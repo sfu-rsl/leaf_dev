@@ -16,6 +16,7 @@ use rustc_middle::{
     middle::exported_symbols::ExportedSymbol,
     mir::{
         self,
+        interpret::{Allocation, ConstValue},
         terminator::{Terminator, TerminatorKind::*},
         BasicBlock, BasicBlockData, LocalDecl, LocalDecls, Operand, Place, SourceInfo,
     },
@@ -70,14 +71,16 @@ impl rustc_driver::Callbacks for Callbacks {
         // What I chose to do is to read the whole file as a string, add "extern crate rc0lib;" in
         // the string, and use the string for the compilation. This seems equally ugly but for now,
         // that's what we have.
-        let input_path = &config.input_path.as_ref().expect("No file given");
-        let mut contents =
-            std::fs::read_to_string(input_path).expect("Fail to read the input file");
-        contents = format!("extern crate rc0lib;\n{}", contents);
-        config.input = rustc_session::config::Input::Str {
-            name: source_map::FileName::Custom(input_path.to_str().unwrap().to_string()),
-            input: contents,
-        };
+        config.input_path.as_ref().and_then(|input_path| {
+            let mut contents =
+                std::fs::read_to_string(input_path).expect("Fail to read the input file");
+            contents = format!("extern crate rc0lib;\n{}", contents);
+            config.input = rustc_session::config::Input::Str {
+                name: source_map::FileName::Custom(input_path.to_str().unwrap().to_string()),
+                input: contents,
+            };
+            Some(())
+        });
         config.override_queries = Some(|_session, lprov, _eprov| {
             lprov.optimized_mir = Callbacks::local_optimized_mir;
             //eprov.optimized_mir = Callbacks::extern_optimized_mir;
@@ -159,15 +162,23 @@ impl Callbacks {
             })
             .collect();
 
-        for (basic_block_idx, basic_block) in basic_blocks.iter_enumerated_mut() {
-            Self::process_terminator(
-                tcx,
-                basic_block_idx,
-                basic_block,
-                local_decls,
-                &index_map,
-                &def_ids,
-            );
+        let mut iter = basic_blocks.iter_enumerated_mut().peekable();
+        for _ in 0..iter.len() {
+            if let Some((basic_block_idx, basic_block)) = iter.next() {
+                let next_terminator = iter
+                    .peek()
+                    .map(|(_, next_block)| next_block.terminator.as_ref())
+                    .flatten();
+                Self::process_terminator(
+                    tcx,
+                    basic_block_idx,
+                    basic_block,
+                    local_decls,
+                    &index_map,
+                    &def_ids,
+                    next_terminator,
+                );
+            }
         }
     }
 
@@ -351,6 +362,7 @@ impl Callbacks {
         basic_block: &mut BasicBlockData<'tcx>,
         local_decls: &mut LocalDecls<'tcx>,
         def_ids: &Vec<&DefId>,
+        next_terminator: Option<&Terminator>,
     ) {
         // TODO: Should build a (function_name, def_id) map. Assume only one function
         // for now.
@@ -360,10 +372,33 @@ impl Callbacks {
 
         // Add a new local_decl of the () type, which is used as an lvalue for a function call with
         // no return values.
-        let local_decl = LocalDecl::new(tcx.intern_tup(&[]), span.to_owned());
-        let local_decl_idx = local_decls.push(local_decl);
+        let ret_local_decl = LocalDecl::new(tcx.intern_tup(&[]), span.to_owned());
+        let ret_local_decl_idx = local_decls.push(ret_local_decl);
 
-        // Create arguments to pass
+        // Create arguments to pass.
+        // First create a &str constant.
+        let s = if basic_block.statements.len() == 0 {
+            let s = format!("{:?}", next_terminator.unwrap().kind);
+            s
+        } else {
+            let s = format!("{:?}", basic_block.statements.first().unwrap());
+            s
+        };
+        let allocation = Allocation::from_bytes_byte_aligned_immutable(s.as_bytes());
+        let allocation = tcx.intern_const_alloc(allocation);
+        let constant = mir::Constant {
+            span: span.to_owned(),
+            user_ty: None, // TODO: not sure about this but this is not coming from a user, so...
+            literal: mir::ConstantKind::Val(
+                ConstValue::Slice {
+                    data: allocation,
+                    start: 0,
+                    end: s.len(),
+                },
+                tcx.mk_static_str(),
+            ),
+        };
+        let str_operand = Operand::Constant(Box::new(constant));
 
         let new_terminator = Terminator {
             source_info: SourceInfo::outermost(span), // TODO: Not sure how good
@@ -374,8 +409,8 @@ impl Callbacks {
                     tcx.intern_substs(&[]),
                     span.to_owned(),
                 ),
-                args: vec![],
-                destination: Some((Place::from(local_decl_idx), basic_block_idx + 1)),
+                args: vec![str_operand],
+                destination: Some((Place::from(ret_local_decl_idx), basic_block_idx + 1)),
                 cleanup: None,
                 from_hir_call: true,
                 fn_span: span.to_owned(),
@@ -392,6 +427,7 @@ impl Callbacks {
         local_decls: &mut LocalDecls<'tcx>,
         index_map: &HashMap<BasicBlock, BasicBlock>,
         def_ids: &Vec<&DefId>,
+        next_terminator: Option<&Terminator>,
     ) {
         match &mut basic_block.terminator {
             Some(terminator) => {
@@ -401,7 +437,14 @@ impl Callbacks {
             }
             None => {
                 // A newly-added basic block
-                Self::add_new_terminator(tcx, basic_block_idx, basic_block, local_decls, def_ids);
+                Self::add_new_terminator(
+                    tcx,
+                    basic_block_idx,
+                    basic_block,
+                    local_decls,
+                    &def_ids,
+                    next_terminator,
+                );
             }
         };
     }
