@@ -68,49 +68,6 @@ impl rustc_driver::Callbacks for Callbacks {
             }
         }
 
-        //// We're injecting "extern crate rc0lib;" into the source file itself. Since we're adding
-        //// calls to the functions in rc0lib, there has to be a way to bring rc0lib into the crate's
-        //// scope. The easiest way seems to be adding extern crate in the source file. There are
-        //// probably other ways such as adding it in HIR. But I couldn't find a way to do
-        //// that. "extern crate std;" seems to be automatically added (this is what's called
-        //// "extern preludes") when generating HIR. So if that's true, then we just need to do the
-        //// same thing for rc0lib.
-        ////
-        //// When adding "extern crate rc0lib;" to the source file, you could generate a new file and
-        //// add it there. But I chose not to do it since there has to be a way to clean up the
-        //// temporary file created in the process and I thought it'd be ugly.
-        ////
-        //// What I chose to do is to read the whole file as a string, add "extern crate rc0lib;" in
-        //// the string, and use the string for the compilation. This seems equally ugly but for now,
-        //// that's what we have.
-        //config.input_path.as_ref().and_then(|input_path| {
-        //    let mut contents =
-        //        std::fs::read_to_string(input_path).expect("Fail to read the input file");
-
-        //    // Detect outer doc comments //! and /*! ... */, as well as #! outer attributes.
-        //    let mut loc0 = 0;
-        //    for mat in Regex::new(r"(?m)//!.*$").unwrap().find_iter(&contents) {
-        //        loc0 = mat.end();
-        //    }
-        //    let mut loc1 = 0;
-        //    for mat in Regex::new(r"(?s)/\*!.*\*/").unwrap().find_iter(&contents) {
-        //        loc1 = mat.end();
-        //    }
-        //    let mut loc2 = 0;
-        //    for mat in Regex::new(r"(?m)#!.*$").unwrap().find_iter(&contents) {
-        //        loc2 = mat.end();
-        //    }
-
-        //    contents.insert_str(
-        //        std::cmp::max(loc0, std::cmp::max(loc1, loc2)),
-        //        "\n\nextern crate rc0lib;\n\n",
-        //    );
-        //    config.input = rustc_session::config::Input::Str {
-        //        name: source_map::FileName::Custom(input_path.to_str().unwrap().to_string()),
-        //        input: contents,
-        //    };
-        //    Some(())
-        //});
         config.override_queries = Some(|_session, lprov, _eprov| {
             lprov.optimized_mir = Instrumenter::local_optimized_mir;
             //eprov.optimized_mir = Callbacks::extern_optimized_mir;
