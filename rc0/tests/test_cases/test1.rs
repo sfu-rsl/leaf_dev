@@ -1,5 +1,5 @@
 fn main() {
-    let b = false;
+    let b: bool = false;
 
     switch(b);
 }
