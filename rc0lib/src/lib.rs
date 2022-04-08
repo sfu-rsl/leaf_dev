@@ -14,6 +14,6 @@ pub fn call() {
     println!("Call");
 }
 
-pub fn assign() {
-    println!("Assign");
+pub fn assign(str0: &str, str1: &str) {
+    println!("Assign, {str0}, {str1}");
 }
