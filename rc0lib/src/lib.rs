@@ -1,19 +1,36 @@
 //pub fn add_this(string: &str) {
 //    println!("{string}");
 //}
+//
 
-pub fn switch_int() {
-    println!("SwitchInt");
+pub mod switch_int {
+    pub fn filler() {
+        println!("switch_int::filler");
+    }
 }
 
-pub fn ret() {
-    println!("Return");
+pub mod ret {
+    pub fn filler() {
+        println!("ret::filler");
+    }
 }
 
-pub fn call() {
-    println!("Call");
+pub mod call {
+    pub fn filler() {
+        println!("call:filler");
+    }
 }
 
-pub fn assign(str0: &str, str1: &str) {
-    println!("Assign, {str0}, {str1}");
+pub mod assign {
+    pub fn filler(arg0: &str, arg1: &str) {
+        println!("assign::filler, {arg0}, {arg1}");
+    }
+
+    pub mod rvalue {
+        pub mod ruse {
+            pub fn filler(kind: &str, lvalue: &str, rvalue: &str) {
+                println!("assign::rvalue::ruse::filler, {kind}, {lvalue}, {rvalue}");
+            }
+        }
+    }
 }

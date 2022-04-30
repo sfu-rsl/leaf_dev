@@ -257,17 +257,19 @@ impl<'tcx> Transformer<'tcx> {
 
     fn add_new_terminator(&mut self, body: &mut mir::Body<'tcx>, basic_block_idx: mir::BasicBlock) {
         let new_terminator = Some(if body.index(basic_block_idx).statements.is_empty() {
-            let next_terminator = body
+            let kind = &body
                 .basic_blocks()
                 .get(basic_block_idx + 1)
-                .map(|next_block| next_block.terminator());
-            match next_terminator.unwrap().kind {
+                .map(|next_block| next_block.terminator())
+                .unwrap()
+                .kind;
+            match kind {
                 SwitchInt {
                     discr: _,
                     switch_ty: _,
                     targets: _,
-                } => self.get_switch_int(&mut body.local_decls, basic_block_idx),
-                Return => self.get_ret(&mut body.local_decls, basic_block_idx),
+                } => self.handle_switch_int(&mut body.local_decls, basic_block_idx),
+                Return => self.handle_ret(&mut body.local_decls, basic_block_idx),
                 Call {
                     func: _,
                     args: _,
@@ -275,9 +277,9 @@ impl<'tcx> Transformer<'tcx> {
                     cleanup: _,
                     from_hir_call: _,
                     fn_span: _,
-                } => self.get_call(&mut body.local_decls, basic_block_idx),
+                } => self.handle_call(&mut body.local_decls, basic_block_idx),
                 // TODO: Check if we need to handle anything else.
-                _ => self.get_goto(basic_block_idx),
+                _ => self.handle_goto(basic_block_idx),
             }
         } else {
             let kind = &body
@@ -289,105 +291,48 @@ impl<'tcx> Transformer<'tcx> {
                 .to_owned();
             match kind {
                 mir::StatementKind::Assign(asgn) => {
-                    self.get_assign(&mut body.local_decls, basic_block_idx, asgn)
+                    self.handle_assign(&mut body.local_decls, basic_block_idx, asgn)
                 }
                 // TODO: Check if we need to handle anything else.
-                _ => self.get_goto(basic_block_idx),
+                _ => self.handle_goto(basic_block_idx),
             }
         });
-        let basic_block = body.index_mut(basic_block_idx);
-        basic_block.terminator = new_terminator;
+        body.index_mut(basic_block_idx).terminator = new_terminator;
     }
 
     // TODO: Filler
-    fn get_switch_int(
+    fn handle_switch_int(
         &mut self,
         local_decls: &mut mir::LocalDecls<'tcx>,
         basic_block_idx: mir::BasicBlock,
     ) -> terminator::Terminator<'tcx> {
-        let def_id = self.func_map.get("rc0lib::switch_int").unwrap();
-
-        // Add a new local_decl of the () type, which is used as an lvalue for a function call with
-        // no return values.
-        let ret_local_decl = mir::LocalDecl::new(self.tcx.intern_tup(&[]), rustc_span::DUMMY_SP);
-        let ret_local_decl_idx = local_decls.push(ret_local_decl);
-
-        terminator::Terminator {
-            source_info: mir::SourceInfo::outermost(rustc_span::DUMMY_SP), // TODO: Not sure how good
-            kind: Call {
-                func: mir::Operand::function_handle(
-                    self.tcx,
-                    *def_id,
-                    self.tcx.intern_substs(&[]),
-                    rustc_span::DUMMY_SP,
-                ),
-                args: vec![],
-                destination: Some((mir::Place::from(ret_local_decl_idx), basic_block_idx + 1)),
-                cleanup: None,
-                from_hir_call: true,
-                fn_span: rustc_span::DUMMY_SP,
-            },
-        }
+        self.build_call_terminator(
+            local_decls,
+            basic_block_idx,
+            "rc0lib::switch_int::filler",
+            vec![],
+        )
     }
 
     // TODO: Filler
-    fn get_ret(
+    fn handle_ret(
         &mut self,
         local_decls: &mut mir::LocalDecls<'tcx>,
         basic_block_idx: mir::BasicBlock,
     ) -> terminator::Terminator<'tcx> {
-        let def_id = self.func_map.get("rc0lib::ret").unwrap();
-        let ret_local_decl = mir::LocalDecl::new(self.tcx.intern_tup(&[]), rustc_span::DUMMY_SP);
-        let ret_local_decl_idx = local_decls.push(ret_local_decl);
-
-        terminator::Terminator {
-            source_info: mir::SourceInfo::outermost(rustc_span::DUMMY_SP), // TODO: Not sure how good
-            kind: Call {
-                func: mir::Operand::function_handle(
-                    self.tcx,
-                    *def_id,
-                    self.tcx.intern_substs(&[]),
-                    rustc_span::DUMMY_SP,
-                ),
-                args: vec![],
-                destination: Some((mir::Place::from(ret_local_decl_idx), basic_block_idx + 1)),
-                cleanup: None,
-                from_hir_call: true,
-                fn_span: rustc_span::DUMMY_SP,
-            },
-        }
+        self.build_call_terminator(local_decls, basic_block_idx, "rc0lib::ret::filler", vec![])
     }
 
     // TODO: Filler
-    fn get_call(
+    fn handle_call(
         &mut self,
         local_decls: &mut mir::LocalDecls<'tcx>,
         basic_block_idx: mir::BasicBlock,
     ) -> terminator::Terminator<'tcx> {
-        let def_id = self.func_map.get("rc0lib::call").unwrap();
-        let ret_local_decl = mir::LocalDecl::new(self.tcx.intern_tup(&[]), rustc_span::DUMMY_SP);
-        let ret_local_decl_idx = local_decls.push(ret_local_decl);
-
-        terminator::Terminator {
-            source_info: mir::SourceInfo::outermost(rustc_span::DUMMY_SP), // TODO: Not sure how good
-            kind: Call {
-                func: mir::Operand::function_handle(
-                    self.tcx,
-                    *def_id,
-                    self.tcx.intern_substs(&[]),
-                    rustc_span::DUMMY_SP,
-                ),
-                args: vec![],
-                destination: Some((mir::Place::from(ret_local_decl_idx), basic_block_idx + 1)),
-                cleanup: None,
-                from_hir_call: true,
-                fn_span: rustc_span::DUMMY_SP,
-            },
-        }
+        self.build_call_terminator(local_decls, basic_block_idx, "rc0lib::call::filler", vec![])
     }
 
-    // TODO: Filler
-    fn get_assign(
+    fn handle_assign(
         &mut self,
         local_decls: &mut mir::LocalDecls<'tcx>,
         basic_block_idx: mir::BasicBlock,
@@ -414,84 +359,105 @@ impl<'tcx> Transformer<'tcx> {
                 }
             */
             mir::Rvalue::Use(operand) => {
-                self.get_assign_use(local_decls, place, basic_block_idx, operand)
+                self.handle_use(local_decls, place, basic_block_idx, operand)
             }
-            _ => {
-                let def_id = self.func_map.get("rc0lib::assign").unwrap();
-                let ret_local_decl =
-                    mir::LocalDecl::new(self.tcx.intern_tup(&[]), rustc_span::DUMMY_SP);
-                let ret_local_decl_idx = local_decls.push(ret_local_decl);
-
-                terminator::Terminator {
-                    source_info: mir::SourceInfo::outermost(rustc_span::DUMMY_SP), // TODO: Not sure how good
-                    kind: Call {
-                        func: mir::Operand::function_handle(
-                            self.tcx,
-                            *def_id,
-                            self.tcx.intern_substs(&[]),
-                            rustc_span::DUMMY_SP,
-                        ),
-                        args: vec![self.build_str(String::new()), self.build_str(String::new())],
-                        destination: Some((
-                            mir::Place::from(ret_local_decl_idx),
-                            basic_block_idx + 1,
-                        )),
-                        cleanup: None,
-                        from_hir_call: true,
-                        fn_span: rustc_span::DUMMY_SP,
-                    },
-                }
-            }
+            _ => self.build_call_terminator(
+                local_decls,
+                basic_block_idx,
+                "rc0lib::assign::filler",
+                vec![self.build_str(String::new()), self.build_str(String::new())],
+            ),
         }
     }
 
-    fn get_assign_use(
+    fn handle_use(
         &mut self,
         local_decls: &mut mir::LocalDecls<'tcx>,
-        _place: &mir::Place,
+        place: &mir::Place,
         basic_block_idx: mir::BasicBlock,
         operand: &mir::Operand,
     ) -> terminator::Terminator<'tcx> {
-        log::debug!("get_assign_use");
-
-        let def_id = self.func_map.get("rc0lib::assign").unwrap();
-        let ret_local_decl = mir::LocalDecl::new(self.tcx.intern_tup(&[]), rustc_span::DUMMY_SP);
-        let ret_local_decl_idx = local_decls.push(ret_local_decl);
-
-        let (arg0, arg1) = match operand {
+        let (func_name, args) = match operand {
             mir::Operand::Copy(pl) => (
-                self.build_str("copy".to_string()),
-                self.build_str(format!("{pl:?}")),
+                "rc0lib::assign::rvalue::ruse::filler",
+                vec![
+                    self.build_str("copy".to_string()),
+                    self.handle_place(place),
+                    self.build_str(format!("{pl:?}")),
+                ],
             ),
             mir::Operand::Move(pl) => (
-                self.build_str("move".to_string()),
-                self.build_str(format!("{pl:?}")),
+                "rc0lib::assign::rvalue::ruse::filler",
+                vec![
+                    self.build_str("move".to_string()),
+                    self.handle_place(place),
+                    self.build_str(format!("{pl:?}")),
+                ],
             ),
             mir::Operand::Constant(c) => (
-                self.build_str("constant".to_string()),
-                self.build_str(format!("{c}")),
+                "rc0lib::assign::rvalue::ruse::filler",
+                vec![
+                    self.build_str("constant".to_string()),
+                    self.handle_place(place),
+                    self.handle_constant(c),
+                ],
             ),
         };
+        self.build_call_terminator(local_decls, basic_block_idx, func_name, args)
+    }
 
-        terminator::Terminator {
-            source_info: mir::SourceInfo::outermost(rustc_span::DUMMY_SP), // TODO: Not sure how good
-            kind: Call {
-                func: mir::Operand::function_handle(
-                    self.tcx,
-                    *def_id,
-                    self.tcx.intern_substs(&[]),
-                    rustc_span::DUMMY_SP,
-                ),
-                args: vec![arg0, arg1],
-                destination: Some((mir::Place::from(ret_local_decl_idx), basic_block_idx + 1)),
-                cleanup: None,
-                from_hir_call: true,
-                fn_span: rustc_span::DUMMY_SP,
-            },
+    // TODO
+    fn handle_place(&self, place: &mir::Place) -> mir::Operand<'tcx> {
+        self.build_str(format!("{place:?}"))
+    }
+
+    fn handle_constant(&self, c: &mir::Constant) -> mir::Operand<'tcx> {
+        match c.literal {
+            mir::ConstantKind::Ty(cons) => self.handle_ty(cons),
+            mir::ConstantKind::Val(cons, ty) => self.handle_val(cons, ty),
         }
     }
 
-    fn get_goto(&self, basic_block_idx: mir::BasicBlock) -> terminator::Terminator<'tcx> {
+    // TODO
+    fn handle_ty(&self, cons: ty::Const) -> mir::Operand<'tcx> {
+        self.build_str(format!("{cons:?}"))
+    }
+
+    // TODO
+    fn handle_val(&self, cons: interpret::ConstValue, ty: ty::Ty) -> mir::Operand<'tcx> {
+        match ty.kind() {
+            ty::TyKind::Bool => log::debug!("bool"),
+            ty::TyKind::Char => log::debug!("char"),
+            ty::TyKind::Int(_) => log::debug!("int"),
+            ty::TyKind::Uint(_) => log::debug!("uint"),
+            ty::TyKind::Float(_) => log::debug!("float"),
+            ty::TyKind::Adt(_, _) => log::debug!("adt"),
+            ty::TyKind::Foreign(_) => log::debug!("foreign"),
+            ty::TyKind::Str => log::debug!("str"),
+            ty::TyKind::Array(_, _) => log::debug!("array"),
+            ty::TyKind::Slice(_) => log::debug!("slice"),
+            ty::TyKind::RawPtr(_) => log::debug!("rawptr"),
+            ty::TyKind::Ref(_, _, _) => log::debug!("ref"),
+            ty::TyKind::FnDef(_, _) => log::debug!("fndef"),
+            ty::TyKind::FnPtr(_) => log::debug!("fnptr"),
+            ty::TyKind::Dynamic(_, _) => log::debug!("dynamic"),
+            ty::TyKind::Closure(_, _) => log::debug!("closure"),
+            ty::TyKind::Generator(_, _, _) => log::debug!("generator"),
+            ty::TyKind::GeneratorWitness(_) => log::debug!("generator_witness"),
+            ty::TyKind::Never => log::debug!("never"),
+            ty::TyKind::Tuple(_) => log::debug!("tuple"),
+            ty::TyKind::Projection(_) => log::debug!("projection"),
+            ty::TyKind::Opaque(_, _) => log::debug!("opaque"),
+            ty::TyKind::Param(_) => log::debug!("param"),
+            ty::TyKind::Bound(_, _) => log::debug!("bound"),
+            ty::TyKind::Placeholder(_) => log::debug!("place_holder"),
+            ty::TyKind::Infer(_) => log::debug!("infer"),
+            ty::TyKind::Error(_) => log::debug!("error"),
+        }
+        self.build_str(format!("{cons:?}, {ty:?}"))
+    }
+
+    fn handle_goto(&self, basic_block_idx: mir::BasicBlock) -> terminator::Terminator<'tcx> {
         terminator::Terminator {
             source_info: mir::SourceInfo::outermost(rustc_span::DUMMY_SP), // TODO: Not sure how good
             kind: Goto {
@@ -517,5 +483,34 @@ impl<'tcx> Transformer<'tcx> {
             ),
         };
         mir::Operand::Constant(Box::new(constant))
+    }
+
+    fn build_call_terminator(
+        &self,
+        local_decls: &mut mir::LocalDecls<'tcx>,
+        basic_block_idx: mir::BasicBlock,
+        func_name: &str,
+        args: Vec<mir::Operand<'tcx>>,
+    ) -> terminator::Terminator<'tcx> {
+        let def_id = self.func_map.get(func_name).unwrap();
+        let ret_local_decl = mir::LocalDecl::new(self.tcx.intern_tup(&[]), rustc_span::DUMMY_SP);
+        let ret_local_decl_idx = local_decls.push(ret_local_decl);
+
+        terminator::Terminator {
+            source_info: mir::SourceInfo::outermost(rustc_span::DUMMY_SP), // TODO: Not sure how good
+            kind: Call {
+                func: mir::Operand::function_handle(
+                    self.tcx,
+                    *def_id,
+                    self.tcx.intern_substs(&[]),
+                    rustc_span::DUMMY_SP,
+                ),
+                args,
+                destination: Some((mir::Place::from(ret_local_decl_idx), basic_block_idx + 1)),
+                cleanup: None,
+                from_hir_call: true,
+                fn_span: rustc_span::DUMMY_SP,
+            },
+        }
     }
 }
