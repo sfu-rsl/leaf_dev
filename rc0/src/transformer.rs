@@ -2,6 +2,7 @@ extern crate rustc_middle;
 extern crate rustc_span;
 
 use log;
+use rc0lib::place;
 use rustc_middle::{
     middle::exported_symbols,
     mir::{
@@ -339,122 +340,12 @@ impl<'tcx> Transformer<'tcx> {
         asgn: &Box<(mir::Place<'tcx>, mir::Rvalue<'tcx>)>,
     ) -> terminator::Terminator<'tcx> {
         let (place, rvalue) = asgn.as_ref();
-        match rvalue {
-            /*
-                pub enum Rvalue<'tcx> {
-                    Use(Operand<'tcx>),
-                    Repeat(Operand<'tcx>, Const<'tcx>),
-                    Ref(Region<'tcx>, BorrowKind, Place<'tcx>),
-                    ThreadLocalRef(DefId),
-                    AddressOf(Mutability, Place<'tcx>),
-                    Len(Place<'tcx>),
-                    Cast(CastKind, Operand<'tcx>, Ty<'tcx>),
-                    BinaryOp(BinOp, Box<(Operand<'tcx>, Operand<'tcx>)>),
-                    CheckedBinaryOp(BinOp, Box<(Operand<'tcx>, Operand<'tcx>)>),
-                    NullaryOp(NullOp, Ty<'tcx>),
-                    UnaryOp(UnOp, Operand<'tcx>),
-                    Discriminant(Place<'tcx>),
-                    Aggregate(Box<AggregateKind<'tcx>>, Vec<Operand<'tcx>>),
-                    ShallowInitBox(Operand<'tcx>, Ty<'tcx>),
-                }
-            */
-            mir::Rvalue::Use(operand) => {
-                self.handle_use(local_decls, place, basic_block_idx, operand)
-            }
-            _ => self.build_call_terminator(
-                local_decls,
-                basic_block_idx,
-                "rc0lib::assign::filler",
-                vec![self.build_str(String::new()), self.build_str(String::new())],
-            ),
-        }
-    }
-
-    fn handle_use(
-        &mut self,
-        local_decls: &mut mir::LocalDecls<'tcx>,
-        place: &mir::Place,
-        basic_block_idx: mir::BasicBlock,
-        operand: &mir::Operand,
-    ) -> terminator::Terminator<'tcx> {
-        let (func_name, args) = match operand {
-            mir::Operand::Copy(pl) => (
-                "rc0lib::assign::rvalue::ruse::filler",
-                vec![
-                    self.build_str("copy".to_string()),
-                    self.handle_place(place),
-                    self.build_str(format!("{pl:?}")),
-                ],
-            ),
-            mir::Operand::Move(pl) => (
-                "rc0lib::assign::rvalue::ruse::filler",
-                vec![
-                    self.build_str("move".to_string()),
-                    self.handle_place(place),
-                    self.build_str(format!("{pl:?}")),
-                ],
-            ),
-            mir::Operand::Constant(c) => (
-                "rc0lib::assign::rvalue::ruse::filler",
-                vec![
-                    self.build_str("constant".to_string()),
-                    self.handle_place(place),
-                    self.handle_constant(c),
-                ],
-            ),
-        };
-        self.build_call_terminator(local_decls, basic_block_idx, func_name, args)
-    }
-
-    // TODO
-    fn handle_place(&self, place: &mir::Place) -> mir::Operand<'tcx> {
-        self.build_str(format!("{place:?}"))
-    }
-
-    fn handle_constant(&self, c: &mir::Constant) -> mir::Operand<'tcx> {
-        match c.literal {
-            mir::ConstantKind::Ty(cons) => self.handle_ty(cons),
-            mir::ConstantKind::Val(cons, ty) => self.handle_val(cons, ty),
-        }
-    }
-
-    // TODO
-    fn handle_ty(&self, cons: ty::Const) -> mir::Operand<'tcx> {
-        self.build_str(format!("{cons:?}"))
-    }
-
-    // TODO
-    fn handle_val(&self, cons: interpret::ConstValue, ty: ty::Ty) -> mir::Operand<'tcx> {
-        match ty.kind() {
-            ty::TyKind::Bool => log::debug!("bool"),
-            ty::TyKind::Char => log::debug!("char"),
-            ty::TyKind::Int(_) => log::debug!("int"),
-            ty::TyKind::Uint(_) => log::debug!("uint"),
-            ty::TyKind::Float(_) => log::debug!("float"),
-            ty::TyKind::Adt(_, _) => log::debug!("adt"),
-            ty::TyKind::Foreign(_) => log::debug!("foreign"),
-            ty::TyKind::Str => log::debug!("str"),
-            ty::TyKind::Array(_, _) => log::debug!("array"),
-            ty::TyKind::Slice(_) => log::debug!("slice"),
-            ty::TyKind::RawPtr(_) => log::debug!("rawptr"),
-            ty::TyKind::Ref(_, _, _) => log::debug!("ref"),
-            ty::TyKind::FnDef(_, _) => log::debug!("fndef"),
-            ty::TyKind::FnPtr(_) => log::debug!("fnptr"),
-            ty::TyKind::Dynamic(_, _) => log::debug!("dynamic"),
-            ty::TyKind::Closure(_, _) => log::debug!("closure"),
-            ty::TyKind::Generator(_, _, _) => log::debug!("generator"),
-            ty::TyKind::GeneratorWitness(_) => log::debug!("generator_witness"),
-            ty::TyKind::Never => log::debug!("never"),
-            ty::TyKind::Tuple(_) => log::debug!("tuple"),
-            ty::TyKind::Projection(_) => log::debug!("projection"),
-            ty::TyKind::Opaque(_, _) => log::debug!("opaque"),
-            ty::TyKind::Param(_) => log::debug!("param"),
-            ty::TyKind::Bound(_, _) => log::debug!("bound"),
-            ty::TyKind::Placeholder(_) => log::debug!("place_holder"),
-            ty::TyKind::Infer(_) => log::debug!("infer"),
-            ty::TyKind::Error(_) => log::debug!("error"),
-        }
-        self.build_str(format!("{cons:?}, {ty:?}"))
+        self.build_call_terminator(
+            local_decls,
+            basic_block_idx,
+            "rc0lib::assign::serialize",
+            vec![self.build_str(serde_json::to_string(&place::Place::from(place)).unwrap())],
+        )
     }
 
     fn handle_goto(&self, basic_block_idx: mir::BasicBlock) -> terminator::Terminator<'tcx> {

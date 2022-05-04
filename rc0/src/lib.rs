@@ -10,19 +10,30 @@ extern crate rustc_span;
 
 mod transformer;
 
-use rustc_ast::{ast, ptr};
-use rustc_interface::interface;
-use rustc_middle::ty::{
-    self,
-    query::{query_keys, query_values, Providers},
+use rustc_ast::{
+    ast::{Item, ItemKind, Visibility, VisibilityKind},
+    ptr::P,
+    DUMMY_NODE_ID,
 };
-use rustc_span::symbol;
-use std::path;
+use rustc_driver::Compilation;
+use rustc_interface::{
+    interface::{Compiler, Config},
+    Queries,
+};
+use rustc_middle::ty::{
+    query::{query_keys, query_values, Providers},
+    TyCtxt,
+};
+use rustc_span::{
+    symbol::{Ident, Symbol},
+    DUMMY_SP,
+};
+use std::path::PathBuf;
 
 pub struct RunCompiler;
 
 impl RunCompiler {
-    pub fn run(args: &mut Vec<String>, input_path: Option<path::PathBuf>) -> i32 {
+    pub fn run(args: &mut Vec<String>, input_path: Option<PathBuf>) -> i32 {
         // Taken frim MIRI <https://github.com/rust-lang/miri/blob/master/src/bin/miri.rs#L205>
         let home = option_env!("RUSTUP_HOME").or(option_env!("MULTIRUST_HOME"));
         let toolchain = option_env!("RUSTUP_TOOLCHAIN").or(option_env!("MULTIRUST_TOOLCHAIN"));
@@ -49,7 +60,7 @@ impl RunCompiler {
 struct Callbacks;
 
 impl rustc_driver::Callbacks for Callbacks {
-    fn config(&mut self, config: &mut interface::Config) {
+    fn config(&mut self, config: &mut Config) {
         if let Some(output_dir) = &config.output_dir {
             // Skip build scripts.
             if output_dir
@@ -69,34 +80,34 @@ impl rustc_driver::Callbacks for Callbacks {
 
     fn after_parsing<'tcx>(
         &mut self,
-        compiler: &interface::Compiler,
-        queries: &'tcx rustc_interface::Queries<'tcx>,
-    ) -> rustc_driver::Compilation {
+        compiler: &Compiler,
+        queries: &'tcx Queries<'tcx>,
+    ) -> Compilation {
         compiler.session().abort_if_errors();
 
         // The following adds a new statement "extern crate rc0lib" to the parsed AST as a new item.
         let items = &mut queries.parse().unwrap().peek_mut().items;
-        let item = ast::Item {
+        let item = Item {
             attrs: Vec::new(),
-            id: rustc_ast::DUMMY_NODE_ID,
-            span: rustc_span::DUMMY_SP,
-            vis: ast::Visibility {
-                kind: ast::VisibilityKind::Inherited,
-                span: rustc_span::DUMMY_SP,
+            id: DUMMY_NODE_ID,
+            span: DUMMY_SP,
+            vis: Visibility {
+                kind: VisibilityKind::Inherited,
+                span: DUMMY_SP,
                 tokens: None,
             },
-            ident: symbol::Ident::with_dummy_span(symbol::Symbol::intern("rc0lib")),
-            kind: ast::ItemKind::ExternCrate(None),
+            ident: Ident::with_dummy_span(Symbol::intern("rc0lib")),
+            kind: ItemKind::ExternCrate(None),
             tokens: None,
         };
-        items.insert(0, ptr::P(item));
+        items.insert(0, P(item));
 
-        rustc_driver::Compilation::Continue
+        Compilation::Continue
     }
 }
 
 fn local_optimized_mir<'tcx>(
-    tcx: ty::TyCtxt<'tcx>,
+    tcx: TyCtxt<'tcx>,
     opt_mir: query_keys::optimized_mir<'tcx>,
 ) -> query_values::optimized_mir<'tcx> {
     let mut providers = Providers::default();
