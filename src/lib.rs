@@ -135,6 +135,12 @@ impl Callbacks {
             StatementKind::Assign(_) => {
                 log::debug!("Assign: {statement:?}");
             }
+            StatementKind::FakeRead(_) => {
+                log::debug!("FakeRead: {statement:?}");
+            }
+            StatementKind::SetDiscriminant { .. } => {
+                log::debug!("SetDiscriminant: {statement:?}");
+            }
             _ => {
                 log::debug!("Other: {statement:?}");
             }
