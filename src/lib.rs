@@ -12,7 +12,7 @@ use rustc_interface::{
     Queries,
 };
 use rustc_middle::{
-    mir::{BasicBlockData, Body, LocalDecls, Statement, StatementKind},
+    mir::{BasicBlockData, Body, LocalDecls, Place, Rvalue, Statement, StatementKind},
     ty::{InstanceDef, TyCtxt, WithOptConstParam},
 };
 use std::path::PathBuf;
@@ -84,6 +84,8 @@ impl Callbacks {
             let id = WithOptConstParam::unknown(body_id.to_def_id());
             let def = InstanceDef::Item(id);
             let body = tcx.instance_mir(def);
+            let phase = body.phase;
+            log::debug!("Phase: {phase:?}");
             self.visit_basic_blocks(body);
         }
     }
@@ -131,9 +133,29 @@ impl Callbacks {
              Nop,
          }
         */
+        // Note: According to https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/mir/enum.StatementKind.html
+        // not all StatementKinds are allowed at every MirPhase
         match &statement.kind {
-            StatementKind::Assign(_) => {
-                log::debug!("Assign: {statement:?}");
+            StatementKind::Assign(b) => {
+                let (place, rvalue): &(Place<'_>, Rvalue<'_>) = &**b;
+                let rvalue_string = match *rvalue {
+                    Rvalue::Use(_) => "Use",
+                    Rvalue::Repeat(_, _) => "Repeat",
+                    Rvalue::Ref(_, _, _) => "Ref",
+                    Rvalue::AddressOf(_, _) => "AddressOf",
+                    Rvalue::Len(_) => "Len",
+                    Rvalue::Cast(_, _, _) => "Cast",
+                    Rvalue::BinaryOp(_, _) => "BinaryOp",
+                    Rvalue::CheckedBinaryOp(_, _) => "CheckedBinaryOp",
+                    Rvalue::NullaryOp(_, _) => "NullaryOp",
+                    Rvalue::UnaryOp(_, _) => "UnaryOp",
+                    Rvalue::Discriminant(_) => "Discriminant",
+                    Rvalue::Aggregate(_, _) => "Aggregate",
+                    Rvalue::ShallowInitBox(_, _) => "ShallowInitBox",
+                    _ => "Other"
+                };
+                log::debug!("Assign: {b:?}");
+                log::debug!(" Rvalue variant: {}", rvalue_string);
             }
             StatementKind::FakeRead(_) => {
                 log::debug!("FakeRead: {statement:?}");
