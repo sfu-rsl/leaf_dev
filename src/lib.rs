@@ -50,6 +50,10 @@ impl RunCompiler {
 /// due to issues with the upstream type not being thread-safe (e.g. compiler errors that say
 /// "`rustc_span::span_encoding::Span` cannot be shared between threads safely") and how there might
 /// be irrelevant info anyway.
+/// 
+/// TODO: Convert `Place` to a similar version
+/// TODO: TerminatorKind
+/// TODO: Migrate tests to use the serializable types in the `steveyko` branch
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SimpleStatementKind {
     Assign(SimpleRvalue), // (Box<(Place<'tcx>, Rvalue<'tcx>)>)
@@ -67,6 +71,8 @@ pub enum SimpleStatementKind {
 
 impl SimpleStatementKind {
     fn from_statement_kind(statement_kind: &StatementKind) -> Self {
+        // Note: According to https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/mir/enum.StatementKind.html
+        // not all StatementKinds are allowed at every MirPhase
         match statement_kind {
             StatementKind::Assign(b) => {
                 let (place, rvalue): &(Place<'_>, Rvalue<'_>) = &*b;
@@ -107,7 +113,7 @@ pub enum SimpleRvalue {
 
 impl SimpleRvalue {
     fn from_rvalue(rvalue: &Rvalue) -> Self {
-        match *rvalue {
+        match rvalue {
             Rvalue::Use(_) => SimpleRvalue::Use,
             Rvalue::Repeat(_, _) => SimpleRvalue::Repeat,
             Rvalue::Ref(_, _, _) => SimpleRvalue::Ref,
@@ -207,8 +213,6 @@ impl Callbacks {
     }
 
     fn visit_statement(&mut self, statement: &Statement) {
-        // Note: According to https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/mir/enum.StatementKind.html
-        // not all StatementKinds are allowed at every MirPhase
         self.statements.push(SimpleStatementKind::from_statement_kind(&statement.kind));
     }
 }
