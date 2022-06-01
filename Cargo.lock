@@ -63,6 +63,35 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1aab8fc367588b89dcee83ab0fd66b72b50b72fa1904d7095045ace2b0c81c35"
 
 [[package]]
+name = "leafc"
+version = "0.1.0"
+dependencies = [
+ "env_logger",
+ "leafcommon",
+ "leafrt",
+ "log",
+ "test-log",
+]
+
+[[package]]
+name = "leafcommon"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "leafrt"
+version = "0.1.0"
+dependencies = [
+ "env_logger",
+ "leafcommon",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "libc"
 version = "0.2.125"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -99,35 +128,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a1feb54ed693b93a84e14094943b84b7c4eae204c512b7ccb95ab0c66d278ad1"
 dependencies = [
  "proc-macro2",
-]
-
-[[package]]
-name = "rc0"
-version = "0.1.0"
-dependencies = [
- "env_logger",
- "log",
- "rc0common",
- "rc0lib",
- "test-log",
-]
-
-[[package]]
-name = "rc0common"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "rc0lib"
-version = "0.1.0"
-dependencies = [
- "env_logger",
- "rc0common",
- "serde",
- "serde_json",
 ]
 
 [[package]]

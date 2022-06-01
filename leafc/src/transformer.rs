@@ -2,8 +2,8 @@ extern crate rustc_middle;
 extern crate rustc_span;
 
 use crate::helpers;
+use leafcommon::{place, rvalue};
 use log::debug;
-use rc0common::{place, rvalue};
 use rustc_middle::{
     middle::exported_symbols,
     mir::{
@@ -22,13 +22,13 @@ pub struct Transformer<'tcx> {
 
 impl<'tcx> Transformer<'tcx> {
     pub fn new(tcx: ty::TyCtxt<'tcx>) -> Transformer<'tcx> {
-        // Find the rc0lib crate and the functions in it.
+        // Find the leafrt crate and the functions in it.
         // TODO: Perhaps we shouldn't use expect here (and not panic)?
         let cnum = tcx
             .crates(())
             .iter()
-            .find(|cnum| tcx.crate_name(**cnum).as_str() == "rc0lib")
-            .expect("rc0lib crate not found");
+            .find(|cnum| tcx.crate_name(**cnum).as_str() == "leafrt")
+            .expect("leafrt crate not found");
         let def_ids: Vec<&def_id::DefId> = tcx
             .exported_symbols(*cnum)
             .iter()
@@ -138,7 +138,7 @@ impl<'tcx> Transformer<'tcx> {
         self.build_call_terminator(
             local_decls,
             basic_block_idx,
-            "rc0lib::switch_int::filler",
+            "leafrt::switch_int::filler",
             vec![],
         )
     }
@@ -149,7 +149,7 @@ impl<'tcx> Transformer<'tcx> {
         local_decls: &mut mir::LocalDecls<'tcx>,
         basic_block_idx: mir::BasicBlock,
     ) -> terminator::Terminator<'tcx> {
-        self.build_call_terminator(local_decls, basic_block_idx, "rc0lib::ret::filler", vec![])
+        self.build_call_terminator(local_decls, basic_block_idx, "leafrt::ret::filler", vec![])
     }
 
     // TODO: Filler
@@ -158,7 +158,7 @@ impl<'tcx> Transformer<'tcx> {
         local_decls: &mut mir::LocalDecls<'tcx>,
         basic_block_idx: mir::BasicBlock,
     ) -> terminator::Terminator<'tcx> {
-        self.build_call_terminator(local_decls, basic_block_idx, "rc0lib::call::filler", vec![])
+        self.build_call_terminator(local_decls, basic_block_idx, "leafrt::call::filler", vec![])
     }
 
     fn transform_assign(
@@ -176,7 +176,7 @@ impl<'tcx> Transformer<'tcx> {
                 let place: place::Place = p.into();
                 let rvalue: rvalue::Rvalue = r.into();
                 (
-                    "rc0lib::assign::deserialize".into(),
+                    "leafrt::assign::deserialize".into(),
                     vec![
                         self.build_str(place.to_string()),
                         self.build_str(rvalue.to_string()),
@@ -237,7 +237,7 @@ impl<'tcx> Transformer<'tcx> {
                 }
             }
             (
-                "rc0lib::assign::deserialize".into(),
+                "leafrt::assign::deserialize".into(),
                 vec![
                     self.build_str(place.to_string()),
                     self.build_str(rvalue.to_string()),
@@ -281,6 +281,7 @@ impl<'tcx> Transformer<'tcx> {
         func_name: &str,
         args: Vec<mir::Operand<'tcx>>,
     ) -> terminator::Terminator<'tcx> {
+        debug!("{func_name:?}");
         let def_id = self.func_map.get(func_name).unwrap();
         let ret_local_decl = mir::LocalDecl::new(self.tcx.intern_tup(&[]), rustc_span::DUMMY_SP);
         let ret_local_decl_idx = local_decls.push(ret_local_decl);

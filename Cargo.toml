@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "rc0",
-    "rc0lib",
-    "rc0common",
+    "leafc",
+    "leafrt",
+    "leafcommon",
 ]

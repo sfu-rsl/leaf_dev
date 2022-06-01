@@ -88,7 +88,7 @@ impl rustc_driver::Callbacks for Callbacks {
     ) -> Compilation {
         compiler.session().abort_if_errors();
 
-        // The following adds a new statement "extern crate rc0lib" to the parsed AST as a new item.
+        // The following adds a new statement "extern crate leafrt" to the parsed AST as a new item.
         let items = &mut queries.parse().unwrap().peek_mut().items;
         let item = Item {
             attrs: Vec::new(),
@@ -99,7 +99,7 @@ impl rustc_driver::Callbacks for Callbacks {
                 span: DUMMY_SP,
                 tokens: None,
             },
-            ident: Ident::with_dummy_span(Symbol::intern("rc0lib")),
+            ident: Ident::with_dummy_span(Symbol::intern("leafrt")),
             kind: ItemKind::ExternCrate(None),
             tokens: None,
         };

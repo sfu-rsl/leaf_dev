@@ -224,7 +224,7 @@ pub fn create_new_blocks<'tcx>(
     new_basic_block.is_cleanup = basic_block.is_cleanup;
     new_basic_blocks.push(new_basic_block);
 
-    // Create a new block that will include a rc0lib call for the terminator
+    // Create a new block that will include a leafrt call for the terminator
     new_basic_blocks.push(mir::BasicBlockData::new(None));
 
     while let Some(statement) = basic_block.statements.pop() {
@@ -438,5 +438,5 @@ pub fn get_fn_name(ty_kind: &ty::TyKind) -> Option<String> {
             return None;
         }
     };
-    Some(format!("{}{}", "rc0lib::assign::", fn_name_suffix))
+    Some(format!("{}{}", "leafrt::assign::", fn_name_suffix))
 }
