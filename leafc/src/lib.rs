@@ -113,7 +113,6 @@ fn local_optimized_mir<'tcx>(
     tcx: TyCtxt<'tcx>,
     opt_mir: query_keys::optimized_mir<'tcx>,
 ) -> query_values::optimized_mir<'tcx> {
-    log::debug!("local_optimized_mir");
     let mut providers = Providers::default();
     rustc_mir_transform::provide(&mut providers);
     // Cloning here is probably not ideal but couldn't find a different way

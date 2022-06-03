@@ -3,7 +3,7 @@ extern crate rustc_span;
 
 use crate::helpers;
 use leafcommon::{place, rvalue};
-use log::debug;
+//use log::debug;
 use rustc_middle::{
     middle::exported_symbols,
     mir::{
@@ -94,24 +94,53 @@ impl<'tcx> Transformer<'tcx> {
                 .kind;
             match kind {
                 SwitchInt {
-                    discr: _,
+                    discr,
                     switch_ty: _,
                     targets: _,
-                } => self.transform_switch_int(&mut body.local_decls, basic_block_idx),
-                Return => self.transform_ret(&mut body.local_decls, basic_block_idx),
+                } => {
+                    let discr: rvalue::Operand = discr.into();
+                    self.build_call_terminator(
+                        &mut body.local_decls,
+                        basic_block_idx,
+                        "leafrt::switch_int",
+                        vec![self.build_str(discr.to_string())],
+                    )
+                }
+                Return => self.build_call_terminator(
+                    &mut body.local_decls,
+                    basic_block_idx,
+                    "leafrt::ret",
+                    vec![],
+                ),
                 Call {
-                    func: _,
-                    args: _,
-                    destination: _,
+                    func,
+                    args,
+                    destination,
                     cleanup: _,
                     from_hir_call: _,
                     fn_span: _,
-                } => self.transform_call(&mut body.local_decls, basic_block_idx),
+                } => {
+                    let func: rvalue::Operand = func.into();
+                    let args = rvalue::OperandVec(
+                        args.iter().map(|arg| rvalue::Operand::from(arg)).collect(),
+                    );
+                    let destination: place::Place = (&destination.unwrap().0).into();
+                    self.build_call_terminator(
+                        &mut body.local_decls,
+                        basic_block_idx,
+                        "leafrt::call",
+                        vec![
+                            self.build_str(func.to_string()),
+                            self.build_str(args.to_string()),
+                            self.build_str(destination.to_string()),
+                        ],
+                    )
+                }
                 // TODO: Check if we need to handle anything else.
                 _ => self.transform_goto(basic_block_idx),
             }
         } else {
-            let kind = &body
+            let kind = body
                 .index(basic_block_idx)
                 .statements
                 .first()
@@ -120,7 +149,7 @@ impl<'tcx> Transformer<'tcx> {
                 .to_owned();
             match kind {
                 mir::StatementKind::Assign(asgn) => {
-                    self.transform_assign(&mut body.local_decls, basic_block_idx, asgn)
+                    self.transform_assign(&mut body.local_decls, basic_block_idx, &asgn)
                 }
                 // TODO: Check if we need to handle anything else.
                 _ => self.transform_goto(basic_block_idx),
@@ -129,54 +158,20 @@ impl<'tcx> Transformer<'tcx> {
         body.index_mut(basic_block_idx).terminator = new_terminator;
     }
 
-    // TODO: Filler
-    fn transform_switch_int(
-        &mut self,
-        local_decls: &mut mir::LocalDecls<'tcx>,
-        basic_block_idx: mir::BasicBlock,
-    ) -> terminator::Terminator<'tcx> {
-        self.build_call_terminator(
-            local_decls,
-            basic_block_idx,
-            "leafrt::switch_int::filler",
-            vec![],
-        )
-    }
-
-    // TODO: Filler
-    fn transform_ret(
-        &mut self,
-        local_decls: &mut mir::LocalDecls<'tcx>,
-        basic_block_idx: mir::BasicBlock,
-    ) -> terminator::Terminator<'tcx> {
-        self.build_call_terminator(local_decls, basic_block_idx, "leafrt::ret::filler", vec![])
-    }
-
-    // TODO: Filler
-    fn transform_call(
-        &mut self,
-        local_decls: &mut mir::LocalDecls<'tcx>,
-        basic_block_idx: mir::BasicBlock,
-    ) -> terminator::Terminator<'tcx> {
-        self.build_call_terminator(local_decls, basic_block_idx, "leafrt::call::filler", vec![])
-    }
-
     fn transform_assign(
         &mut self,
         local_decls: &mut mir::LocalDecls<'tcx>,
         basic_block_idx: mir::BasicBlock,
         asgn: &Box<(mir::Place<'tcx>, mir::Rvalue<'tcx>)>,
     ) -> terminator::Terminator<'tcx> {
-        debug!("Assign: {asgn:?}");
         let (p, r) = &**asgn;
         let (fn_name, args) = match r {
             mir::Rvalue::Use(op) => self.transform_use(op, &p, &r),
             _ => {
-                debug!("Rvalue: Other");
                 let place: place::Place = p.into();
                 let rvalue: rvalue::Rvalue = r.into();
                 (
-                    "leafrt::assign::deserialize".into(),
+                    "leafrt::assign".into(),
                     vec![
                         self.build_str(place.to_string()),
                         self.build_str(rvalue.to_string()),
@@ -193,7 +188,6 @@ impl<'tcx> Transformer<'tcx> {
         p: &mir::Place<'tcx>,
         r: &mir::Rvalue<'tcx>,
     ) -> (String, Vec<mir::Operand<'tcx>>) {
-        debug!("Rvalue: Use");
         let place: place::Place = p.into();
         let rvalue: rvalue::Rvalue = r.into();
         if let Some((did, p)) = helpers::get_unevaluated_promoted(&op) {
@@ -207,7 +201,6 @@ impl<'tcx> Transformer<'tcx> {
                 .try_for_each(|bb| {
                     // TODO: Not expecting more than one statement with a const for a promoted
                     bb.statements.iter().try_for_each(|statement| {
-                        debug!("statement: {statement:?}");
                         helpers::get_const_op(statement).map_or_else(|| Ok(()), |op| Err(op))
                     })
                 })
@@ -230,14 +223,13 @@ impl<'tcx> Transformer<'tcx> {
                         vec![
                             self.build_str(place.to_string()),
                             self.build_str(rvalue.to_string()),
-                            //mir::Operand::Copy((*p).into()),
                             (*op).clone(),
                         ],
                     );
                 }
             }
             (
-                "leafrt::assign::deserialize".into(),
+                "leafrt::assign".into(),
                 vec![
                     self.build_str(place.to_string()),
                     self.build_str(rvalue.to_string()),
@@ -281,7 +273,6 @@ impl<'tcx> Transformer<'tcx> {
         func_name: &str,
         args: Vec<mir::Operand<'tcx>>,
     ) -> terminator::Terminator<'tcx> {
-        debug!("{func_name:?}");
         let def_id = self.func_map.get(func_name).unwrap();
         let ret_local_decl = mir::LocalDecl::new(self.tcx.intern_tup(&[]), rustc_span::DUMMY_SP);
         let ret_local_decl_idx = local_decls.push(ret_local_decl);

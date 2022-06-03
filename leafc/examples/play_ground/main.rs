@@ -13,6 +13,12 @@ fn main() {
     let x = &T3;
     let x = 1_usize;
     let x = "x";
+
+    if x == "y" {
+        noop(x);
+    } else {
+        noop(x);
+    }
     //noop(x);
     //let mut y = [&&&&&&&&1; 10];
     //let (x, y) = (&1, [&&&&&&&&1; 10]);
@@ -25,4 +31,4 @@ fn main() {
     //let z = 2 * 2;
 }
 
-//fn noop<T>(mut i: T) {}
+fn noop<T>(mut i: T) {}
