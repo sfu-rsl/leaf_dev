@@ -159,7 +159,7 @@ pub fn separate_consts_in_assign<'tcx>(
             Some(new_statements)
         }
         _ => {
-            debug!("Not supported: {r:?}");
+            debug!("Other: {r:?}");
             None
         }
     }
@@ -438,5 +438,5 @@ pub fn get_fn_name(ty_kind: &ty::TyKind) -> Option<String> {
             return None;
         }
     };
-    Some(format!("{}{}", "leafrt::assign::", fn_name_suffix))
+    Some(format!("{}{}", "leafrt::", fn_name_suffix))
 }

@@ -76,10 +76,33 @@ impl<'tcx> From<&mir::Rvalue<'tcx>> for Rvalue {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct OperandVec(pub Vec<Operand>);
+
+impl Display for OperandVec {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", serde_json::to_string(&self).unwrap())
+    }
+}
+
+impl TryFrom<&str> for OperandVec {
+    type Error = serde_json::Error;
+
+    fn try_from(s: &str) -> result::Result<Self, Self::Error> {
+        serde_json::from_str(s)
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Operand {
     Copy(Place),
     Move(Place),
     Constant(Box<Constant>),
+}
+
+impl Display for Operand {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", serde_json::to_string(&self).unwrap())
+    }
 }
 
 impl<'tcx> From<&mir::Operand<'tcx>> for Operand {
@@ -89,6 +112,14 @@ impl<'tcx> From<&mir::Operand<'tcx>> for Operand {
             mir::Operand::Move(p) => Operand::Move(p.into()),
             mir::Operand::Constant(_) => Operand::Constant(Box::new(t.constant().unwrap().into())),
         }
+    }
+}
+
+impl TryFrom<&str> for Operand {
+    type Error = serde_json::Error;
+
+    fn try_from(s: &str) -> result::Result<Self, Self::Error> {
+        serde_json::from_str(s)
     }
 }
 
