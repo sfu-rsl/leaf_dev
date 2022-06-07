@@ -1,27 +1,29 @@
 extern crate rustc_middle;
 extern crate rustc_span;
 
-use crate::helpers;
+use crate::{const_separator, preprocessor};
 use leafcommon::{place, rvalue};
 //use log::debug;
 use rustc_middle::{
     middle::exported_symbols,
     mir::{
-        self, interpret,
+        interpret,
         terminator::{self, TerminatorKind::*},
+        BasicBlock, Body, Constant, ConstantKind, LocalDecl, LocalDecls, Operand, Place, Promoted,
+        Rvalue, SourceInfo, Statement, StatementKind,
     },
-    ty,
+    ty::{ConstKind, FloatTy, IntTy, TyCtxt, TyKind, UintTy, Unevaluated, WithOptConstParam},
 };
-use rustc_span::def_id;
-use std::{collections, ops::Index, ops::IndexMut};
+use rustc_span::def_id::DefId;
+use std::{collections::HashMap, ops::Index, ops::IndexMut};
 
 pub struct Transformer<'tcx> {
-    tcx: ty::TyCtxt<'tcx>,
-    func_map: collections::HashMap<String, def_id::DefId>,
+    tcx: TyCtxt<'tcx>,
+    func_map: HashMap<String, DefId>,
 }
 
 impl<'tcx> Transformer<'tcx> {
-    pub fn new(tcx: ty::TyCtxt<'tcx>) -> Transformer<'tcx> {
+    pub fn new(tcx: TyCtxt<'tcx>) -> Transformer<'tcx> {
         // Find the leafrt crate and the functions in it.
         // TODO: Perhaps we shouldn't use expect here (and not panic)?
         let cnum = tcx
@@ -29,7 +31,7 @@ impl<'tcx> Transformer<'tcx> {
             .iter()
             .find(|cnum| tcx.crate_name(**cnum).as_str() == "leafrt")
             .expect("leafrt crate not found");
-        let def_ids: Vec<&def_id::DefId> = tcx
+        let def_ids: Vec<&DefId> = tcx
             .exported_symbols(*cnum)
             .iter()
             .filter_map(|(exported_symbol, _)| match exported_symbol {
@@ -39,7 +41,7 @@ impl<'tcx> Transformer<'tcx> {
             })
             .collect();
 
-        let mut func_map = collections::HashMap::<String, def_id::DefId>::new();
+        let mut func_map = HashMap::<String, DefId>::new();
         def_ids.iter().for_each(|def_id| {
             func_map.insert(tcx.def_path_str(**def_id), **def_id);
         });
@@ -47,18 +49,18 @@ impl<'tcx> Transformer<'tcx> {
         Transformer { tcx, func_map }
     }
 
-    pub fn transform(&mut self, body: &mut mir::Body<'tcx>) {
+    pub fn transform(&mut self, body: &mut Body<'tcx>) {
         // Create separate constant assignment statements
-        helpers::separate_consts(body);
+        const_separator::separate_consts(body);
 
         // Clear up the basic_block list
-        let mut reverse = helpers::clear_and_get_reverse(body);
+        let mut reverse = preprocessor::clear_and_get_reverse(body);
 
         // Create a new block for each statement
-        let index_counts = helpers::repopulate_basic_blocks(body, &mut reverse);
+        let index_counts = preprocessor::repopulate_basic_blocks(body, &mut reverse);
 
         // Calculate index mappings
-        let index_map = helpers::create_index_mappings(&index_counts);
+        let index_map = preprocessor::create_index_mappings(&index_counts);
 
         body.basic_blocks().indices().for_each(|basic_block_idx| {
             self.process_terminators(body, basic_block_idx, &index_map);
@@ -67,15 +69,15 @@ impl<'tcx> Transformer<'tcx> {
 
     fn process_terminators(
         &mut self,
-        body: &mut mir::Body<'tcx>,
-        basic_block_idx: mir::BasicBlock,
-        index_map: &collections::HashMap<mir::BasicBlock, mir::BasicBlock>,
+        body: &mut Body<'tcx>,
+        basic_block_idx: BasicBlock,
+        index_map: &HashMap<BasicBlock, BasicBlock>,
     ) {
         match &body.index(basic_block_idx).terminator {
             Some(_) => {
                 // The basic block already has a terminator (it's the last basic block).
                 // Adjust jump targets.
-                helpers::remap_jump_targets(body, basic_block_idx, &index_map);
+                preprocessor::remap_jump_targets(body, basic_block_idx, &index_map);
             }
             None => {
                 // A newly-added basic block
@@ -84,7 +86,7 @@ impl<'tcx> Transformer<'tcx> {
         };
     }
 
-    fn add_new_terminator(&mut self, body: &mut mir::Body<'tcx>, basic_block_idx: mir::BasicBlock) {
+    fn add_new_terminator(&mut self, body: &mut Body<'tcx>, basic_block_idx: BasicBlock) {
         let new_terminator = Some(if body.index(basic_block_idx).statements.is_empty() {
             let kind = &body
                 .basic_blocks()
@@ -148,7 +150,7 @@ impl<'tcx> Transformer<'tcx> {
                 .kind
                 .to_owned();
             match kind {
-                mir::StatementKind::Assign(asgn) => {
+                StatementKind::Assign(asgn) => {
                     self.transform_assign(&mut body.local_decls, basic_block_idx, &asgn)
                 }
                 // TODO: Check if we need to handle anything else.
@@ -160,13 +162,13 @@ impl<'tcx> Transformer<'tcx> {
 
     fn transform_assign(
         &mut self,
-        local_decls: &mut mir::LocalDecls<'tcx>,
-        basic_block_idx: mir::BasicBlock,
-        asgn: &Box<(mir::Place<'tcx>, mir::Rvalue<'tcx>)>,
+        local_decls: &mut LocalDecls<'tcx>,
+        basic_block_idx: BasicBlock,
+        asgn: &Box<(Place<'tcx>, Rvalue<'tcx>)>,
     ) -> terminator::Terminator<'tcx> {
         let (p, r) = &**asgn;
         let (fn_name, args) = match r {
-            mir::Rvalue::Use(op) => self.transform_use(op, &p, &r),
+            Rvalue::Use(op) => self.transform_use(op, &p, &r),
             _ => {
                 let place: place::Place = p.into();
                 let rvalue: rvalue::Rvalue = r.into();
@@ -184,13 +186,13 @@ impl<'tcx> Transformer<'tcx> {
 
     fn transform_use(
         &self,
-        op: &mir::Operand<'tcx>,
-        p: &mir::Place<'tcx>,
-        r: &mir::Rvalue<'tcx>,
-    ) -> (String, Vec<mir::Operand<'tcx>>) {
+        op: &Operand<'tcx>,
+        p: &Place<'tcx>,
+        r: &Rvalue<'tcx>,
+    ) -> (String, Vec<Operand<'tcx>>) {
         let place: place::Place = p.into();
         let rvalue: rvalue::Rvalue = r.into();
-        if let Some((did, p)) = helpers::get_unevaluated_promoted(&op) {
+        if let Some((did, p)) = get_unevaluated_promoted(&op) {
             let promoteds = self.tcx.promoted_mir_opt_const_arg(did);
             let promoted = promoteds.get(p).unwrap();
             // TODO: Not expecting more than one block for a promoted---verify.
@@ -201,13 +203,13 @@ impl<'tcx> Transformer<'tcx> {
                 .try_for_each(|bb| {
                     // TODO: Not expecting more than one statement with a const for a promoted
                     bb.statements.iter().try_for_each(|statement| {
-                        helpers::get_const_op(statement).map_or_else(|| Ok(()), |op| Err(op))
+                        get_const_op(statement).map_or_else(|| Ok(()), |op| Err(op))
                     })
                 })
                 .unwrap_err();
 
             (
-                helpers::get_fn_name(op.constant().unwrap().ty().kind()).unwrap(),
+                get_fn_name(op.constant().unwrap().ty().kind()).unwrap(),
                 vec![
                     self.build_str(place.to_string()),
                     self.build_str(rvalue.to_string()),
@@ -215,8 +217,8 @@ impl<'tcx> Transformer<'tcx> {
                 ],
             )
         } else {
-            if let mir::Rvalue::Use(mir::Operand::Constant(box c)) = r {
-                let fn_name_option = helpers::get_fn_name(c.ty().kind());
+            if let Rvalue::Use(Operand::Constant(box c)) = r {
+                let fn_name_option = get_fn_name(c.ty().kind());
                 if let Some(fn_name) = fn_name_option {
                     return (
                         fn_name,
@@ -238,23 +240,23 @@ impl<'tcx> Transformer<'tcx> {
         }
     }
 
-    fn transform_goto(&self, basic_block_idx: mir::BasicBlock) -> terminator::Terminator<'tcx> {
+    fn transform_goto(&self, basic_block_idx: BasicBlock) -> terminator::Terminator<'tcx> {
         terminator::Terminator {
-            source_info: mir::SourceInfo::outermost(rustc_span::DUMMY_SP), // TODO: Not sure how good
+            source_info: SourceInfo::outermost(rustc_span::DUMMY_SP), // TODO: Not sure how good
             kind: Goto {
                 target: basic_block_idx + 1,
             },
         }
     }
 
-    fn build_str(&self, s: String) -> mir::Operand<'tcx> {
+    fn build_str(&self, s: String) -> Operand<'tcx> {
         let allocation = interpret::Allocation::from_bytes_byte_aligned_immutable(s.as_bytes());
         let allocation = self.tcx.intern_const_alloc(allocation);
         let span = rustc_span::DUMMY_SP;
-        let constant = mir::Constant {
+        let constant = Constant {
             span: span.to_owned(),
             user_ty: None, // TODO: not sure about this but this is not coming from a user, so...
-            literal: mir::ConstantKind::Val(
+            literal: ConstantKind::Val(
                 interpret::ConstValue::Slice {
                     data: allocation,
                     start: 0,
@@ -263,35 +265,112 @@ impl<'tcx> Transformer<'tcx> {
                 self.tcx.mk_static_str(),
             ),
         };
-        mir::Operand::Constant(Box::new(constant))
+        Operand::Constant(Box::new(constant))
     }
 
     fn build_call_terminator(
         &self,
-        local_decls: &mut mir::LocalDecls<'tcx>,
-        basic_block_idx: mir::BasicBlock,
+        local_decls: &mut LocalDecls<'tcx>,
+        basic_block_idx: BasicBlock,
         func_name: &str,
-        args: Vec<mir::Operand<'tcx>>,
+        args: Vec<Operand<'tcx>>,
     ) -> terminator::Terminator<'tcx> {
+        log::debug!("{func_name:?}");
         let def_id = self.func_map.get(func_name).unwrap();
-        let ret_local_decl = mir::LocalDecl::new(self.tcx.intern_tup(&[]), rustc_span::DUMMY_SP);
+        let ret_local_decl = LocalDecl::new(self.tcx.intern_tup(&[]), rustc_span::DUMMY_SP);
         let ret_local_decl_idx = local_decls.push(ret_local_decl);
 
         terminator::Terminator {
-            source_info: mir::SourceInfo::outermost(rustc_span::DUMMY_SP), // TODO: Not sure how good
+            source_info: SourceInfo::outermost(rustc_span::DUMMY_SP), // TODO: Not sure how good
             kind: Call {
-                func: mir::Operand::function_handle(
+                func: Operand::function_handle(
                     self.tcx,
                     *def_id,
                     self.tcx.intern_substs(&[]),
                     rustc_span::DUMMY_SP,
                 ),
                 args,
-                destination: Some((mir::Place::from(ret_local_decl_idx), basic_block_idx + 1)),
+                destination: Some((Place::from(ret_local_decl_idx), basic_block_idx + 1)),
                 cleanup: None,
                 from_hir_call: true,
                 fn_span: rustc_span::DUMMY_SP,
             },
         }
     }
+}
+
+fn get_unevaluated_promoted<'tcx>(
+    op: &Operand<'tcx>,
+) -> Option<(WithOptConstParam<DefId>, Promoted)> {
+    if let Operand::Constant(box Constant {
+        span: _,
+        user_ty: _,
+        literal: ConstantKind::Ty(c),
+    }) = op
+    {
+        if let ConstKind::Unevaluated(Unevaluated {
+            def: did,
+            substs: _,
+            promoted: Some(p),
+        }) = c.val()
+        {
+            return Some((did, p));
+        }
+    }
+    None
+}
+
+fn get_const_op<'tcx>(statement: &'tcx Statement<'tcx>) -> Option<&'tcx Operand<'tcx>> {
+    if let Statement {
+        source_info: _,
+        kind:
+            StatementKind::Assign(box (
+                _,
+                Rvalue::Use(
+                    op @ Operand::Constant(box Constant {
+                        span: _,
+                        user_ty: _,
+                        literal: _,
+                    }),
+                ),
+            )),
+    } = statement
+    {
+        return Some(op);
+    }
+    None
+}
+
+fn get_fn_name(ty_kind: &TyKind) -> Option<String> {
+    let fn_name_suffix = match ty_kind {
+        TyKind::Bool => "assign_bool",
+        TyKind::Char => "assign_char",
+        TyKind::Int(IntTy::Isize) => "assign_isize",
+        TyKind::Int(IntTy::I8) => "assign_i8",
+        TyKind::Int(IntTy::I16) => "assign_i16",
+        TyKind::Int(IntTy::I32) => "assign_i32",
+        TyKind::Int(IntTy::I64) => "assign_i64",
+        TyKind::Int(IntTy::I128) => "assign_i128",
+        TyKind::Uint(UintTy::Usize) => "assign_usize",
+        TyKind::Uint(UintTy::U8) => "assign_u8",
+        TyKind::Uint(UintTy::U16) => "assign_u16",
+        TyKind::Uint(UintTy::U32) => "assign_u32",
+        TyKind::Uint(UintTy::U64) => "assign_u64",
+        TyKind::Uint(UintTy::U128) => "assign_u128",
+        TyKind::Float(FloatTy::F32) => "assign_f32",
+        TyKind::Float(FloatTy::F64) => "assign_f64",
+        //TyKind::Str => "assign_str",
+        TyKind::Ref(_, ty, _) => {
+            let tk = ty.kind();
+            if let TyKind::Str = tk {
+                "assign_str"
+            } else {
+                return None;
+            }
+        }
+        _ => {
+            return None;
+        }
+    };
+    Some(format!("{}{}", "leafrt::", fn_name_suffix))
 }

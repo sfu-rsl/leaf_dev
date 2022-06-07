@@ -10,7 +10,8 @@ extern crate rustc_mir_build;
 extern crate rustc_mir_transform;
 extern crate rustc_span;
 
-mod helpers;
+mod const_separator;
+mod preprocessor;
 mod transformer;
 
 use rustc_ast::{
