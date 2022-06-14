@@ -4,4 +4,5 @@
 pub mod consts;
 pub mod place;
 pub mod rvalue;
+pub mod statementkind;
 pub mod ty;
