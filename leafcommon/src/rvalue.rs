@@ -61,7 +61,7 @@ impl<'tcx> From<&mir::Rvalue<'tcx>> for Rvalue {
             }
             mir::Rvalue::CheckedBinaryOp(b, o) => {
                 let (o0, o1) = &**o;
-                Rvalue::BinaryOp(b.into(), Box::new((o0.into(), o1.into())))
+                Rvalue::CheckedBinaryOp(b.into(), Box::new((o0.into(), o1.into())))
             }
             mir::Rvalue::NullaryOp(n, t) => Rvalue::NullaryOp(n.into(), t.into()),
             mir::Rvalue::UnaryOp(u, o) => Rvalue::UnaryOp(u.into(), o.into()),
