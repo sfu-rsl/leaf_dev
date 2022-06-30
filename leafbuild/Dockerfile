@@ -25,10 +25,15 @@ WORKDIR $HOME
 #
 FROM builder_base AS builder_source
 
+ENV LEAF_LLVM_VERSION=14
+
 RUN sudo apt-get update \
     && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        clang-$LEAF_LLVM_VERSION \
         curl \
-        gcc \
+        cmake \
+        g++ \
+        python3-setuptools \
     && sudo apt-get clean
 
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh /dev/stdin -y
