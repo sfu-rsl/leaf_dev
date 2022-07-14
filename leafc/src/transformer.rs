@@ -2,15 +2,16 @@ extern crate rustc_middle;
 extern crate rustc_span;
 
 use crate::{const_separator, preprocessor};
-use leafcommon::{place, rvalue};
+use leafcommon::{misc, place, rvalue};
 //use log::debug;
+use leafcommon::misc::DebugInfo;
 use rustc_middle::{
     middle::exported_symbols,
     mir::{
         interpret,
         terminator::{self, TerminatorKind::*},
         BasicBlock, Body, Constant, ConstantKind, LocalDecl, LocalDecls, Operand, Place, Promoted,
-        Rvalue, SourceInfo, Statement, StatementKind,
+        Rvalue, SourceInfo, Statement, StatementKind, VarDebugInfo, VarDebugInfoContents,
     },
     ty::{ConstKind, FloatTy, IntTy, TyCtxt, TyKind, UintTy, Unevaluated, WithOptConstParam},
 };
@@ -142,17 +143,23 @@ impl<'tcx> Transformer<'tcx> {
                 _ => self.transform_goto(basic_block_idx),
             }
         } else {
-            let kind = body
+            let statement = body
                 .index(basic_block_idx)
                 .statements
                 .first()
                 .unwrap()
-                .kind
                 .to_owned();
+            let kind = statement.kind.to_owned();
+            let (_, _, debug_infos) = body.basic_blocks_local_decls_mut_and_var_debug_info();
+            let debug_infos = debug_infos.to_owned();
+
             match kind {
-                StatementKind::Assign(asgn) => {
-                    self.transform_assign(&mut body.local_decls, basic_block_idx, &asgn)
-                }
+                StatementKind::Assign(asgn) => self.transform_assign(
+                    &mut body.local_decls,
+                    basic_block_idx,
+                    &asgn,
+                    &debug_infos,
+                ),
                 // TODO: Check if we need to handle anything else.
                 _ => self.transform_goto(basic_block_idx),
             }
@@ -165,16 +172,31 @@ impl<'tcx> Transformer<'tcx> {
         local_decls: &mut LocalDecls<'tcx>,
         basic_block_idx: BasicBlock,
         asgn: &Box<(Place<'tcx>, Rvalue<'tcx>)>,
+        debug_infos: &[VarDebugInfo],
     ) -> terminator::Terminator<'tcx> {
         let (p, r) = &**asgn;
+
+        let debug_info: misc::DebugInfo = if let Some(debug_info) =
+            debug_infos.iter().find(|info| match info.value {
+                VarDebugInfoContents::Place(place) => place == *p,
+                VarDebugInfoContents::Const(constant) => false,
+            }) {
+            debug_info.into()
+        } else {
+            misc::DebugInfo {
+                variable_name: String::from("UNKNOWN"),
+            }
+        };
+
         let (fn_name, args) = match r {
-            Rvalue::Use(op) => self.transform_use(op, &p, &r),
+            Rvalue::Use(op) => self.transform_use(op, &p, &r, &debug_info),
             _ => {
                 let place: place::Place = p.into();
                 let rvalue: rvalue::Rvalue = r.into();
                 (
                     "leafrt::assign".into(),
                     vec![
+                        self.build_str(debug_info.to_string()),
                         self.build_str(place.to_string()),
                         self.build_str(rvalue.to_string()),
                     ],
@@ -189,6 +211,7 @@ impl<'tcx> Transformer<'tcx> {
         op: &Operand<'tcx>,
         p: &Place<'tcx>,
         r: &Rvalue<'tcx>,
+        debug_info: &DebugInfo,
     ) -> (String, Vec<Operand<'tcx>>) {
         let place: place::Place = p.into();
         let rvalue: rvalue::Rvalue = r.into();
@@ -211,6 +234,7 @@ impl<'tcx> Transformer<'tcx> {
             (
                 get_fn_name(op.constant().unwrap().ty().kind()).unwrap(),
                 vec![
+                    self.build_str(debug_info.to_string()),
                     self.build_str(place.to_string()),
                     self.build_str(rvalue.to_string()),
                     (*op).clone(),
@@ -220,9 +244,11 @@ impl<'tcx> Transformer<'tcx> {
             if let Rvalue::Use(Operand::Constant(box c)) = r {
                 let fn_name_option = get_fn_name(c.ty().kind());
                 if let Some(fn_name) = fn_name_option {
+                    log::debug!("fn_name: {fn_name:?}");
                     return (
                         fn_name,
                         vec![
+                            self.build_str(debug_info.to_string()),
                             self.build_str(place.to_string()),
                             self.build_str(rvalue.to_string()),
                             (*op).clone(),
@@ -233,6 +259,7 @@ impl<'tcx> Transformer<'tcx> {
             (
                 "leafrt::assign".into(),
                 vec![
+                    self.build_str(debug_info.to_string()),
                     self.build_str(place.to_string()),
                     self.build_str(rvalue.to_string()),
                 ],

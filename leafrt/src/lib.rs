@@ -5,6 +5,7 @@ use leafcommon::place::Place;
 use leafcommon::rvalue::{Operand, OperandVec, Rvalue};
 //use z3_sys::{Z3_config, Z3_context, Z3_solver};
 //use z3::{Config, Context, Solver};
+use leafcommon::misc::DebugInfo;
 use z3;
 
 struct Config(z3::Config);
@@ -62,128 +63,147 @@ pub fn call(func: &str, args: &str, destination: &str) {
     println!("[call] func: {func:?} args: {args:?} destination: {destination:?}");
 }
 
-pub fn assign(place: &str, rvalue: &str) {
+pub fn assign(debug_info: &str, place: &str, rvalue: &str) {
+    let debug_info: DebugInfo = debug_info.try_into().unwrap();
     let place: Place = place.try_into().unwrap();
     let rvalue: Rvalue = rvalue.try_into().unwrap();
 
-    println!("[assign] place: {place:?} rvalue: {rvalue:?}");
+    println!("[assign] debug_info: {debug_info:?} place: {place:?} rvalue: {rvalue:?}");
 }
 
-pub fn assign_isize(place: &str, rvalue: &str, constant: isize) {
+pub fn assign_isize(debug_info: &str, place: &str, rvalue: &str, constant: isize) {
+    let debug_info: DebugInfo = debug_info.try_into().unwrap();
     let place: Place = place.try_into().unwrap();
     let rvalue: Rvalue = rvalue.try_into().unwrap();
 
-    println!("[assign_isize] place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
+    println!("[assign_isize] {place:?} rvalue: {rvalue:?} constant: {constant:?}");
 }
 
-pub fn assign_i8(place: &str, rvalue: &str, constant: i8) {
+pub fn assign_i8(debug_info: &str, place: &str, rvalue: &str, constant: i8) {
+    let debug_info: DebugInfo = debug_info.try_into().unwrap();
     let place: Place = place.try_into().unwrap();
     let rvalue: Rvalue = rvalue.try_into().unwrap();
 
-    println!("[assign_i8] place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
+    println!("[assign_i8] debug_info: {debug_info:?} place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
 }
 
-pub fn assign_i16(place: &str, rvalue: &str, constant: i16) {
+pub fn assign_i16(debug_info: &str, place: &str, rvalue: &str, constant: i16) {
+    let debug_info: DebugInfo = debug_info.try_into().unwrap();
     let place: Place = place.try_into().unwrap();
     let rvalue: Rvalue = rvalue.try_into().unwrap();
 
-    println!("[assign_i16] place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
+    println!("[assign_i16] debug_info: {debug_info:?} place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
 }
 
-pub fn assign_i32(place: &str, rvalue: &str, constant: i32) {
+pub fn assign_i32(debug_info: &str, place: &str, rvalue: &str, constant: i32) {
+    let debug_info: DebugInfo = debug_info.try_into().unwrap();
+    let debug_info: DebugInfo = debug_info.try_into().unwrap();
     let place: Place = place.try_into().unwrap();
     let rvalue: Rvalue = rvalue.try_into().unwrap();
 
-    println!("[assign_i32] place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
+    println!("[assign_i32] debug_info: {debug_info:?} place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
 }
 
-pub fn assign_i64(place: &str, rvalue: &str, constant: i64) {
+pub fn assign_i64(debug_info: &str, place: &str, rvalue: &str, constant: i64) {
+    let debug_info: DebugInfo = debug_info.try_into().unwrap();
     let place: Place = place.try_into().unwrap();
     let rvalue: Rvalue = rvalue.try_into().unwrap();
 
-    println!("[assign_i64] place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
+    println!("[assign_i64] debug_info: {debug_info:?} place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
 }
 
-pub fn assign_i128(place: &str, rvalue: &str, constant: i128) {
+pub fn assign_i128(debug_info: &str, place: &str, rvalue: &str, constant: i128) {
+    let debug_info: DebugInfo = debug_info.try_into().unwrap();
     let place: Place = place.try_into().unwrap();
     let rvalue: Rvalue = rvalue.try_into().unwrap();
 
-    println!("[assign_i128] place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
+    println!("[assign_i128] debug_info: {debug_info:?} place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
 }
 
-pub fn assign_usize(place: &str, rvalue: &str, constant: usize) {
+pub fn assign_usize(debug_info: &str, place: &str, rvalue: &str, constant: usize) {
+    let debug_info: DebugInfo = debug_info.try_into().unwrap();
     let place: Place = place.try_into().unwrap();
     let rvalue: Rvalue = rvalue.try_into().unwrap();
 
-    println!("[assign_usize] place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
+    println!("[assign_usize] debug_info: {debug_info:?} place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
 }
 
-pub fn assign_u8(place: &str, rvalue: &str, constant: u8) {
+pub fn assign_u8(debug_info: &str, place: &str, rvalue: &str, constant: u8) {
+    let debug_info: DebugInfo = debug_info.try_into().unwrap();
     let place: Place = place.try_into().unwrap();
     let rvalue: Rvalue = rvalue.try_into().unwrap();
 
-    println!("[assign_u8] place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
+    println!("[assign_u8] debug_info: {debug_info:?} place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
 }
 
-pub fn assign_u16(place: &str, rvalue: &str, constant: u16) {
+pub fn assign_u16(debug_info: &str, place: &str, rvalue: &str, constant: u16) {
+    let debug_info: DebugInfo = debug_info.try_into().unwrap();
     let place: Place = place.try_into().unwrap();
     let rvalue: Rvalue = rvalue.try_into().unwrap();
 
-    println!("[assign_u16] place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
+    println!("[assign_u16] debug_info: {debug_info:?} place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
 }
 
-pub fn assign_u32(place: &str, rvalue: &str, constant: u32) {
+pub fn assign_u32(debug_info: &str, place: &str, rvalue: &str, constant: u32) {
+    let debug_info: DebugInfo = debug_info.try_into().unwrap();
     let place: Place = place.try_into().unwrap();
     let rvalue: Rvalue = rvalue.try_into().unwrap();
 
-    println!("[assign_u32] place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
+    println!("[assign_u32] debug_info: {debug_info:?} place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
 }
 
-pub fn assign_u64(place: &str, rvalue: &str, constant: u64) {
+pub fn assign_u64(debug_info: &str, place: &str, rvalue: &str, constant: u64) {
+    let debug_info: DebugInfo = debug_info.try_into().unwrap();
     let place: Place = place.try_into().unwrap();
     let rvalue: Rvalue = rvalue.try_into().unwrap();
 
-    println!("[assign_u64] place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
+    println!("[assign_u64] debug_info: {debug_info:?} place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
 }
 
-pub fn assign_u128(place: &str, rvalue: &str, constant: u128) {
+pub fn assign_u128(debug_info: &str, place: &str, rvalue: &str, constant: u128) {
+    let debug_info: DebugInfo = debug_info.try_into().unwrap();
     let place: Place = place.try_into().unwrap();
     let rvalue: Rvalue = rvalue.try_into().unwrap();
 
-    println!("[assign_u128] place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
+    println!("[assign_u128] debug_info: {debug_info:?} place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
 }
 
-pub fn assign_f32(place: &str, rvalue: &str, constant: f32) {
+pub fn assign_f32(debug_info: &str, place: &str, rvalue: &str, constant: f32) {
+    let debug_info: DebugInfo = debug_info.try_into().unwrap();
     let place: Place = place.try_into().unwrap();
     let rvalue: Rvalue = rvalue.try_into().unwrap();
 
-    println!("[assign_f32] place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
+    println!("[assign_f32] debug_info: {debug_info:?} place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
 }
 
-pub fn assign_f64(place: &str, rvalue: &str, constant: f64) {
+pub fn assign_f64(debug_info: &str, place: &str, rvalue: &str, constant: f64) {
+    let debug_info: DebugInfo = debug_info.try_into().unwrap();
     let place: Place = place.try_into().unwrap();
     let rvalue: Rvalue = rvalue.try_into().unwrap();
 
-    println!("[assign_f64] place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
+    println!("[assign_f64] debug_info: {debug_info:?} place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
 }
 
-pub fn assign_char(place: &str, rvalue: &str, constant: char) {
+pub fn assign_char(debug_info: &str, place: &str, rvalue: &str, constant: char) {
+    let debug_info: DebugInfo = debug_info.try_into().unwrap();
     let place: Place = place.try_into().unwrap();
     let rvalue: Rvalue = rvalue.try_into().unwrap();
 
-    println!("[assign_char] place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
+    println!("[assign_char] debug_info: {debug_info:?} place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
 }
 
-pub fn assign_bool(place: &str, rvalue: &str, constant: bool) {
+pub fn assign_bool(debug_info: &str, place: &str, rvalue: &str, constant: bool) {
+    let debug_info: DebugInfo = debug_info.try_into().unwrap();
     let place: Place = place.try_into().unwrap();
     let rvalue: Rvalue = rvalue.try_into().unwrap();
 
-    println!("[assign_bool] place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
+    println!("[assign_bool] debug_info: {debug_info:?} place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
 }
 
-pub fn assign_str(place: &str, rvalue: &str, constant: &str) {
+pub fn assign_str(debug_info: &str, place: &str, rvalue: &str, constant: &str) {
+    let debug_info: DebugInfo = debug_info.try_into().unwrap();
     let place: Place = place.try_into().unwrap();
     let rvalue: Rvalue = rvalue.try_into().unwrap();
 
-    println!("[assign_str] place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
+    println!("[assign_str] debug_info: {debug_info:?} place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
 }

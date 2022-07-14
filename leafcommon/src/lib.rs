@@ -2,6 +2,7 @@
 #![deny(rustc::internal)]
 
 pub mod consts;
+pub mod misc;
 pub mod place;
 pub mod rvalue;
 pub mod statementkind;
