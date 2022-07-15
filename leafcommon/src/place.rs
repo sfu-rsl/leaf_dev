@@ -13,7 +13,7 @@ use std::{
 };
 
 /// https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/mir/struct.Place.html
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct Place {
     pub local: Local,
     pub projection: Vec<PlaceElem>,
@@ -42,7 +42,7 @@ impl TryFrom<&str> for Place {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum PlaceElem {
     Deref,
     Field(Field, Ty),
@@ -83,7 +83,7 @@ impl<'tcx> From<&mir::PlaceElem<'tcx>> for PlaceElem {
     }
 }
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct Local {
     private: u32,
 }
@@ -96,7 +96,7 @@ impl From<&mir::Local> for Local {
     }
 }
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct Field {
     private: u32,
 }
@@ -125,7 +125,7 @@ impl From<&mir::Field> for Field {
 //    private: u32,
 //}
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct VariantIdx {
     private: u32,
 }

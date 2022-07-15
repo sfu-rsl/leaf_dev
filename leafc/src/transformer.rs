@@ -88,6 +88,9 @@ impl<'tcx> Transformer<'tcx> {
     }
 
     fn add_new_terminator(&mut self, body: &mut Body<'tcx>, basic_block_idx: BasicBlock) {
+        let (_, _, debug_infos) = body.basic_blocks_local_decls_mut_and_var_debug_info();
+        let debug_infos = debug_infos.to_owned();
+
         let new_terminator = Some(if body.index(basic_block_idx).statements.is_empty() {
             let kind = &body
                 .basic_blocks()
@@ -127,12 +130,15 @@ impl<'tcx> Transformer<'tcx> {
                     let args = rvalue::OperandVec(
                         args.iter().map(|arg| rvalue::Operand::from(arg)).collect(),
                     );
-                    let destination: place::Place = (&destination.unwrap().0).into();
+                    let mir_dest: &Place = &destination.unwrap().0;
+                    let destination: place::Place = mir_dest.into();
+                    let debug_info: misc::DebugInfo = self.build_debug_info(&debug_infos, mir_dest);
                     self.build_call_terminator(
                         &mut body.local_decls,
                         basic_block_idx,
                         "leafrt::call",
                         vec![
+                            self.build_str(debug_info.to_string()),
                             self.build_str(func.to_string()),
                             self.build_str(args.to_string()),
                             self.build_str(destination.to_string()),
@@ -150,8 +156,6 @@ impl<'tcx> Transformer<'tcx> {
                 .unwrap()
                 .to_owned();
             let kind = statement.kind.to_owned();
-            let (_, _, debug_infos) = body.basic_blocks_local_decls_mut_and_var_debug_info();
-            let debug_infos = debug_infos.to_owned();
 
             match kind {
                 StatementKind::Assign(asgn) => self.transform_assign(
@@ -176,17 +180,7 @@ impl<'tcx> Transformer<'tcx> {
     ) -> terminator::Terminator<'tcx> {
         let (p, r) = &**asgn;
 
-        let debug_info: misc::DebugInfo = if let Some(debug_info) =
-            debug_infos.iter().find(|info| match info.value {
-                VarDebugInfoContents::Place(place) => place == *p,
-                VarDebugInfoContents::Const(constant) => false,
-            }) {
-            debug_info.into()
-        } else {
-            misc::DebugInfo {
-                variable_name: String::from("UNKNOWN"),
-            }
-        };
+        let debug_info: misc::DebugInfo = self.build_debug_info(debug_infos, p);
 
         let (fn_name, args) = match r {
             Rvalue::Use(op) => self.transform_use(op, &p, &r, &debug_info),
@@ -244,7 +238,6 @@ impl<'tcx> Transformer<'tcx> {
             if let Rvalue::Use(Operand::Constant(box c)) = r {
                 let fn_name_option = get_fn_name(c.ty().kind());
                 if let Some(fn_name) = fn_name_option {
-                    log::debug!("fn_name: {fn_name:?}");
                     return (
                         fn_name,
                         vec![
@@ -273,6 +266,19 @@ impl<'tcx> Transformer<'tcx> {
             kind: Goto {
                 target: basic_block_idx + 1,
             },
+        }
+    }
+
+    fn build_debug_info(&self, debug_infos: &[VarDebugInfo], place: &Place) -> DebugInfo {
+        if let Some(debug_info) = debug_infos.iter().find(|info| match info.value {
+            VarDebugInfoContents::Place(p) => *place == p,
+            VarDebugInfoContents::Const(constant) => false,
+        }) {
+            debug_info.into()
+        } else {
+            misc::DebugInfo {
+                variable_name: String::from("UNKNOWN"),
+            }
         }
     }
 

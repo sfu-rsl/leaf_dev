@@ -8,7 +8,7 @@ use rustc_middle::{mir::interpret, ty};
 use rustc_target::abi;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct Const {
     pub ty: Ty,
     pub val: ConstKind,
@@ -23,7 +23,7 @@ impl<'tcx> From<&ty::Const<'tcx>> for Const {
     }
 }
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum ConstKind {
     Param(ParamConst),
     Infer,       // Infer(InferConst)
@@ -48,7 +48,7 @@ impl<'tcx> From<&ty::ConstKind<'tcx>> for ConstKind {
     }
 }
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct ParamConst {
     pub index: u32,
     //pub name: Symbol,
@@ -60,7 +60,7 @@ impl From<&ty::ParamConst> for ParamConst {
     }
 }
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum ConstValue {
     Scalar(Scalar),
     Slice {
@@ -93,7 +93,7 @@ impl<'tcx> From<&interpret::ConstValue<'tcx>> for ConstValue {
     }
 }
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum Scalar {
     Int, // Int(ScalarInt),
     Ptr, // Ptr(Pointer, u8),
@@ -108,7 +108,7 @@ impl From<&interpret::Scalar> for Scalar {
     }
 }
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct Size {
     raw: u64,
 }
