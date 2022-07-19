@@ -71,13 +71,20 @@ pub fn ret() {
     );
 }
 
-pub fn call(debug_info: &str, func: &str, args: &str, destination: &str) {
-    let debug_info: DebugInfo = debug_info.try_into().unwrap();
+pub fn call(
+    func_debug_info: &str,
+    func: &str,
+    args: &str,
+    destination: &str,
+    dest_debug_info: &str,
+) {
+    let func_debug_info: DebugInfo = func_debug_info.try_into().unwrap();
+    let dest_debug_info: DebugInfo = dest_debug_info.try_into().unwrap();
     let func: Operand = func.try_into().unwrap();
     let args: OperandVec = args.try_into().unwrap();
     let destination: Place = destination.try_into().unwrap();
-    println!("[call] func: {func:?} args: {args:?} destination: {destination:?} destination_debug_info: {debug_info:?}");
-    handle_place(&debug_info, &destination, None);
+    println!("[call] func_debug_info: {func_debug_info:?} func: {func:?} args: {args:?} destination: {destination:?} dest_debug_info: {dest_debug_info:?}");
+    handle_place(&dest_debug_info, &destination, None);
 }
 
 pub fn assign(debug_info: &str, place: &str, rvalue: &str) {
@@ -297,7 +304,7 @@ fn handle_place(debug_info: &DebugInfo, place: &Place, rvalue: Option<&Rvalue>) 
     // TODO: Add a proper way for denoting symbolic variables instead of just reading the
     //  variable name.
     } else if debug_info
-        .variable_name
+        .name
         .as_ref()
         .map(|n| n.to_lowercase().contains("leaf_symbolic"))
         .unwrap_or(false)

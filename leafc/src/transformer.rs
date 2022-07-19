@@ -123,7 +123,8 @@ impl<'tcx> Transformer<'tcx> {
                     target: _,
                     unwind: _,
                 } => {
-                    let debug_info: misc::DebugInfo = self.build_debug_info(&debug_infos, place);
+                    let debug_info: misc::DebugInfo =
+                        self.build_debug_info_place(&debug_infos, place);
                     let place: place::Place = place.into();
                     self.build_call_terminator(
                         &mut body.local_decls,
@@ -143,22 +144,25 @@ impl<'tcx> Transformer<'tcx> {
                     from_hir_call: _,
                     fn_span: _,
                 } => {
+                    let func_debug_info = self.build_debug_info_function_call(func);
                     let func: rvalue::Operand = func.into();
                     let args = rvalue::OperandVec(
                         args.iter().map(|arg| rvalue::Operand::from(arg)).collect(),
                     );
                     let mir_dest: &Place = &destination.unwrap().0;
                     let destination: place::Place = mir_dest.into();
-                    let debug_info: misc::DebugInfo = self.build_debug_info(&debug_infos, mir_dest);
+                    let dest_debug_info: misc::DebugInfo =
+                        self.build_debug_info_place(&debug_infos, mir_dest);
                     self.build_call_terminator(
                         &mut body.local_decls,
                         basic_block_idx,
                         "leafrt::call",
                         vec![
-                            self.build_str(debug_info.to_string()),
+                            self.build_str(func_debug_info.to_string()),
                             self.build_str(func.to_string()),
                             self.build_str(args.to_string()),
                             self.build_str(destination.to_string()),
+                            self.build_str(dest_debug_info.to_string()),
                         ],
                     )
                 }
@@ -197,7 +201,7 @@ impl<'tcx> Transformer<'tcx> {
     ) -> terminator::Terminator<'tcx> {
         let (p, r) = &**asgn;
 
-        let debug_info: misc::DebugInfo = self.build_debug_info(debug_infos, p);
+        let debug_info: misc::DebugInfo = self.build_debug_info_place(debug_infos, p);
 
         let (fn_name, args) = match r {
             Rvalue::Use(op) => self.transform_use(op, &p, &r, &debug_info),
@@ -286,17 +290,42 @@ impl<'tcx> Transformer<'tcx> {
         }
     }
 
-    fn build_debug_info(&self, debug_infos: &[VarDebugInfo], place: &Place) -> DebugInfo {
+    fn build_debug_info_place(&self, debug_infos: &[VarDebugInfo], place: &Place) -> DebugInfo {
         if let Some(debug_info) = debug_infos.iter().find(|info| match info.value {
             VarDebugInfoContents::Place(p) => *place == p,
-            VarDebugInfoContents::Const(constant) => false,
+            _ => false,
         }) {
             debug_info.into()
         } else {
-            misc::DebugInfo {
-                variable_name: None,
+            misc::DebugInfo { name: None }
+        }
+    }
+
+    fn build_debug_info_function_call(&self, func_operand: &Operand) -> DebugInfo {
+        let constant = if let Operand::Constant(c) = func_operand {
+            c
+        } else {
+            return DebugInfo { name: None };
+        };
+
+        match constant.literal {
+            ConstantKind::Ty(_) => {}
+            ConstantKind::Val(_, ty) => {
+                match ty.kind() {
+                    TyKind::FnDef(defid, _) => {
+                        return DebugInfo {
+                            name: Some(self.tcx.def_path_str(*defid)),
+                        }
+                    }
+                    // TODO: Handle these?
+                    TyKind::FnPtr(_) => {}
+                    TyKind::Closure(_, _) => {}
+                    _ => {}
+                }
             }
         }
+
+        return DebugInfo { name: None };
     }
 
     fn build_str(&self, s: String) -> Operand<'tcx> {
