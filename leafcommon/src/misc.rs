@@ -7,7 +7,7 @@ use std::{fmt, result};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DebugInfo {
-    pub variable_name: String,
+    pub variable_name: Option<String>,
 }
 
 impl Display for DebugInfo {
@@ -19,7 +19,7 @@ impl Display for DebugInfo {
 impl<'tcx> From<&mir::VarDebugInfo<'tcx>> for DebugInfo {
     fn from(info: &mir::VarDebugInfo) -> DebugInfo {
         DebugInfo {
-            variable_name: info.name.to_string(),
+            variable_name: Some(info.name.to_string()),
         }
     }
 }

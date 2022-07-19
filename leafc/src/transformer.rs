@@ -276,9 +276,7 @@ impl<'tcx> Transformer<'tcx> {
         }) {
             debug_info.into()
         } else {
-            misc::DebugInfo {
-                variable_name: String::from("UNKNOWN"),
-            }
+            misc::DebugInfo { variable_name: None, }
         }
     }
 
