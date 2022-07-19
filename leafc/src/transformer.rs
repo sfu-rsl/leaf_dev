@@ -118,6 +118,23 @@ impl<'tcx> Transformer<'tcx> {
                     "leafrt::ret",
                     vec![],
                 ),
+                Drop {
+                    place,
+                    target: _,
+                    unwind: _,
+                } => {
+                    let debug_info: misc::DebugInfo = self.build_debug_info(&debug_infos, place);
+                    let place: place::Place = place.into();
+                    self.build_call_terminator(
+                        &mut body.local_decls,
+                        basic_block_idx,
+                        "leafrt::drop",
+                        vec![
+                            self.build_str(debug_info.to_string()),
+                            self.build_str(place.to_string()),
+                        ],
+                    )
+                }
                 Call {
                     func,
                     args,
@@ -276,7 +293,9 @@ impl<'tcx> Transformer<'tcx> {
         }) {
             debug_info.into()
         } else {
-            misc::DebugInfo { variable_name: None, }
+            misc::DebugInfo {
+                variable_name: None,
+            }
         }
     }
 

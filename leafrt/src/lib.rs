@@ -250,11 +250,19 @@ fn handle_place(debug_info: &DebugInfo, place: &Place) {
     let mut symbolic_variables_set = SYMBOLIC_VARIABLES.lock().unwrap();
     if symbolic_variables_set.contains(&SymbolicVariable::Place(place.clone()))
         || debug_info
-        .variable_name
-        .as_ref()
-        .map(|n| n.to_lowercase().contains("leaf_symbolic"))
-        .unwrap_or(false)
+            .variable_name
+            .as_ref()
+            .map(|n| n.to_lowercase().contains("leaf_symbolic"))
+            .unwrap_or(false)
     {
         symbolic_variables_set.insert(SymbolicVariable::Place(place.clone()));
     }
+}
+
+pub fn drop(debug_info: &str, place: &str) {
+    let debug_info: DebugInfo = debug_info.try_into().unwrap();
+    let place: Place = place.try_into().unwrap();
+
+    println!("[drop] debug_info: {debug_info:?} place: {place:?}");
+    handle_place(&debug_info, &place)
 }
