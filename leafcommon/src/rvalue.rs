@@ -123,7 +123,7 @@ impl TryFrom<&str> for Operand {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct Constant {
     //pub span: Span,
     //pub user_ty: Option<UserTypeAnnotationIndex>,
@@ -138,7 +138,7 @@ impl<'tcx> From<&mir::Constant<'tcx>> for Constant {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum ConstantKind {
     Ty(Const),
     Val(ConstValue, Ty),

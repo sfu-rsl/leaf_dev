@@ -3,7 +3,7 @@ extern crate rustc_middle;
 use rustc_middle::{mir, ty};
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct Ty(TyKind);
 
 impl<'tcx> From<&ty::Ty<'tcx>> for Ty {
@@ -13,7 +13,7 @@ impl<'tcx> From<&ty::Ty<'tcx>> for Ty {
 }
 
 /// https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/ty/sty/enum.TyKind.html
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum TyKind {
     Bool,
     Char,
@@ -81,7 +81,7 @@ impl<'tcx> From<&ty::TyKind<'tcx>> for TyKind {
     }
 }
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum IntTy {
     Isize,
     I8,
@@ -104,7 +104,7 @@ impl From<&ty::IntTy> for IntTy {
     }
 }
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum UintTy {
     Usize,
     U8,
@@ -127,7 +127,7 @@ impl From<&ty::UintTy> for UintTy {
     }
 }
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum FloatTy {
     F32,
     F64,
@@ -142,7 +142,7 @@ impl From<&ty::FloatTy> for FloatTy {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct TypeAndMut {
     pub ty: Box<Ty>,
     pub mutbl: Mutability,
@@ -157,7 +157,7 @@ impl<'tcx> From<&ty::TypeAndMut<'tcx>> for TypeAndMut {
     }
 }
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum Mutability {
     Mut,
     Not,
