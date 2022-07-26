@@ -14,5 +14,5 @@ fn get_int() -> i32 {
 
 fn main() {
     let leaf_symbolic = get_int();
-    let x = if leaf_symbolic > 10 { "Hi" } else { "Bye" };
+    let x = if leaf_symbolic >= 14 { "Hi" } else { "Bye" };
 }

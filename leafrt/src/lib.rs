@@ -408,9 +408,6 @@ pub fn switch_int(discr: &str, switch_targets: &str) {
             let (left, right) = &**b;
             let (left, right) = (get_place_from_operand(left), get_place_from_operand(right));
             if let (Some(left_info), Some(right_info)) = (var_map.get(left), var_map.get(right)) {
-                if !left_info.is_symbolic && !right_info.is_symbolic {
-                    return;
-                }
                 assert_eq!(left_info.var_type, right_info.var_type);
                 let (left_ast, right_ast) = match left_info.var_type {
                     TyKind::Int(intty) => (
@@ -420,41 +417,47 @@ pub fn switch_int(discr: &str, switch_targets: &str) {
                     _ => return,
                 };
 
-                match op {
-                    BinOp::Gt => {
-                        // SwitchTargets value of 0 means false
-                        for (value, basic_block_idx) in &switch_targets.switch_targets {
-                            println!(
-                                "Checking results for value = {}, bb_idx = {}",
-                                value, basic_block_idx
-                            );
-                            let mut f1 = left_ast.gt(&right_ast).not();
-                            if *value == 0 {
-                                f1 = f1.not();
-                            }
-                            SOLVER.0.assert(&f1);
+                // SwitchTargets value of 0 means false
+                for (value, basic_block_idx) in &switch_targets.switch_targets {
+                    println!(
+                        "Checking results for value = {}, bb_idx = {}",
+                        value, basic_block_idx
+                    );
+                    let mut f1 = match op {
+                        BinOp::Gt => left_ast.gt(&right_ast),
+                        // TODO: Eq with constants is just using the value directly inside of
+                        //  switch_targets
+                        BinOp::Eq => left_ast._eq(&right_ast),
+                        BinOp::Lt => left_ast.lt(&right_ast),
+                        BinOp::Le => left_ast.le(&right_ast),
+                        BinOp::Ne => left_ast._eq(&right_ast).not(),
+                        BinOp::Ge => left_ast.ge(&right_ast),
+                        // TODO: Include the rest of the binary operations
+                        _ => return
+                    };
+                    if *value == 0 {
+                        f1 = f1.not()
+                    };
+                    SOLVER.0.assert(&f1);
 
-                            match SOLVER.0.check() {
-                                SatResult::Sat => {
-                                    println!("SAT");
-                                    // Note: Must check satisfiability before you can get the model.
-                                    if let Some(model) = SOLVER.0.get_model() {
-                                        // Retrieve interpretations
-                                        println!("{}", model);
-                                    } else {
-                                        println!("Failed to get model!");
-                                    }
-                                }
-                                SatResult::Unsat => {
-                                    println!("UNSAT");
-                                }
-                                _ => {
-                                    println!("UNKNOWN");
-                                }
+                    match SOLVER.0.check() {
+                        SatResult::Sat => {
+                            println!("SAT");
+                            // Note: Must check satisfiability before you can get the model.
+                            if let Some(model) = SOLVER.0.get_model() {
+                                // Retrieve interpretations
+                                println!("{}", model);
+                            } else {
+                                println!("Failed to get model!");
                             }
                         }
+                        SatResult::Unsat => {
+                            println!("UNSAT");
+                        }
+                        _ => {
+                            println!("UNKNOWN");
+                        }
                     }
-                    _ => {}
                 }
             }
         }
