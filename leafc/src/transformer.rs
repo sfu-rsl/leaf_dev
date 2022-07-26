@@ -2,7 +2,7 @@ extern crate rustc_middle;
 extern crate rustc_span;
 
 use crate::{const_separator, preprocessor};
-use leafcommon::{misc, rvalue};
+use leafcommon::{misc, rvalue, switchtargets};
 //use log::debug;
 use leafcommon::misc::{DebugInfo, PlaceAndDebugInfo};
 use rustc_middle::{
@@ -103,14 +103,18 @@ impl<'tcx> Transformer<'tcx> {
                 SwitchInt {
                     discr,
                     switch_ty: _,
-                    targets: _,
+                    targets,
                 } => {
                     let discr: rvalue::Operand = discr.into();
+                    let targets: switchtargets::SwitchTargets = targets.into();
                     self.build_call_terminator(
                         &mut body.local_decls,
                         basic_block_idx,
                         "leafrt::switch_int",
-                        vec![self.build_str(discr.to_string())],
+                        vec![
+                            self.build_str(discr.to_string()),
+                            self.build_str(targets.to_string()),
+                        ],
                     )
                 }
                 Return => self.build_call_terminator(

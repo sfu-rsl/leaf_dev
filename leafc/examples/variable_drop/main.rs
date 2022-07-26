@@ -9,7 +9,7 @@ fn this_function_is_busy(a: &str) -> i64 {
 
 fn main() {
     let leaf_symbolic = String::from("Test string");
-    let compile_time_constant = 503;
+    let _compile_time_constant = 503;
     let y = leaf_symbolic;
     this_function_is_busy(&y);
 }

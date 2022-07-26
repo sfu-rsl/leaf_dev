@@ -6,6 +6,7 @@ use leafcommon::rvalue::{Constant, Operand, OperandVec, Rvalue};
 //use z3_sys::{Z3_config, Z3_context, Z3_solver};
 //use z3::{Config, Context, Solver};
 use leafcommon::misc::{DebugInfo, PlaceAndDebugInfo};
+use leafcommon::switchtargets::SwitchTargets;
 use std::collections::HashSet;
 use std::sync::Mutex;
 use z3;
@@ -59,9 +60,10 @@ lazy_static! {
     static ref SYMBOLIC_VARIABLES: Mutex<HashSet<SymbolicVariable>> = Mutex::new(HashSet::new());
 }
 
-pub fn switch_int(discr: &str) {
+pub fn switch_int(discr: &str, switch_targets: &str) {
     let discr: Operand = discr.try_into().unwrap();
-    println!("[switch_int] discr: {discr:?}");
+    let switch_targets: SwitchTargets = switch_targets.try_into().unwrap();
+    println!("[switch_int] discr: {discr:?} switch_targets: {switch_targets:?}");
 }
 
 pub fn ret() {
