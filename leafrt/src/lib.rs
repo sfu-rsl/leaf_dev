@@ -73,13 +73,22 @@ impl SymbolicVarMap {
 
     /// Returns true if `operand` is operating on a symbolic variable and `Copy` or `Move` is being
     /// done to a symbolic variable. True means the `new_place` was added.
-    fn insert_from_operand(&mut self, new_place: &Place, operand: &Operand) -> InsertResult {
+    fn insert_from_operand(
+        &mut self,
+        new_place: Option<&Place>,
+        new_place_debug_info: Option<DebugInfo>,
+        operand: &Operand,
+    ) -> InsertResult {
         match operand {
             Operand::Copy(source_place) => {
                 // If this is a Copy of a symbolic variable, add the Copy as well to the symbolic
                 // variables set
-                if let Some(source) = self.get(source_place) {
-                    if self.insert_if_absent(new_place.clone(), source.var_type.clone()) {
+                if let (Some(source), Some(new_place)) = (self.get(source_place), new_place) {
+                    if self.insert_if_absent(
+                        new_place.clone(),
+                        source.var_type.clone(),
+                        new_place_debug_info,
+                    ) {
                         InsertResult::Inserted
                     } else {
                         InsertResult::Noop
@@ -90,7 +99,14 @@ impl SymbolicVarMap {
             }
             Operand::Move(source_place) => {
                 if let Some(source) = self.get(source_place) {
-                    self.insert_if_absent(new_place.clone(), source.var_type.clone());
+                    // TODO: Handling Move via function argument
+                    if let Some(new_place) = new_place {
+                        self.insert_if_absent(
+                            new_place.clone(),
+                            source.var_type.clone(),
+                            new_place_debug_info,
+                        );
+                    }
                     InsertResult::NeedsRemoval(source_place.local.clone())
                 } else {
                     InsertResult::Noop
@@ -106,11 +122,17 @@ impl SymbolicVarMap {
         }
     }
 
-    fn insert_place_rvalue_pair(&mut self, place: &Place, rvalue: &Rvalue) -> bool {
+    fn insert_place_rvalue_pair(
+        &mut self,
+        place: &Place,
+        place_debug_info: Option<DebugInfo>,
+        rvalue: &Rvalue,
+    ) -> bool {
         // TODO: Handle other Rvalue variants
         let is_rvalue_on_symbolic_variable = match rvalue {
             Rvalue::Use(ref use_operand) => {
-                let insert_result = self.insert_from_operand(place, use_operand);
+                let insert_result =
+                    self.insert_from_operand(Some(place), place_debug_info, use_operand);
                 self.process_insert_result(&insert_result);
                 insert_result.is_inserted()
             }
@@ -120,8 +142,10 @@ impl SymbolicVarMap {
             }
             Rvalue::BinaryOp(op, b) => {
                 let (left, right) = &**b;
-                let left_insert_result = self.insert_from_operand(place, left);
-                let right_insert_result = self.insert_from_operand(place, right);
+                let left_insert_result =
+                    self.insert_from_operand(Some(place), place_debug_info.clone(), left);
+                let right_insert_result =
+                    self.insert_from_operand(Some(place), place_debug_info, right);
                 let any_symbolic_variables =
                     left_insert_result.is_inserted() || right_insert_result.is_inserted();
                 if any_symbolic_variables {
@@ -164,9 +188,15 @@ impl SymbolicVarMap {
     /// Inserts a new symbolic variable place into the map.
     /// If the map did not have this key present, true is returned.
     /// If the map did have this key present, the value is not updated, and falsei s returned
-    fn insert_if_absent(&mut self, place: Place, ty: TyKind) -> bool {
+    fn insert_if_absent(
+        &mut self,
+        place: Place,
+        ty: TyKind,
+        debug_info: Option<DebugInfo>,
+    ) -> bool {
         if !self.map.contains_key(&place.local) {
-            self.map.insert(place.local, SymbolicVarInfo::new(ty));
+            self.map
+                .insert(place.local, SymbolicVarInfo::new(ty, debug_info));
             true
         } else {
             false
@@ -205,15 +235,17 @@ impl Default for SymbolicVarMap {
 #[derive(Debug, Clone)]
 struct SymbolicVarInfo {
     var_type: TyKind,
+    debug_info: Option<DebugInfo>,
     references: HashSet<Local>,
     /// Map of `Place` to `Rvalue`s stored in those places.
     expressions: HashMap<Local, Rvalue>,
 }
 
 impl SymbolicVarInfo {
-    fn new(var_type: TyKind) -> Self {
+    fn new(var_type: TyKind, debug_info: Option<DebugInfo>) -> Self {
         Self {
             var_type,
+            debug_info,
             references: Default::default(),
             expressions: Default::default(),
         }
@@ -511,7 +543,11 @@ fn handle_place_with_function_call_ctx(
     };
 
     if let Some(rvalue) = rvalue {
-        symbolic_variables_set.insert_place_rvalue_pair(place, rvalue);
+        symbolic_variables_set.insert_place_rvalue_pair(
+            place,
+            place_and_debug_info.debug_info.clone(),
+            rvalue,
+        );
     // TODO: Add a proper way for denoting symbolic variables instead of just reading the
     //  variable name.
     } else if let Some(ref debug_info) = place_and_debug_info.debug_info {
@@ -521,8 +557,11 @@ fn handle_place_with_function_call_ctx(
             .map(|n| n.to_lowercase().contains("leaf_symbolic"))
             .unwrap_or(false)
         {
-            symbolic_variables_set
-                .insert_if_absent(place.clone(), ty.expect("type needed for first variable"));
+            symbolic_variables_set.insert_if_absent(
+                place.clone(),
+                ty.expect("type needed for first variable"),
+                Some(debug_info.clone()),
+            );
         }
     }
 }
