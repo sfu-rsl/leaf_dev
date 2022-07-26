@@ -6,6 +6,7 @@ use crate::ty::Ty;
 use rustc_middle::mir;
 use rustc_target::abi;
 use serde::{Deserialize, Serialize};
+use std::hash::Hash;
 use std::{
     convert::From,
     fmt::{self, Display, Formatter},

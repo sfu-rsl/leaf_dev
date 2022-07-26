@@ -1,13 +1,13 @@
 #[macro_use]
 extern crate lazy_static;
 
-use leafcommon::place::Place;
-use leafcommon::rvalue::{Constant, Operand, OperandVec, Rvalue};
+use leafcommon::place::{Local, Place};
+use leafcommon::rvalue::{Operand, OperandVec, Rvalue};
 //use z3_sys::{Z3_config, Z3_context, Z3_solver};
 //use z3::{Config, Context, Solver};
 use leafcommon::misc::{DebugInfo, PlaceAndDebugInfo};
 use leafcommon::switchtargets::SwitchTargets;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 use z3;
 
@@ -41,6 +41,66 @@ impl<'a> Solver<'a> {
     }
 }
 
+#[derive(Debug, Clone)]
+struct SymbolicVarMap {
+    map: HashMap<Local, SymbolicVarInfo>,
+}
+
+impl SymbolicVarMap {
+    fn new() -> Self {
+        Self {
+            map: HashMap::default(),
+        }
+    }
+
+    /// Inserts a key-value pair into the map.
+    /// If the map did not have this key present, `None` is returned.
+    /// If the map did have this key present, the value is updated, and the old value is returned.
+    fn insert(&mut self, place: Place) -> Option<SymbolicVarInfo> {
+        self.map
+            .insert(place.local.clone(), SymbolicVarInfo::default())
+    }
+
+    /// Inserts a `reference` to a `source` Place. Returns true iff insertion was successful
+    fn insert_ref(&mut self, source: &Place, reference: Place) -> bool {
+        self.get_mut(source)
+            .map_or(false, |info| info.insert_ref(reference))
+    }
+
+    fn get(&self, place: &Place) -> Option<&SymbolicVarInfo> {
+        self.map.get(&place.local)
+    }
+
+    fn get_mut(&mut self, place: &Place) -> Option<&mut SymbolicVarInfo> {
+        self.map.get_mut(&place.local)
+    }
+
+    fn contains(&self, place: &Place) -> bool {
+        self.map.contains_key(&place.local)
+    }
+
+    fn remove(&mut self, place: &Place) -> Option<SymbolicVarInfo> {
+        self.map.remove(&place.local)
+    }
+}
+
+impl Default for SymbolicVarMap {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+struct SymbolicVarInfo {
+    references: HashSet<Local>,
+}
+
+impl SymbolicVarInfo {
+    fn insert_ref(&mut self, reference: Place) -> bool {
+        self.references.insert(reference.local)
+    }
+}
+
 lazy_static! {
     //static ref CFG: Z3_config = z3_sys::Z3_mk_config();
     //static ref CTX: Z3_context = z3_sys::Z3_mk_context(CFG);
@@ -50,8 +110,7 @@ lazy_static! {
     static ref SOLVER: Solver<'static> = Solver::new(&CTX);
 
     /// Keep track of places in memory that are known to be symbolic.
-    /// TODO: Keep track of drops to remove from the set?
-    static ref SYMBOLIC_VARIABLES: Mutex<HashSet<Place>> = Mutex::new(HashSet::new());
+    static ref SYMBOLIC_VARIABLES: Mutex<SymbolicVarMap> = Mutex::new(SymbolicVarMap::new());
 }
 
 pub fn switch_int(discr: &str, switch_targets: &str) {
@@ -239,7 +298,7 @@ fn handle_place(place_and_debug_info: &PlaceAndDebugInfo, rvalue: Option<&Rvalue
                     }
                 }
                 Operand::Move(source_place) => {
-                    if symbolic_variables_set.remove(&source_place) {
+                    if symbolic_variables_set.remove(&source_place).is_some() {
                         symbolic_variables_set.insert(place.clone());
                     }
                 }
@@ -247,10 +306,9 @@ fn handle_place(place_and_debug_info: &PlaceAndDebugInfo, rvalue: Option<&Rvalue
             },
             Rvalue::Repeat(_, _) => {}
             Rvalue::Ref(_, ref source_place) => {
-                // TODO: Is there a way to tell if a reference is expired
                 if symbolic_variables_set.contains(&source_place) {
                     // Add references to symbolic variables to the set
-                    symbolic_variables_set.insert(place.clone());
+                    symbolic_variables_set.insert_ref(source_place, place.clone());
                 }
             }
             Rvalue::ThreadLocalRef => {}
