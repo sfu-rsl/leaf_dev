@@ -2,7 +2,7 @@
 extern crate lazy_static;
 
 use leafcommon::place::{Local, Place};
-use leafcommon::rvalue::{Operand, OperandVec, Rvalue};
+use leafcommon::rvalue::{BinOp, Operand, OperandVec, Rvalue};
 //use z3_sys::{Z3_config, Z3_context, Z3_solver};
 //use z3::{Config, Context, Solver};
 use leafcommon::misc::{DebugInfo, PlaceAndDebugInfo};
@@ -53,12 +53,88 @@ impl SymbolicVarMap {
         }
     }
 
-    /// Inserts a key-value pair into the map.
-    /// If the map did not have this key present, `None` is returned.
-    /// If the map did have this key present, the value is updated, and the old value is returned.
-    fn insert(&mut self, place: Place) -> Option<SymbolicVarInfo> {
-        self.map
-            .insert(place.local.clone(), SymbolicVarInfo::default())
+    fn insert_from_operand(&mut self, new_place: &Place, operand: &Operand) -> bool {
+        match operand {
+            Operand::Copy(source_place) => {
+                // If this is a Copy of a symbolic variable, add the Copy as well to the symbolic
+                // variables set
+                if self.contains(source_place) {
+                    self.insert_if_absent(new_place.clone())
+                } else {
+                    false
+                }
+            }
+            Operand::Move(source_place) => {
+                if self.remove(&source_place).is_some() {
+                    self.insert_if_absent(new_place.clone())
+                } else {
+                    false
+                }
+            }
+            Operand::Constant(_) => false
+        }
+    }
+
+    fn insert_place_rvalue_pair(&mut self, place: &Place, rvalue: &Rvalue) -> bool {
+        match rvalue {
+            Rvalue::Use(ref use_operand) => return self.insert_from_operand(place, use_operand),
+            Rvalue::Repeat(_, _) => {}
+            Rvalue::Ref(_, ref source_place) => {
+                // Add references to symbolic variables to the set.
+                return self.insert_ref(source_place, place.clone())
+            }
+            Rvalue::ThreadLocalRef => {}
+            Rvalue::AddressOf(_, _) => {}
+            Rvalue::Len(_) => {}
+            Rvalue::Cast(_, _, _) => {}
+            Rvalue::BinaryOp(op, b) => {
+                let (left, right) = &**b;
+                let left_result = self.insert_from_operand(place, left);
+                let right_result = self.insert_from_operand(place, right);
+
+                match op {
+                    BinOp::Add => {}
+                    BinOp::Sub => {}
+                    BinOp::Mul => {}
+                    BinOp::Div => {}
+                    BinOp::Rem => {}
+                    BinOp::BitXor => {}
+                    BinOp::BitAnd => {}
+                    BinOp::BitOr => {}
+                    BinOp::Shl => {}
+                    BinOp::Shr => {}
+                    BinOp::Eq => {}
+                    BinOp::Lt => {}
+                    BinOp::Le => {}
+                    BinOp::Ne => {}
+                    BinOp::Ge => {}
+                    BinOp::Gt => {}
+                    BinOp::Offset => {}
+                }
+
+                return left_result || right_result;
+            }
+            Rvalue::CheckedBinaryOp(_, _) => {}
+            Rvalue::NullaryOp(_, _) => {}
+            Rvalue::UnaryOp(_, _) => {}
+            Rvalue::Discriminant(_) => {}
+            Rvalue::Aggregate(_, _) => {}
+            Rvalue::ShallowInitBox(_, _) => {}
+        };
+
+        return false;
+    }
+
+    /// Inserts a new symbolic variable place into the map.
+    /// If the map did not have this key present, true is returned.
+    /// If the map did have this key present, the value is not updated, and falsei s returned
+    fn insert_if_absent(&mut self, place: Place) -> bool {
+        if !self.map.contains_key(&place.local) {
+            self.map.insert(place.local, SymbolicVarInfo::default());
+            true
+        } else {
+            false
+        }
     }
 
     /// Inserts a `reference` to a `source` Place. Returns true iff insertion was successful
@@ -290,39 +366,7 @@ fn handle_place(place_and_debug_info: &PlaceAndDebugInfo, rvalue: Option<&Rvalue
     };
 
     if let Some(rvalue) = rvalue {
-        match *rvalue {
-            Rvalue::Use(ref use_operand) => match use_operand {
-                Operand::Copy(source_place) => {
-                    if symbolic_variables_set.contains(&source_place) {
-                        symbolic_variables_set.insert(place.clone());
-                    }
-                }
-                Operand::Move(source_place) => {
-                    if symbolic_variables_set.remove(&source_place).is_some() {
-                        symbolic_variables_set.insert(place.clone());
-                    }
-                }
-                Operand::Constant(_) => {}
-            },
-            Rvalue::Repeat(_, _) => {}
-            Rvalue::Ref(_, ref source_place) => {
-                if symbolic_variables_set.contains(&source_place) {
-                    // Add references to symbolic variables to the set
-                    symbolic_variables_set.insert_ref(source_place, place.clone());
-                }
-            }
-            Rvalue::ThreadLocalRef => {}
-            Rvalue::AddressOf(_, _) => {}
-            Rvalue::Len(_) => {}
-            Rvalue::Cast(_, _, _) => {}
-            Rvalue::BinaryOp(_, _) => {}
-            Rvalue::CheckedBinaryOp(_, _) => {}
-            Rvalue::NullaryOp(_, _) => {}
-            Rvalue::UnaryOp(_, _) => {}
-            Rvalue::Discriminant(_) => {}
-            Rvalue::Aggregate(_, _) => {}
-            Rvalue::ShallowInitBox(_, _) => {}
-        }
+        symbolic_variables_set.insert_place_rvalue_pair(place, rvalue);
     // TODO: Add a proper way for denoting symbolic variables instead of just reading the
     //  variable name.
     } else if let Some(ref debug_info) = place_and_debug_info.debug_info {
@@ -332,7 +376,7 @@ fn handle_place(place_and_debug_info: &PlaceAndDebugInfo, rvalue: Option<&Rvalue
             .map(|n| n.to_lowercase().contains("leaf_symbolic"))
             .unwrap_or(false)
         {
-            symbolic_variables_set.insert(place.clone());
+            symbolic_variables_set.insert_if_absent(place.clone());
         }
     }
 }
