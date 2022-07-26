@@ -1,5 +1,6 @@
 extern crate rustc_middle;
 
+use crate::ty::TyKind;
 use crate::{
     consts::{Const, ConstValue},
     place::Place,

@@ -1,10 +1,17 @@
 extern crate rustc_middle;
 
+use crate::rvalue::{ConstantKind, Operand, Rvalue};
 use rustc_middle::{mir, ty};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct Ty(TyKind);
+
+impl Ty {
+    pub fn kind(&self) -> TyKind {
+        self.0.clone()
+    }
+}
 
 impl<'tcx> From<&ty::Ty<'tcx>> for Ty {
     fn from(ty: &ty::Ty<'tcx>) -> Ty {
@@ -42,6 +49,33 @@ pub enum TyKind {
     Placeholder, //Placeholder(PlaceholderType)
     Infer,       //Infer(InferTy)
     Error,       //Error(DelaySpanBugEmitted)
+}
+
+impl TryFrom<Operand> for TyKind {
+    type Error = ();
+
+    fn try_from(value: Operand) -> Result<Self, ()> {
+        // TODO: Handle other variants
+        match value {
+            Operand::Constant(c) => match c.literal {
+                ConstantKind::Ty(cons) => Ok(cons.ty.kind()),
+                ConstantKind::Val(_, ty) => Ok(ty.kind()),
+            },
+            _ => Err(()),
+        }
+    }
+}
+
+impl TryFrom<Rvalue> for TyKind {
+    type Error = ();
+
+    fn try_from(value: Rvalue) -> Result<Self, ()> {
+        // TODO: Handle other variants
+        match value {
+            Rvalue::Use(u) => u.try_into(),
+            _ => Err(()),
+        }
+    }
 }
 
 impl<'tcx> From<&ty::TyKind<'tcx>> for TyKind {

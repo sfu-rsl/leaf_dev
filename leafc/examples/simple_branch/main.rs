@@ -1,7 +1,15 @@
 #![allow(unused)]
 
+fn get_bool() -> bool {
+    false
+}
+
 fn get_int() -> i32 {
-    5
+    if get_bool() {
+        42
+    } else {
+        1
+    }
 }
 
 fn main() {
