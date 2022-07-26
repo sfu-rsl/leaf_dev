@@ -41,12 +41,6 @@ impl<'a> Solver<'a> {
     }
 }
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-enum SymbolicVariable {
-    Place(Place),
-    Constant(Constant),
-}
-
 lazy_static! {
     //static ref CFG: Z3_config = z3_sys::Z3_mk_config();
     //static ref CTX: Z3_context = z3_sys::Z3_mk_context(CFG);
@@ -57,7 +51,7 @@ lazy_static! {
 
     /// Keep track of places in memory that are known to be symbolic.
     /// TODO: Keep track of drops to remove from the set?
-    static ref SYMBOLIC_VARIABLES: Mutex<HashSet<SymbolicVariable>> = Mutex::new(HashSet::new());
+    static ref SYMBOLIC_VARIABLES: Mutex<HashSet<Place>> = Mutex::new(HashSet::new());
 }
 
 pub fn switch_int(discr: &str, switch_targets: &str) {
@@ -239,35 +233,24 @@ fn handle_place(place_and_debug_info: &PlaceAndDebugInfo, rvalue: Option<&Rvalue
     if let Some(rvalue) = rvalue {
         match *rvalue {
             Rvalue::Use(ref use_operand) => match use_operand {
-                Operand::Copy(copy_place) => {
-                    let old_place = SymbolicVariable::Place(copy_place.clone());
-                    if symbolic_variables_set.contains(&old_place) {
-                        let new_place = SymbolicVariable::Place(place.clone());
-                        symbolic_variables_set.insert(new_place);
+                Operand::Copy(source_place) => {
+                    if symbolic_variables_set.contains(&source_place) {
+                        symbolic_variables_set.insert(place.clone());
                     }
                 }
-                Operand::Move(move_place) => {
-                    let old_place = SymbolicVariable::Place(move_place.clone());
-                    if symbolic_variables_set.remove(&old_place) {
-                        let new_place = SymbolicVariable::Place(place.clone());
-                        symbolic_variables_set.insert(new_place);
+                Operand::Move(source_place) => {
+                    if symbolic_variables_set.remove(&source_place) {
+                        symbolic_variables_set.insert(place.clone());
                     }
                 }
-                Operand::Constant(constant) => {
-                    let old_constant = SymbolicVariable::Constant(*constant.clone());
-                    if symbolic_variables_set.contains(&old_constant) {
-                        let new_place = SymbolicVariable::Place(place.clone());
-                        symbolic_variables_set.insert(new_place);
-                    }
-                }
+                Operand::Constant(_) => {}
             },
             Rvalue::Repeat(_, _) => {}
-            Rvalue::Ref(_, ref ref_place) => {
-                // TODO: Is ther a way to tell if a reference is expired
-                let old_place = SymbolicVariable::Place(ref_place.clone());
-                if symbolic_variables_set.contains(&old_place) {
-                    let new_place = SymbolicVariable::Place(place.clone());
-                    symbolic_variables_set.insert(new_place);
+            Rvalue::Ref(_, ref source_place) => {
+                // TODO: Is there a way to tell if a reference is expired
+                if symbolic_variables_set.contains(&source_place) {
+                    // Add references to symbolic variables to the set
+                    symbolic_variables_set.insert(place.clone());
                 }
             }
             Rvalue::ThreadLocalRef => {}
@@ -291,7 +274,7 @@ fn handle_place(place_and_debug_info: &PlaceAndDebugInfo, rvalue: Option<&Rvalue
             .map(|n| n.to_lowercase().contains("leaf_symbolic"))
             .unwrap_or(false)
         {
-            symbolic_variables_set.insert(SymbolicVariable::Place(place.clone()));
+            symbolic_variables_set.insert(place.clone());
         }
     }
 }
@@ -304,9 +287,10 @@ pub fn drop(place_and_debug_info: &str) {
         return;
     };
 
-    let mut symbolic_variables_set = SYMBOLIC_VARIABLES.lock().unwrap();
-    let symbolic_variable_removed =
-        symbolic_variables_set.remove(&SymbolicVariable::Place(place.clone()));
+    let symbolic_variable_removed = {
+        let mut symbolic_variables_set = SYMBOLIC_VARIABLES.lock().unwrap();
+        symbolic_variables_set.remove(&place)
+    };
 
     println!(
         "[drop] {place_and_debug_info:?} symbolic_variable_removed: {symbolic_variable_removed:?}"
