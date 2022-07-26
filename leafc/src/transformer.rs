@@ -2,9 +2,9 @@ extern crate rustc_middle;
 extern crate rustc_span;
 
 use crate::{const_separator, preprocessor};
-use leafcommon::{misc, place, rvalue};
+use leafcommon::{misc, rvalue};
 //use log::debug;
-use leafcommon::misc::DebugInfo;
+use leafcommon::misc::{DebugInfo, PlaceAndDebugInfo};
 use rustc_middle::{
     middle::exported_symbols,
     mir::{
@@ -16,6 +16,7 @@ use rustc_middle::{
     ty::{ConstKind, FloatTy, IntTy, TyCtxt, TyKind, UintTy, Unevaluated, WithOptConstParam},
 };
 use rustc_span::def_id::DefId;
+use std::default::Default;
 use std::{collections::HashMap, ops::Index, ops::IndexMut};
 
 pub struct Transformer<'tcx> {
@@ -123,17 +124,13 @@ impl<'tcx> Transformer<'tcx> {
                     target: _,
                     unwind: _,
                 } => {
-                    let debug_info: misc::DebugInfo =
-                        self.build_debug_info_place(&debug_infos, place);
-                    let place: place::Place = place.into();
+                    let place_and_debug_info =
+                        self.build_place_and_debug_info(&debug_infos, Some(place));
                     self.build_call_terminator(
                         &mut body.local_decls,
                         basic_block_idx,
                         "leafrt::drop",
-                        vec![
-                            self.build_str(debug_info.to_string()),
-                            self.build_str(place.to_string()),
-                        ],
+                        vec![self.build_str(place_and_debug_info.to_string())],
                     )
                 }
                 Call {
@@ -149,10 +146,10 @@ impl<'tcx> Transformer<'tcx> {
                     let args = rvalue::OperandVec(
                         args.iter().map(|arg| rvalue::Operand::from(arg)).collect(),
                     );
-                    let mir_dest: &Place = &destination.unwrap().0;
-                    let destination: place::Place = mir_dest.into();
-                    let dest_debug_info: misc::DebugInfo =
-                        self.build_debug_info_place(&debug_infos, mir_dest);
+                    let mir_dest = destination.map(|dest| dest.0);
+                    let dest_and_debug_info =
+                        self.build_place_and_debug_info(&debug_infos, mir_dest.as_ref());
+
                     self.build_call_terminator(
                         &mut body.local_decls,
                         basic_block_idx,
@@ -161,8 +158,7 @@ impl<'tcx> Transformer<'tcx> {
                             self.build_str(func_debug_info.to_string()),
                             self.build_str(func.to_string()),
                             self.build_str(args.to_string()),
-                            self.build_str(destination.to_string()),
-                            self.build_str(dest_debug_info.to_string()),
+                            self.build_str(dest_and_debug_info.to_string()),
                         ],
                     )
                 }
@@ -201,18 +197,15 @@ impl<'tcx> Transformer<'tcx> {
     ) -> terminator::Terminator<'tcx> {
         let (p, r) = &**asgn;
 
-        let debug_info: misc::DebugInfo = self.build_debug_info_place(debug_infos, p);
-
         let (fn_name, args) = match r {
-            Rvalue::Use(op) => self.transform_use(op, &p, &r, &debug_info),
+            Rvalue::Use(op) => self.transform_use(op, &p, &r, &debug_infos),
             _ => {
-                let place: place::Place = p.into();
+                let place_and_debug_info = self.build_place_and_debug_info(debug_infos, Some(p));
                 let rvalue: rvalue::Rvalue = r.into();
                 (
                     "leafrt::assign".into(),
                     vec![
-                        self.build_str(debug_info.to_string()),
-                        self.build_str(place.to_string()),
+                        self.build_str(place_and_debug_info.to_string()),
                         self.build_str(rvalue.to_string()),
                     ],
                 )
@@ -226,9 +219,9 @@ impl<'tcx> Transformer<'tcx> {
         op: &Operand<'tcx>,
         p: &Place<'tcx>,
         r: &Rvalue<'tcx>,
-        debug_info: &DebugInfo,
+        debug_infos: &[VarDebugInfo],
     ) -> (String, Vec<Operand<'tcx>>) {
-        let place: place::Place = p.into();
+        let dest_and_debug_info = self.build_place_and_debug_info(debug_infos, Some(p));
         let rvalue: rvalue::Rvalue = r.into();
         if let Some((did, p)) = get_unevaluated_promoted(&op) {
             let promoteds = self.tcx.promoted_mir_opt_const_arg(did);
@@ -249,8 +242,7 @@ impl<'tcx> Transformer<'tcx> {
             (
                 get_fn_name(op.constant().unwrap().ty().kind()).unwrap(),
                 vec![
-                    self.build_str(debug_info.to_string()),
-                    self.build_str(place.to_string()),
+                    self.build_str(dest_and_debug_info.to_string()),
                     self.build_str(rvalue.to_string()),
                     (*op).clone(),
                 ],
@@ -262,8 +254,7 @@ impl<'tcx> Transformer<'tcx> {
                     return (
                         fn_name,
                         vec![
-                            self.build_str(debug_info.to_string()),
-                            self.build_str(place.to_string()),
+                            self.build_str(dest_and_debug_info.to_string()),
                             self.build_str(rvalue.to_string()),
                             (*op).clone(),
                         ],
@@ -273,8 +264,7 @@ impl<'tcx> Transformer<'tcx> {
             (
                 "leafrt::assign".into(),
                 vec![
-                    self.build_str(debug_info.to_string()),
-                    self.build_str(place.to_string()),
+                    self.build_str(dest_and_debug_info.to_string()),
                     self.build_str(rvalue.to_string()),
                 ],
             )
@@ -290,15 +280,29 @@ impl<'tcx> Transformer<'tcx> {
         }
     }
 
-    fn build_debug_info_place(&self, debug_infos: &[VarDebugInfo], place: &Place) -> DebugInfo {
-        if let Some(debug_info) = debug_infos.iter().find(|info| match info.value {
-            VarDebugInfoContents::Place(p) => *place == p,
-            _ => false,
-        }) {
-            debug_info.into()
-        } else {
-            misc::DebugInfo { name: None }
+    fn build_place_and_debug_info(
+        &self,
+        debug_infos: &[VarDebugInfo],
+        place: Option<&Place>,
+    ) -> PlaceAndDebugInfo {
+        fn build_debug_info_place(debug_infos: &[VarDebugInfo], place: &Place) -> DebugInfo {
+            if let Some(debug_info) = debug_infos.iter().find(|info| match info.value {
+                VarDebugInfoContents::Place(p) => *place == p,
+                _ => false,
+            }) {
+                debug_info.into()
+            } else {
+                misc::DebugInfo { name: None }
+            }
         }
+
+        place.map_or_else(
+            || Default::default(),
+            |dest| PlaceAndDebugInfo {
+                place: Some(dest.into()),
+                debug_info: Some(build_debug_info_place(&debug_infos, &dest)),
+            },
+        )
     }
 
     fn build_debug_info_function_call(&self, func_operand: &Operand) -> DebugInfo {
