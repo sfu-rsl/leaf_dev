@@ -215,7 +215,7 @@ impl From<&adjustment::PointerCast> for PointerCast {
     }
 }
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, Serialize, Deserialize)]
 pub enum BinOp {
     Add,
     Sub,

@@ -86,11 +86,11 @@ impl<'tcx> From<&mir::PlaceElem<'tcx>> for PlaceElem {
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct Local {
-    private: u32,
+    pub private: u32,
 }
 
 impl Local {
-    pub fn get_private(&self) -> u32 {
+    pub fn private(&self) -> u32 {
         self.private
     }
 }

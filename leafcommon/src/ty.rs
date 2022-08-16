@@ -8,8 +8,12 @@ use serde::{Deserialize, Serialize};
 pub struct Ty(TyKind);
 
 impl Ty {
-    pub fn kind(&self) -> TyKind {
-        self.0.clone()
+    pub fn new(kind: TyKind) -> Self {
+        Ty(kind)
+    }
+
+    pub fn kind(&self) -> &TyKind {
+        &self.0
     }
 }
 
@@ -58,8 +62,8 @@ impl TryFrom<Operand> for TyKind {
         // TODO: Handle other variants
         match value {
             Operand::Constant(c) => match c.literal {
-                ConstantKind::Ty(cons) => Ok(cons.ty.kind()),
-                ConstantKind::Val(_, ty) => Ok(ty.kind()),
+                ConstantKind::Ty(cons) => Ok(cons.ty.kind().clone()),
+                ConstantKind::Val(_, ty) => Ok(ty.kind().clone()),
             },
             _ => Err(()),
         }
@@ -203,5 +207,23 @@ impl From<&mir::Mutability> for Mutability {
             mir::Mutability::Mut => Mutability::Mut,
             mir::Mutability::Not => Mutability::Not,
         }
+    }
+}
+
+mod test {
+    use crate::ty::*;
+
+    #[test]
+    fn test_ty_equality() {
+        assert_eq!(
+            TypeAndMut {
+                ty: Box::new(Ty(TyKind::Bool)),
+                mutbl: Mutability::Mut
+            },
+            TypeAndMut {
+                ty: Box::new(Ty(TyKind::Bool)),
+                mutbl: Mutability::Mut
+            }
+        );
     }
 }
