@@ -59,73 +59,6 @@ impl SymbolicType {
     }
 }
 
-fn create_ast_based_on_ty(
-    ctx: &Context,
-    ty: TyKind,
-    variable_name: String,
-    serialized_const_value: Option<String>,
-) -> AstType {
-    match ty {
-        TyKind::Bool => AstType::Bool(
-            if let Some(serialized_const_value) = serialized_const_value {
-                z3::ast::Bool::from_bool(&ctx.0, bool::from_str(&serialized_const_value).unwrap())
-            } else {
-                z3::ast::Bool::new_const(&ctx.0, variable_name.clone())
-            },
-        ),
-        TyKind::Char => todo!(),
-        TyKind::Int(_) | TyKind::Uint(_) => AstType::Int(
-            if let Some(serialized_const_value) = serialized_const_value {
-                z3::ast::Int::from_str(&ctx.0, &serialized_const_value).unwrap()
-            } else {
-                z3::ast::Int::new_const(&ctx.0, variable_name.clone())
-            },
-        ),
-        TyKind::Float(FloatTy::F32) => AstType::Float(
-            if let Some(serialized_const_value) = serialized_const_value {
-                z3::ast::Float::from_f32(&ctx.0, f32::from_str(&serialized_const_value).unwrap())
-            } else {
-                z3::ast::Float::new_const_float32(&ctx.0, variable_name.clone())
-            },
-        ),
-        TyKind::Float(FloatTy::F64) => AstType::Float(
-            if let Some(serialized_const_value) = serialized_const_value {
-                z3::ast::Float::from_f64(&ctx.0, f64::from_str(&serialized_const_value).unwrap())
-            } else {
-                z3::ast::Float::new_const_double(&ctx.0, variable_name.clone())
-            },
-        ),
-        TyKind::Adt => todo!(),
-        TyKind::Foreign => todo!(),
-        TyKind::Str => AstType::String(
-            if let Some(serialized_const_value) = serialized_const_value {
-                z3::ast::String::from_str(&ctx.0, &serialized_const_value).unwrap()
-            } else {
-                z3::ast::String::new_const(&ctx.0, variable_name.clone())
-            },
-        ),
-        TyKind::Array => todo!(),
-        TyKind::Slice => todo!(),
-        TyKind::RawPtr(_) => todo!(),
-        TyKind::Ref(_) => todo!(),
-        TyKind::FnDef => todo!(),
-        TyKind::FnPtr => todo!(),
-        TyKind::Dynamic => todo!(),
-        TyKind::Closure => todo!(),
-        TyKind::Generator => todo!(),
-        TyKind::GeneratorWitness => todo!(),
-        TyKind::Never => todo!(),
-        TyKind::Tuple => todo!(),
-        TyKind::Projection => todo!(),
-        TyKind::Opaque => todo!(),
-        TyKind::Param => todo!(),
-        TyKind::Bound => todo!(),
-        TyKind::Placeholder => todo!(),
-        TyKind::Infer => todo!(),
-        TyKind::Error => todo!(),
-    }
-}
-
 fn generate_variable_name(
     fn_name: Option<&String>,
     destination: &Place,
@@ -207,22 +140,23 @@ impl<'ctx> PlaceMap<'ctx> {
         self.map.insert(destination.local, expr);
     }
 
-    pub fn expr_from_operand<'a>(&self, operand: &'a Operand) -> &Expression<'ctx> {
+    pub fn expr_from_operand<'a>(&self, operand: &'a Operand) -> Option<&Expression<'ctx>> {
         let place = place_from_operand(operand).unwrap();
-        self.map
-            .get(&place.local)
-            .expect("expression should be present")
+        self.map.get(&place.local)
     }
 
     fn handle_binary_op_ast_creation(
         &self,
         ctx: &'ctx Context,
+        fn_name: Option<&String>,
+        destination: &Place,
+        debug_info: Option<&DebugInfo>,
         bin_op: &BinOp,
         operand_pair: &Box<(Operand, Operand)>,
-    ) -> (SymbolicType, AstType<'ctx>, TyKind) {
+    ) -> (SymbolicType, AstTypeAndFormulas<'ctx>, TyKind) {
         let (left, right) = &**operand_pair;
-        let left = self.expr_from_operand(left);
-        let right = self.expr_from_operand(right);
+        let left = self.expr_from_operand(left).expect("present");
+        let right = self.expr_from_operand(right).expect("present");
 
         let symbolic_type = {
             if left.symbolic_type().is_symbolic() || right.symbolic_type().is_symbolic() {
@@ -232,23 +166,37 @@ impl<'ctx> PlaceMap<'ctx> {
             }
         };
 
-        let (ast_type, ty_kind) = match bin_op {
+        let variable_name = generate_variable_name(fn_name, destination, debug_info);
+
+        let (ast_type, formulas, ty_kind) = match bin_op {
             BinOp::Add => match left.ast_type() {
                 AstType::Bool(_) | AstType::String(_) => unreachable!(),
                 AstType::Int(left_ast) => {
                     if let AstType::Int(right_ast) = right.ast_type() {
-                        (
-                            AstType::Int(z3::ast::Int::add(&ctx.0, &[left_ast, right_ast])),
-                            left.ty_kind().clone(),
-                        )
+                        let sum = z3::ast::Int::new_const(&ctx.0, variable_name);
+                        let formula = sum._eq(&z3::ast::Int::add(&ctx.0, &[left_ast, right_ast]));
+                        (AstType::Int(sum), vec![formula], left.ty_kind().clone())
                     } else {
                         unreachable!()
                     }
                 }
-                AstType::Float(left_ast) => {
-                    if let AstType::Float(right_ast) = right.ast_type() {
+                AstType::Float {
+                    ast: left_ast,
+                    is_f32,
+                } => {
+                    if let AstType::Float { ast: right_ast, .. } = right.ast_type() {
+                        let sum = if *is_f32 {
+                            z3::ast::Float::new_const_float32(&ctx.0, variable_name)
+                        } else {
+                            z3::ast::Float::new_const_double(&ctx.0, variable_name)
+                        };
+                        let formula = sum._eq(&left_ast.add_towards_zero(right_ast));
                         (
-                            AstType::Float(left_ast.add_towards_zero(right_ast)),
+                            AstType::Float {
+                                ast: sum,
+                                is_f32: *is_f32,
+                            },
+                            vec![formula],
                             left.ty_kind().clone(),
                         )
                     } else {
@@ -260,17 +208,37 @@ impl<'ctx> PlaceMap<'ctx> {
                 AstType::Bool(_) | AstType::String(_) => unreachable!(),
                 AstType::Int(left_ast) => {
                     if let AstType::Int(right_ast) = right.ast_type() {
+                        let difference = z3::ast::Int::new_const(&ctx.0, variable_name);
+                        let formula =
+                            difference._eq(&z3::ast::Int::sub(&ctx.0, &[left_ast, right_ast]));
                         (
-                            AstType::Int(z3::ast::Int::sub(&ctx.0, &[left_ast, right_ast])),
+                            AstType::Int(difference),
+                            vec![formula],
                             left.ty_kind().clone(),
                         )
                     } else {
                         unreachable!()
                     }
                 }
-                AstType::Float(left_ast) => {
-                    if let AstType::Float(right_ast) = right.ast_type() {
-                        (AstType::Float(left_ast.sub_towards_zero(right_ast)), left.ty_kind().clone())
+                AstType::Float {
+                    ast: left_ast,
+                    is_f32,
+                } => {
+                    if let AstType::Float { ast: right_ast, .. } = right.ast_type() {
+                        let difference = if *is_f32 {
+                            z3::ast::Float::new_const_float32(&ctx.0, variable_name)
+                        } else {
+                            z3::ast::Float::new_const_double(&ctx.0, variable_name)
+                        };
+                        let formula = difference._eq(&left_ast.sub_towards_zero(right_ast));
+                        (
+                            AstType::Float {
+                                ast: difference,
+                                is_f32: *is_f32,
+                            },
+                            vec![formula],
+                            left.ty_kind().clone(),
+                        )
                     } else {
                         unreachable!()
                     }
@@ -280,14 +248,33 @@ impl<'ctx> PlaceMap<'ctx> {
                 AstType::Bool(_) | AstType::String(_) => unreachable!(),
                 AstType::Int(left_ast) => {
                     if let AstType::Int(right_ast) = right.ast_type() {
-                        (AstType::Int(z3::ast::Int::mul(&ctx.0, &[left_ast, right_ast])), left.ty_kind().clone())
+                        let product = z3::ast::Int::new_const(&ctx.0, variable_name);
+                        let formula =
+                            product._eq(&z3::ast::Int::mul(&ctx.0, &[left_ast, right_ast]));
+                        (AstType::Int(product), vec![formula], left.ty_kind().clone())
                     } else {
                         unreachable!()
                     }
                 }
-                AstType::Float(left_ast) => {
-                    if let AstType::Float(right_ast) = right.ast_type() {
-                        (AstType::Float(left_ast.mul_towards_zero(right_ast)), left.ty_kind().clone())
+                AstType::Float {
+                    ast: left_ast,
+                    is_f32,
+                } => {
+                    if let AstType::Float { ast: right_ast, .. } = right.ast_type() {
+                        let product = if *is_f32 {
+                            z3::ast::Float::new_const_float32(&ctx.0, variable_name)
+                        } else {
+                            z3::ast::Float::new_const_double(&ctx.0, variable_name)
+                        };
+                        let formula = product._eq(&left_ast.mul_towards_zero(right_ast));
+                        (
+                            AstType::Float {
+                                ast: product,
+                                is_f32: *is_f32,
+                            },
+                            vec![formula],
+                            left.ty_kind().clone(),
+                        )
                     } else {
                         unreachable!()
                     }
@@ -297,14 +284,36 @@ impl<'ctx> PlaceMap<'ctx> {
                 AstType::Bool(_) | AstType::String(_) => unreachable!(),
                 AstType::Int(left_ast) => {
                     if let AstType::Int(right_ast) = right.ast_type() {
-                        (AstType::Int(left_ast.div(right_ast)), left.ty_kind().clone())
+                        let quotient = z3::ast::Int::new_const(&ctx.0, variable_name);
+                        let formula = quotient._eq(&left_ast.div(right_ast));
+                        (
+                            AstType::Int(quotient),
+                            vec![formula],
+                            left.ty_kind().clone(),
+                        )
                     } else {
                         unreachable!()
                     }
                 }
-                AstType::Float(left_ast) => {
-                    if let AstType::Float(right_ast) = right.ast_type() {
-                        (AstType::Float(left_ast.div_towards_zero(right_ast)), left.ty_kind().clone())
+                AstType::Float {
+                    ast: left_ast,
+                    is_f32,
+                } => {
+                    if let AstType::Float { ast: right_ast, .. } = right.ast_type() {
+                        let quotient = if *is_f32 {
+                            z3::ast::Float::new_const_float32(&ctx.0, variable_name)
+                        } else {
+                            z3::ast::Float::new_const_double(&ctx.0, variable_name)
+                        };
+                        let formula = quotient._eq(&left_ast.div_towards_zero(right_ast));
+                        (
+                            AstType::Float {
+                                ast: quotient,
+                                is_f32: *is_f32,
+                            },
+                            vec![formula],
+                            left.ty_kind().clone(),
+                        )
                     } else {
                         unreachable!()
                     }
@@ -327,16 +336,20 @@ impl<'ctx> PlaceMap<'ctx> {
                 AstType::Bool(_) | AstType::String(_) => unreachable!(),
                 AstType::Int(left_ast) => {
                     if let AstType::Int(right_ast) = right.ast_type() {
-                        (AstType::Bool(left_ast.ge(right_ast)), TyKind::Bool)
+                        let result = z3::ast::Bool::new_const(&ctx.0, variable_name);
+                        let formula = result._eq(&left_ast.ge(right_ast));
+                        (AstType::Bool(result), vec![formula], left.ty_kind().clone())
                     } else {
                         unreachable!()
                     }
                 }
-                AstType::Float(left_ast) => {
-                    if let AstType::Float(right_ast) = right.ast_type() {
-                        (AstType::Bool(left_ast.ge(right_ast)), TyKind::Bool)
+                AstType::Float { ast: left_ast, .. } => {
+                    if let AstType::Float { ast: right_ast, .. } = right.ast_type() {
+                        let result = z3::ast::Bool::new_const(&ctx.0, variable_name);
+                        let formula = result._eq(&left_ast.ge(right_ast));
+                        (AstType::Bool(result), vec![formula], left.ty_kind().clone())
                     } else {
-                        unreachable!("{:?}", right)
+                        unreachable!()
                     }
                 }
             },
@@ -344,22 +357,119 @@ impl<'ctx> PlaceMap<'ctx> {
                 AstType::Bool(_) | AstType::String(_) => unreachable!(),
                 AstType::Int(left_ast) => {
                     if let AstType::Int(right_ast) = right.ast_type() {
-                        (AstType::Bool(left_ast.gt(right_ast)), TyKind::Bool)
+                        let result = z3::ast::Bool::new_const(&ctx.0, variable_name);
+                        let formula = result._eq(&left_ast.gt(right_ast));
+                        (AstType::Bool(result), vec![formula], left.ty_kind().clone())
                     } else {
                         unreachable!()
                     }
                 }
-                AstType::Float(left_ast) => {
-                    if let AstType::Float(right_ast) = right.ast_type() {
-                        (AstType::Bool(left_ast.gt(right_ast)), TyKind::Bool)
+                AstType::Float { ast: left_ast, .. } => {
+                    if let AstType::Float { ast: right_ast, .. } = right.ast_type() {
+                        let result = z3::ast::Bool::new_const(&ctx.0, variable_name);
+                        let formula = result._eq(&left_ast.gt(right_ast));
+                        (AstType::Bool(result), vec![formula], left.ty_kind().clone())
                     } else {
-                        unreachable!("{:?}", right)
+                        unreachable!()
                     }
                 }
             },
             BinOp::Offset => todo!(),
         };
-        (symbolic_type, ast_type, ty_kind)
+        (
+            symbolic_type,
+            AstTypeAndFormulas(ast_type, formulas),
+            ty_kind,
+        )
+    }
+
+    fn create_ast_based_on_ty(
+        &self,
+        ctx: &'ctx Context,
+        ty: TyKind,
+        variable_name: String,
+        serialized_const_value: Option<String>,
+        source_operand: &Operand,
+    ) -> AstTypeAndFormulas<'ctx> {
+        // FIXME Formulas
+        match ty {
+            TyKind::Bool => {
+                let ast = z3::ast::Bool::new_const(&ctx.0, variable_name.clone());
+
+                let formulas = if let Some(serialized_const_value) = serialized_const_value {
+                    vec![ast._eq(&z3::ast::Bool::from_bool(
+                        &ctx.0,
+                        bool::from_str(&serialized_const_value).unwrap(),
+                    ))]
+                } else if let Some(AstType::Bool(operand_ast)) = self
+                    .expr_from_operand(source_operand)
+                    .map(|expr| expr.ast_type())
+                {
+                    vec![ast._eq(operand_ast)]
+                } else {
+                    vec![]
+                };
+
+                AstTypeAndFormulas(AstType::Bool(ast), formulas)
+            }
+            TyKind::Char => todo!(),
+            TyKind::Int(_) | TyKind::Uint(_) => {
+                let ast = z3::ast::Int::new_const(&ctx.0, variable_name.clone());
+
+                let formulas = if let Some(serialized_const_value) = serialized_const_value {
+                    vec![ast._eq(&z3::ast::Int::from_str(&ctx.0, &serialized_const_value).unwrap())]
+                } else if let Some(AstType::Int(operand_ast)) = self
+                    .expr_from_operand(source_operand)
+                    .map(|expr| expr.ast_type())
+                {
+                    vec![ast._eq(operand_ast)]
+                } else {
+                    vec![]
+                };
+
+                AstTypeAndFormulas(AstType::Int(ast), formulas)
+            }
+            TyKind::Float(FloatTy::F32) => todo!(),
+            TyKind::Float(FloatTy::F64) => todo!(),
+            TyKind::Adt => todo!(),
+            TyKind::Foreign => todo!(),
+            TyKind::Str => {
+                let ast = z3::ast::String::new_const(&ctx.0, variable_name.clone());
+
+                let formulas = if let Some(serialized_const_value) = serialized_const_value {
+                    vec![ast
+                        ._eq(&z3::ast::String::from_str(&ctx.0, &serialized_const_value).unwrap())]
+                } else if let Some(AstType::String(operand_ast)) = self
+                    .expr_from_operand(source_operand)
+                    .map(|expr| expr.ast_type())
+                {
+                    vec![ast._eq(operand_ast)]
+                } else {
+                    vec![]
+                };
+
+                AstTypeAndFormulas(AstType::String(ast), formulas)
+            }
+            TyKind::Array => todo!(),
+            TyKind::Slice => todo!(),
+            TyKind::RawPtr(_) => todo!(),
+            TyKind::Ref(_) => todo!(),
+            TyKind::FnDef => todo!(),
+            TyKind::FnPtr => todo!(),
+            TyKind::Dynamic => todo!(),
+            TyKind::Closure => todo!(),
+            TyKind::Generator => todo!(),
+            TyKind::GeneratorWitness => todo!(),
+            TyKind::Never => todo!(),
+            TyKind::Tuple => todo!(),
+            TyKind::Projection => todo!(),
+            TyKind::Opaque => todo!(),
+            TyKind::Param => todo!(),
+            TyKind::Bound => todo!(),
+            TyKind::Placeholder => todo!(),
+            TyKind::Infer => todo!(),
+            TyKind::Error => todo!(),
+        }
     }
 
     pub fn insert_rvalue(
@@ -375,22 +485,25 @@ impl<'ctx> PlaceMap<'ctx> {
         // dbg!(&rvalue);
         let variable_name = generate_variable_name(fn_name, destination, debug_info);
 
-        let (symbolic_type, ast_type, ty) = match &rvalue {
+        let (symbolic_type, ast_type_and_formulas, ty) = match &rvalue {
             Rvalue::Use(operand) => {
                 let ty = if let Some(ty) = ty {
                     ty
                 } else {
-                    let expr = self.expr_from_operand(operand);
+                    let expr = self
+                        .expr_from_operand(operand)
+                        .expect("missing type means copy/clone of existing value");
                     expr.ty_kind().clone()
                 };
 
                 (
                     self.operand_symbolic_type(operand, debug_info),
-                    create_ast_based_on_ty(
+                    self.create_ast_based_on_ty(
                         ctx,
                         ty.clone(),
                         variable_name.clone(),
                         serialized_constant_value,
+                        operand,
                     ),
                     ty,
                 )
@@ -401,13 +514,25 @@ impl<'ctx> PlaceMap<'ctx> {
             Rvalue::AddressOf(_, _) => todo!(),
             Rvalue::Len(_) => todo!(),
             Rvalue::Cast(_, _, _) => todo!(),
-            Rvalue::BinaryOp(b, operand_pair) => {
-                self.handle_binary_op_ast_creation(ctx, b, operand_pair)
-            }
+            Rvalue::BinaryOp(b, operand_pair) => self.handle_binary_op_ast_creation(
+                ctx,
+                fn_name,
+                destination,
+                debug_info,
+                b,
+                operand_pair,
+            ),
             Rvalue::CheckedBinaryOp(b, operand_pair) => {
                 // TODO: Detect overflows?
-                self.handle_binary_op_ast_creation(ctx, b, operand_pair)
-            },
+                self.handle_binary_op_ast_creation(
+                    ctx,
+                    fn_name,
+                    destination,
+                    debug_info,
+                    b,
+                    operand_pair,
+                )
+            }
             Rvalue::NullaryOp(_, _) => todo!(),
             Rvalue::UnaryOp(_, _) => todo!(),
             Rvalue::Discriminant(_) => todo!(),
@@ -421,7 +546,7 @@ impl<'ctx> PlaceMap<'ctx> {
                     Expression::Symbolic {
                         place: destination.local,
                         ty,
-                        ast_type,
+                        ast_type_and_formulas,
                         variable_name,
                     },
                 );
@@ -431,7 +556,7 @@ impl<'ctx> PlaceMap<'ctx> {
                     destination.local,
                     Expression::Rvalue {
                         ty,
-                        ast_type,
+                        ast_type_and_formulas,
                         is_symbolic: symbolic_type.is_symbolic(),
                     },
                 );
@@ -524,7 +649,9 @@ impl<'ctx> FunctionCallStack<'ctx> {
     ) {
         let solver = &solver.0;
         let place_map = self.current_place_map().unwrap();
-        let discriminant = place_map.expr_from_operand(&discriminant);
+        let discriminant = place_map
+            .expr_from_operand(&discriminant)
+            .expect("discriminant present");
         let ast_expr = discriminant.ast_type();
         match ast_expr {
             AstType::Bool(discriminant_bool) => {
@@ -535,85 +662,20 @@ impl<'ctx> FunctionCallStack<'ctx> {
                     .collect::<Vec<bool>>();
 
                 for target in value_targets {
-                    /*
-                    TODO: Preserve the original variable traces.
-
-                    Example program:
-
-                        fn get_int() -> i32 { 6 }
-
-                        fn main() {
-                            let leaf_symbolic = get_int();
-
-                            if leaf_symbolic > 5 {
-                                "Greater than 5"
-                            } else {
-                                "Less than 5"
-                            };
-                        }
-
-                    The MIR looks like this:
-
-                        fn get_int() -> i32 {
-                            let mut _0: i32;                     // return place in scope 0 at src/main.rs:1:17: 1:20
-
-                            bb0: {
-                                _0 = const 6_i32;                // scope 0 at src/main.rs:2:5: 2:6
-                                return;                          // scope 0 at src/main.rs:3:2: 3:2
-                            }
-                        }
-
-                        fn main() -> () {
-                            let mut _0: ();                      // return place in scope 0 at src/main.rs:5:11: 5:11
-                            let _1: i32;                         // in scope 0 at src/main.rs:8:9: 8:22
-                            let mut _2: bool;                    // in scope 0 at src/main.rs:10:8: 10:25
-                            let mut _3: i32;                     // in scope 0 at src/main.rs:10:8: 10:21
-                            scope 1 {
-                                debug leaf_symbolic => _1;       // in scope 1 at src/main.rs:8:9: 8:22
-                            }
-
-                            bb0: {
-                                _1 = get_int() -> bb1;           // scope 0 at src/main.rs:8:25: 8:34
-                                                                 // mir::Constant
-                                                                 // + span: src/main.rs:8:25: 8:32
-                                                                 // + literal: Const { ty: fn() -> i32 {get_int}, val: Value(Scalar(<ZST>)) }
-                            }
-
-                            bb1: {
-                                _3 = _1;                         // scope 1 at src/main.rs:10:8: 10:21
-                                _2 = Gt(move _3, const 5_i32);   // scope 1 at src/main.rs:10:8: 10:25
-                                switchInt(move _2) -> [false: bb3, otherwise: bb2]; // scope 1 at src/main.rs:10:8: 10:25
-                            }
-
-                            bb2: {
-                                goto -> bb4;                     // scope 1 at src/main.rs:10:5: 14:6
-                            }
-
-                            bb3: {
-                                goto -> bb4;                     // scope 1 at src/main.rs:10:5: 14:6
-                            }
-
-                            bb4: {
-                                return;                          // scope 0 at src/main.rs:15:2: 15:2
-                            }
-                        }
-
-                    Currently, the solver is only showing that we can set _3 to be 5 in order to go
-                    to bb3. Want to show that we can choose _1 as 5.
-                     */
-
+                    for formula in place_map
+                        .map
+                        .iter()
+                        .flat_map(|(_, expr)| &expr.ast_type_and_formulas().1)
+                    {
+                        solver.assert(formula);
+                    }
                     solver.assert(
                         &discriminant_bool._eq(&Bool::from_bool(solver.get_context(), target)),
                     );
 
                     match solver.check() {
                         SatResult::Sat => {
-                            if target {
-                                println!("Reaching the first branch is possible");
-                            } else {
-                                println!("Reaching the second branch is possible");
-                            }
-
+                            println!("Reaching the {} branch is possible", target);
                             // Note: Must check satisfiability before you can get the model.
                             if let Some(model) = solver.get_model() {
                                 println!("model: {:?}", model);
@@ -638,8 +700,40 @@ impl<'ctx> FunctionCallStack<'ctx> {
                     .iter()
                     .map(|(value, _target)| *value)
                     .collect::<Vec<u128>>();
+                for target in value_targets {
+                    for formula in place_map
+                        .map
+                        .iter()
+                        .flat_map(|(_, expr)| &expr.ast_type_and_formulas().1)
+                    {
+                        solver.assert(formula);
+                    }
+                    solver.assert(
+                        &discriminant_int._eq(&Int::from_u64(solver.get_context(), target as u64)),
+                    );
+
+                    match solver.check() {
+                        SatResult::Sat => {
+                            println!("Reaching the {} branch is possible", target);
+                            // Note: Must check satisfiability before you can get the model.
+                            if let Some(model) = solver.get_model() {
+                                println!("model: {:?}", model);
+                            } else {
+                                println!("Failed to get model!");
+                            }
+                        }
+                        SatResult::Unsat => {
+                            println!("UNSAT");
+                        }
+                        _ => {
+                            println!("UNKNOWN");
+                        }
+                    }
+
+                    solver.reset()
+                }
             }
-            AstType::Float(_) => unreachable!(),
+            AstType::Float { .. } => unreachable!(),
             AstType::String(_) => unreachable!(),
         }
     }
@@ -681,12 +775,20 @@ impl<'ctx> FunctionCallStack<'ctx> {
                             TyKind::Int(_) | TyKind::Uint(_) => {
                                 AstType::Int(z3::ast::Int::new_const(&ctx.0, variable_name.clone()))
                             }
-                            TyKind::Float(FloatTy::F32) => AstType::Float(
-                                z3::ast::Float::new_const_float32(&ctx.0, variable_name.clone()),
-                            ),
-                            TyKind::Float(FloatTy::F64) => AstType::Float(
-                                z3::ast::Float::new_const_double(&ctx.0, variable_name.clone()),
-                            ),
+                            TyKind::Float(FloatTy::F32) => AstType::Float {
+                                ast: z3::ast::Float::new_const_float32(
+                                    &ctx.0,
+                                    variable_name.clone(),
+                                ),
+                                is_f32: true,
+                            },
+                            TyKind::Float(FloatTy::F64) => AstType::Float {
+                                ast: z3::ast::Float::new_const_double(
+                                    &ctx.0,
+                                    variable_name.clone(),
+                                ),
+                                is_f32: false,
+                            },
                             TyKind::Adt => todo!(),
                             TyKind::Foreign => todo!(),
                             TyKind::Str => AstType::String(z3::ast::String::new_const(
@@ -719,7 +821,7 @@ impl<'ctx> FunctionCallStack<'ctx> {
                             Expression::Symbolic {
                                 place: destination.local,
                                 ty: ty.clone(),
-                                ast_type,
+                                ast_type_and_formulas: AstTypeAndFormulas(ast_type, vec![]),
                                 variable_name,
                             },
                         );
@@ -864,7 +966,10 @@ impl SerializedValue {
 enum AstType<'ctx> {
     Bool(z3::ast::Bool<'ctx>),
     Int(z3::ast::Int<'ctx>),
-    Float(z3::ast::Float<'ctx>),
+    Float {
+        ast: z3::ast::Float<'ctx>,
+        is_f32: bool,
+    },
     String(z3::ast::String<'ctx>),
 }
 
@@ -873,21 +978,28 @@ unsafe impl<'a> std::marker::Sync for AstType<'a> {}
 unsafe impl<'a> std::marker::Send for AstType<'a> {}
 
 #[derive(Debug)]
+struct AstTypeAndFormulas<'ctx>(AstType<'ctx>, Vec<z3::ast::Bool<'ctx>>);
+
+unsafe impl<'a> std::marker::Sync for AstTypeAndFormulas<'a> {}
+
+unsafe impl<'a> std::marker::Send for AstTypeAndFormulas<'a> {}
+
+#[derive(Debug)]
 pub enum Expression<'ctx> {
     Symbolic {
         place: Local,
         ty: TyKind,
-        ast_type: AstType<'ctx>,
+        ast_type_and_formulas: AstTypeAndFormulas<'ctx>,
         variable_name: String,
     },
     ConcreteConstant {
         place: Local,
         ty: TyKind,
-        ast_type: AstType<'ctx>,
+        ast_type_and_formulas: AstTypeAndFormulas<'ctx>,
         serialized_value: SerializedValue,
     },
     Rvalue {
-        ast_type: AstType<'ctx>,
+        ast_type_and_formulas: AstTypeAndFormulas<'ctx>,
         ty: TyKind,
         /// Whether any of the nodes inside of [ast_type] is symbolic.
         is_symbolic: bool,
@@ -903,11 +1015,37 @@ impl<'ctx> Expression<'ctx> {
         }
     }
 
+    fn ast_type_and_formulas(&self) -> &AstTypeAndFormulas<'ctx> {
+        match self {
+            Expression::Symbolic {
+                ast_type_and_formulas,
+                ..
+            } => &ast_type_and_formulas,
+            Expression::ConcreteConstant {
+                ast_type_and_formulas,
+                ..
+            } => &ast_type_and_formulas,
+            Expression::Rvalue {
+                ast_type_and_formulas,
+                ..
+            } => &ast_type_and_formulas,
+        }
+    }
+
     fn ast_type(&self) -> &AstType<'ctx> {
         match self {
-            Expression::Symbolic { ast_type, .. } => ast_type,
-            Expression::ConcreteConstant { ast_type, .. } => ast_type,
-            Expression::Rvalue { ast_type, .. } => ast_type,
+            Expression::Symbolic {
+                ast_type_and_formulas,
+                ..
+            } => &ast_type_and_formulas.0,
+            Expression::ConcreteConstant {
+                ast_type_and_formulas,
+                ..
+            } => &ast_type_and_formulas.0,
+            Expression::Rvalue {
+                ast_type_and_formulas,
+                ..
+            } => &ast_type_and_formulas.0,
         }
     }
 
