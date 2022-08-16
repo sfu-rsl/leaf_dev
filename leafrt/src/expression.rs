@@ -232,19 +232,25 @@ impl<'ctx> PlaceMap<'ctx> {
             }
         };
 
-        let ast_type = match bin_op {
+        let (ast_type, ty_kind) = match bin_op {
             BinOp::Add => match left.ast_type() {
                 AstType::Bool(_) | AstType::String(_) => unreachable!(),
                 AstType::Int(left_ast) => {
                     if let AstType::Int(right_ast) = right.ast_type() {
-                        AstType::Int(z3::ast::Int::add(&ctx.0, &[left_ast, right_ast]))
+                        (
+                            AstType::Int(z3::ast::Int::add(&ctx.0, &[left_ast, right_ast])),
+                            left.ty_kind().clone(),
+                        )
                     } else {
                         unreachable!()
                     }
                 }
                 AstType::Float(left_ast) => {
                     if let AstType::Float(right_ast) = right.ast_type() {
-                        AstType::Float(left_ast.add_towards_zero(right_ast))
+                        (
+                            AstType::Float(left_ast.add_towards_zero(right_ast)),
+                            left.ty_kind().clone(),
+                        )
                     } else {
                         unreachable!()
                     }
@@ -254,14 +260,17 @@ impl<'ctx> PlaceMap<'ctx> {
                 AstType::Bool(_) | AstType::String(_) => unreachable!(),
                 AstType::Int(left_ast) => {
                     if let AstType::Int(right_ast) = right.ast_type() {
-                        AstType::Int(z3::ast::Int::sub(&ctx.0, &[left_ast, right_ast]))
+                        (
+                            AstType::Int(z3::ast::Int::sub(&ctx.0, &[left_ast, right_ast])),
+                            left.ty_kind().clone(),
+                        )
                     } else {
                         unreachable!()
                     }
                 }
                 AstType::Float(left_ast) => {
                     if let AstType::Float(right_ast) = right.ast_type() {
-                        AstType::Float(left_ast.sub_towards_zero(right_ast))
+                        (AstType::Float(left_ast.sub_towards_zero(right_ast)), left.ty_kind().clone())
                     } else {
                         unreachable!()
                     }
@@ -271,14 +280,14 @@ impl<'ctx> PlaceMap<'ctx> {
                 AstType::Bool(_) | AstType::String(_) => unreachable!(),
                 AstType::Int(left_ast) => {
                     if let AstType::Int(right_ast) = right.ast_type() {
-                        AstType::Int(z3::ast::Int::mul(&ctx.0, &[left_ast, right_ast]))
+                        (AstType::Int(z3::ast::Int::mul(&ctx.0, &[left_ast, right_ast])), left.ty_kind().clone())
                     } else {
                         unreachable!()
                     }
                 }
                 AstType::Float(left_ast) => {
                     if let AstType::Float(right_ast) = right.ast_type() {
-                        AstType::Float(left_ast.mul_towards_zero(right_ast))
+                        (AstType::Float(left_ast.mul_towards_zero(right_ast)), left.ty_kind().clone())
                     } else {
                         unreachable!()
                     }
@@ -288,14 +297,14 @@ impl<'ctx> PlaceMap<'ctx> {
                 AstType::Bool(_) | AstType::String(_) => unreachable!(),
                 AstType::Int(left_ast) => {
                     if let AstType::Int(right_ast) = right.ast_type() {
-                        AstType::Int(left_ast.div(right_ast))
+                        (AstType::Int(left_ast.div(right_ast)), left.ty_kind().clone())
                     } else {
                         unreachable!()
                     }
                 }
                 AstType::Float(left_ast) => {
                     if let AstType::Float(right_ast) = right.ast_type() {
-                        AstType::Float(left_ast.div_towards_zero(right_ast))
+                        (AstType::Float(left_ast.div_towards_zero(right_ast)), left.ty_kind().clone())
                     } else {
                         unreachable!()
                     }
@@ -318,14 +327,14 @@ impl<'ctx> PlaceMap<'ctx> {
                 AstType::Bool(_) | AstType::String(_) => unreachable!(),
                 AstType::Int(left_ast) => {
                     if let AstType::Int(right_ast) = right.ast_type() {
-                        AstType::Bool(left_ast.ge(right_ast))
+                        (AstType::Bool(left_ast.ge(right_ast)), TyKind::Bool)
                     } else {
                         unreachable!()
                     }
                 }
                 AstType::Float(left_ast) => {
                     if let AstType::Float(right_ast) = right.ast_type() {
-                        AstType::Bool(left_ast.ge(right_ast))
+                        (AstType::Bool(left_ast.ge(right_ast)), TyKind::Bool)
                     } else {
                         unreachable!("{:?}", right)
                     }
@@ -335,14 +344,14 @@ impl<'ctx> PlaceMap<'ctx> {
                 AstType::Bool(_) | AstType::String(_) => unreachable!(),
                 AstType::Int(left_ast) => {
                     if let AstType::Int(right_ast) = right.ast_type() {
-                        AstType::Bool(left_ast.gt(right_ast))
+                        (AstType::Bool(left_ast.gt(right_ast)), TyKind::Bool)
                     } else {
                         unreachable!()
                     }
                 }
                 AstType::Float(left_ast) => {
                     if let AstType::Float(right_ast) = right.ast_type() {
-                        AstType::Bool(left_ast.gt(right_ast))
+                        (AstType::Bool(left_ast.gt(right_ast)), TyKind::Bool)
                     } else {
                         unreachable!("{:?}", right)
                     }
@@ -350,9 +359,7 @@ impl<'ctx> PlaceMap<'ctx> {
             },
             BinOp::Offset => todo!(),
         };
-
-        // FIXME: Use proper type
-        (symbolic_type, ast_type, TyKind::Bool)
+        (symbolic_type, ast_type, ty_kind)
     }
 
     pub fn insert_rvalue(
@@ -397,7 +404,10 @@ impl<'ctx> PlaceMap<'ctx> {
             Rvalue::BinaryOp(b, operand_pair) => {
                 self.handle_binary_op_ast_creation(ctx, b, operand_pair)
             }
-            Rvalue::CheckedBinaryOp(b, operand_pair) => todo!(),
+            Rvalue::CheckedBinaryOp(b, operand_pair) => {
+                // TODO: Detect overflows?
+                self.handle_binary_op_ast_creation(ctx, b, operand_pair)
+            },
             Rvalue::NullaryOp(_, _) => todo!(),
             Rvalue::UnaryOp(_, _) => todo!(),
             Rvalue::Discriminant(_) => todo!(),

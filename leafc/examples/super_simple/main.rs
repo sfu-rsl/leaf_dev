@@ -7,7 +7,7 @@ fn main() {
     // program multiple times with different values.
     let leaf_symbolic = get_int();
 
-    if leaf_symbolic > 5 {
+    if leaf_symbolic + 1 > 5 {
         "Greater than 5"
     } else {
         "Less than 5"
