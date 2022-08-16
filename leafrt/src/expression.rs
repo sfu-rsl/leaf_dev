@@ -4,6 +4,8 @@ use leafcommon::consts::Const;
 use leafcommon::misc::{DebugInfo, PlaceAndDebugInfo};
 use leafcommon::place::{Local, Place};
 use leafcommon::rvalue::{BinOp, Constant, ConstantKind, Operand, OperandVec, Rvalue};
+use leafcommon::switchtargets::SwitchTargets;
+use leafcommon::ty::IntTy::I32;
 use leafcommon::ty::{FloatTy, IntTy, TyKind};
 use paste::paste;
 use std::collections::{HashMap, HashSet};
@@ -13,7 +15,7 @@ use std::ops::Rem;
 use std::rc::Rc;
 use std::str::FromStr;
 use z3::ast::{Ast, Bool, Int};
-use leafcommon::ty::IntTy::I32;
+use z3::SatResult;
 
 /// Contains an insertion result from an [Operand] insert. Since an Operand insert can use Move
 #[derive(Debug, Eq, PartialEq)]
@@ -190,6 +192,7 @@ impl<'ctx> PlaceMap<'ctx> {
         &self,
         solver: Solver,
         place: &Place,
+        switch_targets: SwitchTargets,
     ) -> Result<z3::ast::Int, ()> {
         let expression = self.map.get(&place.local).ok_or(())?;
         match expression {
@@ -216,7 +219,7 @@ impl<'ctx> PlaceMap<'ctx> {
         ctx: &'ctx Context,
         bin_op: &BinOp,
         operand_pair: &Box<(Operand, Operand)>,
-    ) -> (SymbolicType, AstType<'ctx>) {
+    ) -> (SymbolicType, AstType<'ctx>, TyKind) {
         let (left, right) = &**operand_pair;
         let left = self.expr_from_operand(left);
         let right = self.expr_from_operand(right);
@@ -230,7 +233,7 @@ impl<'ctx> PlaceMap<'ctx> {
         };
 
         let ast_type = match bin_op {
-            BinOp::Add => todo!()/*match left.ast_type() {
+            BinOp::Add => match left.ast_type() {
                 AstType::Bool(_) | AstType::String(_) => unreachable!(),
                 AstType::Int(left_ast) => {
                     if let AstType::Int(right_ast) = right.ast_type() {
@@ -246,8 +249,8 @@ impl<'ctx> PlaceMap<'ctx> {
                         unreachable!()
                     }
                 }
-            }*/,
-            BinOp::Sub => todo!()/*match left.ast_type() {
+            },
+            BinOp::Sub => match left.ast_type() {
                 AstType::Bool(_) | AstType::String(_) => unreachable!(),
                 AstType::Int(left_ast) => {
                     if let AstType::Int(right_ast) = right.ast_type() {
@@ -263,8 +266,8 @@ impl<'ctx> PlaceMap<'ctx> {
                         unreachable!()
                     }
                 }
-            }*/,
-            BinOp::Mul => todo!()/*match left.ast_type() {
+            },
+            BinOp::Mul => match left.ast_type() {
                 AstType::Bool(_) | AstType::String(_) => unreachable!(),
                 AstType::Int(left_ast) => {
                     if let AstType::Int(right_ast) = right.ast_type() {
@@ -280,8 +283,8 @@ impl<'ctx> PlaceMap<'ctx> {
                         unreachable!()
                     }
                 }
-            }*/,
-            BinOp::Div => todo!()/*match left.ast_type() {
+            },
+            BinOp::Div => match left.ast_type() {
                 AstType::Bool(_) | AstType::String(_) => unreachable!(),
                 AstType::Int(left_ast) => {
                     if let AstType::Int(right_ast) = right.ast_type() {
@@ -297,18 +300,21 @@ impl<'ctx> PlaceMap<'ctx> {
                         unreachable!()
                     }
                 }
-            }*/,
+            },
             BinOp::Rem => todo!(),
             BinOp::BitXor => todo!(),
             BinOp::BitAnd => todo!(),
             BinOp::BitOr => todo!(),
             BinOp::Shl => todo!(),
             BinOp::Shr => todo!(),
+            // Note: Eq, Lt, Le, Ne, Ge, Gt will return 0 or 1, but we have to interpret it as a
+            // boolean, since we don't know how to cast booleans into integers with the Z3 crate.
+            // Z3 supposedly supports casting / type coercion though.
             BinOp::Eq => todo!(),
             BinOp::Lt => todo!(),
             BinOp::Le => todo!(),
             BinOp::Ne => todo!(),
-            BinOp::Ge => todo!()/*match left.ast_type() {
+            BinOp::Ge => match left.ast_type() {
                 AstType::Bool(_) | AstType::String(_) => unreachable!(),
                 AstType::Int(left_ast) => {
                     if let AstType::Int(right_ast) = right.ast_type() {
@@ -321,15 +327,32 @@ impl<'ctx> PlaceMap<'ctx> {
                     if let AstType::Float(right_ast) = right.ast_type() {
                         AstType::Bool(left_ast.ge(right_ast))
                     } else {
+                        unreachable!("{:?}", right)
+                    }
+                }
+            },
+            BinOp::Gt => match left.ast_type() {
+                AstType::Bool(_) | AstType::String(_) => unreachable!(),
+                AstType::Int(left_ast) => {
+                    if let AstType::Int(right_ast) = right.ast_type() {
+                        AstType::Bool(left_ast.gt(right_ast))
+                    } else {
                         unreachable!()
                     }
                 }
-            }*/,
-            BinOp::Gt => todo!(),
+                AstType::Float(left_ast) => {
+                    if let AstType::Float(right_ast) = right.ast_type() {
+                        AstType::Bool(left_ast.gt(right_ast))
+                    } else {
+                        unreachable!("{:?}", right)
+                    }
+                }
+            },
             BinOp::Offset => todo!(),
         };
 
-        (symbolic_type, ast_type)
+        // FIXME: Use proper type
+        (symbolic_type, ast_type, TyKind::Bool)
     }
 
     pub fn insert_rvalue(
@@ -342,7 +365,7 @@ impl<'ctx> PlaceMap<'ctx> {
         debug_info: Option<&DebugInfo>,
         serialized_constant_value: Option<String>,
     ) {
-        dbg!(&rvalue);
+        // dbg!(&rvalue);
         let variable_name = generate_variable_name(fn_name, destination, debug_info);
 
         let (symbolic_type, ast_type, ty) = match &rvalue {
@@ -356,10 +379,15 @@ impl<'ctx> PlaceMap<'ctx> {
 
                 (
                     self.operand_symbolic_type(operand, debug_info),
-                    create_ast_based_on_ty(ctx, ty.clone(), variable_name.clone(), serialized_constant_value),
+                    create_ast_based_on_ty(
+                        ctx,
+                        ty.clone(),
+                        variable_name.clone(),
+                        serialized_constant_value,
+                    ),
                     ty,
                 )
-            },
+            }
             Rvalue::Repeat(_, _) => todo!(),
             Rvalue::Ref(_, _) => todo!(),
             Rvalue::ThreadLocalRef => todo!(),
@@ -367,116 +395,8 @@ impl<'ctx> PlaceMap<'ctx> {
             Rvalue::Len(_) => todo!(),
             Rvalue::Cast(_, _, _) => todo!(),
             Rvalue::BinaryOp(b, operand_pair) => {
-                let (left, right) = &**operand_pair;
-                let left = self.expr_from_operand(left);
-                let right = self.expr_from_operand(right);
-
-                let symbolic_type =
-                    if left.symbolic_type().is_symbolic() || right.symbolic_type().is_symbolic() {
-                        SymbolicType::InvolvesSymbolic
-                    } else {
-                        SymbolicType::Concrete
-                    };
-
-                let ast_type = match b {
-                    BinOp::Add => match left.ast_type() {
-                        AstType::Bool(_) | AstType::String(_) => unreachable!(),
-                        AstType::Int(ref left_ast) => {
-                            if let AstType::Int(ref right_ast) = right.ast_type() {
-                                AstType::Int(z3::ast::Int::add(&ctx.0, &[left_ast, right_ast]))
-                            } else {
-                                unreachable!()
-                            }
-                        }
-                        AstType::Float(ref left_ast) => {
-                            todo!()
-                        }
-                    },
-                    BinOp::Sub => todo!()/*match left.ast_type() {
-                AstType::Bool(_) | AstType::String(_) => unreachable!(),
-                AstType::Int(left_ast) => {
-                    if let AstType::Int(right_ast) = right.ast_type() {
-                        AstType::Int(z3::ast::Int::sub(&ctx.0, &[left_ast, right_ast]))
-                    } else {
-                        unreachable!()
-                    }
-                }
-                AstType::Float(left_ast) => {
-                    if let AstType::Float(right_ast) = right.ast_type() {
-                        AstType::Float(left_ast.sub_towards_zero(right_ast))
-                    } else {
-                        unreachable!()
-                    }
-                }
-            }*/,
-                    BinOp::Mul => todo!()/*match left.ast_type() {
-                AstType::Bool(_) | AstType::String(_) => unreachable!(),
-                AstType::Int(left_ast) => {
-                    if let AstType::Int(right_ast) = right.ast_type() {
-                        AstType::Int(z3::ast::Int::mul(&ctx.0, &[left_ast, right_ast]))
-                    } else {
-                        unreachable!()
-                    }
-                }
-                AstType::Float(left_ast) => {
-                    if let AstType::Float(right_ast) = right.ast_type() {
-                        AstType::Float(left_ast.mul_towards_zero(right_ast))
-                    } else {
-                        unreachable!()
-                    }
-                }
-            }*/,
-                    BinOp::Div => todo!()/*match left.ast_type() {
-                AstType::Bool(_) | AstType::String(_) => unreachable!(),
-                AstType::Int(left_ast) => {
-                    if let AstType::Int(right_ast) = right.ast_type() {
-                        AstType::Int(left_ast.div(right_ast))
-                    } else {
-                        unreachable!()
-                    }
-                }
-                AstType::Float(left_ast) => {
-                    if let AstType::Float(right_ast) = right.ast_type() {
-                        AstType::Float(left_ast.div_towards_zero(right_ast))
-                    } else {
-                        unreachable!()
-                    }
-                }
-            }*/,
-                    BinOp::Rem => todo!(),
-                    BinOp::BitXor => todo!(),
-                    BinOp::BitAnd => todo!(),
-                    BinOp::BitOr => todo!(),
-                    BinOp::Shl => todo!(),
-                    BinOp::Shr => todo!(),
-                    BinOp::Eq => todo!(),
-                    BinOp::Lt => todo!(),
-                    BinOp::Le => todo!(),
-                    BinOp::Ne => todo!(),
-                    BinOp::Ge => todo!()/*match left.ast_type() {
-                        AstType::Bool(_) | AstType::String(_) => unreachable!(),
-                        AstType::Int(left_ast) => {
-                            if let AstType::Int(right_ast) = right.ast_type() {
-                                AstType::Bool(left_ast.ge(right_ast))
-                            } else {
-                                unreachable!()
-                            }
-                        }
-                        AstType::Float(left_ast) => {
-                            if let AstType::Float(right_ast) = right.ast_type() {
-                                AstType::Bool(left_ast.ge(right_ast))
-                            } else {
-                                unreachable!()
-                            }
-                        }
-                    }*/,
-                    BinOp::Gt => todo!(),
-                    BinOp::Offset => todo!(),
-                };
-
-                // FIXME: Resolve the type
-                (symbolic_type, ast_type, TyKind::Bool)
-            },
+                self.handle_binary_op_ast_creation(ctx, b, operand_pair)
+            }
             Rvalue::CheckedBinaryOp(b, operand_pair) => todo!(),
             Rvalue::NullaryOp(_, _) => todo!(),
             Rvalue::UnaryOp(_, _) => todo!(),
@@ -583,6 +503,134 @@ impl<'ctx> FunctionCallStack<'ctx> {
                 level: 0,
                 place_map: PlaceMap::new(),
             }],
+        }
+    }
+
+    pub fn handle_switch_int(
+        &mut self,
+        solver: &Solver,
+        discriminant: Operand,
+        switch_targets: SwitchTargets,
+    ) {
+        let solver = &solver.0;
+        let place_map = self.current_place_map().unwrap();
+        let discriminant = place_map.expr_from_operand(&discriminant);
+        let ast_expr = discriminant.ast_type();
+        match ast_expr {
+            AstType::Bool(discriminant_bool) => {
+                let value_targets = switch_targets
+                    .switch_targets
+                    .iter()
+                    .map(|(value, _target)| *value == 1)
+                    .collect::<Vec<bool>>();
+
+                for target in value_targets {
+                    /*
+                    TODO: Preserve the original variable traces.
+
+                    Example program:
+
+                        fn get_int() -> i32 { 6 }
+
+                        fn main() {
+                            let leaf_symbolic = get_int();
+
+                            if leaf_symbolic > 5 {
+                                "Greater than 5"
+                            } else {
+                                "Less than 5"
+                            };
+                        }
+
+                    The MIR looks like this:
+
+                        fn get_int() -> i32 {
+                            let mut _0: i32;                     // return place in scope 0 at src/main.rs:1:17: 1:20
+
+                            bb0: {
+                                _0 = const 6_i32;                // scope 0 at src/main.rs:2:5: 2:6
+                                return;                          // scope 0 at src/main.rs:3:2: 3:2
+                            }
+                        }
+
+                        fn main() -> () {
+                            let mut _0: ();                      // return place in scope 0 at src/main.rs:5:11: 5:11
+                            let _1: i32;                         // in scope 0 at src/main.rs:8:9: 8:22
+                            let mut _2: bool;                    // in scope 0 at src/main.rs:10:8: 10:25
+                            let mut _3: i32;                     // in scope 0 at src/main.rs:10:8: 10:21
+                            scope 1 {
+                                debug leaf_symbolic => _1;       // in scope 1 at src/main.rs:8:9: 8:22
+                            }
+
+                            bb0: {
+                                _1 = get_int() -> bb1;           // scope 0 at src/main.rs:8:25: 8:34
+                                                                 // mir::Constant
+                                                                 // + span: src/main.rs:8:25: 8:32
+                                                                 // + literal: Const { ty: fn() -> i32 {get_int}, val: Value(Scalar(<ZST>)) }
+                            }
+
+                            bb1: {
+                                _3 = _1;                         // scope 1 at src/main.rs:10:8: 10:21
+                                _2 = Gt(move _3, const 5_i32);   // scope 1 at src/main.rs:10:8: 10:25
+                                switchInt(move _2) -> [false: bb3, otherwise: bb2]; // scope 1 at src/main.rs:10:8: 10:25
+                            }
+
+                            bb2: {
+                                goto -> bb4;                     // scope 1 at src/main.rs:10:5: 14:6
+                            }
+
+                            bb3: {
+                                goto -> bb4;                     // scope 1 at src/main.rs:10:5: 14:6
+                            }
+
+                            bb4: {
+                                return;                          // scope 0 at src/main.rs:15:2: 15:2
+                            }
+                        }
+
+                    Currently, the solver is only showing that we can set _3 to be 5 in order to go
+                    to bb3. Want to show that we can choose _1 as 5.
+                     */
+
+                    solver.assert(
+                        &discriminant_bool._eq(&Bool::from_bool(solver.get_context(), target)),
+                    );
+
+                    match solver.check() {
+                        SatResult::Sat => {
+                            if target {
+                                println!("Reaching the first branch is possible");
+                            } else {
+                                println!("Reaching the second branch is possible");
+                            }
+
+                            // Note: Must check satisfiability before you can get the model.
+                            if let Some(model) = solver.get_model() {
+                                println!("model: {:?}", model);
+                            } else {
+                                println!("Failed to get model!");
+                            }
+                        }
+                        SatResult::Unsat => {
+                            println!("UNSAT");
+                        }
+                        _ => {
+                            println!("UNKNOWN");
+                        }
+                    }
+
+                    solver.reset()
+                }
+            }
+            AstType::Int(discriminant_int) => {
+                let value_targets = switch_targets
+                    .switch_targets
+                    .iter()
+                    .map(|(value, _target)| *value)
+                    .collect::<Vec<u128>>();
+            }
+            AstType::Float(_) => unreachable!(),
+            AstType::String(_) => unreachable!(),
         }
     }
 
@@ -765,6 +813,10 @@ impl<'ctx> FunctionCallStack<'ctx> {
 
     pub fn current_ctx_mut(&mut self) -> Option<&mut FunctionCallContext<'ctx>> {
         self.stack.last_mut()
+    }
+
+    pub fn current_place_map(&self) -> Option<&PlaceMap<'ctx>> {
+        self.stack.last().map(|ctx| ctx.place_map())
     }
 
     pub fn current_place_map_mut(&mut self) -> Option<&mut PlaceMap<'ctx>> {

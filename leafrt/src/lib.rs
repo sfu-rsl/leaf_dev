@@ -70,19 +70,10 @@ lazy_static! {
 pub fn switch_int(discr: &str, switch_targets: &str) {
     let discr: Operand = discr.try_into().unwrap();
     let switch_targets: SwitchTargets = switch_targets.try_into().unwrap();
-
-    let stack = FUNCTION_CALL_STACK.lock().unwrap();
-
-    fn get_place_from_operand(operand: &Operand) -> &Place {
-        match operand {
-            Operand::Copy(ref p) => p,
-            Operand::Move(ref p) => p,
-            Operand::Constant(_) => panic!("not expected"),
-        }
-    }
-
-    let place = get_place_from_operand(&discr);
+    let mut stack = FUNCTION_CALL_STACK.lock().unwrap();
     println!("[switch_int] discr: {discr:?} switch_targets: {switch_targets:?}, stack: {stack:?}");
+
+    stack.handle_switch_int(&SOLVER, discr, switch_targets);
 }
 
 pub fn ret() {
