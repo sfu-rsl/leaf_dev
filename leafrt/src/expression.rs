@@ -860,7 +860,7 @@ impl SerializedValue {
     build_serialized_value_ty_fns!(i128);
     build_serialized_value_ty_fns!(isize);
 }
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 enum AstType<'ctx> {
     Bool(z3::ast::Bool<'ctx>),
     Int(z3::ast::Int<'ctx>),
@@ -872,7 +872,7 @@ unsafe impl<'a> std::marker::Sync for AstType<'a> {}
 
 unsafe impl<'a> std::marker::Send for AstType<'a> {}
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum Expression<'ctx> {
     Symbolic {
         place: Local,
