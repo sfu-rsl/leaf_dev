@@ -11,9 +11,9 @@ fn main() {
     let leaf_symbolic_x = get_int();
     let leaf_symbolic_y = get_int();
 
-    if a * leaf_symbolic_x + b * leaf_symbolic_y == c {
-        "ax + by == c is satisfied"
-    } else {
+    if a * leaf_symbolic_x + b * leaf_symbolic_y != c {
         "ax + by == c is not satisfied"
+    } else {
+        "ax + by == c is satisfied"
     };
 }

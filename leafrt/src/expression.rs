@@ -328,10 +328,84 @@ impl<'ctx> PlaceMap<'ctx> {
             // Note: Eq, Lt, Le, Ne, Ge, Gt will return 0 or 1, but we have to interpret it as a
             // boolean, since we don't know how to cast booleans into integers with the Z3 crate.
             // Z3 supposedly supports casting / type coercion though.
-            BinOp::Eq => todo!(),
+            BinOp::Eq => match left.ast_type() {
+                AstType::Bool(left_ast) => {
+                    if let AstType::Bool(right_ast) = right.ast_type() {
+                        let result = z3::ast::Bool::new_const(&ctx.0, variable_name);
+                        let formula = result._eq(&left_ast._eq(right_ast));
+                        (AstType::Bool(result), vec![formula], left.ty_kind().clone())
+                    } else {
+                        unreachable!()
+                    }
+                }
+                AstType::String(left_ast) => {
+                    if let AstType::String(right_ast) = right.ast_type() {
+                        let result = z3::ast::Bool::new_const(&ctx.0, variable_name);
+                        let formula = result._eq(&left_ast._eq(right_ast));
+                        (AstType::Bool(result), vec![formula], left.ty_kind().clone())
+                    } else {
+                        unreachable!()
+                    }
+                }
+                AstType::Int(left_ast) => {
+                    if let AstType::Int(right_ast) = right.ast_type() {
+                        let result = z3::ast::Bool::new_const(&ctx.0, variable_name);
+                        let formula = result._eq(&left_ast._eq(right_ast));
+                        (AstType::Bool(result), vec![formula], left.ty_kind().clone())
+                    } else {
+                        unreachable!()
+                    }
+                }
+                AstType::Float { ast: left_ast, .. } => {
+                    if let AstType::Float { ast: right_ast, .. } = right.ast_type() {
+                        let result = z3::ast::Bool::new_const(&ctx.0, variable_name);
+                        let formula = result._eq(&left_ast._eq(right_ast));
+                        (AstType::Bool(result), vec![formula], left.ty_kind().clone())
+                    } else {
+                        unreachable!()
+                    }
+                }
+            },
             BinOp::Lt => todo!(),
             BinOp::Le => todo!(),
-            BinOp::Ne => todo!(),
+            BinOp::Ne => match left.ast_type() {
+                AstType::Bool(left_ast) => {
+                    if let AstType::Bool(right_ast) = right.ast_type() {
+                        let result = z3::ast::Bool::new_const(&ctx.0, variable_name);
+                        let formula = result._eq(&left_ast._eq(right_ast)).not();
+                        (AstType::Bool(result), vec![formula], left.ty_kind().clone())
+                    } else {
+                        unreachable!()
+                    }
+                }
+                AstType::String(left_ast) => {
+                    if let AstType::String(right_ast) = right.ast_type() {
+                        let result = z3::ast::Bool::new_const(&ctx.0, variable_name);
+                        let formula = result._eq(&left_ast._eq(right_ast)).not();
+                        (AstType::Bool(result), vec![formula], left.ty_kind().clone())
+                    } else {
+                        unreachable!()
+                    }
+                }
+                AstType::Int(left_ast) => {
+                    if let AstType::Int(right_ast) = right.ast_type() {
+                        let result = z3::ast::Bool::new_const(&ctx.0, variable_name);
+                        let formula = result._eq(&left_ast._eq(right_ast)).not();
+                        (AstType::Bool(result), vec![formula], left.ty_kind().clone())
+                    } else {
+                        unreachable!()
+                    }
+                }
+                AstType::Float { ast: left_ast, .. } => {
+                    if let AstType::Float { ast: right_ast, .. } = right.ast_type() {
+                        let result = z3::ast::Bool::new_const(&ctx.0, variable_name);
+                        let formula = result._eq(&left_ast._eq(right_ast)).not();
+                        (AstType::Bool(result), vec![formula], left.ty_kind().clone())
+                    } else {
+                        unreachable!()
+                    }
+                }
+            },
             BinOp::Ge => match left.ast_type() {
                 AstType::Bool(_) | AstType::String(_) => unreachable!(),
                 AstType::Int(left_ast) => {
