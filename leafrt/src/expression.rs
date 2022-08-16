@@ -12,7 +12,8 @@ use std::fmt::{Debug, Formatter};
 use std::ops::Rem;
 use std::rc::Rc;
 use std::str::FromStr;
-use z3::ast::{Ast, Bool};
+use z3::ast::{Ast, Bool, Int};
+use leafcommon::ty::IntTy::I32;
 
 /// Contains an insertion result from an [Operand] insert. Since an Operand insert can use Move
 #[derive(Debug, Eq, PartialEq)]
@@ -337,18 +338,28 @@ impl<'ctx> PlaceMap<'ctx> {
         fn_name: Option<&String>,
         destination: &Place,
         rvalue: Rvalue,
-        ty: TyKind,
+        ty: Option<TyKind>,
         debug_info: Option<&DebugInfo>,
         serialized_constant_value: Option<String>,
     ) {
         dbg!(&rvalue);
         let variable_name = generate_variable_name(fn_name, destination, debug_info);
 
-        let (symbolic_type, ast_type) = match &rvalue {
-            Rvalue::Use(operand) => (
-                self.operand_symbolic_type(operand, debug_info),
-                create_ast_based_on_ty(ctx, ty, variable_name.clone(), serialized_constant_value),
-            ),
+        let (symbolic_type, ast_type, ty) = match &rvalue {
+            Rvalue::Use(operand) => {
+                let ty = if let Some(ty) = ty {
+                    ty
+                } else {
+                    let expr = self.expr_from_operand(operand);
+                    expr.ty_kind().clone()
+                };
+
+                (
+                    self.operand_symbolic_type(operand, debug_info),
+                    create_ast_based_on_ty(ctx, ty.clone(), variable_name.clone(), serialized_constant_value),
+                    ty,
+                )
+            },
             Rvalue::Repeat(_, _) => todo!(),
             Rvalue::Ref(_, _) => todo!(),
             Rvalue::ThreadLocalRef => todo!(),
@@ -368,19 +379,19 @@ impl<'ctx> PlaceMap<'ctx> {
                     };
 
                 let ast_type = match b {
-                    BinOp::Add => todo!()/*match left.ast_type() {
+                    BinOp::Add => match left.ast_type() {
                         AstType::Bool(_) | AstType::String(_) => unreachable!(),
-                        AstType::Int(left_ast) => {
-                            if let AstType::Int(right_ast) = right.ast_type() {
+                        AstType::Int(ref left_ast) => {
+                            if let AstType::Int(ref right_ast) = right.ast_type() {
                                 AstType::Int(z3::ast::Int::add(&ctx.0, &[left_ast, right_ast]))
                             } else {
                                 unreachable!()
                             }
                         }
-                        AstType::Float(left_ast) => {
+                        AstType::Float(ref left_ast) => {
                             todo!()
                         }
-                    }*/,
+                    },
                     BinOp::Sub => todo!()/*match left.ast_type() {
                 AstType::Bool(_) | AstType::String(_) => unreachable!(),
                 AstType::Int(left_ast) => {
@@ -463,7 +474,8 @@ impl<'ctx> PlaceMap<'ctx> {
                     BinOp::Offset => todo!(),
                 };
 
-                (symbolic_type, ast_type)
+                // FIXME: Resolve the type
+                (symbolic_type, ast_type, TyKind::Bool)
             },
             Rvalue::CheckedBinaryOp(b, operand_pair) => todo!(),
             Rvalue::NullaryOp(_, _) => todo!(),
@@ -478,6 +490,7 @@ impl<'ctx> PlaceMap<'ctx> {
                     destination.local,
                     Expression::Symbolic {
                         place: destination.local,
+                        ty,
                         ast_type,
                         variable_name,
                     },
@@ -487,6 +500,7 @@ impl<'ctx> PlaceMap<'ctx> {
                 self.map.insert(
                     destination.local,
                     Expression::Rvalue {
+                        ty,
                         ast_type,
                         is_symbolic: symbolic_type.is_symbolic(),
                     },
@@ -598,7 +612,9 @@ impl<'ctx> FunctionCallStack<'ctx> {
                             debug_info.as_ref(),
                         );
 
-                        let ast_type = match last_seen_type.as_ref().unwrap() {
+                        let ty = last_seen_type.as_ref().unwrap();
+
+                        let ast_type = match ty {
                             TyKind::Bool => AstType::Bool(z3::ast::Bool::new_const(
                                 &ctx.0,
                                 variable_name.clone(),
@@ -644,6 +660,7 @@ impl<'ctx> FunctionCallStack<'ctx> {
                             &destination,
                             Expression::Symbolic {
                                 place: destination.local,
+                                ty: ty.clone(),
                                 ast_type,
                                 variable_name,
                             },
@@ -695,7 +712,7 @@ impl<'ctx> FunctionCallStack<'ctx> {
                     fn_name.as_ref(),
                     place,
                     rvalue.clone(),
-                    ty.expect("rvalue should have a type"),
+                    ty,
                     place_and_debug_info.debug_info.as_ref(),
                     serialized_const_value,
                 );
@@ -797,23 +814,34 @@ unsafe impl<'a> std::marker::Send for AstType<'a> {}
 pub enum Expression<'ctx> {
     Symbolic {
         place: Local,
+        ty: TyKind,
         ast_type: AstType<'ctx>,
         variable_name: String,
     },
     ConcreteConstant {
         place: Local,
+        ty: TyKind,
         ast_type: AstType<'ctx>,
         serialized_value: SerializedValue,
     },
     Rvalue {
         ast_type: AstType<'ctx>,
+        ty: TyKind,
         /// Whether any of the nodes inside of [ast_type] is symbolic.
         is_symbolic: bool,
     },
 }
 
 impl<'ctx> Expression<'ctx> {
-    fn ast_type(&self) -> &AstType {
+    fn ty_kind(&self) -> &TyKind {
+        match self {
+            Expression::Symbolic { ty, .. } => ty,
+            Expression::ConcreteConstant { ty, .. } => ty,
+            Expression::Rvalue { ty, .. } => ty,
+        }
+    }
+
+    fn ast_type(&self) -> &AstType<'ctx> {
         match self {
             Expression::Symbolic { ast_type, .. } => ast_type,
             Expression::ConcreteConstant { ast_type, .. } => ast_type,
