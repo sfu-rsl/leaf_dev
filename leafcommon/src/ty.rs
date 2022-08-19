@@ -3,6 +3,8 @@ extern crate rustc_middle;
 use crate::rvalue::{ConstantKind, Operand, Rvalue};
 use rustc_middle::{mir, ty};
 use serde::{Deserialize, Serialize};
+use std::fmt::{Display, Formatter};
+use std::{fmt, result};
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct Ty(TyKind);
@@ -14,6 +16,26 @@ impl Ty {
 
     pub fn kind(&self) -> &TyKind {
         &self.0
+    }
+}
+
+impl Display for Ty {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", serde_json::to_string(&self).unwrap())
+    }
+}
+
+impl TryFrom<&str> for Ty {
+    type Error = serde_json::Error;
+
+    fn try_from(s: &str) -> result::Result<Self, Self::Error> {
+        serde_json::from_str(s)
+    }
+}
+
+impl<'tcx> From<ty::Ty<'tcx>> for Ty {
+    fn from(ty: ty::Ty<'tcx>) -> Ty {
+        Ty(ty.kind().into())
     }
 }
 
@@ -45,14 +67,14 @@ pub enum TyKind {
     Generator,        // Generator(DefId, SubstsRef<'tcx>, Movability)
     GeneratorWitness, // GeneratorWitness(Binder<'tcx, &'tcx List<Ty<'tcx>>>)
     Never,
-    Tuple,       // Tuple(&'tcx List<Ty<'tcx>>)
-    Projection,  // Projection(ProjectionTy<'tcx>)
-    Opaque,      // Opaque(DefId, SubstsRef<'tcx>)
-    Param,       // Param(ParamTy)
-    Bound,       // Bound(DebruijnIndex, BoundTy)
-    Placeholder, //Placeholder(PlaceholderType)
-    Infer,       //Infer(InferTy)
-    Error,       //Error(DelaySpanBugEmitted)
+    Tuple(Vec<Ty>), // Tuple(&'tcx List<Ty<'tcx>>)
+    Projection,     // Projection(ProjectionTy<'tcx>)
+    Opaque,         // Opaque(DefId, SubstsRef<'tcx>)
+    Param,          // Param(ParamTy)
+    Bound,          // Bound(DebruijnIndex, BoundTy)
+    Placeholder,    //Placeholder(PlaceholderType)
+    Infer,          //Infer(InferTy)
+    Error,          //Error(DelaySpanBugEmitted)
 }
 
 impl TryFrom<Operand> for TyKind {
@@ -107,7 +129,10 @@ impl<'tcx> From<&ty::TyKind<'tcx>> for TyKind {
             ty::TyKind::Generator(_, _, _) => TyKind::Generator,
             ty::TyKind::GeneratorWitness(_) => TyKind::GeneratorWitness,
             ty::TyKind::Never => TyKind::Never,
-            ty::TyKind::Tuple(_) => TyKind::Tuple,
+            ty::TyKind::Tuple(ty_list) => {
+                let ty_list: Vec<Ty> = ty_list.iter().map(|ty| ty.into()).collect();
+                TyKind::Tuple(ty_list)
+            }
             ty::TyKind::Projection(_) => TyKind::Projection,
             ty::TyKind::Opaque(_, _) => TyKind::Opaque,
             ty::TyKind::Param(_) => TyKind::Param,

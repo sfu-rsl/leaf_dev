@@ -2,9 +2,10 @@ extern crate rustc_middle;
 extern crate rustc_span;
 
 use crate::{const_separator, preprocessor};
-use leafcommon::{misc, rvalue, switchtargets};
+use leafcommon::{misc, rvalue, switchtargets, ty};
 //use log::debug;
 use leafcommon::misc::{DebugInfo, PlaceAndDebugInfo};
+use rustc_middle::ty::{FnSig, Ty};
 use rustc_middle::{
     middle::exported_symbols,
     mir::{
@@ -13,7 +14,9 @@ use rustc_middle::{
         BasicBlock, Body, Constant, ConstantKind, LocalDecl, LocalDecls, Operand, Place, Promoted,
         Rvalue, SourceInfo, Statement, StatementKind, VarDebugInfo, VarDebugInfoContents,
     },
-    ty::{ConstKind, FloatTy, IntTy, TyCtxt, TyKind, UintTy, Unevaluated, WithOptConstParam},
+    ty::{
+        Binder, ConstKind, FloatTy, IntTy, TyCtxt, TyKind, UintTy, Unevaluated, WithOptConstParam,
+    },
 };
 use rustc_span::def_id::DefId;
 use std::default::Default;
@@ -146,10 +149,55 @@ impl<'tcx> Transformer<'tcx> {
                     fn_span: _,
                 } => {
                     let func_debug_info = self.build_debug_info_function_call(func);
+                    let func_return_type: ty::Ty = {
+                        match func {
+                            Operand::Constant(b) => match b.literal {
+                                ConstantKind::Ty(_) => unreachable!(),
+                                ConstantKind::Val(_, ty) => match ty.kind() {
+                                    TyKind::FnDef(defid, _) => {
+                                        let x: Binder<'_, rustc_middle::ty::FnSig<'_>> =
+                                            self.tcx.fn_sig(defid);
+                                        let x: FnSig = x.skip_binder();
+                                        let ty = x.output();
+                                        let ty: ty::Ty = ty.into();
+                                        ty
+                                    }
+                                    _ => unreachable!(),
+                                },
+                            },
+                            _ => unreachable!(),
+                        }
+                    };
                     let func: rvalue::Operand = func.into();
+                    // TODO: Make this better?
+                    let const_vals = rvalue::OperandConstValueVec(
+                        args.iter()
+                            .map(|arg| {
+                                if let Operand::Constant(c) = arg {
+                                    let mut const_as_str = c.to_string();
+                                    assert!(const_as_str.starts_with("const "));
+                                    for _ in 0.."const ".len() {
+                                        const_as_str.remove(0);
+                                    }
+                                    Some(const_as_str.to_string())
+                                    /*
+                                    use rustc_middle::ty::print::{FmtPrinter, PrettyPrinter};
+                                    let literal = self.tcx.lift(c).unwrap();
+                                    let mut cx = FmtPrinter::new(tcx, Namespace::ValueNS);
+                                    cx.print_alloc_ids = true;
+                                    let cx = cx.pretty_print_const(literal, print_types)?;
+                                    Some(cx.into_buffer())
+                                     */
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect(),
+                    );
                     let args = rvalue::OperandVec(
                         args.iter().map(|arg| rvalue::Operand::from(arg)).collect(),
                     );
+
                     let mir_dest = destination.map(|dest| dest.0);
                     let dest_and_debug_info =
                         self.build_place_and_debug_info(&debug_infos, mir_dest.as_ref());
@@ -161,7 +209,9 @@ impl<'tcx> Transformer<'tcx> {
                         vec![
                             self.build_str(func_debug_info.to_string()),
                             self.build_str(func.to_string()),
+                            self.build_str(func_return_type.to_string()),
                             self.build_str(args.to_string()),
+                            self.build_str(const_vals.to_string()),
                             self.build_str(dest_and_debug_info.to_string()),
                         ],
                     )

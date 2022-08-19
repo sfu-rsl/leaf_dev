@@ -2,7 +2,9 @@
 extern crate lazy_static;
 
 use leafcommon::place::{Local, Place};
-use leafcommon::rvalue::{BinOp, Constant, ConstantKind, Operand, OperandVec, Rvalue};
+use leafcommon::rvalue::{
+    BinOp, Constant, ConstantKind, Operand, OperandConstValueVec, OperandVec, Rvalue,
+};
 use std::borrow::Borrow;
 //use z3_sys::{Z3_config, Z3_context, Z3_solver};
 //use z3::{Config, Context, Solver};
@@ -12,7 +14,7 @@ use leafcommon::switchtargets::SwitchTargets;
 use leafcommon::ty::FloatTy::{F32, F64};
 use leafcommon::ty::IntTy::{Isize, I128, I16, I32, I64, I8};
 use leafcommon::ty::UintTy::{Usize, U128, U16, U32, U64, U8};
-use leafcommon::ty::{IntTy, TyKind};
+use leafcommon::ty::{IntTy, Ty, TyKind};
 use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
 use std::str::FromStr;
@@ -81,19 +83,29 @@ pub fn ret() {
     stack.handle_ret(&CTX);
 }
 
-pub fn call(func_debug_info: &str, func: &str, args: &str, dest_and_debug_info: &str) {
+pub fn call(
+    func_debug_info: &str,
+    func: &str,
+    func_return_type: &str,
+    args: &str,
+    const_arg_values: &str,
+    dest_and_debug_info: &str,
+) {
     let func_debug_info: DebugInfo = func_debug_info.try_into().unwrap();
     let func: Operand = func.try_into().unwrap();
-    let func_return_type: TyKind = func.clone().try_into().unwrap();
+    let func_return_type: Ty = func_return_type.try_into().unwrap();
     let args: OperandVec = args.try_into().unwrap();
+    let const_arg_values: OperandConstValueVec = const_arg_values.try_into().unwrap();
+    assert_eq!(const_arg_values.0.len(), args.0.len());
     let destination_and_debug_info: PlaceAndDebugInfo = dest_and_debug_info.try_into().unwrap();
-    println!("[call] func_debug_info: {func_debug_info:?} func: {func:?} args: {args:?} dest: {destination_and_debug_info:?}");
+    println!("[call] func_debug_info: {func_debug_info:?} func: {func:?} func_return_type: {func_return_type:?} args: {args:?} const_arg_values: {const_arg_values:?} dest: {destination_and_debug_info:?}");
 
-    // handle_place(&destination_and_debug_info, None, Some(func_return_type));
-    FUNCTION_CALL_STACK
-        .lock()
-        .unwrap()
-        .push(func_debug_info, destination_and_debug_info, args)
+    FUNCTION_CALL_STACK.lock().unwrap().handle_fn_call(
+        func_debug_info,
+        func_return_type,
+        destination_and_debug_info,
+        args,
+    )
 }
 
 pub fn assign(place_and_debug_info: &str, rvalue: &str) {

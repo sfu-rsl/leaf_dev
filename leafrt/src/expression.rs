@@ -6,7 +6,7 @@ use leafcommon::place::{Local, Place};
 use leafcommon::rvalue::{BinOp, Constant, ConstantKind, Operand, OperandVec, Rvalue};
 use leafcommon::switchtargets::SwitchTargets;
 use leafcommon::ty::IntTy::I32;
-use leafcommon::ty::{FloatTy, IntTy, TyKind};
+use leafcommon::ty::{FloatTy, IntTy, Ty, TyKind};
 use paste::paste;
 use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
@@ -535,7 +535,7 @@ impl<'ctx> PlaceMap<'ctx> {
             TyKind::Generator => todo!(),
             TyKind::GeneratorWitness => todo!(),
             TyKind::Never => todo!(),
-            TyKind::Tuple => todo!(),
+            TyKind::Tuple(_) => todo!(),
             TyKind::Projection => todo!(),
             TyKind::Opaque => todo!(),
             TyKind::Param => todo!(),
@@ -900,7 +900,7 @@ impl<'ctx> FunctionCallStack<'ctx> {
                             TyKind::Generator => todo!(),
                             TyKind::GeneratorWitness => todo!(),
                             TyKind::Never => todo!(),
-                            TyKind::Tuple => todo!(),
+                            TyKind::Tuple(_) => todo!(),
                             TyKind::Projection => todo!(),
                             TyKind::Opaque => todo!(),
                             TyKind::Param => todo!(),
@@ -974,9 +974,10 @@ impl<'ctx> FunctionCallStack<'ctx> {
         }
     }
 
-    pub fn push(
+    pub fn handle_fn_call(
         &mut self,
         function_debug_info: DebugInfo,
+        func_return_type: Ty,
         return_destination: PlaceAndDebugInfo,
         args: OperandVec,
     ) {
