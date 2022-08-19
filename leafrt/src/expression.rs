@@ -112,11 +112,21 @@ impl<'ctx> PlaceMap<'ctx> {
         let symbolic_type = place_from_operand(operand)
             .and_then(|place| self.map.get(&place.local))
             .map(|expr| match expr.deref() {
-                Expression::Symbolic { .. } => SymbolicType::InvolvesSymbolic { dependencies: vec![Arc::clone(expr)] },
-                Expression::Rvalue { is_symbolic, .. } if *is_symbolic => SymbolicType::InvolvesSymbolic { dependencies: vec![Arc::clone(expr)] },
-                _ => SymbolicType::Concrete { dependencies: vec![Arc::clone(expr)] }
+                Expression::Symbolic { .. } => SymbolicType::InvolvesSymbolic {
+                    dependencies: vec![Arc::clone(expr)],
+                },
+                Expression::Rvalue { is_symbolic, .. } if *is_symbolic => {
+                    SymbolicType::InvolvesSymbolic {
+                        dependencies: vec![Arc::clone(expr)],
+                    }
+                }
+                _ => SymbolicType::Concrete {
+                    dependencies: vec![Arc::clone(expr)],
+                },
             })
-            .unwrap_or_else(|| SymbolicType::Concrete { dependencies: vec![] });
+            .unwrap_or_else(|| SymbolicType::Concrete {
+                dependencies: vec![],
+            });
 
         if !symbolic_type.is_symbolic() {
             if let Some(DebugInfo { name: Some(name) }) = debug_info {
@@ -734,6 +744,26 @@ pub struct FunctionCallStack<'ctx> {
     stack: Vec<FunctionCallContext<'ctx>>,
 }
 
+fn construct_assumptions<'a>(discriminant: &'a Arc<Expression<'a>>) -> Vec<&'a z3::ast::Bool<'a>> {
+    fn add_formulas_recurse<'a>(
+        formulas_list: &mut Vec<&'a z3::ast::Bool<'a>>,
+        dependency: &'a Arc<Expression<'a>>,
+    ) {
+        for formula in &dependency.ast_type_and_formulas().1 {
+            formulas_list.push(formula)
+        }
+
+        if let Expression::Rvalue { dependencies, .. } = &dependency.deref() {
+            for dep in dependencies {
+                add_formulas_recurse(formulas_list, dep);
+            }
+        }
+    }
+    let mut formulas_list = Vec::new();
+    add_formulas_recurse(&mut formulas_list, discriminant);
+    formulas_list
+}
+
 impl<'ctx> FunctionCallStack<'ctx> {
     pub fn new() -> Self {
         // TODO: Detect whether the main function has a return value or not
@@ -765,20 +795,8 @@ impl<'ctx> FunctionCallStack<'ctx> {
             return;
         }
 
-        fn assert_on_deps(solver: &z3::Solver, dependency: &Arc<Expression>) {
-            println!("ASSERTING FOR {:?}", dependency.deref());
-            for formula in &dependency.ast_type_and_formulas().1 {
-                solver.assert(formula)
-            }
-
-            if let Expression::Rvalue { dependencies, ..} = &dependency.deref() {
-                for dep in dependencies {
-                    assert_on_deps(solver, dep);
-                }
-            }
-        }
-
         let ast_expr = discriminant.ast_type();
+        let formulas = construct_assumptions(&discriminant);
         match ast_expr {
             AstType::Bool(discriminant_bool) => {
                 let value_targets = switch_targets
@@ -786,11 +804,12 @@ impl<'ctx> FunctionCallStack<'ctx> {
                     .iter()
                     .map(|(value, _target)| *value == 1);
                 for target in value_targets {
-                    assert_on_deps(solver, &discriminant);
+                    for formula in &formulas {
+                        solver.assert(formula);
+                    }
                     solver.assert(
                         &discriminant_bool._eq(&Bool::from_bool(solver.get_context(), target)),
                     );
-
                     match solver.check() {
                         SatResult::Sat => {
                             println!("Reaching the {} branch is possible", target);
@@ -808,8 +827,7 @@ impl<'ctx> FunctionCallStack<'ctx> {
                             println!("UNKNOWN");
                         }
                     }
-
-                    solver.reset()
+                    solver.reset();
                 }
             }
             AstType::Int(discriminant_int) => {
@@ -818,11 +836,14 @@ impl<'ctx> FunctionCallStack<'ctx> {
                     .iter()
                     .map(|(value, _target)| *value);
                 for target in value_targets {
-                    assert_on_deps(solver, &discriminant);
+                    for formula in &formulas {
+                        solver.assert(formula);
+                    }
                     solver.assert(
-                        &discriminant_int._eq(&Int::from_u64(solver.get_context(), target as u64)),
+                        &discriminant_int._eq(
+                            &Int::from_str(solver.get_context(), &target.to_string()).unwrap(),
+                        ),
                     );
-
                     match solver.check() {
                         SatResult::Sat => {
                             println!("Reaching the {} branch is possible", target);
@@ -840,8 +861,7 @@ impl<'ctx> FunctionCallStack<'ctx> {
                             println!("UNKNOWN");
                         }
                     }
-
-                    solver.reset()
+                    solver.reset();
                 }
             }
             AstType::Float { .. } => todo!(),
@@ -916,7 +936,6 @@ impl<'ctx> FunctionCallStack<'ctx> {
 
                 if let Some(DebugInfo { name: Some(name) }) = debug_info {
                     if name.contains("leaf_symbolic") {
-
                         map_of_parent_caller.insert_expr(
                             &destination,
                             Arc::new(Expression::Symbolic {
@@ -1183,7 +1202,9 @@ impl<'ctx> Expression<'ctx> {
     fn symbolic_type(&self) -> SymbolicType<'ctx> {
         match self {
             Expression::Symbolic { .. } => SymbolicType::ExplicitSymbolic,
-            Expression::ConcreteConstant { .. } => SymbolicType::Concrete { dependencies: vec![] },
+            Expression::ConcreteConstant { .. } => SymbolicType::Concrete {
+                dependencies: vec![],
+            },
             Expression::Rvalue {
                 is_symbolic,
                 dependencies,
