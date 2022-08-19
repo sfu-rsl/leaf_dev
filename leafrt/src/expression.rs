@@ -576,7 +576,7 @@ impl<'ctx> PlaceMap<'ctx> {
                         ctx,
                         ty.clone(),
                         variable_name.clone(),
-                        serialized_constant_value,
+                        serialized_constant_value.clone(),
                         operand,
                     ),
                     ty,
@@ -622,6 +622,17 @@ impl<'ctx> PlaceMap<'ctx> {
                         ty,
                         ast_type_and_formulas,
                         variable_name,
+                    },
+                );
+            }
+            SymbolicType::Concrete if serialized_constant_value.is_some() => {
+                self.insert(
+                    destination,
+                    Expression::ConcreteConstant {
+                        place: destination.local,
+                        ty,
+                        ast_type_and_formulas,
+                        serialized_value: serialized_constant_value.unwrap(),
                     },
                 );
             }
@@ -736,6 +747,10 @@ impl<'ctx> FunctionCallStack<'ctx> {
                     .collect::<Vec<bool>>();
 
                 for target in value_targets {
+                    // TODO: For this formula, only assert the booleans on the values that are used
+                    //  as dependencies
+                    //  e.g., if the Place _5 uses _3 and _4, then we should only assert the booleans
+                    //  for places _3 and _4 and also anything that _3 and _4 depends on.
                     for formula in place_map
                         .map
                         .iter()
@@ -1017,11 +1032,11 @@ macro_rules! build_serialized_value_ty_fns {
     ($t:ty) => {
         paste! {
             pub fn [< from_ $t >](kind: ConstantKind, input: $t) -> Self {
-                SerializedValue(kind, Some(serde_json::to_string(&input).unwrap()))
+                SerializedValue(kind, Some(input.to_string()))
             }
 
             pub fn [< as_ $t >](&self) -> Option<$t> {
-                self.1.as_ref().and_then(|s| serde_json::from_str(&s).ok())
+                self.1.as_ref().and_then(|s| $t::from_str(&s).ok())
             }
         }
     };
@@ -1070,7 +1085,7 @@ pub enum Expression<'ctx> {
         place: Local,
         ty: TyKind,
         ast_type_and_formulas: AstTypeAndFormulas<'ctx>,
-        serialized_value: SerializedValue,
+        serialized_value: String,
     },
     Rvalue {
         ast_type_and_formulas: AstTypeAndFormulas<'ctx>,
