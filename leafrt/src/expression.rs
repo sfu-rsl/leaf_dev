@@ -751,9 +751,7 @@ impl<'ctx> FunctionCallStack<'ctx> {
                 let value_targets = switch_targets
                     .switch_targets
                     .iter()
-                    .map(|(value, _target)| *value == 1)
-                    .collect::<Vec<bool>>();
-
+                    .map(|(value, _target)| *value == 1);
                 for target in value_targets {
                     // TODO: For this formula, only assert the booleans on the values that are used
                     //  as dependencies
@@ -795,8 +793,7 @@ impl<'ctx> FunctionCallStack<'ctx> {
                 let value_targets = switch_targets
                     .switch_targets
                     .iter()
-                    .map(|(value, _target)| *value)
-                    .collect::<Vec<u128>>();
+                    .map(|(value, _target)| *value);
                 for target in value_targets {
                     for formula in place_map
                         .map
@@ -830,8 +827,8 @@ impl<'ctx> FunctionCallStack<'ctx> {
                     solver.reset()
                 }
             }
-            AstType::Float { .. } => unreachable!(),
-            AstType::String(_) => unreachable!(),
+            AstType::Float { .. } => todo!(),
+            AstType::String(_) => todo!(),
         }
     }
 
