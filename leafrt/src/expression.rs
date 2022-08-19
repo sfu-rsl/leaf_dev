@@ -734,9 +734,17 @@ impl<'ctx> FunctionCallStack<'ctx> {
     ) {
         let solver = &solver.0;
         let place_map = self.current_place_map().unwrap();
-        let discriminant = place_map
-            .expr_from_operand(&discriminant)
-            .expect("discriminant present");
+        let discriminant = if let Some(discriminant) = place_map.expr_from_operand(&discriminant) {
+            discriminant
+        } else {
+            println!("Skipping SAT call: missing discriminant place AST node");
+            return;
+        };
+        if !discriminant.symbolic_type().is_symbolic() {
+            println!("Skipping SAT call: discriminant is not symbolic");
+            return;
+        }
+
         let ast_expr = discriminant.ast_type();
         match ast_expr {
             AstType::Bool(discriminant_bool) => {

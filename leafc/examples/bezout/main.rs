@@ -11,6 +11,10 @@ fn main() {
     let leaf_symbolic_x = get_int();
     let leaf_symbolic_y = get_int();
 
+    if a == 3 {
+        "abc";
+    }
+
     if a * leaf_symbolic_x + b * leaf_symbolic_y != c {
         "ax + by == c is not satisfied"
     } else {
