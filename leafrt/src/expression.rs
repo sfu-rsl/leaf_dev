@@ -992,7 +992,12 @@ impl<'ctx> FunctionCallStack<'ctx> {
         }
 
         let level = self.stack.len();
-        if return_destination.place.is_some() {
+        // When a Rust function returns nothing, it actually returns the unit, ()---an empty tuple.
+        let is_unit_return = match func_return_type.kind() {
+            TyKind::Tuple(type_vec) => type_vec.is_empty(),
+            _ => false,
+        };
+        if return_destination.place.is_some() && !is_unit_return {
             self.stack.push(FunctionCallContext::WithReturn {
                 function_name: function_debug_info.name,
                 level,
