@@ -8,12 +8,12 @@ use leafcommon::switchtargets::SwitchTargets;
 use leafcommon::ty::IntTy::I32;
 use leafcommon::ty::{FloatTy, IntTy, Ty, TyKind};
 use paste::paste;
-use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
 use std::env::var;
 use std::fmt::{Debug, Formatter};
 use std::ops::{Deref, Rem};
 use std::rc::Rc;
+use std::slice::Iter;
 use std::str::FromStr;
 use std::sync::Arc;
 use z3::ast::{Ast, Bool, Int};
@@ -45,18 +45,22 @@ impl InsertResult {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Copy, Clone)]
-enum SymbolicType {
+#[derive(Debug, Clone)]
+enum SymbolicType<'ctx> {
     ExplicitSymbolic,
-    InvolvesSymbolic,
-    Concrete,
+    InvolvesSymbolic {
+        dependencies: Vec<Arc<Expression<'ctx>>>,
+    },
+    Concrete {
+        dependencies: Vec<Arc<Expression<'ctx>>>,
+    },
 }
 
-impl SymbolicType {
+impl<'ctx> SymbolicType<'ctx> {
     fn is_symbolic(&self) -> bool {
         match self {
-            SymbolicType::ExplicitSymbolic | SymbolicType::InvolvesSymbolic => true,
-            SymbolicType::Concrete => false,
+            SymbolicType::ExplicitSymbolic | SymbolicType::InvolvesSymbolic { .. } => true,
+            SymbolicType::Concrete { .. } => false,
         }
     }
 }
@@ -103,14 +107,16 @@ impl<'ctx> PlaceMap<'ctx> {
         &self,
         operand: &Operand,
         debug_info: Option<&DebugInfo>,
-    ) -> SymbolicType {
-        let place = place_from_operand(operand);
+    ) -> SymbolicType<'ctx> {
         // See if the Rvalue refers to an existing place
-        let mut symbolic_type = place.map_or(SymbolicType::Concrete, |place| {
-            self.map
-                .get(&place.local)
-                .map_or(SymbolicType::Concrete, |expr| expr.symbolic_type())
-        });
+        let symbolic_type = place_from_operand(operand)
+            .and_then(|place| self.map.get(&place.local))
+            .map(|expr| match expr.deref() {
+                Expression::Symbolic { .. } => SymbolicType::InvolvesSymbolic { dependencies: vec![Arc::clone(expr)] },
+                Expression::Rvalue { is_symbolic, .. } if *is_symbolic => SymbolicType::InvolvesSymbolic { dependencies: vec![Arc::clone(expr)] },
+                _ => SymbolicType::Concrete { dependencies: vec![Arc::clone(expr)] }
+            })
+            .unwrap_or_else(|| SymbolicType::Concrete { dependencies: vec![] });
 
         if !symbolic_type.is_symbolic() {
             if let Some(DebugInfo { name: Some(name) }) = debug_info {
@@ -141,16 +147,17 @@ impl<'ctx> PlaceMap<'ctx> {
         debug_info: Option<&DebugInfo>,
         bin_op: &BinOp,
         operand_pair: &Box<(Operand, Operand)>,
-    ) -> (SymbolicType, AstTypeAndFormulas<'ctx>, TyKind) {
+    ) -> (SymbolicType<'ctx>, AstTypeAndFormulas<'ctx>, TyKind) {
         let (left, right) = &**operand_pair;
         let left = self.expr_from_operand(left).expect("present");
         let right = self.expr_from_operand(right).expect("present");
 
         let symbolic_type = {
-            if left.symbolic_type().is_symbolic() || right.symbolic_type().is_symbolic() {
-                SymbolicType::InvolvesSymbolic
+            let dependencies = vec![Arc::clone(&left), Arc::clone(&right)];
+            if left.is_symbolic() || right.is_symbolic() {
+                SymbolicType::InvolvesSymbolic { dependencies }
             } else {
-                SymbolicType::Concrete
+                SymbolicType::Concrete { dependencies }
             }
         };
 
@@ -625,7 +632,7 @@ impl<'ctx> PlaceMap<'ctx> {
                     },
                 );
             }
-            SymbolicType::Concrete if serialized_constant_value.is_some() => {
+            SymbolicType::Concrete { .. } if serialized_constant_value.is_some() => {
                 self.insert(
                     destination,
                     Expression::ConcreteConstant {
@@ -636,13 +643,27 @@ impl<'ctx> PlaceMap<'ctx> {
                     },
                 );
             }
-            SymbolicType::InvolvesSymbolic | SymbolicType::Concrete => {
+            SymbolicType::InvolvesSymbolic { dependencies } => {
                 self.insert(
                     destination,
                     Expression::Rvalue {
+                        place: destination.local,
                         ty,
                         ast_type_and_formulas,
-                        is_symbolic: symbolic_type.is_symbolic(),
+                        is_symbolic: true,
+                        dependencies,
+                    },
+                );
+            }
+            SymbolicType::Concrete { dependencies } => {
+                self.insert(
+                    destination,
+                    Expression::Rvalue {
+                        place: destination.local,
+                        ty,
+                        ast_type_and_formulas,
+                        is_symbolic: false,
+                        dependencies,
                     },
                 );
             }
@@ -673,8 +694,7 @@ pub enum FunctionCallContext<'ctx> {
         function_name: Option<String>,
         level: usize,
         place_map: PlaceMap<'ctx>,
-        last_seen_type: Option<TyKind>,
-        last_const_val: Option<String>,
+        return_type: Ty,
         destination: PlaceAndDebugInfo,
     },
 }
@@ -740,9 +760,22 @@ impl<'ctx> FunctionCallStack<'ctx> {
             println!("Skipping SAT call: missing discriminant place AST node");
             return;
         };
-        if !discriminant.symbolic_type().is_symbolic() {
+        if !discriminant.is_symbolic() {
             println!("Skipping SAT call: discriminant is not symbolic");
             return;
+        }
+
+        fn assert_on_deps(solver: &z3::Solver, dependency: &Arc<Expression>) {
+            println!("ASSERTING FOR {:?}", dependency.deref());
+            for formula in &dependency.ast_type_and_formulas().1 {
+                solver.assert(formula)
+            }
+
+            if let Expression::Rvalue { dependencies, ..} = &dependency.deref() {
+                for dep in dependencies {
+                    assert_on_deps(solver, dep);
+                }
+            }
         }
 
         let ast_expr = discriminant.ast_type();
@@ -753,17 +786,7 @@ impl<'ctx> FunctionCallStack<'ctx> {
                     .iter()
                     .map(|(value, _target)| *value == 1);
                 for target in value_targets {
-                    // TODO: For this formula, only assert the booleans on the values that are used
-                    //  as dependencies
-                    //  e.g., if the Place _5 uses _3 and _4, then we should only assert the booleans
-                    //  for places _3 and _4 and also anything that _3 and _4 depends on.
-                    for formula in place_map
-                        .map
-                        .iter()
-                        .flat_map(|(_, expr)| &expr.ast_type_and_formulas().1)
-                    {
-                        solver.assert(formula);
-                    }
+                    assert_on_deps(solver, &discriminant);
                     solver.assert(
                         &discriminant_bool._eq(&Bool::from_bool(solver.get_context(), target)),
                     );
@@ -795,13 +818,7 @@ impl<'ctx> FunctionCallStack<'ctx> {
                     .iter()
                     .map(|(value, _target)| *value);
                 for target in value_targets {
-                    for formula in place_map
-                        .map
-                        .iter()
-                        .flat_map(|(_, expr)| &expr.ast_type_and_formulas().1)
-                    {
-                        solver.assert(formula);
-                    }
+                    assert_on_deps(solver, &discriminant);
                     solver.assert(
                         &discriminant_int._eq(&Int::from_u64(solver.get_context(), target as u64)),
                     );
@@ -837,7 +854,7 @@ impl<'ctx> FunctionCallStack<'ctx> {
         if let Some(ref mut context_of_returned_function) = context_of_returned_function {
             if let FunctionCallContext::WithReturn {
                 place_map,
-                last_seen_type,
+                return_type,
                 destination:
                     PlaceAndDebugInfo {
                         place: Some(destination),
@@ -846,132 +863,101 @@ impl<'ctx> FunctionCallStack<'ctx> {
                 ..
             } = context_of_returned_function
             {
-                let fn_name = self
+                let parent_caller_fn_name = self
                     .current_ctx()
                     .and_then(|ctx| ctx.function_name().cloned());
                 let map_of_parent_caller = self.current_place_map_mut().unwrap();
+                let variable_name = generate_variable_name(
+                    parent_caller_fn_name.as_ref(),
+                    destination,
+                    debug_info.as_ref(),
+                );
+                let ast_type = match return_type.kind() {
+                    TyKind::Bool => {
+                        AstType::Bool(z3::ast::Bool::new_const(&ctx.0, variable_name.clone()))
+                    }
+                    TyKind::Char => todo!(),
+                    TyKind::Int(_) | TyKind::Uint(_) => {
+                        AstType::Int(z3::ast::Int::new_const(&ctx.0, variable_name.clone()))
+                    }
+                    TyKind::Float(FloatTy::F32) => AstType::Float {
+                        ast: z3::ast::Float::new_const_float32(&ctx.0, variable_name.clone()),
+                        is_f32: true,
+                    },
+                    TyKind::Float(FloatTy::F64) => AstType::Float {
+                        ast: z3::ast::Float::new_const_double(&ctx.0, variable_name.clone()),
+                        is_f32: false,
+                    },
+                    TyKind::Adt => todo!(),
+                    TyKind::Foreign => todo!(),
+                    TyKind::Str => {
+                        AstType::String(z3::ast::String::new_const(&ctx.0, variable_name.clone()))
+                    }
+                    TyKind::Array => todo!(),
+                    TyKind::Slice => todo!(),
+                    TyKind::RawPtr(_) => todo!(),
+                    TyKind::Ref(_) => todo!(),
+                    TyKind::FnDef => todo!(),
+                    TyKind::FnPtr => todo!(),
+                    TyKind::Dynamic => todo!(),
+                    TyKind::Closure => todo!(),
+                    TyKind::Generator => todo!(),
+                    TyKind::GeneratorWitness => todo!(),
+                    TyKind::Never => todo!(),
+                    TyKind::Tuple(_) => todo!(),
+                    TyKind::Projection => todo!(),
+                    TyKind::Opaque => todo!(),
+                    TyKind::Param => todo!(),
+                    TyKind::Bound => todo!(),
+                    TyKind::Placeholder => todo!(),
+                    TyKind::Infer => todo!(),
+                    TyKind::Error => todo!(),
+                };
+
                 if let Some(DebugInfo { name: Some(name) }) = debug_info {
                     if name.contains("leaf_symbolic") {
-                        let variable_name = generate_variable_name(
-                            fn_name.as_ref(),
-                            destination,
-                            debug_info.as_ref(),
-                        );
-
-                        let ty = last_seen_type.as_ref().unwrap();
-
-                        let ast_type = match ty {
-                            TyKind::Bool => AstType::Bool(z3::ast::Bool::new_const(
-                                &ctx.0,
-                                variable_name.clone(),
-                            )),
-                            TyKind::Char => todo!(),
-                            TyKind::Int(_) | TyKind::Uint(_) => {
-                                AstType::Int(z3::ast::Int::new_const(&ctx.0, variable_name.clone()))
-                            }
-                            TyKind::Float(FloatTy::F32) => AstType::Float {
-                                ast: z3::ast::Float::new_const_float32(
-                                    &ctx.0,
-                                    variable_name.clone(),
-                                ),
-                                is_f32: true,
-                            },
-                            TyKind::Float(FloatTy::F64) => AstType::Float {
-                                ast: z3::ast::Float::new_const_double(
-                                    &ctx.0,
-                                    variable_name.clone(),
-                                ),
-                                is_f32: false,
-                            },
-                            TyKind::Adt => todo!(),
-                            TyKind::Foreign => todo!(),
-                            TyKind::Str => AstType::String(z3::ast::String::new_const(
-                                &ctx.0,
-                                variable_name.clone(),
-                            )),
-                            TyKind::Array => todo!(),
-                            TyKind::Slice => todo!(),
-                            TyKind::RawPtr(_) => todo!(),
-                            TyKind::Ref(_) => todo!(),
-                            TyKind::FnDef => todo!(),
-                            TyKind::FnPtr => todo!(),
-                            TyKind::Dynamic => todo!(),
-                            TyKind::Closure => todo!(),
-                            TyKind::Generator => todo!(),
-                            TyKind::GeneratorWitness => todo!(),
-                            TyKind::Never => todo!(),
-                            TyKind::Tuple(_) => todo!(),
-                            TyKind::Projection => todo!(),
-                            TyKind::Opaque => todo!(),
-                            TyKind::Param => todo!(),
-                            TyKind::Bound => todo!(),
-                            TyKind::Placeholder => todo!(),
-                            TyKind::Infer => todo!(),
-                            TyKind::Error => todo!(),
-                        };
 
                         map_of_parent_caller.insert_expr(
                             &destination,
                             Arc::new(Expression::Symbolic {
                                 place: destination.local,
-                                ty: ty.clone(),
+                                ty: return_type.kind().clone(),
                                 ast_type_and_formulas: AstTypeAndFormulas(ast_type, vec![]),
                                 variable_name,
                             }),
                         );
+                        return;
                     }
-                } else {
-                    static LOCAL_PLACE: Local = Local { private: 0 };
-                    let expr_from_returned_function = place_map.map.remove(&LOCAL_PLACE).unwrap();
-                    map_of_parent_caller.insert_expr(&destination, expr_from_returned_function);
                 }
+
+                static LOCAL_PLACE: Local = Local { private: 0 };
+                // Moving ownership. Any expressions constructed inside of the function are now
+                // moved to the return destination.
+                let expr_from_returned_function = place_map.map.remove(&LOCAL_PLACE).unwrap();
+
+                let formulas = vec![match (&ast_type, expr_from_returned_function.ast_type()) {
+                    (AstType::Bool(left), AstType::Bool(right)) => left._eq(right),
+                    (AstType::Int(left), AstType::Int(right)) => left._eq(right),
+                    (AstType::Float { ast: left, .. }, AstType::Float { ast: right, .. }) => {
+                        left._eq(right)
+                    }
+                    (AstType::String(left), AstType::String(right)) => left._eq(right),
+                    _ => unreachable!(),
+                }];
+                let destination_expr = Expression::Rvalue {
+                    place: destination.local,
+                    ty: return_type.kind().clone(),
+                    is_symbolic: expr_from_returned_function.is_symbolic(),
+                    ast_type_and_formulas: AstTypeAndFormulas(ast_type, formulas),
+                    dependencies: vec![Arc::clone(&expr_from_returned_function)],
+                };
+                map_of_parent_caller.insert_expr(&destination, Arc::new(destination_expr));
             }
         }
         println!(
             "[ret] latest_ctx = {:?}, FUNCTION_CALL_STACK = {:?}",
             context_of_returned_function, self,
         );
-    }
-
-    pub fn handle_assign(
-        &mut self,
-        context: &'ctx Context,
-        place_and_debug_info: &PlaceAndDebugInfo,
-        rvalue: Option<&Rvalue>,
-        ty: Option<TyKind>,
-        serialized_const_value: Option<String>,
-    ) {
-        // If the local variable is _0, then it's the return value.
-        if let Some(FunctionCallContext::WithReturn {
-            last_seen_type,
-            last_const_val,
-            ..
-        }) = self.current_ctx_mut()
-        {
-            *last_seen_type = ty.clone();
-            if let Some(ref const_val) = serialized_const_value {
-                *last_const_val = Some(const_val.clone());
-            }
-        }
-
-        let fn_name = self
-            .current_ctx()
-            .and_then(|ctx| ctx.function_name().cloned());
-        let place_map = self.current_place_map_mut().unwrap();
-
-        if let Some(place) = &place_and_debug_info.place {
-            if let Some(rvalue) = rvalue {
-                place_map.insert_rvalue(
-                    context,
-                    fn_name.as_ref(),
-                    place,
-                    rvalue.clone(),
-                    ty,
-                    place_and_debug_info.debug_info.as_ref(),
-                    serialized_const_value,
-                );
-            }
-        }
     }
 
     pub fn handle_fn_call(
@@ -1002,8 +988,7 @@ impl<'ctx> FunctionCallStack<'ctx> {
                 function_name: function_debug_info.name,
                 level,
                 place_map,
-                last_seen_type: None,
-                last_const_val: None,
+                return_type: func_return_type,
                 destination: return_destination,
             })
         } else {
@@ -1012,6 +997,34 @@ impl<'ctx> FunctionCallStack<'ctx> {
                 level,
                 place_map,
             })
+        }
+    }
+
+    pub fn handle_assign(
+        &mut self,
+        context: &'ctx Context,
+        place_and_debug_info: &PlaceAndDebugInfo,
+        rvalue: Option<&Rvalue>,
+        ty: Option<TyKind>,
+        serialized_const_value: Option<String>,
+    ) {
+        let fn_name = self
+            .current_ctx()
+            .and_then(|ctx| ctx.function_name().cloned());
+        let place_map = self.current_place_map_mut().unwrap();
+
+        if let Some(place) = &place_and_debug_info.place {
+            if let Some(rvalue) = rvalue {
+                place_map.insert_rvalue(
+                    context,
+                    fn_name.as_ref(),
+                    place,
+                    rvalue.clone(),
+                    ty,
+                    place_and_debug_info.debug_info.as_ref(),
+                    serialized_const_value,
+                );
+            }
         }
     }
 
@@ -1099,14 +1112,24 @@ pub enum Expression<'ctx> {
         serialized_value: String,
     },
     Rvalue {
+        place: Local,
         ast_type_and_formulas: AstTypeAndFormulas<'ctx>,
         ty: TyKind,
         /// Whether any of the nodes inside of [ast_type] is symbolic.
         is_symbolic: bool,
+        dependencies: Vec<Arc<Expression<'ctx>>>,
     },
 }
 
 impl<'ctx> Expression<'ctx> {
+    fn local_place(&self) -> &Local {
+        match self {
+            Expression::Symbolic { place, .. }
+            | Expression::ConcreteConstant { place, .. }
+            | Expression::Rvalue { place, .. } => place,
+        }
+    }
+
     fn ty_kind(&self) -> &TyKind {
         match self {
             Expression::Symbolic { ty, .. } => ty,
@@ -1149,15 +1172,31 @@ impl<'ctx> Expression<'ctx> {
         }
     }
 
-    fn symbolic_type(&self) -> SymbolicType {
+    fn is_symbolic(&self) -> bool {
+        match self {
+            Expression::Symbolic { .. } => true,
+            Expression::ConcreteConstant { .. } => false,
+            Expression::Rvalue { is_symbolic, .. } => *is_symbolic,
+        }
+    }
+
+    fn symbolic_type(&self) -> SymbolicType<'ctx> {
         match self {
             Expression::Symbolic { .. } => SymbolicType::ExplicitSymbolic,
-            Expression::ConcreteConstant { .. } => SymbolicType::Concrete,
-            Expression::Rvalue { is_symbolic, .. } => {
+            Expression::ConcreteConstant { .. } => SymbolicType::Concrete { dependencies: vec![] },
+            Expression::Rvalue {
+                is_symbolic,
+                dependencies,
+                ..
+            } => {
                 if *is_symbolic {
-                    SymbolicType::InvolvesSymbolic
+                    SymbolicType::InvolvesSymbolic {
+                        dependencies: dependencies.clone(),
+                    }
                 } else {
-                    SymbolicType::Concrete
+                    SymbolicType::Concrete {
+                        dependencies: dependencies.clone(),
+                    }
                 }
             }
         }
