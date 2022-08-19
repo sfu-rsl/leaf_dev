@@ -8,12 +8,14 @@ use leafcommon::switchtargets::SwitchTargets;
 use leafcommon::ty::IntTy::I32;
 use leafcommon::ty::{FloatTy, IntTy, TyKind};
 use paste::paste;
+use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
 use std::env::var;
 use std::fmt::{Debug, Formatter};
-use std::ops::Rem;
+use std::ops::{Deref, Rem};
 use std::rc::Rc;
 use std::str::FromStr;
+use std::sync::Arc;
 use z3::ast::{Ast, Bool, Int};
 use z3::SatResult;
 
@@ -79,7 +81,7 @@ fn generate_variable_name(
 
 #[derive(Debug, Default)]
 pub struct PlaceMap<'ctx> {
-    pub(crate) map: HashMap<Local, Expression<'ctx>>,
+    pub(crate) map: HashMap<Local, Arc<Expression<'ctx>>>,
 }
 
 fn place_from_operand(operand: &Operand) -> Option<&Place> {
@@ -121,28 +123,14 @@ impl<'ctx> PlaceMap<'ctx> {
         return symbolic_type;
     }
 
-    pub fn create_switch_int_formula(
-        &self,
-        solver: Solver,
-        place: &Place,
-        switch_targets: SwitchTargets,
-    ) -> Result<z3::ast::Int, ()> {
-        let expression = self.map.get(&place.local).ok_or(())?;
-        match expression {
-            Expression::Symbolic { .. } => {}
-            Expression::ConcreteConstant { .. } => {}
-            Expression::Rvalue { .. } => {}
-        }
-        Err(())
-    }
-
-    pub fn insert_expr(&mut self, destination: &Place, expr: Expression<'ctx>) {
+    pub fn insert_expr(&mut self, destination: &Place, expr: Arc<Expression<'ctx>>) {
         self.map.insert(destination.local, expr);
     }
 
-    pub fn expr_from_operand<'a>(&self, operand: &'a Operand) -> Option<&Expression<'ctx>> {
+    pub fn expr_from_operand<'a>(&self, operand: &'a Operand) -> Option<Arc<Expression<'ctx>>> {
         let place = place_from_operand(operand).unwrap();
-        self.map.get(&place.local)
+        let expr = self.map.get(&place.local)?;
+        Some(Arc::clone(expr))
     }
 
     fn handle_binary_op_ast_creation(
@@ -475,13 +463,17 @@ impl<'ctx> PlaceMap<'ctx> {
                         &ctx.0,
                         bool::from_str(&serialized_const_value).unwrap(),
                     ))]
-                } else if let Some(AstType::Bool(operand_ast)) = self
-                    .expr_from_operand(source_operand)
-                    .map(|expr| expr.ast_type())
-                {
-                    vec![ast._eq(operand_ast)]
                 } else {
-                    vec![]
+                    let expr: Option<Arc<Expression>> = self.expr_from_operand(source_operand);
+                    if let Some(expr) = expr {
+                        if let AstType::Bool(operand_ast) = expr.ast_type() {
+                            vec![ast._eq(operand_ast)]
+                        } else {
+                            vec![]
+                        }
+                    } else {
+                        vec![]
+                    }
                 };
 
                 AstTypeAndFormulas(AstType::Bool(ast), formulas)
@@ -492,13 +484,17 @@ impl<'ctx> PlaceMap<'ctx> {
 
                 let formulas = if let Some(serialized_const_value) = serialized_const_value {
                     vec![ast._eq(&z3::ast::Int::from_str(&ctx.0, &serialized_const_value).unwrap())]
-                } else if let Some(AstType::Int(operand_ast)) = self
-                    .expr_from_operand(source_operand)
-                    .map(|expr| expr.ast_type())
-                {
-                    vec![ast._eq(operand_ast)]
                 } else {
-                    vec![]
+                    let expr: Option<Arc<Expression>> = self.expr_from_operand(source_operand);
+                    if let Some(expr) = expr {
+                        if let AstType::Int(operand_ast) = expr.ast_type() {
+                            vec![ast._eq(operand_ast)]
+                        } else {
+                            vec![]
+                        }
+                    } else {
+                        vec![]
+                    }
                 };
 
                 AstTypeAndFormulas(AstType::Int(ast), formulas)
@@ -513,13 +509,17 @@ impl<'ctx> PlaceMap<'ctx> {
                 let formulas = if let Some(serialized_const_value) = serialized_const_value {
                     vec![ast
                         ._eq(&z3::ast::String::from_str(&ctx.0, &serialized_const_value).unwrap())]
-                } else if let Some(AstType::String(operand_ast)) = self
-                    .expr_from_operand(source_operand)
-                    .map(|expr| expr.ast_type())
-                {
-                    vec![ast._eq(operand_ast)]
                 } else {
-                    vec![]
+                    let expr: Option<Arc<Expression>> = self.expr_from_operand(source_operand);
+                    if let Some(expr) = expr {
+                        if let AstType::String(operand_ast) = expr.ast_type() {
+                            vec![ast._eq(operand_ast)]
+                        } else {
+                            vec![]
+                        }
+                    } else {
+                        vec![]
+                    }
                 };
 
                 AstTypeAndFormulas(AstType::String(ast), formulas)
@@ -615,8 +615,8 @@ impl<'ctx> PlaceMap<'ctx> {
         };
         match symbolic_type {
             SymbolicType::ExplicitSymbolic => {
-                self.map.insert(
-                    destination.local,
+                self.insert(
+                    destination,
                     Expression::Symbolic {
                         place: destination.local,
                         ty,
@@ -626,8 +626,8 @@ impl<'ctx> PlaceMap<'ctx> {
                 );
             }
             SymbolicType::InvolvesSymbolic | SymbolicType::Concrete => {
-                self.map.insert(
-                    destination.local,
+                self.insert(
+                    destination,
                     Expression::Rvalue {
                         ty,
                         ast_type_and_formulas,
@@ -638,15 +638,15 @@ impl<'ctx> PlaceMap<'ctx> {
         };
     }
 
-    fn get(&'ctx self, place: &Place) -> Option<&'ctx Expression<'ctx>> {
-        self.map.get(&place.local)
+    fn insert(&mut self, place: &Place, expression: Expression<'ctx>) {
+        self.map.insert(place.local, Arc::new(expression));
     }
 
     fn contains(&self, place: &Place) -> bool {
         self.map.contains_key(&place.local)
     }
 
-    fn remove(&mut self, place: &Place) -> Option<Expression> {
+    fn remove(&mut self, place: &Place) -> Option<Arc<Expression>> {
         self.map.remove(&place.local)
     }
 }
@@ -892,12 +892,12 @@ impl<'ctx> FunctionCallStack<'ctx> {
 
                         map_of_parent_caller.insert_expr(
                             &destination,
-                            Expression::Symbolic {
+                            Arc::new(Expression::Symbolic {
                                 place: destination.local,
                                 ty: ty.clone(),
                                 ast_type_and_formulas: AstTypeAndFormulas(ast_type, vec![]),
                                 variable_name,
-                            },
+                            }),
                         );
                     }
                 } else {
