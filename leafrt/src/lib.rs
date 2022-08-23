@@ -101,10 +101,12 @@ pub fn call(
     println!("[call] func_debug_info: {func_debug_info:?} func: {func:?} func_return_type: {func_return_type:?} args: {args:?} const_arg_values: {const_arg_values:?} dest: {destination_and_debug_info:?}");
 
     FUNCTION_CALL_STACK.lock().unwrap().handle_fn_call(
+        &CTX,
         func_debug_info,
         func_return_type,
         destination_and_debug_info,
         args,
+        const_arg_values,
     )
 }
 

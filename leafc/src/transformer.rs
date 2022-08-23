@@ -179,6 +179,17 @@ impl<'tcx> Transformer<'tcx> {
                                     for _ in 0.."const ".len() {
                                         const_as_str.remove(0);
                                     }
+
+                                    let underscore_suffix_idx = const_as_str.rfind("_").unwrap();
+                                    log::debug!(
+                                        "Removing suffix {} from constant value {}",
+                                        &const_as_str[underscore_suffix_idx..],
+                                        &const_as_str
+                                    );
+                                    let substr_size = const_as_str.len() - underscore_suffix_idx;
+                                    for _ in 0..substr_size {
+                                        const_as_str.pop();
+                                    }
                                     Some(const_as_str.to_string())
                                     /*
                                     use rustc_middle::ty::print::{FmtPrinter, PrettyPrinter};

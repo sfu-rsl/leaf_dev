@@ -162,6 +162,15 @@ pub enum ConstantKind {
     Val(ConstValue, Ty),
 }
 
+impl ConstantKind {
+    pub fn get_ty(&self) -> &Ty {
+        match self {
+            ConstantKind::Ty(cons) => &cons.ty,
+            ConstantKind::Val(_, ty) => &ty,
+        }
+    }
+}
+
 impl<'tcx> From<&mir::ConstantKind<'tcx>> for ConstantKind {
     fn from(t: &mir::ConstantKind<'tcx>) -> ConstantKind {
         match t {

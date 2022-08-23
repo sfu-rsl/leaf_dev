@@ -3,7 +3,9 @@ use crate::{Context, Solver};
 use leafcommon::consts::Const;
 use leafcommon::misc::{DebugInfo, PlaceAndDebugInfo};
 use leafcommon::place::{Local, Place};
-use leafcommon::rvalue::{BinOp, Constant, ConstantKind, Operand, OperandVec, Rvalue};
+use leafcommon::rvalue::{
+    BinOp, Constant, ConstantKind, Operand, OperandConstValueVec, OperandVec, Rvalue,
+};
 use leafcommon::switchtargets::SwitchTargets;
 use leafcommon::ty::IntTy::I32;
 use leafcommon::ty::{FloatTy, IntTy, Ty, TyKind};
@@ -83,6 +85,7 @@ fn generate_variable_name(
     }
 }
 
+/// Maps MIR `Place`s to Z3 expressions.
 #[derive(Debug, Default)]
 pub struct PlaceMap<'ctx> {
     pub(crate) map: HashMap<Local, Arc<Expression<'ctx>>>,
@@ -139,12 +142,16 @@ impl<'ctx> PlaceMap<'ctx> {
         return symbolic_type;
     }
 
+    pub fn insert_expr_from_local(&mut self, destination: Local, expr: Arc<Expression<'ctx>>) {
+        self.map.insert(destination, expr);
+    }
+
     pub fn insert_expr(&mut self, destination: &Place, expr: Arc<Expression<'ctx>>) {
         self.map.insert(destination.local, expr);
     }
 
     pub fn expr_from_operand<'a>(&self, operand: &'a Operand) -> Option<Arc<Expression<'ctx>>> {
-        let place = place_from_operand(operand).unwrap();
+        let place = place_from_operand(operand)?;
         let expr = self.map.get(&place.local)?;
         Some(Arc::clone(expr))
     }
@@ -462,7 +469,7 @@ impl<'ctx> PlaceMap<'ctx> {
         )
     }
 
-    fn create_ast_based_on_ty(
+    pub fn create_ast_based_on_ty(
         &self,
         ctx: &'ctx Context,
         ty: TyKind,
@@ -563,6 +570,51 @@ impl<'ctx> PlaceMap<'ctx> {
         }
     }
 
+    pub fn create_type_ast_and_formulas_for_rvalue_use(
+        &self,
+        context: &'ctx Context,
+        variable_name: String,
+        operand: &Operand,
+        serialized_const_value: Option<String>,
+        ty: Option<TyKind>,
+        debug_info: Option<&DebugInfo>,
+    ) -> (SymbolicType<'ctx>, AstTypeAndFormulas<'ctx>, TyKind) {
+        let ty = if let Some(ty) = ty {
+            ty
+        } else {
+            let expr = self.expr_from_operand(operand);
+
+            if let Some(expr) = expr {
+                expr.ty_kind().clone()
+            } else {
+                if let Operand::Constant(b) = operand {
+                    let constant = &**b;
+                    constant.literal.get_ty().kind().clone()
+                } else {
+                    dbg!(&self);
+                    panic!(
+                        "missing type means operand {:?} should've been from existing place",
+                        operand
+                    )
+                }
+            }
+        };
+
+        // TODO: Handle Operand::Move by removing from the previous place and adding that expr
+        //  as just the dependency.
+        (
+            self.operand_symbolic_type(operand, debug_info),
+            self.create_ast_based_on_ty(
+                context,
+                ty.clone(),
+                variable_name,
+                serialized_const_value,
+                operand,
+            ),
+            ty,
+        )
+    }
+
     pub fn insert_rvalue(
         &mut self,
         ctx: &'ctx Context,
@@ -577,28 +629,14 @@ impl<'ctx> PlaceMap<'ctx> {
         let variable_name = generate_variable_name(fn_name, destination, debug_info);
 
         let (symbolic_type, ast_type_and_formulas, ty) = match &rvalue {
-            Rvalue::Use(operand) => {
-                let ty = if let Some(ty) = ty {
-                    ty
-                } else {
-                    let expr = self
-                        .expr_from_operand(operand)
-                        .expect("missing type means copy/clone of existing value");
-                    expr.ty_kind().clone()
-                };
-
-                (
-                    self.operand_symbolic_type(operand, debug_info),
-                    self.create_ast_based_on_ty(
-                        ctx,
-                        ty.clone(),
-                        variable_name.clone(),
-                        serialized_constant_value.clone(),
-                        operand,
-                    ),
-                    ty,
-                )
-            }
+            Rvalue::Use(operand) => self.create_type_ast_and_formulas_for_rvalue_use(
+                ctx,
+                variable_name.clone(),
+                operand,
+                serialized_constant_value.as_ref().cloned(),
+                ty,
+                debug_info,
+            ),
             Rvalue::Repeat(_, _) => todo!(),
             Rvalue::Ref(_, _) => todo!(),
             Rvalue::ThreadLocalRef => todo!(),
@@ -630,6 +668,25 @@ impl<'ctx> PlaceMap<'ctx> {
             Rvalue::Aggregate(_, _) => todo!(),
             Rvalue::ShallowInitBox(_, _) => todo!(),
         };
+        self.insert_expr_with_symbolic_type(
+            destination,
+            symbolic_type,
+            ast_type_and_formulas,
+            ty,
+            serialized_constant_value,
+            variable_name,
+        );
+    }
+
+    pub fn insert_expr_with_symbolic_type(
+        &mut self,
+        destination: &Place,
+        symbolic_type: SymbolicType<'ctx>,
+        ast_type_and_formulas: AstTypeAndFormulas<'ctx>,
+        ty: TyKind,
+        serialized_constant_value: Option<String>,
+        variable_name: String,
+    ) {
         match symbolic_type {
             SymbolicType::ExplicitSymbolic => {
                 self.insert(
@@ -981,19 +1038,77 @@ impl<'ctx> FunctionCallStack<'ctx> {
 
     pub fn handle_fn_call(
         &mut self,
+        context: &'ctx Context,
         function_debug_info: DebugInfo,
         func_return_type: Ty,
         return_destination: PlaceAndDebugInfo,
         args: OperandVec,
+        const_arg_values: OperandConstValueVec,
     ) {
-        let place_map = PlaceMap::new();
-        for arg in args.0 {
-            match arg {
-                Operand::Copy(p) | Operand::Move(p) => {
-                    // TODO: For function calls arguments, get the Rvalue
-                }
-                _ => {}
-            }
+        let mut place_map = PlaceMap::new();
+        let parent_caller_place_map = self
+            .current_place_map_mut()
+            .expect("parent should have PlaceMap");
+
+        for (idx, arg) in args.0.iter().enumerate() {
+            let place = Place {
+                local: Local {
+                    private: (idx + 1) as u32,
+                },
+                projection: vec![],
+            };
+
+            let const_value = const_arg_values
+                .0
+                .get(idx)
+                .expect("list have same size")
+                .as_ref()
+                .cloned();
+            // dbg!(&rvalue);
+            let variable_name =
+                generate_variable_name(function_debug_info.name.as_ref(), &place, None);
+
+            let (symbolic_type, ast_and_formulas, ty) = parent_caller_place_map
+                .create_type_ast_and_formulas_for_rvalue_use(
+                    context,
+                    variable_name.clone(),
+                    arg,
+                    const_value.as_ref().cloned(),
+                    None,
+                    None,
+                );
+
+            place_map.insert_expr_with_symbolic_type(
+                &place,
+                symbolic_type,
+                ast_and_formulas,
+                ty,
+                const_value,
+                variable_name,
+            )
+            /*
+            let (symbolic_type, ast_type_and_formulas, ty) = {
+                let const_value = const_arg_values.0
+                    .get(idx)
+                    .expect("list have same size")
+                    .as_ref()
+                    .cloned();
+
+                parent_caller_place_map.create_type_ast_and_formulas_for_rvalue_use(
+                    context,
+                    generate_variable_name(
+                        function_debug_info.name.as_ref(),
+                        &place,
+                        None
+                    ),
+                    arg,
+                    const_value,
+                    None,
+                    None
+                )
+            };
+
+             */
         }
 
         let level = self.stack.len();
