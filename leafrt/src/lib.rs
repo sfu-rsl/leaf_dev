@@ -15,10 +15,12 @@ use leafcommon::ty::FloatTy::{F32, F64};
 use leafcommon::ty::IntTy::{Isize, I128, I16, I32, I64, I8};
 use leafcommon::ty::UintTy::{Usize, U128, U16, U32, U64, U8};
 use leafcommon::ty::{IntTy, Ty, TyKind};
+use paste::paste;
 use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::Mutex;
+use std::{concat, stringify};
 use z3;
 use z3::ast::{Ast, Int};
 use z3::SatResult;
@@ -73,14 +75,14 @@ pub fn switch_int(basic_block_idx: u32, discr: &str, switch_targets: &str) {
     let discr: Operand = discr.try_into().unwrap();
     let switch_targets: SwitchTargets = switch_targets.try_into().unwrap();
     let mut stack = FUNCTION_CALL_STACK.lock().unwrap();
-    println!("[switch_int] discr: {discr:?} switch_targets: {switch_targets:?}, stack: {stack:?}");
+    println!("[switch_int] bb{basic_block_idx:?}, discr: {discr:?} switch_targets: {switch_targets:?}, stack: {stack:?}");
 
     stack.handle_switch_int(&SOLVER, discr, switch_targets);
 }
 
-pub fn ret() {
+pub fn ret(basic_block_idx: u32) {
     let mut stack = FUNCTION_CALL_STACK.lock().unwrap();
-    stack.handle_ret(&CTX);
+    stack.handle_ret(&CTX, basic_block_idx);
 }
 
 pub fn call(
@@ -99,7 +101,7 @@ pub fn call(
     let const_arg_values: OperandConstValueVec = const_arg_values.try_into().unwrap();
     assert_eq!(const_arg_values.0.len(), args.0.len());
     let destination_and_debug_info: PlaceAndDebugInfo = dest_and_debug_info.try_into().unwrap();
-    println!("[call] func_debug_info: {func_debug_info:?} func: {func:?} func_return_type: {func_return_type:?} args: {args:?} const_arg_values: {const_arg_values:?} dest: {destination_and_debug_info:?}");
+    println!("[call] bb{basic_block_idx:?}, func_debug_info: {func_debug_info:?} func: {func:?} func_return_type: {func_return_type:?} args: {args:?} const_arg_values: {const_arg_values:?} dest: {destination_and_debug_info:?}");
 
     FUNCTION_CALL_STACK.lock().unwrap().handle_fn_call(
         &CTX,
@@ -111,227 +113,62 @@ pub fn call(
     )
 }
 
-pub fn assign(place_and_debug_info: &str, rvalue: &str) {
+pub fn assign(basic_block_idx: u32, place_and_debug_info: &str, rvalue: &str) {
     let place_and_debug_info: PlaceAndDebugInfo = place_and_debug_info.try_into().unwrap();
     let rvalue: Rvalue = rvalue.try_into().unwrap();
-    println!("[assign] {place_and_debug_info:?} rvalue: {rvalue:?}");
+    println!("[assign] bb{basic_block_idx:?}, {place_and_debug_info:?} rvalue: {rvalue:?}");
     let ty: Option<TyKind> = rvalue.clone().try_into().ok();
     handle_place(&place_and_debug_info, Some(&rvalue), ty, None);
 }
 
-pub fn assign_isize(place_and_debug_info: &str, rvalue: &str, constant: isize) {
-    let place_and_debug_info: PlaceAndDebugInfo = place_and_debug_info.try_into().unwrap();
-    let rvalue: Rvalue = rvalue.try_into().unwrap();
-
-    println!("[assign_isize] {place_and_debug_info:?} rvalue: {rvalue:?} constant: {constant:?}");
-    handle_place(
-        &place_and_debug_info,
-        Some(&rvalue),
-        Some(TyKind::Int(Isize)),
-        Some(constant.to_string()),
-    )
+macro_rules! assign_fn {
+    ($t:ty) => {
+        paste! {
+            pub fn [< assign_ $t >](basic_block_idx: u32, place_and_debug_info: &str, rvalue: &str, constant: $t) {
+                let place_and_debug_info: PlaceAndDebugInfo = place_and_debug_info.try_into().unwrap();
+                let rvalue: Rvalue = rvalue.try_into().unwrap();
+                println!(
+                    concat!(
+                        "[assign_",
+                        stringify!($t),
+                        "] bb{}, {:?} rvalue: {:?} constant: {:?}"
+                    ),
+                    basic_block_idx,
+                    place_and_debug_info,
+                    rvalue,
+                    constant
+                );
+                handle_place(
+                    &place_and_debug_info,
+                    Some(&rvalue),
+                    Some(TyKind::[<for_ $t>]()),
+                    Some(constant.to_string()),
+                )
+            }
+        }
+    };
 }
 
-pub fn assign_i8(place_and_debug_info: &str, rvalue: &str, constant: i8) {
+assign_fn!(isize);
+assign_fn!(i8);
+assign_fn!(i16);
+assign_fn!(i32);
+assign_fn!(i64);
+assign_fn!(usize);
+assign_fn!(u8);
+assign_fn!(u16);
+assign_fn!(u32);
+assign_fn!(u64);
+assign_fn!(f32);
+assign_fn!(f64);
+assign_fn!(char);
+assign_fn!(bool);
+
+pub fn assign_str(basic_block_idx: u32, place_and_debug_info: &str, rvalue: &str, constant: &str) {
     let place_and_debug_info: PlaceAndDebugInfo = place_and_debug_info.try_into().unwrap();
     let rvalue: Rvalue = rvalue.try_into().unwrap();
 
-    println!("[assign_i8] {place_and_debug_info:?} rvalue: {rvalue:?} constant: {constant:?}");
-    handle_place(
-        &place_and_debug_info,
-        Some(&rvalue),
-        Some(TyKind::Int(I8)),
-        Some(constant.to_string()),
-    )
-}
-
-pub fn assign_i16(place_and_debug_info: &str, rvalue: &str, constant: i16) {
-    let place_and_debug_info: PlaceAndDebugInfo = place_and_debug_info.try_into().unwrap();
-    let rvalue: Rvalue = rvalue.try_into().unwrap();
-
-    println!("[assign_i16] {place_and_debug_info:?} rvalue: {rvalue:?} constant: {constant:?}");
-    handle_place(
-        &place_and_debug_info,
-        Some(&rvalue),
-        Some(TyKind::Int(I16)),
-        Some(constant.to_string()),
-    )
-}
-
-pub fn assign_i32(place_and_debug_info: &str, rvalue: &str, constant: i32) {
-    let place_and_debug_info: PlaceAndDebugInfo = place_and_debug_info.try_into().unwrap();
-    let rvalue: Rvalue = rvalue.try_into().unwrap();
-
-    println!("[assign_i32] {place_and_debug_info:?} rvalue: {rvalue:?} constant: {constant:?}");
-    handle_place(
-        &place_and_debug_info,
-        Some(&rvalue),
-        Some(TyKind::Int(I32)),
-        Some(constant.to_string()),
-    )
-}
-
-pub fn assign_i64(place_and_debug_info: &str, rvalue: &str, constant: i64) {
-    let place_and_debug_info: PlaceAndDebugInfo = place_and_debug_info.try_into().unwrap();
-    let rvalue: Rvalue = rvalue.try_into().unwrap();
-
-    println!("[assign_i64] {place_and_debug_info:?} rvalue: {rvalue:?} constant: {constant:?}");
-    handle_place(
-        &place_and_debug_info,
-        Some(&rvalue),
-        Some(TyKind::Int(I64)),
-        Some(constant.to_string()),
-    )
-}
-
-pub fn assign_i128(place_and_debug_info: &str, rvalue: &str, constant: i128) {
-    let place_and_debug_info: PlaceAndDebugInfo = place_and_debug_info.try_into().unwrap();
-    let rvalue: Rvalue = rvalue.try_into().unwrap();
-
-    println!("[assign_i128] {place_and_debug_info:?} rvalue: {rvalue:?} constant: {constant:?}");
-    handle_place(
-        &place_and_debug_info,
-        Some(&rvalue),
-        Some(TyKind::Int(I128)),
-        Some(constant.to_string()),
-    )
-}
-
-pub fn assign_usize(place_and_debug_info: &str, rvalue: &str, constant: usize) {
-    let place_and_debug_info: PlaceAndDebugInfo = place_and_debug_info.try_into().unwrap();
-    let rvalue: Rvalue = rvalue.try_into().unwrap();
-
-    println!("[assign_usize] {place_and_debug_info:?} rvalue: {rvalue:?} constant: {constant:?}");
-    handle_place(
-        &place_and_debug_info,
-        Some(&rvalue),
-        Some(TyKind::Uint(Usize)),
-        Some(constant.to_string()),
-    );
-}
-
-pub fn assign_u8(place_and_debug_info: &str, rvalue: &str, constant: u8) {
-    let place_and_debug_info: PlaceAndDebugInfo = place_and_debug_info.try_into().unwrap();
-    let rvalue: Rvalue = rvalue.try_into().unwrap();
-
-    println!("[assign_u8] {place_and_debug_info:?} rvalue: {rvalue:?} constant: {constant:?}");
-    handle_place(
-        &place_and_debug_info,
-        Some(&rvalue),
-        Some(TyKind::Uint(U8)),
-        Some(constant.to_string()),
-    )
-}
-
-pub fn assign_u16(place_and_debug_info: &str, rvalue: &str, constant: u16) {
-    let place_and_debug_info: PlaceAndDebugInfo = place_and_debug_info.try_into().unwrap();
-    let rvalue: Rvalue = rvalue.try_into().unwrap();
-
-    println!("[assign_u16] {place_and_debug_info:?} rvalue: {rvalue:?} constant: {constant:?}");
-    handle_place(
-        &place_and_debug_info,
-        Some(&rvalue),
-        Some(TyKind::Uint(U16)),
-        Some(constant.to_string()),
-    )
-}
-
-pub fn assign_u32(place_and_debug_info: &str, rvalue: &str, constant: u32) {
-    let place_and_debug_info: PlaceAndDebugInfo = place_and_debug_info.try_into().unwrap();
-    let rvalue: Rvalue = rvalue.try_into().unwrap();
-
-    println!("[assign_u32] {place_and_debug_info:?} rvalue: {rvalue:?} constant: {constant:?}");
-    handle_place(
-        &place_and_debug_info,
-        Some(&rvalue),
-        Some(TyKind::Uint(U32)),
-        Some(constant.to_string()),
-    )
-}
-
-pub fn assign_u64(place_and_debug_info: &str, rvalue: &str, constant: u64) {
-    let place_and_debug_info: PlaceAndDebugInfo = place_and_debug_info.try_into().unwrap();
-    let rvalue: Rvalue = rvalue.try_into().unwrap();
-
-    println!("[assign_u64] {place_and_debug_info:?} rvalue: {rvalue:?} constant: {constant:?}");
-    handle_place(
-        &place_and_debug_info,
-        Some(&rvalue),
-        Some(TyKind::Uint(U64)),
-        Some(constant.to_string()),
-    )
-}
-
-pub fn assign_u128(place_and_debug_info: &str, rvalue: &str, constant: u128) {
-    let place_and_debug_info: PlaceAndDebugInfo = place_and_debug_info.try_into().unwrap();
-    let rvalue: Rvalue = rvalue.try_into().unwrap();
-
-    println!("[assign_u128] {place_and_debug_info:?} rvalue: {rvalue:?} constant: {constant:?}");
-    handle_place(
-        &place_and_debug_info,
-        Some(&rvalue),
-        Some(TyKind::Uint(U128)),
-        Some(constant.to_string()),
-    )
-}
-
-pub fn assign_f32(place_and_debug_info: &str, rvalue: &str, constant: f32) {
-    let place_and_debug_info: PlaceAndDebugInfo = place_and_debug_info.try_into().unwrap();
-    let rvalue: Rvalue = rvalue.try_into().unwrap();
-
-    println!("[assign_f32] {place_and_debug_info:?} rvalue: {rvalue:?} constant: {constant:?}");
-    handle_place(
-        &place_and_debug_info,
-        Some(&rvalue),
-        Some(TyKind::Float(F32)),
-        Some(constant.to_string()),
-    )
-}
-
-pub fn assign_f64(place_and_debug_info: &str, rvalue: &str, constant: f64) {
-    let place_and_debug_info: PlaceAndDebugInfo = place_and_debug_info.try_into().unwrap();
-    let rvalue: Rvalue = rvalue.try_into().unwrap();
-
-    println!("[assign_f64] {place_and_debug_info:?} rvalue: {rvalue:?} constant: {constant:?}");
-    handle_place(
-        &place_and_debug_info,
-        Some(&rvalue),
-        Some(TyKind::Float(F64)),
-        Some(constant.to_string()),
-    )
-}
-
-pub fn assign_char(place_and_debug_info: &str, rvalue: &str, constant: char) {
-    let place_and_debug_info: PlaceAndDebugInfo = place_and_debug_info.try_into().unwrap();
-    let rvalue: Rvalue = rvalue.try_into().unwrap();
-
-    println!("[assign_char] {place_and_debug_info:?} rvalue: {rvalue:?} constant: {constant:?}");
-    handle_place(
-        &place_and_debug_info,
-        Some(&rvalue),
-        Some(TyKind::Char),
-        Some(constant.to_string()),
-    )
-}
-
-pub fn assign_bool(place_and_debug_info: &str, rvalue: &str, constant: bool) {
-    let place_and_debug_info: PlaceAndDebugInfo = place_and_debug_info.try_into().unwrap();
-    let rvalue: Rvalue = rvalue.try_into().unwrap();
-
-    println!("[assign_bool] {place_and_debug_info:?} rvalue: {rvalue:?} constant: {constant:?}");
-    handle_place(
-        &place_and_debug_info,
-        Some(&rvalue),
-        Some(TyKind::Bool),
-        Some(constant.to_string()),
-    );
-}
-
-pub fn assign_str(place_and_debug_info: &str, rvalue: &str, constant: &str) {
-    let place_and_debug_info: PlaceAndDebugInfo = place_and_debug_info.try_into().unwrap();
-    let rvalue: Rvalue = rvalue.try_into().unwrap();
-
-    println!("[assign_str] {place_and_debug_info:?} rvalue: {rvalue:?} constant: {constant:?}");
+    println!("[assign_str] bb{basic_block_idx:?}, {place_and_debug_info:?} rvalue: {rvalue:?} constant: {constant:?}");
     handle_place(
         &place_and_debug_info,
         Some(&rvalue),

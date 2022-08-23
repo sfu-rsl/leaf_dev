@@ -1,6 +1,7 @@
 extern crate rustc_middle;
 
 use crate::rvalue::{ConstantKind, Operand, Rvalue};
+use paste::paste;
 use rustc_middle::{mir, ty};
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
@@ -75,6 +76,52 @@ pub enum TyKind {
     Placeholder,    //Placeholder(PlaceholderType)
     Infer,          //Infer(InferTy)
     Error,          //Error(DelaySpanBugEmitted)
+}
+
+macro_rules! tykind_for_signed_int_types {
+    ($t:ty) => {
+        paste! {
+            pub fn [< for_ $t >]() -> TyKind { TyKind::Int(IntTy::[<$t:camel>]) }
+        }
+    };
+}
+
+macro_rules! tykind_for_unsigned_int_types {
+    ($t:ty) => {
+        paste! {
+            pub fn [< for_ $t >]() -> TyKind { TyKind::Uint(UintTy::[<$t:camel>]) }
+        }
+    };
+}
+
+impl TyKind {
+    tykind_for_signed_int_types!(isize);
+    tykind_for_signed_int_types!(i8);
+    tykind_for_signed_int_types!(i16);
+    tykind_for_signed_int_types!(i32);
+    tykind_for_signed_int_types!(i64);
+    tykind_for_signed_int_types!(i128);
+    tykind_for_unsigned_int_types!(usize);
+    tykind_for_unsigned_int_types!(u8);
+    tykind_for_unsigned_int_types!(u16);
+    tykind_for_unsigned_int_types!(u32);
+    tykind_for_unsigned_int_types!(u64);
+    tykind_for_unsigned_int_types!(u128);
+    pub fn for_f32() -> TyKind {
+        TyKind::Float(FloatTy::F32)
+    }
+    pub fn for_f64() -> TyKind {
+        TyKind::Float(FloatTy::F64)
+    }
+    pub fn for_char() -> TyKind {
+        TyKind::Char
+    }
+    pub fn for_bool() -> TyKind {
+        TyKind::Bool
+    }
+    pub fn for_str() -> TyKind {
+        TyKind::Str
+    }
 }
 
 impl TryFrom<Operand> for TyKind {

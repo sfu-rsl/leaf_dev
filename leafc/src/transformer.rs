@@ -5,7 +5,9 @@ extern crate rustc_target;
 use crate::{const_separator, preprocessor};
 use leafcommon::{misc, rvalue, switchtargets, ty};
 //use log::debug;
+use leafcommon::consts::Size;
 use leafcommon::misc::{DebugInfo, PlaceAndDebugInfo};
+use rustc_middle::mir::interpret::ConstValue;
 use rustc_middle::ty::{FnSig, ScalarInt, Ty};
 use rustc_middle::{
     middle::exported_symbols,
@@ -22,8 +24,6 @@ use rustc_middle::{
 use rustc_span::def_id::DefId;
 use std::default::Default;
 use std::{collections::HashMap, ops::Index, ops::IndexMut};
-use rustc_middle::mir::interpret::ConstValue;
-use leafcommon::consts::Size;
 
 pub struct Transformer<'tcx> {
     tcx: TyCtxt<'tcx>,
@@ -128,7 +128,7 @@ impl<'tcx> Transformer<'tcx> {
                     &mut body.local_decls,
                     basic_block_idx,
                     "leafrt::ret",
-                    vec![],
+                    vec![self.build_basic_block_u32_operand(basic_block_idx)],
                 ),
                 Drop {
                     place,
@@ -269,13 +269,14 @@ impl<'tcx> Transformer<'tcx> {
         let (p, r) = &**asgn;
 
         let (fn_name, args) = match r {
-            Rvalue::Use(op) => self.transform_use(op, &p, &r, &debug_infos),
+            Rvalue::Use(op) => self.transform_use(basic_block_idx, op, &p, &r, &debug_infos),
             _ => {
                 let place_and_debug_info = self.build_place_and_debug_info(debug_infos, Some(p));
                 let rvalue: rvalue::Rvalue = r.into();
                 (
                     "leafrt::assign".into(),
                     vec![
+                        self.build_basic_block_u32_operand(basic_block_idx),
                         self.build_str(place_and_debug_info.to_string()),
                         self.build_str(rvalue.to_string()),
                     ],
@@ -287,6 +288,7 @@ impl<'tcx> Transformer<'tcx> {
 
     fn transform_use(
         &self,
+        basic_block_idx: BasicBlock,
         op: &Operand<'tcx>,
         p: &Place<'tcx>,
         r: &Rvalue<'tcx>,
@@ -311,8 +313,9 @@ impl<'tcx> Transformer<'tcx> {
                 .unwrap_err();
 
             (
-                get_fn_name(op.constant().unwrap().ty().kind()).unwrap(),
+                get_leafrt_assign_fn_name(op.constant().unwrap().ty().kind()).unwrap(),
                 vec![
+                    self.build_basic_block_u32_operand(basic_block_idx),
                     self.build_str(dest_and_debug_info.to_string()),
                     self.build_str(rvalue.to_string()),
                     (*op).clone(),
@@ -320,11 +323,12 @@ impl<'tcx> Transformer<'tcx> {
             )
         } else {
             if let Rvalue::Use(Operand::Constant(box c)) = r {
-                let fn_name_option = get_fn_name(c.ty().kind());
+                let fn_name_option = get_leafrt_assign_fn_name(c.ty().kind());
                 if let Some(fn_name) = fn_name_option {
                     return (
                         fn_name,
                         vec![
+                            self.build_basic_block_u32_operand(basic_block_idx),
                             self.build_str(dest_and_debug_info.to_string()),
                             self.build_str(rvalue.to_string()),
                             (*op).clone(),
@@ -335,6 +339,7 @@ impl<'tcx> Transformer<'tcx> {
             (
                 "leafrt::assign".into(),
                 vec![
+                    self.build_basic_block_u32_operand(basic_block_idx),
                     self.build_str(dest_and_debug_info.to_string()),
                     self.build_str(rvalue.to_string()),
                 ],
@@ -405,23 +410,20 @@ impl<'tcx> Transformer<'tcx> {
 
     fn build_basic_block_u32_operand(&self, basic_block_idx: BasicBlock) -> Operand<'tcx> {
         let span = rustc_span::DUMMY_SP;
-        Operand::Constant(Box::new(
-            Constant {
-                span: span.to_owned(),
-                user_ty: None,
-                literal: ConstantKind::Val(
-                    interpret::ConstValue::Scalar(
-                        interpret::Scalar::Int(
-                            ScalarInt::try_from_uint(
-                                u32::from(basic_block_idx),
-                                rustc_target::abi::Size::from_bytes(4)
-                            ).expect("should be u32")
-                        )
-                    ),
-                    self.tcx.mk_mach_uint(UintTy::U32)
-                )
-            }
-        ))
+        Operand::Constant(Box::new(Constant {
+            span: span.to_owned(),
+            user_ty: None,
+            literal: ConstantKind::Val(
+                interpret::ConstValue::Scalar(interpret::Scalar::Int(
+                    ScalarInt::try_from_uint(
+                        u32::from(basic_block_idx),
+                        rustc_target::abi::Size::from_bytes(4),
+                    )
+                    .expect("should be u32"),
+                )),
+                self.tcx.mk_mach_uint(UintTy::U32),
+            ),
+        }))
     }
 
     fn build_str(&self, s: String) -> Operand<'tcx> {
@@ -516,7 +518,7 @@ fn get_const_op<'tcx>(statement: &'tcx Statement<'tcx>) -> Option<&'tcx Operand<
     None
 }
 
-fn get_fn_name(ty_kind: &TyKind) -> Option<String> {
+fn get_leafrt_assign_fn_name(ty_kind: &TyKind) -> Option<String> {
     let fn_name_suffix = match ty_kind {
         TyKind::Bool => "assign_bool",
         TyKind::Char => "assign_char",

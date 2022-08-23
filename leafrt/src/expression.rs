@@ -668,7 +668,6 @@ impl<'ctx> PlaceMap<'ctx> {
             Rvalue::Aggregate(_, _) => todo!(),
             Rvalue::ShallowInitBox(_, _) => todo!(),
         };
-        dbg!(&symbolic_type);
         self.insert_expr_with_symbolic_type(
             destination,
             symbolic_type,
@@ -834,9 +833,7 @@ impl<'ctx> FunctionCallStack<'ctx> {
         }
     }
 
-    fn do_mut(&mut self) {
-
-    }
+    fn do_mut(&mut self) {}
 
     pub fn handle_switch_int(
         &mut self,
@@ -935,8 +932,12 @@ impl<'ctx> FunctionCallStack<'ctx> {
         }
     }
 
-    pub fn handle_ret(&mut self, ctx: &'ctx Context) {
+    pub fn handle_ret(&mut self, ctx: &'ctx Context, basic_block_idx: u32) {
         let mut context_of_returned_function = self.pop();
+        println!(
+            "[ret] bb{}, latest_ctx = {:?}, FUNCTION_CALL_STACK = {:?}",
+            basic_block_idx, context_of_returned_function, self,
+        );
         if let Some(ref mut context_of_returned_function) = context_of_returned_function {
             if let FunctionCallContext::WithReturn {
                 place_map,
@@ -1039,10 +1040,6 @@ impl<'ctx> FunctionCallStack<'ctx> {
                 map_of_parent_caller.insert_expr(&destination, Arc::new(destination_expr));
             }
         }
-        println!(
-            "[ret] latest_ctx = {:?}, FUNCTION_CALL_STACK = {:?}",
-            context_of_returned_function, self,
-        );
     }
 
     pub fn handle_fn_call(
