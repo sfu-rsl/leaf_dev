@@ -85,16 +85,21 @@ impl<'tcx> Transformer<'tcx> {
             Some(_) => {
                 // The basic block already has a terminator (it's the last basic block).
                 // Adjust jump targets.
-                preprocessor::remap_jump_targets(body, basic_block_idx, &index_map);
+                preprocessor::remap_jump_targets(body, basic_block_idx, index_map);
             }
             None => {
                 // A newly-added basic block
-                self.add_new_terminator(body, basic_block_idx);
+                self.add_new_terminator(body, basic_block_idx, index_map);
             }
         };
     }
 
-    fn add_new_terminator(&mut self, body: &mut Body<'tcx>, basic_block_idx: BasicBlock) {
+    fn add_new_terminator(
+        &mut self,
+        body: &mut Body<'tcx>,
+        basic_block_idx: BasicBlock,
+        index_map: &HashMap<BasicBlock, BasicBlock>,
+    ) {
         let (_, _, debug_infos) = body.basic_blocks_local_decls_mut_and_var_debug_info();
         let debug_infos = debug_infos.to_owned();
 
@@ -112,7 +117,12 @@ impl<'tcx> Transformer<'tcx> {
                     targets,
                 } => {
                     let discr: rvalue::Operand = discr.into();
-                    let targets: switchtargets::SwitchTargets = targets.into();
+                    let mut targets = targets.clone();
+                    for target in targets.all_targets_mut() {
+                        *target = index_map.get(&target).unwrap().to_owned();
+                    }
+                    let targets: switchtargets::SwitchTargets = (&targets).into();
+
                     self.build_call_terminator(
                         &mut body.local_decls,
                         basic_block_idx,
@@ -153,24 +163,22 @@ impl<'tcx> Transformer<'tcx> {
                     fn_span: _,
                 } => {
                     let func_debug_info = self.build_debug_info_function_call(func);
-                    let func_return_type: ty::Ty = {
-                        match func {
-                            Operand::Constant(b) => match b.literal {
-                                ConstantKind::Ty(_) => unreachable!(),
-                                ConstantKind::Val(_, ty) => match ty.kind() {
-                                    TyKind::FnDef(defid, _) => {
-                                        let x: Binder<'_, rustc_middle::ty::FnSig<'_>> =
-                                            self.tcx.fn_sig(defid);
-                                        let x: FnSig = x.skip_binder();
-                                        let ty = x.output();
-                                        let ty: ty::Ty = ty.into();
-                                        ty
-                                    }
-                                    _ => unreachable!(),
-                                },
-                            },
-                            _ => unreachable!(),
+                    let func_return_type: ty::Ty = if let Operand::Constant(box Constant {
+                        literal: ConstantKind::Val(_, ty),
+                        ..
+                    }) = func
+                    {
+                        if let TyKind::FnDef(defid, _) = ty.kind() {
+                            let x: Binder<'_, rustc_middle::ty::FnSig<'_>> = self.tcx.fn_sig(defid);
+                            let x: FnSig = x.skip_binder();
+                            let ty = x.output();
+                            let ty: ty::Ty = ty.into();
+                            ty
+                        } else {
+                            unreachable!()
                         }
+                    } else {
+                        unreachable!()
                     };
                     let func: rvalue::Operand = func.into();
                     // TODO: Make this better? Even if the MIR representation uses an constant
