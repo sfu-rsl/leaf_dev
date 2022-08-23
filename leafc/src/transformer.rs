@@ -1,11 +1,12 @@
 extern crate rustc_middle;
 extern crate rustc_span;
+extern crate rustc_target;
 
 use crate::{const_separator, preprocessor};
 use leafcommon::{misc, rvalue, switchtargets, ty};
 //use log::debug;
 use leafcommon::misc::{DebugInfo, PlaceAndDebugInfo};
-use rustc_middle::ty::{FnSig, Ty};
+use rustc_middle::ty::{FnSig, ScalarInt, Ty};
 use rustc_middle::{
     middle::exported_symbols,
     mir::{
@@ -21,6 +22,8 @@ use rustc_middle::{
 use rustc_span::def_id::DefId;
 use std::default::Default;
 use std::{collections::HashMap, ops::Index, ops::IndexMut};
+use rustc_middle::mir::interpret::ConstValue;
+use leafcommon::consts::Size;
 
 pub struct Transformer<'tcx> {
     tcx: TyCtxt<'tcx>,
@@ -115,6 +118,7 @@ impl<'tcx> Transformer<'tcx> {
                         basic_block_idx,
                         "leafrt::switch_int",
                         vec![
+                            self.build_basic_block_u32_operand(basic_block_idx),
                             self.build_str(discr.to_string()),
                             self.build_str(targets.to_string()),
                         ],
@@ -169,7 +173,8 @@ impl<'tcx> Transformer<'tcx> {
                         }
                     };
                     let func: rvalue::Operand = func.into();
-                    // TODO: Make this better?
+                    // TODO: Make this better? Even if the MIR representation uses an constant
+                    //  value from an existing place, here, it just makes a new constant.
                     let const_vals = rvalue::OperandConstValueVec(
                         args.iter()
                             .map(|arg| {
@@ -182,7 +187,7 @@ impl<'tcx> Transformer<'tcx> {
 
                                     let underscore_suffix_idx = const_as_str.rfind("_").unwrap();
                                     log::debug!(
-                                        "Removing suffix {} from constant value {}",
+                                        "Removing suffix {} from function arg constant value {}",
                                         &const_as_str[underscore_suffix_idx..],
                                         &const_as_str
                                     );
@@ -218,6 +223,7 @@ impl<'tcx> Transformer<'tcx> {
                         basic_block_idx,
                         "leafrt::call",
                         vec![
+                            self.build_basic_block_u32_operand(basic_block_idx),
                             self.build_str(func_debug_info.to_string()),
                             self.build_str(func.to_string()),
                             self.build_str(func_return_type.to_string()),
@@ -395,6 +401,27 @@ impl<'tcx> Transformer<'tcx> {
         }
 
         return DebugInfo { name: None };
+    }
+
+    fn build_basic_block_u32_operand(&self, basic_block_idx: BasicBlock) -> Operand<'tcx> {
+        let span = rustc_span::DUMMY_SP;
+        Operand::Constant(Box::new(
+            Constant {
+                span: span.to_owned(),
+                user_ty: None,
+                literal: ConstantKind::Val(
+                    interpret::ConstValue::Scalar(
+                        interpret::Scalar::Int(
+                            ScalarInt::try_from_uint(
+                                u32::from(basic_block_idx),
+                                rustc_target::abi::Size::from_bytes(4)
+                            ).expect("should be u32")
+                        )
+                    ),
+                    self.tcx.mk_mach_uint(UintTy::U32)
+                )
+            }
+        ))
     }
 
     fn build_str(&self, s: String) -> Operand<'tcx> {

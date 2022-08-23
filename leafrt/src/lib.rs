@@ -69,7 +69,7 @@ lazy_static! {
     static ref FUNCTION_CALL_STACK: Mutex<FunctionCallStack<'static>> = Mutex::new(FunctionCallStack::new());
 }
 
-pub fn switch_int(discr: &str, switch_targets: &str) {
+pub fn switch_int(basic_block_idx: u32, discr: &str, switch_targets: &str) {
     let discr: Operand = discr.try_into().unwrap();
     let switch_targets: SwitchTargets = switch_targets.try_into().unwrap();
     let mut stack = FUNCTION_CALL_STACK.lock().unwrap();
@@ -84,6 +84,7 @@ pub fn ret() {
 }
 
 pub fn call(
+    basic_block_idx: u32,
     func_debug_info: &str,
     func: &str,
     func_return_type: &str,

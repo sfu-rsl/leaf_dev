@@ -668,6 +668,7 @@ impl<'ctx> PlaceMap<'ctx> {
             Rvalue::Aggregate(_, _) => todo!(),
             Rvalue::ShallowInitBox(_, _) => todo!(),
         };
+        dbg!(&symbolic_type);
         self.insert_expr_with_symbolic_type(
             destination,
             symbolic_type,
@@ -833,6 +834,10 @@ impl<'ctx> FunctionCallStack<'ctx> {
         }
     }
 
+    fn do_mut(&mut self) {
+
+    }
+
     pub fn handle_switch_int(
         &mut self,
         solver: &Solver,
@@ -854,6 +859,10 @@ impl<'ctx> FunctionCallStack<'ctx> {
 
         let ast_expr = discriminant.ast_type();
         let formulas = construct_assumptions(&discriminant);
+        // TODO: Record values to use for alternate paths somewhere
+        // TODO: When we reach a branch is selected, any values inside should use the
+        //  discriminator formula as a "path constraint". This might require adding a new leafrt
+        //  injected call at the start of every basic block
         match ast_expr {
             AstType::Bool(discriminant_bool) => {
                 let value_targets = switch_targets
@@ -1077,6 +1086,8 @@ impl<'ctx> FunctionCallStack<'ctx> {
                     None,
                     None,
                 );
+
+            dbg!(&symbolic_type);
 
             place_map.insert_expr_with_symbolic_type(
                 &place,
