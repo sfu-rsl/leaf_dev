@@ -751,16 +751,28 @@ impl<'ctx> PlaceMap<'ctx> {
 }
 
 #[derive(Debug)]
+struct SwitchIntInfo<'ctx> {
+    discriminant: Arc<Expression<'ctx>>,
+    basic_block_to_constraint_map: HashMap<u32, Bool<'ctx>>,
+}
+
+unsafe impl<'a> std::marker::Sync for SwitchIntInfo<'a> {}
+
+unsafe impl<'a> std::marker::Send for SwitchIntInfo<'a> {}
+
+#[derive(Debug)]
 pub enum FunctionCallContext<'ctx> {
     NoReturn {
         function_name: Option<String>,
         level: usize,
         place_map: PlaceMap<'ctx>,
+        switch_int_info: Option<SwitchIntInfo<'ctx>>,
     },
     WithReturn {
         function_name: Option<String>,
         level: usize,
         place_map: PlaceMap<'ctx>,
+        switch_int_info: Option<SwitchIntInfo<'ctx>>,
         return_type: Ty,
         destination: PlaceAndDebugInfo,
     },
@@ -769,39 +781,76 @@ pub enum FunctionCallContext<'ctx> {
 impl<'ctx> FunctionCallContext<'ctx> {
     pub fn function_name(&self) -> Option<&String> {
         match self {
-            FunctionCallContext::NoReturn { function_name, .. } => function_name.as_ref(),
-            FunctionCallContext::WithReturn { function_name, .. } => function_name.as_ref(),
+            FunctionCallContext::NoReturn { function_name, .. }
+            | FunctionCallContext::WithReturn { function_name, .. } => function_name.as_ref(),
         }
     }
 
     pub fn level(&self) -> usize {
         match self {
-            FunctionCallContext::NoReturn { level, .. } => *level,
-            FunctionCallContext::WithReturn { level, .. } => *level,
+            FunctionCallContext::NoReturn { level, .. }
+            | FunctionCallContext::WithReturn { level, .. } => *level,
         }
     }
 
     pub fn place_map(&self) -> &PlaceMap<'ctx> {
         match self {
-            FunctionCallContext::NoReturn { place_map, .. } => place_map,
-            FunctionCallContext::WithReturn { place_map, .. } => place_map,
+            FunctionCallContext::NoReturn { place_map, .. }
+            | FunctionCallContext::WithReturn { place_map, .. } => place_map,
         }
     }
 
     pub fn place_map_mut(&mut self) -> &mut PlaceMap<'ctx> {
         match self {
-            FunctionCallContext::NoReturn { place_map, .. } => place_map,
-            FunctionCallContext::WithReturn { place_map, .. } => place_map,
+            FunctionCallContext::NoReturn { place_map, .. }
+            | FunctionCallContext::WithReturn { place_map, .. } => place_map,
+        }
+    }
+
+    pub fn switch_int_info_mut(&mut self) -> Option<&mut SwitchIntInfo<'ctx>> {
+        match self {
+            FunctionCallContext::NoReturn {
+                switch_int_info, ..
+            }
+            | FunctionCallContext::WithReturn {
+                switch_int_info, ..
+            } => switch_int_info.as_mut(),
+        }
+    }
+
+    pub fn update_switch_int_info(&mut self, new_switch_int_info: SwitchIntInfo<'ctx>) {
+        match self {
+            FunctionCallContext::NoReturn {
+                switch_int_info, ..
+            }
+            | FunctionCallContext::WithReturn {
+                switch_int_info, ..
+            } => {
+                switch_int_info.replace(new_switch_int_info);
+            }
         }
     }
 }
 
 #[derive(Debug)]
-pub struct FunctionCallStack<'ctx> {
-    stack: Vec<FunctionCallContext<'ctx>>,
+struct PathConstraint<'ctx> {
+    formula: Bool<'ctx>,
+    discriminant: Arc<Expression<'ctx>>,
 }
 
-fn construct_assumptions<'a>(discriminant: &'a Arc<Expression<'a>>) -> Vec<&'a z3::ast::Bool<'a>> {
+#[derive(Debug)]
+pub struct FunctionCallStack<'ctx> {
+    stack: Vec<FunctionCallContext<'ctx>>,
+    path_constraints: Vec<PathConstraint<'ctx>>,
+}
+
+unsafe impl<'a> std::marker::Sync for FunctionCallStack<'a> {}
+
+unsafe impl<'a> std::marker::Send for FunctionCallStack<'a> {}
+
+fn construct_assumptions_from_dependencies<'a>(
+    discriminant: &'a Arc<Expression<'a>>,
+) -> Vec<&'a z3::ast::Bool<'a>> {
     fn add_formulas_recurse<'a>(
         formulas_list: &mut Vec<&'a z3::ast::Bool<'a>>,
         dependency: &'a Arc<Expression<'a>>,
@@ -829,53 +878,98 @@ impl<'ctx> FunctionCallStack<'ctx> {
                 function_name: Some(String::from("main")),
                 level: 0,
                 place_map: PlaceMap::new(),
+                switch_int_info: None,
             }],
+            path_constraints: vec![],
         }
     }
 
     fn do_mut(&mut self) {}
 
+    pub fn process_switch_int_info(&mut self, current_basic_block: u32) {
+        let ctx = self.current_ctx_mut().expect("context present");
+        if let Some(switch_int_info) = ctx.switch_int_info_mut() {
+            let discriminant = Arc::clone(&switch_int_info.discriminant);
+            if let Some(path_constraint) = switch_int_info
+                .basic_block_to_constraint_map
+                .remove(&current_basic_block)
+            {
+                println!("Push path constraint {:?}", path_constraint);
+                let path_constraint = PathConstraint {
+                    formula: path_constraint,
+                    discriminant,
+                };
+                self.path_constraints.push(path_constraint);
+                self.current_ctx_mut()
+                    .expect("context present")
+                    .switch_int_info_mut()
+                    .take();
+            }
+        }
+    }
+
     pub fn handle_switch_int(
         &mut self,
-        solver: &Solver,
+        solver: &Solver<'ctx>,
         discriminant: Operand,
         switch_targets: SwitchTargets,
     ) {
         let solver = &solver.0;
-        let place_map = self.current_place_map().unwrap();
-        let discriminant = if let Some(discriminant) = place_map.expr_from_operand(&discriminant) {
+        let discriminant = {
+            let ctx = self.current_ctx_mut().unwrap();
+            let place_map = ctx.place_map();
+            let discriminant =
+                if let Some(discriminant) = place_map.expr_from_operand(&discriminant) {
+                    discriminant
+                } else {
+                    println!("Skipping SAT call: missing discriminant place AST node");
+                    return;
+                };
+            if !discriminant.is_symbolic() {
+                // TODO: Better detection. We should have discriminant.is_symbolic() == true if
+                //  discriminant is a result of a path from a symbolic variable.
+                if self.path_constraints.is_empty() {
+                    println!("Skipping SAT call: discriminant is not symbolic");
+                    return;
+                }
+            }
             discriminant
-        } else {
-            println!("Skipping SAT call: missing discriminant place AST node");
-            return;
         };
-        if !discriminant.is_symbolic() {
-            println!("Skipping SAT call: discriminant is not symbolic");
-            return;
+
+        let mut formulas_and_path_constraints =
+            construct_assumptions_from_dependencies(&discriminant);
+        for path_constraint in &self.path_constraints {
+            formulas_and_path_constraints.push(&path_constraint.formula);
+            formulas_and_path_constraints.append(&mut construct_assumptions_from_dependencies(
+                &path_constraint.discriminant,
+            ))
         }
 
         let ast_expr = discriminant.ast_type();
-        let formulas = construct_assumptions(&discriminant);
+
         // TODO: Record values to use for alternate paths somewhere
         // TODO: When we reach a branch is selected, any values inside should use the
         //  discriminator formula as a "path constraint". This might require adding a new leafrt
         //  injected call at the start of every basic block
+        let mut basic_block_to_constraint_map: HashMap<u32, Bool<'ctx>> = HashMap::new();
+        let otherwise_basic_block = switch_targets.otherwise;
         match ast_expr {
             AstType::Bool(discriminant_bool) => {
                 let value_targets = switch_targets
                     .switch_targets
                     .iter()
-                    .map(|(value, _target)| *value == 1);
-                for target in value_targets {
-                    for formula in &formulas {
+                    .map(|(value, target)| (*value == 1, *target));
+                for (value, target) in value_targets {
+                    for formula in &formulas_and_path_constraints {
                         solver.assert(formula);
                     }
-                    solver.assert(
-                        &discriminant_bool._eq(&Bool::from_bool(solver.get_context(), target)),
-                    );
+                    let path_constraint =
+                        discriminant_bool._eq(&Bool::from_bool(solver.get_context(), value));
+                    solver.assert(&path_constraint);
+                    basic_block_to_constraint_map.insert(target, path_constraint);
                     match solver.check() {
                         SatResult::Sat => {
-                            println!("Reaching the {} branch is possible", target);
+                            println!("Reaching the {} branch is possible", value);
                             // Note: Must check satisfiability before you can get the model.
                             if let Some(model) = solver.get_model() {
                                 println!("model: {:?}", model);
@@ -894,22 +988,17 @@ impl<'ctx> FunctionCallStack<'ctx> {
                 }
             }
             AstType::Int(discriminant_int) => {
-                let value_targets = switch_targets
-                    .switch_targets
-                    .iter()
-                    .map(|(value, _target)| *value);
-                for target in value_targets {
-                    for formula in &formulas {
+                for (value, target) in switch_targets.switch_targets {
+                    for formula in &formulas_and_path_constraints {
                         solver.assert(formula);
                     }
-                    solver.assert(
-                        &discriminant_int._eq(
-                            &Int::from_str(solver.get_context(), &target.to_string()).unwrap(),
-                        ),
-                    );
+                    let path_constraint = discriminant_int
+                        ._eq(&Int::from_str(solver.get_context(), &value.to_string()).unwrap());
+                    solver.assert(&path_constraint);
+                    basic_block_to_constraint_map.insert(target, path_constraint);
                     match solver.check() {
                         SatResult::Sat => {
-                            println!("Reaching the {} branch is possible", target);
+                            println!("Reaching the {} branch is possible", value);
                             // Note: Must check satisfiability before you can get the model.
                             if let Some(model) = solver.get_model() {
                                 println!("model: {:?}", model);
@@ -930,6 +1019,38 @@ impl<'ctx> FunctionCallStack<'ctx> {
             AstType::Float { .. } => todo!(),
             AstType::String(_) => todo!(),
         }
+        if let Some(otherwise_basic_block) = otherwise_basic_block {
+            let values = basic_block_to_constraint_map.values();
+            match values.len() {
+                0 => {}
+                1 => {
+                    let single = basic_block_to_constraint_map
+                        .values()
+                        .last()
+                        .expect("1 element");
+                    basic_block_to_constraint_map.insert(otherwise_basic_block, single.not());
+                }
+                _ => {
+                    // If A, B, C are constraints for if and else-if, then to reach the else block, we need
+                    // ~A & ~B & ~C; this is equivalent to ~(A || B || C)
+                    let otherwise_constraint = Bool::or(
+                        solver.get_context(),
+                        &basic_block_to_constraint_map.values().collect::<Vec<_>>(),
+                    )
+                    .not();
+                    basic_block_to_constraint_map
+                        .insert(otherwise_basic_block, otherwise_constraint);
+                }
+            }
+        }
+
+        let switch_int_info = SwitchIntInfo {
+            discriminant: discriminant,
+            basic_block_to_constraint_map,
+        };
+        self.current_ctx_mut()
+            .unwrap()
+            .update_switch_int_info(switch_int_info);
     }
 
     pub fn handle_ret(&mut self, ctx: &'ctx Context, basic_block_idx: u32) {
@@ -1045,12 +1166,14 @@ impl<'ctx> FunctionCallStack<'ctx> {
     pub fn handle_fn_call(
         &mut self,
         context: &'ctx Context,
+        basic_block_idx: u32,
         function_debug_info: DebugInfo,
         func_return_type: Ty,
         return_destination: PlaceAndDebugInfo,
         args: OperandVec,
         const_arg_values: OperandConstValueVec,
     ) {
+        self.process_switch_int_info(basic_block_idx);
         let mut place_map = PlaceMap::new();
         let parent_caller_place_map = self
             .current_place_map_mut()
@@ -1125,11 +1248,13 @@ impl<'ctx> FunctionCallStack<'ctx> {
             TyKind::Tuple(type_vec) => type_vec.is_empty(),
             _ => false,
         };
+        let switch_int_info = None;
         if return_destination.place.is_some() && !is_unit_return {
             self.stack.push(FunctionCallContext::WithReturn {
                 function_name: function_debug_info.name,
                 level,
                 place_map,
+                switch_int_info,
                 return_type: func_return_type,
                 destination: return_destination,
             })
@@ -1138,6 +1263,7 @@ impl<'ctx> FunctionCallStack<'ctx> {
                 function_name: function_debug_info.name,
                 level,
                 place_map,
+                switch_int_info,
             })
         }
     }
@@ -1145,11 +1271,13 @@ impl<'ctx> FunctionCallStack<'ctx> {
     pub fn handle_assign(
         &mut self,
         context: &'ctx Context,
+        basic_block_idx: u32,
         place_and_debug_info: &PlaceAndDebugInfo,
         rvalue: Option<&Rvalue>,
         ty: Option<TyKind>,
         serialized_const_value: Option<String>,
     ) {
+        self.process_switch_int_info(basic_block_idx);
         let fn_name = self
             .current_ctx()
             .and_then(|ctx| ctx.function_name().cloned());

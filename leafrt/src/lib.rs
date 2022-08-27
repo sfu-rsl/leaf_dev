@@ -105,6 +105,7 @@ pub fn call(
 
     FUNCTION_CALL_STACK.lock().unwrap().handle_fn_call(
         &CTX,
+        basic_block_idx,
         func_debug_info,
         func_return_type,
         destination_and_debug_info,
@@ -118,7 +119,13 @@ pub fn assign(basic_block_idx: u32, place_and_debug_info: &str, rvalue: &str) {
     let rvalue: Rvalue = rvalue.try_into().unwrap();
     println!("[assign] bb{basic_block_idx:?}, {place_and_debug_info:?} rvalue: {rvalue:?}");
     let ty: Option<TyKind> = rvalue.clone().try_into().ok();
-    handle_place(&place_and_debug_info, Some(&rvalue), ty, None);
+    handle_place(
+        basic_block_idx,
+        &place_and_debug_info,
+        Some(&rvalue),
+        ty,
+        None,
+    );
 }
 
 macro_rules! assign_fn {
@@ -139,6 +146,7 @@ macro_rules! assign_fn {
                     constant
                 );
                 handle_place(
+                    basic_block_idx,
                     &place_and_debug_info,
                     Some(&rvalue),
                     Some(TyKind::[<for_ $t>]()),
@@ -170,6 +178,7 @@ pub fn assign_str(basic_block_idx: u32, place_and_debug_info: &str, rvalue: &str
 
     println!("[assign_str] bb{basic_block_idx:?}, {place_and_debug_info:?} rvalue: {rvalue:?} constant: {constant:?}");
     handle_place(
+        basic_block_idx,
         &place_and_debug_info,
         Some(&rvalue),
         Some(TyKind::Str),
@@ -180,6 +189,7 @@ pub fn assign_str(basic_block_idx: u32, place_and_debug_info: &str, rvalue: &str
 /// Common function for handling places. Pass in [rvalue] for assign statements to be able to
 /// detect `Ref`s / `Copy`s / `Move`s of symbolic variables and propagate their status.
 fn handle_place(
+    basic_block_idx: u32,
     place_and_debug_info: &PlaceAndDebugInfo,
     rvalue: Option<&Rvalue>,
     ty: Option<TyKind>,
@@ -188,6 +198,7 @@ fn handle_place(
     let mut function_call_stack = FUNCTION_CALL_STACK.lock().unwrap();
     function_call_stack.handle_assign(
         &CTX,
+        basic_block_idx,
         place_and_debug_info,
         rvalue,
         ty,
