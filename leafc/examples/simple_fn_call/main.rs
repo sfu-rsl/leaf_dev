@@ -15,5 +15,5 @@ fn main() {
 
     let c = get_c(leaf_symbolic_arg);
 
-    let result = if c == 1 { "Equals to 1" } else { "Not 1" };
+    let result = if c == 2 { "Equals to 1" } else { "Not 1" };
 }

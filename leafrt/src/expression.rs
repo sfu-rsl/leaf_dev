@@ -1056,8 +1056,8 @@ impl<'ctx> FunctionCallStack<'ctx> {
     pub fn handle_ret(&mut self, ctx: &'ctx Context, basic_block_idx: u32) {
         let mut context_of_returned_function = self.pop();
         println!(
-            "[ret] bb{}, latest_ctx = {:?}, FUNCTION_CALL_STACK = {:?}",
-            basic_block_idx, context_of_returned_function, self,
+            "[ret] bb{}",
+            basic_block_idx,
         );
         if let Some(ref mut context_of_returned_function) = context_of_returned_function {
             if let FunctionCallContext::WithReturn {

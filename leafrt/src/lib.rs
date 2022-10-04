@@ -75,7 +75,7 @@ pub fn switch_int(basic_block_idx: u32, discr: &str, switch_targets: &str) {
     let discr: Operand = discr.try_into().unwrap();
     let switch_targets: SwitchTargets = switch_targets.try_into().unwrap();
     let mut stack = FUNCTION_CALL_STACK.lock().unwrap();
-    println!("[switch_int] bb{basic_block_idx:?}, discr: {discr:?} switch_targets: {switch_targets:?}, stack: {stack:?}");
+    println!("[switch_int] bb{basic_block_idx:?}, discr: {discr:?} switch_targets: {switch_targets:?}");
 
     stack.handle_switch_int(&SOLVER, discr, switch_targets);
 }
