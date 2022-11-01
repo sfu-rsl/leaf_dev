@@ -1,10 +1,44 @@
 extern crate rustc_middle;
 
+use crate::rvalue::{ConstantKind, Operand, Rvalue};
+use paste::paste;
 use rustc_middle::{mir, ty};
 use serde::{Deserialize, Serialize};
+use std::fmt::{Display, Formatter};
+use std::{fmt, result};
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct Ty(TyKind);
+
+impl Ty {
+    pub fn new(kind: TyKind) -> Self {
+        Ty(kind)
+    }
+
+    pub fn kind(&self) -> &TyKind {
+        &self.0
+    }
+}
+
+impl Display for Ty {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", serde_json::to_string(&self).unwrap())
+    }
+}
+
+impl TryFrom<&str> for Ty {
+    type Error = serde_json::Error;
+
+    fn try_from(s: &str) -> result::Result<Self, Self::Error> {
+        serde_json::from_str(s)
+    }
+}
+
+impl<'tcx> From<ty::Ty<'tcx>> for Ty {
+    fn from(ty: ty::Ty<'tcx>) -> Ty {
+        Ty(ty.kind().into())
+    }
+}
 
 impl<'tcx> From<&ty::Ty<'tcx>> for Ty {
     fn from(ty: &ty::Ty<'tcx>) -> Ty {
@@ -34,14 +68,87 @@ pub enum TyKind {
     Generator,        // Generator(DefId, SubstsRef<'tcx>, Movability)
     GeneratorWitness, // GeneratorWitness(Binder<'tcx, &'tcx List<Ty<'tcx>>>)
     Never,
-    Tuple,       // Tuple(&'tcx List<Ty<'tcx>>)
-    Projection,  // Projection(ProjectionTy<'tcx>)
-    Opaque,      // Opaque(DefId, SubstsRef<'tcx>)
-    Param,       // Param(ParamTy)
-    Bound,       // Bound(DebruijnIndex, BoundTy)
-    Placeholder, //Placeholder(PlaceholderType)
-    Infer,       //Infer(InferTy)
-    Error,       //Error(DelaySpanBugEmitted)
+    Tuple(Vec<Ty>), // Tuple(&'tcx List<Ty<'tcx>>)
+    Projection,     // Projection(ProjectionTy<'tcx>)
+    Opaque,         // Opaque(DefId, SubstsRef<'tcx>)
+    Param,          // Param(ParamTy)
+    Bound,          // Bound(DebruijnIndex, BoundTy)
+    Placeholder,    //Placeholder(PlaceholderType)
+    Infer,          //Infer(InferTy)
+    Error,          //Error(DelaySpanBugEmitted)
+}
+
+macro_rules! tykind_for_signed_int_types {
+    ($t:ty) => {
+        paste! {
+            pub fn [< for_ $t >]() -> TyKind { TyKind::Int(IntTy::[<$t:camel>]) }
+        }
+    };
+}
+
+macro_rules! tykind_for_unsigned_int_types {
+    ($t:ty) => {
+        paste! {
+            pub fn [< for_ $t >]() -> TyKind { TyKind::Uint(UintTy::[<$t:camel>]) }
+        }
+    };
+}
+
+impl TyKind {
+    tykind_for_signed_int_types!(isize);
+    tykind_for_signed_int_types!(i8);
+    tykind_for_signed_int_types!(i16);
+    tykind_for_signed_int_types!(i32);
+    tykind_for_signed_int_types!(i64);
+    tykind_for_signed_int_types!(i128);
+    tykind_for_unsigned_int_types!(usize);
+    tykind_for_unsigned_int_types!(u8);
+    tykind_for_unsigned_int_types!(u16);
+    tykind_for_unsigned_int_types!(u32);
+    tykind_for_unsigned_int_types!(u64);
+    tykind_for_unsigned_int_types!(u128);
+    pub fn for_f32() -> TyKind {
+        TyKind::Float(FloatTy::F32)
+    }
+    pub fn for_f64() -> TyKind {
+        TyKind::Float(FloatTy::F64)
+    }
+    pub fn for_char() -> TyKind {
+        TyKind::Char
+    }
+    pub fn for_bool() -> TyKind {
+        TyKind::Bool
+    }
+    pub fn for_str() -> TyKind {
+        TyKind::Str
+    }
+}
+
+impl TryFrom<Operand> for TyKind {
+    type Error = ();
+
+    fn try_from(value: Operand) -> Result<Self, ()> {
+        // TODO: Handle other variants
+        match value {
+            Operand::Constant(c) => match c.literal {
+                ConstantKind::Ty(cons) => Ok(cons.ty.kind().clone()),
+                ConstantKind::Val(_, ty) => Ok(ty.kind().clone()),
+            },
+            _ => Err(()),
+        }
+    }
+}
+
+impl TryFrom<Rvalue> for TyKind {
+    type Error = ();
+
+    fn try_from(value: Rvalue) -> Result<Self, ()> {
+        // TODO: Handle other variants
+        match value {
+            Rvalue::Use(u) => u.try_into(),
+            _ => Err(()),
+        }
+    }
 }
 
 impl<'tcx> From<&ty::TyKind<'tcx>> for TyKind {
@@ -69,7 +176,10 @@ impl<'tcx> From<&ty::TyKind<'tcx>> for TyKind {
             ty::TyKind::Generator(_, _, _) => TyKind::Generator,
             ty::TyKind::GeneratorWitness(_) => TyKind::GeneratorWitness,
             ty::TyKind::Never => TyKind::Never,
-            ty::TyKind::Tuple(_) => TyKind::Tuple,
+            ty::TyKind::Tuple(ty_list) => {
+                let ty_list: Vec<Ty> = ty_list.iter().map(|ty| ty.into()).collect();
+                TyKind::Tuple(ty_list)
+            }
             ty::TyKind::Projection(_) => TyKind::Projection,
             ty::TyKind::Opaque(_, _) => TyKind::Opaque,
             ty::TyKind::Param(_) => TyKind::Param,
@@ -169,5 +279,23 @@ impl From<&mir::Mutability> for Mutability {
             mir::Mutability::Mut => Mutability::Mut,
             mir::Mutability::Not => Mutability::Not,
         }
+    }
+}
+
+mod test {
+    use crate::ty::*;
+
+    #[test]
+    fn test_ty_equality() {
+        assert_eq!(
+            TypeAndMut {
+                ty: Box::new(Ty(TyKind::Bool)),
+                mutbl: Mutability::Mut
+            },
+            TypeAndMut {
+                ty: Box::new(Ty(TyKind::Bool)),
+                mutbl: Mutability::Mut
+            }
+        );
     }
 }

@@ -1,14 +1,31 @@
 #[macro_use]
 extern crate lazy_static;
 
-use leafcommon::place::Place;
-use leafcommon::rvalue::{Constant, Operand, OperandVec, Rvalue};
+use leafcommon::place::{Local, Place};
+use leafcommon::rvalue::{
+    BinOp, Constant, ConstantKind, Operand, OperandConstValueVec, OperandVec, Rvalue,
+};
+use std::borrow::Borrow;
 //use z3_sys::{Z3_config, Z3_context, Z3_solver};
 //use z3::{Config, Context, Solver};
-use leafcommon::misc::DebugInfo;
-use std::collections::HashSet;
+use crate::expression::{FunctionCallContext, FunctionCallStack};
+use leafcommon::misc::{DebugInfo, PlaceAndDebugInfo};
+use leafcommon::switchtargets::SwitchTargets;
+use leafcommon::ty::FloatTy::{F32, F64};
+use leafcommon::ty::IntTy::{Isize, I128, I16, I32, I64, I8};
+use leafcommon::ty::UintTy::{Usize, U128, U16, U32, U64, U8};
+use leafcommon::ty::{IntTy, Ty, TyKind};
+use paste::paste;
+use std::collections::{HashMap, HashSet};
+use std::ops::Deref;
+use std::str::FromStr;
 use std::sync::Mutex;
+use std::{concat, stringify};
 use z3;
+use z3::ast::{Ast, Int};
+use z3::SatResult;
+
+mod expression;
 
 struct Config(z3::Config);
 
@@ -20,6 +37,7 @@ impl Config {
     }
 }
 
+#[derive(Debug)]
 struct Context(z3::Context);
 
 unsafe impl std::marker::Sync for Context {}
@@ -40,12 +58,6 @@ impl<'a> Solver<'a> {
     }
 }
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-enum SymbolicVariable {
-    Place(Place),
-    Constant(Constant),
-}
-
 lazy_static! {
     //static ref CFG: Z3_config = z3_sys::Z3_mk_config();
     //static ref CTX: Z3_context = z3_sys::Z3_mk_context(CFG);
@@ -54,272 +66,153 @@ lazy_static! {
     static ref CTX: Context = Context::new(&CFG);
     static ref SOLVER: Solver<'static> = Solver::new(&CTX);
 
-    /// Keep track of places in memory that are known to be symbolic.
-    /// TODO: Keep track of drops to remove from the set?
-    static ref SYMBOLIC_VARIABLES: Mutex<HashSet<SymbolicVariable>> = Mutex::new(HashSet::new());
+    /// Keeps track of the function call stack. When we return, we can pop the information
+    /// about the function we returned from.
+    static ref FUNCTION_CALL_STACK: Mutex<FunctionCallStack<'static>> = Mutex::new(FunctionCallStack::new());
 }
 
-pub fn switch_int(discr: &str) {
+pub fn switch_int(basic_block_idx: u32, discr: &str, switch_targets: &str) {
     let discr: Operand = discr.try_into().unwrap();
-    println!("[switch_int] discr: {discr:?}");
+    let switch_targets: SwitchTargets = switch_targets.try_into().unwrap();
+    let mut stack = FUNCTION_CALL_STACK.lock().unwrap();
+    println!("[switch_int] bb{basic_block_idx:?}, discr: {discr:?} switch_targets: {switch_targets:?}");
+
+    stack.handle_switch_int(&SOLVER, discr, switch_targets);
 }
 
-pub fn ret() {
-    println!(
-        "[ret] SYMBOLIC_VARIABLES = {:?}",
-        SYMBOLIC_VARIABLES.lock().unwrap()
-    );
+pub fn ret(basic_block_idx: u32) {
+    let mut stack = FUNCTION_CALL_STACK.lock().unwrap();
+    stack.handle_ret(&CTX, basic_block_idx);
 }
 
 pub fn call(
+    basic_block_idx: u32,
     func_debug_info: &str,
     func: &str,
+    func_return_type: &str,
     args: &str,
-    destination: &str,
-    dest_debug_info: &str,
+    const_arg_values: &str,
+    dest_and_debug_info: &str,
 ) {
     let func_debug_info: DebugInfo = func_debug_info.try_into().unwrap();
-    let dest_debug_info: DebugInfo = dest_debug_info.try_into().unwrap();
     let func: Operand = func.try_into().unwrap();
+    let func_return_type: Ty = func_return_type.try_into().unwrap();
     let args: OperandVec = args.try_into().unwrap();
-    let destination: Place = destination.try_into().unwrap();
-    println!("[call] func_debug_info: {func_debug_info:?} func: {func:?} args: {args:?} destination: {destination:?} dest_debug_info: {dest_debug_info:?}");
-    handle_place(&dest_debug_info, &destination, None);
+    let const_arg_values: OperandConstValueVec = const_arg_values.try_into().unwrap();
+    assert_eq!(const_arg_values.0.len(), args.0.len());
+    let destination_and_debug_info: PlaceAndDebugInfo = dest_and_debug_info.try_into().unwrap();
+    println!("[call] bb{basic_block_idx:?}, func_debug_info: {func_debug_info:?} func: {func:?} func_return_type: {func_return_type:?} args: {args:?} const_arg_values: {const_arg_values:?} dest: {destination_and_debug_info:?}");
+
+    FUNCTION_CALL_STACK.lock().unwrap().handle_fn_call(
+        &CTX,
+        basic_block_idx,
+        func_debug_info,
+        func_return_type,
+        destination_and_debug_info,
+        args,
+        const_arg_values,
+    )
 }
 
-pub fn assign(debug_info: &str, place: &str, rvalue: &str) {
-    let debug_info: DebugInfo = debug_info.try_into().unwrap();
-    let place: Place = place.try_into().unwrap();
+pub fn assign(basic_block_idx: u32, place_and_debug_info: &str, rvalue: &str) {
+    let place_and_debug_info: PlaceAndDebugInfo = place_and_debug_info.try_into().unwrap();
     let rvalue: Rvalue = rvalue.try_into().unwrap();
-
-    println!("[assign] debug_info: {debug_info:?} place: {place:?} rvalue: {rvalue:?}");
-    handle_place(&debug_info, &place, Some(&rvalue));
+    println!("[assign] bb{basic_block_idx:?}, {place_and_debug_info:?} rvalue: {rvalue:?}");
+    let ty: Option<TyKind> = rvalue.clone().try_into().ok();
+    handle_place(
+        basic_block_idx,
+        &place_and_debug_info,
+        Some(&rvalue),
+        ty,
+        None,
+    );
 }
 
-pub fn assign_isize(debug_info: &str, place: &str, rvalue: &str, constant: isize) {
-    let debug_info: DebugInfo = debug_info.try_into().unwrap();
-    let place: Place = place.try_into().unwrap();
-    let rvalue: Rvalue = rvalue.try_into().unwrap();
-
-    println!("[assign_isize] {place:?} rvalue: {rvalue:?} constant: {constant:?}");
-    handle_place(&debug_info, &place, Some(&rvalue));
+macro_rules! assign_fn {
+    ($t:ty) => {
+        paste! {
+            pub fn [< assign_ $t >](basic_block_idx: u32, place_and_debug_info: &str, rvalue: &str, constant: $t) {
+                let place_and_debug_info: PlaceAndDebugInfo = place_and_debug_info.try_into().unwrap();
+                let rvalue: Rvalue = rvalue.try_into().unwrap();
+                println!(
+                    concat!(
+                        "[assign_",
+                        stringify!($t),
+                        "] bb{}, {:?} rvalue: {:?} constant: {:?}"
+                    ),
+                    basic_block_idx,
+                    place_and_debug_info,
+                    rvalue,
+                    constant
+                );
+                handle_place(
+                    basic_block_idx,
+                    &place_and_debug_info,
+                    Some(&rvalue),
+                    Some(TyKind::[<for_ $t>]()),
+                    Some(constant.to_string()),
+                )
+            }
+        }
+    };
 }
 
-pub fn assign_i8(debug_info: &str, place: &str, rvalue: &str, constant: i8) {
-    let debug_info: DebugInfo = debug_info.try_into().unwrap();
-    let place: Place = place.try_into().unwrap();
+assign_fn!(isize);
+assign_fn!(i8);
+assign_fn!(i16);
+assign_fn!(i32);
+assign_fn!(i64);
+assign_fn!(usize);
+assign_fn!(u8);
+assign_fn!(u16);
+assign_fn!(u32);
+assign_fn!(u64);
+assign_fn!(f32);
+assign_fn!(f64);
+assign_fn!(char);
+assign_fn!(bool);
+
+pub fn assign_str(basic_block_idx: u32, place_and_debug_info: &str, rvalue: &str, constant: &str) {
+    let place_and_debug_info: PlaceAndDebugInfo = place_and_debug_info.try_into().unwrap();
     let rvalue: Rvalue = rvalue.try_into().unwrap();
 
-    println!("[assign_i8] debug_info: {debug_info:?} place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
-    handle_place(&debug_info, &place, Some(&rvalue));
-}
-
-pub fn assign_i16(debug_info: &str, place: &str, rvalue: &str, constant: i16) {
-    let debug_info: DebugInfo = debug_info.try_into().unwrap();
-    let place: Place = place.try_into().unwrap();
-    let rvalue: Rvalue = rvalue.try_into().unwrap();
-
-    println!("[assign_i16] debug_info: {debug_info:?} place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
-    handle_place(&debug_info, &place, Some(&rvalue));
-}
-
-pub fn assign_i32(debug_info: &str, place: &str, rvalue: &str, constant: i32) {
-    let debug_info: DebugInfo = debug_info.try_into().unwrap();
-    let debug_info: DebugInfo = debug_info.try_into().unwrap();
-    let place: Place = place.try_into().unwrap();
-    let rvalue: Rvalue = rvalue.try_into().unwrap();
-
-    println!("[assign_i32] debug_info: {debug_info:?} place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
-    handle_place(&debug_info, &place, Some(&rvalue))
-}
-
-pub fn assign_i64(debug_info: &str, place: &str, rvalue: &str, constant: i64) {
-    let debug_info: DebugInfo = debug_info.try_into().unwrap();
-    let place: Place = place.try_into().unwrap();
-    let rvalue: Rvalue = rvalue.try_into().unwrap();
-
-    println!("[assign_i64] debug_info: {debug_info:?} place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
-    handle_place(&debug_info, &place, Some(&rvalue));
-}
-
-pub fn assign_i128(debug_info: &str, place: &str, rvalue: &str, constant: i128) {
-    let debug_info: DebugInfo = debug_info.try_into().unwrap();
-    let place: Place = place.try_into().unwrap();
-    let rvalue: Rvalue = rvalue.try_into().unwrap();
-
-    println!("[assign_i128] debug_info: {debug_info:?} place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
-    handle_place(&debug_info, &place, Some(&rvalue));
-}
-
-pub fn assign_usize(debug_info: &str, place: &str, rvalue: &str, constant: usize) {
-    let debug_info: DebugInfo = debug_info.try_into().unwrap();
-    let place: Place = place.try_into().unwrap();
-    let rvalue: Rvalue = rvalue.try_into().unwrap();
-
-    println!("[assign_usize] debug_info: {debug_info:?} place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
-    handle_place(&debug_info, &place, Some(&rvalue));
-}
-
-pub fn assign_u8(debug_info: &str, place: &str, rvalue: &str, constant: u8) {
-    let debug_info: DebugInfo = debug_info.try_into().unwrap();
-    let place: Place = place.try_into().unwrap();
-    let rvalue: Rvalue = rvalue.try_into().unwrap();
-
-    println!("[assign_u8] debug_info: {debug_info:?} place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
-    handle_place(&debug_info, &place, Some(&rvalue))
-}
-
-pub fn assign_u16(debug_info: &str, place: &str, rvalue: &str, constant: u16) {
-    let debug_info: DebugInfo = debug_info.try_into().unwrap();
-    let place: Place = place.try_into().unwrap();
-    let rvalue: Rvalue = rvalue.try_into().unwrap();
-
-    println!("[assign_u16] debug_info: {debug_info:?} place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
-    handle_place(&debug_info, &place, Some(&rvalue))
-}
-
-pub fn assign_u32(debug_info: &str, place: &str, rvalue: &str, constant: u32) {
-    let debug_info: DebugInfo = debug_info.try_into().unwrap();
-    let place: Place = place.try_into().unwrap();
-    let rvalue: Rvalue = rvalue.try_into().unwrap();
-
-    println!("[assign_u32] debug_info: {debug_info:?} place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
-    handle_place(&debug_info, &place, Some(&rvalue))
-}
-
-pub fn assign_u64(debug_info: &str, place: &str, rvalue: &str, constant: u64) {
-    let debug_info: DebugInfo = debug_info.try_into().unwrap();
-    let place: Place = place.try_into().unwrap();
-    let rvalue: Rvalue = rvalue.try_into().unwrap();
-
-    println!("[assign_u64] debug_info: {debug_info:?} place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
-    handle_place(&debug_info, &place, Some(&rvalue))
-}
-
-pub fn assign_u128(debug_info: &str, place: &str, rvalue: &str, constant: u128) {
-    let debug_info: DebugInfo = debug_info.try_into().unwrap();
-    let place: Place = place.try_into().unwrap();
-    let rvalue: Rvalue = rvalue.try_into().unwrap();
-
-    println!("[assign_u128] debug_info: {debug_info:?} place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
-    handle_place(&debug_info, &place, Some(&rvalue))
-}
-
-pub fn assign_f32(debug_info: &str, place: &str, rvalue: &str, constant: f32) {
-    let debug_info: DebugInfo = debug_info.try_into().unwrap();
-    let place: Place = place.try_into().unwrap();
-    let rvalue: Rvalue = rvalue.try_into().unwrap();
-
-    println!("[assign_f32] debug_info: {debug_info:?} place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
-    handle_place(&debug_info, &place, Some(&rvalue))
-}
-
-pub fn assign_f64(debug_info: &str, place: &str, rvalue: &str, constant: f64) {
-    let debug_info: DebugInfo = debug_info.try_into().unwrap();
-    let place: Place = place.try_into().unwrap();
-    let rvalue: Rvalue = rvalue.try_into().unwrap();
-
-    println!("[assign_f64] debug_info: {debug_info:?} place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
-    handle_place(&debug_info, &place, Some(&rvalue))
-}
-
-pub fn assign_char(debug_info: &str, place: &str, rvalue: &str, constant: char) {
-    let debug_info: DebugInfo = debug_info.try_into().unwrap();
-    let place: Place = place.try_into().unwrap();
-    let rvalue: Rvalue = rvalue.try_into().unwrap();
-
-    println!("[assign_char] debug_info: {debug_info:?} place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
-    handle_place(&debug_info, &place, Some(&rvalue))
-}
-
-pub fn assign_bool(debug_info: &str, place: &str, rvalue: &str, constant: bool) {
-    let debug_info: DebugInfo = debug_info.try_into().unwrap();
-    let place: Place = place.try_into().unwrap();
-    let rvalue: Rvalue = rvalue.try_into().unwrap();
-
-    println!("[assign_bool] debug_info: {debug_info:?} place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
-    handle_place(&debug_info, &place, Some(&rvalue));
-}
-
-pub fn assign_str(debug_info: &str, place: &str, rvalue: &str, constant: &str) {
-    let debug_info: DebugInfo = debug_info.try_into().unwrap();
-    let place: Place = place.try_into().unwrap();
-    let rvalue: Rvalue = rvalue.try_into().unwrap();
-
-    println!("[assign_str] debug_info: {debug_info:?} place: {place:?} rvalue: {rvalue:?} constant: {constant:?}");
-    handle_place(&debug_info, &place, Some(&rvalue));
+    println!("[assign_str] bb{basic_block_idx:?}, {place_and_debug_info:?} rvalue: {rvalue:?} constant: {constant:?}");
+    handle_place(
+        basic_block_idx,
+        &place_and_debug_info,
+        Some(&rvalue),
+        Some(TyKind::Str),
+        Some(constant.to_string()),
+    );
 }
 
 /// Common function for handling places. Pass in [rvalue] for assign statements to be able to
 /// detect `Ref`s / `Copy`s / `Move`s of symbolic variables and propagate their status.
-fn handle_place(debug_info: &DebugInfo, place: &Place, rvalue: Option<&Rvalue>) {
-    let mut symbolic_variables_set = SYMBOLIC_VARIABLES.lock().unwrap();
-
-    if let Some(rvalue) = rvalue {
-        match *rvalue {
-            Rvalue::Use(ref use_operand) => match use_operand {
-                Operand::Copy(cooy_place) => {
-                    let old_place = SymbolicVariable::Place(cooy_place.clone());
-                    if symbolic_variables_set.contains(&old_place) {
-                        let new_place = SymbolicVariable::Place(place.clone());
-                        symbolic_variables_set.insert(new_place);
-                    }
-                }
-                Operand::Move(move_place) => {
-                    let old_place = SymbolicVariable::Place(move_place.clone());
-                    if symbolic_variables_set.remove(&old_place) {
-                        let new_place = SymbolicVariable::Place(place.clone());
-                        symbolic_variables_set.insert(new_place);
-                    }
-                }
-                Operand::Constant(constant) => {
-                    let old_constant = SymbolicVariable::Constant(*constant.clone());
-                    if symbolic_variables_set.contains(&old_constant) {
-                        let new_place = SymbolicVariable::Place(place.clone());
-                        symbolic_variables_set.insert(new_place);
-                    }
-                }
-            },
-            Rvalue::Repeat(_, _) => {}
-            Rvalue::Ref(_, ref ref_place) => {
-                // TODO: Is ther a way to tell if a reference is expired
-                let old_place = SymbolicVariable::Place(ref_place.clone());
-                if symbolic_variables_set.contains(&old_place) {
-                    let new_place = SymbolicVariable::Place(place.clone());
-                    symbolic_variables_set.insert(new_place);
-                }
-            }
-            Rvalue::ThreadLocalRef => {}
-            Rvalue::AddressOf(_, _) => {}
-            Rvalue::Len(_) => {}
-            Rvalue::Cast(_, _, _) => {}
-            Rvalue::BinaryOp(_, _) => {}
-            Rvalue::CheckedBinaryOp(_, _) => {}
-            Rvalue::NullaryOp(_, _) => {}
-            Rvalue::UnaryOp(_, _) => {}
-            Rvalue::Discriminant(_) => {}
-            Rvalue::Aggregate(_, _) => {}
-            Rvalue::ShallowInitBox(_, _) => {}
-        }
-    // TODO: Add a proper way for denoting symbolic variables instead of just reading the
-    //  variable name.
-    } else if debug_info
-        .name
-        .as_ref()
-        .map(|n| n.to_lowercase().contains("leaf_symbolic"))
-        .unwrap_or(false)
-    {
-        symbolic_variables_set.insert(SymbolicVariable::Place(place.clone()));
-    }
+fn handle_place(
+    basic_block_idx: u32,
+    place_and_debug_info: &PlaceAndDebugInfo,
+    rvalue: Option<&Rvalue>,
+    ty: Option<TyKind>,
+    serialized_const_value: Option<String>,
+) {
+    let mut function_call_stack = FUNCTION_CALL_STACK.lock().unwrap();
+    function_call_stack.handle_assign(
+        &CTX,
+        basic_block_idx,
+        place_and_debug_info,
+        rvalue,
+        ty,
+        serialized_const_value,
+    );
 }
 
-pub fn drop(debug_info: &str, place: &str) {
-    let debug_info: DebugInfo = debug_info.try_into().unwrap();
-    let place: Place = place.try_into().unwrap();
+pub fn drop(place_and_debug_info: &str) {
+    let place_and_debug_info: PlaceAndDebugInfo = place_and_debug_info.try_into().unwrap();
+    let variable_removed = {
+        // place_map.remove(&place)
+        // TODO: Fix
+        false
+    };
 
-    let mut symbolic_variables_set = SYMBOLIC_VARIABLES.lock().unwrap();
-    let symbolic_variable_removed =
-        symbolic_variables_set.remove(&SymbolicVariable::Place(place.clone()));
-
-    println!("[drop] debug_info: {debug_info:?} place: {place:?} symbolic_variable_removed: {symbolic_variable_removed:?}");
+    println!("[drop] {place_and_debug_info:?} variable_removed: {variable_removed:?}");
 }

@@ -1,5 +1,6 @@
 extern crate rustc_middle;
 
+use crate::ty::TyKind;
 use crate::{
     consts::{Const, ConstValue},
     place::Place,
@@ -93,6 +94,23 @@ impl TryFrom<&str> for OperandVec {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct OperandConstValueVec(pub Vec<Option<String>>);
+
+impl TryFrom<&str> for OperandConstValueVec {
+    type Error = serde_json::Error;
+
+    fn try_from(s: &str) -> result::Result<Self, Self::Error> {
+        serde_json::from_str(s)
+    }
+}
+
+impl Display for OperandConstValueVec {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", serde_json::to_string(&self).unwrap())
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Operand {
     Copy(Place),
     Move(Place),
@@ -142,6 +160,15 @@ impl<'tcx> From<&mir::Constant<'tcx>> for Constant {
 pub enum ConstantKind {
     Ty(Const),
     Val(ConstValue, Ty),
+}
+
+impl ConstantKind {
+    pub fn get_ty(&self) -> &Ty {
+        match self {
+            ConstantKind::Ty(cons) => &cons.ty,
+            ConstantKind::Val(_, ty) => &ty,
+        }
+    }
 }
 
 impl<'tcx> From<&mir::ConstantKind<'tcx>> for ConstantKind {
@@ -214,7 +241,7 @@ impl From<&adjustment::PointerCast> for PointerCast {
     }
 }
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, Serialize, Deserialize)]
 pub enum BinOp {
     Add,
     Sub,

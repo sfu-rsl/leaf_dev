@@ -6,4 +6,5 @@ pub mod misc;
 pub mod place;
 pub mod rvalue;
 pub mod statementkind;
+pub mod switchtargets;
 pub mod ty;
