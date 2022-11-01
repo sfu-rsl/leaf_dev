@@ -188,21 +188,25 @@ impl<'tcx> Transformer<'tcx> {
                             .map(|arg| {
                                 if let Operand::Constant(c) = arg {
                                     let mut const_as_str = c.to_string();
+                                    log::debug!("Arg constant value: {}", const_as_str);
+                                    
                                     assert!(const_as_str.starts_with("const "));
                                     for _ in 0.."const ".len() {
                                         const_as_str.remove(0);
                                     }
 
-                                    let underscore_suffix_idx = const_as_str.rfind("_").unwrap();
-                                    log::debug!(
-                                        "Removing suffix {} from function arg constant value {}",
-                                        &const_as_str[underscore_suffix_idx..],
-                                        &const_as_str
-                                    );
-                                    let substr_size = const_as_str.len() - underscore_suffix_idx;
-                                    for _ in 0..substr_size {
-                                        const_as_str.pop();
+                                    if let Some(underscore_suffix_idx) = const_as_str.rfind("_") {
+                                        log::debug!(
+                                            "Removing suffix {} from function arg constant value {}",
+                                            &const_as_str[underscore_suffix_idx..],
+                                            &const_as_str
+                                        );
+                                        let substr_size = const_as_str.len() - underscore_suffix_idx;
+                                        for _ in 0..substr_size {
+                                            const_as_str.pop();
+                                        }
                                     }
+
                                     Some(const_as_str.to_string())
                                     /*
                                     use rustc_middle::ty::print::{FmtPrinter, PrettyPrinter};
