@@ -3,13 +3,9 @@ extern crate rustc_span;
 extern crate rustc_target;
 
 use crate::{const_separator, preprocessor};
-use leafcommon::{misc, rvalue, switchtargets, ty};
-//use log::debug;
-use leafcommon::consts::Size;
 use leafcommon::misc::{DebugInfo, PlaceAndDebugInfo};
-use rustc_middle::mir::interpret::ConstValue;
-use rustc_middle::mir::AggregateKind;
-use rustc_middle::ty::{FnSig, ScalarInt, Ty};
+use leafcommon::{misc, rvalue, switchtargets, ty};
+use rustc_middle::ty::{FnSig, ScalarInt};
 use rustc_middle::{
     middle::exported_symbols,
     mir::{
@@ -327,7 +323,7 @@ impl<'tcx> Transformer<'tcx> {
                 .unwrap()
                 .1
 
-            // TODO: We should check the inner rvalues recursively because it 
+            // TODO: We should check the inner rvalues recursively because it
             // seems that it is possible to see promoted values in promoted blocks.
         });
 
