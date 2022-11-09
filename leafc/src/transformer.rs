@@ -8,6 +8,7 @@ use leafcommon::{misc, rvalue, switchtargets, ty};
 use leafcommon::consts::Size;
 use leafcommon::misc::{DebugInfo, PlaceAndDebugInfo};
 use rustc_middle::mir::interpret::ConstValue;
+use rustc_middle::mir::AggregateKind;
 use rustc_middle::ty::{FnSig, ScalarInt, Ty};
 use rustc_middle::{
     middle::exported_symbols,
@@ -189,7 +190,7 @@ impl<'tcx> Transformer<'tcx> {
                                 if let Operand::Constant(c) = arg {
                                     let mut const_as_str = c.to_string();
                                     log::debug!("Arg constant value: {}", const_as_str);
-                                    
+
                                     assert!(const_as_str.starts_with("const "));
                                     for _ in 0.."const ".len() {
                                         const_as_str.remove(0);
@@ -307,56 +308,61 @@ impl<'tcx> Transformer<'tcx> {
         debug_infos: &[VarDebugInfo],
     ) -> (String, Vec<Operand<'tcx>>) {
         let dest_and_debug_info = self.build_place_and_debug_info(debug_infos, Some(p));
-        let rvalue: rvalue::Rvalue = r.into();
-        if let Some((did, p)) = get_unevaluated_promoted(&op) {
-            let promoteds = self.tcx.promoted_mir_opt_const_arg(did);
-            let promoted = promoteds.get(p).unwrap();
+
+        let r = get_unevaluated_promoted(&op).map_or(r, |(did, p)| {
+            let promoted = self.tcx.promoted_mir_opt_const_arg(did).get(p).unwrap();
+
             // TODO: Not expecting more than one block for a promoted---verify.
             assert!(promoted.basic_blocks().len() == 1);
-            let op = promoted
+
+            // TODO: Not expecting more than one statement with a const for a promoted
+            &promoted
                 .basic_blocks()
                 .iter()
-                .try_for_each(|bb| {
-                    // TODO: Not expecting more than one statement with a const for a promoted
-                    bb.statements.iter().try_for_each(|statement| {
-                        get_const_op(statement).map_or_else(|| Ok(()), |op| Err(op))
-                    })
-                })
-                .unwrap_err();
+                .next()
+                .unwrap()
+                .statements
+                .iter()
+                .find_map(|s: &Statement| s.kind.as_assign())
+                .unwrap()
+                .1
 
-            (
-                get_leafrt_assign_fn_name(op.constant().unwrap().ty().kind()).unwrap(),
-                vec![
-                    self.build_basic_block_u32_operand(basic_block_idx),
-                    self.build_str(dest_and_debug_info.to_string()),
-                    self.build_str(rvalue.to_string()),
-                    (*op).clone(),
-                ],
-            )
-        } else {
-            if let Rvalue::Use(Operand::Constant(box c)) = r {
-                let fn_name_option = get_leafrt_assign_fn_name(c.ty().kind());
-                if let Some(fn_name) = fn_name_option {
-                    return (
-                        fn_name,
-                        vec![
-                            self.build_basic_block_u32_operand(basic_block_idx),
-                            self.build_str(dest_and_debug_info.to_string()),
-                            self.build_str(rvalue.to_string()),
-                            (*op).clone(),
-                        ],
-                    );
+            // TODO: We should check the inner rvalues recursively because it 
+            // seems that it is possible to see promoted values in promoted blocks.
+        });
+
+        let rvalue: rvalue::Rvalue = r.into();
+
+        // As we have extracted the rvalue from the promoted block,
+        // r is not necessarily a Use anymore.
+
+        fn find_constant_assign<'a>(r: &Rvalue<'a>) -> Option<(String, Vec<Operand<'a>>)> {
+            if let Rvalue::Use(op) = r {
+                if let Operand::Constant(box c) = op {
+                    if let Some(fn_name) = get_leafrt_assign_fn_name(c.ty().kind()) {
+                        return Some((fn_name, vec![(*op).clone()]));
+                    }
                 }
             }
-            (
-                "leafrt::assign".into(),
+
+            None
+        }
+
+        let (fn_name, additional_args) =
+            find_constant_assign(r).unwrap_or(("leafrt::assign".into(), vec![]));
+
+        (
+            fn_name,
+            [
                 vec![
                     self.build_basic_block_u32_operand(basic_block_idx),
                     self.build_str(dest_and_debug_info.to_string()),
                     self.build_str(rvalue.to_string()),
                 ],
-            )
-        }
+                additional_args,
+            ]
+            .concat(),
+        )
     }
 
     fn transform_goto(&self, basic_block_idx: BasicBlock) -> terminator::Terminator<'tcx> {
@@ -505,27 +511,6 @@ fn get_unevaluated_promoted<'tcx>(
         {
             return Some((did, p));
         }
-    }
-    None
-}
-
-fn get_const_op<'tcx>(statement: &'tcx Statement<'tcx>) -> Option<&'tcx Operand<'tcx>> {
-    if let Statement {
-        source_info: _,
-        kind:
-            StatementKind::Assign(box (
-                _,
-                Rvalue::Use(
-                    op @ Operand::Constant(box Constant {
-                        span: _,
-                        user_ty: _,
-                        literal: _,
-                    }),
-                ),
-            )),
-    } = statement
-    {
-        return Some(op);
     }
     None
 }
