@@ -329,19 +329,15 @@ impl<'tcx> Transformer<'tcx> {
 
         let rvalue: rvalue::Rvalue = r.into();
 
-        // As we have extracted the rvalue from the promoted block,
-        // r is not necessarily a Use anymore.
-
         fn find_constant_assign<'a>(r: &Rvalue<'a>) -> Option<(String, Vec<Operand<'a>>)> {
-            if let Rvalue::Use(op) = r {
-                if let Operand::Constant(box c) = op {
-                    if let Some(fn_name) = get_leafrt_assign_fn_name(c.ty().kind()) {
-                        return Some((fn_name, vec![(*op).clone()]));
-                    }
-                }
+            /* As we have extracted the rvalue from the promoted block,
+             * r is not necessarily a Use anymore. */
+            if let Rvalue::Use(op @ Operand::Constant(box c)) = r {
+                get_leafrt_assign_fn_name(c.ty().kind())
+                    .map(|fn_name| (fn_name, vec![(*op).clone()]))
+            } else {
+                None
             }
-
-            None
         }
 
         let (fn_name, additional_args) =
