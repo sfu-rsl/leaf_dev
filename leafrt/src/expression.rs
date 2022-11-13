@@ -215,6 +215,7 @@ impl<'ctx> PlaceMap<'ctx> {
                         unreachable!()
                     }
                 }
+                AstType::BitVector(_) => todo!(),
             },
             BinOp::Sub => match left.ast_type() {
                 AstType::Bool(_) | AstType::String(_) => unreachable!(),
@@ -255,6 +256,7 @@ impl<'ctx> PlaceMap<'ctx> {
                         unreachable!()
                     }
                 }
+                AstType::BitVector(_) => todo!(),
             },
             BinOp::Mul => match left.ast_type() {
                 AstType::Bool(_) | AstType::String(_) => unreachable!(),
@@ -291,6 +293,7 @@ impl<'ctx> PlaceMap<'ctx> {
                         unreachable!()
                     }
                 }
+                AstType::BitVector(_) => todo!(),
             },
             BinOp::Div => match left.ast_type() {
                 AstType::Bool(_) | AstType::String(_) => unreachable!(),
@@ -330,6 +333,7 @@ impl<'ctx> PlaceMap<'ctx> {
                         unreachable!()
                     }
                 }
+                AstType::BitVector(_) => todo!(),
             },
             BinOp::Rem => todo!(),
             BinOp::BitXor => todo!(),
@@ -377,6 +381,7 @@ impl<'ctx> PlaceMap<'ctx> {
                         unreachable!()
                     }
                 }
+                AstType::BitVector(_) => todo!(),
             },
             BinOp::Lt => todo!(),
             BinOp::Le => todo!(),
@@ -417,6 +422,7 @@ impl<'ctx> PlaceMap<'ctx> {
                         unreachable!()
                     }
                 }
+                AstType::BitVector(_) => todo!(),
             },
             BinOp::Ge => match left.ast_type() {
                 AstType::Bool(_) | AstType::String(_) => unreachable!(),
@@ -438,6 +444,7 @@ impl<'ctx> PlaceMap<'ctx> {
                         unreachable!()
                     }
                 }
+                AstType::BitVector(_) => todo!(),
             },
             BinOp::Gt => match left.ast_type() {
                 AstType::Bool(_) | AstType::String(_) => unreachable!(),
@@ -459,6 +466,7 @@ impl<'ctx> PlaceMap<'ctx> {
                         unreachable!()
                     }
                 }
+                AstType::BitVector(_) => todo!(),
             },
             BinOp::Offset => todo!(),
         };
@@ -1017,6 +1025,7 @@ impl<'ctx> FunctionCallStack<'ctx> {
                 }
             }
             AstType::Float { .. } => todo!(),
+            AstType::BitVector(_) => todo!(),
             AstType::String(_) => todo!(),
         }
         if let Some(otherwise_basic_block) = otherwise_basic_block {
@@ -1353,6 +1362,7 @@ enum AstType<'ctx> {
         ast: z3::ast::Float<'ctx>,
         is_f32: bool,
     },
+    BitVector(z3::ast::BV<'ctx>),
     String(z3::ast::String<'ctx>),
 }
 
