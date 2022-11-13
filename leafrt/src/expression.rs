@@ -10,6 +10,7 @@ use leafcommon::switchtargets::SwitchTargets;
 use leafcommon::ty::IntTy::I32;
 use leafcommon::ty::{FloatTy, IntTy, Ty, TyKind};
 use paste::paste;
+use std::cmp;
 use std::collections::{HashMap, HashSet};
 use std::env::var;
 use std::fmt::{Debug, Formatter};
@@ -18,10 +19,11 @@ use std::rc::Rc;
 use std::slice::Iter;
 use std::str::FromStr;
 use std::sync::Arc;
-use z3::ast::{Ast, Bool, Int};
+use z3::ast::{Ast, Bool, Int, BV};
 use z3::SatResult;
 
-const CHAR_BIT_SIZE: u32 = 32;
+const CHAR_BIT_SIZE: u32 = (8 * std::mem::size_of::<char>()) as u32;
+const SWITCH_VALUE_BIT_SIZE: u32 = (8 * std::mem::size_of::<u128>()) as u32;
 
 /// Contains an insertion result from an [Operand] insert. Since an Operand insert can use Move
 #[derive(Debug, Eq, PartialEq)]
@@ -217,7 +219,24 @@ impl<'ctx> PlaceMap<'ctx> {
                         unreachable!()
                     }
                 }
-                AstType::BitVector(_) => todo!(),
+                AstType::BitVector(left_ast) => {
+                    if let AstType::BitVector(right_ast) = right.ast_type() {
+                        let sum = z3::ast::BV::new_const(
+                            &ctx.0,
+                            variable_name,
+                            // Note: Possibility of overflow. Make it more precise in future.
+                            cmp::max(left_ast.get_size(), left_ast.get_size()),
+                        );
+                        let formula = sum._eq(&(left_ast + right_ast));
+                        (
+                            AstType::BitVector(sum),
+                            vec![formula],
+                            left.ty_kind().clone(),
+                        )
+                    } else {
+                        unreachable!()
+                    }
+                }
             },
             BinOp::Sub => match left.ast_type() {
                 AstType::Bool(_) | AstType::String(_) => unreachable!(),
@@ -258,7 +277,23 @@ impl<'ctx> PlaceMap<'ctx> {
                         unreachable!()
                     }
                 }
-                AstType::BitVector(_) => todo!(),
+                AstType::BitVector(left_ast) => {
+                    if let AstType::BitVector(right_ast) = right.ast_type() {
+                        let sum = z3::ast::BV::new_const(
+                            &ctx.0,
+                            variable_name,
+                            cmp::max(left_ast.get_size(), left_ast.get_size()),
+                        );
+                        let formula = sum._eq(&(left_ast - right_ast));
+                        (
+                            AstType::BitVector(sum),
+                            vec![formula],
+                            left.ty_kind().clone(),
+                        )
+                    } else {
+                        unreachable!()
+                    }
+                }
             },
             BinOp::Mul => match left.ast_type() {
                 AstType::Bool(_) | AstType::String(_) => unreachable!(),
@@ -295,7 +330,25 @@ impl<'ctx> PlaceMap<'ctx> {
                         unreachable!()
                     }
                 }
-                AstType::BitVector(_) => todo!(),
+                AstType::BitVector(left_ast) => {
+                    if let AstType::BitVector(right_ast) = right.ast_type() {
+                        let product = z3::ast::BV::new_const(
+                            &ctx.0,
+                            variable_name,
+                            /* NOTE: Although it's a safe upper bound,
+                             * it's not realistic withing the context of programs. */
+                            left_ast.get_size() + right_ast.get_size(),
+                        );
+                        let formula = product._eq(&(left_ast * right_ast));
+                        (
+                            AstType::BitVector(product),
+                            vec![formula],
+                            left.ty_kind().clone(),
+                        )
+                    } else {
+                        unreachable!()
+                    }
+                }
             },
             BinOp::Div => match left.ast_type() {
                 AstType::Bool(_) | AstType::String(_) => unreachable!(),
@@ -335,7 +388,24 @@ impl<'ctx> PlaceMap<'ctx> {
                         unreachable!()
                     }
                 }
-                AstType::BitVector(_) => todo!(),
+                AstType::BitVector(left_ast) => {
+                    if let AstType::BitVector(right_ast) = right.ast_type() {
+                        let sum = z3::ast::BV::new_const(
+                            &ctx.0,
+                            variable_name,
+                            cmp::max(left_ast.get_size(), left_ast.get_size()),
+                        );
+                        // Note: Decide about the sign.
+                        let formula = sum._eq(&(left_ast.bvsdiv(right_ast)));
+                        (
+                            AstType::BitVector(sum),
+                            vec![formula],
+                            left.ty_kind().clone(),
+                        )
+                    } else {
+                        unreachable!()
+                    }
+                }
             },
             BinOp::Rem => todo!(),
             BinOp::BitXor => todo!(),
@@ -383,7 +453,15 @@ impl<'ctx> PlaceMap<'ctx> {
                         unreachable!()
                     }
                 }
-                AstType::BitVector(_) => todo!(),
+                AstType::BitVector(left_ast) => {
+                    if let AstType::BitVector(right_ast) = right.ast_type() {
+                        let result = z3::ast::Bool::new_const(&ctx.0, variable_name);
+                        let formula = result._eq(&left_ast._eq(right_ast));
+                        (AstType::Bool(result), vec![formula], left.ty_kind().clone())
+                    } else {
+                        unreachable!()
+                    }
+                }
             },
             BinOp::Lt => todo!(),
             BinOp::Le => todo!(),
@@ -424,7 +502,16 @@ impl<'ctx> PlaceMap<'ctx> {
                         unreachable!()
                     }
                 }
-                AstType::BitVector(_) => todo!(),
+                AstType::BitVector(left_ast) => {
+                    if let AstType::BitVector(right_ast) = right.ast_type() {
+                        let result = z3::ast::Bool::new_const(&ctx.0, variable_name);
+                        // Note: Decide about the sign.
+                        let formula = result._eq(&left_ast._eq(right_ast).not());
+                        (AstType::Bool(result), vec![formula], left.ty_kind().clone())
+                    } else {
+                        unreachable!()
+                    }
+                }
             },
             BinOp::Ge => match left.ast_type() {
                 AstType::Bool(_) | AstType::String(_) => unreachable!(),
@@ -446,7 +533,16 @@ impl<'ctx> PlaceMap<'ctx> {
                         unreachable!()
                     }
                 }
-                AstType::BitVector(_) => todo!(),
+                AstType::BitVector(left_ast) => {
+                    if let AstType::BitVector(right_ast) = right.ast_type() {
+                        let result = z3::ast::Bool::new_const(&ctx.0, variable_name);
+                        // Note: Decide about the sign.
+                        let formula = result._eq(&(left_ast.bvsge(right_ast)));
+                        (AstType::Bool(result), vec![formula], left.ty_kind().clone())
+                    } else {
+                        unreachable!()
+                    }
+                }
             },
             BinOp::Gt => match left.ast_type() {
                 AstType::Bool(_) | AstType::String(_) => unreachable!(),
@@ -468,7 +564,16 @@ impl<'ctx> PlaceMap<'ctx> {
                         unreachable!()
                     }
                 }
-                AstType::BitVector(_) => todo!(),
+                AstType::BitVector(left_ast) => {
+                    if let AstType::BitVector(right_ast) = right.ast_type() {
+                        let result = z3::ast::Bool::new_const(&ctx.0, variable_name);
+                        // Note: Decide about the sign.
+                        let formula = result._eq(&(left_ast.bvsgt(right_ast)));
+                        (AstType::Bool(result), vec![formula], left.ty_kind().clone())
+                    } else {
+                        unreachable!()
+                    }
+                }
             },
             BinOp::Offset => todo!(),
         };
@@ -658,7 +763,6 @@ impl<'ctx> PlaceMap<'ctx> {
         debug_info: Option<&DebugInfo>,
         serialized_constant_value: Option<String>,
     ) {
-        // dbg!(&rvalue);
         let variable_name = generate_variable_name(fn_name, destination, debug_info);
 
         let (symbolic_type, ast_type_and_formulas, ty) = match &rvalue {
@@ -1050,7 +1154,37 @@ impl<'ctx> FunctionCallStack<'ctx> {
                 }
             }
             AstType::Float { .. } => todo!(),
-            AstType::BitVector(_) => todo!(),
+            AstType::BitVector(discriminant_bv) => {
+                for (value, target) in switch_targets.switch_targets {
+                    for formula in &formulas_and_path_constraints {
+                        solver.assert(formula);
+                    }
+                    let path_constraint = discriminant_bv._eq(&BV::from_int(
+                        &Int::from_str(solver.get_context(), &value.to_string()).unwrap(),
+                        SWITCH_VALUE_BIT_SIZE,
+                    ));
+                    solver.assert(&path_constraint);
+                    basic_block_to_constraint_map.insert(target, path_constraint);
+                    match solver.check() {
+                        SatResult::Sat => {
+                            println!("Reaching the {} branch is possible", value);
+                            // Note: Must check satisfiability before you can get the model.
+                            if let Some(model) = solver.get_model() {
+                                println!("model: {:?}", model);
+                            } else {
+                                println!("Failed to get model!");
+                            }
+                        }
+                        SatResult::Unsat => {
+                            println!("UNSAT");
+                        }
+                        _ => {
+                            println!("UNKNOWN");
+                        }
+                    }
+                    solver.reset();
+                }
+            }
             AstType::String(_) => todo!(),
         }
         if let Some(otherwise_basic_block) = otherwise_basic_block {
@@ -1089,10 +1223,7 @@ impl<'ctx> FunctionCallStack<'ctx> {
 
     pub fn handle_ret(&mut self, ctx: &'ctx Context, basic_block_idx: u32) {
         let mut context_of_returned_function = self.pop();
-        println!(
-            "[ret] bb{}",
-            basic_block_idx,
-        );
+        println!("[ret] bb{}", basic_block_idx,);
         if let Some(ref mut context_of_returned_function) = context_of_returned_function {
             if let FunctionCallContext::WithReturn {
                 place_map,
@@ -1118,9 +1249,11 @@ impl<'ctx> FunctionCallStack<'ctx> {
                     TyKind::Bool => {
                         AstType::Bool(z3::ast::Bool::new_const(&ctx.0, variable_name.clone()))
                     }
-                    TyKind::Char => {
-                        AstType::BitVector(z3::ast::BV::new_const(&ctx.0, variable_name.clone(), CHAR_BIT_SIZE))
-                    }
+                    TyKind::Char => AstType::BitVector(z3::ast::BV::new_const(
+                        &ctx.0,
+                        variable_name.clone(),
+                        CHAR_BIT_SIZE,
+                    )),
                     TyKind::Int(_) | TyKind::Uint(_) => {
                         AstType::Int(z3::ast::Int::new_const(&ctx.0, variable_name.clone()))
                     }
@@ -1184,8 +1317,9 @@ impl<'ctx> FunctionCallStack<'ctx> {
                     (AstType::Float { ast: left, .. }, AstType::Float { ast: right, .. }) => {
                         left._eq(right)
                     }
+                    (AstType::BitVector(left), AstType::BitVector(right)) => left._eq(right),
                     (AstType::String(left), AstType::String(right)) => left._eq(right),
-                    _ => unreachable!(),
+                    _ => todo!(),
                 }];
                 let destination_expr = Expression::Rvalue {
                     place: destination.local,
