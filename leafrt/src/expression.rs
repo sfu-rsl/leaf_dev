@@ -21,6 +21,8 @@ use std::sync::Arc;
 use z3::ast::{Ast, Bool, Int};
 use z3::SatResult;
 
+const CHAR_BIT_SIZE: u32 = 32;
+
 /// Contains an insertion result from an [Operand] insert. Since an Operand insert can use Move
 #[derive(Debug, Eq, PartialEq)]
 enum InsertResult {
@@ -510,7 +512,30 @@ impl<'ctx> PlaceMap<'ctx> {
 
                 AstTypeAndFormulas(AstType::Bool(ast), formulas)
             }
-            TyKind::Char => todo!(),
+            TyKind::Char => {
+                // char type is always 4 bytes in size.
+                let ast = z3::ast::BV::new_const(&ctx.0, variable_name.clone(), CHAR_BIT_SIZE);
+                let formulas = if let Some(serialized_const_value) = serialized_const_value {
+                    vec![ast._eq(&z3::ast::BV::from_u64(
+                        &ctx.0,
+                        char::from_str(&serialized_const_value).unwrap() as u64,
+                        CHAR_BIT_SIZE,
+                    ))]
+                } else {
+                    let expr: Option<Arc<Expression>> = self.expr_from_operand(source_operand);
+                    if let Some(expr) = expr {
+                        if let AstType::BitVector(operand_ast) = expr.ast_type() {
+                            vec![ast._eq(operand_ast)]
+                        } else {
+                            vec![]
+                        }
+                    } else {
+                        vec![]
+                    }
+                };
+
+                AstTypeAndFormulas(AstType::BitVector(ast), formulas)
+            }
             TyKind::Int(_) | TyKind::Uint(_) => {
                 let ast = z3::ast::Int::new_const(&ctx.0, variable_name.clone());
 
@@ -1093,7 +1118,9 @@ impl<'ctx> FunctionCallStack<'ctx> {
                     TyKind::Bool => {
                         AstType::Bool(z3::ast::Bool::new_const(&ctx.0, variable_name.clone()))
                     }
-                    TyKind::Char => todo!(),
+                    TyKind::Char => {
+                        AstType::BitVector(z3::ast::BV::new_const(&ctx.0, variable_name.clone(), CHAR_BIT_SIZE))
+                    }
                     TyKind::Int(_) | TyKind::Uint(_) => {
                         AstType::Int(z3::ast::Int::new_const(&ctx.0, variable_name.clone()))
                     }
