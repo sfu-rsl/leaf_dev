@@ -1,4 +1,5 @@
 use crate::expression::Expression::Symbolic;
+use crate::utils::bv_safe_binop;
 use crate::{Context, Solver};
 use leafcommon::consts::Const;
 use leafcommon::misc::{DebugInfo, PlaceAndDebugInfo};
@@ -221,11 +222,9 @@ impl<'ctx> PlaceMap<'ctx> {
                 }
                 AstType::BitVector(left_ast) => {
                     if let AstType::BitVector(right_ast) = right.ast_type() {
-                        // Note: Possibility of overflow. Make it more precise in future.
-                        let size = cmp::max(left_ast.get_size(), right_ast.get_size());
-                        let sum = z3::ast::BV::new_const(&ctx.0, variable_name, size);
-                        let formula =
-                            sum._eq(&(left_ast.ensure_size(size) + right_ast.ensure_size(size)));
+                        let value = bv_safe_binop(BV::bvadd, left_ast, right_ast);
+                        let sum = z3::ast::BV::new_const(&ctx.0, variable_name, value.get_size());
+                        let formula = sum._eq(&value);
                         (
                             AstType::BitVector(sum),
                             vec![formula],
@@ -277,11 +276,9 @@ impl<'ctx> PlaceMap<'ctx> {
                 }
                 AstType::BitVector(left_ast) => {
                     if let AstType::BitVector(right_ast) = right.ast_type() {
-                        // Note: Possibility of overflow. Make it more precise in future.
-                        let size = cmp::max(left_ast.get_size(), right_ast.get_size());
-                        let difference = z3::ast::BV::new_const(&ctx.0, variable_name, size);
-                        let formula = difference
-                            ._eq(&(left_ast.ensure_size(size) - right_ast.ensure_size(size)));
+                        let value = bv_safe_binop(BV::bvsub, left_ast, right_ast);
+                        let difference = BV::new_const(&ctx.0, variable_name, value.get_size());
+                        let formula = difference._eq(&value);
                         (
                             AstType::BitVector(difference),
                             vec![formula],
@@ -329,11 +326,10 @@ impl<'ctx> PlaceMap<'ctx> {
                 }
                 AstType::BitVector(left_ast) => {
                     if let AstType::BitVector(right_ast) = right.ast_type() {
-                        // Note: Possibility of overflow. Make it more precise in future.
-                        let size = cmp::max(left_ast.get_size(), right_ast.get_size());
-                        let product = z3::ast::BV::new_const(&ctx.0, variable_name, size);
-                        let formula = product
-                            ._eq(&(left_ast.ensure_size(size) * right_ast.ensure_size(size)));
+                        let value = bv_safe_binop(BV::bvmul, left_ast, right_ast);
+                        let product =
+                            z3::ast::BV::new_const(&ctx.0, variable_name, value.get_size());
+                        let formula = product._eq(&value);
                         (
                             AstType::BitVector(product),
                             vec![formula],
@@ -384,16 +380,12 @@ impl<'ctx> PlaceMap<'ctx> {
                 }
                 AstType::BitVector(left_ast) => {
                     if let AstType::BitVector(right_ast) = right.ast_type() {
-                        let size = cmp::max(left_ast.get_size(), right_ast.get_size());
-                        let sum = z3::ast::BV::new_const(&ctx.0, variable_name, size);
-                        // Note: Decide about the sign.
-                        let formula = sum._eq(
-                            &(left_ast
-                                .ensure_size(size)
-                                .bvsdiv(&right_ast.ensure_size(size))),
-                        );
+                        // NOTE: Decide the sign.
+                        let value = bv_safe_binop(BV::bvsdiv, left_ast, right_ast);
+                        let quotient = BV::new_const(&ctx.0, variable_name, value.get_size());
+                        let formula = quotient._eq(&value);
                         (
-                            AstType::BitVector(sum),
+                            AstType::BitVector(quotient),
                             vec![formula],
                             left.ty_kind().clone(),
                         )
@@ -451,9 +443,8 @@ impl<'ctx> PlaceMap<'ctx> {
                 AstType::BitVector(left_ast) => {
                     if let AstType::BitVector(right_ast) = right.ast_type() {
                         let result = z3::ast::Bool::new_const(&ctx.0, variable_name);
-                        let size = cmp::max(left_ast.get_size(), right_ast.get_size());
-                        let formula = result
-                            ._eq(&left_ast.ensure_size(size)._eq(&right_ast.ensure_size(size)));
+                        let value = bv_safe_binop(BV::_eq, left_ast, right_ast);
+                        let formula = result._eq(&value);
                         (AstType::Bool(result), vec![formula], left.ty_kind().clone())
                     } else {
                         unreachable!()
@@ -502,13 +493,8 @@ impl<'ctx> PlaceMap<'ctx> {
                 AstType::BitVector(left_ast) => {
                     if let AstType::BitVector(right_ast) = right.ast_type() {
                         let result = z3::ast::Bool::new_const(&ctx.0, variable_name);
-                        let size = cmp::max(left_ast.get_size(), right_ast.get_size());
-                        let formula = result._eq(
-                            &left_ast
-                                .ensure_size(size)
-                                ._eq(&right_ast.ensure_size(size))
-                                .not(),
-                        );
+                        let value = bv_safe_binop(BV::_eq, left_ast, right_ast);
+                        let formula = result._eq(&value.not());
                         (AstType::Bool(result), vec![formula], left.ty_kind().clone())
                     } else {
                         unreachable!()
@@ -538,8 +524,9 @@ impl<'ctx> PlaceMap<'ctx> {
                 AstType::BitVector(left_ast) => {
                     if let AstType::BitVector(right_ast) = right.ast_type() {
                         let result = z3::ast::Bool::new_const(&ctx.0, variable_name);
-                        // Note: Decide about the sign.
-                        let formula = result._eq(&(left_ast.bvsge(right_ast)));
+                        // NOTE: Decide the sign.
+                        let value = bv_safe_binop(BV::bvsge, left_ast, right_ast);
+                        let formula = result._eq(&value);
                         (AstType::Bool(result), vec![formula], left.ty_kind().clone())
                     } else {
                         unreachable!()
@@ -569,12 +556,9 @@ impl<'ctx> PlaceMap<'ctx> {
                 AstType::BitVector(left_ast) => {
                     if let AstType::BitVector(right_ast) = right.ast_type() {
                         let result = z3::ast::Bool::new_const(&ctx.0, variable_name);
-                        let size = cmp::max(left_ast.get_size(), right_ast.get_size());
-                        let formula = result._eq(
-                            &(left_ast
-                                .ensure_size(size)
-                                .bvsgt(&right_ast.ensure_size(size))),
-                        );
+                        // NOTE: Decide the sign.
+                        let value = bv_safe_binop(BV::bvsgt, left_ast, right_ast);
+                        let formula = result._eq(&value);
                         (AstType::Bool(result), vec![formula], left.ty_kind().clone())
                     } else {
                         unreachable!()
@@ -1165,13 +1149,11 @@ impl<'ctx> FunctionCallStack<'ctx> {
                     for formula in &formulas_and_path_constraints {
                         solver.assert(formula);
                     }
-                    let path_constraint =
-                        discriminant_bv
-                            .ensure_size(SWITCH_VALUE_BIT_SIZE)
-                            ._eq(&BV::from_int(
-                                &Int::from_str(solver.get_context(), &value.to_string()).unwrap(),
-                                SWITCH_VALUE_BIT_SIZE,
-                            ));
+                    let switch_value = BV::from_int(
+                        &Int::from_str(solver.get_context(), &value.to_string()).unwrap(),
+                        SWITCH_VALUE_BIT_SIZE,
+                    );
+                    let path_constraint = bv_safe_binop(BV::_eq, discriminant_bv, &switch_value);
                     solver.assert(&path_constraint);
                     basic_block_to_constraint_map.insert(target, path_constraint);
                     match solver.check() {
@@ -1671,19 +1653,5 @@ mod test {
             5,
         );
         assert_eq!(5, serialized.as_i32().unwrap());
-    }
-}
-
-trait Extendable {
-    fn ensure_size(&self, size: u32) -> Self;
-}
-
-impl<'ctx> Extendable for BV<'ctx> {
-    fn ensure_size(&self, size: u32) -> BV<'ctx> {
-        if size > self.get_size() {
-            self.sign_ext(size - self.get_size())
-        } else {
-            self.extract(size - 1, 0)
-        }
     }
 }
