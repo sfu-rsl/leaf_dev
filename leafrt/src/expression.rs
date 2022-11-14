@@ -1,5 +1,5 @@
 use crate::expression::Expression::Symbolic;
-use crate::utils::bv_safe_binop;
+use crate::utils::{bv_safe_binop, bv_safe_sbinop};
 use crate::{Context, Solver};
 use leafcommon::consts::Const;
 use leafcommon::misc::{DebugInfo, PlaceAndDebugInfo};
@@ -220,13 +220,22 @@ impl<'ctx> PlaceMap<'ctx> {
                         unreachable!()
                     }
                 }
-                AstType::BitVector(left_ast) => {
-                    if let AstType::BitVector(right_ast) = right.ast_type() {
+                AstType::BitVector {
+                    ast: left_ast,
+                    signed: left_signed,
+                } => {
+                    if let AstType::BitVector { ast: right_ast, .. } = right.ast_type() {
                         let value = bv_safe_binop(BV::bvadd, left_ast, right_ast);
                         let sum = z3::ast::BV::new_const(&ctx.0, variable_name, value.get_size());
                         let formula = sum._eq(&value);
                         (
-                            AstType::BitVector(sum),
+                            AstType::BitVector {
+                                ast: sum,
+                                /* Rust compiler prevents incompatible signs,
+                                 * thus the sign will be the same as one of the operands.
+                                 * True for other unsigned operations.  */
+                                signed: *left_signed,
+                            },
                             vec![formula],
                             left.ty_kind().clone(),
                         )
@@ -274,13 +283,19 @@ impl<'ctx> PlaceMap<'ctx> {
                         unreachable!()
                     }
                 }
-                AstType::BitVector(left_ast) => {
-                    if let AstType::BitVector(right_ast) = right.ast_type() {
+                AstType::BitVector {
+                    ast: left_ast,
+                    signed: left_signed,
+                } => {
+                    if let AstType::BitVector { ast: right_ast, .. } = right.ast_type() {
                         let value = bv_safe_binop(BV::bvsub, left_ast, right_ast);
                         let difference = BV::new_const(&ctx.0, variable_name, value.get_size());
                         let formula = difference._eq(&value);
                         (
-                            AstType::BitVector(difference),
+                            AstType::BitVector {
+                                ast: difference,
+                                signed: *left_signed,
+                            },
                             vec![formula],
                             left.ty_kind().clone(),
                         )
@@ -324,14 +339,20 @@ impl<'ctx> PlaceMap<'ctx> {
                         unreachable!()
                     }
                 }
-                AstType::BitVector(left_ast) => {
-                    if let AstType::BitVector(right_ast) = right.ast_type() {
+                AstType::BitVector {
+                    ast: left_ast,
+                    signed: left_signed,
+                } => {
+                    if let AstType::BitVector{ ast: right_ast, .. } = right.ast_type() {
                         let value = bv_safe_binop(BV::bvmul, left_ast, right_ast);
                         let product =
                             z3::ast::BV::new_const(&ctx.0, variable_name, value.get_size());
                         let formula = product._eq(&value);
                         (
-                            AstType::BitVector(product),
+                            AstType::BitVector {
+                                ast: product,
+                                signed: *left_signed,
+                            },
                             vec![formula],
                             left.ty_kind().clone(),
                         )
@@ -378,14 +399,29 @@ impl<'ctx> PlaceMap<'ctx> {
                         unreachable!()
                     }
                 }
-                AstType::BitVector(left_ast) => {
-                    if let AstType::BitVector(right_ast) = right.ast_type() {
-                        // NOTE: Decide the sign.
-                        let value = bv_safe_binop(BV::bvsdiv, left_ast, right_ast);
+                AstType::BitVector {
+                    ast: left_ast,
+                    signed: left_signed,
+                } => {
+                    if let AstType::BitVector {
+                        ast: right_ast,
+                        signed: right_signed,
+                    } = right.ast_type()
+                    {
+                        let value = bv_safe_sbinop(
+                            BV::bvsdiv,
+                            left_ast,
+                            *left_signed,
+                            right_ast,
+                            *right_signed,
+                        );
                         let quotient = BV::new_const(&ctx.0, variable_name, value.get_size());
                         let formula = quotient._eq(&value);
                         (
-                            AstType::BitVector(quotient),
+                            AstType::BitVector {
+                                ast: quotient,
+                                signed: *left_signed || *right_signed,
+                            },
                             vec![formula],
                             left.ty_kind().clone(),
                         )
@@ -440,8 +476,8 @@ impl<'ctx> PlaceMap<'ctx> {
                         unreachable!()
                     }
                 }
-                AstType::BitVector(left_ast) => {
-                    if let AstType::BitVector(right_ast) = right.ast_type() {
+                AstType::BitVector { ast: left_ast, .. } => {
+                    if let AstType::BitVector { ast: right_ast, .. } = right.ast_type() {
                         let result = z3::ast::Bool::new_const(&ctx.0, variable_name);
                         let value = bv_safe_binop(BV::_eq, left_ast, right_ast);
                         let formula = result._eq(&value);
@@ -490,8 +526,8 @@ impl<'ctx> PlaceMap<'ctx> {
                         unreachable!()
                     }
                 }
-                AstType::BitVector(left_ast) => {
-                    if let AstType::BitVector(right_ast) = right.ast_type() {
+                AstType::BitVector { ast: left_ast, .. } => {
+                    if let AstType::BitVector { ast: right_ast, .. } = right.ast_type() {
                         let result = z3::ast::Bool::new_const(&ctx.0, variable_name);
                         let value = bv_safe_binop(BV::_eq, left_ast, right_ast);
                         let formula = result._eq(&value.not());
@@ -521,11 +557,23 @@ impl<'ctx> PlaceMap<'ctx> {
                         unreachable!()
                     }
                 }
-                AstType::BitVector(left_ast) => {
-                    if let AstType::BitVector(right_ast) = right.ast_type() {
+                AstType::BitVector {
+                    ast: left_ast,
+                    signed: left_signed,
+                } => {
+                    if let AstType::BitVector {
+                        ast: right_ast,
+                        signed: right_signed,
+                    } = right.ast_type()
+                    {
                         let result = z3::ast::Bool::new_const(&ctx.0, variable_name);
-                        // NOTE: Decide the sign.
-                        let value = bv_safe_binop(BV::bvsge, left_ast, right_ast);
+                        let value = bv_safe_sbinop(
+                            BV::bvsge,
+                            left_ast,
+                            *left_signed,
+                            right_ast,
+                            *right_signed,
+                        );
                         let formula = result._eq(&value);
                         (AstType::Bool(result), vec![formula], left.ty_kind().clone())
                     } else {
@@ -553,11 +601,23 @@ impl<'ctx> PlaceMap<'ctx> {
                         unreachable!()
                     }
                 }
-                AstType::BitVector(left_ast) => {
-                    if let AstType::BitVector(right_ast) = right.ast_type() {
-                        let result = z3::ast::Bool::new_const(&ctx.0, variable_name);
-                        // NOTE: Decide the sign.
-                        let value = bv_safe_binop(BV::bvsgt, left_ast, right_ast);
+                AstType::BitVector {
+                    ast: left_ast,
+                    signed: left_signed,
+                } => {
+                    if let AstType::BitVector {
+                        ast: right_ast,
+                        signed: right_signed,
+                    } = right.ast_type()
+                    {
+                        let result = z3::ast::Bool::new_const(&ctx.0, variable_name);                        
+                        let value = bv_safe_sbinop(
+                            BV::bvsgt,
+                            left_ast,
+                            *left_signed,
+                            right_ast,
+                            *right_signed,
+                        );
                         let formula = result._eq(&value);
                         (AstType::Bool(result), vec![formula], left.ty_kind().clone())
                     } else {
@@ -619,7 +679,10 @@ impl<'ctx> PlaceMap<'ctx> {
                 } else {
                     let expr: Option<Arc<Expression>> = self.expr_from_operand(source_operand);
                     if let Some(expr) = expr {
-                        if let AstType::BitVector(operand_ast) = expr.ast_type() {
+                        if let AstType::BitVector {
+                            ast: operand_ast, ..
+                        } = expr.ast_type()
+                        {
                             vec![ast._eq(operand_ast)]
                         } else {
                             vec![]
@@ -629,7 +692,7 @@ impl<'ctx> PlaceMap<'ctx> {
                     }
                 };
 
-                AstTypeAndFormulas(AstType::BitVector(ast), formulas)
+                AstTypeAndFormulas(AstType::BitVector { ast, signed: false }, formulas)
             }
             TyKind::Int(_) | TyKind::Uint(_) => {
                 let ast = z3::ast::Int::new_const(&ctx.0, variable_name.clone());
@@ -1144,7 +1207,10 @@ impl<'ctx> FunctionCallStack<'ctx> {
                 }
             }
             AstType::Float { .. } => todo!(),
-            AstType::BitVector(discriminant_bv) => {
+            AstType::BitVector {
+                ast: discriminant_bv,
+                ..
+            } => {
                 for (value, target) in switch_targets.switch_targets {
                     for formula in &formulas_and_path_constraints {
                         solver.assert(formula);
@@ -1240,11 +1306,10 @@ impl<'ctx> FunctionCallStack<'ctx> {
                     TyKind::Bool => {
                         AstType::Bool(z3::ast::Bool::new_const(&ctx.0, variable_name.clone()))
                     }
-                    TyKind::Char => AstType::BitVector(z3::ast::BV::new_const(
-                        &ctx.0,
-                        variable_name.clone(),
-                        CHAR_BIT_SIZE,
-                    )),
+                    TyKind::Char => AstType::BitVector {
+                        ast: z3::ast::BV::new_const(&ctx.0, variable_name.clone(), CHAR_BIT_SIZE),
+                        signed: false,
+                    },
                     TyKind::Int(_) | TyKind::Uint(_) => {
                         AstType::Int(z3::ast::Int::new_const(&ctx.0, variable_name.clone()))
                     }
@@ -1308,7 +1373,10 @@ impl<'ctx> FunctionCallStack<'ctx> {
                     (AstType::Float { ast: left, .. }, AstType::Float { ast: right, .. }) => {
                         left._eq(right)
                     }
-                    (AstType::BitVector(left), AstType::BitVector(right)) => left._eq(right),
+                    (
+                        AstType::BitVector { ast: left, .. },
+                        AstType::BitVector { ast: right, .. },
+                    ) => left._eq(right),
                     (AstType::String(left), AstType::String(right)) => left._eq(right),
                     _ => todo!(),
                 }];
@@ -1514,7 +1582,10 @@ enum AstType<'ctx> {
         ast: z3::ast::Float<'ctx>,
         is_f32: bool,
     },
-    BitVector(z3::ast::BV<'ctx>),
+    BitVector {
+        ast: z3::ast::BV<'ctx>,
+        signed: bool,
+    },
     String(z3::ast::String<'ctx>),
 }
 
