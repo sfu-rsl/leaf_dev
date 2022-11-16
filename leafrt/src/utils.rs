@@ -9,22 +9,28 @@ trait Extendable {
 
 impl<'ctx> Extendable for BV<'ctx> {
     fn ensure_size(&self, size: u32) -> BV<'ctx> {
-        if size > self.get_size() {
-            self.sign_ext(size - self.get_size())
-        } else {
+        let current_size = self.get_size();
+        if size > current_size {
+            self.sign_ext(size - current_size)
+        } else if size < current_size {
             self.extract(size - 1, 0)
+        } else {
+            self.clone()
         }
     }
 
     fn ensure_size_signed(&self, size: u32, signed: bool) -> BV<'ctx> {
-        if size > self.get_size() {
+        let current_size = self.get_size();
+        if size > current_size {
             if signed {
-                self.sign_ext(size - self.get_size())
+                self.sign_ext(size - current_size)
             } else {
-                self.zero_ext(size - self.get_size())
+                self.zero_ext(size - current_size)
             }
-        } else {
+        } else if size < current_size {
             self.extract(size - 1, 0)
+        } else {
+            self.clone()
         }
     }
 }
