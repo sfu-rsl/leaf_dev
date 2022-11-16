@@ -1,4 +1,5 @@
 use crate::expression::Expression::Symbolic;
+use crate::utils::{bv_safe_binop, bv_safe_sbinop};
 use crate::{Context, Solver};
 use leafcommon::consts::Const;
 use leafcommon::misc::{DebugInfo, PlaceAndDebugInfo};
@@ -10,6 +11,7 @@ use leafcommon::switchtargets::SwitchTargets;
 use leafcommon::ty::IntTy::I32;
 use leafcommon::ty::{FloatTy, IntTy, Ty, TyKind};
 use paste::paste;
+use std::cmp;
 use std::collections::{HashMap, HashSet};
 use std::env::var;
 use std::fmt::{Debug, Formatter};
@@ -18,8 +20,11 @@ use std::rc::Rc;
 use std::slice::Iter;
 use std::str::FromStr;
 use std::sync::Arc;
-use z3::ast::{Ast, Bool, Int};
+use z3::ast::{Ast, Bool, Int, BV};
 use z3::SatResult;
+
+const CHAR_BIT_SIZE: u32 = (8 * std::mem::size_of::<char>()) as u32;
+const SWITCH_VALUE_BIT_SIZE: u32 = (8 * std::mem::size_of::<u128>()) as u32;
 
 /// Contains an insertion result from an [Operand] insert. Since an Operand insert can use Move
 #[derive(Debug, Eq, PartialEq)]
@@ -215,6 +220,29 @@ impl<'ctx> PlaceMap<'ctx> {
                         unreachable!()
                     }
                 }
+                AstType::BitVector {
+                    ast: left_ast,
+                    signed: left_signed,
+                } => {
+                    if let AstType::BitVector { ast: right_ast, .. } = right.ast_type() {
+                        let value = bv_safe_binop(BV::bvadd, left_ast, right_ast);
+                        let sum = z3::ast::BV::new_const(&ctx.0, variable_name, value.get_size());
+                        let formula = sum._eq(&value);
+                        (
+                            AstType::BitVector {
+                                ast: sum,
+                                /* Rust compiler prevents incompatible signs,
+                                 * thus the sign will be the same as one of the operands.
+                                 * True for other unsigned operations.  */
+                                signed: *left_signed,
+                            },
+                            vec![formula],
+                            left.ty_kind().clone(),
+                        )
+                    } else {
+                        unreachable!()
+                    }
+                }
             },
             BinOp::Sub => match left.ast_type() {
                 AstType::Bool(_) | AstType::String(_) => unreachable!(),
@@ -247,6 +275,26 @@ impl<'ctx> PlaceMap<'ctx> {
                             AstType::Float {
                                 ast: difference,
                                 is_f32: *is_f32,
+                            },
+                            vec![formula],
+                            left.ty_kind().clone(),
+                        )
+                    } else {
+                        unreachable!()
+                    }
+                }
+                AstType::BitVector {
+                    ast: left_ast,
+                    signed: left_signed,
+                } => {
+                    if let AstType::BitVector { ast: right_ast, .. } = right.ast_type() {
+                        let value = bv_safe_binop(BV::bvsub, left_ast, right_ast);
+                        let difference = BV::new_const(&ctx.0, variable_name, value.get_size());
+                        let formula = difference._eq(&value);
+                        (
+                            AstType::BitVector {
+                                ast: difference,
+                                signed: *left_signed,
                             },
                             vec![formula],
                             left.ty_kind().clone(),
@@ -291,6 +339,27 @@ impl<'ctx> PlaceMap<'ctx> {
                         unreachable!()
                     }
                 }
+                AstType::BitVector {
+                    ast: left_ast,
+                    signed: left_signed,
+                } => {
+                    if let AstType::BitVector{ ast: right_ast, .. } = right.ast_type() {
+                        let value = bv_safe_binop(BV::bvmul, left_ast, right_ast);
+                        let product =
+                            z3::ast::BV::new_const(&ctx.0, variable_name, value.get_size());
+                        let formula = product._eq(&value);
+                        (
+                            AstType::BitVector {
+                                ast: product,
+                                signed: *left_signed,
+                            },
+                            vec![formula],
+                            left.ty_kind().clone(),
+                        )
+                    } else {
+                        unreachable!()
+                    }
+                }
             },
             BinOp::Div => match left.ast_type() {
                 AstType::Bool(_) | AstType::String(_) => unreachable!(),
@@ -322,6 +391,36 @@ impl<'ctx> PlaceMap<'ctx> {
                             AstType::Float {
                                 ast: quotient,
                                 is_f32: *is_f32,
+                            },
+                            vec![formula],
+                            left.ty_kind().clone(),
+                        )
+                    } else {
+                        unreachable!()
+                    }
+                }
+                AstType::BitVector {
+                    ast: left_ast,
+                    signed: left_signed,
+                } => {
+                    if let AstType::BitVector {
+                        ast: right_ast,
+                        signed: right_signed,
+                    } = right.ast_type()
+                    {
+                        let value = bv_safe_sbinop(
+                            BV::bvsdiv,
+                            left_ast,
+                            *left_signed,
+                            right_ast,
+                            *right_signed,
+                        );
+                        let quotient = BV::new_const(&ctx.0, variable_name, value.get_size());
+                        let formula = quotient._eq(&value);
+                        (
+                            AstType::BitVector {
+                                ast: quotient,
+                                signed: *left_signed || *right_signed,
                             },
                             vec![formula],
                             left.ty_kind().clone(),
@@ -377,6 +476,16 @@ impl<'ctx> PlaceMap<'ctx> {
                         unreachable!()
                     }
                 }
+                AstType::BitVector { ast: left_ast, .. } => {
+                    if let AstType::BitVector { ast: right_ast, .. } = right.ast_type() {
+                        let result = z3::ast::Bool::new_const(&ctx.0, variable_name);
+                        let value = bv_safe_binop(BV::_eq, left_ast, right_ast);
+                        let formula = result._eq(&value);
+                        (AstType::Bool(result), vec![formula], left.ty_kind().clone())
+                    } else {
+                        unreachable!()
+                    }
+                }
             },
             BinOp::Lt => todo!(),
             BinOp::Le => todo!(),
@@ -417,6 +526,16 @@ impl<'ctx> PlaceMap<'ctx> {
                         unreachable!()
                     }
                 }
+                AstType::BitVector { ast: left_ast, .. } => {
+                    if let AstType::BitVector { ast: right_ast, .. } = right.ast_type() {
+                        let result = z3::ast::Bool::new_const(&ctx.0, variable_name);
+                        let value = bv_safe_binop(BV::_eq, left_ast, right_ast);
+                        let formula = result._eq(&value.not());
+                        (AstType::Bool(result), vec![formula], left.ty_kind().clone())
+                    } else {
+                        unreachable!()
+                    }
+                }
             },
             BinOp::Ge => match left.ast_type() {
                 AstType::Bool(_) | AstType::String(_) => unreachable!(),
@@ -438,6 +557,29 @@ impl<'ctx> PlaceMap<'ctx> {
                         unreachable!()
                     }
                 }
+                AstType::BitVector {
+                    ast: left_ast,
+                    signed: left_signed,
+                } => {
+                    if let AstType::BitVector {
+                        ast: right_ast,
+                        signed: right_signed,
+                    } = right.ast_type()
+                    {
+                        let result = z3::ast::Bool::new_const(&ctx.0, variable_name);
+                        let value = bv_safe_sbinop(
+                            BV::bvsge,
+                            left_ast,
+                            *left_signed,
+                            right_ast,
+                            *right_signed,
+                        );
+                        let formula = result._eq(&value);
+                        (AstType::Bool(result), vec![formula], left.ty_kind().clone())
+                    } else {
+                        unreachable!()
+                    }
+                }
             },
             BinOp::Gt => match left.ast_type() {
                 AstType::Bool(_) | AstType::String(_) => unreachable!(),
@@ -454,6 +596,29 @@ impl<'ctx> PlaceMap<'ctx> {
                     if let AstType::Float { ast: right_ast, .. } = right.ast_type() {
                         let result = z3::ast::Bool::new_const(&ctx.0, variable_name);
                         let formula = result._eq(&left_ast.gt(right_ast));
+                        (AstType::Bool(result), vec![formula], left.ty_kind().clone())
+                    } else {
+                        unreachable!()
+                    }
+                }
+                AstType::BitVector {
+                    ast: left_ast,
+                    signed: left_signed,
+                } => {
+                    if let AstType::BitVector {
+                        ast: right_ast,
+                        signed: right_signed,
+                    } = right.ast_type()
+                    {
+                        let result = z3::ast::Bool::new_const(&ctx.0, variable_name);                        
+                        let value = bv_safe_sbinop(
+                            BV::bvsgt,
+                            left_ast,
+                            *left_signed,
+                            right_ast,
+                            *right_signed,
+                        );
+                        let formula = result._eq(&value);
                         (AstType::Bool(result), vec![formula], left.ty_kind().clone())
                     } else {
                         unreachable!()
@@ -502,7 +667,33 @@ impl<'ctx> PlaceMap<'ctx> {
 
                 AstTypeAndFormulas(AstType::Bool(ast), formulas)
             }
-            TyKind::Char => todo!(),
+            TyKind::Char => {
+                // char type is always 4 bytes in size.
+                let ast = z3::ast::BV::new_const(&ctx.0, variable_name.clone(), CHAR_BIT_SIZE);
+                let formulas = if let Some(serialized_const_value) = serialized_const_value {
+                    vec![ast._eq(&z3::ast::BV::from_u64(
+                        &ctx.0,
+                        char::from_str(&serialized_const_value).unwrap() as u64,
+                        CHAR_BIT_SIZE,
+                    ))]
+                } else {
+                    let expr: Option<Arc<Expression>> = self.expr_from_operand(source_operand);
+                    if let Some(expr) = expr {
+                        if let AstType::BitVector {
+                            ast: operand_ast, ..
+                        } = expr.ast_type()
+                        {
+                            vec![ast._eq(operand_ast)]
+                        } else {
+                            vec![]
+                        }
+                    } else {
+                        vec![]
+                    }
+                };
+
+                AstTypeAndFormulas(AstType::BitVector { ast, signed: false }, formulas)
+            }
             TyKind::Int(_) | TyKind::Uint(_) => {
                 let ast = z3::ast::Int::new_const(&ctx.0, variable_name.clone());
 
@@ -625,7 +816,6 @@ impl<'ctx> PlaceMap<'ctx> {
         debug_info: Option<&DebugInfo>,
         serialized_constant_value: Option<String>,
     ) {
-        // dbg!(&rvalue);
         let variable_name = generate_variable_name(fn_name, destination, debug_info);
 
         let (symbolic_type, ast_type_and_formulas, ty) = match &rvalue {
@@ -1017,6 +1207,41 @@ impl<'ctx> FunctionCallStack<'ctx> {
                 }
             }
             AstType::Float { .. } => todo!(),
+            AstType::BitVector {
+                ast: discriminant_bv,
+                ..
+            } => {
+                for (value, target) in switch_targets.switch_targets {
+                    for formula in &formulas_and_path_constraints {
+                        solver.assert(formula);
+                    }
+                    let switch_value = BV::from_int(
+                        &Int::from_str(solver.get_context(), &value.to_string()).unwrap(),
+                        SWITCH_VALUE_BIT_SIZE,
+                    );
+                    let path_constraint = bv_safe_binop(BV::_eq, discriminant_bv, &switch_value);
+                    solver.assert(&path_constraint);
+                    basic_block_to_constraint_map.insert(target, path_constraint);
+                    match solver.check() {
+                        SatResult::Sat => {
+                            println!("Reaching the {} branch is possible", value);
+                            // Note: Must check satisfiability before you can get the model.
+                            if let Some(model) = solver.get_model() {
+                                println!("model: {:?}", model);
+                            } else {
+                                println!("Failed to get model!");
+                            }
+                        }
+                        SatResult::Unsat => {
+                            println!("UNSAT");
+                        }
+                        _ => {
+                            println!("UNKNOWN");
+                        }
+                    }
+                    solver.reset();
+                }
+            }
             AstType::String(_) => todo!(),
         }
         if let Some(otherwise_basic_block) = otherwise_basic_block {
@@ -1055,10 +1280,7 @@ impl<'ctx> FunctionCallStack<'ctx> {
 
     pub fn handle_ret(&mut self, ctx: &'ctx Context, basic_block_idx: u32) {
         let mut context_of_returned_function = self.pop();
-        println!(
-            "[ret] bb{}",
-            basic_block_idx,
-        );
+        println!("[ret] bb{}", basic_block_idx,);
         if let Some(ref mut context_of_returned_function) = context_of_returned_function {
             if let FunctionCallContext::WithReturn {
                 place_map,
@@ -1084,7 +1306,10 @@ impl<'ctx> FunctionCallStack<'ctx> {
                     TyKind::Bool => {
                         AstType::Bool(z3::ast::Bool::new_const(&ctx.0, variable_name.clone()))
                     }
-                    TyKind::Char => todo!(),
+                    TyKind::Char => AstType::BitVector {
+                        ast: z3::ast::BV::new_const(&ctx.0, variable_name.clone(), CHAR_BIT_SIZE),
+                        signed: false,
+                    },
                     TyKind::Int(_) | TyKind::Uint(_) => {
                         AstType::Int(z3::ast::Int::new_const(&ctx.0, variable_name.clone()))
                     }
@@ -1148,8 +1373,12 @@ impl<'ctx> FunctionCallStack<'ctx> {
                     (AstType::Float { ast: left, .. }, AstType::Float { ast: right, .. }) => {
                         left._eq(right)
                     }
+                    (
+                        AstType::BitVector { ast: left, .. },
+                        AstType::BitVector { ast: right, .. },
+                    ) => left._eq(right),
                     (AstType::String(left), AstType::String(right)) => left._eq(right),
-                    _ => unreachable!(),
+                    _ => todo!(),
                 }];
                 let destination_expr = Expression::Rvalue {
                     place: destination.local,
@@ -1352,6 +1581,10 @@ enum AstType<'ctx> {
     Float {
         ast: z3::ast::Float<'ctx>,
         is_f32: bool,
+    },
+    BitVector {
+        ast: z3::ast::BV<'ctx>,
+        signed: bool,
     },
     String(z3::ast::String<'ctx>),
 }

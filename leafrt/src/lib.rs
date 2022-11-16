@@ -26,6 +26,7 @@ use z3::ast::{Ast, Int};
 use z3::SatResult;
 
 mod expression;
+mod utils;
 
 struct Config(z3::Config);
 
