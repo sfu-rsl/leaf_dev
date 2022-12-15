@@ -1,10 +1,10 @@
-use rustc_ast::{InlineAsmOptions, InlineAsmTemplatePiece};
+use rustc_ast::{InlineAsmOptions, InlineAsmTemplatePiece, Mutability};
 use rustc_middle::{
     mir::{
-        AssertMessage, BasicBlock, InlineAsmOperand, Operand, Place,
-        SwitchTargets, TerminatorKind,
+        AggregateKind, AssertMessage, BasicBlock, BinOp, BorrowKind, CastKind, InlineAsmOperand,
+        NullOp, Operand, Place, Rvalue, SwitchTargets, TerminatorKind, UnOp,
     },
-    ty::Ty,
+    ty::{Const, Region, Ty},
 };
 use rustc_span::Span;
 
@@ -275,4 +275,141 @@ trait DefaultTerminatorKindMutVisitor<'tcx>: TerminatorKindMutVisitor<'tcx, ()> 
         cleanup: &mut Option<BasicBlock>,
     ) {
     }
+}
+
+trait RvalueMutVisitor<'tcx, T> {
+    fn visit_rvalue(&mut self, rvalue: &mut Rvalue<'tcx>) -> T {
+        self.super_visit_rvalue(rvalue)
+    }
+
+    fn visit_use(&mut self, operand: &mut Operand<'tcx>) -> T;
+
+    fn visit_repeat(&mut self, operand: &mut Operand<'tcx>, count: &mut Const<'tcx>) -> T;
+
+    fn visit_ref(
+        &mut self,
+        region: &mut Region,
+        borrow_kind: &mut BorrowKind,
+        place: &mut Place<'tcx>,
+    ) -> T;
+
+    fn visit_thread_local_ref(
+        &mut self,
+        /* DefId is weirdly private at the current time of development.
+        def_id: &mut DefId,
+        */
+    ) -> T;
+
+    fn visit_address_of(&mut self, mutability: &mut Mutability, place: &mut Place<'tcx>) -> T;
+
+    fn visit_len(&mut self, place: &mut Place<'tcx>) -> T;
+
+    fn visit_cast(
+        &mut self,
+        kind: &mut CastKind,
+        operand: &mut Operand<'tcx>,
+        ty: &mut Ty<'tcx>,
+    ) -> T;
+
+    fn visit_binary_op(
+        &mut self,
+        op: &mut BinOp,
+        operands: &mut Box<(Operand<'tcx>, Operand<'tcx>)>,
+    ) -> T;
+
+    fn visit_checked_binary_op(
+        &mut self,
+        op: &mut BinOp,
+        operands: &mut Box<(Operand<'tcx>, Operand<'tcx>)>,
+    ) -> T;
+
+    fn visit_nullary_op(&mut self, op: &mut NullOp, ty: &mut Ty<'tcx>) -> T;
+
+    fn visit_unary_op(&mut self, op: &mut UnOp, operand: &mut Operand<'tcx>) -> T;
+
+    fn visit_discriminant(&mut self, place: &mut Place<'tcx>) -> T;
+
+    fn visit_aggregate(
+        &mut self,
+        kind: &mut Box<AggregateKind>,
+        operands: &mut Vec<Operand<'tcx>>,
+    ) -> T;
+
+    fn visit_shallow_init_box(&mut self, operand: &mut Operand<'tcx>, ty: &mut Ty<'tcx>) -> T;
+
+    fn super_visit_rvalue(&mut self, rvalue: &mut Rvalue<'tcx>) -> T {
+        match rvalue {
+            Rvalue::Use(operand) => self.visit_use(operand),
+            Rvalue::Repeat(operand, count) => self.visit_repeat(operand, count),
+            Rvalue::Ref(region, borrow_kind, place) => self.visit_ref(region, borrow_kind, place),
+            Rvalue::ThreadLocalRef(_) => self.visit_thread_local_ref(),
+            Rvalue::AddressOf(mutability, place) => self.visit_address_of(mutability, place),
+            Rvalue::Len(place) => self.visit_len(place),
+            Rvalue::Cast(kind, operand, ty) => self.visit_cast(kind, operand, ty),
+            Rvalue::BinaryOp(op, operands) => self.visit_binary_op(op, operands),
+            Rvalue::CheckedBinaryOp(op, operands) => self.visit_checked_binary_op(op, operands),
+            Rvalue::NullaryOp(op, ty) => self.visit_nullary_op(op, ty),
+            Rvalue::UnaryOp(op, operand) => self.visit_unary_op(op, operand),
+            Rvalue::Discriminant(place) => self.visit_discriminant(place),
+            Rvalue::Aggregate(kind, operands) => self.visit_aggregate(kind, operands),
+            Rvalue::ShallowInitBox(operand, ty) => self.visit_shallow_init_box(operand, ty),
+        }
+    }
+}
+
+trait DefaultRvalueMutVisitor<'tcx>: RvalueMutVisitor<'tcx, ()> {
+    fn visit_use(&mut self, operand: &mut Operand<'tcx>) {}
+
+    fn visit_repeat(&mut self, operand: &mut Operand<'tcx>, count: &mut Const<'tcx>) {}
+
+    fn visit_ref(
+        &mut self,
+        region: &mut Region,
+        borrow_kind: &mut BorrowKind,
+        place: &mut Place<'tcx>,
+    ) {
+    }
+
+    fn visit_thread_local_ref(
+        &mut self,
+        /* DefId is weirdly private at the current time of development.
+        def_id: &mut DefId,
+        */
+    ) {
+    }
+
+    fn visit_address_of(&mut self, mutability: &mut Mutability, place: &mut Place<'tcx>) {}
+
+    fn visit_len(&mut self, place: &mut Place<'tcx>) {}
+
+    fn visit_cast(&mut self, kind: &mut CastKind, operand: &mut Operand<'tcx>, ty: &mut Ty<'tcx>) {}
+
+    fn visit_binary_op(
+        &mut self,
+        op: &mut BinOp,
+        operands: &mut Box<(Operand<'tcx>, Operand<'tcx>)>,
+    ) {
+    }
+
+    fn visit_checked_binary_op(
+        &mut self,
+        op: &mut BinOp,
+        operands: &mut Box<(Operand<'tcx>, Operand<'tcx>)>,
+    ) {
+    }
+
+    fn visit_nullary_op(&mut self, op: &mut NullOp, ty: &mut Ty<'tcx>) {}
+
+    fn visit_unary_op(&mut self, op: &mut UnOp, operand: &mut Operand<'tcx>) {}
+
+    fn visit_discriminant(&mut self, place: &mut Place<'tcx>) {}
+
+    fn visit_aggregate(
+        &mut self,
+        kind: &mut Box<AggregateKind>,
+        operands: &mut Vec<Operand<'tcx>>,
+    ) {
+    }
+
+    fn visit_shallow_init_box(&mut self, operand: &mut Operand<'tcx>, ty: &mut Ty<'tcx>) {}
 }
