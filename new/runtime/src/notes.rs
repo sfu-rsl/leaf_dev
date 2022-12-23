@@ -9,11 +9,7 @@ fn visit_terminator(kind: TerminatorKind) {
         {
             ()
         }
-        TerminatorKind::SwitchInt {
-            discr,
-            switch_ty,
-            targets,
-        } => todo!(),
+        TerminatorKind::SwitchInt { discr, targets } => todo!(),
         TerminatorKind::Yield { .. } | TerminatorKind::Resume | TerminatorKind::GeneratorDrop =>
         /* Even after testing generators couldn't find these operations appear. Maybe they belong to intermediate stages. */
         {
@@ -45,6 +41,7 @@ fn visit_terminator(kind: TerminatorKind) {
             func,
             args,
             destination,
+            target,
             cleanup,
             from_hir_call,
             fn_span,
@@ -110,7 +107,7 @@ fn visit_statement(kind: StatementKind) {
         {
             ()
         }
-        StatementKind::CopyNonOverlapping(_) => todo!(),
+        StatementKind::Intrinsic(_) => todo!(),
         StatementKind::Nop => (),
     }
 }
@@ -143,5 +140,6 @@ fn visit_rvalue(rvalue: Rvalue) {
         }
         Rvalue::Aggregate(_, _) => todo!(),
         Rvalue::ShallowInitBox(_, _) => todo!(),
+        Rvalue::CopyForDeref(_) => todo!(),
     }
 }

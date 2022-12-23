@@ -47,8 +47,6 @@ impl<'tcx> MutVisitor<'tcx> for LeafVisitor<'tcx> {
             }),
             is_cleanup: false,
         });
-
-        x.extend(iter)
     }
 
     fn visit_assign(&mut self,place: &mut rustc_middle::mir::Place<'tcx>,rvalue: &mut rustc_middle::mir::Rvalue<'tcx>,location:rustc_middle::mir::Location) {

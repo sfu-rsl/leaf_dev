@@ -246,9 +246,9 @@ impl Callbacks {
         self.visit_local_decls(&body.local_decls);
 
         // Basic blocks have statements.
-        for basic_block in body.basic_blocks().iter() {
-            self.visit_basic_block(basic_block);
-        }
+        // for basic_block in body.basic_blocks_mut().iter() {
+        //     self.visit_basic_block(basic_block);
+        // }
     }
 
     fn visit_local_decls(&mut self, local_decls: &mir::LocalDecls) {

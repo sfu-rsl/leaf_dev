@@ -5,4 +5,3 @@
  * As of the time of writing, it has three types: Copy, Move, and Const.
  * For the
  */
-struct ConstSeparator<'tcx> {}
