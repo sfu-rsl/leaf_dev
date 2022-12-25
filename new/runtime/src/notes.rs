@@ -85,7 +85,7 @@ fn visit_statement(kind: StatementKind) {
             place,
             variant_index,
         } =>
-        /* No idea yet. */
+        /* When initializing a value for an enum, the discriminant will be set as well. */
         {
             todo!()
         }
@@ -128,9 +128,8 @@ fn visit_rvalue(rvalue: Rvalue) {
         Rvalue::BinaryOp(_, _) => todo!(),
         Rvalue::CheckedBinaryOp(_, _) => todo!(),
         Rvalue::NullaryOp(_, _) =>
-        /* Not sure if it appears after some stages or gets computed. */
+        /* It seems to be replaced by a constant after a specific pass. */
         {
-            todo!()
         }
         Rvalue::UnaryOp(_, _) => todo!(),
         Rvalue::Discriminant(_) =>
