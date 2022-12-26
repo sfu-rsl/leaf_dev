@@ -2,5 +2,5 @@
 members = [
     "compiler",
     "runtime",
-    "pbi",
+    "pri",
 ]
