@@ -1,18 +1,23 @@
 #![feature(rustc_private)]
+#![feature(custom_mir)]
+#![feature(let_chains)]
+#![feature(is_some_and)]
+#![feature(extend_one)]
 #![deny(rustc::internal)]
 
 extern crate rustc_ast;
 extern crate rustc_data_structures;
 extern crate rustc_driver;
+extern crate rustc_index;
 extern crate rustc_interface;
 extern crate rustc_middle;
 extern crate rustc_mir_build;
 extern crate rustc_mir_transform;
 extern crate rustc_span;
 
+mod mir_transform;
 mod pass;
 mod visit;
-mod const_sep;
 
 use rustc_ast::{
     ast::{Item, ItemKind, Visibility, VisibilityKind},
