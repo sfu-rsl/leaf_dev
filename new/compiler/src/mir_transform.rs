@@ -13,16 +13,23 @@ use rustc_span::Span;
 
 use crate::visit::{self, TerminatorKindMutVisitor};
 
-struct BasicBlockInserter<'tcx> {
-    body: &'tcx mut Body<'tcx>,
-}
-
 struct BodyModificationUnit<'tcx> {
     body: &'tcx mut Body<'tcx>,
 
     new_locals: Vec<NewLocalDecl<'tcx>>,
     new_blocks: HashMap<BasicBlock, Vec<(BasicBlock, BasicBlockData<'tcx>)>>,
     new_block_count: u32,
+}
+
+impl<'tcx> BodyModificationUnit<'tcx> {
+    fn new(body: &'tcx mut Body<'tcx>) -> Self {
+        Self {
+            body: body,
+            new_locals: Vec::new(),
+            new_blocks: HashMap::new(),
+            new_block_count: 0,
+        }
+    }
 }
 
 struct NewLocalDecl<'tcx>(LocalDecl<'tcx>);
@@ -108,7 +115,10 @@ impl<'tcx> BodyModificationUnit<'tcx> {
                 &mut self.body.basic_blocks_mut(),
                 self.new_blocks,
             );
-            BodyModificationUnit::update_jumps(self.body.basic_blocks_mut().iter_mut(), index_mapping);
+            BodyModificationUnit::update_jumps(
+                self.body.basic_blocks_mut().iter_mut(),
+                index_mapping,
+            );
         }
     }
 
@@ -129,6 +139,14 @@ impl<'tcx> BodyModificationUnit<'tcx> {
         I: IntoIterator<Item = (BasicBlock, Vec<(BasicBlock, BasicBlockData<'tcx>)>)>,
     {
         let mut index_mapping = HashMap::<BasicBlock, BasicBlock>::new();
+        let mut push = |blocks: &mut IndexVec<BasicBlock, BasicBlockData<'tcx>>,
+                        block: BasicBlockData<'tcx>,
+                        current_index: BasicBlock| {
+            let new_index = blocks.push(block);
+            if new_index != current_index {
+                index_mapping.insert(current_index, new_index);
+            }
+        };
 
         let current_blocks = Vec::from_iter(blocks.drain(..));
 
@@ -142,13 +160,11 @@ impl<'tcx> BodyModificationUnit<'tcx> {
                 let (_, chunk) = new_blocks.next().unwrap();
                 blocks.extend_reserve(chunk.len());
                 for (pseudo_index, block) in chunk {
-                    let new_index = blocks.push(block);
-                    index_mapping.insert(pseudo_index, new_index);
+                    push(blocks, block, pseudo_index);
                 }
             }
 
-            let new_index = blocks.push(block);
-            index_mapping.insert(i, new_index);
+            push(blocks, block, i);
         }
 
         // Currently, we only consider insertion of blocks before original blocks.
@@ -273,7 +289,9 @@ impl<'tcx> JumpUpdater<'tcx> {
     }
 
     fn update(&self, target: &mut BasicBlock) {
-        *target = self.index_mapping[target]
+        if let Some(new_index) = self.index_mapping.get(target) {
+            *target = *new_index;
+        }
     }
 
     fn update_maybe(&self, target: &mut Option<BasicBlock>) {
