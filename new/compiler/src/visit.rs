@@ -8,29 +8,43 @@ use rustc_middle::{
 };
 use rustc_span::Span;
 
-trait TerminatorKindMutVisitor<'tcx, T> {
+pub trait TerminatorKindMutVisitor<'tcx, T: Default> {
     fn visit_terminator_kind(&mut self, kind: &mut TerminatorKind<'tcx>) -> T {
         self.super_visit_terminator_kind(kind)
     }
 
-    fn visit_goto(&mut self, target: &mut BasicBlock) -> T;
+    fn visit_goto(&mut self, target: &mut BasicBlock) -> T {
+        Default::default()
+    }
 
-    fn visit_switch_int(&mut self, discr: &mut Operand<'tcx>, targets: &mut SwitchTargets) -> T;
+    fn visit_switch_int(&mut self, discr: &mut Operand<'tcx>, targets: &mut SwitchTargets) -> T {
+        Default::default()
+    }
 
-    fn visit_resume(&mut self) -> T;
+    fn visit_resume(&mut self) -> T {
+        Default::default()
+    }
 
-    fn visit_abort(&mut self) -> T;
+    fn visit_abort(&mut self) -> T {
+        Default::default()
+    }
 
-    fn visit_return(&mut self) -> T;
+    fn visit_return(&mut self) -> T {
+        Default::default()
+    }
 
-    fn visit_unreachable(&mut self) -> T;
+    fn visit_unreachable(&mut self) -> T {
+        Default::default()
+    }
 
     fn visit_drop(
         &mut self,
         place: &mut Place<'tcx>,
         target: &mut BasicBlock,
         unwind: &mut Option<BasicBlock>,
-    ) -> T;
+    ) -> T {
+        Default::default()
+    }
 
     fn visit_drop_and_replace(
         &mut self,
@@ -38,7 +52,9 @@ trait TerminatorKindMutVisitor<'tcx, T> {
         value: &mut Operand<'tcx>,
         target: &mut BasicBlock,
         unwind: &mut Option<BasicBlock>,
-    ) -> T;
+    ) -> T {
+        Default::default()
+    }
 
     fn visit_call(
         &mut self,
@@ -49,17 +65,20 @@ trait TerminatorKindMutVisitor<'tcx, T> {
         cleanup: &mut Option<BasicBlock>,
         from_hir_call: bool,
         fn_span: Span,
-    ) -> T;
+    ) -> T {
+        Default::default()
+    }
 
     fn visit_assert(
         &mut self,
-
         cond: &mut Operand<'tcx>,
         expected: &mut bool,
         msg: &mut AssertMessage<'tcx>,
         target: &mut BasicBlock,
         cleanup: &mut Option<BasicBlock>,
-    ) -> T;
+    ) -> T {
+        Default::default()
+    }
 
     fn visit_yield(
         &mut self,
@@ -67,31 +86,41 @@ trait TerminatorKindMutVisitor<'tcx, T> {
         resume: &mut BasicBlock,
         resume_arg: &mut Place<'tcx>,
         drop: &mut Option<BasicBlock>,
-    ) -> T;
+    ) -> T {
+        Default::default()
+    }
 
-    fn visit_generator_drop(&mut self) -> T;
+    fn visit_generator_drop(&mut self) -> T {
+        Default::default()
+    }
 
     fn visit_false_edge(
         &mut self,
         real_target: &mut BasicBlock,
         imaginary_target: &mut BasicBlock,
-    ) -> T;
+    ) -> T {
+        Default::default()
+    }
 
     fn visit_false_unwind(
         &mut self,
         real_target: &mut BasicBlock,
         unwind: &mut Option<BasicBlock>,
-    ) -> T;
+    ) -> T {
+        Default::default()
+    }
 
     fn visit_inline_asm(
         &mut self,
-        template: &'tcx [InlineAsmTemplatePiece],
+        template: &mut &[InlineAsmTemplatePiece],
         operands: &mut Vec<InlineAsmOperand<'tcx>>,
         options: &mut InlineAsmOptions,
         line_spans: &'tcx [Span],
         destination: &mut Option<BasicBlock>,
         cleanup: &mut Option<BasicBlock>,
-    ) -> T;
+    ) -> T {
+        Default::default()
+    }
 
     fn super_visit_terminator_kind(&mut self, kind: &mut TerminatorKind<'tcx>) -> T {
         match kind {
@@ -155,14 +184,14 @@ trait TerminatorKindMutVisitor<'tcx, T> {
                 ref mut unwind,
             } => self.visit_false_unwind(real_target, unwind),
             TerminatorKind::InlineAsm {
-                template,
+                ref mut template,
                 ref mut operands,
                 ref mut options,
                 line_spans,
                 ref mut destination,
                 ref mut cleanup,
             } => self.visit_inline_asm(
-                &template,
+                template,
                 operands,
                 options,
                 line_spans,
@@ -173,151 +202,97 @@ trait TerminatorKindMutVisitor<'tcx, T> {
     }
 }
 
-trait DefaultTerminatorKindMutVisitor<'tcx>: TerminatorKindMutVisitor<'tcx, ()> {
-    fn visit_goto(&mut self, target: &mut BasicBlock) {}
-
-    fn visit_switch_int(
-        &mut self,
-        discr: &mut Operand<'tcx>,
-        switch_ty: Ty<'tcx>,
-        targets: &mut SwitchTargets,
-    ) {
-    }
-
-    fn visit_resume(&mut self) {}
-
-    fn visit_abort(&mut self) {}
-
-    fn visit_return(&mut self) {}
-
-    fn visit_unreachable(&mut self) {}
-
-    fn visit_drop(
-        &mut self,
-        place: &mut Place<'tcx>,
-        target: &mut BasicBlock,
-        unwind: &mut Option<BasicBlock>,
-    ) {
-    }
-
-    fn visit_drop_and_replace(
-        &mut self,
-        place: &mut Place<'tcx>,
-        value: &mut Operand<'tcx>,
-        target: &mut BasicBlock,
-        unwind: &mut Option<BasicBlock>,
-    ) {
-    }
-
-    fn visit_assert(
-        &mut self,
-
-        cond: &mut Operand<'tcx>,
-        expected: &mut bool,
-        msg: &mut AssertMessage<'tcx>,
-        target: &mut BasicBlock,
-        cleanup: &mut Option<BasicBlock>,
-    ) {
-    }
-
-    fn visit_yield(
-        &mut self,
-        value: &mut Operand<'tcx>,
-        resume: &mut BasicBlock,
-        resume_arg: &mut Place<'tcx>,
-        drop: &mut Option<BasicBlock>,
-    ) {
-    }
-
-    fn visit_generator_drop(&mut self) {}
-
-    fn visit_false_edge(
-        &mut self,
-        real_target: &mut BasicBlock,
-        imaginary_target: &mut BasicBlock,
-    ) {
-    }
-
-    fn visit_false_unwind(
-        &mut self,
-        real_target: &mut BasicBlock,
-        unwind: &mut Option<BasicBlock>,
-    ) {
-    }
-
-    fn visit_inline_asm(
-        &mut self,
-        template: &'tcx mut [InlineAsmTemplatePiece],
-        operands: &mut Vec<InlineAsmOperand<'tcx>>,
-        options: &mut InlineAsmOptions,
-        line_spans: &'tcx [Span],
-        destination: &mut Option<BasicBlock>,
-        cleanup: &mut Option<BasicBlock>,
-    ) {
-    }
-}
-
-trait RvalueMutVisitor<'tcx, T> {
+pub trait RvalueMutVisitor<'tcx, T: Default> {
     fn visit_rvalue(&mut self, rvalue: &mut Rvalue<'tcx>) -> T {
         self.super_visit_rvalue(rvalue)
     }
 
-    fn visit_use(&mut self, operand: &mut Operand<'tcx>) -> T;
+    fn visit_use(&mut self, operand: &mut Operand<'tcx>) -> T {
+        Default::default()
+    }
 
-    fn visit_repeat(&mut self, operand: &mut Operand<'tcx>, count: &mut Const<'tcx>) -> T;
+    fn visit_repeat(&mut self, operand: &mut Operand<'tcx>, count: &mut Const<'tcx>) -> T {
+        Default::default()
+    }
 
     fn visit_ref(
         &mut self,
         region: &mut Region,
         borrow_kind: &mut BorrowKind,
         place: &mut Place<'tcx>,
-    ) -> T;
+    ) -> T {
+        Default::default()
+    }
 
     fn visit_thread_local_ref(
         &mut self,
         /* DefId is weirdly private at the current time of development.
         def_id: &mut DefId,
         */
-    ) -> T;
+    ) -> T {
+        Default::default()
+    }
 
-    fn visit_address_of(&mut self, mutability: &mut Mutability, place: &mut Place<'tcx>) -> T;
+    fn visit_address_of(&mut self, mutability: &mut Mutability, place: &mut Place<'tcx>) -> T {
+        Default::default()
+    }
 
-    fn visit_len(&mut self, place: &mut Place<'tcx>) -> T;
+    fn visit_len(&mut self, place: &mut Place<'tcx>) -> T {
+        Default::default()
+    }
 
     fn visit_cast(
         &mut self,
         kind: &mut CastKind,
         operand: &mut Operand<'tcx>,
         ty: &mut Ty<'tcx>,
-    ) -> T;
+    ) -> T {
+        Default::default()
+    }
 
     fn visit_binary_op(
         &mut self,
         op: &mut BinOp,
         operands: &mut Box<(Operand<'tcx>, Operand<'tcx>)>,
-    ) -> T;
+    ) -> T {
+        Default::default()
+    }
 
     fn visit_checked_binary_op(
         &mut self,
         op: &mut BinOp,
         operands: &mut Box<(Operand<'tcx>, Operand<'tcx>)>,
-    ) -> T;
+    ) -> T {
+        Default::default()
+    }
 
-    fn visit_nullary_op(&mut self, op: &mut NullOp, ty: &mut Ty<'tcx>) -> T;
+    fn visit_nullary_op(&mut self, op: &mut NullOp, ty: &mut Ty<'tcx>) -> T {
+        Default::default()
+    }
 
-    fn visit_unary_op(&mut self, op: &mut UnOp, operand: &mut Operand<'tcx>) -> T;
+    fn visit_unary_op(&mut self, op: &mut UnOp, operand: &mut Operand<'tcx>) -> T {
+        Default::default()
+    }
 
-    fn visit_discriminant(&mut self, place: &mut Place<'tcx>) -> T;
+    fn visit_discriminant(&mut self, place: &mut Place<'tcx>) -> T {
+        Default::default()
+    }
 
     fn visit_aggregate(
         &mut self,
         kind: &mut Box<AggregateKind>,
         operands: &mut Vec<Operand<'tcx>>,
-    ) -> T;
+    ) -> T {
+        Default::default()
+    }
 
-    fn visit_shallow_init_box(&mut self, operand: &mut Operand<'tcx>, ty: &mut Ty<'tcx>) -> T;
+    fn visit_shallow_init_box(&mut self, operand: &mut Operand<'tcx>, ty: &mut Ty<'tcx>) -> T {
+        Default::default()
+    }
 
-    fn visit_copy_for_deref(&mut self, place: &mut Place<'tcx>) -> T;
+    fn visit_copy_for_deref(&mut self, place: &mut Place<'tcx>) -> T {
+        Default::default()
+    }
 
     fn super_visit_rvalue(&mut self, rvalue: &mut Rvalue<'tcx>) -> T {
         match rvalue {
@@ -338,63 +313,4 @@ trait RvalueMutVisitor<'tcx, T> {
             Rvalue::CopyForDeref(place) => self.visit_copy_for_deref(place),
         }
     }
-}
-
-trait DefaultRvalueMutVisitor<'tcx>: RvalueMutVisitor<'tcx, ()> {
-    fn visit_use(&mut self, operand: &mut Operand<'tcx>) {}
-
-    fn visit_repeat(&mut self, operand: &mut Operand<'tcx>, count: &mut Const<'tcx>) {}
-
-    fn visit_ref(
-        &mut self,
-        region: &mut Region,
-        borrow_kind: &mut BorrowKind,
-        place: &mut Place<'tcx>,
-    ) {
-    }
-
-    fn visit_thread_local_ref(
-        &mut self,
-        /* DefId is weirdly private at the current time of development.
-        def_id: &mut DefId,
-        */
-    ) {
-    }
-
-    fn visit_address_of(&mut self, mutability: &mut Mutability, place: &mut Place<'tcx>) {}
-
-    fn visit_len(&mut self, place: &mut Place<'tcx>) {}
-
-    fn visit_cast(&mut self, kind: &mut CastKind, operand: &mut Operand<'tcx>, ty: &mut Ty<'tcx>) {}
-
-    fn visit_binary_op(
-        &mut self,
-        op: &mut BinOp,
-        operands: &mut Box<(Operand<'tcx>, Operand<'tcx>)>,
-    ) {
-    }
-
-    fn visit_checked_binary_op(
-        &mut self,
-        op: &mut BinOp,
-        operands: &mut Box<(Operand<'tcx>, Operand<'tcx>)>,
-    ) {
-    }
-
-    fn visit_nullary_op(&mut self, op: &mut NullOp, ty: &mut Ty<'tcx>) {}
-
-    fn visit_unary_op(&mut self, op: &mut UnOp, operand: &mut Operand<'tcx>) {}
-
-    fn visit_discriminant(&mut self, place: &mut Place<'tcx>) {}
-
-    fn visit_aggregate(
-        &mut self,
-        kind: &mut Box<AggregateKind>,
-        operands: &mut Vec<Operand<'tcx>>,
-    ) {
-    }
-
-    fn visit_shallow_init_box(&mut self, operand: &mut Operand<'tcx>, ty: &mut Ty<'tcx>) {}
-
-    fn visit_copy_for_deref(&mut self, place: &mut Place<'tcx>) {}
 }
