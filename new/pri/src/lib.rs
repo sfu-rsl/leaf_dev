@@ -32,19 +32,19 @@ type OperandRef = Ref;
 type BasicBlockIndex = u32;
 type BranchTarget = BasicBlockIndex;
 
-fn ref_place_local(local: u32) -> PlaceRef {
+pub fn ref_place_local(local: u32) -> PlaceRef {
     todo!()
 }
-fn ref_place_deref(place: PlaceRef) -> PlaceRef {
+pub fn ref_place_deref(place: PlaceRef) -> PlaceRef {
     todo!()
 }
-fn ref_place_field(place: PlaceRef, field: u32 /*, type */) -> PlaceRef {
+pub fn ref_place_field(place: PlaceRef, field: u32 /*, type */) -> PlaceRef {
     todo!()
 }
-fn ref_place_index(place: PlaceRef, index_place: PlaceRef) -> PlaceRef {
+pub fn ref_place_index(place: PlaceRef, index_place: PlaceRef) -> PlaceRef {
     todo!()
 }
-fn ref_place_constant_index(
+pub fn ref_place_constant_index(
     place: PlaceRef,
     offset: u64,
     min_length: u64,
@@ -52,73 +52,73 @@ fn ref_place_constant_index(
 ) -> PlaceRef {
     todo!()
 }
-fn ref_place_sublice(place: PlaceRef, from: u64, to: u64, from_end: bool) -> PlaceRef {
+pub fn ref_place_sublice(place: PlaceRef, from: u64, to: u64, from_end: bool) -> PlaceRef {
     todo!()
 }
-fn ref_place_downcast(place: PlaceRef, variant_index: u32 /*, type */) -> PlaceRef {
+pub fn ref_place_downcast(place: PlaceRef, variant_index: u32 /*, type */) -> PlaceRef {
     todo!()
 }
-fn ref_place_opaque_cast(place: PlaceRef /*, type */) -> PlaceRef {
-    todo!()
-}
-
-fn ref_operand_copy(place: PlaceRef) -> OperandRef {
-    todo!()
-}
-fn ref_operand_move(place: PlaceRef) -> OperandRef {
-    todo!()
-}
-fn ref_operand_const(/* TODO */) -> OperandRef {
+pub fn ref_place_opaque_cast(place: PlaceRef /*, type */) -> PlaceRef {
     todo!()
 }
 
-fn assign_use(place: PlaceRef, operand: OperandRef) {
+pub fn ref_operand_copy(place: PlaceRef) -> OperandRef {
     todo!()
 }
-fn assign_repeat(operand: OperandRef, count: u32 /* constant */) {
+pub fn ref_operand_move(place: PlaceRef) -> OperandRef {
     todo!()
 }
-fn assign_ref(place: PlaceRef, is_mutable: bool) {
+pub fn ref_operand_const(/* TODO */) -> OperandRef {
     todo!()
 }
-fn assign_thread_local_ref(/* TODO: Complicated. MIRAI has some works on it. */) {
+
+pub fn assign_use(place: PlaceRef, operand: OperandRef) {
     todo!()
 }
-fn assign_address_of(place: PlaceRef, is_mutable: bool) {
+pub fn assign_repeat(operand: OperandRef, count: u32 /* constant */) {
     todo!()
 }
-fn assign_len(place: PlaceRef) {
+pub fn assign_ref(place: PlaceRef, is_mutable: bool) {
+    todo!()
+}
+pub fn assign_thread_local_ref(/* TODO: Complicated. MIRAI has some works on it. */) {
+    todo!()
+}
+pub fn assign_address_of(place: PlaceRef, is_mutable: bool) {
+    todo!()
+}
+pub fn assign_len(place: PlaceRef) {
     // To be investigated. Not obvious whether it appears at all in the later stages.
     todo!()
 }
 
-fn assign_cast_numeric(operand: OperandRef, is_to_float: bool, size: usize) {
+pub fn assign_cast_numeric(operand: OperandRef, is_to_float: bool, size: usize) {
     todo!()
 }
-fn assign_cast(/* TODO: Other types of cast. */) {
-    todo!()
-}
-
-fn assign_binary_op(operator: BinaryOp, first: OperandRef, second: OperandRef, checked: bool) {
-    todo!()
-}
-fn assign_unary_op(operator: UnaryOp, operand: OperandRef) {
+pub fn assign_cast(/* TODO: Other types of cast. */) {
     todo!()
 }
 
-fn set_discriminant(place: PlaceRef, variant_index: u32) {
+pub fn assign_binary_op(operator: BinaryOp, first: OperandRef, second: OperandRef, checked: bool) {
     todo!()
 }
-fn assign_discriminant(place: PlaceRef) {
+pub fn assign_unary_op(operator: UnaryOp, operand: OperandRef) {
+    todo!()
+}
+
+pub fn set_discriminant(place: PlaceRef, variant_index: u32) {
+    todo!()
+}
+pub fn assign_discriminant(place: PlaceRef) {
     todo!()
 }
 
 // We use slice to simplify working with the interface.
-fn assign_aggregate_array(items: &[OperandRef]) {
+pub fn assign_aggregate_array(items: &[OperandRef]) {
     todo!()
 }
 
-fn switch_int(
+pub fn switch_int(
     discriminant: OperandRef,
     branches: &[(u128, BranchTarget)],
     otherwise_target: BranchTarget,
@@ -126,10 +126,10 @@ fn switch_int(
     todo!()
 }
 
-fn fn_call(func: OperandRef, args: &[OperandRef], destination: PlaceRef) {
+pub fn fn_call(func: OperandRef, args: &[OperandRef], destination: PlaceRef) {
     todo!()
 }
-fn fn_return() {
+pub fn fn_return() {
     todo!()
 }
 
