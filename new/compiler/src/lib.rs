@@ -5,7 +5,9 @@
 #![feature(extend_one)]
 #![deny(rustc::internal)]
 
+extern crate rustc_abi;
 extern crate rustc_ast;
+extern crate rustc_const_eval;
 extern crate rustc_data_structures;
 extern crate rustc_driver;
 extern crate rustc_index;
@@ -14,6 +16,7 @@ extern crate rustc_middle;
 extern crate rustc_mir_build;
 extern crate rustc_mir_transform;
 extern crate rustc_span;
+extern crate rustc_type_ir;
 
 mod mir_transform;
 mod pass;
