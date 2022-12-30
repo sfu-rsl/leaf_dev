@@ -95,7 +95,7 @@ impl<'tcx> BodyModificationUnit<'tcx> {
             // Associating temporary indices to the new blocks, so they can be referenced if needed.
             chunk.extend(blocks.into_iter().enumerate().map(|(i, b)| {
                 (
-                    BasicBlock::from(u32::MAX - self.new_block_count - i as u32),
+                    BasicBlock::from(u32::MAX - 1 - self.new_block_count - i as u32),
                     b,
                 )
             }));
@@ -112,17 +112,12 @@ impl<'tcx> BodyModificationUnit<'tcx> {
 
 impl<'tcx> BodyModificationUnit<'tcx> {
     pub fn commit(self) {
-        BodyModificationUnit::add_new_locals(&mut self.body.local_decls, self.new_locals);
+        Self::add_new_locals(&mut self.body.local_decls, self.new_locals);
 
         if !self.new_blocks.is_empty() {
-            let index_mapping = BodyModificationUnit::insert_new_blocks(
-                &mut self.body.basic_blocks_mut(),
-                self.new_blocks,
-            );
-            BodyModificationUnit::update_jumps(
-                self.body.basic_blocks_mut().iter_mut(),
-                index_mapping,
-            );
+            let index_mapping =
+                Self::insert_new_blocks(&mut self.body.basic_blocks_mut(), self.new_blocks);
+            Self::update_jumps(self.body.basic_blocks_mut(), index_mapping);
         }
     }
 
@@ -177,15 +172,20 @@ impl<'tcx> BodyModificationUnit<'tcx> {
         index_mapping
     }
 
-    fn update_jumps<I>(blocks: I, index_mapping: HashMap<BasicBlock, BasicBlock>)
-    where
-        I: Iterator<Item = &'tcx mut BasicBlockData<'tcx>>,
-    {
+    fn update_jumps(
+        blocks: &mut IndexVec<BasicBlock, BasicBlockData<'tcx>>,
+        index_mapping: HashMap<BasicBlock, BasicBlock>,
+    ) {
         let mut updater = JumpUpdater {
             index_mapping: index_mapping,
+            next_index: NEXT_BLOCK,
             phantom: PhantomData,
         };
-        for block in blocks.filter(|b| b.terminator.is_some()) {
+        for (index, block) in blocks
+            .iter_enumerated_mut()
+            .filter(|(_, b)| b.terminator.is_some())
+        {
+            updater.next_index = index + 1;
             updater.update_terminator(block.terminator_mut());
         }
     }
@@ -193,6 +193,7 @@ impl<'tcx> BodyModificationUnit<'tcx> {
 
 struct JumpUpdater<'tcx> {
     index_mapping: HashMap<BasicBlock, BasicBlock>,
+    next_index: BasicBlock,
     phantom: PhantomData<&'tcx ()>,
 }
 
@@ -289,11 +290,13 @@ impl<'tcx> visit::TerminatorKindMutVisitor<'tcx, ()> for JumpUpdater<'tcx> {
 
 impl<'tcx> JumpUpdater<'tcx> {
     pub fn update_terminator(&mut self, terminator: &mut Terminator<'tcx>) {
-        TerminatorKindMutVisitor::<'tcx, ()>::visit_terminator_kind(self, &mut terminator.kind)
+        Self::visit_terminator_kind(self, &mut terminator.kind)
     }
 
     fn update(&self, target: &mut BasicBlock) {
-        if let Some(new_index) = self.index_mapping.get(target) {
+        if *target == NEXT_BLOCK {
+            *target = self.next_index;
+        } else if let Some(new_index) = self.index_mapping.get(target) {
             *target = *new_index;
         }
     }
