@@ -25,6 +25,7 @@ impl runtime::Runtime for RuntimeImpl {
     }
 }
 
+type Local = u32;
 type Ref = u64;
 type PlaceRef = Ref;
 type OperandRef = Ref;
@@ -32,7 +33,7 @@ type OperandRef = Ref;
 type BasicBlockIndex = u32;
 type BranchTarget = BasicBlockIndex;
 
-pub fn ref_place_local(local: u32) -> PlaceRef {
+pub fn ref_place_local(local: Local) -> PlaceRef {
     todo!()
 }
 pub fn ref_place_deref(place: PlaceRef) -> PlaceRef {
@@ -52,7 +53,7 @@ pub fn ref_place_constant_index(
 ) -> PlaceRef {
     todo!()
 }
-pub fn ref_place_sublice(place: PlaceRef, from: u64, to: u64, from_end: bool) -> PlaceRef {
+pub fn ref_place_subslice(place: PlaceRef, from: u64, to: u64, from_end: bool) -> PlaceRef {
     todo!()
 }
 pub fn ref_place_downcast(place: PlaceRef, variant_index: u32 /*, type */) -> PlaceRef {
