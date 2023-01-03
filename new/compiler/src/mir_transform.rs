@@ -408,6 +408,40 @@ impl<'tcx> RuntimeCallAdder<'tcx> {
 }
 
 impl<'tcx> RuntimeCallAdder<'tcx> {
+    pub fn reference_operand(&mut self, operand: Operand<'tcx>, location: BasicBlock) -> Local {
+        let (reference, new_blocks) = self.internal_reference_operand(operand);
+        self.modification_unit
+            .insert_blocks_before(location, new_blocks);
+        reference
+    }
+
+    fn internal_reference_operand(
+        &mut self,
+        operand: Operand<'tcx>,
+        location: BasicBlock,
+    ) -> (Local, Vec<BasicBlockData<'tcx>>) {
+        let mut new_blocks = vec![];
+        let new_ref = match operand {
+            Operand::Copy(place) | Operand::Move(place) => {
+                let (place_ref, additional_blocks) = self.internal_reference_place(place);
+                new_blocks.extend(additional_blocks);
+
+                let func_name = if let Operand::Copy(_) = operand {
+                    stringify!(pri::ref_operand_copy)
+                } else {
+                    stringify!(pri::ref_operand_move)
+                };
+
+                self.make_bb_for_call_with_ret(func_name, vec![operand::copy_for_local(place_ref)])
+            }
+            Operand::Constant(_) => todo!(),
+        };
+
+        (new_ref, new_blocks)
+    }
+}
+
+impl<'tcx> RuntimeCallAdder<'tcx> {
     fn make_bb_for_call_with_ret(
         &mut self,
         func_name: &str,
