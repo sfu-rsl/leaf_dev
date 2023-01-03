@@ -1,13 +1,18 @@
 use std::{collections::HashMap, marker::PhantomData};
 
+use rustc_apfloat::{
+    ieee::{self},
+    Float,
+};
 use rustc_ast::Mutability;
+use rustc_const_eval::interpret::{ConstValue, Scalar};
 use rustc_index::vec::IndexVec;
 use rustc_middle::{
     mir::{
-        BasicBlock, BasicBlockData, Body, HasLocalDecls, Local, LocalDecl, LocalDecls, Operand,
-        Place, ProjectionElem, SourceInfo, Terminator, TerminatorKind,
+        BasicBlock, BasicBlockData, Body, Constant, ConstantKind, HasLocalDecls, Local, LocalDecl,
+        LocalDecls, Operand, Place, ProjectionElem, SourceInfo, Terminator, TerminatorKind,
     },
-    ty::{Ty, TyCtxt},
+    ty::{ScalarInt, Ty, TyCtxt},
 };
 use rustc_span::{Span, DUMMY_SP};
 
@@ -409,7 +414,7 @@ impl<'tcx> RuntimeCallAdder<'tcx> {
 
 impl<'tcx> RuntimeCallAdder<'tcx> {
     pub fn reference_operand(&mut self, operand: Operand<'tcx>, location: BasicBlock) -> Local {
-        let (reference, new_blocks) = self.internal_reference_operand(operand);
+        let (reference, new_blocks) = self.internal_reference_operand(operand, location);
         self.modification_unit
             .insert_blocks_before(location, new_blocks);
         reference
@@ -434,10 +439,86 @@ impl<'tcx> RuntimeCallAdder<'tcx> {
 
                 self.make_bb_for_call_with_ret(func_name, vec![operand::copy_for_local(place_ref)])
             }
-            Operand::Constant(_) => todo!(),
+            Operand::Constant(constant) => self.internal_reference_const_operand(&constant),
         };
 
         (new_ref, new_blocks)
+    }
+
+    fn internal_reference_const_operand(
+        &mut self,
+        constant: &Constant<'tcx>,
+    ) -> (Local, BasicBlockData<'tcx>) {
+        let kind = constant.literal;
+        match kind {
+            ConstantKind::Ty(_) => todo!(),
+            ConstantKind::Unevaluated(_, _) => todo!(),
+            ConstantKind::Val(value, ty) => self.internal_reference_val_const_operand(value, ty),
+        }
+    }
+
+    fn internal_reference_val_const_operand(
+        &mut self,
+        value: ConstValue<'tcx>,
+        ty: Ty<'tcx>,
+    ) -> (Local, BasicBlockData<'tcx>) {
+        match value {
+            ConstValue::Scalar(scalar) => self.internal_reference_scalar_const_operand(scalar, ty),
+            ConstValue::ZeroSized => todo!(),
+            ConstValue::Slice { data, start, end } => todo!(),
+            ConstValue::ByRef { alloc, offset } => todo!(),
+        }
+    }
+
+    fn internal_reference_scalar_const_operand(
+        &mut self,
+        scalar: Scalar,
+        ty: Ty<'tcx>,
+    ) -> (Local, BasicBlockData<'tcx>) {
+        match scalar {
+            Scalar::Int(int) => self.internal_reference_scalar_int_const_operand(int, ty),
+            Scalar::Ptr(_, _) => todo!(),
+        }
+    }
+
+    fn internal_reference_scalar_int_const_operand(
+        &mut self,
+        scalar: ScalarInt,
+        ty: Ty<'tcx>,
+    ) -> (Local, BasicBlockData<'tcx>) {
+        if ty.is_bool() {
+            self.make_bb_for_call_with_ret(
+                stringify!(pri::ref_operand_const_bool),
+                vec![operand::const_from_scalar_int(self.tcx, scalar.clone(), ty)],
+            )
+        } else if ty.is_integral() {
+            self.make_bb_for_call_with_ret(
+                stringify!(pri::ref_operand_const_int),
+                vec![
+                    operand::const_from_scalar_int(self.tcx, scalar.clone(), ty),
+                    operand::const_from_uint(self.tcx, scalar.size().bits()),
+                    operand::const_from_bool(self.tcx, ty.is_signed()),
+                ],
+            )
+        } else if ty.is_floating_point() {
+            let bits = scalar.size().bits();
+            let ebits = if bits == ieee::Single::BITS as u64 {
+                ieee::Single::PRECISION
+            } else {
+                ieee::Double::PRECISION
+            } as u64;
+            let sbits = bits - ebits;
+            self.make_bb_for_call_with_ret(
+                stringify!(pri::ref_operand_const_float),
+                vec![
+                    operand::const_from_scalar_int(self.tcx, scalar.clone(), ty),
+                    operand::const_from_uint(self.tcx, ebits),
+                    operand::const_from_uint(self.tcx, sbits),
+                ],
+            )
+        } else {
+            unreachable!("ScalarInt is supposed to be either bool, int, or float.")
+        }
     }
 }
 

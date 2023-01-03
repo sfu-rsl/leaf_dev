@@ -69,7 +69,13 @@ pub fn ref_operand_copy(place: PlaceRef) -> OperandRef {
 pub fn ref_operand_move(place: PlaceRef) -> OperandRef {
     todo!()
 }
-pub fn ref_operand_const(/* TODO */) -> OperandRef {
+pub fn ref_operand_const_bool(value: bool) -> OperandRef {
+    todo!()
+}
+pub fn ref_operand_const_int(bit_rep: u128, size: u64, is_signed: bool) -> OperandRef {
+    todo!()
+}
+pub fn ref_operand_const_float(bit_rep: u128, ebits: u64, sbits: u64) -> OperandRef {
     todo!()
 }
 
