@@ -22,18 +22,17 @@ use self::utils::*;
 
 const NEXT_BLOCK: BasicBlock = BasicBlock::MAX;
 
-struct BodyModificationUnit<'tcx> {
-    body: &'tcx mut Body<'tcx>,
-
+pub struct BodyModificationUnit<'tcx> {
+    nex_local_index: Local,
     new_locals: Vec<NewLocalDecl<'tcx>>,
     new_blocks: HashMap<BasicBlock, Vec<(BasicBlock, BasicBlockData<'tcx>)>>,
     new_block_count: u32,
 }
 
 impl<'tcx> BodyModificationUnit<'tcx> {
-    fn new(body: &'tcx mut Body<'tcx>) -> Self {
+    pub fn new(nex_local_index: Local) -> Self {
         Self {
-            body: body,
+            nex_local_index: nex_local_index,
             new_locals: Vec::new(),
             new_blocks: HashMap::new(),
             new_block_count: 0,
@@ -81,7 +80,7 @@ impl<'tcx> BodyModificationUnit<'tcx> {
         T: Into<NewLocalDecl<'tcx>>,
     {
         self.new_locals.push(decl_info.into());
-        Local::from(self.body.local_decls().next_index() + (self.new_locals.len() - 1))
+        Local::from(self.nex_local_index + (self.new_locals.len() - 1))
     }
 }
 
@@ -116,13 +115,12 @@ impl<'tcx> BodyModificationUnit<'tcx> {
 }
 
 impl<'tcx> BodyModificationUnit<'tcx> {
-    pub fn commit(self) {
-        Self::add_new_locals(&mut self.body.local_decls, self.new_locals);
+    pub fn commit(self, body: &mut Body<'tcx>) {
+        Self::add_new_locals(&mut body.local_decls, self.new_locals);
 
         if !self.new_blocks.is_empty() {
-            let index_mapping =
-                Self::insert_new_blocks(&mut self.body.basic_blocks_mut(), self.new_blocks);
-            Self::update_jumps(self.body.basic_blocks_mut(), index_mapping);
+            let index_mapping = Self::insert_new_blocks(body.basic_blocks_mut(), self.new_blocks);
+            Self::update_jumps(body.basic_blocks_mut(), index_mapping);
         }
     }
 
@@ -313,9 +311,18 @@ impl<'tcx> JumpUpdater<'tcx> {
     }
 }
 
-struct RuntimeCallAdder<'tcx> {
+pub struct RuntimeCallAdder<'tcx, 'm> {
     tcx: TyCtxt<'tcx>,
-    modification_unit: BodyModificationUnit<'tcx>,
+    modification_unit: &'m mut BodyModificationUnit<'tcx>,
+}
+
+impl<'tcx, 'm> RuntimeCallAdder<'tcx, 'm> {
+    pub fn new(tcx: TyCtxt<'tcx>, modification_unit: &'m mut BodyModificationUnit<'tcx>) -> Self {
+        Self {
+            tcx: tcx,
+            modification_unit: modification_unit,
+        }
+    }
 }
 
 struct BlocksAndResult<'tcx>(Vec<BasicBlockData<'tcx>>, Local);
@@ -332,15 +339,15 @@ impl<'tcx> From<(BasicBlockData<'tcx>, Local)> for BlocksAndResult<'tcx> {
     }
 }
 
-impl<'tcx> RuntimeCallAdder<'tcx> {
-    pub fn reference_place(&mut self, place: Place<'tcx>, location: BasicBlock) -> Local {
+impl<'tcx, 'm> RuntimeCallAdder<'tcx, 'm> {
+    pub fn reference_place(&mut self, place: &Place<'tcx>, location: BasicBlock) -> Local {
         let BlocksAndResult(new_blocks, reference) = self.internal_reference_place(place);
         self.modification_unit
             .insert_blocks_before(location, new_blocks);
         reference
     }
 
-    fn internal_reference_place(&mut self, place: Place<'tcx>) -> BlocksAndResult<'tcx> {
+    fn internal_reference_place(&mut self, place: &Place<'tcx>) -> BlocksAndResult<'tcx> {
         let mut new_blocks = vec![];
         let (call_block, mut current_ref) = self.make_bb_for_call_with_ret(
             stringify!(pri::ref_place_local),
@@ -373,7 +380,7 @@ impl<'tcx> RuntimeCallAdder<'tcx> {
             ),
             ProjectionElem::Index(index) => {
                 let BlocksAndResult(additional_blocks, index_ref) =
-                    self.internal_reference_place(Place::from(index));
+                    self.internal_reference_place(&Place::from(index));
                 new_blocks.extend(additional_blocks);
                 (
                     stringify!(pri::ref_place_index),
@@ -423,15 +430,15 @@ impl<'tcx> RuntimeCallAdder<'tcx> {
     }
 }
 
-impl<'tcx> RuntimeCallAdder<'tcx> {
-    pub fn reference_operand(&mut self, operand: Operand<'tcx>, location: BasicBlock) -> Local {
+impl<'tcx, 'm> RuntimeCallAdder<'tcx, 'm> {
+    pub fn reference_operand(&mut self, operand: &Operand<'tcx>, location: BasicBlock) -> Local {
         let BlocksAndResult(new_blocks, reference) = self.internal_reference_operand(operand);
         self.modification_unit
             .insert_blocks_before(location, new_blocks);
         reference
     }
 
-    fn internal_reference_operand(&mut self, operand: Operand<'tcx>) -> BlocksAndResult<'tcx> {
+    fn internal_reference_operand(&mut self, operand: &Operand<'tcx>) -> BlocksAndResult<'tcx> {
         match operand {
             Operand::Copy(place) | Operand::Move(place) => {
                 let BlocksAndResult(additional_blocks, place_ref) =
@@ -533,7 +540,7 @@ impl<'tcx> RuntimeCallAdder<'tcx> {
     }
 }
 
-impl<'tcx> RuntimeCallAdder<'tcx> {
+impl<'tcx, 'm> RuntimeCallAdder<'tcx, 'm> {
     fn make_bb_for_call_with_ret(
         &mut self,
         func_name: &str,
