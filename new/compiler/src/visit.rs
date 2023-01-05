@@ -1,12 +1,103 @@
 use rustc_ast::{InlineAsmOptions, InlineAsmTemplatePiece, Mutability};
 use rustc_middle::{
     mir::{
-        AggregateKind, AssertMessage, BasicBlock, BinOp, BorrowKind, CastKind, InlineAsmOperand,
-        NullOp, Operand, Place, Rvalue, SwitchTargets, TerminatorKind, UnOp,
+        AggregateKind, AssertMessage, BasicBlock, BinOp, BorrowKind, CastKind, Coverage,
+        FakeReadCause, InlineAsmOperand, Local, NonDivergingIntrinsic, NullOp, Operand, Place,
+        RetagKind, Rvalue, StatementKind, SwitchTargets, TerminatorKind, UnOp, UserTypeProjection,
     },
-    ty::{Const, Region, Ty},
+    ty::{Const, Region, Ty, Variance},
 };
 use rustc_span::Span;
+use rustc_target::abi::VariantIdx;
+
+macro_rules! make_statement_kind_visitor {
+    ($visitor_trait_name:ident, $($mutability:ident)?) => {
+        pub trait $visitor_trait_name<'tcx, T: Default> {
+            fn visit_statement_kind(&mut self, kind: & $($mutability)? StatementKind<'tcx>) -> T {
+                self.super_statement_kind(kind)
+            }
+            
+            fn visit_assign(&mut self, place: & $($mutability)? Place<'tcx>, rvalue: & $($mutability)? Rvalue<'tcx>) -> T {
+                Default::default()
+            }
+
+            fn visit_fake_read(&mut self, cause: & $($mutability)? FakeReadCause, place: & $($mutability)? Place<'tcx>) -> T {
+                Default::default()
+            }
+
+            fn visit_set_discriminant(
+                &mut self,
+                place: &Place<'tcx>,
+                variant_index: & $($mutability)? VariantIdx,
+            ) -> T {
+                Default::default()
+            }
+
+            fn visit_deinit(&mut self, place: & $($mutability)? Place<'tcx>) -> T {
+                Default::default()
+            }
+
+            fn visit_storage_live(&mut self, local: & $($mutability)? Local) -> T {
+                Default::default()
+            }
+
+            fn visit_storage_dead(&mut self, local: & $($mutability)? Local) -> T {
+                Default::default()
+            }
+
+            fn visit_retag(&mut self, kind: & $($mutability)? RetagKind, place: & $($mutability)? Place<'tcx>) -> T {
+                Default::default()
+            }
+
+            fn visit_ascribe_user_type(
+                &mut self,
+                place: & $($mutability)? Place<'tcx>,
+                user_type_proj: & $($mutability)? UserTypeProjection,
+                variance: & $($mutability)? Variance,
+            ) -> T {
+                Default::default()
+            }
+
+            fn visit_coverage(&mut self, coverage: & $($mutability)? Coverage) -> T {
+                Default::default()
+            }
+
+            fn visit_intrinsic(&mut self, intrinsic: & $($mutability)? NonDivergingIntrinsic<'tcx>) -> T {
+                Default::default()
+            }
+
+            fn visit_nop(&mut self) -> T {
+                Default::default()
+            }
+
+            fn super_statement_kind(&mut self, kind: & $($mutability)? StatementKind<'tcx>) -> T {
+                match kind {
+                    StatementKind::Assign(box (place, rvalue)) => self.visit_assign(place, rvalue),
+                    StatementKind::FakeRead(box (cause, place)) => {
+                        self.visit_fake_read(cause, place)
+                    }
+                    StatementKind::SetDiscriminant {
+                        place,
+                        variant_index,
+                    } => self.visit_set_discriminant(place, variant_index),
+                    StatementKind::Deinit(place) => self.visit_deinit(place),
+                    StatementKind::StorageLive(local) => self.visit_storage_live(local),
+                    StatementKind::StorageDead(local) => self.visit_storage_dead(local),
+                    StatementKind::Retag(kind, place) => self.visit_retag(kind, place),
+                    StatementKind::AscribeUserType(box (place, user_type_proj), variance) => {
+                        self.visit_ascribe_user_type(place, user_type_proj, variance)
+                    }
+                    StatementKind::Coverage(coverage) => self.visit_coverage(coverage),
+                    StatementKind::Intrinsic(intrinsic) => self.visit_intrinsic(intrinsic),
+                    StatementKind::Nop => self.visit_nop(),
+                }
+            }
+        }
+    };
+}
+
+make_statement_kind_visitor!(StatementKindVisitor,);
+make_statement_kind_visitor!(StatementKindMutVisitor, mut);
 
 macro_rules! make_terminator_kind_visitor {
     ($visitor_trait_name:ident, $($mutability:ident)?) => {
