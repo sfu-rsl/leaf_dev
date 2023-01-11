@@ -340,7 +340,7 @@ impl<'tcx> From<(BasicBlockData<'tcx>, Local)> for BlocksAndResult<'tcx> {
 }
 
 impl<'tcx, 'm> RuntimeCallAdder<'tcx, 'm> {
-    pub fn reference_place(&mut self, place: &Place<'tcx>, location: BasicBlock) -> Local {
+    pub fn reference_place(&mut self, location: BasicBlock, place: &Place<'tcx>) -> Local {
         let BlocksAndResult(new_blocks, reference) = self.internal_reference_place(place);
         self.modification_unit
             .insert_blocks_before(location, new_blocks);
@@ -349,7 +349,7 @@ impl<'tcx, 'm> RuntimeCallAdder<'tcx, 'm> {
 
     fn internal_reference_place(&mut self, place: &Place<'tcx>) -> BlocksAndResult<'tcx> {
         let mut new_blocks = vec![];
-        let (call_block, mut current_ref) = self.make_bb_for_call_with_ret(
+        let (call_block, mut current_ref) = self.make_bb_for_place_ref_call(
             stringify!(pri::ref_place_local),
             vec![operand::const_from_uint(self.tcx, u32::from(place.local))],
         );
@@ -414,24 +414,28 @@ impl<'tcx, 'm> RuntimeCallAdder<'tcx, 'm> {
             ProjectionElem::OpaqueCast(_) => (stringify!(pri::ref_place_opaque_cast), vec![]),
         };
 
-        BlocksAndResult::from(self.make_bb_for_call_with_ret(
+        BlocksAndResult::from(self.make_bb_for_place_ref_call(
             func_name,
             [vec![operand::copy_for_local(current_ref)], additional_args].concat(),
         ))
         .prepend(new_blocks)
     }
 
-    fn get_pri_place_ref_ty(&self) -> Ty<'tcx> {
-        todo!()
+    fn make_bb_for_place_ref_call(
+        &mut self,
+        func_name: &str,
+        args: Vec<Operand<'tcx>>,
+    ) -> (BasicBlockData<'tcx>, Local) {
+        self.make_bb_for_call_with_ret(func_name, args, self.get_pri_operand_ref_ty())
     }
 
-    fn get_pri_operand_ref_ty(&self) -> Ty<'tcx> {
+    fn get_pri_place_ref_ty(&self) -> Ty<'tcx> {
         todo!()
     }
 }
 
 impl<'tcx, 'm> RuntimeCallAdder<'tcx, 'm> {
-    pub fn reference_operand(&mut self, operand: &Operand<'tcx>, location: BasicBlock) -> Local {
+    pub fn reference_operand(&mut self, location: BasicBlock, operand: &Operand<'tcx>) -> Local {
         let BlocksAndResult(new_blocks, reference) = self.internal_reference_operand(operand);
         self.modification_unit
             .insert_blocks_before(location, new_blocks);
@@ -450,12 +454,10 @@ impl<'tcx, 'm> RuntimeCallAdder<'tcx, 'm> {
                     stringify!(pri::ref_operand_move)
                 };
 
-                BlocksAndResult::from(
-                    self.make_bb_for_call_with_ret(
-                        func_name,
-                        vec![operand::copy_for_local(place_ref)],
-                    ),
-                )
+                BlocksAndResult::from(self.make_bb_for_operand_ref_call(
+                    func_name,
+                    vec![operand::copy_for_local(place_ref)],
+                ))
                 .prepend(additional_blocks)
             }
             Operand::Constant(constant) => self.internal_reference_const_operand(&constant),
@@ -504,12 +506,12 @@ impl<'tcx, 'm> RuntimeCallAdder<'tcx, 'm> {
         ty: Ty<'tcx>,
     ) -> BlocksAndResult<'tcx> {
         if ty.is_bool() {
-            self.make_bb_for_call_with_ret(
+            self.make_bb_for_operand_ref_call(
                 stringify!(pri::ref_operand_const_bool),
                 vec![operand::const_from_scalar_int(self.tcx, scalar.clone(), ty)],
             )
         } else if ty.is_integral() {
-            self.make_bb_for_call_with_ret(
+            self.make_bb_for_operand_ref_call(
                 stringify!(pri::ref_operand_const_int),
                 vec![
                     operand::const_from_scalar_int(self.tcx, scalar.clone(), ty),
@@ -525,7 +527,7 @@ impl<'tcx, 'm> RuntimeCallAdder<'tcx, 'm> {
                 ieee::Double::PRECISION
             } as u64;
             let sbits = bits - ebits;
-            self.make_bb_for_call_with_ret(
+            self.make_bb_for_operand_ref_call(
                 stringify!(pri::ref_operand_const_float),
                 vec![
                     operand::const_from_scalar_int(self.tcx, scalar.clone(), ty),
@@ -538,6 +540,18 @@ impl<'tcx, 'm> RuntimeCallAdder<'tcx, 'm> {
         }
         .into()
     }
+
+    fn make_bb_for_operand_ref_call(
+        &mut self,
+        func_name: &str,
+        args: Vec<Operand<'tcx>>,
+    ) -> (BasicBlockData<'tcx>, Local) {
+        self.make_bb_for_call_with_ret(func_name, args, self.get_pri_operand_ref_ty())
+    }
+
+    fn get_pri_operand_ref_ty(&self) -> Ty<'tcx> {
+        todo!()
+    }
 }
 
 impl<'tcx, 'm> RuntimeCallAdder<'tcx, 'm> {
@@ -545,6 +559,7 @@ impl<'tcx, 'm> RuntimeCallAdder<'tcx, 'm> {
         &mut self,
         func_name: &str,
         args: Vec<Operand<'tcx>>,
+        ret_ty: Ty<'tcx>,
     ) -> (BasicBlockData<'tcx>, Local) {
         let result_local = self
             .modification_unit
