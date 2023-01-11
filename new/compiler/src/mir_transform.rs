@@ -426,11 +426,7 @@ impl<'tcx, 'm> RuntimeCallAdder<'tcx, 'm> {
         func_name: &str,
         args: Vec<Operand<'tcx>>,
     ) -> (BasicBlockData<'tcx>, Local) {
-        self.make_bb_for_call_with_ret(func_name, args, self.get_pri_operand_ref_ty())
-    }
-
-    fn get_pri_place_ref_ty(&self) -> Ty<'tcx> {
-        todo!()
+        self.make_bb_for_call_with_ret(func_name, args)
     }
 }
 
@@ -546,8 +542,9 @@ impl<'tcx, 'm> RuntimeCallAdder<'tcx, 'm> {
         func_name: &str,
         args: Vec<Operand<'tcx>>,
     ) -> (BasicBlockData<'tcx>, Local) {
-        self.make_bb_for_call_with_ret(func_name, args, self.get_pri_operand_ref_ty())
+        self.make_bb_for_call_with_ret(func_name, args)
     }
+}
 
     fn get_pri_operand_ref_ty(&self) -> Ty<'tcx> {
         todo!()
@@ -559,11 +556,10 @@ impl<'tcx, 'm> RuntimeCallAdder<'tcx, 'm> {
         &mut self,
         func_name: &str,
         args: Vec<Operand<'tcx>>,
-        ret_ty: Ty<'tcx>,
     ) -> (BasicBlockData<'tcx>, Local) {
         let result_local = self
             .modification_unit
-            .add_local(self.get_pri_place_ref_ty());
+            .add_local(self.get_pri_return_ty(func_name));
 
         (
             self.make_bb_for_call(func_name, args, Place::from(result_local)),
