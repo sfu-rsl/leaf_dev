@@ -41,7 +41,7 @@ impl<'tcx> BodyModificationUnit<'tcx> {
     }
 }
 
-struct NewLocalDecl<'tcx>(LocalDecl<'tcx>);
+pub struct NewLocalDecl<'tcx>(LocalDecl<'tcx>);
 
 impl<'tcx> From<LocalDecl<'tcx>> for NewLocalDecl<'tcx> {
     fn from(value: LocalDecl<'tcx>) -> Self {
