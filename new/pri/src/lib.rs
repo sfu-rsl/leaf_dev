@@ -79,49 +79,57 @@ pub fn ref_operand_const_float(bit_rep: u128, ebits: u64, sbits: u64) -> Operand
     todo!()
 }
 
-pub fn assign_use(place: PlaceRef, operand: OperandRef) {
+pub fn assign_use(dest: PlaceRef, operand: OperandRef) {
     todo!()
 }
-pub fn assign_repeat(operand: OperandRef, count: u32 /* constant */) {
+pub fn assign_repeat(dest: PlaceRef, operand: OperandRef, count: usize /* constant */) {
     todo!()
 }
-pub fn assign_ref(place: PlaceRef, is_mutable: bool) {
+pub fn assign_ref(dest: PlaceRef, place: PlaceRef, is_mutable: bool) {
     todo!()
 }
-pub fn assign_thread_local_ref(/* TODO: Complicated. MIRAI has some works on it. */) {
+pub fn assign_thread_local_ref(
+    dest: PlaceRef, /* TODO: Complicated. MIRAI has some works on it. */
+) {
     todo!()
 }
-pub fn assign_address_of(place: PlaceRef, is_mutable: bool) {
+pub fn assign_address_of(dest: PlaceRef, place: PlaceRef, is_mutable: bool) {
     todo!()
 }
-pub fn assign_len(place: PlaceRef) {
+pub fn assign_len(dest: PlaceRef, place: PlaceRef) {
     // To be investigated. Not obvious whether it appears at all in the later stages.
     todo!()
 }
 
-pub fn assign_cast_numeric(operand: OperandRef, is_to_float: bool, size: usize) {
+pub fn assign_cast_numeric(dest: PlaceRef, operand: OperandRef, is_to_float: bool, size: usize) {
     todo!()
 }
-pub fn assign_cast(/* TODO: Other types of cast. */) {
-    todo!()
-}
-
-pub fn assign_binary_op(operator: BinaryOp, first: OperandRef, second: OperandRef, checked: bool) {
-    todo!()
-}
-pub fn assign_unary_op(operator: UnaryOp, operand: OperandRef) {
+pub fn assign_cast(dest: PlaceRef /* TODO: Other types of cast. */) {
     todo!()
 }
 
-pub fn set_discriminant(place: PlaceRef, variant_index: u32) {
+pub fn assign_binary_op(
+    dest: PlaceRef,
+    operator: BinaryOp,
+    first: OperandRef,
+    second: OperandRef,
+    checked: bool,
+) {
     todo!()
 }
-pub fn assign_discriminant(place: PlaceRef) {
+pub fn assign_unary_op(dest: PlaceRef, operator: UnaryOp, operand: OperandRef) {
+    todo!()
+}
+
+pub fn set_discriminant(dest: PlaceRef, place: PlaceRef, variant_index: u32) {
+    todo!()
+}
+pub fn assign_discriminant(dest: PlaceRef, place: PlaceRef) {
     todo!()
 }
 
 // We use slice to simplify working with the interface.
-pub fn assign_aggregate_array(items: &[OperandRef]) {
+pub fn assign_aggregate_array(dest: PlaceRef, items: &[OperandRef]) {
     todo!()
 }
 
@@ -140,6 +148,7 @@ pub fn fn_return() {
     todo!()
 }
 
+#[derive(Debug)]
 pub enum BinaryOp {
     Add,
     Sub,
@@ -160,6 +169,7 @@ pub enum BinaryOp {
     Offset,
 }
 
+#[derive(Debug)]
 pub enum UnaryOp {
     Not,
     Neg,

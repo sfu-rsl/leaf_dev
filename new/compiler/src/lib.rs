@@ -3,6 +3,7 @@
 #![feature(let_chains)]
 #![feature(is_some_and)]
 #![feature(extend_one)]
+#![feature(box_patterns)]
 #![deny(rustc::internal)]
 
 extern crate rustc_abi;
@@ -17,6 +18,7 @@ extern crate rustc_middle;
 extern crate rustc_mir_build;
 extern crate rustc_mir_transform;
 extern crate rustc_span;
+extern crate rustc_target;
 extern crate rustc_type_ir;
 
 mod mir_transform;
