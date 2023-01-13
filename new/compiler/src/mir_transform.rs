@@ -237,6 +237,19 @@ impl<'tcx> visit::TerminatorKindMutVisitor<'tcx, ()> for JumpUpdater<'tcx> {
         self.update_maybe(unwind);
     }
 
+    fn visit_call(
+        &mut self,
+        _func: &mut Operand<'tcx>,
+        _args: &mut Vec<Operand<'tcx>>,
+        _destination: &mut Place<'tcx>,
+        target: &mut Option<BasicBlock>,
+        _cleanup: &mut Option<BasicBlock>,
+        _from_hir_call: bool,
+        _fn_span: Span,
+    ) -> () {
+        self.update_maybe(target);
+    }
+
     fn visit_assert(
         &mut self,
         _cond: &mut rustc_middle::mir::Operand<'tcx>,
