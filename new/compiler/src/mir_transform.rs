@@ -602,29 +602,42 @@ impl<'tcx, 'm> RuntimeCallAdder<'tcx, 'm> {
             self.make_bb_for_operand_ref_call(
                 stringify!(pri::ref_operand_const_int),
                 vec![
-                    operand::const_from_scalar_int(self.tcx, scalar.clone(), ty),
+                    operand::const_from_uint(
+                        self.tcx,
+                        /* Currently no direct way to read the data field. */
+                        scalar.assert_bits(scalar.size()),
+                    ),
                     operand::const_from_uint(self.tcx, scalar.size().bits()),
                     operand::const_from_bool(self.tcx, ty.is_signed()),
                 ],
             )
         } else if ty.is_floating_point() {
-            let bits = scalar.size().bits();
-            let ebits = if bits == ieee::Single::BITS as u64 {
+            let bit_size = scalar.size().bits();
+            let ebit_size = if bit_size == ieee::Single::BITS as u64 {
                 ieee::Single::PRECISION
             } else {
                 ieee::Double::PRECISION
             } as u64;
-            let sbits = bits - ebits;
+            let sbits = bit_size - ebit_size;
             self.make_bb_for_operand_ref_call(
                 stringify!(pri::ref_operand_const_float),
                 vec![
-                    operand::const_from_scalar_int(self.tcx, scalar.clone(), ty),
-                    operand::const_from_uint(self.tcx, ebits),
+                    operand::const_from_uint(
+                        self.tcx,
+                        /* Currently no direct way to read the data field. */
+                        scalar.assert_bits(scalar.size()),
+                    ),
+                    operand::const_from_uint(self.tcx, ebit_size),
                     operand::const_from_uint(self.tcx, sbits),
                 ],
             )
+        } else if ty.is_char() {
+            self.make_bb_for_operand_ref_call(
+                stringify!(pri::ref_operand_const_char),
+                vec![operand::const_from_scalar_int(self.tcx, scalar.clone(), ty)],
+            )
         } else {
-            unreachable!("ScalarInt is supposed to be either bool, int, or float.")
+            unreachable!("ScalarInt is supposed to be either bool, int, float, or char.")
         }
         .into()
     }
