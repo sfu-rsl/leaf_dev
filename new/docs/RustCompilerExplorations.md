@@ -26,3 +26,9 @@ As the rust compiler is not well-documented and fairly unstable, lots of facts a
 
 #### Bool
 Booleans, numeric types, chars, pointers, and fn defs are expressed as `Scalar` in the consts. Source: `Display` implementation for scalar type. Or easier: the constants `ScalarInt::TRUE` and `FALSE`.
+
+## Ty (Types)
+
+### Function
+- `TyCtxt::type_of` returns the function type. Its kind is `TyKind::FnDef`.
+- To get the return type we can query its signature using `TyCtxt::fn_sig`.
