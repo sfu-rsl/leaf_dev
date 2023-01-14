@@ -1,22 +1,15 @@
 use rustc_middle::mir::visit::MutVisitor;
-use rustc_middle::mir::visit::Visitor;
-use rustc_middle::mir::BasicBlock;
-use rustc_middle::mir::BasicBlockData;
-use rustc_middle::mir::Operand;
-
-use rustc_middle::mir::HasLocalDecls;
-use rustc_middle::mir::Local;
-use rustc_middle::mir::Location;
-use rustc_middle::mir::MirPass;
-use rustc_middle::mir::Place;
-use rustc_middle::mir::Rvalue;
+use rustc_middle::mir::{visit::Visitor, BasicBlock};
+use rustc_middle::mir::{
+    BasicBlockData, HasLocalDecls, Local, Location, MirPass, Operand, Place, Rvalue,
+};
+use rustc_target::abi::VariantIdx;
 
 use crate::mir_transform::BodyModificationUnit;
 use crate::mir_transform::RuntimeCallAdder;
 use crate::mir_transform::RuntimeCallAdderForAssignment;
 use crate::visit::RvalueVisitor;
 use crate::visit::StatementKindVisitor;
-use rustc_target::abi::VariantIdx;
 
 pub struct LeafPass;
 
@@ -26,6 +19,8 @@ impl<'tcx> MirPass<'tcx> for LeafPass {
         tcx: rustc_middle::ty::TyCtxt<'tcx>,
         body: &mut rustc_middle::mir::Body<'tcx>,
     ) {
+        log::info!("Running leaf pass on body at {:#?}", body.span);
+
         let mut modification = BodyModificationUnit::new(body.local_decls().next_index());
         let mut call_adder = RuntimeCallAdder::new(tcx, &mut modification);
         let mut visitor = BodyVisitor {

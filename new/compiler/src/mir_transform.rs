@@ -92,17 +92,13 @@ impl<'tcx> BodyModificationUnit<'tcx> {
     where
         I: IntoIterator<Item = BasicBlockData<'tcx>>,
     {
-        if !self.new_blocks.contains_key(&index) {
-            self.new_blocks.insert(index, Vec::new());
-        }
-
-        let chunk = self.new_blocks.get_mut(&index).unwrap();
+        let chunk = self.new_blocks.entry(index).or_insert_with(Vec::new);
         let block_count: u32 = {
             let count_before = chunk.len();
             // Associating temporary indices to the new blocks, so they can be referenced if needed.
             chunk.extend(blocks.into_iter().enumerate().map(|(i, b)| {
                 (
-                    BasicBlock::from(u32::MAX - 1 - self.new_block_count - i as u32),
+                    BasicBlock::from(BasicBlock::MAX_AS_U32 - 1 - self.new_block_count - i as u32),
                     b,
                 )
             }));
@@ -313,11 +309,13 @@ impl<'tcx> JumpUpdater<'tcx> {
     }
 
     fn update(&self, target: &mut BasicBlock) {
+        log::debug!("Updating jump target from {:?}", target);
         if *target == NEXT_BLOCK {
             *target = self.next_index;
         } else if let Some(new_index) = self.index_mapping.get(target) {
             *target = *new_index;
         }
+        log::debug!("Updated jump target to {:?}", target);
     }
 
     fn update_maybe(&self, target: &mut Option<BasicBlock>) {
