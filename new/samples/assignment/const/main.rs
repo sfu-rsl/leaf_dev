@@ -17,4 +17,6 @@ fn main() {
     let f = 10.33 as f64;
 
     let c = 'a';
+    
+    let u = ();
 }
