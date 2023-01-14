@@ -6,8 +6,10 @@ use rustc_apfloat::{
 };
 use rustc_ast::Mutability;
 use rustc_const_eval::interpret::{ConstValue, Scalar};
+use rustc_hir::def::DefKind;
 use rustc_index::vec::IndexVec;
 use rustc_middle::{
+    middle::exported_symbols::ExportedSymbol,
     mir::{
         BasicBlock, BasicBlockData, BinOp, Body, Constant, ConstantKind, HasLocalDecls, Local,
         LocalDecl, LocalDecls, Operand, Place, ProjectionElem, SourceInfo, Statement, Terminator,
@@ -15,7 +17,7 @@ use rustc_middle::{
     },
     ty::{ScalarInt, Ty, TyCtxt},
 };
-use rustc_span::{Span, DUMMY_SP};
+use rustc_span::{def_id::DefId, Span, DUMMY_SP};
 
 use crate::visit::{self, TerminatorKindMutVisitor};
 
@@ -325,17 +327,95 @@ impl<'tcx> JumpUpdater<'tcx> {
     }
 }
 
+struct FunctionInfo<'tcx> {
+    def_id: DefId,
+    ret_ty: Ty<'tcx>,
+}
+
+struct SpecialTypes<'tcx> {
+    place_ref: Ty<'tcx>,
+    operand_ref: Ty<'tcx>,
+    binary_op: Ty<'tcx>,
+    unary_op: Ty<'tcx>,
+}
+
 pub struct RuntimeCallAdder<'tcx, 'm> {
     tcx: TyCtxt<'tcx>,
     modification_unit: &'m mut BodyModificationUnit<'tcx>,
+    pri_functions: HashMap<String, FunctionInfo<'tcx>>,
+    pri_special_types: SpecialTypes<'tcx>,
 }
 
 impl<'tcx, 'm> RuntimeCallAdder<'tcx, 'm> {
     pub fn new(tcx: TyCtxt<'tcx>, modification_unit: &'m mut BodyModificationUnit<'tcx>) -> Self {
         Self {
             tcx: tcx,
-            modification_unit: modification_unit,
+            modification_unit,
+            pri_functions: Self::extract_functions(tcx), // FIXME: Perform caching
+            pri_special_types: Self::find_special_types(tcx),
         }
+    }
+
+    fn extract_functions(tcx: TyCtxt<'tcx>) -> HashMap<String, FunctionInfo<'tcx>> {
+        RuntimeCallAdder::get_exported_symbols_of_pri(tcx)
+            .into_iter()
+            .filter(|def_id| matches!(tcx.def_kind(def_id), DefKind::Fn))
+            .map(|def_id| {
+                (
+                    tcx.def_path_str(def_id),
+                    FunctionInfo {
+                        def_id,
+                        ret_ty: tcx.fn_sig(def_id).output().skip_binder(),
+                    },
+                )
+            })
+            .collect()
+    }
+
+    fn find_special_types(tcx: TyCtxt<'tcx>) -> SpecialTypes<'tcx> {
+        /*
+         * FIXME: The desired enums and type aliases don't show up in the exported symbols.
+         * It may be because of the MIR phases that clean up/optimize/unify things,
+         * the way that the library is added (using the compiled file), or
+         * that enums and type aliases are not included at all in the exported_symbols.
+         * As a workaround, we have defined some static variables having those desired
+         * types and are accessible.
+         * However, there should be some functions in TyCtxt that will list these items for us.
+         */
+        let def_ids: HashMap<String, DefId> = RuntimeCallAdder::get_exported_symbols_of_pri(tcx)
+            .into_iter()
+            .filter(|def_id| matches!(tcx.def_kind(def_id), DefKind::Static(_)))
+            .map(|def_id| (tcx.def_path_str(def_id), def_id))
+            .collect();
+
+        let get_ty =
+            |name: &str| -> Ty<'tcx> { tcx.type_of(def_ids.get(&name.replace(" ", "")).unwrap()) };
+        SpecialTypes {
+            place_ref: get_ty(stringify!(pri::PLACE_REF_TYPE_HOLDER)),
+            operand_ref: get_ty(stringify!(pri::OPERAND_REF_TYPE_HOLDER)),
+            binary_op: get_ty(stringify!(pri::BINARY_OP_TYPE_HOLDER)),
+            unary_op: get_ty(stringify!(pri::UNARY_OP_TYPE_HOLDER)),
+        }
+    }
+
+    fn get_exported_symbols_of_pri(tcx: TyCtxt<'tcx>) -> Vec<DefId> {
+        let crate_num = tcx
+            .crates(())
+            .iter()
+            .find(|cnum| tcx.crate_name(**cnum).as_str() == stringify!(pri))
+            .expect(format!("{} crate is not added as a dependency.", stringify!(pri)).as_str())
+            .clone();
+
+        tcx.exported_symbols(crate_num)
+            .iter()
+            .filter_map(|(exported_symbol, _)| match exported_symbol {
+                ExportedSymbol::NonGeneric(def_id) | ExportedSymbol::Generic(def_id, _) => {
+                    Some(def_id)
+                }
+                _ => None,
+            })
+            .cloned()
+            .collect()
     }
 }
 
@@ -646,12 +726,18 @@ impl<'tcx, 'm> RuntimeCallAdder<'tcx, 'm> {
         }
     }
 
-    fn get_pri_func_def_id(&self, func_name: &str) -> rustc_span::def_id::DefId {
-        todo!()
+    fn get_pri_func_def_id(&self, func_name: &str) -> DefId {
+        self.get_pri_func_info(func_name).def_id
     }
 
     fn get_pri_return_ty(&self, func_name: &str) -> Ty<'tcx> {
-        todo!()
+        self.get_pri_func_info(func_name).ret_ty
+    }
+
+    fn get_pri_func_info(&self, func_name: &str) -> &FunctionInfo<'tcx> {
+        self.pri_functions
+            .get(&func_name.replace(" ", "")) // FIXME
+            .expect("Invalid pri function name.")
     }
 }
 
@@ -734,7 +820,7 @@ impl<'tcx, 'm, 'c> RuntimeCallAdderForAssignment<'tcx, 'm, 'c> {
     ) {
         let operator = convert_mir_binop_to_pri(operator);
         let (operator_local, additional_statements) =
-            self.add_and_set_local_for_enum(self.get_pri_binary_op_ty(), operator);
+            self.add_and_set_local_for_enum(self.call_adder.pri_special_types.binary_op, operator);
 
         self.add_bb_for_assign_call_with_statements(
             stringify!(pri::assign_binary_op),
@@ -751,7 +837,7 @@ impl<'tcx, 'm, 'c> RuntimeCallAdderForAssignment<'tcx, 'm, 'c> {
     pub fn by_unary_op(&mut self, operator: &UnOp, operand_ref: Local) {
         let operator = convert_mir_unop_to_pri(operator);
         let (operator_local, additional_statements) =
-            self.add_and_set_local_for_enum(self.get_pri_unary_op_ty(), operator);
+            self.add_and_set_local_for_enum(self.call_adder.pri_special_types.unary_op, operator);
 
         self.add_bb_for_assign_call_with_statements(
             stringify!(pri::assign_unary_op),
@@ -772,7 +858,7 @@ impl<'tcx, 'm, 'c> RuntimeCallAdderForAssignment<'tcx, 'm, 'c> {
 
     pub fn by_aggregate_array(&mut self, items: &[Local]) {
         let tcx = self.call_adder.tcx;
-        let operand_ref_ty = self.call_adder.get_pri_operand_ref_ty();
+        let operand_ref_ty = self.call_adder.pri_special_types.operand_ref;
         let items_local = self
             .call_adder
             .modification_unit
@@ -828,19 +914,9 @@ impl<'tcx, 'm, 'c> RuntimeCallAdderForAssignment<'tcx, 'm, 'c> {
         T: Debug,
     {
         let local = self.call_adder.modification_unit.add_local(enum_ty);
-        let statements = enums::set_variant_to_local(
-            self.get_pri_binary_op_ty(),
-            format!("{:?}", value).as_str(),
-            local,
-        );
+        let statements =
+            enums::set_variant_to_local(enum_ty, format!("{:?}", value).as_str(), local);
         (local, statements)
-    }
-
-    fn get_pri_binary_op_ty(&self) -> Ty<'tcx> {
-        todo!()
-    }
-    fn get_pri_unary_op_ty(&self) -> Ty<'tcx> {
-        todo!()
     }
 }
 

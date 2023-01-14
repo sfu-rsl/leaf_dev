@@ -25,13 +25,22 @@ impl runtime::Runtime for RuntimeImpl {
     }
 }
 
-type Local = u32;
-type Ref = u64;
-type PlaceRef = Ref;
-type OperandRef = Ref;
+pub type Local = u32;
+pub type Ref = u64;
+pub type PlaceRef = Ref;
+pub type OperandRef = Ref;
 
-type BasicBlockIndex = u32;
-type BranchTarget = BasicBlockIndex;
+/*
+ * These fields serve as exported symbols in the workaround to get the Tys for
+ * the desired types in the compiler.
+ */
+pub static PLACE_REF_TYPE_HOLDER: PlaceRef = 0;
+pub static OPERAND_REF_TYPE_HOLDER: OperandRef = 0;
+pub static BINARY_OP_TYPE_HOLDER: BinaryOp = BinaryOp::Add;
+pub static UNARY_OP_TYPE_HOLDER: UnaryOp = UnaryOp::Neg;
+
+pub type BasicBlockIndex = u32;
+pub type BranchTarget = BasicBlockIndex;
 
 pub fn ref_place_local(local: Local) -> PlaceRef {
     todo!()

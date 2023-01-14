@@ -12,6 +12,7 @@ extern crate rustc_ast;
 extern crate rustc_const_eval;
 extern crate rustc_data_structures;
 extern crate rustc_driver;
+extern crate rustc_hir;
 extern crate rustc_index;
 extern crate rustc_interface;
 extern crate rustc_middle;
@@ -20,6 +21,7 @@ extern crate rustc_mir_transform;
 extern crate rustc_span;
 extern crate rustc_target;
 extern crate rustc_type_ir;
+extern crate thin_vec;
 
 mod mir_transform;
 mod pass;
@@ -85,27 +87,24 @@ impl RunCompiler {
         args.push(String::from("-L"));
         args.push(format!("dependency={}", path.to_string_lossy()));
 
-        /*
-        // Add leafrt library as extern crate
+        // Add pri library as extern crate
         std::fs::read_dir(&path)
             .expect("unable to read directory")
             .filter_map(|r| r.ok())
             .filter(|file_name| {
                 let name = file_name.file_name().to_string_lossy().to_string();
-                name.ends_with(".rlib") && name.starts_with("libleafrt-")
+                name.ends_with(".rlib") && name.starts_with("libpri-")
             })
             .take(1)
             .for_each(|file_name| {
                 args.push(String::from("--extern"));
                 args.push(format!(
-                    "leafrt={}",
+                    "pri={}",
                     path.join(file_name.file_name())
                         .to_string_lossy()
                         .to_string()
                 ));
             });
-
-         */
 
         args.push(String::from("--sysroot"));
         args.push(sysroot);
@@ -179,11 +178,10 @@ impl rustc_driver::Callbacks for Callbacks {
             return Compilation::Stop;
         }
 
-        /*
-        // The following adds a new statement "extern crate leafrt" to the parsed AST as a new item.
+        // The following adds a new statement "extern crate pri" to the parsed AST as a new item.
         let items = &mut queries.parse().unwrap().peek_mut().items;
         let item = Item {
-            attrs: Vec::new(),
+            attrs: thin_vec::ThinVec::new(),
             id: DUMMY_NODE_ID,
             span: DUMMY_SP,
             vis: Visibility {
@@ -191,12 +189,11 @@ impl rustc_driver::Callbacks for Callbacks {
                 span: DUMMY_SP,
                 tokens: None,
             },
-            ident: Ident::with_dummy_span(Symbol::intern("leafrt_new")),
+            ident: Ident::with_dummy_span(Symbol::intern("pri")),
             kind: ItemKind::ExternCrate(None),
             tokens: None,
         };
         items.insert(0, P(item));
-        */
 
         Compilation::Continue
     }
