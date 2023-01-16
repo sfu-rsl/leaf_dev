@@ -5,7 +5,7 @@ use rustc_middle::mir::{
 };
 use rustc_target::abi::VariantIdx;
 
-use crate::mir_transform::BodyModificationUnit;
+use crate::mir_transform::modification::BodyModificationUnit;
 use crate::mir_transform::RuntimeCallAdder;
 use crate::mir_transform::RuntimeCallAdderForAssignment;
 use crate::visit::RvalueVisitor;
