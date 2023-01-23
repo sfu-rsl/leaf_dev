@@ -51,7 +51,7 @@ impl VisitorFactory {
     where
         BC: ctxtreqs::Basic<'tcx>,
     {
-        LeafBodyVisitor {
+        LeafBasicBlockVisitor {
             call_adder: call_adder.at(block),
         }
     }
