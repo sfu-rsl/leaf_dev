@@ -1,13 +1,15 @@
 use rustc_middle::mir::visit::MutVisitor;
-use rustc_middle::mir::{visit::Visitor, BasicBlock};
 use rustc_middle::mir::{
-    BasicBlockData, HasLocalDecls, Local, Location, MirPass, Operand, Place, Rvalue,
+    self, visit::Visitor, BasicBlock, BasicBlockData, HasLocalDecls, Local, Location, MirPass,
+    Operand, Place, Rvalue,
 };
 use rustc_target::abi::VariantIdx;
 
+use crate::mir_transform::call_addition::{
+    context_requirements as ctxtreqs, Assigner, OperandReferencer, PlaceReferencer,
+    XRuntimeCallAdder,
+};
 use crate::mir_transform::modification::BodyModificationUnit;
-use crate::mir_transform::RuntimeCallAdder;
-use crate::mir_transform::RuntimeCallAdderForAssignment;
 use crate::visit::RvalueVisitor;
 use crate::visit::StatementKindVisitor;
 
@@ -22,56 +24,80 @@ impl<'tcx> MirPass<'tcx> for LeafPass {
         log::info!("Running leaf pass on body at {:#?}", body.span);
 
         let mut modification = BodyModificationUnit::new(body.local_decls().next_index());
-        let mut call_adder = RuntimeCallAdder::new(tcx, &mut modification);
-        let mut visitor = BodyVisitor {
-            call_adder: &mut call_adder,
-        };
-        visitor.visit_body(body);
+        let mut call_adder = XRuntimeCallAdder::new(tcx, &mut modification);
+        LeafBodyVisitor::<()>::new(&mut call_adder).visit_body(body);
         modification.commit(body);
     }
 }
 
-struct BodyVisitor<'tcx, 'c, 'm> {
-    call_adder: &'c mut RuntimeCallAdder<'tcx, 'm>,
+struct LeafBodyVisitor<C> {
+    call_adder: XRuntimeCallAdder<C>,
 }
 
-impl<'tcx, 'c, 'm> Visitor<'tcx> for BodyVisitor<'tcx, 'c, 'm> {
+impl<C> LeafBodyVisitor<C> {
+    fn new<'tcx, 'c, BC>(call_adder: &'c mut XRuntimeCallAdder<BC>) -> impl Visitor<'tcx> + 'c
+    where
+        BC: ctxtreqs::Basic<'tcx>,
+    {
+        LeafBodyVisitor {
+            call_adder: XRuntimeCallAdder::borrow_from(call_adder),
+        }
+    }
+}
+
+impl<'tcx, C> Visitor<'tcx> for LeafBodyVisitor<C>
+where
+    C: ctxtreqs::Basic<'tcx>,
+{
     fn visit_basic_block_data(&mut self, block: BasicBlock, data: &BasicBlockData<'tcx>) {
         let mut visitor = BasicBlockVisitor {
-            call_adder: &mut self.call_adder,
-            current_block: block,
+            call_adder: self.call_adder.at(block),
         };
         visitor.visit_basic_block_data(block, data);
     }
 }
 
-struct BasicBlockVisitor<'tcx, 'c, 'm> {
-    call_adder: &'c mut RuntimeCallAdder<'tcx, 'm>,
-    current_block: BasicBlock,
+struct BasicBlockVisitor<C> {
+    call_adder: XRuntimeCallAdder<C>,
 }
 
-impl<'tcx, 'c, 'm> Visitor<'tcx> for BasicBlockVisitor<'tcx, 'c, 'm> {
+impl<'tcx, C> Visitor<'tcx> for BasicBlockVisitor<C>
+where
+    C: ctxtreqs::ForPlaceRef<'tcx> + ctxtreqs::ForOperandRef<'tcx>,
+{
     fn visit_statement(
         &mut self,
         statement: &rustc_middle::mir::Statement<'tcx>,
-        location: Location,
+        _location: Location,
     ) {
-        LeafStatementKindVisitor {
-            call_adder: self.call_adder,
-            location,
-        }
-        .visit_statement_kind(&statement.kind)
+        <LeafStatementKindVisitor>::new(&mut self.call_adder).visit_statement_kind(&statement.kind);
     }
 }
 
-struct LeafStatementKindVisitor<'tcx, 'c, 'm> {
-    call_adder: &'c mut RuntimeCallAdder<'tcx, 'm>,
-    location: Location,
+struct LeafStatementKindVisitor<C = ()> {
+    call_adder: XRuntimeCallAdder<C>,
 }
 
-impl<'tcx, 'c, 'm> StatementKindVisitor<'tcx, ()> for LeafStatementKindVisitor<'tcx, 'c, 'm> {
+impl<C> LeafStatementKindVisitor<C> {
+    fn new<'tcx, 'b, X>(
+        call_adder: &'b mut XRuntimeCallAdder<X>,
+    ) -> impl StatementKindVisitor<'tcx, ()> + 'b
+    // LeafStatementKindVisitor<TransparentContext<X>>
+    where
+        X: ctxtreqs::ForPlaceRef<'tcx> + ctxtreqs::ForOperandRef<'tcx>,
+    {
+        LeafStatementKindVisitor {
+            call_adder: XRuntimeCallAdder::borrow_from(call_adder),
+        }
+    }
+}
+
+impl<'tcx, C> StatementKindVisitor<'tcx, ()> for LeafStatementKindVisitor<C>
+where
+    C: ctxtreqs::ForPlaceRef<'tcx> + ctxtreqs::ForOperandRef<'tcx>,
+{
     fn visit_assign(&mut self, place: &Place<'tcx>, rvalue: &Rvalue<'tcx>) -> () {
-        LeafAssignmentVisitor::new(self.call_adder, self.location, place).visit_rvalue(rvalue)
+        LeafAssignmentVisitor::<()>::new(&mut self.call_adder, place).visit_rvalue(rvalue)
     }
 
     fn visit_fake_read(
@@ -127,37 +153,37 @@ impl<'tcx, 'c, 'm> StatementKindVisitor<'tcx, ()> for LeafStatementKindVisitor<'
     }
 }
 
-struct LeafAssignmentVisitor<'tcx, 'c, 'm> {
-    call_adder: RuntimeCallAdderForAssignment<'tcx, 'm, 'c>,
-    location: Location,
+struct LeafAssignmentVisitor<C> {
+    call_adder: XRuntimeCallAdder<C>,
 }
-impl<'tcx, 'c, 'm> LeafAssignmentVisitor<'tcx, 'c, 'm> {
-    fn new(
-        call_adder: &'c mut RuntimeCallAdder<'tcx, 'm>,
-        location: Location,
+
+impl<C> LeafAssignmentVisitor<C> {
+    fn new<'tcx, 'b, BC>(
+        call_adder: &'b mut XRuntimeCallAdder<BC>,
         destination: &Place<'tcx>,
-    ) -> Self {
-        let dest_ref = call_adder.reference_place(location.block, destination);
-        Self {
-            call_adder: call_adder.assign(location.block, dest_ref),
-            location,
+    ) -> impl RvalueVisitor<'tcx, ()> + 'b
+    where
+        BC: ctxtreqs::ForPlaceRef<'tcx> + ctxtreqs::ForOperandRef<'tcx>,
+    {
+        let dest_ref = call_adder.reference_place(destination);
+        LeafAssignmentVisitor {
+            call_adder: call_adder.assign(dest_ref),
         }
     }
 }
 
-impl<'tcx, 'c, 'm> RvalueVisitor<'tcx, ()> for LeafAssignmentVisitor<'tcx, 'c, 'm> {
-    fn visit_use(&mut self, operand: &rustc_middle::mir::Operand<'tcx>) {
-        let operand_ref = self.reference_operand(operand);
+impl<'tcx, 'c, 'm, C> RvalueVisitor<'tcx, ()> for LeafAssignmentVisitor<C>
+where
+    C: ctxtreqs::ForPlaceRef<'tcx> + ctxtreqs::ForOperandRef<'tcx> + ctxtreqs::ForAssignment<'tcx>,
+{
+    fn visit_use(&mut self, operand: &Operand<'tcx>) {
+        let operand_ref = self.call_adder.reference_operand(operand);
         self.call_adder.by_use(operand_ref)
     }
 
-    fn visit_repeat(
-        &mut self,
-        operand: &rustc_middle::mir::Operand<'tcx>,
-        count: &rustc_middle::ty::Const<'tcx>,
-    ) {
+    fn visit_repeat(&mut self, operand: &Operand<'tcx>, count: &rustc_middle::ty::Const<'tcx>) {
         self.call_adder.by_repeat(
-            self.reference_operand(operand),
+            self.call_adder.reference_operand(operand),
             todo!("Convert {count} to number."),
         )
     }
@@ -168,7 +194,7 @@ impl<'tcx, 'c, 'm> RvalueVisitor<'tcx, ()> for LeafAssignmentVisitor<'tcx, 'c, '
         borrow_kind: &rustc_middle::mir::BorrowKind,
         place: &Place<'tcx>,
     ) {
-        let place_ref = self.reference_place(place);
+        let place_ref = self.call_adder.reference_place(place);
         self.call_adder.by_ref(
             place_ref,
             matches!(borrow_kind, rustc_middle::mir::BorrowKind::Mut { .. }),
@@ -180,43 +206,33 @@ impl<'tcx, 'c, 'm> RvalueVisitor<'tcx, ()> for LeafAssignmentVisitor<'tcx, 'c, '
     }
 
     fn visit_address_of(&mut self, mutability: &rustc_ast::Mutability, place: &Place<'tcx>) {
-        let place_ref = self.reference_place(place);
+        let place_ref = self.call_adder.reference_place(place);
         self.call_adder
             .by_address_of(place_ref, mutability.is_mut());
     }
 
     fn visit_len(&mut self, place: &Place<'tcx>) {
-        let place_ref = self.reference_place(place);
+        let place_ref = self.call_adder.reference_place(place);
         self.call_adder.by_len(place_ref)
     }
 
     fn visit_cast(
         &mut self,
         kind: &rustc_middle::mir::CastKind,
-        operand: &rustc_middle::mir::Operand<'tcx>,
+        operand: &Operand<'tcx>,
         ty: &rustc_middle::ty::Ty<'tcx>,
     ) {
         todo!()
     }
 
-    fn visit_binary_op(
-        &mut self,
-        op: &rustc_middle::mir::BinOp,
-        operands: &Box<(
-            rustc_middle::mir::Operand<'tcx>,
-            rustc_middle::mir::Operand<'tcx>,
-        )>,
-    ) {
+    fn visit_binary_op(&mut self, op: &mir::BinOp, operands: &Box<(Operand<'tcx>, Operand<'tcx>)>) {
         self.visit_binary_op_general(op, operands, false)
     }
 
     fn visit_checked_binary_op(
         &mut self,
-        op: &rustc_middle::mir::BinOp,
-        operands: &Box<(
-            rustc_middle::mir::Operand<'tcx>,
-            rustc_middle::mir::Operand<'tcx>,
-        )>,
+        op: &mir::BinOp,
+        operands: &Box<(Operand<'tcx>, Operand<'tcx>)>,
     ) {
         self.visit_binary_op_general(op, operands, true)
     }
@@ -230,43 +246,28 @@ impl<'tcx, 'c, 'm> RvalueVisitor<'tcx, ()> for LeafAssignmentVisitor<'tcx, 'c, '
         Default::default()
     }
 
-    fn visit_unary_op(
-        &mut self,
-        op: &rustc_middle::mir::UnOp,
-        operand: &rustc_middle::mir::Operand<'tcx>,
-    ) {
-        let operand_ref = self.reference_operand(operand);
+    fn visit_unary_op(&mut self, op: &rustc_middle::mir::UnOp, operand: &Operand<'tcx>) {
+        let operand_ref = self.call_adder.reference_operand(operand);
         self.call_adder.by_unary_op(op, operand_ref)
     }
 
     fn visit_discriminant(&mut self, place: &Place<'tcx>) {
-        let place_ref = self.reference_place(place);
+        let place_ref = self.call_adder.reference_place(place);
         self.call_adder.by_discriminant(place_ref)
     }
 
-    fn visit_aggregate(
-        &mut self,
-        kind: &Box<rustc_middle::mir::AggregateKind>,
-        operands: &Vec<rustc_middle::mir::Operand<'tcx>>,
-    ) {
+    fn visit_aggregate(&mut self, kind: &Box<mir::AggregateKind>, operands: &Vec<Operand<'tcx>>) {
         // Based on compiler documents it is the only possible type that can reach here.
-        assert!(matches!(
-            kind,
-            box rustc_middle::mir::AggregateKind::Array(_)
-        ));
+        assert!(matches!(kind, box mir::AggregateKind::Array(_)));
 
         let items = operands
             .iter()
-            .map(|o| self.reference_operand(o))
+            .map(|o| self.call_adder.reference_operand(o))
             .collect::<Vec<Local>>();
         self.call_adder.by_aggregate_array(items.as_slice())
     }
 
-    fn visit_shallow_init_box(
-        &mut self,
-        operand: &rustc_middle::mir::Operand<'tcx>,
-        ty: &rustc_middle::ty::Ty<'tcx>,
-    ) {
+    fn visit_shallow_init_box(&mut self, operand: &Operand<'tcx>, ty: &rustc_middle::ty::Ty<'tcx>) {
         todo!("Not sure yet.")
     }
 
@@ -275,30 +276,18 @@ impl<'tcx, 'c, 'm> RvalueVisitor<'tcx, ()> for LeafAssignmentVisitor<'tcx, 'c, '
     }
 }
 
-impl<'tcx, 'c, 'm> LeafAssignmentVisitor<'tcx, 'c, 'm> {
-    fn reference_place(&mut self, place: &Place<'tcx>) -> Local {
-        self.call_adder
-            .call_adder
-            .reference_place(self.location.block, place)
-    }
-
-    fn reference_operand(&mut self, operand: &Operand<'tcx>) -> Local {
-        self.call_adder
-            .call_adder
-            .reference_operand(self.location.block, operand)
-    }
-
+impl<'tcx, C> LeafAssignmentVisitor<C>
+where
+    C: ctxtreqs::ForOperandRef<'tcx> + ctxtreqs::ForAssignment<'tcx>,
+{
     fn visit_binary_op_general(
         &mut self,
-        op: &rustc_middle::mir::BinOp,
-        operands: &Box<(
-            rustc_middle::mir::Operand<'tcx>,
-            rustc_middle::mir::Operand<'tcx>,
-        )>,
+        op: &mir::BinOp,
+        operands: &Box<(Operand<'tcx>, Operand<'tcx>)>,
         checked: bool,
     ) {
-        let first_ref = self.reference_operand(&operands.0);
-        let second_ref = self.reference_operand(&operands.1);
+        let first_ref = self.call_adder.reference_operand(&operands.0);
+        let second_ref = self.call_adder.reference_operand(&operands.1);
         self.call_adder
             .by_binary_op(op, first_ref, second_ref, checked)
     }

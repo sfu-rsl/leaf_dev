@@ -66,8 +66,20 @@ impl<'tcx> From<Ty<'tcx>> for NewLocalDecl<'tcx> {
     }
 }
 
-impl<'tcx> BodyModificationUnit<'tcx> {
-    pub fn add_local<T>(&mut self, decl_info: T) -> Local
+pub trait BodyLocalManager<'tcx> {
+    fn add_local<T>(&mut self, decl_info: T) -> Local
+    where
+        T: Into<NewLocalDecl<'tcx>>;
+}
+
+pub trait BodyBlockManager<'tcx> {
+    fn insert_blocks_before<I>(&mut self, index: BasicBlock, blocks: I) -> Vec<BasicBlock>
+    where
+        I: IntoIterator<Item = BasicBlockData<'tcx>>;
+}
+
+impl<'tcx> BodyLocalManager<'tcx> for BodyModificationUnit<'tcx> {
+    fn add_local<T>(&mut self, decl_info: T) -> Local
     where
         T: Into<NewLocalDecl<'tcx>>,
     {
@@ -76,8 +88,8 @@ impl<'tcx> BodyModificationUnit<'tcx> {
     }
 }
 
-impl<'tcx> BodyModificationUnit<'tcx> {
-    pub fn insert_blocks_before<I>(&mut self, index: BasicBlock, blocks: I) -> Vec<BasicBlock>
+impl<'tcx> BodyBlockManager<'tcx> for BodyModificationUnit<'tcx> {
+    fn insert_blocks_before<I>(&mut self, index: BasicBlock, blocks: I) -> Vec<BasicBlock>
     where
         I: IntoIterator<Item = BasicBlockData<'tcx>>,
     {
