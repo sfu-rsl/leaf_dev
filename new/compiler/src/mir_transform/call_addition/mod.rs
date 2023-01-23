@@ -19,7 +19,7 @@ use super::modification::{self, BodyBlockManager, BodyLocalManager, BodyModifica
 
 pub mod context;
 
-/* 
+/*
  * Contexts and RuntimeCallAdder.
  * Based on the location and the statement we are going to add runtime calls for,
  * there are some data that are required to be passed to the runtime or used in
@@ -30,10 +30,10 @@ pub mod context;
  * corresponding to calling the assignment functions in the runtime library.
  */
 
- /*
-  * The following traits are meant for definition of features that we expect
-  * from `RuntimeCallAdder` for various call adding situations.
-  */
+/*
+ * The following traits are meant for definition of features that we expect
+ * from `RuntimeCallAdder` for various call adding situations.
+ */
 
 pub trait MirCallAdder<'tcx> {
     fn make_bb_for_call(
@@ -55,47 +55,73 @@ pub trait BlockInserter<'tcx> {
         I: IntoIterator<Item = BasicBlockData<'tcx>>;
 }
 
+/*
+ * These wrappers just ensure the semantics for the runtime call adder and
+ * prevent interchangeably using them.
+ * Note that these types are different from what pri has declared. They are
+ * direct aliases for interface clarification but these are separate structures
+ * that provide stricter interface rules.
+ */
+macro_rules! make_local_wrapper {
+    ($name:ident) => {
+        #[derive(Clone, Copy)]
+        pub struct $name(Local);
+        impl From<Local> for $name {
+            fn from(value: Local) -> Self {
+                Self(value)
+            }
+        }
+        impl Into<Local> for $name {
+            fn into(self) -> Local {
+                self.0
+            }
+        }
+    };
+}
+make_local_wrapper!(PlaceRef);
+make_local_wrapper!(OperandRef);
+
 pub trait PlaceReferencer<'tcx>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
 {
-    fn reference_place(&mut self, place: &Place<'tcx>) -> Local;
+    fn reference_place(&mut self, place: &Place<'tcx>) -> PlaceRef;
 }
 
 pub trait OperandReferencer<'tcx> {
-    fn reference_operand(&mut self, operand: &Operand<'tcx>) -> Local;
+    fn reference_operand(&mut self, operand: &Operand<'tcx>) -> OperandRef;
 }
 
 pub trait Assigner {
-    fn by_use(&mut self, operand_ref: Local);
+    fn by_use(&mut self, operand: OperandRef);
 
-    fn by_repeat(&mut self, operand_ref: Local, count: u64);
+    fn by_repeat(&mut self, operand: OperandRef, count: u64);
 
-    fn by_ref(&mut self, place_ref: Local, is_mutable: bool);
+    fn by_ref(&mut self, place: PlaceRef, is_mutable: bool);
 
     fn by_thread_local_ref(&mut self);
 
-    fn by_address_of(&mut self, place_ref: Local, is_mutable: bool);
+    fn by_address_of(&mut self, place: PlaceRef, is_mutable: bool);
 
-    fn by_len(&mut self, place_ref: Local);
+    fn by_len(&mut self, place: PlaceRef);
 
-    fn by_cast_numeric(&mut self, operand_ref: Local, is_to_float: bool, size: u64);
+    fn by_cast_numeric(&mut self, operand: OperandRef, is_to_float: bool, size: u64);
 
-    fn by_cast(&mut self, operand_ref: Local, is_to_float: bool, size: u64);
+    fn by_cast(&mut self, operand: OperandRef, is_to_float: bool, size: u64);
 
     fn by_binary_op(
         &mut self,
         operator: &BinOp,
-        first_ref: Local,
-        second_ref: Local,
+        first: OperandRef,
+        second: OperandRef,
         checked: bool,
     );
 
-    fn by_unary_op(&mut self, operator: &UnOp, operand_ref: Local);
+    fn by_unary_op(&mut self, operator: &UnOp, operand: OperandRef);
 
-    fn by_discriminant(&mut self, place_ref: Local);
+    fn by_discriminant(&mut self, place: PlaceRef);
 
-    fn by_aggregate_array(&mut self, items: &[Local]);
+    fn by_aggregate_array(&mut self, items: &[OperandRef]);
 }
 
 pub struct RuntimeCallAdder<C> {
@@ -120,7 +146,7 @@ impl<C> RuntimeCallAdder<C> {
         }
     }
 
-    pub fn assign(&mut self, dest_ref: Local) -> RuntimeCallAdder<AssignmentContext<C>> {
+    pub fn assign(&mut self, dest_ref: PlaceRef) -> RuntimeCallAdder<AssignmentContext<C>> {
         RuntimeCallAdder {
             context: AssignmentContext {
                 base: &mut self.context,
@@ -231,10 +257,10 @@ where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
     C: TyContextProvider<'tcx>,
 {
-    fn reference_place(&mut self, place: &Place<'tcx>) -> Local {
+    fn reference_place(&mut self, place: &Place<'tcx>) -> PlaceRef {
         let BlocksAndResult(new_blocks, reference) = self.internal_reference_place(place);
         self.insert_blocks(new_blocks);
-        reference
+        reference.into()
     }
 }
 
@@ -340,10 +366,10 @@ where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
     C: TyContextProvider<'tcx>,
 {
-    fn reference_operand(&mut self, operand: &Operand<'tcx>) -> Local {
+    fn reference_operand(&mut self, operand: &Operand<'tcx>) -> OperandRef {
         let BlocksAndResult(new_blocks, reference) = self.internal_reference_operand(operand);
         self.insert_blocks(new_blocks);
-        reference
+        reference.into()
     }
 }
 
@@ -486,28 +512,28 @@ where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
     C: DestinationReferenceProvider + LocationProvider + BaseContext<'tcx>,
 {
-    fn by_use(&mut self, operand_ref: Local) {
+    fn by_use(&mut self, operand: OperandRef) {
         self.add_bb_for_assign_call(
             stringify!(pri::assign_use),
-            vec![operand::copy_for_local(operand_ref)],
+            vec![operand::copy_for_local(operand.into())],
         )
     }
 
-    fn by_repeat(&mut self, operand_ref: Local, count: u64) {
+    fn by_repeat(&mut self, operand: OperandRef, count: u64) {
         self.add_bb_for_assign_call(
             stringify!(pri::assign_repeat),
             vec![
-                operand::copy_for_local(operand_ref),
+                operand::copy_for_local(operand.into()),
                 operand::const_from_uint(self.context.tcx(), count),
             ],
         )
     }
 
-    fn by_ref(&mut self, place_ref: Local, is_mutable: bool) {
+    fn by_ref(&mut self, place: PlaceRef, is_mutable: bool) {
         self.add_bb_for_assign_call(
             stringify!(pri::assign_ref),
             vec![
-                operand::copy_for_local(place_ref),
+                operand::copy_for_local(place.into()),
                 operand::const_from_bool(self.context.tcx(), is_mutable),
             ],
         )
@@ -517,43 +543,43 @@ where
         todo!()
     }
 
-    fn by_address_of(&mut self, place_ref: Local, is_mutable: bool) {
+    fn by_address_of(&mut self, place: PlaceRef, is_mutable: bool) {
         self.add_bb_for_assign_call(
             stringify!(pri::assign_address_of),
             vec![
-                operand::copy_for_local(place_ref),
+                operand::copy_for_local(place.into()),
                 operand::const_from_bool(self.context.tcx(), is_mutable),
             ],
         )
     }
 
-    fn by_len(&mut self, place_ref: Local) {
+    fn by_len(&mut self, place: PlaceRef) {
         self.add_bb_for_assign_call(
             stringify!(pri::assign_len),
-            vec![operand::copy_for_local(place_ref)],
+            vec![operand::copy_for_local(place.into())],
         )
     }
 
-    fn by_cast_numeric(&mut self, operand_ref: Local, is_to_float: bool, size: u64) {
+    fn by_cast_numeric(&mut self, operand: OperandRef, is_to_float: bool, size: u64) {
         self.add_bb_for_assign_call(
             stringify!(pri::assign_cast_numeric),
             vec![
-                operand::copy_for_local(operand_ref),
+                operand::copy_for_local(operand.into()),
                 operand::const_from_bool(self.context.tcx(), is_to_float),
                 operand::const_from_uint(self.context.tcx(), size),
             ],
         )
     }
 
-    fn by_cast(&mut self, operand_ref: Local, is_to_float: bool, size: u64) {
+    fn by_cast(&mut self, operand: OperandRef, is_to_float: bool, size: u64) {
         todo!()
     }
 
     fn by_binary_op(
         &mut self,
         operator: &BinOp,
-        first_ref: Local,
-        second_ref: Local,
+        first: OperandRef,
+        second: OperandRef,
         checked: bool,
     ) {
         let operator = convert_mir_binop_to_pri(operator);
@@ -564,15 +590,15 @@ where
             stringify!(pri::assign_binary_op),
             vec![
                 operand::move_for_local(operator_local),
-                operand::copy_for_local(first_ref),
-                operand::copy_for_local(second_ref),
+                operand::copy_for_local(first.into()),
+                operand::copy_for_local(second.into()),
                 operand::const_from_bool(self.context.tcx(), checked),
             ],
             additional_statements,
         )
     }
 
-    fn by_unary_op(&mut self, operator: &UnOp, operand_ref: Local) {
+    fn by_unary_op(&mut self, operator: &UnOp, operand: OperandRef) {
         let operator = convert_mir_unop_to_pri(operator);
         let (operator_local, additional_statements) =
             self.add_and_set_local_for_enum(self.context.pri_special_types().unary_op, operator);
@@ -581,26 +607,34 @@ where
             stringify!(pri::assign_unary_op),
             vec![
                 operand::move_for_local(operator_local),
-                operand::copy_for_local(operand_ref),
+                operand::copy_for_local(operand.into()),
             ],
             additional_statements,
         )
     }
 
-    fn by_discriminant(&mut self, place_ref: Local) {
+    fn by_discriminant(&mut self, place: PlaceRef) {
         self.add_bb_for_assign_call(
             stringify!(pri::assign_discriminant),
-            vec![operand::copy_for_local(place_ref)],
+            vec![operand::copy_for_local(place.into())],
         )
     }
 
-    fn by_aggregate_array(&mut self, items: &[Local]) {
+    fn by_aggregate_array(&mut self, items: &[OperandRef]) {
         let tcx = self.context.tcx();
         let operand_ref_ty = self.context.pri_special_types().operand_ref;
         let items_local = self
             .context
             .add_local(tcx.mk_array(operand_ref_ty, items.len() as u64));
-        assignment::array_of_locals_by_move(Place::from(items_local), operand_ref_ty, &items);
+        assignment::array_of_locals_by_move(
+            Place::from(items_local),
+            operand_ref_ty,
+            &items
+                .iter()
+                .map(|i| (*i).into())
+                .collect::<Vec<Local>>()
+                .as_slice(),
+        );
         let items_ref_local = self.context.add_local(
             self.context
                 .tcx()
@@ -642,7 +676,11 @@ where
     ) -> BasicBlockData<'tcx> {
         self.make_bb_for_call(
             func_name,
-            [vec![operand::copy_for_local(self.context.dest_ref())], args].concat(),
+            [
+                vec![operand::copy_for_local(self.context.dest_ref().into())],
+                args,
+            ]
+            .concat(),
         )
     }
 

@@ -12,6 +12,8 @@ use crate::mir_transform::modification::{
     self, BodyBlockManager, BodyLocalManager, BodyModificationUnit,
 };
 
+use super::PlaceRef;
+
 pub struct FunctionInfo<'tcx> {
     pub def_id: DefId,
     pub ret_ty: Ty<'tcx>,
@@ -41,7 +43,7 @@ pub trait LocationProvider {
 }
 
 pub trait DestinationReferenceProvider {
-    fn dest_ref(&self) -> Local;
+    fn dest_ref(&self) -> PlaceRef;
 }
 
 /*
@@ -204,11 +206,11 @@ impl<B> LocationProvider for AtLocationContext<'_, B> {
 
 pub struct AssignmentContext<'b, B> {
     pub(super) base: &'b mut B,
-    pub(super) dest_ref: Local,
+    pub(super) dest_ref: PlaceRef,
 }
 
 impl<B> DestinationReferenceProvider for AssignmentContext<'_, B> {
-    fn dest_ref(&self) -> Local {
+    fn dest_ref(&self) -> PlaceRef {
         self.dest_ref
     }
 }
@@ -298,7 +300,7 @@ macro_rules! impl_dest_ref_provider {
         impl<'b, B: DestinationReferenceProvider> DestinationReferenceProvider
             for $generic_context_type<'b, B>
         {
-            fn dest_ref(&self) -> Local {
+            fn dest_ref(&self) -> PlaceRef {
                 self.base.dest_ref()
             }
         }

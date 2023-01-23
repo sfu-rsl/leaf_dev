@@ -6,7 +6,7 @@ use rustc_middle::mir::{
 use rustc_target::abi::VariantIdx;
 
 use crate::mir_transform::call_addition::{
-    context_requirements as ctxtreqs, Assigner, OperandReferencer, PlaceReferencer,
+    context_requirements as ctxtreqs, Assigner, OperandRef, OperandReferencer, PlaceReferencer,
     RuntimeCallAdder,
 };
 use crate::mir_transform::modification::BodyModificationUnit;
@@ -270,10 +270,10 @@ where
         // Based on compiler documents it is the only possible type that can reach here.
         assert!(matches!(kind, box mir::AggregateKind::Array(_)));
 
-        let items = operands
+        let items: Vec<OperandRef> = operands
             .iter()
             .map(|o| self.call_adder.reference_operand(o))
-            .collect::<Vec<Local>>();
+            .collect();
         self.call_adder.by_aggregate_array(items.as_slice())
     }
 
