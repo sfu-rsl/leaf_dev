@@ -7,7 +7,7 @@ use rustc_target::abi::VariantIdx;
 
 use crate::mir_transform::call_addition::{
     context_requirements as ctxtreqs, Assigner, OperandReferencer, PlaceReferencer,
-    XRuntimeCallAdder,
+    RuntimeCallAdder,
 };
 use crate::mir_transform::modification::BodyModificationUnit;
 use crate::visit::RvalueVisitor;
@@ -24,44 +24,86 @@ impl<'tcx> MirPass<'tcx> for LeafPass {
         log::info!("Running leaf pass on body at {:#?}", body.span);
 
         let mut modification = BodyModificationUnit::new(body.local_decls().next_index());
-        let mut call_adder = XRuntimeCallAdder::new(tcx, &mut modification);
-        LeafBodyVisitor::<()>::new(&mut call_adder).visit_body(body);
+        let mut call_adder = RuntimeCallAdder::new(tcx, &mut modification);
+        VisitorFactory::make_body_visitor(&mut call_adder).visit_body(body);
         modification.commit(body);
     }
 }
 
-struct LeafBodyVisitor<C> {
-    call_adder: XRuntimeCallAdder<C>,
-}
+struct VisitorFactory;
 
-impl<C> LeafBodyVisitor<C> {
-    fn new<'tcx, 'c, BC>(call_adder: &'c mut XRuntimeCallAdder<BC>) -> impl Visitor<'tcx> + 'c
+impl VisitorFactory {
+    fn make_body_visitor<'tcx, 'c, BC>(
+        call_adder: &'c mut RuntimeCallAdder<BC>,
+    ) -> impl Visitor<'tcx> + 'c
     where
         BC: ctxtreqs::Basic<'tcx>,
     {
         LeafBodyVisitor {
-            call_adder: XRuntimeCallAdder::borrow_from(call_adder),
+            call_adder: RuntimeCallAdder::borrow_from(call_adder),
+        }
+    }
+
+    fn make_basic_block_visitor<'tcx, 'c, BC>(
+        call_adder: &'c mut RuntimeCallAdder<BC>,
+        block: BasicBlock,
+    ) -> impl Visitor<'tcx> + 'c
+    where
+        BC: ctxtreqs::Basic<'tcx>,
+    {
+        LeafBodyVisitor {
+            call_adder: call_adder.at(block),
+        }
+    }
+
+    fn make_statement_kind_visitor<'tcx, 'b, BC>(
+        call_adder: &'b mut RuntimeCallAdder<BC>,
+    ) -> impl StatementKindVisitor<'tcx, ()> + 'b
+    where
+        BC: ctxtreqs::ForPlaceRef<'tcx> + ctxtreqs::ForOperandRef<'tcx>,
+    {
+        LeafStatementKindVisitor {
+            call_adder: RuntimeCallAdder::borrow_from(call_adder),
+        }
+    }
+
+    fn make_assignment_visitor<'tcx, 'b, BC>(
+        call_adder: &'b mut RuntimeCallAdder<BC>,
+        destination: &Place<'tcx>,
+    ) -> impl RvalueVisitor<'tcx, ()> + 'b
+    where
+        BC: ctxtreqs::ForPlaceRef<'tcx> + ctxtreqs::ForOperandRef<'tcx>,
+    {
+        let dest_ref = call_adder.reference_place(destination);
+        LeafAssignmentVisitor {
+            call_adder: call_adder.assign(dest_ref),
         }
     }
 }
+
+macro_rules! make_general_visitor {
+    ($name:ident) => {
+        struct $name<C> {
+            call_adder: RuntimeCallAdder<C>,
+        }
+    };
+}
+
+make_general_visitor!(LeafBodyVisitor);
 
 impl<'tcx, C> Visitor<'tcx> for LeafBodyVisitor<C>
 where
     C: ctxtreqs::Basic<'tcx>,
 {
     fn visit_basic_block_data(&mut self, block: BasicBlock, data: &BasicBlockData<'tcx>) {
-        let mut visitor = BasicBlockVisitor {
-            call_adder: self.call_adder.at(block),
-        };
-        visitor.visit_basic_block_data(block, data);
+        VisitorFactory::make_basic_block_visitor(&mut self.call_adder, block)
+            .visit_basic_block_data(block, data);
     }
 }
 
-struct BasicBlockVisitor<C> {
-    call_adder: XRuntimeCallAdder<C>,
-}
+make_general_visitor!(LeafBasicBlockVisitor);
 
-impl<'tcx, C> Visitor<'tcx> for BasicBlockVisitor<C>
+impl<'tcx, C> Visitor<'tcx> for LeafBasicBlockVisitor<C>
 where
     C: ctxtreqs::ForPlaceRef<'tcx> + ctxtreqs::ForOperandRef<'tcx>,
 {
@@ -70,34 +112,19 @@ where
         statement: &rustc_middle::mir::Statement<'tcx>,
         _location: Location,
     ) {
-        <LeafStatementKindVisitor>::new(&mut self.call_adder).visit_statement_kind(&statement.kind);
+        VisitorFactory::make_statement_kind_visitor(&mut self.call_adder)
+            .visit_statement_kind(&statement.kind);
     }
 }
 
-struct LeafStatementKindVisitor<C = ()> {
-    call_adder: XRuntimeCallAdder<C>,
-}
-
-impl<C> LeafStatementKindVisitor<C> {
-    fn new<'tcx, 'b, X>(
-        call_adder: &'b mut XRuntimeCallAdder<X>,
-    ) -> impl StatementKindVisitor<'tcx, ()> + 'b
-    // LeafStatementKindVisitor<TransparentContext<X>>
-    where
-        X: ctxtreqs::ForPlaceRef<'tcx> + ctxtreqs::ForOperandRef<'tcx>,
-    {
-        LeafStatementKindVisitor {
-            call_adder: XRuntimeCallAdder::borrow_from(call_adder),
-        }
-    }
-}
+make_general_visitor!(LeafStatementKindVisitor);
 
 impl<'tcx, C> StatementKindVisitor<'tcx, ()> for LeafStatementKindVisitor<C>
 where
     C: ctxtreqs::ForPlaceRef<'tcx> + ctxtreqs::ForOperandRef<'tcx>,
 {
     fn visit_assign(&mut self, place: &Place<'tcx>, rvalue: &Rvalue<'tcx>) -> () {
-        LeafAssignmentVisitor::<()>::new(&mut self.call_adder, place).visit_rvalue(rvalue)
+        VisitorFactory::make_assignment_visitor(&mut self.call_adder, place).visit_rvalue(rvalue)
     }
 
     fn visit_fake_read(
@@ -153,24 +180,7 @@ where
     }
 }
 
-struct LeafAssignmentVisitor<C> {
-    call_adder: XRuntimeCallAdder<C>,
-}
-
-impl<C> LeafAssignmentVisitor<C> {
-    fn new<'tcx, 'b, BC>(
-        call_adder: &'b mut XRuntimeCallAdder<BC>,
-        destination: &Place<'tcx>,
-    ) -> impl RvalueVisitor<'tcx, ()> + 'b
-    where
-        BC: ctxtreqs::ForPlaceRef<'tcx> + ctxtreqs::ForOperandRef<'tcx>,
-    {
-        let dest_ref = call_adder.reference_place(destination);
-        LeafAssignmentVisitor {
-            call_adder: call_adder.assign(dest_ref),
-        }
-    }
-}
+make_general_visitor!(LeafAssignmentVisitor);
 
 impl<'tcx, 'c, 'm, C> RvalueVisitor<'tcx, ()> for LeafAssignmentVisitor<C>
 where

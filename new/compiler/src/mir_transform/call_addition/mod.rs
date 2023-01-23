@@ -84,11 +84,11 @@ pub trait Assigner {
     fn by_aggregate_array(&mut self, items: &[Local]);
 }
 
-pub struct XRuntimeCallAdder<C> {
+pub struct RuntimeCallAdder<C> {
     context: C,
 }
 
-impl<'tcx, 'm> XRuntimeCallAdder<DefaultContext<'tcx, 'm>> {
+impl<'tcx, 'm> RuntimeCallAdder<DefaultContext<'tcx, 'm>> {
     pub fn new(tcx: TyCtxt<'tcx>, modification_unit: &'m mut BodyModificationUnit<'tcx>) -> Self {
         Self {
             context: DefaultContext::new(tcx, modification_unit),
@@ -96,9 +96,9 @@ impl<'tcx, 'm> XRuntimeCallAdder<DefaultContext<'tcx, 'm>> {
     }
 }
 
-impl<C> XRuntimeCallAdder<C> {
-    pub fn at(&mut self, location: BasicBlock) -> XRuntimeCallAdder<AtLocationContext<C>> {
-        XRuntimeCallAdder {
+impl<C> RuntimeCallAdder<C> {
+    pub fn at(&mut self, location: BasicBlock) -> RuntimeCallAdder<AtLocationContext<C>> {
+        RuntimeCallAdder {
             context: AtLocationContext {
                 base: &mut self.context,
                 location: location,
@@ -106,8 +106,8 @@ impl<C> XRuntimeCallAdder<C> {
         }
     }
 
-    pub fn assign(&mut self, dest_ref: Local) -> XRuntimeCallAdder<AssignmentContext<C>> {
-        XRuntimeCallAdder {
+    pub fn assign(&mut self, dest_ref: Local) -> RuntimeCallAdder<AssignmentContext<C>> {
+        RuntimeCallAdder {
             context: AssignmentContext {
                 base: &mut self.context,
                 dest_ref,
@@ -116,9 +116,9 @@ impl<C> XRuntimeCallAdder<C> {
     }
 
     pub fn borrow_from(
-        other: &mut XRuntimeCallAdder<C>,
-    ) -> XRuntimeCallAdder<TransparentContext<C>> {
-        XRuntimeCallAdder {
+        other: &mut RuntimeCallAdder<C>,
+    ) -> RuntimeCallAdder<TransparentContext<C>> {
+        RuntimeCallAdder {
             context: TransparentContext {
                 base: &mut other.context,
             },
@@ -126,7 +126,7 @@ impl<C> XRuntimeCallAdder<C> {
     }
 }
 
-impl<'tcx, C> MirCallAdder<'tcx> for XRuntimeCallAdder<C>
+impl<'tcx, C> MirCallAdder<'tcx> for RuntimeCallAdder<C>
 where
     C: BodyLocalManager<'tcx> + TyContextProvider<'tcx> + FunctionInfoProvider<'tcx>,
 {
@@ -154,7 +154,7 @@ where
     }
 }
 
-impl<'tcx, C> XRuntimeCallAdder<C>
+impl<'tcx, C> RuntimeCallAdder<C>
 where
     C: TyContextProvider<'tcx> + FunctionInfoProvider<'tcx>,
 {
@@ -201,7 +201,7 @@ where
     }
 }
 
-impl<'tcx, C> BlockInserter<'tcx> for XRuntimeCallAdder<C>
+impl<'tcx, C> BlockInserter<'tcx> for RuntimeCallAdder<C>
 where
     C: BodyBlockManager<'tcx> + LocationProvider,
 {
@@ -214,7 +214,7 @@ where
     }
 }
 
-impl<'tcx, C> PlaceReferencer<'tcx> for XRuntimeCallAdder<C>
+impl<'tcx, C> PlaceReferencer<'tcx> for RuntimeCallAdder<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
     C: TyContextProvider<'tcx>,
@@ -226,7 +226,7 @@ where
     }
 }
 
-impl<'tcx, C> XRuntimeCallAdder<C>
+impl<'tcx, C> RuntimeCallAdder<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
     C: TyContextProvider<'tcx>,
@@ -323,7 +323,7 @@ where
     }
 }
 
-impl<'tcx, C> OperandReferencer<'tcx> for XRuntimeCallAdder<C>
+impl<'tcx, C> OperandReferencer<'tcx> for RuntimeCallAdder<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
     C: TyContextProvider<'tcx>,
@@ -335,7 +335,7 @@ where
     }
 }
 
-impl<'tcx, C> XRuntimeCallAdder<C>
+impl<'tcx, C> RuntimeCallAdder<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
     C: TyContextProvider<'tcx>,
@@ -469,7 +469,7 @@ where
     }
 }
 
-impl<'tcx, C> Assigner for XRuntimeCallAdder<C>
+impl<'tcx, C> Assigner for RuntimeCallAdder<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
     C: DestinationReferenceProvider + LocationProvider + BaseContext<'tcx>,
@@ -603,7 +603,7 @@ where
     }
 }
 
-impl<'tcx, C> XRuntimeCallAdder<C>
+impl<'tcx, C> RuntimeCallAdder<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
     C: DestinationReferenceProvider + BodyLocalManager<'tcx>,
