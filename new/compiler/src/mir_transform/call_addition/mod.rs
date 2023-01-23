@@ -5,7 +5,6 @@ use rustc_apfloat::{
     Float,
 };
 use rustc_const_eval::interpret::{ConstValue, Scalar};
-
 use rustc_middle::{
     mir::{
         BasicBlock, BasicBlockData, BinOp, Constant, ConstantKind, Local, Operand, Place,
@@ -16,10 +15,25 @@ use rustc_middle::{
 use rustc_span::DUMMY_SP;
 
 use self::{context::*, utils::*};
-
 use super::modification::{self, BodyBlockManager, BodyLocalManager, BodyModificationUnit};
 
 pub mod context;
+
+/* 
+ * Contexts and RuntimeCallAdder.
+ * Based on the location and the statement we are going to add runtime calls for,
+ * there are some data that are required to be passed to the runtime or used in
+ * MIR generation. We place these data in a `Context` and `RuntimeCallAdder`
+ * capabilities is determined by this context. For example, if the information
+ * for a destination place (left hand side of an assignment) is available in the
+ * current context, then `RuntimeCallAdder` will be able to generate basic blocks
+ * corresponding to calling the assignment functions in the runtime library.
+ */
+
+ /*
+  * The following traits are meant for definition of features that we expect
+  * from `RuntimeCallAdder` for various call adding situations.
+  */
 
 pub trait MirCallAdder<'tcx> {
     fn make_bb_for_call(
@@ -115,9 +129,7 @@ impl<C> RuntimeCallAdder<C> {
         }
     }
 
-    pub fn borrow_from(
-        other: &mut RuntimeCallAdder<C>,
-    ) -> RuntimeCallAdder<TransparentContext<C>> {
+    pub fn borrow_from(other: &mut RuntimeCallAdder<C>) -> RuntimeCallAdder<TransparentContext<C>> {
         RuntimeCallAdder {
             context: TransparentContext {
                 base: &mut other.context,
@@ -649,6 +661,11 @@ where
     }
 }
 
+/*
+ * Context requirements work as aliases for context traits to guarantee that a
+ * certain feature will be available in `RuntimeCallAdder` when its context
+ * implement that set of traits.
+ */
 pub mod context_requirements {
     use super::{context::*, *};
 
