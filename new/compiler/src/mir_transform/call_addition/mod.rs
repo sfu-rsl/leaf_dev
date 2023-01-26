@@ -7,8 +7,8 @@ use rustc_apfloat::{
 use rustc_const_eval::interpret::{ConstValue, Scalar};
 use rustc_middle::{
     mir::{
-        BasicBlock, BasicBlockData, BinOp, Constant, ConstantKind, Local, Operand, Place,
-        ProjectionElem, SourceInfo, Statement, Terminator, TerminatorKind, UnOp,
+        BasicBlock, BasicBlockData, BinOp, Body, Constant, ConstantKind, HasLocalDecls, Local,
+        Operand, Place, ProjectionElem, SourceInfo, Statement, Terminator, TerminatorKind, UnOp,
     },
     ty::{ScalarInt, Ty, TyCtxt},
 };
@@ -124,6 +124,14 @@ pub trait Assigner {
     fn by_aggregate_array(&mut self, items: &[OperandRef]);
 }
 
+pub trait BranchingHandler {
+    fn store_info(&mut self) -> Local;
+
+    fn take_by_value(&mut self, value: u128);
+
+    fn take_otherwise(&mut self, values: &[u128]);
+}
+
 pub struct RuntimeCallAdder<C> {
     context: C,
 }
@@ -137,6 +145,18 @@ impl<'tcx, 'm> RuntimeCallAdder<DefaultContext<'tcx, 'm>> {
 }
 
 impl<C> RuntimeCallAdder<C> {
+    pub fn in_body<'b, 'tcx, 'bd>(
+        &'b mut self,
+        body: &'bd Body<'tcx>,
+    ) -> RuntimeCallAdder<InBodyContext<'b, 'tcx, 'bd, C>> {
+        RuntimeCallAdder {
+            context: InBodyContext {
+                base: &mut self.context,
+                body,
+            },
+        }
+    }
+
     pub fn at(&mut self, location: BasicBlock) -> RuntimeCallAdder<AtLocationContext<C>> {
         RuntimeCallAdder {
             context: AtLocationContext {
@@ -151,6 +171,24 @@ impl<C> RuntimeCallAdder<C> {
             context: AssignmentContext {
                 base: &mut self.context,
                 dest_ref,
+            },
+        }
+    }
+
+    pub fn branch<'tcx, 'b>(
+        &'b mut self,
+        discr: &Operand<'tcx>,
+    ) -> RuntimeCallAdder<BranchingContext<'b, 'tcx, C>>
+    where
+        C: TyContextProvider<'tcx> + HasLocalDecls<'tcx>,
+        Self: OperandReferencer<'tcx>,
+    {
+        let operand_ref = self.reference_operand(discr);
+        let ty = discr.ty(self.context.local_decls(), self.context.tcx());
+        RuntimeCallAdder {
+            context: BranchingContext {
+                base: &mut self.context,
+                discr: DiscriminantInfo { operand_ref, ty },
             },
         }
     }
@@ -699,6 +737,24 @@ where
     }
 }
 
+impl<'tcx, C> BranchingHandler for RuntimeCallAdder<C>
+where
+    Self: MirCallAdder<'tcx>,
+    C: LocationProvider + BodyLocalManager<'tcx> + DiscriminantInfoProvider<'tcx>,
+{
+    fn store_info(&mut self) -> Local {
+        todo!()
+    }
+
+    fn take_by_value(&mut self, value: u128) {
+        todo!()
+    }
+
+    fn take_otherwise(&mut self, values: &[u128]) {
+        todo!()
+    }
+}
+
 /*
  * Context requirements work as aliases for context traits to guarantee that a
  * certain feature will be available in `RuntimeCallAdder` when its context
@@ -713,6 +769,7 @@ pub mod context_requirements {
         + BodyBlockManager<'tcx>
         + FunctionInfoProvider<'tcx>
         + SpecialTypesProvider<'tcx>
+        + HasLocalDecls<'tcx>
     {
     }
     impl<'tcx, C> Basic<'tcx> for C where
@@ -721,6 +778,7 @@ pub mod context_requirements {
             + BodyBlockManager<'tcx>
             + FunctionInfoProvider<'tcx>
             + SpecialTypesProvider<'tcx>
+            + HasLocalDecls<'tcx>
     {
     }
 
@@ -738,6 +796,9 @@ pub mod context_requirements {
         C: DestinationReferenceProvider + LocationProvider + BaseContext<'tcx>
     {
     }
+
+    pub trait ForBranching<'tcx>: LocationProvider + BaseContext<'tcx> {}
+    impl<'tcx, C> ForBranching<'tcx> for C where C: LocationProvider + BaseContext<'tcx> {}
 }
 
 struct BlocksAndResult<'tcx>(Vec<BasicBlockData<'tcx>>, Local);

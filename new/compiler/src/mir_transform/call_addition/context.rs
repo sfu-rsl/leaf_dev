@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use rustc_hir::def::DefKind;
 use rustc_middle::{
     middle::exported_symbols,
-    mir::{BasicBlock, BasicBlockData, Local},
+    mir::{self, BasicBlock, BasicBlockData, Local, HasLocalDecls},
     ty::{Ty, TyCtxt},
 };
 use rustc_span::def_id::DefId;
@@ -12,15 +12,19 @@ use crate::mir_transform::modification::{
     self, BodyBlockManager, BodyLocalManager, BodyModificationUnit,
 };
 
-use super::PlaceRef;
+use super::{OperandRef, PlaceRef};
+
+pub trait TyContextProvider<'tcx> {
+    fn tcx(&self) -> TyCtxt<'tcx>;
+}
+
+pub trait BodyProvider<'tcx> {
+    fn body(&self) -> &mir::Body<'tcx>;
+}
 
 pub struct FunctionInfo<'tcx> {
     pub def_id: DefId,
     pub ret_ty: Ty<'tcx>,
-}
-
-pub trait TyContextProvider<'tcx> {
-    fn tcx(&self) -> TyCtxt<'tcx>;
 }
 
 pub trait FunctionInfoProvider<'tcx> {
@@ -46,6 +50,16 @@ pub trait DestinationReferenceProvider {
     fn dest_ref(&self) -> PlaceRef;
 }
 
+#[derive(Clone, Copy)]
+pub struct DiscriminantInfo<'tcx> {
+    pub(super) operand_ref: OperandRef,
+    pub(super) ty: Ty<'tcx>,
+}
+
+pub trait DiscriminantInfoProvider<'tcx> {
+    fn discr(&self) -> DiscriminantInfo<'tcx>;
+}
+
 /*
  * This is the minimal required context that we expect for call adding.
  *(Otherwise, we will not be able to add new call blocks to the MIR.)
@@ -56,7 +70,8 @@ where
         + BodyLocalManager<'tcx>
         + BodyBlockManager<'tcx>
         + FunctionInfoProvider<'tcx>
-        + SpecialTypesProvider<'tcx>,
+        + SpecialTypesProvider<'tcx>
+        + HasLocalDecls<'tcx>,
 {
 }
 
@@ -66,6 +81,7 @@ impl<'tcx, C> BaseContext<'tcx> for C where
         + BodyBlockManager<'tcx>
         + FunctionInfoProvider<'tcx>
         + SpecialTypesProvider<'tcx>
+        + HasLocalDecls<'tcx>
 {
 }
 
@@ -193,6 +209,23 @@ pub struct TransparentContext<'b, B> {
     pub(super) base: &'b mut B,
 }
 
+pub struct InBodyContext<'b, 'tcx, 'bd, B> {
+    pub(super) base: &'b mut B,
+    pub(super) body: &'bd mir::Body<'tcx>,
+}
+
+impl<'tcx, 'bd, B> BodyProvider<'tcx> for InBodyContext<'_, 'tcx, '_, B> {
+    fn body(&self) -> &mir::Body<'tcx> {
+        self.body
+    }
+}
+
+impl<'tcx, 'bd, B> mir::HasLocalDecls<'tcx> for InBodyContext<'_, 'tcx, '_, B> {
+    fn local_decls(&self) -> &mir::LocalDecls<'tcx> {
+        self.body().local_decls()
+    }
+}
+
 pub struct AtLocationContext<'b, B> {
     pub(super) base: &'b mut B,
     pub(super) location: BasicBlock,
@@ -215,14 +248,25 @@ impl<B> DestinationReferenceProvider for AssignmentContext<'_, B> {
     }
 }
 
+pub struct BranchingContext<'b, 'tcx, B> {
+    pub(super) base: &'b mut B,
+    pub(super) discr: DiscriminantInfo<'tcx>,
+}
+
+impl<'tcx, B> DiscriminantInfoProvider<'tcx> for BranchingContext<'_, 'tcx, B> {
+    fn discr(&self) -> DiscriminantInfo<'tcx> {
+        self.discr
+    }
+}
+
 /*
  * We make inheritance of traits from the base context possible through generics.
  */
 
 macro_rules! impl_func_info_provider {
-    ($generic_context_type:ident) => {
-        impl<'tcx, 'b, B: FunctionInfoProvider<'tcx>> FunctionInfoProvider<'tcx>
-            for $generic_context_type<'b, B>
+    ($generic_context_type:ident, $($extra_lifetime_param:lifetime)*, $($extra_generic_param:ident)*) => {
+        impl<'b, 'tcx$(, $extra_lifetime_param)*, B: FunctionInfoProvider<'tcx>$(, $extra_generic_param)*> FunctionInfoProvider<'tcx>
+            for $generic_context_type<'b$(, $extra_lifetime_param)*, B$(, $extra_generic_param)*>
         {
             fn get_pri_func_info(&self, func_name: &str) -> &FunctionInfo<'tcx> {
                 self.base.get_pri_func_info(func_name)
@@ -232,9 +276,9 @@ macro_rules! impl_func_info_provider {
 }
 
 macro_rules! impl_special_types_provider {
-    ($generic_context_type:ident) => {
-        impl<'tcx, 'b, B: SpecialTypesProvider<'tcx>> SpecialTypesProvider<'tcx>
-            for $generic_context_type<'b, B>
+    ($generic_context_type:ident, $($extra_lifetime_param:lifetime)*, $($extra_generic_param:ident)*) => {
+        impl<'b, 'tcx$(, $extra_lifetime_param)*, B: SpecialTypesProvider<'tcx>$(, $extra_generic_param)*> SpecialTypesProvider<'tcx>
+            for $generic_context_type<'b$(, $extra_lifetime_param)*, B$(, $extra_generic_param)*>
         {
             fn pri_special_types(&self) -> &SpecialTypes<'tcx> {
                 self.base.pri_special_types()
@@ -244,9 +288,9 @@ macro_rules! impl_special_types_provider {
 }
 
 macro_rules! impl_local_manager {
-    ($generic_context_type:ident) => {
-        impl<'tcx, 'b, B: BodyLocalManager<'tcx>> BodyLocalManager<'tcx>
-            for $generic_context_type<'b, B>
+    ($generic_context_type:ident, $($extra_lifetime_param:lifetime)*, $($extra_generic_param:ident)*) => {
+        impl<'b, 'tcx$(, $extra_lifetime_param)*, B: BodyLocalManager<'tcx>$(, $extra_generic_param)*> BodyLocalManager<'tcx>
+            for $generic_context_type<'b$(, $extra_lifetime_param)*, B$(, $extra_generic_param)*>
         {
             fn add_local<T>(&mut self, decl_info: T) -> Local
             where
@@ -259,9 +303,9 @@ macro_rules! impl_local_manager {
 }
 
 macro_rules! impl_block_manager {
-    ($generic_context_type:ident) => {
-        impl<'tcx, 'b, B: BodyBlockManager<'tcx>> BodyBlockManager<'tcx>
-            for $generic_context_type<'b, B>
+    ($generic_context_type:ident, $($extra_lifetime_param:lifetime)*, $($extra_generic_param:ident)*) => {
+        impl<'b, 'tcx$(, $extra_lifetime_param)*, B: BodyBlockManager<'tcx>$(, $extra_generic_param)*> BodyBlockManager<'tcx>
+            for $generic_context_type<'b$(, $extra_lifetime_param)*, B>$(, $extra_generic_param)*
         {
             fn insert_blocks_before<I>(&mut self, index: BasicBlock, blocks: I) -> Vec<BasicBlock>
             where
@@ -274,9 +318,9 @@ macro_rules! impl_block_manager {
 }
 
 macro_rules! impl_ty_ctxt_provider {
-    ($generic_context_type:ident) => {
-        impl<'tcx, 'b, B: TyContextProvider<'tcx>> TyContextProvider<'tcx>
-            for $generic_context_type<'b, B>
+    ($generic_context_type:ident, $($extra_lifetime_param:lifetime)*, $($extra_generic_param:ident)*) => {
+        impl<'b, 'tcx$(, $extra_lifetime_param)*, B: TyContextProvider<'tcx>$(, $extra_generic_param)*> TyContextProvider<'tcx>
+            for $generic_context_type<'b$(, $extra_lifetime_param)*, B$(, $extra_generic_param)*>
         {
             fn tcx(&self) -> TyCtxt<'tcx> {
                 self.base.tcx()
@@ -285,9 +329,29 @@ macro_rules! impl_ty_ctxt_provider {
     };
 }
 
+macro_rules! impl_body_provider {
+    ($generic_context_type:ident, $($extra_lifetime_param:lifetime)*, $($extra_generic_param:ident)*) => {
+        impl<'b, 'tcx$(, $extra_lifetime_param)*, B: BodyProvider<'tcx>$(, $extra_generic_param)*> BodyProvider<'tcx> for $generic_context_type<'b$(, $extra_lifetime_param)*, B$(, $extra_generic_param)*> {
+            fn body(&self) -> &mir::Body<'tcx> {
+                self.base.body()
+            }
+        }
+    };
+}
+
+macro_rules! impl_has_local_decls {
+    ($generic_context_type:ident, $($extra_lifetime_param:lifetime)*, $($extra_generic_param:ident)*) => {
+        impl<'b, 'tcx$(, $extra_lifetime_param)*, B: mir::HasLocalDecls<'tcx>$(, $extra_generic_param)*> mir::HasLocalDecls<'tcx> for $generic_context_type<'b$(, $extra_lifetime_param)*, B$(, $extra_generic_param)*> {
+            fn local_decls(&self) -> &mir::LocalDecls<'tcx>  {
+                self.base.local_decls()
+            }
+        }
+    };
+}
+
 macro_rules! impl_location_provider {
-    ($generic_context_type:ident) => {
-        impl<'b, B: LocationProvider> LocationProvider for $generic_context_type<'b, B> {
+    ($generic_context_type:ident, $($extra_lifetime_param:lifetime)*, $($extra_generic_param:ident)*) => {
+        impl<'b$(, $extra_lifetime_param)*, B: LocationProvider$(, $extra_generic_param)*> LocationProvider for $generic_context_type<'b$(, $extra_lifetime_param)*, B$(, $extra_generic_param)*> {
             fn location(&self) -> BasicBlock {
                 self.base.location()
             }
@@ -296,9 +360,9 @@ macro_rules! impl_location_provider {
 }
 
 macro_rules! impl_dest_ref_provider {
-    ($generic_context_type:ident) => {
-        impl<'b, B: DestinationReferenceProvider> DestinationReferenceProvider
-            for $generic_context_type<'b, B>
+    ($generic_context_type:ident, $($extra_lifetime_param:lifetime)*, $($extra_generic_param:ident)*) => {
+        impl<'b$(, $extra_lifetime_param)*, B: DestinationReferenceProvider$(, $extra_generic_param)*> DestinationReferenceProvider
+            for $generic_context_type<'b$(, $extra_lifetime_param)*, B$(, $extra_generic_param)*>
         {
             fn dest_ref(&self) -> PlaceRef {
                 self.base.dest_ref()
@@ -307,24 +371,64 @@ macro_rules! impl_dest_ref_provider {
     };
 }
 
-impl_func_info_provider!(TransparentContext);
-impl_special_types_provider!(TransparentContext);
-impl_local_manager!(TransparentContext);
-impl_block_manager!(TransparentContext);
-impl_ty_ctxt_provider!(TransparentContext);
-impl_location_provider!(TransparentContext);
-impl_dest_ref_provider!(TransparentContext);
+macro_rules! impl_discr_info_provider {
+    ($generic_context_type:ident, $($extra_lifetime_param:lifetime)*, $($extra_generic_param:ident)*) => {
+        impl<'b, 'tcx$(, $extra_lifetime_param)*, B: DiscriminantInfoProvider<'tcx>$(, $extra_generic_param)*> DiscriminantInfoProvider<'tcx>
+            for $generic_context_type<'b$(, $extra_lifetime_param)*, B$(, $extra_generic_param)*>
+        {
+            fn discr(&self) -> DiscriminantInfo<'tcx> {
+                self.base.discr()
+            }
+        }
+    };
+}
 
-impl_func_info_provider!(AtLocationContext);
-impl_special_types_provider!(AtLocationContext);
-impl_local_manager!(AtLocationContext);
-impl_block_manager!(AtLocationContext);
-impl_ty_ctxt_provider!(AtLocationContext);
-impl_dest_ref_provider!(AtLocationContext);
+impl_func_info_provider!(TransparentContext,,);
+impl_special_types_provider!(TransparentContext,,);
+impl_local_manager!(TransparentContext,,);
+impl_block_manager!(TransparentContext,,);
+impl_ty_ctxt_provider!(TransparentContext,,);
+impl_body_provider!(TransparentContext,,);
+impl_has_local_decls!(TransparentContext,,);
+impl_location_provider!(TransparentContext,,);
+impl_dest_ref_provider!(TransparentContext,,);
+impl_discr_info_provider!(TransparentContext,,);
 
-impl_func_info_provider!(AssignmentContext);
-impl_special_types_provider!(AssignmentContext);
-impl_local_manager!(AssignmentContext);
-impl_block_manager!(AssignmentContext);
-impl_ty_ctxt_provider!(AssignmentContext);
-impl_location_provider!(AssignmentContext);
+impl_func_info_provider!(InBodyContext, 'tcxb 'bd,);
+impl_special_types_provider!(InBodyContext, 'tcxb 'bd,);
+impl_local_manager!(InBodyContext, 'tcxb 'bd,);
+impl_block_manager!(InBodyContext, 'tcxb 'bd,);
+impl_ty_ctxt_provider!(InBodyContext, 'tcxb 'bd,);
+impl_location_provider!(InBodyContext, 'tcxb 'bd,);
+impl_dest_ref_provider!(InBodyContext, 'tcxb 'bd,);
+impl_discr_info_provider!(InBodyContext, 'tcxb 'bd,);
+
+impl_func_info_provider!(AtLocationContext,,);
+impl_special_types_provider!(AtLocationContext,,);
+impl_local_manager!(AtLocationContext,,);
+impl_block_manager!(AtLocationContext,,);
+impl_ty_ctxt_provider!(AtLocationContext,,);
+impl_body_provider!(AtLocationContext,,);
+impl_has_local_decls!(AtLocationContext,,);
+impl_dest_ref_provider!(AtLocationContext,,);
+impl_discr_info_provider!(AtLocationContext,,);
+
+impl_func_info_provider!(AssignmentContext,,);
+impl_special_types_provider!(AssignmentContext,,);
+impl_local_manager!(AssignmentContext,,);
+impl_block_manager!(AssignmentContext,,);
+impl_ty_ctxt_provider!(AssignmentContext,,);
+impl_body_provider!(AssignmentContext,,);
+impl_has_local_decls!(AssignmentContext,,);
+impl_location_provider!(AssignmentContext,,);
+impl_discr_info_provider!(AssignmentContext,,);
+
+impl_func_info_provider!(BranchingContext, 'tcxd,);
+impl_special_types_provider!(BranchingContext, 'tcxd,);
+impl_local_manager!(BranchingContext, 'tcxd,);
+impl_block_manager!(BranchingContext, 'tcxd,);
+impl_ty_ctxt_provider!(BranchingContext, 'tcxd,);
+impl_body_provider!(BranchingContext, 'tcxd,);
+impl_has_local_decls!(BranchingContext, 'tcxd,);
+impl_location_provider!(BranchingContext, 'tcxd,);
+impl_dest_ref_provider!(BranchingContext, 'tcxd,);

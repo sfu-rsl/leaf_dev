@@ -25,6 +25,7 @@ impl<'tcx> MirPass<'tcx> for LeafPass {
 
         let mut modification = BodyModificationUnit::new(body.local_decls().next_index());
         let mut call_adder = RuntimeCallAdder::new(tcx, &mut modification);
+        let mut call_adder = call_adder.in_body(body);
         VisitorFactory::make_body_visitor(&mut call_adder).visit_body(body);
         modification.commit(body);
     }
@@ -71,7 +72,9 @@ impl VisitorFactory {
         call_adder: &'b mut RuntimeCallAdder<BC>,
     ) -> impl TerminatorKindVisitor<'tcx, ()> + 'b
     where
-        BC: ctxtreqs::ForPlaceRef<'tcx> + ctxtreqs::ForOperandRef<'tcx>,
+        BC: ctxtreqs::ForPlaceRef<'tcx>
+            + ctxtreqs::ForOperandRef<'tcx>
+            + ctxtreqs::ForBranching<'tcx>,
     {
         LeafTerminatorKindVisitor {
             call_adder: RuntimeCallAdder::borrow_from(call_adder),
@@ -160,9 +163,12 @@ where
 }
 
 make_general_visitor!(LeafTerminatorKindVisitor);
-impl<'tcx, C> TerminatorKindVisitor<'tcx, ()> for LeafTerminatorKindVisitor<C> {
+impl<'tcx, C> TerminatorKindVisitor<'tcx, ()> for LeafTerminatorKindVisitor<C>
+where
+    C: ctxtreqs::ForBranching<'tcx>,
+{
     fn visit_switch_int(&mut self, discr: &Operand<'tcx>, targets: &mir::SwitchTargets) -> () {
-        Default::default()
+        let mut call_adder = self.call_adder.branch(discr);
     }
 
     fn visit_resume(&mut self) -> () {
@@ -243,7 +249,7 @@ impl<'tcx, C> TerminatorKindVisitor<'tcx, ()> for LeafTerminatorKindVisitor<C> {
 
 make_general_visitor!(LeafAssignmentVisitor);
 
-impl<'tcx, 'c, 'm, C> RvalueVisitor<'tcx, ()> for LeafAssignmentVisitor<C>
+impl<'tcx, C> RvalueVisitor<'tcx, ()> for LeafAssignmentVisitor<C>
 where
     C: ctxtreqs::ForPlaceRef<'tcx> + ctxtreqs::ForOperandRef<'tcx> + ctxtreqs::ForAssignment<'tcx>,
 {
