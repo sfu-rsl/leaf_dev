@@ -166,21 +166,21 @@ pub fn take_branch_false(info: BranchingInfo) {
 pub fn take_branch_int(info: BranchingInfo, value_bit_rep: u128) {
     todo!()
 }
-pub fn take_branch_int_ow(info: BranchingInfo, non_values: &[u128]) {
+pub fn take_branch_ow_int(info: BranchingInfo, non_values: &[u128]) {
     todo!()
 }
 
 pub fn take_branch_char(info: BranchingInfo, value: char) {
     todo!()
 }
-pub fn take_branch_char_ow(info: BranchingInfo, non_values: &[u128]) {
+pub fn take_branch_ow_char(info: BranchingInfo, non_values: &[u128]) {
     todo!()
 }
 
 pub fn take_branch_enum_discriminant(info: BranchingInfo, index: VariantIndex) {
     todo!()
 }
-pub fn take_branch_enum_discriminant_ow(info: BranchingInfo, non_indices: &[VariantIndex]) {
+pub fn take_branch_ow_enum_discriminant(info: BranchingInfo, non_indices: &[VariantIndex]) {
     todo!()
 }
 
@@ -219,6 +219,15 @@ pub enum UnaryOp {
 }
 
 pub struct BranchingInfo {
-    pub fork_location: BasicBlockIndex,
+    pub node_location: BasicBlockIndex,
     pub discriminant: OperandRef,
+}
+
+impl BranchingInfo {
+    fn new(node_location: BasicBlockIndex, discriminant: OperandRef) -> Self {
+        Self {
+            node_location,
+            discriminant,
+        }
+    }
 }

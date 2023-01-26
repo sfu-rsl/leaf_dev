@@ -125,11 +125,9 @@ pub trait Assigner {
 }
 
 pub trait BranchingHandler {
-    fn store_info(&mut self) -> Local;
-
     fn take_by_value(&mut self, value: u128);
 
-    fn take_otherwise(&mut self, values: &[u128]);
+    fn take_otherwise(&mut self, non_values: &[u128]);
 }
 
 pub struct RuntimeCallAdder<C> {
@@ -180,15 +178,24 @@ impl<C> RuntimeCallAdder<C> {
         discr: &Operand<'tcx>,
     ) -> RuntimeCallAdder<BranchingContext<'b, 'tcx, C>>
     where
-        C: TyContextProvider<'tcx> + HasLocalDecls<'tcx>,
-        Self: OperandReferencer<'tcx>,
+        C: TyContextProvider<'tcx> + HasLocalDecls<'tcx> + LocationProvider,
+        Self: MirCallAdder<'tcx> + BlockInserter<'tcx> + OperandReferencer<'tcx>,
     {
+        let tcx = self.context.tcx();
         let operand_ref = self.reference_operand(discr);
-        let ty = discr.ty(self.context.local_decls(), self.context.tcx());
+        let ty = discr.ty(self.context.local_decls(), tcx);
+        let (block, info_store_var) = self.make_bb_for_call_with_ret(
+            stringify!(pri::BranchingInfo::new),
+            vec![
+                operand::const_from_uint(tcx, u32::from(self.context.location())),
+                operand::copy_for_local(operand_ref.into()),
+            ],
+        );
+        self.insert_blocks([block]);
         RuntimeCallAdder {
             context: BranchingContext {
                 base: &mut self.context,
-                discr: DiscriminantInfo { operand_ref, ty },
+                discr: DiscriminantInfo { ty, info_store_var },
             },
         }
     }
@@ -739,19 +746,139 @@ where
 
 impl<'tcx, C> BranchingHandler for RuntimeCallAdder<C>
 where
-    Self: MirCallAdder<'tcx>,
-    C: LocationProvider + BodyLocalManager<'tcx> + DiscriminantInfoProvider<'tcx>,
+    Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
+    C: TyContextProvider<'tcx>
+        + BodyLocalManager<'tcx>
+        + LocationProvider
+        + DiscriminantInfoProvider<'tcx>,
 {
-    fn store_info(&mut self) -> Local {
-        todo!()
-    }
-
     fn take_by_value(&mut self, value: u128) {
-        todo!()
+        let discr_ty = self.context.discr().ty;
+        let (func_name, additional_args) = if discr_ty.is_bool() {
+            /*
+             * NOTE: This value is found in experiments with MIR.
+             * Please provide exact interpretation points in the compiler in the documentation.
+             */
+            if value == 0 {
+                (stringify!(pri::take_branch_false), vec![])
+            } else {
+                unreachable!("SwitchInts for booleans are expected to provide the case only for 0.")
+            }
+        } else if discr_ty.is_integral() {
+            // TODO: Detect discriminant
+            (
+                stringify!(pri::take_branch_int),
+                vec![operand::const_from_uint(self.context.tcx(), value)],
+            )
+        } else if discr_ty.is_char() {
+            (
+                stringify!(pri::take_branch_char),
+                vec![operand::const_from_uint(
+                    self.context.tcx(),
+                    char::from_u32(value.try_into().unwrap()).unwrap(),
+                )],
+            )
+        } else {
+            unreachable!("Branching node discriminant is supposed to be either bool, int, char, or enum discriminant.")
+        };
+
+        let block = self.make_bb_for_call(
+            func_name,
+            [
+                vec![operand::move_for_local(self.context.discr().info_store_var)],
+                additional_args,
+            ]
+            .concat(),
+        );
+        self.insert_blocks([block]);
     }
 
-    fn take_otherwise(&mut self, values: &[u128]) {
-        todo!()
+    fn take_otherwise(&mut self, non_values: &[u128]) {
+        let discr_ty = self.context.discr().ty;
+        let (additional_statements, func_name, additional_args) = if discr_ty.is_bool() {
+            debug_assert!(non_values.len() == 1);
+            debug_assert!(non_values[0] == 0);
+
+            (vec![], stringify!(pri::take_branch_true), vec![])
+        } else {
+            let tcx = self.context.tcx();
+
+            let (func_name, value_type, value_to_operand): (
+                &str,
+                Ty<'tcx>,
+                Box<dyn Fn(u128) -> Operand<'tcx>>,
+            ) = if discr_ty.is_integral() {
+                // TODO: Detect discriminant
+                (
+                    stringify!(pri::take_branch_ow_int),
+                    tcx.types.u128,
+                    Box::new(|nv: u128| operand::const_from_uint(tcx, nv)),
+                )
+            } else if discr_ty.is_char() {
+                (
+                    stringify!(pri::take_branch_ow_char),
+                    tcx.types.char,
+                    Box::new(|nv: u128| {
+                        operand::const_from_uint(
+                            tcx,
+                            char::from_u32(nv.try_into().unwrap()).unwrap(),
+                        )
+                    }),
+                )
+            } else {
+                unreachable!("Branching node discriminant is supposed to be either bool, int, char, or enum discriminant.")
+            };
+
+            let (non_values_local, assign_statement) = self.add_and_assign_local_for_ow_non_values(
+                non_values,
+                value_type,
+                value_to_operand,
+            );
+            (
+                vec![assign_statement],
+                func_name,
+                vec![operand::move_for_local(non_values_local)],
+            )
+        };
+
+        let mut block = self.make_bb_for_call(
+            func_name,
+            [
+                vec![operand::move_for_local(self.context.discr().info_store_var)],
+                additional_args,
+            ]
+            .concat(),
+        );
+        block.statements.extend(additional_statements);
+        self.insert_blocks([block]);
+    }
+}
+impl<'tcx, C> RuntimeCallAdder<C>
+where
+    Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
+    C: TyContextProvider<'tcx>
+        + BodyLocalManager<'tcx>
+        + LocationProvider
+        + DiscriminantInfoProvider<'tcx>,
+{
+    fn add_and_assign_local_for_ow_non_values(
+        &mut self,
+        non_values: &[u128],
+        value_ty: Ty<'tcx>,
+        value_to_operand: impl Fn(u128) -> Operand<'tcx>,
+    ) -> (Local, Statement<'tcx>) {
+        let tcx = self.context.tcx();
+        let non_values_local = self
+            .context
+            .add_local(tcx.mk_array(value_ty, non_values.len() as u64));
+        (
+            non_values_local,
+            assignment::array(
+                Place::from(non_values_local),
+                value_ty,
+                non_values.iter().map(|nv| value_to_operand(*nv)).collect(),
+            ),
+        )
     }
 }
 

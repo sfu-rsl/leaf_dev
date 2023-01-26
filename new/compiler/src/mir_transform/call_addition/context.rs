@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use rustc_hir::def::DefKind;
 use rustc_middle::{
     middle::exported_symbols,
-    mir::{self, BasicBlock, BasicBlockData, Local, HasLocalDecls},
+    mir::{self, BasicBlock, BasicBlockData, HasLocalDecls, Local},
     ty::{Ty, TyCtxt},
 };
 use rustc_span::def_id::DefId;
@@ -52,7 +52,7 @@ pub trait DestinationReferenceProvider {
 
 #[derive(Clone, Copy)]
 pub struct DiscriminantInfo<'tcx> {
-    pub(super) operand_ref: OperandRef,
+    pub(super) info_store_var: Local,
     pub(super) ty: Ty<'tcx>,
 }
 
