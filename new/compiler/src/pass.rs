@@ -127,14 +127,6 @@ where
         VisitorFactory::make_assignment_visitor(&mut self.call_adder, place).visit_rvalue(rvalue)
     }
 
-    fn visit_fake_read(
-        &mut self,
-        cause: &rustc_middle::mir::FakeReadCause,
-        place: &Place<'tcx>,
-    ) -> () {
-        Default::default()
-    }
-
     fn visit_set_discriminant(&mut self, place: &Place<'tcx>, variant_index: &VariantIdx) -> () {
         Default::default()
     }
@@ -143,39 +135,10 @@ where
         Default::default()
     }
 
-    fn visit_storage_live(&mut self, local: &Local) -> () {
-        Default::default()
-    }
-
-    fn visit_storage_dead(&mut self, local: &Local) -> () {
-        Default::default()
-    }
-
-    fn visit_retag(&mut self, kind: &rustc_middle::mir::RetagKind, place: &Place<'tcx>) -> () {
-        Default::default()
-    }
-
-    fn visit_ascribe_user_type(
-        &mut self,
-        place: &Place<'tcx>,
-        user_type_proj: &rustc_middle::mir::UserTypeProjection,
-        variance: &rustc_type_ir::Variance,
-    ) -> () {
-        Default::default()
-    }
-
-    fn visit_coverage(&mut self, coverage: &rustc_middle::mir::Coverage) -> () {
-        Default::default()
-    }
-
     fn visit_intrinsic(
         &mut self,
         intrinsic: &rustc_middle::mir::NonDivergingIntrinsic<'tcx>,
     ) -> () {
-        Default::default()
-    }
-
-    fn visit_nop(&mut self) -> () {
         Default::default()
     }
 }
