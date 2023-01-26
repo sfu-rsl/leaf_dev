@@ -26,9 +26,12 @@ impl runtime::Runtime for RuntimeImpl {
 }
 
 pub type Local = u32;
+
 pub type Ref = u64;
 pub type PlaceRef = Ref;
 pub type OperandRef = Ref;
+
+pub type VariantIndex = u32;
 
 /*
  * These fields serve as exported symbols in the workaround to get the Tys for
@@ -153,6 +156,34 @@ pub fn switch_int(
     todo!()
 }
 
+pub fn take_branch_true(info: BranchingInfo) {
+    todo!()
+}
+pub fn take_branch_false(info: BranchingInfo) {
+    todo!()
+}
+
+pub fn take_branch_int(info: BranchingInfo, value_bit_rep: u128) {
+    todo!()
+}
+pub fn take_branch_int_ow(info: BranchingInfo, non_values: &[u128]) {
+    todo!()
+}
+
+pub fn take_branch_char(info: BranchingInfo, value: char) {
+    todo!()
+}
+pub fn take_branch_char_ow(info: BranchingInfo, non_values: &[u128]) {
+    todo!()
+}
+
+pub fn take_branch_enum_discriminant(info: BranchingInfo, index: VariantIndex) {
+    todo!()
+}
+pub fn take_branch_enum_discriminant_ow(info: BranchingInfo, non_indices: &[VariantIndex]) {
+    todo!()
+}
+
 pub fn fn_call(func: OperandRef, args: &[OperandRef], destination: PlaceRef) {
     todo!()
 }
@@ -185,4 +216,9 @@ pub enum BinaryOp {
 pub enum UnaryOp {
     Not,
     Neg,
+}
+
+pub struct BranchingInfo {
+    pub fork_location: BasicBlockIndex,
+    pub discriminant: OperandRef,
 }
