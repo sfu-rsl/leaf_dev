@@ -10,8 +10,8 @@ use crate::mir_transform::call_addition::{
     RuntimeCallAdder,
 };
 use crate::mir_transform::modification::BodyModificationUnit;
-use crate::visit::RvalueVisitor;
 use crate::visit::StatementKindVisitor;
+use crate::visit::{RvalueVisitor, TerminatorKindVisitor};
 
 pub struct LeafPass;
 
@@ -67,6 +67,17 @@ impl VisitorFactory {
         }
     }
 
+    fn make_terminator_kind_visitor<'tcx, 'b, BC>(
+        call_adder: &'b mut RuntimeCallAdder<BC>,
+    ) -> impl TerminatorKindVisitor<'tcx, ()> + 'b
+    where
+        BC: ctxtreqs::ForPlaceRef<'tcx> + ctxtreqs::ForOperandRef<'tcx>,
+    {
+        LeafTerminatorKindVisitor {
+            call_adder: RuntimeCallAdder::borrow_from(call_adder),
+        }
+    }
+
     fn make_assignment_visitor<'tcx, 'b, BC>(
         call_adder: &'b mut RuntimeCallAdder<BC>,
         destination: &Place<'tcx>,
@@ -115,6 +126,11 @@ where
         VisitorFactory::make_statement_kind_visitor(&mut self.call_adder)
             .visit_statement_kind(&statement.kind);
     }
+
+    fn visit_terminator(&mut self, terminator: &mir::Terminator<'tcx>, _location: Location) {
+        VisitorFactory::make_terminator_kind_visitor(&mut self.call_adder)
+            .visit_terminator_kind(&terminator.kind);
+    }
 }
 
 make_general_visitor!(LeafStatementKindVisitor);
@@ -138,6 +154,88 @@ where
     fn visit_intrinsic(
         &mut self,
         intrinsic: &rustc_middle::mir::NonDivergingIntrinsic<'tcx>,
+    ) -> () {
+        Default::default()
+    }
+}
+
+make_general_visitor!(LeafTerminatorKindVisitor);
+impl<'tcx, C> TerminatorKindVisitor<'tcx, ()> for LeafTerminatorKindVisitor<C> {
+    fn visit_switch_int(&mut self, discr: &Operand<'tcx>, targets: &mir::SwitchTargets) -> () {
+        Default::default()
+    }
+
+    fn visit_resume(&mut self) -> () {
+        Default::default()
+    }
+
+    fn visit_abort(&mut self) -> () {
+        Default::default()
+    }
+
+    fn visit_return(&mut self) -> () {
+        Default::default()
+    }
+
+    fn visit_unreachable(&mut self) -> () {
+        Default::default()
+    }
+
+    fn visit_drop(
+        &mut self,
+        place: &Place<'tcx>,
+        target: &BasicBlock,
+        unwind: &Option<BasicBlock>,
+    ) -> () {
+        Default::default()
+    }
+
+    fn visit_call(
+        &mut self,
+        func: &Operand<'tcx>,
+        args: &Vec<Operand<'tcx>>,
+        destination: &Place<'tcx>,
+        target: &Option<BasicBlock>,
+        cleanup: &Option<BasicBlock>,
+        from_hir_call: bool,
+        fn_span: rustc_span::Span,
+    ) -> () {
+        Default::default()
+    }
+
+    fn visit_assert(
+        &mut self,
+        cond: &Operand<'tcx>,
+        expected: &bool,
+        msg: &mir::AssertMessage<'tcx>,
+        target: &BasicBlock,
+        cleanup: &Option<BasicBlock>,
+    ) -> () {
+        Default::default()
+    }
+
+    fn visit_yield(
+        &mut self,
+        value: &Operand<'tcx>,
+        resume: &BasicBlock,
+        resume_arg: &Place<'tcx>,
+        drop: &Option<BasicBlock>,
+    ) -> () {
+        Default::default()
+    }
+
+    fn visit_generator_drop(&mut self) -> () {
+        Default::default()
+    }
+
+    fn visit_inline_asm(
+        &mut self,
+        template: &&[rustc_ast::InlineAsmTemplatePiece],
+        operands: &Vec<mir::InlineAsmOperand<'tcx>>,
+        options: &rustc_ast::InlineAsmOptions,
+        line_spans: &'tcx [rustc_span::Span],
+        destination: &Option<BasicBlock>,
+        cleanup: &Option<BasicBlock>,
     ) -> () {
         Default::default()
     }
