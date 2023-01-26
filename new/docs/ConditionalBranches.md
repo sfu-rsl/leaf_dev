@@ -52,6 +52,10 @@ Currently, the following types for the discriminant are detected.
 - Booleans
 - Integers
 - Enum Discriminants (isize)
+Update:
+Based on the document provided for [`SwitchInt`][switch_int], the discriminant will be of types signed/unsigned integer, char, or bool.
+
+[switch_int]: https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/mir/enum.TerminatorKind.html#variant.SwitchInt
 
 ## Important Points
 - When in a match expression the arms are exhaustive (no else branch is needed), the otherwise target will be an empty unreachable basic block.
@@ -111,7 +115,7 @@ Example:
 #### 2. On-Target-Site Reporting
 In this strategy, the report is sent to the runtime after the branch is taken. It requires reporting the value of the target branch that is already taken. The otherwise case should report all the other values.
 
-Any shared information such as basic block number will be set in a basic block containing those variables placed on top of the switch-int-terminated basic block.
+Any shared information such as basic block number will be set in a basic block containing those variables placed on top of the forking (switch-int-terminated) basic block.
 
 Example:
 - Boolean
@@ -202,7 +206,7 @@ Examples:
 |**Advantages**|
 |Single basic block gets added.|No need to pass all the target values to the runtime except for the otherwise case.|
 |**Disadvantages**|
-|Breaks the original switch-int-terminated basic block.|Scattered usage of the discriminant local variable before each target.|
+|Breaks the original forking basic block.|Scattered usage of the discriminant local variable before each target.|
 ||~~Any shared information for the branching should be replicated in each function call.~~|
 
 #### Conclusion
