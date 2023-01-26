@@ -755,14 +755,11 @@ where
     fn take_by_value(&mut self, value: u128) {
         let discr_ty = self.context.discr().ty;
         let (func_name, additional_args) = if discr_ty.is_bool() {
-            /*
-             * NOTE: This value is found in experiments with MIR.
-             * Please provide exact interpretation points in the compiler in the documentation.
-             */
-            if value == 0 {
+            const FALSE_SWITCH_VALUE: u128 = 0;
+            if value == FALSE_SWITCH_VALUE {
                 (stringify!(pri::take_branch_false), vec![])
             } else {
-                unreachable!("SwitchInts for booleans are expected to provide the case only for 0.")
+                unreachable!("SwitchInts for booleans are expected to provide only the value 0 (false).")
             }
         } else if discr_ty.is_integral() {
             // TODO: Detect discriminant
@@ -924,8 +921,14 @@ pub mod context_requirements {
     {
     }
 
-    pub trait ForBranching<'tcx>: LocationProvider + BaseContext<'tcx> {}
-    impl<'tcx, C> ForBranching<'tcx> for C where C: LocationProvider + BaseContext<'tcx> {}
+    pub trait ForBranching<'tcx>:
+        DiscriminantInfoProvider<'tcx> + LocationProvider + BaseContext<'tcx>
+    {
+    }
+    impl<'tcx, C> ForBranching<'tcx> for C where
+        C: DiscriminantInfoProvider<'tcx> + LocationProvider + BaseContext<'tcx>
+    {
+    }
 }
 
 struct BlocksAndResult<'tcx>(Vec<BasicBlockData<'tcx>>, Local);

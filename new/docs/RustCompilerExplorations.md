@@ -1,6 +1,10 @@
 # Rust Compiler Expolartion
 As the rust compiler is not well-documented and fairly unstable, lots of facts and behaviors should be understood through reading the source codes, (hopefully) comments in them, and compiling various test programs. In this document, we write whatever we find.
 
+## Source Code
+
+MIR generation codes are located at `rustc_mir_build::build`.
+
 ## Rvalue
 
 ### Aggregates
@@ -32,3 +36,6 @@ Booleans, numeric types, chars, pointers, and fn defs are expressed as `Scalar` 
 ### Function
 - `TyCtxt::type_of` returns the function type. Its kind is `TyKind::FnDef`.
 - To get the return type we can query its signature using `TyCtxt::fn_sig`.
+
+## SwitchInt
+- `false` is considered as 0 in a fashion hard-coded. Take a look at the implementation of `TerminatorKind::if_`.
