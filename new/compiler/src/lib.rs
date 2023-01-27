@@ -173,13 +173,14 @@ impl rustc_driver::Callbacks for Callbacks {
             queries
                 .global_ctxt()
                 .unwrap()
-                .peek_mut()
+                .get_mut()
                 .enter(|tcx| self.visit_mir_body(tcx));
             return Compilation::Stop;
         }
 
         // The following adds a new statement "extern crate pri" to the parsed AST as a new item.
-        let items = &mut queries.parse().unwrap().peek_mut().items;
+        let mut steal = queries.parse().unwrap();
+        let items = &mut steal.get_mut().items;
         let item = Item {
             attrs: thin_vec::ThinVec::new(),
             id: DUMMY_NODE_ID,
@@ -208,7 +209,7 @@ impl rustc_driver::Callbacks for Callbacks {
         queries
             .global_ctxt()
             .unwrap()
-            .peek_mut()
+            .get_mut()
             .enter(|tcx| self.pass_through_leaf(compiler, tcx));
 
         Compilation::Continue
