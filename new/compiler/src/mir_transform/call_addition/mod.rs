@@ -15,7 +15,9 @@ use rustc_middle::{
 use rustc_span::DUMMY_SP;
 
 use self::{context::*, utils::*};
-use super::modification::{self, BodyBlockManager, BodyLocalManager, BodyModificationUnit};
+use super::modification::{
+    self, BodyBlockManager, BodyLocalManager, BodyModificationUnit, JumpTargetModifier,
+};
 
 pub mod context;
 
@@ -127,7 +129,10 @@ pub trait Assigner {
 pub trait BranchingHandler {
     fn take_by_value(&mut self, value: u128);
 
-    fn take_otherwise(&mut self, non_values: &[u128]);
+    fn take_otherwise<I>(&mut self, non_values: I)
+    where
+        I: IntoIterator<Item = u128> + ExactSizeIterator,
+        I::IntoIter: ExactSizeIterator<Item = u128>;
 }
 
 pub struct RuntimeCallAdder<C> {
@@ -756,15 +761,19 @@ where
         + BodyLocalManager<'tcx>
         + LocationProvider
         + SwitchInfoProvider<'tcx>
+        + JumpTargetModifier,
 {
     fn take_by_value(&mut self, value: u128) {
-        let discr_ty = self.context.switch_info().discr_ty;
+        let switch_info = self.context.switch_info();
+        let discr_ty = switch_info.discr_ty;
         let (func_name, additional_args) = if discr_ty.is_bool() {
             const FALSE_SWITCH_VALUE: u128 = 0;
             if value == FALSE_SWITCH_VALUE {
                 (stringify!(pri::take_branch_false), vec![])
             } else {
-                unreachable!("SwitchInts for booleans are expected to provide only the value 0 (false).")
+                unreachable!(
+                    "SwitchInts for booleans are expected to provide only the value 0 (false)."
+                )
             }
         } else if discr_ty.is_integral() {
             // TODO: Detect discriminant
@@ -787,20 +796,30 @@ where
         let block = self.make_bb_for_call(
             func_name,
             [
-                vec![operand::move_for_local(
-                    self.context.switch_info().runtime_info_store_var,
-                )],
+                vec![operand::move_for_local(switch_info.runtime_info_store_var)],
                 additional_args,
             ]
             .concat(),
         );
-        self.insert_blocks([block]);
+        let new_block_index = self.insert_blocks([block])[0];
+        self.context.modify_jump_target(
+            switch_info.node_location,
+            self.context.location(),
+            new_block_index,
+        );
     }
 
-        let discr_ty = self.context.switch_info().discr_ty;
+    fn take_otherwise<I>(&mut self, non_values: I)
+    where
+        I: IntoIterator<Item = u128>,
+        I::IntoIter: ExactSizeIterator<Item = u128>,
+    {
+        let switch_info = self.context.switch_info();
+        let discr_ty = switch_info.discr_ty;
         let (additional_statements, func_name, additional_args) = if discr_ty.is_bool() {
+            let mut non_values = non_values.into_iter();
             debug_assert!(non_values.len() == 1);
-            debug_assert!(non_values[0] == 0);
+            debug_assert!(non_values.next().unwrap() == 0);
 
             (vec![], stringify!(pri::take_branch_true), vec![])
         } else {
@@ -833,7 +852,7 @@ where
             };
 
             let (non_values_local, assign_statement) = self.add_and_assign_local_for_ow_non_values(
-                non_values,
+                non_values.into_iter(),
                 value_type,
                 value_to_operand,
             );
@@ -847,15 +866,18 @@ where
         let mut block = self.make_bb_for_call(
             func_name,
             [
-                vec![operand::move_for_local(
-                    self.context.switch_info().runtime_info_store_var,
-                )],
+                vec![operand::move_for_local(switch_info.runtime_info_store_var)],
                 additional_args,
             ]
             .concat(),
         );
         block.statements.extend(additional_statements);
-        self.insert_blocks([block]);
+        let new_block_index = self.insert_blocks([block])[0];
+        self.context.modify_jump_target(
+            switch_info.node_location,
+            self.context.location(),
+            new_block_index,
+        );
     }
 }
 impl<'tcx, C> RuntimeCallAdder<C>
@@ -864,11 +886,11 @@ where
     C: TyContextProvider<'tcx>
         + BodyLocalManager<'tcx>
         + LocationProvider
-        + DiscriminantInfoProvider<'tcx>,
+        + SwitchInfoProvider<'tcx>,
 {
     fn add_and_assign_local_for_ow_non_values(
         &mut self,
-        non_values: &[u128],
+        non_values: impl ExactSizeIterator<Item = u128>,
         value_ty: Ty<'tcx>,
         value_to_operand: impl Fn(u128) -> Operand<'tcx>,
     ) -> (Local, Statement<'tcx>) {
@@ -881,7 +903,7 @@ where
             assignment::array(
                 Place::from(non_values_local),
                 value_ty,
-                non_values.iter().map(|nv| value_to_operand(*nv)).collect(),
+                non_values.map(|nv| value_to_operand(nv)).collect(),
             ),
         )
     }
@@ -930,11 +952,11 @@ pub mod context_requirements {
     }
 
     pub trait ForBranching<'tcx>:
-        SwitchInfoProvider<'tcx> + LocationProvider + BaseContext<'tcx>
+        LocationProvider + BaseContext<'tcx> + JumpTargetModifier
     {
     }
     impl<'tcx, C> ForBranching<'tcx> for C where
-        C: SwitchInfoProvider<'tcx> + LocationProvider + BaseContext<'tcx>
+        C: LocationProvider + BaseContext<'tcx> + JumpTargetModifier
     {
     }
 }

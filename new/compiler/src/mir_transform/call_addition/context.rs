@@ -9,7 +9,7 @@ use rustc_middle::{
 use rustc_span::def_id::DefId;
 
 use crate::mir_transform::modification::{
-    self, BodyBlockManager, BodyLocalManager, BodyModificationUnit,
+    self, BodyBlockManager, BodyLocalManager, BodyModificationUnit, JumpTargetModifier,
 };
 
 use super::{OperandRef, PlaceRef};
@@ -189,6 +189,18 @@ impl<'tcx, 'm> BodyBlockManager<'tcx> for DefaultContext<'tcx, 'm> {
     }
 }
 
+impl JumpTargetModifier for DefaultContext<'_, '_> {
+    fn modify_jump_target(
+        &mut self,
+        terminator_location: BasicBlock,
+        from: BasicBlock,
+        to: BasicBlock,
+    ) {
+        self.modification_unit
+            .modify_jump_target(terminator_location, from, to)
+    }
+}
+
 impl<'tcx> FunctionInfoProvider<'tcx> for DefaultContext<'tcx, '_> {
     fn get_pri_func_info(&self, func_name: &str) -> &FunctionInfo<'tcx> {
         self.pri_functions
@@ -318,6 +330,22 @@ macro_rules! impl_block_manager {
     };
 }
 
+macro_rules! impl_jump_target_modifier {
+    ($generic_context_type:ident, $($extra_lifetime_param:lifetime)*, $($extra_generic_param:ident)*) => {
+        impl<'b$(, $extra_lifetime_param)*, B: JumpTargetModifier$(, $extra_generic_param)*> JumpTargetModifier for $generic_context_type<'b$(, $extra_lifetime_param)*, B$(, $extra_generic_param)*> {
+            fn modify_jump_target(
+                &mut self,
+                terminator_location: BasicBlock,
+                from: BasicBlock,
+                to: BasicBlock,
+            ) {
+                self.base
+                    .modify_jump_target(terminator_location, from, to)
+            }
+        }
+    };
+}
+
 macro_rules! impl_ty_ctxt_provider {
     ($generic_context_type:ident, $($extra_lifetime_param:lifetime)*, $($extra_generic_param:ident)*) => {
         impl<'b, 'tcx$(, $extra_lifetime_param)*, B: TyContextProvider<'tcx>$(, $extra_generic_param)*> TyContextProvider<'tcx>
@@ -388,6 +416,7 @@ impl_func_info_provider!(TransparentContext,,);
 impl_special_types_provider!(TransparentContext,,);
 impl_local_manager!(TransparentContext,,);
 impl_block_manager!(TransparentContext,,);
+impl_jump_target_modifier!(TransparentContext,,);
 impl_ty_ctxt_provider!(TransparentContext,,);
 impl_body_provider!(TransparentContext,,);
 impl_has_local_decls!(TransparentContext,,);
@@ -399,6 +428,7 @@ impl_func_info_provider!(InBodyContext, 'tcxb 'bd,);
 impl_special_types_provider!(InBodyContext, 'tcxb 'bd,);
 impl_local_manager!(InBodyContext, 'tcxb 'bd,);
 impl_block_manager!(InBodyContext, 'tcxb 'bd,);
+impl_jump_target_modifier!(InBodyContext, 'tcxb 'bd,);
 impl_ty_ctxt_provider!(InBodyContext, 'tcxb 'bd,);
 impl_location_provider!(InBodyContext, 'tcxb 'bd,);
 impl_dest_ref_provider!(InBodyContext, 'tcxb 'bd,);
@@ -408,6 +438,7 @@ impl_func_info_provider!(AtLocationContext,,);
 impl_special_types_provider!(AtLocationContext,,);
 impl_local_manager!(AtLocationContext,,);
 impl_block_manager!(AtLocationContext,,);
+impl_jump_target_modifier!(AtLocationContext,,);
 impl_ty_ctxt_provider!(AtLocationContext,,);
 impl_body_provider!(AtLocationContext,,);
 impl_has_local_decls!(AtLocationContext,,);
@@ -418,6 +449,7 @@ impl_func_info_provider!(AssignmentContext,,);
 impl_special_types_provider!(AssignmentContext,,);
 impl_local_manager!(AssignmentContext,,);
 impl_block_manager!(AssignmentContext,,);
+impl_jump_target_modifier!(AssignmentContext,,);
 impl_ty_ctxt_provider!(AssignmentContext,,);
 impl_body_provider!(AssignmentContext,,);
 impl_has_local_decls!(AssignmentContext,,);
@@ -428,6 +460,7 @@ impl_func_info_provider!(BranchingContext, 'tcxd,);
 impl_special_types_provider!(BranchingContext, 'tcxd,);
 impl_local_manager!(BranchingContext, 'tcxd,);
 impl_block_manager!(BranchingContext, 'tcxd,);
+impl_jump_target_modifier!(BranchingContext, 'tcxd,);
 impl_ty_ctxt_provider!(BranchingContext, 'tcxd,);
 impl_body_provider!(BranchingContext, 'tcxd,);
 impl_has_local_decls!(BranchingContext, 'tcxd,);
