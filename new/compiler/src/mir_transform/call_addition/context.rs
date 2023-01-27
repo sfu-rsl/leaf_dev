@@ -51,13 +51,14 @@ pub trait DestinationReferenceProvider {
 }
 
 #[derive(Clone, Copy)]
-pub struct DiscriminantInfo<'tcx> {
-    pub(super) info_store_var: Local,
-    pub(super) ty: Ty<'tcx>,
+pub struct SwitchInfo<'tcx> {
+    pub(super) node_location: BasicBlock,
+    pub(super) discr_ty: Ty<'tcx>,
+    pub(super) runtime_info_store_var: Local,
 }
 
-pub trait DiscriminantInfoProvider<'tcx> {
-    fn discr(&self) -> DiscriminantInfo<'tcx>;
+pub trait SwitchInfoProvider<'tcx> {
+    fn switch_info(&self) -> SwitchInfo<'tcx>;
 }
 
 /*
@@ -250,12 +251,12 @@ impl<B> DestinationReferenceProvider for AssignmentContext<'_, B> {
 
 pub struct BranchingContext<'b, 'tcx, B> {
     pub(super) base: &'b mut B,
-    pub(super) discr: DiscriminantInfo<'tcx>,
+    pub(super) switch: SwitchInfo<'tcx>,
 }
 
-impl<'tcx, B> DiscriminantInfoProvider<'tcx> for BranchingContext<'_, 'tcx, B> {
-    fn discr(&self) -> DiscriminantInfo<'tcx> {
-        self.discr
+impl<'tcx, B> SwitchInfoProvider<'tcx> for BranchingContext<'_, 'tcx, B> {
+    fn switch_info(&self) -> SwitchInfo<'tcx> {
+        self.switch
     }
 }
 
@@ -373,11 +374,11 @@ macro_rules! impl_dest_ref_provider {
 
 macro_rules! impl_discr_info_provider {
     ($generic_context_type:ident, $($extra_lifetime_param:lifetime)*, $($extra_generic_param:ident)*) => {
-        impl<'b, 'tcx$(, $extra_lifetime_param)*, B: DiscriminantInfoProvider<'tcx>$(, $extra_generic_param)*> DiscriminantInfoProvider<'tcx>
+        impl<'b, 'tcx$(, $extra_lifetime_param)*, B: SwitchInfoProvider<'tcx>$(, $extra_generic_param)*> SwitchInfoProvider<'tcx>
             for $generic_context_type<'b$(, $extra_lifetime_param)*, B$(, $extra_generic_param)*>
         {
-            fn discr(&self) -> DiscriminantInfo<'tcx> {
-                self.base.discr()
+            fn switch_info(&self) -> SwitchInfo<'tcx> {
+                self.base.switch_info()
             }
         }
     };

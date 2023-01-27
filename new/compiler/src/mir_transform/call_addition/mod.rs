@@ -184,10 +184,11 @@ impl<C> RuntimeCallAdder<C> {
         let tcx = self.context.tcx();
         let operand_ref = self.reference_operand(discr);
         let ty = discr.ty(self.context.local_decls(), tcx);
+        let node_location = self.context.location();
         let (block, info_store_var) = self.make_bb_for_call_with_ret(
             stringify!(pri::BranchingInfo::new),
             vec![
-                operand::const_from_uint(tcx, u32::from(self.context.location())),
+                operand::const_from_uint(tcx, u32::from(node_location)),
                 operand::copy_for_local(operand_ref.into()),
             ],
         );
@@ -195,7 +196,11 @@ impl<C> RuntimeCallAdder<C> {
         RuntimeCallAdder {
             context: BranchingContext {
                 base: &mut self.context,
-                discr: DiscriminantInfo { ty, info_store_var },
+                switch: SwitchInfo {
+                    node_location,
+                    discr_ty: ty,
+                    runtime_info_store_var: info_store_var,
+                },
             },
         }
     }
@@ -750,10 +755,10 @@ where
     C: TyContextProvider<'tcx>
         + BodyLocalManager<'tcx>
         + LocationProvider
-        + DiscriminantInfoProvider<'tcx>,
+        + SwitchInfoProvider<'tcx>
 {
     fn take_by_value(&mut self, value: u128) {
-        let discr_ty = self.context.discr().ty;
+        let discr_ty = self.context.switch_info().discr_ty;
         let (func_name, additional_args) = if discr_ty.is_bool() {
             const FALSE_SWITCH_VALUE: u128 = 0;
             if value == FALSE_SWITCH_VALUE {
@@ -782,7 +787,9 @@ where
         let block = self.make_bb_for_call(
             func_name,
             [
-                vec![operand::move_for_local(self.context.discr().info_store_var)],
+                vec![operand::move_for_local(
+                    self.context.switch_info().runtime_info_store_var,
+                )],
                 additional_args,
             ]
             .concat(),
@@ -790,8 +797,7 @@ where
         self.insert_blocks([block]);
     }
 
-    fn take_otherwise(&mut self, non_values: &[u128]) {
-        let discr_ty = self.context.discr().ty;
+        let discr_ty = self.context.switch_info().discr_ty;
         let (additional_statements, func_name, additional_args) = if discr_ty.is_bool() {
             debug_assert!(non_values.len() == 1);
             debug_assert!(non_values[0] == 0);
@@ -841,7 +847,9 @@ where
         let mut block = self.make_bb_for_call(
             func_name,
             [
-                vec![operand::move_for_local(self.context.discr().info_store_var)],
+                vec![operand::move_for_local(
+                    self.context.switch_info().runtime_info_store_var,
+                )],
                 additional_args,
             ]
             .concat(),
@@ -922,11 +930,11 @@ pub mod context_requirements {
     }
 
     pub trait ForBranching<'tcx>:
-        DiscriminantInfoProvider<'tcx> + LocationProvider + BaseContext<'tcx>
+        SwitchInfoProvider<'tcx> + LocationProvider + BaseContext<'tcx>
     {
     }
     impl<'tcx, C> ForBranching<'tcx> for C where
-        C: DiscriminantInfoProvider<'tcx> + LocationProvider + BaseContext<'tcx>
+        C: SwitchInfoProvider<'tcx> + LocationProvider + BaseContext<'tcx>
     {
     }
 }
