@@ -260,6 +260,11 @@ impl<'tcx, C> RvalueVisitor<'tcx, ()> for LeafAssignmentVisitor<C>
 where
     C: ctxtreqs::ForPlaceRef<'tcx> + ctxtreqs::ForOperandRef<'tcx> + ctxtreqs::ForAssignment<'tcx>,
 {
+    fn visit_rvalue(&mut self, rvalue: &Rvalue<'tcx>) {
+        log::debug!("Visiting Rvalue: {:#?}", rvalue);
+        self.super_rvalue(rvalue)
+    }
+
     fn visit_use(&mut self, operand: &Operand<'tcx>) {
         let operand_ref = self.call_adder.reference_operand(operand);
         self.call_adder.by_use(operand_ref)
