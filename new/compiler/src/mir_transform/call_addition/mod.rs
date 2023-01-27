@@ -1049,14 +1049,14 @@ mod utils {
                 TyKind::Adt(def, _) => def,
                 _ => unreachable!(),
             };
-            let y = adt_def
+            let def = adt_def
                 .variants()
                 .iter()
-                .find(|v| v.name.as_str() == variant_name)
+                .find(|d| d.name.as_str() == variant_name)
                 .expect(
                     format!("Variant could not be found with name `{}`.", variant_name).as_str(),
                 );
-            adt_def.variant_index_with_ctor_id(y.def_id)
+            adt_def.variant_index_with_id(def.def_id)
         }
     }
 
