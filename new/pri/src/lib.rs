@@ -224,7 +224,7 @@ pub struct BranchingInfo {
 }
 
 impl BranchingInfo {
-    fn new(node_location: BasicBlockIndex, discriminant: OperandRef) -> Self {
+    pub fn new(node_location: BasicBlockIndex, discriminant: OperandRef) -> Self {
         Self {
             node_location,
             discriminant,

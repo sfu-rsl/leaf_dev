@@ -106,7 +106,7 @@ impl<'tcx, 'm> DefaultContext<'tcx, 'm> {
     fn extract_functions(tcx: TyCtxt<'tcx>) -> HashMap<String, FunctionInfo<'tcx>> {
         DefaultContext::get_exported_symbols_of_pri(tcx)
             .into_iter()
-            .filter(|def_id| matches!(tcx.def_kind(def_id), DefKind::Fn))
+            .filter(|def_id| matches!(tcx.def_kind(def_id), DefKind::Fn | DefKind::AssocFn))
             .map(|def_id| {
                 (
                     tcx.def_path_str(def_id),

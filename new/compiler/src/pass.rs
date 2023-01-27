@@ -3,15 +3,16 @@ use rustc_middle::mir::{
     self, visit::Visitor, BasicBlock, BasicBlockData, HasLocalDecls, Local, Location, MirPass,
     Operand, Place, Rvalue,
 };
+
 use rustc_target::abi::VariantIdx;
 
 use crate::mir_transform::call_addition::{
-    context_requirements as ctxtreqs, Assigner, OperandRef, OperandReferencer, PlaceReferencer,
-    RuntimeCallAdder,
+    context_requirements as ctxtreqs, Assigner, BranchingHandler, OperandRef, OperandReferencer,
+    PlaceReferencer, RuntimeCallAdder,
 };
-use crate::mir_transform::modification::BodyModificationUnit;
-use crate::visit::StatementKindVisitor;
+use crate::mir_transform::modification::{BodyModificationUnit, JumpTargetModifier};
 use crate::visit::{RvalueVisitor, TerminatorKindVisitor};
+use crate::visit::{StatementKindVisitor};
 
 pub struct LeafPass;
 
@@ -38,7 +39,7 @@ impl VisitorFactory {
         call_adder: &'c mut RuntimeCallAdder<BC>,
     ) -> impl Visitor<'tcx> + 'c
     where
-        BC: ctxtreqs::Basic<'tcx>,
+        BC: ctxtreqs::Basic<'tcx> + JumpTargetModifier,
     {
         LeafBodyVisitor {
             call_adder: RuntimeCallAdder::borrow_from(call_adder),
@@ -50,7 +51,7 @@ impl VisitorFactory {
         block: BasicBlock,
     ) -> impl Visitor<'tcx> + 'c
     where
-        BC: ctxtreqs::Basic<'tcx>,
+        BC: ctxtreqs::Basic<'tcx> + JumpTargetModifier,
     {
         LeafBasicBlockVisitor {
             call_adder: call_adder.at(block),
@@ -107,7 +108,7 @@ make_general_visitor!(LeafBodyVisitor);
 
 impl<'tcx, C> Visitor<'tcx> for LeafBodyVisitor<C>
 where
-    C: ctxtreqs::Basic<'tcx>,
+    C: ctxtreqs::Basic<'tcx> + JumpTargetModifier,
 {
     fn visit_basic_block_data(&mut self, block: BasicBlock, data: &BasicBlockData<'tcx>) {
         VisitorFactory::make_basic_block_visitor(&mut self.call_adder, block)
@@ -119,7 +120,7 @@ make_general_visitor!(LeafBasicBlockVisitor);
 
 impl<'tcx, C> Visitor<'tcx> for LeafBasicBlockVisitor<C>
 where
-    C: ctxtreqs::ForPlaceRef<'tcx> + ctxtreqs::ForOperandRef<'tcx>,
+    C: ctxtreqs::ForPlaceRef<'tcx> + ctxtreqs::ForOperandRef<'tcx> + JumpTargetModifier,
 {
     fn visit_statement(
         &mut self,
@@ -165,10 +166,16 @@ where
 make_general_visitor!(LeafTerminatorKindVisitor);
 impl<'tcx, C> TerminatorKindVisitor<'tcx, ()> for LeafTerminatorKindVisitor<C>
 where
-    C: ctxtreqs::ForBranching<'tcx>,
+    C: ctxtreqs::ForOperandRef<'tcx> + ctxtreqs::ForBranching<'tcx>,
 {
     fn visit_switch_int(&mut self, discr: &Operand<'tcx>, targets: &mir::SwitchTargets) -> () {
         let mut call_adder = self.call_adder.branch(discr);
+        for (value, target) in targets.iter() {
+            call_adder.at(target).take_by_value(value);
+        }
+        call_adder
+            .at(targets.otherwise())
+            .take_otherwise(targets.iter().map(|v| v.0).into_iter());
     }
 
     fn visit_resume(&mut self) -> () {
