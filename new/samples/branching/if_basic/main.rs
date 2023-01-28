@@ -3,20 +3,25 @@ fn main() {
 
     let condition = x == 5;
     if condition {
-        foo();
+        foo(true);
     }
 
     if !condition {
-        foo();
+        foo(false);
     }
 
     if x % 2 == 1 {
-        foo();
+        foo(1);
     }
 
-    let y = get_float_num();
-    if y == 2.0 {
-        foo();
+    let x = get_float_num();
+    if x == 2.0 {
+        foo(2.0);
+    }
+
+    let x = get_char();
+    if x == 'a' {
+        foo('a');
     }
 }
 
@@ -26,5 +31,8 @@ fn get_num() -> i32 {
 fn get_float_num() -> f32 {
     10.0
 }
+fn get_char() -> char {
+    'm'
+}
 
-fn foo() {}
+fn foo<C>(x: C) {}

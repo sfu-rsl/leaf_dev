@@ -12,13 +12,20 @@ fn main() {
         1 => foo(),
         _ => foo(),
     }
+
+    let y = get_char();
+    match y {
+        'a' => foo(),
+        'x' => foo(),
+        _ => foo(),
+    }
 }
 
 fn get_num() -> i32 {
     10
 }
-fn get_float_num() -> f32 {
-    10.0
+fn get_char() -> char {
+    'x'
 }
 
 fn foo() {}
