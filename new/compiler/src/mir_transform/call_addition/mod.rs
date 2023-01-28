@@ -865,7 +865,7 @@ where
                 value_to_operand,
             );
             (
-                vec![assign_statement],
+                assign_statement.to_vec(),
                 func_name,
                 vec![operand::move_for_local(non_values_local)],
             )
@@ -901,18 +901,12 @@ where
         non_values: impl ExactSizeIterator<Item = u128>,
         value_ty: Ty<'tcx>,
         value_to_operand: impl Fn(u128) -> Operand<'tcx>,
-    ) -> (Local, Statement<'tcx>) {
-        let tcx = self.context.tcx();
-        let non_values_local = self
-            .context
-            .add_local(tcx.mk_array(value_ty, non_values.len() as u64));
-        (
-            non_values_local,
-            assignment::array(
-                Place::from(non_values_local),
-                value_ty,
-                non_values.map(|nv| value_to_operand(nv)).collect(),
-            ),
+    ) -> (Local, [Statement<'tcx>; 3]) {
+        prepare_operand_for_slice(
+            self.context.tcx(),
+            &mut self.context,
+            value_ty,
+            non_values.map(|nv| value_to_operand(nv)).collect(),
         )
     }
 }
