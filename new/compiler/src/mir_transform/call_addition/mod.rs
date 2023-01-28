@@ -14,7 +14,10 @@ use rustc_middle::{
 };
 use rustc_span::DUMMY_SP;
 
-use self::{context::*, utils::*};
+use self::{
+    context::*,
+    utils::{assignment::rvalue, *},
+};
 use super::modification::{
     self, BodyBlockManager, BodyLocalManager, BodyModificationUnit, JumpTargetModifier,
 };
@@ -681,21 +684,26 @@ where
         let items_local = self
             .context
             .add_local(tcx.mk_array(operand_ref_ty, items.len() as u64));
-        assignment::array_of_locals_by_move(
+        let array_assign = assignment::create(
             Place::from(items_local),
-            operand_ref_ty,
-            &items
-                .iter()
-                .map(|i| (*i).into())
-                .collect::<Vec<Local>>()
-                .as_slice(),
+            rvalue::array_of_locals_by_move(
+                operand_ref_ty,
+                &items
+                    .iter()
+                    .map(|i| (*i).into())
+                    .collect::<Vec<Local>>()
+                    .as_slice(),
+            ),
         );
         let items_ref_local = self.context.add_local(
             self.context
                 .tcx()
                 .mk_imm_ref(tcx.lifetimes.re_erased, operand_ref_ty),
         );
-        assignment::ref_of(Place::from(items_ref_local), Place::from(items_local), tcx);
+        let ref_assign = assignment::create(
+            Place::from(items_ref_local),
+            rvalue::ref_of(Place::from(items_local), tcx),
+        );
 
         self.add_bb_for_assign_call(
             stringify!(pri::assign_binary_op),
@@ -1091,52 +1099,39 @@ mod utils {
     }
 
     pub mod assignment {
-        use rustc_middle::{
-            mir::{
-                AggregateKind, BorrowKind, Local, Operand, Place, Rvalue, SourceInfo, Statement,
-                StatementKind,
-            },
-            ty::{Ty, TyCtxt},
-        };
+
+        use rustc_middle::mir::{Place, Rvalue, SourceInfo, Statement, StatementKind};
         use rustc_span::DUMMY_SP;
 
-        use super::operand;
+        pub mod rvalue {
+            use super::super::operand;
+            use rustc_middle::{
+                mir::{
+                    AggregateKind, BorrowKind, Local, Operand, Place, Rvalue, SourceInfo,
+                    Statement, StatementKind,
+                },
+                ty::{Ty, TyCtxt},
+            };
 
-        pub fn ref_of<'tcx>(
-            destination: Place<'tcx>,
-            target: Place<'tcx>,
-            tcx: TyCtxt<'tcx>,
-        ) -> Statement<'tcx> {
-            rvalue(
-                destination,
-                Rvalue::Ref(tcx.lifetimes.re_erased, BorrowKind::Shared, target),
-            )
+            pub fn ref_of<'tcx>(target: Place<'tcx>, tcx: TyCtxt<'tcx>) -> Rvalue<'tcx> {
+                Rvalue::Ref(tcx.lifetimes.re_erased, BorrowKind::Shared, target)
+            }
+
+            pub fn cast<'tcx>() {}
+
+            pub fn array_of_locals_by_move<'tcx>(ty: Ty<'tcx>, items: &[Local]) -> Rvalue<'tcx> {
+                array(
+                    ty,
+                    Vec::from_iter(items.iter().map(|l| operand::move_for_local(l.clone()))),
+                )
+            }
+
+            pub fn array<'tcx>(ty: Ty<'tcx>, items: Vec<Operand<'tcx>>) -> Rvalue<'tcx> {
+                Rvalue::Aggregate(Box::new(AggregateKind::Array(ty)), items)
+            }
         }
 
-        pub fn array_of_locals_by_move<'tcx>(
-            destination: Place<'tcx>,
-            ty: Ty<'tcx>,
-            items: &[Local],
-        ) -> Statement<'tcx> {
-            array(
-                destination,
-                ty,
-                Vec::from_iter(items.iter().map(|l| operand::move_for_local(l.clone()))),
-            )
-        }
-
-        pub fn array<'tcx>(
-            destination: Place<'tcx>,
-            ty: Ty<'tcx>,
-            items: Vec<Operand<'tcx>>,
-        ) -> Statement<'tcx> {
-            rvalue(
-                destination,
-                Rvalue::Aggregate(Box::new(AggregateKind::Array(ty)), items),
-            )
-        }
-
-        pub fn rvalue<'tcx>(destination: Place<'tcx>, value: Rvalue<'tcx>) -> Statement<'tcx> {
+        pub fn create<'tcx>(destination: Place<'tcx>, value: Rvalue<'tcx>) -> Statement<'tcx> {
             Statement {
                 source_info: SourceInfo::outermost(DUMMY_SP),
                 kind: StatementKind::Assign(Box::new((destination, value))),
