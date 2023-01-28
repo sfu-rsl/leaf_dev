@@ -1,9 +1,6 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, vec};
 
-use rustc_apfloat::{
-    ieee::{self},
-    Float,
-};
+use rustc_apfloat::{ieee, Float};
 use rustc_const_eval::interpret::{ConstValue, Scalar};
 use rustc_middle::{
     mir::{
@@ -679,35 +676,21 @@ where
     }
 
     fn by_aggregate_array(&mut self, items: &[OperandRef]) {
-        let tcx = self.context.tcx();
         let operand_ref_ty = self.context.pri_special_types().operand_ref;
-        let items_local = self
-            .context
-            .add_local(tcx.mk_array(operand_ref_ty, items.len() as u64));
-        let array_assign = assignment::create(
-            Place::from(items_local),
-            rvalue::array_of_locals_by_move(
-                operand_ref_ty,
-                &items
-                    .iter()
-                    .map(|i| (*i).into())
-                    .collect::<Vec<Local>>()
-                    .as_slice(),
-            ),
-        );
-        let items_ref_local = self.context.add_local(
-            self.context
-                .tcx()
-                .mk_imm_ref(tcx.lifetimes.re_erased, operand_ref_ty),
-        );
-        let ref_assign = assignment::create(
-            Place::from(items_ref_local),
-            rvalue::ref_of(Place::from(items_local), tcx),
+        let (items_local, additional_statements) = prepare_operand_for_slice(
+            self.context.tcx(),
+            &mut self.context,
+            operand_ref_ty,
+            items
+                .iter()
+                .map(|i| operand::move_for_local((*i).into()))
+                .collect(),
         );
 
-        self.add_bb_for_assign_call(
-            stringify!(pri::assign_binary_op),
-            vec![operand::move_for_local(items_ref_local)],
+        self.add_bb_for_assign_call_with_statements(
+            stringify!(pri::assign_aggregate_array),
+            vec![operand::move_for_local(items_local)],
+            additional_statements.to_vec(),
         )
     }
 }
@@ -1124,13 +1107,6 @@ mod utils {
                 to_ty: Ty<'tcx>,
             ) -> Rvalue<'tcx> {
                 Rvalue::Cast(CastKind::Pointer(PointerCast::Unsize), operand, to_ty)
-            }
-
-            pub fn array_of_locals_by_move<'tcx>(ty: Ty<'tcx>, items: &[Local]) -> Rvalue<'tcx> {
-                array(
-                    ty,
-                    Vec::from_iter(items.iter().map(|l| operand::move_for_local(l.clone()))),
-                )
             }
 
             pub fn array<'tcx>(ty: Ty<'tcx>, items: Vec<Operand<'tcx>>) -> Rvalue<'tcx> {
