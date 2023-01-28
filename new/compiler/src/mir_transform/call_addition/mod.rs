@@ -984,7 +984,14 @@ impl<'tcx> From<(BasicBlockData<'tcx>, Local)> for BlocksAndResult<'tcx> {
 }
 
 mod utils {
-    use rustc_middle::mir;
+    use rustc_middle::{
+        mir::{self, Local, Operand, Place, Statement},
+        ty::{Ty, TyCtxt},
+    };
+
+    use crate::mir_transform::modification::BodyLocalManager;
+
+    use self::assignment::rvalue;
 
     pub mod operand {
 
@@ -1100,24 +1107,30 @@ mod utils {
 
     pub mod assignment {
 
-        use rustc_middle::mir::{Place, Rvalue, SourceInfo, Statement, StatementKind};
+        use rustc_middle::mir::{Local, Place, Rvalue, SourceInfo, Statement, StatementKind};
         use rustc_span::DUMMY_SP;
 
         pub mod rvalue {
             use super::super::operand;
             use rustc_middle::{
                 mir::{
-                    AggregateKind, BorrowKind, Local, Operand, Place, Rvalue, SourceInfo,
+                    AggregateKind, BorrowKind, CastKind, Local, Operand, Place, Rvalue, SourceInfo,
                     Statement, StatementKind,
                 },
-                ty::{Ty, TyCtxt},
+                ty::{adjustment::PointerCast, Ty, TyCtxt},
             };
 
             pub fn ref_of<'tcx>(target: Place<'tcx>, tcx: TyCtxt<'tcx>) -> Rvalue<'tcx> {
                 Rvalue::Ref(tcx.lifetimes.re_erased, BorrowKind::Shared, target)
             }
 
-            pub fn cast<'tcx>() {}
+            pub fn cast_to_unsize<'tcx>(
+                tcx: TyCtxt<'tcx>,
+                operand: Operand<'tcx>,
+                to_ty: Ty<'tcx>,
+            ) -> Rvalue<'tcx> {
+                Rvalue::Cast(CastKind::Pointer(PointerCast::Unsize), operand, to_ty)
+            }
 
             pub fn array_of_locals_by_move<'tcx>(ty: Ty<'tcx>, items: &[Local]) -> Rvalue<'tcx> {
                 array(
@@ -1137,6 +1150,41 @@ mod utils {
                 kind: StatementKind::Assign(Box::new((destination, value))),
             }
         }
+    }
+
+    pub mod ty {
+        use rustc_middle::ty::{Ty, TyCtxt};
+
+        pub fn mk_imm_ref<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>) -> Ty<'tcx> {
+            tcx.mk_imm_ref(tcx.lifetimes.re_erased, ty)
+        }
+    }
+
+    pub fn prepare_operand_for_slice<'tcx>(
+        tcx: TyCtxt<'tcx>,
+        local_manager: &mut impl BodyLocalManager<'tcx>,
+        item_ty: Ty<'tcx>,
+        items: Vec<Operand<'tcx>>,
+    ) -> (Local, [Statement<'tcx>; 3]) {
+        let array_ty = tcx.mk_array(item_ty, items.len() as u64);
+        let array_local = local_manager.add_local(array_ty);
+        let array_assign =
+            assignment::create(Place::from(array_local), rvalue::array(item_ty, items));
+
+        let ref_local = local_manager.add_local(ty::mk_imm_ref(tcx, array_ty));
+        let ref_assign = assignment::create(
+            Place::from(ref_local),
+            rvalue::ref_of(Place::from(array_local), tcx),
+        );
+
+        let slice_ty = ty::mk_imm_ref(tcx, tcx.mk_slice(item_ty));
+        let cast_local = local_manager.add_local(slice_ty);
+        let cast_assign = assignment::create(
+            Place::from(cast_local),
+            rvalue::cast_to_unsize(tcx, operand::move_for_local(ref_local), slice_ty),
+        );
+
+        (cast_local, [array_assign, ref_assign, cast_assign])
     }
 
     pub fn convert_mir_binop_to_pri(op: &mir::BinOp) -> pri::BinaryOp {
