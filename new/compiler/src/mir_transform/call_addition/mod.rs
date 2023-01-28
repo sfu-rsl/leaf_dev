@@ -775,7 +775,7 @@ where
         } else if discr_ty.is_char() {
             (
                 stringify!(pri::take_branch_char),
-                vec![operand::const_from_uint(
+                vec![operand::const_from_char(
                     self.context.tcx(),
                     char::from_u32(value.try_into().unwrap()).unwrap(),
                 )],
@@ -832,7 +832,7 @@ where
                     stringify!(pri::take_branch_ow_char),
                     tcx.types.char,
                     Box::new(|nv: u128| {
-                        operand::const_from_uint(
+                        operand::const_from_char(
                             tcx,
                             char::from_u32(nv.try_into().unwrap()).unwrap(),
                         )
@@ -1007,6 +1007,10 @@ mod utils {
 
         pub fn const_from_bool<'tcx>(tcx: TyCtxt<'tcx>, value: bool) -> Operand<'tcx> {
             const_from_scalar_int(tcx, ScalarInt::from(value), tcx.types.bool)
+        }
+
+        pub fn const_from_char<'tcx>(tcx: TyCtxt<'tcx>, value: char) -> Operand<'tcx> {
+            const_from_scalar_int(tcx, ScalarInt::from(value), tcx.types.char)
         }
 
         pub fn const_from_scalar_int<'tcx>(
