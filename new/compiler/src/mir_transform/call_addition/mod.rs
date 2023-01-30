@@ -126,6 +126,9 @@ pub trait Assigner {
     fn by_aggregate_array(&mut self, items: &[OperandRef]);
 }
 
+pub trait BranchingReferencer<'tcx> {
+    fn store_branching_info(&mut self, discr: &Operand<'tcx>) -> SwitchInfo<'tcx>;
+}
 pub trait BranchingHandler {
     fn take_by_value(&mut self, value: u128);
 
@@ -147,6 +150,15 @@ impl<'tcx, 'm> RuntimeCallAdder<DefaultContext<'tcx, 'm>> {
     }
 }
 
+/*
+ * The following methods are context definers that should be side-effect-free.
+ * The reason that self is mutably borrowed is because of the mutability of the
+ * context.
+ * NOTE: Maybe this is a design mistake. Currently, the only mutable component
+ * is the modification unit which may be extracted from the context and stored
+ * directly in the RuntimeCallAdder. However, this change should be done when
+ * the call adder is quite stable and no substantial change is expected.
+ */
 impl<C> RuntimeCallAdder<C> {
     pub fn in_body<'b, 'tcx, 'bd>(
         &'b mut self,
@@ -180,32 +192,16 @@ impl<C> RuntimeCallAdder<C> {
 
     pub fn branch<'tcx, 'b>(
         &'b mut self,
-        discr: &Operand<'tcx>,
+        info: SwitchInfo<'tcx>,
     ) -> RuntimeCallAdder<BranchingContext<'b, 'tcx, C>>
     where
         C: TyContextProvider<'tcx> + HasLocalDecls<'tcx> + LocationProvider,
         Self: MirCallAdder<'tcx> + BlockInserter<'tcx> + OperandReferencer<'tcx>,
     {
-        let tcx = self.context.tcx();
-        let operand_ref = self.reference_operand(discr);
-        let ty = discr.ty(self.context.local_decls(), tcx);
-        let node_location = self.context.location();
-        let (block, info_store_var) = self.make_bb_for_call_with_ret(
-            stringify!(pri::BranchingInfo::new),
-            vec![
-                operand::const_from_uint(tcx, u32::from(node_location)),
-                operand::copy_for_local(operand_ref.into()),
-            ],
-        );
-        self.insert_blocks([block]);
         RuntimeCallAdder {
             context: BranchingContext {
                 base: &mut self.context,
-                switch: SwitchInfo {
-                    node_location,
-                    discr_ty: ty,
-                    runtime_info_store_var: info_store_var,
-                },
+                switch_info: info,
             },
         }
     }
@@ -738,6 +734,32 @@ where
         let statements =
             enums::set_variant_to_local(enum_ty, format!("{:?}", value).as_str(), local);
         (local, statements)
+    }
+}
+
+impl<'tcx, C> BranchingReferencer<'tcx> for RuntimeCallAdder<C>
+where
+    C: TyContextProvider<'tcx> + HasLocalDecls<'tcx> + LocationProvider,
+    Self: MirCallAdder<'tcx> + BlockInserter<'tcx> + OperandReferencer<'tcx>,
+{
+    fn store_branching_info(&mut self, discr: &Operand<'tcx>) -> SwitchInfo<'tcx> {
+        let tcx = self.context.tcx();
+        let operand_ref = self.reference_operand(discr);
+        let ty = discr.ty(self.context.local_decls(), tcx);
+        let node_location = self.context.location();
+        let (block, info_store_var) = self.make_bb_for_call_with_ret(
+            stringify!(pri::BranchingInfo::new),
+            vec![
+                operand::const_from_uint(tcx, u32::from(node_location)),
+                operand::copy_for_local(operand_ref.into()),
+            ],
+        );
+        self.insert_blocks([block]);
+        SwitchInfo {
+            node_location,
+            discr_ty: ty,
+            runtime_info_store_var: info_store_var,
+        }
     }
 }
 

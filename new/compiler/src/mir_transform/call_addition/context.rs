@@ -263,12 +263,12 @@ impl<B> DestinationReferenceProvider for AssignmentContext<'_, B> {
 
 pub struct BranchingContext<'b, 'tcx, B> {
     pub(super) base: &'b mut B,
-    pub(super) switch: SwitchInfo<'tcx>,
+    pub(super) switch_info: SwitchInfo<'tcx>,
 }
 
 impl<'tcx, B> SwitchInfoProvider<'tcx> for BranchingContext<'_, 'tcx, B> {
     fn switch_info(&self) -> SwitchInfo<'tcx> {
-        self.switch
+        self.switch_info
     }
 }
 

@@ -7,12 +7,12 @@ use rustc_middle::mir::{
 use rustc_target::abi::VariantIdx;
 
 use crate::mir_transform::call_addition::{
-    context_requirements as ctxtreqs, Assigner, BranchingHandler, OperandRef, OperandReferencer,
-    PlaceReferencer, RuntimeCallAdder,
+    context_requirements as ctxtreqs, Assigner, BranchingHandler, BranchingReferencer, OperandRef,
+    OperandReferencer, PlaceReferencer, RuntimeCallAdder,
 };
 use crate::mir_transform::modification::{BodyModificationUnit, JumpTargetModifier};
+use crate::visit::StatementKindVisitor;
 use crate::visit::{RvalueVisitor, TerminatorKindVisitor};
-use crate::visit::{StatementKindVisitor};
 
 pub struct LeafPass;
 
@@ -169,7 +169,8 @@ where
     C: ctxtreqs::ForOperandRef<'tcx> + ctxtreqs::ForBranching<'tcx>,
 {
     fn visit_switch_int(&mut self, discr: &Operand<'tcx>, targets: &mir::SwitchTargets) -> () {
-        let mut call_adder = self.call_adder.branch(discr);
+        let switch_info = self.call_adder.store_branching_info(discr);
+        let mut call_adder = self.call_adder.branch(switch_info);
         for (value, target) in targets.iter() {
             call_adder.at(target).take_by_value(value);
         }
