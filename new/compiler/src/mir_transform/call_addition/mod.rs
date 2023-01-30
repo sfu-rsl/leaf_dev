@@ -246,7 +246,6 @@ where
         )
     }
 }
-
 impl<'tcx, C> RuntimeCallAdder<C>
 where
     C: TyContextProvider<'tcx> + FunctionInfoProvider<'tcx>,
@@ -318,7 +317,6 @@ where
         reference.into()
     }
 }
-
 impl<'tcx, C> RuntimeCallAdder<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
@@ -427,7 +425,6 @@ where
         reference.into()
     }
 }
-
 impl<'tcx, C> RuntimeCallAdder<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
@@ -694,7 +691,6 @@ where
         )
     }
 }
-
 impl<'tcx, C> RuntimeCallAdder<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
