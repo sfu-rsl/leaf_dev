@@ -1,4 +1,4 @@
-# Rust Compiler Expolartion
+# Rust Compiler Exploration
 As the rust compiler is not well-documented and fairly unstable, lots of facts and behaviors should be understood through reading the source codes, (hopefully) comments in them, and compiling various test programs. In this document, we write whatever we find.
 
 ## Source Code
@@ -6,6 +6,13 @@ As the rust compiler is not well-documented and fairly unstable, lots of facts a
 MIR generation codes are located at `rustc_mir_build::build`.
 
 ## Rvalue
+
+### Binary
+#### Offset
+Still not obvious how this type is generated. Checked places:
+- MIRAI tests which use `std::intrinsics::offset`
+- `as_rvalue.rs` in MIR build.
+- Lots of plays with `pointer::offset`, slices, arrays, ...
 
 ### Aggregates
 - Appear as a variant of `Rvalue`.
