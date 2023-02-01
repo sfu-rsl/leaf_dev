@@ -1,4 +1,4 @@
-use std::{collections::HashMap, marker::PhantomData};
+use std::{cell::RefCell, collections::HashMap, marker::PhantomData, rc::Rc};
 
 use crate::visit::{self, TerminatorKindMutVisitor};
 use rustc_ast::Mutability;
@@ -19,7 +19,8 @@ pub struct BodyModificationUnit<'tcx> {
     new_locals: Vec<NewLocalDecl<'tcx>>,
     new_blocks: HashMap<BasicBlock, Vec<(BasicBlock, BasicBlockData<'tcx>)>>,
     new_block_count: u32,
-    jump_modifications: HashMap<BasicBlock, HashMap<BasicBlock, BasicBlock>>,
+    jump_modifications:
+        HashMap<BasicBlock, Vec<(BasicBlock, JumpModificationConstraint, BasicBlock)>>,
 }
 
 impl<'tcx> BodyModificationUnit<'tcx> {
@@ -86,7 +87,47 @@ pub trait JumpTargetModifier {
         terminator_location: BasicBlock,
         from: BasicBlock,
         to: BasicBlock,
+    ) {
+        self.modify_jump_target_where(
+            terminator_location,
+            from,
+            to,
+            JumpModificationConstraint::None,
+        )
+    }
+
+    fn modify_jump_target_where(
+        &mut self,
+        terminator_location: BasicBlock,
+        from: BasicBlock,
+        to: BasicBlock,
+        constraint: JumpModificationConstraint,
     );
+}
+
+#[derive(PartialEq, Eq)]
+pub enum JumpModificationConstraint {
+    None,
+    SwitchValue(u128),
+    SwitchOtherwise,
+}
+
+type JumpTargetAttribute = JumpModificationConstraint;
+
+impl JumpModificationConstraint {
+    /// Checks if this constraint satisfies a target situation.
+    /// Returns `None` if the target is not consistent with this constraint;
+    /// otherwise, a number representing the satisfaction score is returned.
+    /// For example, an exact match will get a `MAX` score while the most general
+    /// constraint (`None`) will get a 0 score.
+    /// In simpler words, if self is less constraining it is considered more
+    /// general and satisfying for a target.
+    fn sat_score(&self, target: &JumpTargetAttribute) -> Option<u32> {
+        match self {
+            JumpModificationConstraint::None => Some(0),
+            _ => self.eq(&target).then_some(u32::MAX),
+        }
+    }
 }
 
 impl<'tcx> BodyLocalManager<'tcx> for BodyModificationUnit<'tcx> {
@@ -126,11 +167,12 @@ impl<'tcx> BodyBlockManager<'tcx> for BodyModificationUnit<'tcx> {
 }
 
 impl JumpTargetModifier for BodyModificationUnit<'_> {
-    fn modify_jump_target(
+    fn modify_jump_target_where(
         &mut self,
         terminator_location: BasicBlock,
         from: BasicBlock,
         to: BasicBlock,
+        constraint: JumpModificationConstraint,
     ) {
         if from == to {
             log::warn!(
@@ -142,8 +184,8 @@ impl JumpTargetModifier for BodyModificationUnit<'_> {
 
         self.jump_modifications
             .entry(terminator_location)
-            .or_insert_with(HashMap::new)
-            .insert(from, to);
+            .or_insert_with(|| Vec::with_capacity(1))
+            .push((from, constraint, to));
     }
 }
 
@@ -221,19 +263,30 @@ impl<'tcx> BodyModificationUnit<'tcx> {
 
     fn update_jumps_pre_insert<'b>(
         blocks: impl Iterator<Item = (BasicBlock, &'b mut BasicBlockData<'tcx>)>,
-        jump_modifications: &HashMap<BasicBlock, HashMap<BasicBlock, BasicBlock>>,
+        jump_modifications: &HashMap<
+            BasicBlock,
+            Vec<(BasicBlock, JumpModificationConstraint, BasicBlock)>,
+        >,
     ) where
         'tcx: 'b,
     {
-        let no_update: HashMap<BasicBlock, BasicBlock> = HashMap::new();
+        let blocks = blocks.filter(|(i, _)| jump_modifications.contains_key(i));
+
         Self::update_jumps(
             blocks,
-            |i| jump_modifications.get(&i).unwrap_or(&no_update),
-            |i| NEXT_BLOCK,
-            |m, c| {
-                /* As we don't expect repeated targets this check should suffice. */
-                m.len() == c
+            |i, target, attr| {
+                jump_modifications
+                    .get(&i)
+                    .unwrap()
+                    .iter()
+                    .filter(|(from, _, _)| *from == target)
+                    .filter_map(|(_, c, to)| c.sat_score(attr).map(|s| (s, to)))
+                    .max_by_key(|(score, _)| *score)
+                    .map(|(_, to)| to)
+                    .cloned()
             },
+            false,
+            |i, c| jump_modifications.get(&i).unwrap().len() == c,
             true,
         );
     }
@@ -244,8 +297,8 @@ impl<'tcx> BodyModificationUnit<'tcx> {
     ) {
         Self::update_jumps(
             blocks.iter_enumerated_mut(),
-            |_| &index_mapping,
-            |i| i + 1,
+            |_, target, _| index_mapping.get(&target).cloned(),
+            true,
             |_, _| true,
             false,
         );
@@ -253,20 +306,26 @@ impl<'tcx> BodyModificationUnit<'tcx> {
 
     fn update_jumps<'b, 'm>(
         blocks: impl Iterator<Item = (BasicBlock, &'b mut BasicBlockData<'tcx>)>,
-        index_mapping_provider: impl Fn(BasicBlock) -> &'m HashMap<BasicBlock, BasicBlock>,
-        next_index_provider: impl Fn(BasicBlock) -> BasicBlock,
-        sanity_check: impl Fn(&HashMap<BasicBlock, BasicBlock>, usize) -> bool,
+        index_mapping: impl Fn(BasicBlock, BasicBlock, &JumpTargetAttribute) -> Option<BasicBlock>,
+        update_next: bool,
+        sanity_check: impl Fn(BasicBlock, usize) -> bool,
         recursive: bool,
     ) where
         'tcx: 'b,
     {
-        let initial_mapping = HashMap::new();
-        let mut updater = JumpUpdater::new(&initial_mapping, recursive);
+        let mut index_rc = RefCell::new(BasicBlock::from(0 as u32));
+        let map = |target: BasicBlock, attr: &JumpTargetAttribute| -> Option<BasicBlock> {
+            if update_next && target == NEXT_BLOCK {
+                Some(*index_rc.borrow() + 1)
+            } else {
+                index_mapping(*index_rc.borrow(), target, attr)
+            }
+        };
+        let mut updater = JumpUpdater::new(Box::new(map), recursive);
         for (index, block) in blocks.filter(|(_, b)| b.terminator.is_some()) {
-            updater.index_mapping = index_mapping_provider(index);
-            updater.next_index = next_index_provider(index);
+            *index_rc.borrow_mut() = index;
             let update_count = updater.update_terminator(block.terminator_mut());
-            if !sanity_check(updater.index_mapping, update_count) {
+            if !sanity_check(index, update_count) {
                 panic!(
                     "Update count of {} was not acceptable at index {:?}",
                     update_count, index
@@ -276,16 +335,25 @@ impl<'tcx> BodyModificationUnit<'tcx> {
     }
 }
 
-struct JumpUpdater<'tcx, 'm> {
-    index_mapping: &'m HashMap<BasicBlock, BasicBlock>,
+trait MapFunc: Fn(BasicBlock, &JumpModificationConstraint) -> Option<BasicBlock> {}
+impl<T: Fn(BasicBlock, &JumpModificationConstraint) -> Option<BasicBlock>> MapFunc for T {}
+
+struct JumpUpdater<'tcx, M>
+where
+    M: MapFunc,
+{
+    index_mapping: M,
     next_index: BasicBlock,
     count: usize,
     recursive: bool,
     phantom: PhantomData<&'tcx ()>,
 }
 
-impl<'tcx, 'm> JumpUpdater<'tcx, 'm> {
-    fn new(index_mapping: &'m HashMap<BasicBlock, BasicBlock>, recursive: bool) -> Self {
+impl<'tcx, M> JumpUpdater<'tcx, M>
+where
+    M: MapFunc,
+{
+    fn new(index_mapping: M, recursive: bool) -> Self {
         Self {
             index_mapping,
             next_index: NEXT_BLOCK,
@@ -296,7 +364,10 @@ impl<'tcx, 'm> JumpUpdater<'tcx, 'm> {
     }
 }
 
-impl<'tcx> visit::TerminatorKindMutVisitor<'tcx, ()> for JumpUpdater<'tcx, '_> {
+impl<'tcx, M> visit::TerminatorKindMutVisitor<'tcx, ()> for JumpUpdater<'tcx, M>
+where
+    M: MapFunc,
+{
     fn visit_goto(&mut self, target: &mut BasicBlock) {
         self.update(target);
     }
@@ -306,8 +377,22 @@ impl<'tcx> visit::TerminatorKindMutVisitor<'tcx, ()> for JumpUpdater<'tcx, '_> {
         _discr: &mut rustc_middle::mir::Operand<'tcx>,
         targets: &mut rustc_middle::mir::SwitchTargets,
     ) {
+        // Because of API limitations we have to take this weird approach.
+        let values: Vec<u128> = targets.iter().map(|(v, _)| v).collect();
+        let mut index = 0;
         for target in targets.all_targets_mut() {
-            self.update(&mut *target);
+            if index < values.len() {
+                self.update_with_attr(
+                    &mut *target,
+                    JumpTargetAttribute::SwitchValue(values[index]),
+                );
+            } else {
+                self.update_with_attr(
+                    &mut *target,
+                    JumpTargetAttribute::SwitchOtherwise,
+                );
+            }
+            index += 1;
         }
     }
 
@@ -400,7 +485,10 @@ impl<'tcx> visit::TerminatorKindMutVisitor<'tcx, ()> for JumpUpdater<'tcx, '_> {
     }
 }
 
-impl<'tcx> JumpUpdater<'tcx, '_> {
+impl<'tcx, M> JumpUpdater<'tcx, M>
+where
+    M: MapFunc,
+{
     pub fn update_terminator(&mut self, terminator: &mut Terminator<'tcx>) -> usize {
         self.count = 0;
         Self::visit_terminator_kind(self, &mut terminator.kind);
@@ -408,24 +496,35 @@ impl<'tcx> JumpUpdater<'tcx, '_> {
     }
 
     fn update(&mut self, target: &mut BasicBlock) {
-        log::debug!("Updating jump target from {:?}", target);
-        if self.next_index != NEXT_BLOCK && *target == NEXT_BLOCK {
-            *target = self.next_index;
-        } else if let Some(new_index) = self.index_mapping.get(target) {
-            *target = *new_index;
-        } else {
+        self.update_with_attr(target, JumpTargetAttribute::None)
+    }
+
+    fn update_maybe(&mut self, target: &mut Option<BasicBlock>) {
+        self.update_maybe_with_attr(target, JumpTargetAttribute::None)
+    }
+
+    fn update_with_attr(&mut self, target: &mut BasicBlock, target_attr: JumpTargetAttribute) {
+        let new_index = (self.index_mapping)(*target, &target_attr);
+        if new_index.is_none() {
             return;
         }
+        let new_index = new_index.unwrap();
+
+        log::debug!("Updating jump target from {:?} to {:?}", target, new_index);
+        *target = new_index;
         self.count += 1;
-        log::debug!("Updated jump target to {:?}", target);
         if self.recursive {
             self.update(target);
         }
     }
 
-    fn update_maybe(&mut self, target: &mut Option<BasicBlock>) {
+    fn update_maybe_with_attr(
+        &mut self,
+        target: &mut Option<BasicBlock>,
+        target_attr: JumpTargetAttribute,
+    ) {
         if let Some(t) = target.as_mut() {
-            self.update(t);
+            self.update_with_attr(t, target_attr);
         }
     }
 }

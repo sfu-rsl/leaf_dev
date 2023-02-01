@@ -811,10 +811,11 @@ where
             .concat(),
         );
         let new_block_index = self.insert_blocks([block])[0];
-        self.context.modify_jump_target(
+        self.context.modify_jump_target_where(
             switch_info.node_location,
             self.context.location(),
             new_block_index,
+            modification::JumpModificationConstraint::SwitchValue(value),
         );
     }
 
@@ -882,10 +883,11 @@ where
         );
         block.statements.extend(additional_statements);
         let new_block_index = self.insert_blocks([block])[0];
-        self.context.modify_jump_target(
+        self.context.modify_jump_target_where(
             switch_info.node_location,
             self.context.location(),
             new_block_index,
+            modification::JumpModificationConstraint::SwitchOtherwise,
         );
     }
 }

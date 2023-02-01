@@ -190,14 +190,15 @@ impl<'tcx, 'm> BodyBlockManager<'tcx> for DefaultContext<'tcx, 'm> {
 }
 
 impl JumpTargetModifier for DefaultContext<'_, '_> {
-    fn modify_jump_target(
+    fn modify_jump_target_where(
         &mut self,
         terminator_location: BasicBlock,
         from: BasicBlock,
         to: BasicBlock,
+        constraint: modification::JumpModificationConstraint,
     ) {
         self.modification_unit
-            .modify_jump_target(terminator_location, from, to)
+            .modify_jump_target_where(terminator_location, from, to, constraint)
     }
 }
 
@@ -333,14 +334,15 @@ macro_rules! impl_block_manager {
 macro_rules! impl_jump_target_modifier {
     ($generic_context_type:ident, $($extra_lifetime_param:lifetime)*, $($extra_generic_param:ident)*) => {
         impl<'b$(, $extra_lifetime_param)*, B: JumpTargetModifier$(, $extra_generic_param)*> JumpTargetModifier for $generic_context_type<'b$(, $extra_lifetime_param)*, B$(, $extra_generic_param)*> {
-            fn modify_jump_target(
+            fn modify_jump_target_where(
                 &mut self,
                 terminator_location: BasicBlock,
                 from: BasicBlock,
                 to: BasicBlock,
+                constraint: modification::JumpModificationConstraint,
             ) {
                 self.base
-                    .modify_jump_target(terminator_location, from, to)
+                    .modify_jump_target_where(terminator_location, from, to, constraint)
             }
         }
     };
