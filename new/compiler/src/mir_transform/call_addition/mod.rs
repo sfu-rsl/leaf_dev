@@ -42,19 +42,49 @@ pub trait MirCallAdder<'tcx> {
         &mut self,
         func_name: &str,
         args: Vec<Operand<'tcx>>,
-    ) -> BasicBlockData<'tcx>;
+    ) -> BasicBlockData<'tcx> {
+        self.make_bb_for_call_with_ret(func_name, args).0
+    }
+
+    fn make_bb_for_call_with_target(
+        &mut self,
+        func_name: &str,
+        args: Vec<Operand<'tcx>>,
+        target: Option<BasicBlock>,
+    ) -> BasicBlockData<'tcx> {
+        self.make_bb_for_call_with_target_and_ret(func_name, args, target)
+            .0
+    }
 
     fn make_bb_for_call_with_ret(
         &mut self,
         func_name: &str,
         args: Vec<Operand<'tcx>>,
+    ) -> (BasicBlockData<'tcx>, Local) {
+        self.make_bb_for_call_with_target_and_ret(func_name, args, None)
+    }
+
+    fn make_bb_for_call_with_target_and_ret(
+        &mut self,
+        func_name: &str,
+        args: Vec<Operand<'tcx>>,
+        target: Option<BasicBlock>,
     ) -> (BasicBlockData<'tcx>, Local);
 }
 
 pub trait BlockInserter<'tcx> {
-    fn insert_blocks<I>(&mut self, blocks: I) -> Vec<BasicBlock>
-    where
-        I: IntoIterator<Item = BasicBlockData<'tcx>>;
+    fn insert_blocks(
+        &mut self,
+        blocks: impl IntoIterator<Item = BasicBlockData<'tcx>>,
+    ) -> Vec<BasicBlock> {
+        self.insert_blocks_with_stickiness(blocks, false)
+    }
+
+    fn insert_blocks_with_stickiness(
+        &mut self,
+        blocks: impl IntoIterator<Item = BasicBlockData<'tcx>>,
+        sticky: bool,
+    ) -> Vec<BasicBlock>;
 }
 
 /*
@@ -219,25 +249,18 @@ impl<'tcx, C> MirCallAdder<'tcx> for RuntimeCallAdder<C>
 where
     C: BodyLocalManager<'tcx> + TyContextProvider<'tcx> + FunctionInfoProvider<'tcx>,
 {
-    fn make_bb_for_call(
+    fn make_bb_for_call_with_target_and_ret(
         &mut self,
         func_name: &str,
         args: Vec<Operand<'tcx>>,
-    ) -> BasicBlockData<'tcx> {
-        self.make_bb_for_call_with_ret(func_name, args).0
-    }
-
-    fn make_bb_for_call_with_ret(
-        &mut self,
-        func_name: &str,
-        args: Vec<Operand<'tcx>>,
+        target: Option<BasicBlock>,
     ) -> (BasicBlockData<'tcx>, Local) {
         let result_local = self
             .context
             .add_local(self.context.get_pri_func_info(func_name).ret_ty);
 
         (
-            self.make_call_bb(func_name, args, Place::from(result_local)),
+            self.make_call_bb(func_name, args, Place::from(result_local), target),
             result_local,
         )
     }
@@ -251,11 +274,13 @@ where
         func_name: &str,
         args: Vec<Operand<'tcx>>,
         destination: Place<'tcx>,
+        target: Option<BasicBlock>,
     ) -> BasicBlockData<'tcx> {
         BasicBlockData::new(Some(self.make_call_terminator(
             func_name,
             args,
             destination,
+            target,
         )))
     }
 
@@ -264,6 +289,7 @@ where
         func_name: &str,
         args: Vec<Operand<'tcx>>,
         destination: Place<'tcx>,
+        target: Option<BasicBlock>,
     ) -> Terminator<'tcx> {
         Terminator {
             source_info: SourceInfo::outermost(DUMMY_SP),
@@ -278,9 +304,9 @@ where
                     std::iter::empty(),
                     DUMMY_SP,
                 ),
-                args: args,
-                destination: destination,
-                target: Some(modification::NEXT_BLOCK),
+                args,
+                destination,
+                target: Some(target.unwrap_or(modification::NEXT_BLOCK)),
                 cleanup: None,
                 from_hir_call: true,
                 fn_span: DUMMY_SP,
@@ -293,12 +319,13 @@ impl<'tcx, C> BlockInserter<'tcx> for RuntimeCallAdder<C>
 where
     C: BodyBlockManager<'tcx> + LocationProvider,
 {
-    fn insert_blocks<I>(&mut self, blocks: I) -> Vec<BasicBlock>
-    where
-        I: IntoIterator<Item = BasicBlockData<'tcx>>,
-    {
+    fn insert_blocks_with_stickiness(
+        &mut self,
+        blocks: impl IntoIterator<Item = BasicBlockData<'tcx>>,
+        sticky: bool,
+    ) -> Vec<BasicBlock> {
         self.context
-            .insert_blocks_before(self.context.location(), blocks)
+            .insert_blocks_before(self.context.location(), blocks, sticky)
     }
 }
 
@@ -810,7 +837,7 @@ where
             ]
             .concat(),
         );
-        let new_block_index = self.insert_blocks([block])[0];
+        let new_block_index = self.insert_blocks_with_stickiness([block], false)[0];
         self.context.modify_jump_target_where(
             switch_info.node_location,
             self.context.location(),
@@ -873,16 +900,17 @@ where
             )
         };
 
-        let mut block = self.make_bb_for_call(
+        let mut block = self.make_bb_for_call_with_target(
             func_name,
             [
                 vec![operand::move_for_local(switch_info.runtime_info_store_var)],
                 additional_args,
             ]
             .concat(),
+            Some(self.context.location()),
         );
         block.statements.extend(additional_statements);
-        let new_block_index = self.insert_blocks([block])[0];
+        let new_block_index = self.insert_blocks_with_stickiness([block], false)[0];
         self.context.modify_jump_target_where(
             switch_info.node_location,
             self.context.location(),

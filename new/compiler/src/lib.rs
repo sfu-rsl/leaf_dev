@@ -4,6 +4,7 @@
 #![feature(is_some_and)]
 #![feature(extend_one)]
 #![feature(box_patterns)]
+#![feature(drain_filter)]
 #![deny(rustc::internal)]
 
 extern crate rustc_abi;

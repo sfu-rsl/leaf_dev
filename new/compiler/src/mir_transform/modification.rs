@@ -14,10 +14,16 @@ use rustc_span::Span;
 
 pub const NEXT_BLOCK: BasicBlock = BasicBlock::MAX;
 
+struct NewBasicBlock<'tcx> {
+    pseudo_index: BasicBlock,
+    data: BasicBlockData<'tcx>,
+    is_sticky: bool,
+}
+
 pub struct BodyModificationUnit<'tcx> {
     next_local_index: Local,
     new_locals: Vec<NewLocalDecl<'tcx>>,
-    new_blocks: HashMap<BasicBlock, Vec<(BasicBlock, BasicBlockData<'tcx>)>>,
+    new_blocks: HashMap<BasicBlock, Vec<NewBasicBlock<'tcx>>>,
     new_block_count: u32,
     jump_modifications:
         HashMap<BasicBlock, Vec<(BasicBlock, JumpModificationConstraint, BasicBlock)>>,
@@ -76,7 +82,12 @@ pub trait BodyLocalManager<'tcx> {
 }
 
 pub trait BodyBlockManager<'tcx> {
-    fn insert_blocks_before<I>(&mut self, index: BasicBlock, blocks: I) -> Vec<BasicBlock>
+    fn insert_blocks_before<I>(
+        &mut self,
+        index: BasicBlock,
+        blocks: I,
+        sticky: bool,
+    ) -> Vec<BasicBlock>
     where
         I: IntoIterator<Item = BasicBlockData<'tcx>>;
 }
@@ -141,7 +152,12 @@ impl<'tcx> BodyLocalManager<'tcx> for BodyModificationUnit<'tcx> {
 }
 
 impl<'tcx> BodyBlockManager<'tcx> for BodyModificationUnit<'tcx> {
-    fn insert_blocks_before<I>(&mut self, index: BasicBlock, blocks: I) -> Vec<BasicBlock>
+    fn insert_blocks_before<I>(
+        &mut self,
+        index: BasicBlock,
+        blocks: I,
+        sticky: bool,
+    ) -> Vec<BasicBlock>
     where
         I: IntoIterator<Item = BasicBlockData<'tcx>>,
     {
@@ -149,11 +165,12 @@ impl<'tcx> BodyBlockManager<'tcx> for BodyModificationUnit<'tcx> {
         let block_count: u32 = {
             let count_before = chunk.len();
             // Associating temporary indices to the new blocks, so they can be referenced if needed.
-            chunk.extend(blocks.into_iter().enumerate().map(|(i, b)| {
-                (
-                    BasicBlock::from(BasicBlock::MAX_AS_U32 - 1 - self.new_block_count - i as u32),
-                    b,
-                )
+            chunk.extend(blocks.into_iter().enumerate().map(|(i, b)| NewBasicBlock {
+                pseudo_index: BasicBlock::from(
+                    BasicBlock::MAX_AS_U32 - 1 - self.new_block_count - i as u32,
+                ),
+                data: b,
+                is_sticky: sticky,
             }));
             (chunk.len() - count_before).try_into().unwrap()
         };
@@ -161,7 +178,7 @@ impl<'tcx> BodyBlockManager<'tcx> for BodyModificationUnit<'tcx> {
         Vec::from_iter(
             chunk[(chunk.len() - block_count as usize)..]
                 .iter()
-                .map(|x| x.0),
+                .map(|x| x.pseudo_index),
         )
     }
 }
@@ -199,7 +216,7 @@ impl<'tcx> BodyModificationUnit<'tcx> {
                 (&mut self.new_blocks)
                     .values_mut()
                     .flatten()
-                    .map(|p| (p.0, &mut p.1)),
+                    .map(|p| (p.pseudo_index, &mut p.data)),
             ),
             &self.jump_modifications,
         );
@@ -219,20 +236,19 @@ impl<'tcx> BodyModificationUnit<'tcx> {
         }
     }
 
-    fn insert_new_blocks<I>(
+    fn insert_new_blocks(
         blocks: &mut IndexVec<BasicBlock, BasicBlockData<'tcx>>,
-        new_blocks: I,
-    ) -> HashMap<BasicBlock, BasicBlock>
-    where
-        I: IntoIterator<Item = (BasicBlock, Vec<(BasicBlock, BasicBlockData<'tcx>)>)>,
-    {
+        new_blocks: impl IntoIterator<Item = (BasicBlock, Vec<NewBasicBlock<'tcx>>)>,
+    ) -> HashMap<BasicBlock, BasicBlock> {
         let mut index_mapping = HashMap::<BasicBlock, BasicBlock>::new();
         let mut push = |blocks: &mut IndexVec<BasicBlock, BasicBlockData<'tcx>>,
                         block: BasicBlockData<'tcx>,
-                        current_index: BasicBlock| {
+                        before_index: BasicBlock,
+                        after_index: Option<BasicBlock>| {
             let new_index = blocks.push(block);
-            if new_index != current_index {
-                index_mapping.insert(current_index, new_index);
+            let new_index = after_index.unwrap_or(new_index);
+            if new_index != before_index {
+                index_mapping.insert(before_index, new_index);
             }
         };
 
@@ -244,15 +260,21 @@ impl<'tcx> BodyModificationUnit<'tcx> {
 
         for (i, block) in current_blocks.into_iter().enumerate() {
             let i = BasicBlock::from(i);
+            let mut top_index = i;
             if new_blocks.peek().is_some_and(|(index, _)| *index == i) {
-                let (_, chunk) = new_blocks.next().unwrap();
+                let (_, mut chunk) = new_blocks.next().unwrap();
                 blocks.extend_reserve(chunk.len());
-                for (pseudo_index, block) in chunk {
-                    push(blocks, block, pseudo_index);
+                for non_sticky in chunk.drain_filter(|b| !b.is_sticky) {
+                    push(blocks, non_sticky.data, non_sticky.pseudo_index, None);
                 }
+                top_index = blocks.next_index();
+                for sticky in chunk.drain_filter(|b| b.is_sticky) {
+                    push(blocks, sticky.data, sticky.pseudo_index, None);
+                }
+                debug_assert!(chunk.is_empty());
             }
 
-            push(blocks, block, i);
+            push(blocks, block, i, Some(top_index));
         }
 
         // Currently, we only consider insertion of blocks before original blocks.
@@ -387,10 +409,7 @@ where
                     JumpTargetAttribute::SwitchValue(values[index]),
                 );
             } else {
-                self.update_with_attr(
-                    &mut *target,
-                    JumpTargetAttribute::SwitchOtherwise,
-                );
+                self.update_with_attr(&mut *target, JumpTargetAttribute::SwitchOtherwise);
             }
             index += 1;
         }

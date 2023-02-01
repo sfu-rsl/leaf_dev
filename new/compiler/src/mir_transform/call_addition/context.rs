@@ -181,11 +181,17 @@ impl<'tcx, 'm> BodyLocalManager<'tcx> for DefaultContext<'tcx, 'm> {
 }
 
 impl<'tcx, 'm> BodyBlockManager<'tcx> for DefaultContext<'tcx, 'm> {
-    fn insert_blocks_before<I>(&mut self, index: BasicBlock, blocks: I) -> Vec<BasicBlock>
+    fn insert_blocks_before<I>(
+        &mut self,
+        index: BasicBlock,
+        blocks: I,
+        sticky: bool,
+    ) -> Vec<BasicBlock>
     where
         I: IntoIterator<Item = BasicBlockData<'tcx>>,
     {
-        self.modification_unit.insert_blocks_before(index, blocks)
+        self.modification_unit
+            .insert_blocks_before(index, blocks, sticky)
     }
 }
 
@@ -321,11 +327,11 @@ macro_rules! impl_block_manager {
         impl<'b, 'tcx$(, $extra_lifetime_param)*, B: BodyBlockManager<'tcx>$(, $extra_generic_param)*> BodyBlockManager<'tcx>
             for $generic_context_type<'b$(, $extra_lifetime_param)*, B>$(, $extra_generic_param)*
         {
-            fn insert_blocks_before<I>(&mut self, index: BasicBlock, blocks: I) -> Vec<BasicBlock>
+            fn insert_blocks_before<I>(&mut self, index: BasicBlock, blocks: I, sticky: bool) -> Vec<BasicBlock>
             where
                 I: IntoIterator<Item = BasicBlockData<'tcx>>,
             {
-                self.base.insert_blocks_before(index, blocks)
+                self.base.insert_blocks_before(index, blocks, sticky)
             }
         }
     };
