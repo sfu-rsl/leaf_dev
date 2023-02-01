@@ -829,13 +829,14 @@ where
             unreachable!("Branching node discriminant is supposed to be either bool, int, char, or enum discriminant.")
         };
 
-        let block = self.make_bb_for_call(
+        let block = self.make_bb_for_call_with_target(
             func_name,
             [
                 vec![operand::move_for_local(switch_info.runtime_info_store_var)],
                 additional_args,
             ]
             .concat(),
+            Some(self.context.location()),
         );
         let new_block_index = self.insert_blocks_with_stickiness([block], false)[0];
         self.context.modify_jump_target_where(
