@@ -7,8 +7,8 @@ use rustc_middle::mir::{
 use rustc_target::abi::VariantIdx;
 
 use crate::mir_transform::call_addition::{
-    context_requirements as ctxtreqs, Assigner, BranchingHandler, BranchingReferencer, OperandRef,
-    OperandReferencer, PlaceReferencer, RuntimeCallAdder,
+    context_requirements as ctxtreqs, Assigner, BranchingHandler, BranchingReferencer,
+    FunctionHandler, OperandRef, OperandReferencer, PlaceReferencer, RuntimeCallAdder,
 };
 use crate::mir_transform::modification::{BodyModificationUnit, JumpTargetModifier};
 use crate::visit::StatementKindVisitor;
@@ -166,7 +166,11 @@ where
 make_general_visitor!(LeafTerminatorKindVisitor);
 impl<'tcx, C> TerminatorKindVisitor<'tcx, ()> for LeafTerminatorKindVisitor<C>
 where
-    C: ctxtreqs::ForOperandRef<'tcx> + ctxtreqs::ForBranching<'tcx>,
+    C: ctxtreqs::ForOperandRef<'tcx>
+        + ctxtreqs::ForPlaceRef<'tcx>
+        + ctxtreqs::ForBranching<'tcx>
+        + ctxtreqs::ForFunctionCalling<'tcx>
+        + ctxtreqs::ForReturning<'tcx>,
 {
     fn visit_switch_int(&mut self, discr: &Operand<'tcx>, targets: &mir::SwitchTargets) -> () {
         let switch_info = self.call_adder.store_branching_info(discr);
@@ -188,7 +192,7 @@ where
     }
 
     fn visit_return(&mut self) -> () {
-        Default::default()
+        self.call_adder.return_from_func();
     }
 
     fn visit_unreachable(&mut self) -> () {
@@ -214,7 +218,14 @@ where
         from_hir_call: bool,
         fn_span: rustc_span::Span,
     ) -> () {
-        Default::default()
+        let func_ref = self.call_adder.reference_operand(func);
+        let arg_refs = args
+            .iter()
+            .map(|a| self.call_adder.reference_operand(a))
+            .collect::<Vec<OperandRef>>();
+        let dest_ref = self.call_adder.reference_place(destination);
+        self.call_adder
+            .call_func(func_ref, arg_refs.iter().copied(), dest_ref);
     }
 
     fn visit_assert(

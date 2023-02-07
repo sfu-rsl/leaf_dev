@@ -1042,6 +1042,12 @@ pub mod context_requirements {
         C: LocationProvider + BaseContext<'tcx> + JumpTargetModifier
     {
     }
+
+    pub trait ForFunctionCalling<'tcx>: BaseContext<'tcx> {}
+    impl<'tcx, C> ForFunctionCalling<'tcx> for C where C: BaseContext<'tcx> {}
+
+    pub trait ForReturning<'tcx>: BaseContext<'tcx> {}
+    impl<'tcx, C> ForReturning<'tcx> for C where C: BaseContext<'tcx> {}
 }
 
 struct BlocksAndResult<'tcx>(Vec<BasicBlockData<'tcx>>, Local);
