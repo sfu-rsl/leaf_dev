@@ -96,6 +96,10 @@ pub fn ref_operand_const_char(value: char) -> OperandRef {
 pub fn ref_operand_const_func(id: u64) -> OperandRef {
     todo!()
 }
+// TODO: Fill in arguments
+pub fn ref_operand_const_slice() -> OperandRef {
+    todo!()
+}
 
 pub fn assign_use(dest: PlaceRef, operand: OperandRef) {
     todo!()
