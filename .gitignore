@@ -1,4 +1,8 @@
-/target
 tags
 .z3-trace
-main
+target
+
+.notes
+
+.vscode
+.idea
