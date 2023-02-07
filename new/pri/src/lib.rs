@@ -184,10 +184,10 @@ pub fn take_branch_ow_enum_discriminant(info: BranchingInfo, non_indices: &[Vari
     todo!()
 }
 
-pub fn fn_call(func: OperandRef, args: &[OperandRef], destination: PlaceRef) {
+pub fn call_func(func: OperandRef, args: &[OperandRef], destination: PlaceRef) {
     todo!()
 }
-pub fn fn_return() {
+pub fn return_from_func() {
     todo!()
 }
 

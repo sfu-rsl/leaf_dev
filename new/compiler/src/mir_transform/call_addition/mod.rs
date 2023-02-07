@@ -168,6 +168,17 @@ pub trait BranchingHandler {
         I::IntoIter: ExactSizeIterator<Item = u128>;
 }
 
+pub trait FunctionHandler {
+    fn call_func(
+        &mut self,
+        func: OperandRef,
+        arguments: impl Iterator<Item = OperandRef>,
+        destination: PlaceRef,
+    );
+
+    fn return_from_func(&mut self);
+}
+
 pub struct RuntimeCallAdder<C> {
     context: C,
 }
@@ -940,6 +951,44 @@ where
             value_ty,
             non_values.map(|nv| value_to_operand(nv)).collect(),
         )
+    }
+}
+
+impl<'tcx, C> FunctionHandler for RuntimeCallAdder<C>
+where
+    Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
+    C: TyContextProvider<'tcx> + SpecialTypesProvider<'tcx> + BodyLocalManager<'tcx>,
+{
+    fn call_func(
+        &mut self,
+        func: OperandRef,
+        arguments: impl Iterator<Item = OperandRef>,
+        destination: PlaceRef,
+    ) {
+        let operand_ref_ty = self.context.pri_special_types().operand_ref;
+        let (arguments_local, additional_statements) = prepare_operand_for_slice(
+            self.context.tcx(),
+            &mut self.context,
+            operand_ref_ty,
+            arguments
+                .map(|a| operand::copy_for_local(a.into()))
+                .collect(),
+        );
+        let mut block = self.make_bb_for_call(
+            stringify!(pri::call_func),
+            vec![
+                operand::copy_for_local(func.into()),
+                operand::move_for_local(arguments_local),
+                operand::copy_for_local(destination.into()),
+            ],
+        );
+        block.statements.extend(additional_statements);
+        self.insert_blocks([block]);
+    }
+
+    fn return_from_func(&mut self) {
+        let block = self.make_bb_for_call(stringify!(pri::return_from_func), vec![]);
+        self.insert_blocks([block]);
     }
 }
 
