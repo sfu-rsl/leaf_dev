@@ -7,7 +7,7 @@ use rustc_middle::{
         BasicBlock, BasicBlockData, BinOp, Body, Constant, ConstantKind, HasLocalDecls, Local,
         Operand, Place, ProjectionElem, SourceInfo, Statement, Terminator, TerminatorKind, UnOp,
     },
-    ty::{ScalarInt, Ty, TyCtxt},
+    ty::{GenericArg, ScalarInt, Ty, TyCtxt, TyKind},
 };
 use rustc_span::DUMMY_SP;
 
@@ -505,7 +505,7 @@ where
     ) -> BlocksAndResult<'tcx> {
         match value {
             ConstValue::Scalar(scalar) => self.internal_reference_scalar_const_operand(scalar, ty),
-            ConstValue::ZeroSized => todo!(),
+            ConstValue::ZeroSized => self.internal_reference_zero_sized_const_operand(ty),
             ConstValue::Slice { data, start, end } => todo!(),
             ConstValue::ByRef { alloc, offset } => todo!(),
         }
@@ -581,6 +581,37 @@ where
         } else {
             unreachable!("ScalarInt is supposed to be either bool, int, float, or char.")
         }
+        .into()
+    }
+
+    fn internal_reference_zero_sized_const_operand(
+        &mut self,
+        ty: Ty<'tcx>,
+    ) -> BlocksAndResult<'tcx> {
+        match ty.kind() {
+            TyKind::FnDef(def_id, substs) => {
+                self.internal_reference_func_def_const_operand(def_id, substs)
+            }
+            _ => todo!(),
+        }
+    }
+
+    fn internal_reference_func_def_const_operand(
+        &mut self,
+        def_id: &rustc_span::def_id::DefId,
+        substs: &&rustc_middle::ty::List<GenericArg>,
+    ) -> BlocksAndResult<'tcx> {
+        if !substs.is_empty() {
+            todo!("Generic functions are not supported yet.");
+        }
+
+        /* NOTE: Until we find a better way to represent a function we use  the def id. */
+        let func_id: u64 =
+            ((u32::from(def_id.krate) as u64) << 32) + (u32::from(def_id.index) as u64);
+        self.make_bb_for_operand_ref_call(
+            stringify!(pri::ref_operand_const_func),
+            vec![operand::const_from_uint(self.context.tcx(), func_id)],
+        )
         .into()
     }
 

@@ -93,6 +93,9 @@ pub fn ref_operand_const_float(bit_rep: u128, ebits: u64, sbits: u64) -> Operand
 pub fn ref_operand_const_char(value: char) -> OperandRef {
     todo!()
 }
+pub fn ref_operand_const_func(id: u64) -> OperandRef {
+    todo!()
+}
 
 pub fn assign_use(dest: PlaceRef, operand: OperandRef) {
     todo!()
