@@ -212,7 +212,7 @@ impl<'tcx> FunctionInfoProvider<'tcx> for DefaultContext<'tcx, '_> {
     fn get_pri_func_info(&self, func_name: &str) -> &FunctionInfo<'tcx> {
         self.pri_functions
             .get(&func_name.replace(" ", "")) // FIXME
-            .expect("Invalid pri function name.")
+            .expect(format!("Invalid pri function name: `{}`.", func_name).as_str())
     }
 }
 
