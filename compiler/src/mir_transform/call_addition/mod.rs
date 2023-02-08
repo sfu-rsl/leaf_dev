@@ -1,7 +1,7 @@
 use std::{fmt::Debug, vec};
 
 use rustc_apfloat::{ieee, Float};
-use rustc_const_eval::interpret::{ConstValue, Scalar};
+use rustc_const_eval::interpret::{alloc_range, ConstAllocation, ConstValue, Scalar};
 use rustc_middle::{
     mir::{
         BasicBlock, BasicBlockData, BinOp, Body, Constant, ConstantKind, HasLocalDecls, Local,
@@ -506,7 +506,9 @@ where
         match value {
             ConstValue::Scalar(scalar) => self.internal_reference_scalar_const_operand(scalar, ty),
             ConstValue::ZeroSized => self.internal_reference_zero_sized_const_operand(ty),
-            ConstValue::Slice { data, start, end } => todo!(),
+            ConstValue::Slice { data, start, end } => {
+                self.internal_reference_slice_const_operand(data, start, end, ty)
+            }
             ConstValue::ByRef { alloc, offset } => todo!(),
         }
     }
@@ -612,6 +614,42 @@ where
             stringify!(pri::ref_operand_const_func),
             vec![operand::const_from_uint(self.context.tcx(), func_id)],
         )
+        .into()
+    }
+
+    // Note: This slice form is only used for &[u8] and &str.
+    fn internal_reference_slice_const_operand(
+        &mut self,
+        data: ConstAllocation<'tcx>,
+        start: usize,
+        end: usize,
+        ty: Ty<'tcx>,
+    ) -> BlocksAndResult<'tcx> {
+        let bytes = data
+            .inner()
+            .get_bytes_strip_provenance(
+                &self.context.tcx(),
+                alloc_range(
+                    rustc_target::abi::Size::from_bytes(start as u64),
+                    rustc_target::abi::Size::from_bytes(end as u64),
+                ),
+            )
+            .expect("Slice bytes should be available.");
+
+        if ty.is_str() {
+            self.make_bb_for_operand_ref_call(
+                stringify!(pri::ref_operand_const_slice),
+                vec![
+                    operand::const_from_str(self.context.tcx(), bytes, start, end),
+                    operand::const_from_uint(self.context.tcx(), start as u64),
+                    operand::const_from_uint(self.context.tcx(), end as u64),
+                ],
+            )
+        } else if ty.is_slice() {
+            todo!("u8 slices are not supported yet.")
+        } else {
+            unreachable!("Slice is supposed to be either str or u8 slice.")
+        }
         .into()
     }
 
@@ -1155,6 +1193,20 @@ mod utils {
         ) -> Operand<'tcx> {
             Operand::const_from_scalar(tcx, ty, Scalar::Int(value), DUMMY_SP)
         }
+
+        // pub fn const_from_str<'tcx>(
+        //     tcx: TyCtxt<'tcx>,
+        //     bytes: &str,
+        //     start: usize,
+        //     end: usize,
+        // ) -> Operand<'tcx> {
+        //     Operand::Constant(Box::new(Constant {
+        //         span: DUMMY_SP,
+        //         user_ty: None,
+        //         literal: ConstantKind::Val(ConstValue::)
+        //     }))
+
+        // }
 
         pub fn copy_for_local<'tcx>(value: Local) -> Operand<'tcx> {
             for_local(value, true)
