@@ -178,6 +178,7 @@ where
 }
 
 make_general_visitor!(LeafTerminatorKindVisitor);
+
 impl<'tcx, C> TerminatorKindVisitor<'tcx, ()> for LeafTerminatorKindVisitor<C>
 where
     C: ctxtreqs::ForOperandRef<'tcx>
@@ -297,9 +298,26 @@ where
     }
 
     fn visit_repeat(&mut self, operand: &Operand<'tcx>, count: &rustc_middle::ty::Const<'tcx>) {
+        //log::debug!("VISIT REPEAT BEFORE={count:?}"); 
+        let number = match count.kind() {
+            //rustc_middle::ty::ConstKind::Param(param_const) => param_const.index, // nope
+            //rustc_middle::ty::ConstKind::Infer(_) => panic!(),
+            //rustc_middle::ty::ConstKind::Bound(_, _) => panic!(),
+            //rustc_middle::ty::ConstKind::Placeholder(_) => panic!(),
+            //rustc_middle::ty::ConstKind::Unevaluated(_) => panic!(),
+            rustc_middle::ty::ConstKind::Value(val_tree) => match val_tree {
+                rustc_middle::ty::ValTree::Leaf(scalar_int) => scalar_int.try_to_u64().unwrap(), //TODO: what if it isn't the correct size? -> match size before and pick the right "try to" function in any case
+                rustc_middle::ty::ValTree::Branch(_) => return, // TODO: look into this
+            },
+            //rustc_middle::ty::ConstKind::Error(_) => panic!(),
+            //rustc_middle::ty::ConstKind::Expr(_) => panic!(),
+            _ => return,
+        };
+        //log::debug!("VISIT REPEAT AFTER={number:?}"); // YAY!
+        let operand_ref = self.call_adder.reference_operand(operand);
         self.call_adder.by_repeat(
-            self.call_adder.reference_operand(operand),
-            todo!("Convert {count} to number."),
+            operand_ref,
+            number, //todo!("Convert {count} to number."), // okay, todo this
         )
     }
 
