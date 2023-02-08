@@ -1,7 +1,5 @@
 #![feature(rustc_private)]
 
-mod notes;
-
 #[cfg(test)]
 mod tests {
     #[test]
