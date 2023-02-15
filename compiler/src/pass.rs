@@ -297,27 +297,30 @@ where
         self.call_adder.by_use(operand_ref)
     }
 
+    /// `Repeat(...)` Creates an array where each element is the value of the operand.
     fn visit_repeat(&mut self, operand: &Operand<'tcx>, count: &rustc_middle::ty::Const<'tcx>) {
-        //log::debug!("VISIT REPEAT BEFORE={count:?}"); 
+        // Array specification: https://doc.rust-lang.org/std/primitive.array.html
+        // - Spec requires count is a non-negative compile-time constant size, so it must be 
+        //   of type usize https://doc.rust-lang.org/std/primitive.usize.html
         let number = match count.kind() {
-            //rustc_middle::ty::ConstKind::Param(param_const) => param_const.index, // nope
-            //rustc_middle::ty::ConstKind::Infer(_) => panic!(),
-            //rustc_middle::ty::ConstKind::Bound(_, _) => panic!(),
-            //rustc_middle::ty::ConstKind::Placeholder(_) => panic!(),
-            //rustc_middle::ty::ConstKind::Unevaluated(_) => panic!(),
+            rustc_middle::ty::ConstKind::Param(_) => todo!("used in const generics, may come up again when supporting generic functions"),
+            rustc_middle::ty::ConstKind::Infer(_) => todo!("used in const generics, may come up again when supporting generic functions"),
+            rustc_middle::ty::ConstKind::Bound(_, _) => unreachable!("relates to trait queries & type checking, so likely done in HIR; also MIRAI ignores this"),
+            rustc_middle::ty::ConstKind::Placeholder(_) => unreachable!("used in the borrow checker before `optimized_mir`; also MIRAI ignores this"),
+            rustc_middle::ty::ConstKind::Unevaluated(_) => unreachable!("this is only used in the HIR"),
             rustc_middle::ty::ConstKind::Value(val_tree) => match val_tree {
-                rustc_middle::ty::ValTree::Leaf(scalar_int) => scalar_int.try_to_u64().unwrap(), //TODO: what if it isn't the correct size? -> match size before and pick the right "try to" function in any case
-                rustc_middle::ty::ValTree::Branch(_) => return, // TODO: look into this
+                rustc_middle::ty::ValTree::Leaf(scalar_int) => match scalar_int.try_to_uint(scalar_int.size()) {
+                    Ok(num) => num as u64,
+                    Err(size) => unreachable!("Scalar int would have inconsistent size of both {:?} and {:?}", size, scalar_int.size()),
+                },
+                rustc_middle::ty::ValTree::Branch(_) => unreachable!("these are only for aggragate constants"),
             },
-            //rustc_middle::ty::ConstKind::Error(_) => panic!(),
-            //rustc_middle::ty::ConstKind::Expr(_) => panic!(),
-            _ => return,
+            rustc_middle::ty::ConstKind::Error(_) => todo!("we should implement a reusable error reporting function"),
+            rustc_middle::ty::ConstKind::Expr(_) => unreachable!("this is unreachable because constant propagation"),
         };
-        //log::debug!("VISIT REPEAT AFTER={number:?}"); // YAY!
         let operand_ref = self.call_adder.reference_operand(operand);
         self.call_adder.by_repeat(
-            operand_ref,
-            number, //todo!("Convert {count} to number."), // okay, todo this
+            operand_ref, number,
         )
     }
 
