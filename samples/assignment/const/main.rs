@@ -1,3 +1,5 @@
+#![allow(unused_variables)]
+
 fn main() {
     let b = true;
 
