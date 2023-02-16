@@ -1,7 +1,7 @@
 use std::{fmt::Debug, vec};
 
 use rustc_apfloat::{ieee, Float};
-use rustc_const_eval::interpret::{alloc_range, ConstAllocation, ConstValue, Scalar};
+use rustc_const_eval::interpret::{ConstValue, Scalar};
 use rustc_middle::{
     mir::{
         BasicBlock, BasicBlockData, BinOp, Body, Constant, ConstantKind, HasLocalDecls, Local,
