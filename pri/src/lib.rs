@@ -96,7 +96,7 @@ pub fn ref_operand_const_char(value: char) -> OperandRef {
 pub fn ref_operand_const_func(id: u64) -> OperandRef {
     todo!()
 }
-pub fn ref_operand_const_slice(value: &str) -> OperandRef {
+pub fn ref_operand_const_str(value: &str) -> OperandRef {
     todo!()
 }
 

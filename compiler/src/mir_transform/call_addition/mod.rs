@@ -494,20 +494,7 @@ where
         match kind {
             ConstantKind::Ty(_) => todo!(),
             ConstantKind::Unevaluated(_, _) => todo!(),
-            ConstantKind::Val(value, ty) => match value {
-                // Constant slices are restricted to be of type `&[u8]` or `&str` of which I have
-                // only been able to actually create the latter. As such, we can handle them early
-                // on instead of destructuring them further. It is difficult to recreate an Operand
-                // type from the slice once it has been destructured so this also lets us avoid
-                // that hassle.
-                ConstValue::Slice { data, start, end } => self
-                    .make_bb_for_operand_ref_call(
-                        stringify!(pri::ref_operand_const_slice),
-                        vec![Operand::Constant(Box::new(constant.clone()))],
-                    )
-                    .into(),
-                _ => self.internal_reference_val_const_operand(value, ty),
-            },
+            ConstantKind::Val(value, ty) => self.internal_reference_val_const_operand(value, ty),
         }
     }
 
@@ -520,8 +507,8 @@ where
             ConstValue::Scalar(scalar) => self.internal_reference_scalar_const_operand(scalar, ty),
             ConstValue::ZeroSized => self.internal_reference_zero_sized_const_operand(ty),
             ConstValue::ByRef { alloc, offset } => todo!(),
-            ConstValue::Slice { data, start, end } => {
-                unreachable!("handled in internal_reference_const_operand")
+            ConstValue::Slice { .. } => {
+                self.internal_reference_slice_const_operand(value.clone(), ty)
             }
         }
     }
@@ -627,6 +614,28 @@ where
             stringify!(pri::ref_operand_const_func),
             vec![operand::const_from_uint(self.context.tcx(), func_id)],
         )
+        .into()
+    }
+
+    fn internal_reference_slice_const_operand(
+        &mut self,
+        value: ConstValue<'tcx>,
+        ty: Ty<'tcx>,
+    ) -> BlocksAndResult<'tcx> {
+        // TODO: Ensure this checks for a &str, not just any reference
+        if ty.is_ref() {
+            let constant = Constant {
+                span: DUMMY_SP,
+                user_ty: None,
+                literal: ConstantKind::Val(value, ty),
+            };
+            self.make_bb_for_operand_ref_call(
+                stringify!(pri::ref_operand_const_str),
+                vec![Operand::Constant(Box::new(constant))],
+            )
+        } else {
+            unimplemented!("Only constant str slices are supported for now")
+        }
         .into()
     }
 
