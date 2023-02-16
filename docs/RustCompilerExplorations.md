@@ -38,6 +38,18 @@ Still not obvious how this type is generated. Checked places:
 #### Bool
 Booleans, numeric types, chars, pointers, and fn defs are expressed as `Scalar` in the consts. Source: `Display` implementation for scalar type. Or easier: the constants `ScalarInt::TRUE` and `FALSE`.
 
+#### Slice
+Slice constants are restricted to be of type `&str` or `&[u8]`. As of yet, I have not been able to find any way of creating a u8 variable that is turned into a string const.
+
+- Byte arrays (`b"abc"` for example) are represented using `ConstValue::Scalar`
+- I found reference to a constant reference from a raw pointer here https://github.com/rust-lang/rust/issues/105536
+  - this was represented using `ConstValue::ZeroSized`
+  - the assignment code can be seen below
+
+```rust
+const CONST_U8_REF: &[u8] = unsafe { std::slice::from_raw_parts(3 as *const u8, 0) };
+```
+
 ## Ty (Types)
 
 ### Function
