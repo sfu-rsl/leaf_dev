@@ -506,10 +506,10 @@ where
         match value {
             ConstValue::Scalar(scalar) => self.internal_reference_scalar_const_operand(scalar, ty),
             ConstValue::ZeroSized => self.internal_reference_zero_sized_const_operand(ty),
-            ConstValue::ByRef { alloc, offset } => todo!(),
             ConstValue::Slice { .. } => {
                 self.internal_reference_slice_const_operand(value.clone(), ty)
             }
+            ConstValue::ByRef { alloc, offset } => todo!(),
         }
     }
 
@@ -598,25 +598,6 @@ where
         }
     }
 
-    fn internal_reference_func_def_const_operand(
-        &mut self,
-        def_id: &rustc_span::def_id::DefId,
-        substs: &&rustc_middle::ty::List<GenericArg>,
-    ) -> BlocksAndResult<'tcx> {
-        if !substs.is_empty() {
-            todo!("Generic functions are not supported yet.");
-        }
-
-        /* NOTE: Until we find a better way to represent a function we use  the def id. */
-        let func_id: u64 =
-            ((u32::from(def_id.krate) as u64) << 32) + (u32::from(def_id.index) as u64);
-        self.make_bb_for_operand_ref_call(
-            stringify!(pri::ref_operand_const_func),
-            vec![operand::const_from_uint(self.context.tcx(), func_id)],
-        )
-        .into()
-    }
-
     fn internal_reference_slice_const_operand(
         &mut self,
         value: ConstValue<'tcx>,
@@ -636,6 +617,25 @@ where
         } else {
             unimplemented!("Only constant str slices are supported for now")
         }
+        .into()
+    }
+
+    fn internal_reference_func_def_const_operand(
+        &mut self,
+        def_id: &rustc_span::def_id::DefId,
+        substs: &&rustc_middle::ty::List<GenericArg>,
+    ) -> BlocksAndResult<'tcx> {
+        if !substs.is_empty() {
+            todo!("Generic functions are not supported yet.");
+        }
+
+        /* NOTE: Until we find a better way to represent a function we use  the def id. */
+        let func_id: u64 =
+            ((u32::from(def_id.krate) as u64) << 32) + (u32::from(def_id.index) as u64);
+        self.make_bb_for_operand_ref_call(
+            stringify!(pri::ref_operand_const_func),
+            vec![operand::const_from_uint(self.context.tcx(), func_id)],
+        )
         .into()
     }
 
