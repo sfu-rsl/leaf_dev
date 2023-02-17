@@ -603,8 +603,7 @@ where
         value: ConstValue<'tcx>,
         ty: Ty<'tcx>,
     ) -> BlocksAndResult<'tcx> {
-        // TODO: Ensure this checks for a &str, not just any reference
-        if ty.is_ref() {
+        if ty.peel_refs().is_str() {
             let constant = Constant {
                 span: DUMMY_SP,
                 user_ty: None,
