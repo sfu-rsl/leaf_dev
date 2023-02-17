@@ -1,5 +1,7 @@
 use std::{cell::RefCell, sync::Mutex};
 
+use runtime::{PlaceHandler, PlaceProjectionHandler, Runtime};
+
 #[macro_use]
 extern crate lazy_static;
 
@@ -9,21 +11,8 @@ lazy_static! {
     static ref RUNTIME: Mutex<RuntimeImpl> = todo!();
 }
 
-struct RuntimeImpl {}
-
-impl runtime::Runtime for RuntimeImpl {
-    fn assign<T: runtime::Assignment>() -> T {
-        todo!()
-    }
-
-    fn branch<T: runtime::Branching>() -> T {
-        todo!()
-    }
-
-    fn function<T: runtime::Function>() -> T {
-        todo!()
-    }
-}
+type RuntimeImpl = runtime::fake::FakeRuntime;
+type PlaceImpl = <<RuntimeImpl as runtime::Runtime>::PlaceHandler as runtime::PlaceHandler>::Place;
 
 pub type Local = u32;
 
@@ -48,14 +37,22 @@ pub type BranchTarget = BasicBlockIndex;
 pub fn ref_place_local(local: Local) -> PlaceRef {
     todo!()
 }
+
+pub fn ref_place_local(local: Local) -> PlaceRef {
+    push_place_ref(|mut p| p.of_local(local))
+}
+
 pub fn ref_place_deref(place: PlaceRef) -> PlaceRef {
-    todo!()
+    push_place_ref(|mut p| p.project_on(take_back_place_ref(place)).deref())
 }
 pub fn ref_place_field(place: PlaceRef, field: u32 /*, type */) -> PlaceRef {
-    todo!()
+    push_place_ref(|mut p| p.project_on(take_back_place_ref(place)).for_field(field))
 }
 pub fn ref_place_index(place: PlaceRef, index_place: PlaceRef) -> PlaceRef {
-    todo!()
+    push_place_ref(|mut p| {
+        p.project_on(take_back_place_ref(place))
+            .at_index(take_back_place_ref(index_place))
+    })
 }
 pub fn ref_place_constant_index(
     place: PlaceRef,
@@ -63,16 +60,25 @@ pub fn ref_place_constant_index(
     min_length: u64,
     from_end: bool,
 ) -> PlaceRef {
-    todo!()
+    push_place_ref(|mut p| {
+        p.project_on(take_back_place_ref(place))
+            .at_constant_index(offset, min_length, from_end)
+    })
 }
 pub fn ref_place_subslice(place: PlaceRef, from: u64, to: u64, from_end: bool) -> PlaceRef {
-    todo!()
+    push_place_ref(|mut p| {
+        p.project_on(take_back_place_ref(place))
+            .subslice(from, to, from_end)
+    })
 }
 pub fn ref_place_downcast(place: PlaceRef, variant_index: u32 /*, type */) -> PlaceRef {
-    todo!()
+    push_place_ref(|mut p| {
+        p.project_on(take_back_place_ref(place))
+            .downcast(variant_index)
+    })
 }
 pub fn ref_place_opaque_cast(place: PlaceRef /*, type */) -> PlaceRef {
-    todo!()
+    push_place_ref(|mut p| p.project_on(take_back_place_ref(place)).opaque_cast())
 }
 
 pub fn ref_operand_copy(place: PlaceRef) -> OperandRef {
@@ -235,5 +241,57 @@ impl BranchingInfo {
             node_location,
             discriminant,
         }
+    }
+}
+
+fn push_place_ref(
+    f: impl FnOnce(<RuntimeImpl as runtime::Runtime>::PlaceHandler) -> PlaceImpl,
+) -> PlaceRef {
+    get_place_ref_manager().push(f(get_runtime().place()))
+}
+
+fn take_back_place_ref(reference: PlaceRef) -> PlaceImpl {
+    get_place_ref_manager().take_back(reference)
+}
+
+fn get_runtime() -> &'static mut RuntimeImpl {
+    todo!()
+}
+
+fn get_place_ref_manager() -> &'static mut DefaultRefManager<PlaceImpl> {
+    todo!()
+}
+
+trait RefManager {
+    type Ref;
+    type Value;
+
+    fn push(&mut self, value: Self::Value) -> Self::Ref;
+
+    fn take_back(&mut self, reference: Self::Ref) -> Self::Value;
+}
+
+struct DefaultRefManager<V> {
+    counter: Ref,
+    refs: Vec<(Ref, V)>,
+}
+
+impl<V> RefManager for DefaultRefManager<V> {
+    type Ref = Ref;
+    type Value = V;
+
+    fn push(&mut self, value: V) -> Ref {
+        self.counter += 1;
+        self.refs.push((self.counter, value));
+        self.counter
+    }
+
+    fn take_back(&mut self, reference: Ref) -> V {
+        let index = self
+            .refs
+            .iter()
+            .position(|(r, _)| r.eq(&reference))
+            .unwrap();
+        self.refs.swap_remove(index).1
     }
 }
