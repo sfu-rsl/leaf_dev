@@ -34,7 +34,7 @@ pub static UNARY_OP_TYPE_HOLDER: UnaryOp = UnaryOp::Neg;
 pub type BasicBlockIndex = u32;
 pub type BranchTarget = BasicBlockIndex;
 
-pub fn ref_place_local(local: Local) -> PlaceRef {
+pub fn init_runtime() {
     todo!()
 }
 
@@ -245,9 +245,9 @@ impl BranchingInfo {
 }
 
 fn push_place_ref(
-    f: impl FnOnce(<RuntimeImpl as runtime::Runtime>::PlaceHandler) -> PlaceImpl,
+    get_place: impl FnOnce(<RuntimeImpl as runtime::Runtime>::PlaceHandler) -> PlaceImpl,
 ) -> PlaceRef {
-    get_place_ref_manager().push(f(get_runtime().place()))
+    get_place_ref_manager().push(get_place(get_runtime().place()))
 }
 
 fn take_back_place_ref(reference: PlaceRef) -> PlaceImpl {
