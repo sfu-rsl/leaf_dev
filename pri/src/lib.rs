@@ -170,14 +170,6 @@ pub fn assign_aggregate_array(dest: PlaceRef, items: &[OperandRef]) {
     assign_to_place_ref(dest).array_from(items.iter().map(|o| take_back_operand_ref(*o)))
 }
 
-pub fn switch_int(
-    discriminant: OperandRef,
-    branches: &[(u128, BranchTarget)],
-    otherwise_target: BranchTarget,
-) {
-    todo!()
-}
-
 pub fn take_branch_true(info: BranchingInfo) {
     todo!()
 }
