@@ -3,13 +3,19 @@ use crate::{BinaryOp, Local, UnaryOp};
 pub trait Runtime: Sized {
     type PlaceHandler: PlaceHandler;
     type OperandHandler: OperandHandler;
-    type AssignmentHandler: AssignmentHandler;
+    type AssignmentHandler: AssignmentHandler<
+        Place = <Self::PlaceHandler as PlaceHandler>::Place,
+        Operand = <Self::OperandHandler as OperandHandler>::Operand,
+    >;
 
     fn place(&mut self) -> Self::PlaceHandler;
 
     fn operand(&mut self) -> Self::OperandHandler;
 
-    fn assign_to(dest: <Self::PlaceHandler as PlaceHandler>::Place) -> Self::AssignmentHandler;
+    fn assign_to(
+        &mut self,
+        dest: <Self::PlaceHandler as PlaceHandler>::Place,
+    ) -> Self::AssignmentHandler;
 
     fn branch<T: Branching>() -> T;
 
@@ -76,34 +82,35 @@ pub trait AssignmentHandler {
     type Place;
     type Operand;
 
-    fn use_of(operand: Self::Operand);
+    fn use_of(&mut self, operand: Self::Operand);
 
-    fn repeat_of(operand: Self::Operand, count: usize);
+    fn repeat_of(&mut self, operand: Self::Operand, count: usize);
 
-    fn ref_to(place: Self::Place, is_mutable: bool);
+    fn ref_to(&mut self, place: Self::Place, is_mutable: bool);
 
-    fn thread_local_ref_to();
+    fn thread_local_ref_to(&mut self);
 
-    fn address_of(place: Self::Place, is_mutable: bool);
+    fn address_of(&mut self, place: Self::Place, is_mutable: bool);
 
-    fn len_of(place: Self::Place);
+    fn len_of(&mut self, place: Self::Place);
 
-    fn numeric_cast_of(operand: Self::Operand, is_to_float: bool, size: usize);
+    fn numeric_cast_of(&mut self, operand: Self::Operand, is_to_float: bool, size: usize);
 
-    fn cast_of();
+    fn cast_of(&mut self);
 
     fn binary_op_between(
+        &mut self,
         operator: BinaryOp,
         first: Self::Operand,
         second: Self::Operand,
         checked: bool,
     );
 
-    fn unary_op_on(operator: UnaryOp, operand: Self::Operand);
+    fn unary_op_on(&mut self, operator: UnaryOp, operand: Self::Operand);
 
-    fn discriminant_of(place: Self::Place);
+    fn discriminant_of(&mut self, place: Self::Place);
 
-    fn array_from(items: &[Self::Operand]);
+    fn array_from(&mut self, items: impl Iterator<Item = Self::Operand>);
 }
 
 pub trait Branching {}
@@ -128,7 +135,10 @@ pub mod fake {
             unimplemented!()
         }
 
-        fn assign_to(dest: <Self::PlaceHandler as PlaceHandler>::Place) -> Self::AssignmentHandler {
+        fn assign_to(
+            &mut self,
+            dest: <Self::PlaceHandler as PlaceHandler>::Place,
+        ) -> Self::AssignmentHandler {
             unimplemented!()
         }
 
@@ -255,39 +265,40 @@ pub mod fake {
 
         type Operand = FakeOperand;
 
-        fn use_of(operand: Self::Operand) {
+        fn use_of(&mut self, operand: Self::Operand) {
             unimplemented!()
         }
 
-        fn repeat_of(operand: Self::Operand, count: usize) {
+        fn repeat_of(&mut self, operand: Self::Operand, count: usize) {
             unimplemented!()
         }
 
-        fn ref_to(place: Self::Place, is_mutable: bool) {
+        fn ref_to(&mut self, place: Self::Place, is_mutable: bool) {
             unimplemented!()
         }
 
-        fn thread_local_ref_to() {
+        fn thread_local_ref_to(&mut self) {
             unimplemented!()
         }
 
-        fn address_of(place: Self::Place, is_mutable: bool) {
+        fn address_of(&mut self, place: Self::Place, is_mutable: bool) {
             unimplemented!()
         }
 
-        fn len_of(place: Self::Place) {
+        fn len_of(&mut self, place: Self::Place) {
             unimplemented!()
         }
 
-        fn numeric_cast_of(operand: Self::Operand, is_to_float: bool, size: usize) {
+        fn numeric_cast_of(&mut self, operand: Self::Operand, is_to_float: bool, size: usize) {
             unimplemented!()
         }
 
-        fn cast_of() {
+        fn cast_of(&mut self) {
             unimplemented!()
         }
 
         fn binary_op_between(
+            &mut self,
             operator: BinaryOp,
             first: Self::Operand,
             second: Self::Operand,
@@ -296,15 +307,15 @@ pub mod fake {
             unimplemented!()
         }
 
-        fn unary_op_on(operator: UnaryOp, operand: Self::Operand) {
+        fn unary_op_on(&mut self, operator: UnaryOp, operand: Self::Operand) {
             unimplemented!()
         }
 
-        fn discriminant_of(place: Self::Place) {
+        fn discriminant_of(&mut self, place: Self::Place) {
             unimplemented!()
         }
 
-        fn array_from(items: &[Self::Operand]) {
+        fn array_from(&mut self, items: impl Iterator<Item = Self::Operand>) {
             unimplemented!()
         }
     }

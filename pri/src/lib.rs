@@ -1,6 +1,9 @@
 use std::{cell::RefCell, sync::Mutex};
 
-use runtime::{ConstantHandler, OperandHandler, PlaceHandler, PlaceProjectionHandler, Runtime};
+use runtime::{
+    AssignmentHandler, ConstantHandler, OperandHandler, PlaceHandler, PlaceProjectionHandler,
+    Runtime,
+};
 
 #[macro_use]
 extern crate lazy_static;
@@ -109,32 +112,32 @@ pub fn ref_operand_const_str(value: &str) -> OperandRef {
 }
 
 pub fn assign_use(dest: PlaceRef, operand: OperandRef) {
-    todo!()
+    assign_to_place_ref(dest).use_of(take_back_operand_ref(operand))
 }
 pub fn assign_repeat(dest: PlaceRef, operand: OperandRef, count: usize /* constant */) {
-    todo!()
+    assign_to_place_ref(dest).repeat_of(take_back_operand_ref(operand), count)
 }
 pub fn assign_ref(dest: PlaceRef, place: PlaceRef, is_mutable: bool) {
-    todo!()
+    assign_to_place_ref(dest).ref_to(take_back_place_ref(place), is_mutable)
 }
 pub fn assign_thread_local_ref(
     dest: PlaceRef, /* TODO: Complicated. MIRAI has some works on it. */
 ) {
-    todo!()
+    assign_to_place_ref(dest).thread_local_ref_to()
 }
 pub fn assign_address_of(dest: PlaceRef, place: PlaceRef, is_mutable: bool) {
-    todo!()
+    assign_to_place_ref(dest).address_of(take_back_place_ref(place), is_mutable)
 }
 pub fn assign_len(dest: PlaceRef, place: PlaceRef) {
     // To be investigated. Not obvious whether it appears at all in the later stages.
-    todo!()
+    assign_to_place_ref(dest).len_of(take_back_place_ref(place))
 }
 
 pub fn assign_cast_numeric(dest: PlaceRef, operand: OperandRef, is_to_float: bool, size: usize) {
-    todo!()
+    assign_to_place_ref(dest).numeric_cast_of(take_back_operand_ref(operand), is_to_float, size)
 }
 pub fn assign_cast(dest: PlaceRef /* TODO: Other types of cast. */) {
-    todo!()
+    assign_to_place_ref(dest).cast_of()
 }
 
 pub fn assign_binary_op(
@@ -144,22 +147,27 @@ pub fn assign_binary_op(
     second: OperandRef,
     checked: bool,
 ) {
-    todo!()
+    assign_to_place_ref(dest).binary_op_between(
+        operator,
+        take_back_operand_ref(first),
+        take_back_operand_ref(second),
+        checked,
+    )
 }
 pub fn assign_unary_op(dest: PlaceRef, operator: UnaryOp, operand: OperandRef) {
-    todo!()
+    assign_to_place_ref(dest).unary_op_on(operator, take_back_operand_ref(operand))
 }
 
 pub fn set_discriminant(dest: PlaceRef, place: PlaceRef, variant_index: u32) {
     todo!()
 }
 pub fn assign_discriminant(dest: PlaceRef, place: PlaceRef) {
-    todo!()
+    assign_to_place_ref(dest).discriminant_of(take_back_place_ref(place))
 }
 
 // We use slice to simplify working with the interface.
 pub fn assign_aggregate_array(dest: PlaceRef, items: &[OperandRef]) {
-    todo!()
+    assign_to_place_ref(dest).array_from(items.iter().map(|o| take_back_operand_ref(*o)))
 }
 
 pub fn switch_int(
@@ -256,6 +264,10 @@ fn push_operand_ref(
     get_operand: impl FnOnce(<RuntimeImpl as runtime::Runtime>::OperandHandler) -> OperandImpl,
 ) -> OperandRef {
     get_operand_ref_manager().push(get_operand(get_runtime().operand()))
+}
+
+fn assign_to_place_ref(place: PlaceRef) -> <RuntimeImpl as runtime::Runtime>::AssignmentHandler {
+    get_runtime().assign_to(take_back_place_ref(place))
 }
 
 fn take_back_place_ref(reference: PlaceRef) -> PlaceImpl {
