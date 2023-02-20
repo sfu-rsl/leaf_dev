@@ -320,7 +320,11 @@ pub mod fake {
         }
     }
 
-    pub enum FakePlace {}
+    pub enum FakePlace {
+        Local
+    }
 
-    pub enum FakeOperand {}
+    pub enum FakeOperand {
+        Copy
+    }
 }
