@@ -1,6 +1,6 @@
 use std::{cell::RefCell, sync::Mutex};
 
-use runtime::{PlaceHandler, PlaceProjectionHandler, Runtime};
+use runtime::{ConstantHandler, OperandHandler, PlaceHandler, PlaceProjectionHandler, Runtime};
 
 #[macro_use]
 extern crate lazy_static;
@@ -13,6 +13,8 @@ lazy_static! {
 
 type RuntimeImpl = runtime::fake::FakeRuntime;
 type PlaceImpl = <<RuntimeImpl as runtime::Runtime>::PlaceHandler as runtime::PlaceHandler>::Place;
+type OperandImpl =
+    <<RuntimeImpl as runtime::Runtime>::OperandHandler as runtime::OperandHandler>::Operand;
 
 pub type Local = u32;
 
@@ -82,28 +84,28 @@ pub fn ref_place_opaque_cast(place: PlaceRef /*, type */) -> PlaceRef {
 }
 
 pub fn ref_operand_copy(place: PlaceRef) -> OperandRef {
-    todo!()
+    push_operand_ref(|mut o| o.copy_of(take_back_place_ref(place)))
 }
 pub fn ref_operand_move(place: PlaceRef) -> OperandRef {
-    todo!()
+    push_operand_ref(|mut o| o.move_of(take_back_place_ref(place)))
 }
 pub fn ref_operand_const_bool(value: bool) -> OperandRef {
-    todo!()
+    push_operand_ref(|mut o| o.const_from().bool(value))
 }
 pub fn ref_operand_const_int(bit_rep: u128, size: u64, is_signed: bool) -> OperandRef {
-    todo!()
+    push_operand_ref(|mut o| o.const_from().int(bit_rep, size, is_signed))
 }
 pub fn ref_operand_const_float(bit_rep: u128, ebits: u64, sbits: u64) -> OperandRef {
-    todo!()
+    push_operand_ref(|mut o| o.const_from().float(bit_rep, ebits, sbits))
 }
 pub fn ref_operand_const_char(value: char) -> OperandRef {
-    todo!()
+    push_operand_ref(|mut o| o.const_from().char(value))
 }
 pub fn ref_operand_const_func(id: u64) -> OperandRef {
-    todo!()
+    push_operand_ref(|mut o| o.const_from().func(id))
 }
 pub fn ref_operand_const_str(value: &str) -> OperandRef {
-    todo!()
+    push_operand_ref(|mut o| o.const_from().str(value))
 }
 
 pub fn assign_use(dest: PlaceRef, operand: OperandRef) {
@@ -250,8 +252,18 @@ fn push_place_ref(
     get_place_ref_manager().push(get_place(get_runtime().place()))
 }
 
+fn push_operand_ref(
+    get_operand: impl FnOnce(<RuntimeImpl as runtime::Runtime>::OperandHandler) -> OperandImpl,
+) -> OperandRef {
+    get_operand_ref_manager().push(get_operand(get_runtime().operand()))
+}
+
 fn take_back_place_ref(reference: PlaceRef) -> PlaceImpl {
     get_place_ref_manager().take_back(reference)
+}
+
+fn take_back_operand_ref(reference: OperandRef) -> OperandImpl {
+    get_operand_ref_manager().take_back(reference)
 }
 
 fn get_runtime() -> &'static mut RuntimeImpl {
@@ -259,6 +271,10 @@ fn get_runtime() -> &'static mut RuntimeImpl {
 }
 
 fn get_place_ref_manager() -> &'static mut DefaultRefManager<PlaceImpl> {
+    todo!()
+}
+
+fn get_operand_ref_manager() -> &'static mut DefaultRefManager<OperandImpl> {
     todo!()
 }
 

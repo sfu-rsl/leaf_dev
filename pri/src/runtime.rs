@@ -2,9 +2,12 @@ use crate::{BinaryOp, Local, UnaryOp};
 
 pub trait Runtime: Sized {
     type PlaceHandler: PlaceHandler;
+    type OperandHandler: OperandHandler;
     type AssignmentHandler: AssignmentHandler;
 
     fn place(&mut self) -> Self::PlaceHandler;
+
+    fn operand(&mut self) -> Self::OperandHandler;
 
     fn assign_to(dest: <Self::PlaceHandler as PlaceHandler>::Place) -> Self::AssignmentHandler;
 
@@ -39,6 +42,34 @@ pub trait PlaceProjectionHandler {
     fn downcast(&mut self, variant_index: u32) -> Self::Place;
 
     fn opaque_cast(&mut self) -> Self::Place;
+}
+
+pub trait OperandHandler {
+    type Operand;
+    type Place;
+    type ConstantHandler;
+
+    fn copy_of(&mut self, place: Self::Place) -> Self::Operand;
+
+    fn move_of(&mut self, place: Self::Place) -> Self::Operand;
+
+    fn const_from(&mut self) -> Self::ConstantHandler;
+}
+
+pub trait ConstantHandler {
+    type Operand;
+
+    fn bool(&mut self, value: bool) -> Self::Operand;
+
+    fn char(&mut self, value: char) -> Self::Operand;
+
+    fn int(&mut self, bit_rep: u128, size: u64, is_signed: bool) -> Self::Operand;
+
+    fn float(&mut self, bit_rep: u128, ebits: u64, sbits: u64) -> Self::Operand;
+
+    fn str(&mut self, value: &str) -> Self::Operand;
+
+    fn func(&mut self, id: u64) -> Self::Operand;
 }
 
 pub trait AssignmentHandler {
@@ -86,10 +117,14 @@ pub mod fake {
 
     impl Runtime for FakeRuntime {
         type PlaceHandler = FakePlaceHandler;
-
+        type OperandHandler = FakeOperandHandler;
         type AssignmentHandler = FakeAssignmentHandler;
 
         fn place(&mut self) -> Self::PlaceHandler {
+            unimplemented!()
+        }
+
+        fn operand(&mut self) -> Self::OperandHandler {
             unimplemented!()
         }
 
@@ -161,6 +196,58 @@ pub mod fake {
         }
     }
 
+    pub struct FakeOperandHandler {}
+
+    impl OperandHandler for FakeOperandHandler {
+        type Operand = FakeOperand;
+
+        type Place = FakePlace;
+
+        type ConstantHandler = FakeConstantHandler;
+
+        fn copy_of(&mut self, place: Self::Place) -> Self::Operand {
+            unimplemented!()
+        }
+
+        fn move_of(&mut self, place: Self::Place) -> Self::Operand {
+            unimplemented!()
+        }
+
+        fn const_from(&mut self) -> Self::ConstantHandler {
+            unimplemented!()
+        }
+    }
+
+    pub struct FakeConstantHandler {}
+
+    impl ConstantHandler for FakeConstantHandler {
+        type Operand = FakeOperand;
+
+        fn bool(&mut self, value: bool) -> Self::Operand {
+            unimplemented!()
+        }
+
+        fn char(&mut self, value: char) -> Self::Operand {
+            unimplemented!()
+        }
+
+        fn int(&mut self, bit_rep: u128, size: u64, is_signed: bool) -> Self::Operand {
+            unimplemented!()
+        }
+
+        fn float(&mut self, bit_rep: u128, ebits: u64, sbits: u64) -> Self::Operand {
+            unimplemented!()
+        }
+
+        fn str(&mut self, value: &str) -> Self::Operand {
+            unimplemented!()
+        }
+
+        fn func(&mut self, id: u64) -> Self::Operand {
+            unimplemented!()
+        }
+    }
+
     pub struct FakeAssignmentHandler {}
 
     impl AssignmentHandler for FakeAssignmentHandler {
@@ -222,9 +309,7 @@ pub mod fake {
         }
     }
 
-    pub enum FakePlace {
-    }
+    pub enum FakePlace {}
 
-    pub enum FakeOperand {
-    }
+    pub enum FakeOperand {}
 }
