@@ -1320,32 +1320,32 @@ mod utils {
         (cast_local, [array_assign, ref_assign, cast_assign])
     }
 
-    pub fn convert_mir_binop_to_pri(op: &mir::BinOp) -> pri::BinaryOp {
+    pub fn convert_mir_binop_to_pri(op: &mir::BinOp) -> runtime::abs::BinaryOp {
         match op {
-            mir::BinOp::Add => pri::BinaryOp::Add,
-            mir::BinOp::Sub => pri::BinaryOp::Sub,
-            mir::BinOp::Mul => pri::BinaryOp::Mul,
-            mir::BinOp::Div => pri::BinaryOp::Div,
-            mir::BinOp::Rem => pri::BinaryOp::Rem,
-            mir::BinOp::BitXor => pri::BinaryOp::BitXor,
-            mir::BinOp::BitAnd => pri::BinaryOp::BitAnd,
-            mir::BinOp::BitOr => pri::BinaryOp::BitOr,
-            mir::BinOp::Shl => pri::BinaryOp::Shl,
-            mir::BinOp::Shr => pri::BinaryOp::Shr,
-            mir::BinOp::Eq => pri::BinaryOp::Eq,
-            mir::BinOp::Lt => pri::BinaryOp::Lt,
-            mir::BinOp::Le => pri::BinaryOp::Le,
-            mir::BinOp::Ne => pri::BinaryOp::Ne,
-            mir::BinOp::Ge => pri::BinaryOp::Ge,
-            mir::BinOp::Gt => pri::BinaryOp::Gt,
-            mir::BinOp::Offset => pri::BinaryOp::Offset,
+            mir::BinOp::Add => runtime::abs::BinaryOp::Add,
+            mir::BinOp::Sub => runtime::abs::BinaryOp::Sub,
+            mir::BinOp::Mul => runtime::abs::BinaryOp::Mul,
+            mir::BinOp::Div => runtime::abs::BinaryOp::Div,
+            mir::BinOp::Rem => runtime::abs::BinaryOp::Rem,
+            mir::BinOp::BitXor => runtime::abs::BinaryOp::BitXor,
+            mir::BinOp::BitAnd => runtime::abs::BinaryOp::BitAnd,
+            mir::BinOp::BitOr => runtime::abs::BinaryOp::BitOr,
+            mir::BinOp::Shl => runtime::abs::BinaryOp::Shl,
+            mir::BinOp::Shr => runtime::abs::BinaryOp::Shr,
+            mir::BinOp::Eq => runtime::abs::BinaryOp::Eq,
+            mir::BinOp::Lt => runtime::abs::BinaryOp::Lt,
+            mir::BinOp::Le => runtime::abs::BinaryOp::Le,
+            mir::BinOp::Ne => runtime::abs::BinaryOp::Ne,
+            mir::BinOp::Ge => runtime::abs::BinaryOp::Ge,
+            mir::BinOp::Gt => runtime::abs::BinaryOp::Gt,
+            mir::BinOp::Offset => runtime::abs::BinaryOp::Offset,
         }
     }
 
-    pub fn convert_mir_unop_to_pri(op: &mir::UnOp) -> pri::UnaryOp {
+    pub fn convert_mir_unop_to_pri(op: &mir::UnOp) -> runtime::abs::UnaryOp {
         match op {
-            mir::UnOp::Not => pri::UnaryOp::Not,
-            mir::UnOp::Neg => pri::UnaryOp::Neg,
+            mir::UnOp::Not => runtime::abs::UnaryOp::Not,
+            mir::UnOp::Neg => runtime::abs::UnaryOp::Neg,
         }
     }
 }

@@ -1,12 +1,16 @@
+mod utils;
+
 use std::{
     cell::{RefCell, UnsafeCell},
     sync::{Mutex, Once},
 };
 
-use runtime::{
-    AssignmentHandler, ConstantHandler, OperandHandler, PlaceHandler, PlaceProjectionHandler,
-    Runtime,
+use crate::abs::{
+    AssignmentHandler, BinaryOp, ConstantHandler, Local, OperandHandler, PlaceHandler,
+    PlaceProjectionHandler, Runtime, UnaryOp,
 };
+
+use self::utils::{DefaultRefManager, RefManager, UnsafeSync};
 
 static INIT: Once = Once::new();
 #[cfg(runtime_access = "safe_mt")]
@@ -16,12 +20,9 @@ static RUNTIME: UnsafeSync<RefCell<Option<RuntimeImpl>>> = UnsafeSync::new(RefCe
 #[cfg(runtime_access = "unsafe")]
 static mut RUNTIME: Option<RuntimeImpl> = None;
 
-type RuntimeImpl = runtime::fake::FakeRuntime;
-type PlaceImpl = <<RuntimeImpl as runtime::Runtime>::PlaceHandler as runtime::PlaceHandler>::Place;
-type OperandImpl =
-    <<RuntimeImpl as runtime::Runtime>::OperandHandler as runtime::OperandHandler>::Operand;
-
-pub type Local = u32;
+type RuntimeImpl = crate::backends::fake::FakeRuntime;
+type PlaceImpl = <<RuntimeImpl as Runtime>::PlaceHandler as PlaceHandler>::Place;
+type OperandImpl = <<RuntimeImpl as Runtime>::OperandHandler as OperandHandler>::Operand;
 
 pub type Ref = u64;
 pub type PlaceRef = Ref;
@@ -207,33 +208,6 @@ pub fn return_from_func() {
     todo!()
 }
 
-#[derive(Debug)]
-pub enum BinaryOp {
-    Add,
-    Sub,
-    Mul,
-    Div,
-    Rem,
-    BitXor,
-    BitAnd,
-    BitOr,
-    Shl,
-    Shr,
-    Eq,
-    Lt,
-    Le,
-    Ne,
-    Ge,
-    Gt,
-    Offset,
-}
-
-#[derive(Debug)]
-pub enum UnaryOp {
-    Not,
-    Neg,
-}
-
 pub struct BranchingInfo {
     pub node_location: BasicBlockIndex,
     pub discriminant: OperandRef,
@@ -249,20 +223,20 @@ impl BranchingInfo {
 }
 
 fn push_place_ref(
-    get_place: impl FnOnce(<RuntimeImpl as runtime::Runtime>::PlaceHandler) -> PlaceImpl,
+    get_place: impl FnOnce(<RuntimeImpl as Runtime>::PlaceHandler) -> PlaceImpl,
 ) -> PlaceRef {
     let place = perform_on_runtime(|r| get_place(r.place()));
     get_place_ref_manager().push(place)
 }
 
 fn push_operand_ref(
-    get_operand: impl FnOnce(<RuntimeImpl as runtime::Runtime>::OperandHandler) -> OperandImpl,
+    get_operand: impl FnOnce(<RuntimeImpl as Runtime>::OperandHandler) -> OperandImpl,
 ) -> OperandRef {
     let operand = perform_on_runtime(|r| get_operand(r.operand()));
     get_operand_ref_manager().push(operand)
 }
 
-fn assign_to_place_ref(dest: PlaceRef) -> <RuntimeImpl as runtime::Runtime>::AssignmentHandler {
+fn assign_to_place_ref(dest: PlaceRef) -> <RuntimeImpl as Runtime>::AssignmentHandler {
     let dest = take_back_place_ref(dest);
     perform_on_runtime(|r| r.assign_to(dest))
 }
@@ -306,68 +280,4 @@ fn get_place_ref_manager() -> &'static mut DefaultRefManager<PlaceImpl> {
 
 fn get_operand_ref_manager() -> &'static mut DefaultRefManager<OperandImpl> {
     todo!()
-}
-
-trait RefManager {
-    type Ref;
-    type Value;
-
-    fn push(&mut self, value: Self::Value) -> Self::Ref;
-
-    fn take_back(&mut self, reference: Self::Ref) -> Self::Value;
-}
-
-struct DefaultRefManager<V> {
-    counter: Ref,
-    refs: Vec<(Ref, V)>,
-}
-
-impl<V> RefManager for DefaultRefManager<V> {
-    type Ref = Ref;
-    type Value = V;
-
-    fn push(&mut self, value: V) -> Ref {
-        self.counter += 1;
-        self.refs.push((self.counter, value));
-        self.counter
-    }
-
-    fn take_back(&mut self, reference: Ref) -> V {
-        let index = self
-            .refs
-            .iter()
-            .position(|(r, _)| r.eq(&reference))
-            .unwrap();
-        self.refs.swap_remove(index).1
-    }
-}
-
-use std::ops::{Deref, DerefMut};
-
-use crate::runtime;
-
-pub struct UnsafeSync<T> {
-    value: T,
-}
-
-unsafe impl<T> Sync for UnsafeSync<T> {}
-
-impl<T> UnsafeSync<T> {
-    pub const fn new(value: T) -> Self {
-        Self { value }
-    }
-}
-
-impl<T> Deref for UnsafeSync<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.value
-    }
-}
-
-impl<T> DerefMut for UnsafeSync<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.value
-    }
 }
