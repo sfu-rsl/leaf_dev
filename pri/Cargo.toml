@@ -7,3 +7,6 @@ edition = "2021"
 
 [dependencies]
 lazy_static = "1.4.0"
+
+[build]
+rustflags = ["--cfg", "runtime_access=\"unsafe\""]

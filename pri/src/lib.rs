@@ -1,18 +1,22 @@
-use std::{cell::RefCell, sync::Mutex};
+use std::{
+    cell::{RefCell, UnsafeCell},
+    sync::{Mutex, Once},
+};
 
 use runtime::{
     AssignmentHandler, ConstantHandler, OperandHandler, PlaceHandler, PlaceProjectionHandler,
     Runtime,
 };
 
-#[macro_use]
-extern crate lazy_static;
-
 mod runtime;
 
-lazy_static! {
-    static ref RUNTIME: Mutex<RuntimeImpl> = todo!();
-}
+static INIT: Once = Once::new();
+#[cfg(runtime_access = "safe_mt")]
+static RUNTIME: Mutex<Option<RuntimeImpl>> = Mutex::new(None);
+#[cfg(runtime_access = "safe_brt")]
+static RUNTIME: UnsafeSync<RefCell<Option<RuntimeImpl>>> = UnsafeSync::new(RefCell::new(None));
+#[cfg(runtime_access = "unsafe")]
+static mut RUNTIME: Option<RuntimeImpl> = None;
 
 type RuntimeImpl = runtime::fake::FakeRuntime;
 type PlaceImpl = <<RuntimeImpl as runtime::Runtime>::PlaceHandler as runtime::PlaceHandler>::Place;
@@ -249,17 +253,20 @@ impl BranchingInfo {
 fn push_place_ref(
     get_place: impl FnOnce(<RuntimeImpl as runtime::Runtime>::PlaceHandler) -> PlaceImpl,
 ) -> PlaceRef {
-    get_place_ref_manager().push(get_place(get_runtime().place()))
+    let place = perform_on_runtime(|r| get_place(r.place()));
+    get_place_ref_manager().push(place)
 }
 
 fn push_operand_ref(
     get_operand: impl FnOnce(<RuntimeImpl as runtime::Runtime>::OperandHandler) -> OperandImpl,
 ) -> OperandRef {
-    get_operand_ref_manager().push(get_operand(get_runtime().operand()))
+    let operand = perform_on_runtime(|r| get_operand(r.operand()));
+    get_operand_ref_manager().push(operand)
 }
 
-fn assign_to_place_ref(place: PlaceRef) -> <RuntimeImpl as runtime::Runtime>::AssignmentHandler {
-    get_runtime().assign_to(take_back_place_ref(place))
+fn assign_to_place_ref(dest: PlaceRef) -> <RuntimeImpl as runtime::Runtime>::AssignmentHandler {
+    let dest = take_back_place_ref(dest);
+    perform_on_runtime(|r| r.assign_to(dest))
 }
 
 fn take_back_place_ref(reference: PlaceRef) -> PlaceImpl {
@@ -270,8 +277,29 @@ fn take_back_operand_ref(reference: OperandRef) -> OperandImpl {
     get_operand_ref_manager().take_back(reference)
 }
 
-fn get_runtime() -> &'static mut RuntimeImpl {
-    todo!()
+#[cfg(runtime_access = "safe_mt")]
+fn perform_on_runtime<T>(action: impl FnOnce(&mut RuntimeImpl) -> T) -> T {
+    let mut guard = RUNTIME.lock().unwrap();
+    check_and_perform_on_runtime(&mut guard, action)
+}
+
+#[cfg(runtime_access = "safe_brt")]
+fn perform_on_runtime<T>(action: impl FnOnce(&mut RuntimeImpl) -> T) -> T {
+    let mut binding = RUNTIME.borrow_mut();
+    check_and_perform_on_runtime(&mut binding, action)
+}
+
+#[cfg(runtime_access = "unsafe")]
+fn perform_on_runtime<T>(action: impl FnOnce(&mut RuntimeImpl) -> T) -> T {
+    check_and_perform_on_runtime(unsafe { &mut RUNTIME }, action)
+}
+
+fn check_and_perform_on_runtime<T>(
+    runtime: &mut Option<RuntimeImpl>,
+    action: impl FnOnce(&mut RuntimeImpl) -> T,
+) -> T {
+    let mut runtime = runtime.as_mut().expect("Runtime is not initialized.");
+    action(&mut runtime)
 }
 
 fn get_place_ref_manager() -> &'static mut DefaultRefManager<PlaceImpl> {
@@ -313,5 +341,33 @@ impl<V> RefManager for DefaultRefManager<V> {
             .position(|(r, _)| r.eq(&reference))
             .unwrap();
         self.refs.swap_remove(index).1
+    }
+}
+
+use std::ops::{Deref, DerefMut};
+
+pub struct UnsafeSync<T> {
+    value: T,
+}
+
+unsafe impl<T> Sync for UnsafeSync<T> {}
+
+impl<T> UnsafeSync<T> {
+    pub const fn new(value: T) -> Self {
+        Self { value }
+    }
+}
+
+impl<T> Deref for UnsafeSync<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl<T> DerefMut for UnsafeSync<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.value
     }
 }
