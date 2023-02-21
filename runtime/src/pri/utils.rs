@@ -42,6 +42,15 @@ pub(super) struct DefaultRefManager<V> {
     refs: Vec<(Ref, V)>,
 }
 
+impl<T> DefaultRefManager<T> {
+    pub const fn new() -> Self {
+        Self {
+            counter: 0,
+            refs: Vec::new(),
+        }
+    }
+}
+
 impl<V> RefManager for DefaultRefManager<V> {
     type Ref = Ref;
     type Value = V;

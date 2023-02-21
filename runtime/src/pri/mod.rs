@@ -20,6 +20,26 @@ static RUNTIME: UnsafeSync<RefCell<Option<RuntimeImpl>>> = UnsafeSync::new(RefCe
 #[cfg(runtime_access = "unsafe")]
 static mut RUNTIME: Option<RuntimeImpl> = None;
 
+#[cfg(any(runtime_access = "safe_mt", runtime_access = "safe_brt"))]
+thread_local! {
+/*
+ * Breaking places and operands is something that happens in our compiler, so
+ * it is not possible to see references shared between threads.
+*/
+static PLACE_REF_MANAGER: RefCell<DefaultRefManager<PlaceImpl>> =
+    RefCell::new(DefaultRefManager::new());
+}
+#[cfg(runtime_access = "unsafe")]
+static mut PLACE_REF_MANAGER: DefaultRefManager<PlaceImpl> = DefaultRefManager::new();
+
+#[cfg(any(runtime_access = "safe_mt", runtime_access = "safe_brt"))]
+thread_local! {
+static OPERAND_REF_MANAGER: RefCell<DefaultRefManager<OperandImpl>> =
+    RefCell::new(DefaultRefManager::new());
+}
+#[cfg(runtime_access = "unsafe")]
+static mut OPERAND_REF_MANAGER: DefaultRefManager<OperandImpl> = DefaultRefManager::new();
+
 type RuntimeImpl = crate::backends::fake::FakeRuntime;
 type PlaceImpl = <<RuntimeImpl as Runtime>::PlaceHandler as PlaceHandler>::Place;
 type OperandImpl = <<RuntimeImpl as Runtime>::OperandHandler as OperandHandler>::Operand;
@@ -226,14 +246,14 @@ fn push_place_ref(
     get_place: impl FnOnce(<RuntimeImpl as Runtime>::PlaceHandler) -> PlaceImpl,
 ) -> PlaceRef {
     let place = perform_on_runtime(|r| get_place(r.place()));
-    get_place_ref_manager().push(place)
+    perform_on_place_ref_manager(|rm| rm.push(place))
 }
 
 fn push_operand_ref(
     get_operand: impl FnOnce(<RuntimeImpl as Runtime>::OperandHandler) -> OperandImpl,
 ) -> OperandRef {
     let operand = perform_on_runtime(|r| get_operand(r.operand()));
-    get_operand_ref_manager().push(operand)
+    perform_on_operand_ref_manager(|rm| rm.push(operand))
 }
 
 fn assign_to_place_ref(dest: PlaceRef) -> <RuntimeImpl as Runtime>::AssignmentHandler {
@@ -242,11 +262,11 @@ fn assign_to_place_ref(dest: PlaceRef) -> <RuntimeImpl as Runtime>::AssignmentHa
 }
 
 fn take_back_place_ref(reference: PlaceRef) -> PlaceImpl {
-    get_place_ref_manager().take_back(reference)
+    perform_on_place_ref_manager(|rm| rm.take_back(reference))
 }
 
 fn take_back_operand_ref(reference: OperandRef) -> OperandImpl {
-    get_operand_ref_manager().take_back(reference)
+    perform_on_operand_ref_manager(|rm| rm.take_back(reference))
 }
 
 #[cfg(runtime_access = "safe_mt")]
@@ -274,10 +294,30 @@ fn check_and_perform_on_runtime<T>(
     action(&mut runtime)
 }
 
-fn get_place_ref_manager() -> &'static mut DefaultRefManager<PlaceImpl> {
-    todo!()
+#[cfg(any(runtime_access = "safe_mt", runtime_access = "safe_brt"))]
+fn perform_on_place_ref_manager<T>(
+    action: impl FnOnce(&mut DefaultRefManager<PlaceImpl>) -> T,
+) -> T {
+    PLACE_REF_MANAGER.with_borrow_mut(action)
 }
 
-fn get_operand_ref_manager() -> &'static mut DefaultRefManager<OperandImpl> {
-    todo!()
+#[cfg(runtime_access = "unsafe")]
+fn perform_on_place_ref_manager<T>(
+    action: impl FnOnce(&mut DefaultRefManager<PlaceImpl>) -> T,
+) -> T {
+    action(unsafe { &mut PLACE_REF_MANAGER })
+}
+
+#[cfg(any(runtime_access = "safe_mt", runtime_access = "safe_brt"))]
+fn perform_on_operand_ref_manager<T>(
+    action: impl FnOnce(&mut DefaultRefManager<OperandImpl>) -> T,
+) -> T {
+    OPERAND_REF_MANAGER.with_borrow_mut(action)
+}
+
+#[cfg(runtime_access = "unsafe")]
+fn perform_on_operand_ref_manager<T>(
+    action: impl FnOnce(&mut DefaultRefManager<OperandImpl>) -> T,
+) -> T {
+    action(unsafe { &mut OPERAND_REF_MANAGER })
 }
