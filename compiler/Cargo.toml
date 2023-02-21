@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 log = "0.4.17"
 env_logger = "0.10.0"
-pri = { path = "../pri", version = "0.1.0" }
+runtime = { path = "../runtime", version = "0.1.0" }
 
 [package.metadata.rust-analyzer]
 rustc_private = true

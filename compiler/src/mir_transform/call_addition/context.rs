@@ -138,10 +138,10 @@ impl<'tcx, 'm> DefaultContext<'tcx, 'm> {
         let get_ty =
             |name: &str| -> Ty<'tcx> { tcx.type_of(def_ids.get(&name.replace(" ", "")).unwrap()) };
         SpecialTypes {
-            place_ref: get_ty(stringify!(pri::PLACE_REF_TYPE_HOLDER)),
-            operand_ref: get_ty(stringify!(pri::OPERAND_REF_TYPE_HOLDER)),
-            binary_op: get_ty(stringify!(pri::BINARY_OP_TYPE_HOLDER)),
-            unary_op: get_ty(stringify!(pri::UNARY_OP_TYPE_HOLDER)),
+            place_ref: get_ty(stringify!(runtime::pri::PLACE_REF_TYPE_HOLDER)),
+            operand_ref: get_ty(stringify!(runtime::pri::OPERAND_REF_TYPE_HOLDER)),
+            binary_op: get_ty(stringify!(runtime::pri::BINARY_OP_TYPE_HOLDER)),
+            unary_op: get_ty(stringify!(runtime::pri::UNARY_OP_TYPE_HOLDER)),
         }
     }
 
@@ -149,8 +149,14 @@ impl<'tcx, 'm> DefaultContext<'tcx, 'm> {
         let crate_num = tcx
             .crates(())
             .iter()
-            .find(|cnum| tcx.crate_name(**cnum).as_str() == stringify!(pri))
-            .expect(format!("{} crate is not added as a dependency.", stringify!(pri)).as_str())
+            .find(|cnum| tcx.crate_name(**cnum).as_str() == stringify!(runtime))
+            .expect(
+                format!(
+                    "{} crate is not added as a dependency.",
+                    stringify!(runtime)
+                )
+                .as_str(),
+            )
             .clone();
 
         tcx.exported_symbols(crate_num)
@@ -211,7 +217,7 @@ impl JumpTargetModifier for DefaultContext<'_, '_> {
 impl<'tcx> FunctionInfoProvider<'tcx> for DefaultContext<'tcx, '_> {
     fn get_pri_func_info(&self, func_name: &str) -> &FunctionInfo<'tcx> {
         self.pri_functions
-            .get(&func_name.replace(" ", "")) // FIXME
+            .get(&("runtime::".to_owned() + &func_name.replace(" ", ""))) // FIXME
             .expect(format!("Invalid pri function name: `{}`.", func_name).as_str())
     }
 }

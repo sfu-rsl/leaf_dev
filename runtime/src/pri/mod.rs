@@ -8,8 +8,6 @@ use runtime::{
     Runtime,
 };
 
-mod runtime;
-
 static INIT: Once = Once::new();
 #[cfg(runtime_access = "safe_mt")]
 static RUNTIME: Mutex<Option<RuntimeImpl>> = Mutex::new(None);
@@ -345,6 +343,8 @@ impl<V> RefManager for DefaultRefManager<V> {
 }
 
 use std::ops::{Deref, DerefMut};
+
+use crate::runtime;
 
 pub struct UnsafeSync<T> {
     value: T,

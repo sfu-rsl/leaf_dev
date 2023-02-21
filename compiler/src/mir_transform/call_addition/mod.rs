@@ -1119,6 +1119,7 @@ impl<'tcx> From<(BasicBlockData<'tcx>, Local)> for BlocksAndResult<'tcx> {
 }
 
 mod utils {
+    use runtime::pri;
     use rustc_middle::{
         mir::{self, Local, Operand, Place, Statement},
         ty::{Ty, TyCtxt},

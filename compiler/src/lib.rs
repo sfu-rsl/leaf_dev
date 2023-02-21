@@ -88,19 +88,19 @@ impl RunCompiler {
         args.push(String::from("-L"));
         args.push(format!("dependency={}", path.to_string_lossy()));
 
-        // Add pri library as extern crate
+        // Add runtime library as extern crate
         std::fs::read_dir(&path)
             .expect("unable to read directory")
             .filter_map(|r| r.ok())
             .filter(|file_name| {
                 let name = file_name.file_name().to_string_lossy().to_string();
-                name.ends_with(".rlib") && name.starts_with("libpri-")
+                name.ends_with(".rlib") && name.starts_with("libruntime-")
             })
             .take(1)
             .for_each(|file_name| {
                 args.push(String::from("--extern"));
                 args.push(format!(
-                    "pri={}",
+                    "runtime={}",
                     path.join(file_name.file_name())
                         .to_string_lossy()
                         .to_string()
@@ -179,7 +179,7 @@ impl rustc_driver::Callbacks for Callbacks {
             return Compilation::Stop;
         }
 
-        // The following adds a new statement "extern crate pri" to the parsed AST as a new item.
+        // The following adds a new statement "extern crate runtime" to the parsed AST as a new item.
         let mut steal = queries.parse().unwrap();
         let items = &mut steal.get_mut().items;
         let item = Item {
@@ -191,7 +191,7 @@ impl rustc_driver::Callbacks for Callbacks {
                 span: DUMMY_SP,
                 tokens: None,
             },
-            ident: Ident::with_dummy_span(Symbol::intern("pri")),
+            ident: Ident::with_dummy_span(Symbol::intern("runtime")),
             kind: ItemKind::ExternCrate(None),
             tokens: None,
         };

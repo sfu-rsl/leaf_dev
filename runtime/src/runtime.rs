@@ -1,4 +1,4 @@
-use crate::{BinaryOp, Local, UnaryOp};
+use crate::pri::{BinaryOp, Local, UnaryOp};
 
 pub trait Runtime: Sized {
     type PlaceHandler: PlaceHandler;
