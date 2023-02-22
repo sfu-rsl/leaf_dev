@@ -6,6 +6,7 @@ impl Runtime for FakeRuntime {
     type PlaceHandler = FakePlaceHandler;
     type OperandHandler = FakeOperandHandler;
     type AssignmentHandler = FakeAssignmentHandler;
+    type BranchingHandler = FakeBranchingHandler;
 
     fn place(&mut self) -> Self::PlaceHandler {
         unimplemented!()
@@ -22,8 +23,12 @@ impl Runtime for FakeRuntime {
         unimplemented!()
     }
 
-    fn branch<T: Branching>() -> T {
-        unimplemented!()
+    fn branch(
+        &mut self,
+        location: BasicBlockIndex,
+        discriminant: <Self::OperandHandler as OperandHandler>::Operand,
+    ) -> Self::BranchingHandler {
+        todo!()
     }
 
     fn function<T: Function>() -> T {
@@ -191,6 +196,73 @@ impl AssignmentHandler for FakeAssignmentHandler {
     }
 
     fn array_from(&mut self, items: impl Iterator<Item = Self::Operand>) {
+        unimplemented!()
+    }
+}
+
+pub(crate) struct FakeBranchingHandler {}
+
+impl BranchingHandler for FakeBranchingHandler {
+    type BoolBranchTakingHandler = FakeBranchTakingHandler;
+    type IntBranchTakingHandler = FakeBranchTakingHandler;
+    type CharBranchTakingHandler = FakeBranchTakingHandler;
+    type EnumBranchTakingHandler = FakeBranchTakingHandler;
+
+    fn on_bool(&mut self) -> FakeBranchTakingHandler {
+        unimplemented!()
+    }
+
+    fn on_int(&mut self) -> FakeBranchTakingHandler {
+        unimplemented!()
+    }
+
+    fn on_char(&mut self) -> FakeBranchTakingHandler {
+        unimplemented!()
+    }
+
+    fn on_enum(&mut self) -> FakeBranchTakingHandler {
+        unimplemented!()
+    }
+}
+
+pub(crate) struct FakeBranchTakingHandler {}
+
+impl BranchTakingHandler<bool> for FakeBranchTakingHandler {
+    fn take(&mut self, value: bool) {
+        unimplemented!()
+    }
+
+    fn take_otherwise(&mut self, non_values: &[bool]) {
+        unimplemented!()
+    }
+}
+
+impl BranchTakingHandler<u128> for FakeBranchTakingHandler {
+    fn take(&mut self, value: u128) {
+        unimplemented!()
+    }
+
+    fn take_otherwise(&mut self, non_values: &[u128]) {
+        unimplemented!()
+    }
+}
+
+impl BranchTakingHandler<char> for FakeBranchTakingHandler {
+    fn take(&mut self, value: char) {
+        unimplemented!()
+    }
+
+    fn take_otherwise(&mut self, non_values: &[char]) {
+        unimplemented!()
+    }
+}
+
+impl BranchTakingHandler<VariantIndex> for FakeBranchTakingHandler {
+    fn take(&mut self, value: VariantIndex) {
+        unimplemented!()
+    }
+
+    fn take_otherwise(&mut self, non_values: &[VariantIndex]) {
         unimplemented!()
     }
 }

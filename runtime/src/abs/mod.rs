@@ -1,4 +1,6 @@
 pub(crate) type Local = u32;
+pub type BasicBlockIndex = u32;
+pub type VariantIndex = u32;
 
 #[derive(Debug)]
 pub enum BinaryOp {
@@ -34,6 +36,7 @@ pub(crate) trait Runtime: Sized {
         Place = <Self::PlaceHandler as PlaceHandler>::Place,
         Operand = <Self::OperandHandler as OperandHandler>::Operand,
     >;
+    type BranchingHandler: BranchingHandler;
 
     fn place(&mut self) -> Self::PlaceHandler;
 
@@ -44,7 +47,11 @@ pub(crate) trait Runtime: Sized {
         dest: <Self::PlaceHandler as PlaceHandler>::Place,
     ) -> Self::AssignmentHandler;
 
-    fn branch<T: Branching>() -> T;
+    fn branch(
+        &mut self,
+        location: BasicBlockIndex,
+        discriminant: <Self::OperandHandler as OperandHandler>::Operand,
+    ) -> Self::BranchingHandler;
 
     fn function<T: Function>() -> T;
 }
@@ -140,6 +147,25 @@ pub(crate) trait AssignmentHandler {
     fn array_from(&mut self, items: impl Iterator<Item = Self::Operand>);
 }
 
-pub(crate) trait Branching {}
+pub(crate) trait BranchingHandler {
+    type BoolBranchTakingHandler: BranchTakingHandler<bool>;
+    type IntBranchTakingHandler: BranchTakingHandler<u128>;
+    type CharBranchTakingHandler: BranchTakingHandler<char>;
+    type EnumBranchTakingHandler: BranchTakingHandler<VariantIndex>;
+
+    fn on_bool(&mut self) -> Self::BoolBranchTakingHandler;
+
+    fn on_int(&mut self) -> Self::IntBranchTakingHandler;
+
+    fn on_char(&mut self) -> Self::CharBranchTakingHandler;
+
+    fn on_enum(&mut self) -> Self::EnumBranchTakingHandler;
+}
+
+pub(crate) trait BranchTakingHandler<T> {
+    fn take(&mut self, value: T);
+
+    fn take_otherwise(&mut self, non_values: &[T]);
+}
 
 pub(crate) trait Function {}
