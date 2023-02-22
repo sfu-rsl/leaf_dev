@@ -23,7 +23,7 @@ pub static BINARY_OP_TYPE_HOLDER: BinaryOp = BinaryOp::Add;
 pub static UNARY_OP_TYPE_HOLDER: UnaryOp = UnaryOp::Neg;
 
 pub fn init_runtime_lib() {
-    todo!()
+    init_backend()
 }
 
 pub fn ref_place_local(local: Local) -> PlaceRef {

@@ -2,6 +2,12 @@ use crate::abs::*;
 
 pub(crate) struct FakeBackend {}
 
+impl FakeBackend {
+    pub(crate) fn new() -> Self {
+        Self {}
+    }
+}
+
 impl RuntimeBackend for FakeBackend {
     type PlaceHandler<'a> = FakePlaceHandler where Self: 'a;
     type OperandHandler<'a> = FakeOperandHandler where Self : 'a;

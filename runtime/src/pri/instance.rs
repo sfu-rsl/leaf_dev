@@ -41,6 +41,27 @@ static OPERAND_REF_MANAGER: RefCell<DefaultRefManager<OperandImpl>> =
 #[cfg(runtime_access = "unsafe")]
 static mut OPERAND_REF_MANAGER: DefaultRefManager<OperandImpl> = DefaultRefManager::new();
 
+pub(super) fn init_backend() {
+    INIT.call_once(|| {
+        #[cfg(runtime_access = "safe_mt")]
+        {
+            let mut guard = BACKEND.lock().unwrap();
+            *guard = Some(BackendImpl::new());
+        }
+        #[cfg(runtime_access = "safe_brt")]
+        {
+            let mut binding = BACKEND.borrow_mut();
+            *binding = Some(BackendImpl::new());
+        }
+        #[cfg(runtime_access = "unsafe")]
+        {
+            unsafe {
+                BACKEND = Some(BackendImpl::new());
+            }
+        }
+    });
+}
+
 /* FIXME: Make these functions rely on abstract traits rather than concrete types.
  * It may require some wrapper types to make borrowing/not borrowing of inner objects
  * definite.
