@@ -22,6 +22,8 @@ pub trait BodyProvider<'tcx> {
     fn body(&self) -> &mir::Body<'tcx>;
 }
 
+pub trait InEntryFunction {}
+
 pub struct FunctionInfo<'tcx> {
     pub def_id: DefId,
     pub ret_ty: Ty<'tcx>,
@@ -252,6 +254,12 @@ impl<'tcx, 'bd, B> mir::HasLocalDecls<'tcx> for InBodyContext<'_, 'tcx, '_, B> {
     }
 }
 
+pub struct EntryFunctionMarkerContext<'b, B> {
+    pub(super) base: &'b mut B,
+}
+
+impl<'b, B> InEntryFunction for EntryFunctionMarkerContext<'b, B> {}
+
 pub struct AtLocationContext<'b, B> {
     pub(super) base: &'b mut B,
     pub(super) location: BasicBlock,
@@ -382,6 +390,13 @@ macro_rules! impl_body_provider {
     };
 }
 
+macro_rules! impl_in_entry_function {
+    ($generic_context_type:ident, $($extra_lifetime_param:lifetime)*, $($extra_generic_param:ident)*) => {
+        impl<'b$(, $extra_lifetime_param)*, B: InEntryFunction$(, $extra_generic_param)*> InEntryFunction for $generic_context_type<'b$(, $extra_lifetime_param)*, B$(, $extra_generic_param)*> {
+        }
+    };
+}
+
 macro_rules! impl_has_local_decls {
     ($generic_context_type:ident, $($extra_lifetime_param:lifetime)*, $($extra_generic_param:ident)*) => {
         impl<'b, 'tcx$(, $extra_lifetime_param)*, B: mir::HasLocalDecls<'tcx>$(, $extra_generic_param)*> mir::HasLocalDecls<'tcx> for $generic_context_type<'b$(, $extra_lifetime_param)*, B$(, $extra_generic_param)*> {
@@ -433,6 +448,7 @@ impl_block_manager!(TransparentContext,,);
 impl_jump_target_modifier!(TransparentContext,,);
 impl_ty_ctxt_provider!(TransparentContext,,);
 impl_body_provider!(TransparentContext,,);
+impl_in_entry_function!(TransparentContext,,);
 impl_has_local_decls!(TransparentContext,,);
 impl_location_provider!(TransparentContext,,);
 impl_dest_ref_provider!(TransparentContext,,);
@@ -444,9 +460,22 @@ impl_local_manager!(InBodyContext, 'tcxb 'bd,);
 impl_block_manager!(InBodyContext, 'tcxb 'bd,);
 impl_jump_target_modifier!(InBodyContext, 'tcxb 'bd,);
 impl_ty_ctxt_provider!(InBodyContext, 'tcxb 'bd,);
+impl_in_entry_function!(InBodyContext, 'tcxb 'bd,);
 impl_location_provider!(InBodyContext, 'tcxb 'bd,);
 impl_dest_ref_provider!(InBodyContext, 'tcxb 'bd,);
 impl_discr_info_provider!(InBodyContext, 'tcxb 'bd,);
+
+impl_func_info_provider!(EntryFunctionMarkerContext,,);
+impl_special_types_provider!(EntryFunctionMarkerContext,,);
+impl_local_manager!(EntryFunctionMarkerContext,,);
+impl_block_manager!(EntryFunctionMarkerContext,,);
+impl_jump_target_modifier!(EntryFunctionMarkerContext,,);
+impl_ty_ctxt_provider!(EntryFunctionMarkerContext,,);
+impl_body_provider!(EntryFunctionMarkerContext,,);
+impl_has_local_decls!(EntryFunctionMarkerContext,,);
+impl_location_provider!(EntryFunctionMarkerContext,,);
+impl_dest_ref_provider!(EntryFunctionMarkerContext,,);
+impl_discr_info_provider!(EntryFunctionMarkerContext,,);
 
 impl_func_info_provider!(AtLocationContext,,);
 impl_special_types_provider!(AtLocationContext,,);
@@ -455,6 +484,7 @@ impl_block_manager!(AtLocationContext,,);
 impl_jump_target_modifier!(AtLocationContext,,);
 impl_ty_ctxt_provider!(AtLocationContext,,);
 impl_body_provider!(AtLocationContext,,);
+impl_in_entry_function!(AtLocationContext,,);
 impl_has_local_decls!(AtLocationContext,,);
 impl_dest_ref_provider!(AtLocationContext,,);
 impl_discr_info_provider!(AtLocationContext,,);
@@ -466,6 +496,7 @@ impl_block_manager!(AssignmentContext,,);
 impl_jump_target_modifier!(AssignmentContext,,);
 impl_ty_ctxt_provider!(AssignmentContext,,);
 impl_body_provider!(AssignmentContext,,);
+impl_in_entry_function!(AssignmentContext,,);
 impl_has_local_decls!(AssignmentContext,,);
 impl_location_provider!(AssignmentContext,,);
 impl_discr_info_provider!(AssignmentContext,,);
@@ -477,6 +508,7 @@ impl_block_manager!(BranchingContext, 'tcxd,);
 impl_jump_target_modifier!(BranchingContext, 'tcxd,);
 impl_ty_ctxt_provider!(BranchingContext, 'tcxd,);
 impl_body_provider!(BranchingContext, 'tcxd,);
+impl_in_entry_function!(BranchingContext, 'tcxd,);
 impl_has_local_decls!(BranchingContext, 'tcxd,);
 impl_location_provider!(BranchingContext, 'tcxd,);
 impl_dest_ref_provider!(BranchingContext, 'tcxd,);

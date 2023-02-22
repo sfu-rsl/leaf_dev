@@ -179,6 +179,10 @@ pub trait FunctionHandler {
     fn return_from_func(&mut self);
 }
 
+pub trait EntryFunctionHandler {
+    fn init_runtime_lib(&mut self);
+}
+
 pub struct RuntimeCallAdder<C> {
     context: C,
 }
@@ -243,6 +247,14 @@ impl<C> RuntimeCallAdder<C> {
             context: BranchingContext {
                 base: &mut self.context,
                 switch_info: info,
+            },
+        }
+    }
+
+    pub fn in_entry_fn(&mut self) -> RuntimeCallAdder<EntryFunctionMarkerContext<C>> {
+        RuntimeCallAdder {
+            context: EntryFunctionMarkerContext {
+                base: &mut self.context,
             },
         }
     }
@@ -1046,6 +1058,17 @@ where
     }
 }
 
+impl<'tcx, C> EntryFunctionHandler for RuntimeCallAdder<C>
+where
+    Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
+    C: InEntryFunction,
+{
+    fn init_runtime_lib(&mut self) {
+        let block = self.make_bb_for_call(stringify!(pri::init_runtime_lib), vec![]);
+        self.insert_blocks([block]);
+    }
+}
+
 /*
  * Context requirements work as aliases for context traits to guarantee that a
  * certain feature will be available in `RuntimeCallAdder` when its context
@@ -1102,6 +1125,9 @@ pub mod context_requirements {
 
     pub trait ForReturning<'tcx>: BaseContext<'tcx> {}
     impl<'tcx, C> ForReturning<'tcx> for C where C: BaseContext<'tcx> {}
+
+    pub trait ForEntryFunction<'tcx>: BaseContext<'tcx> + InEntryFunction {}
+    impl<'tcx, C> ForEntryFunction<'tcx> for C where C: BaseContext<'tcx> + InEntryFunction {}
 }
 
 struct BlocksAndResult<'tcx>(Vec<BasicBlockData<'tcx>>, Local);

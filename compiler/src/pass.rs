@@ -8,7 +8,8 @@ use rustc_target::abi::VariantIdx;
 
 use crate::mir_transform::call_addition::{
     context_requirements as ctxtreqs, Assigner, BranchingHandler, BranchingReferencer,
-    FunctionHandler, OperandRef, OperandReferencer, PlaceReferencer, RuntimeCallAdder,
+    EntryFunctionHandler, FunctionHandler, OperandRef, OperandReferencer, PlaceReferencer,
+    RuntimeCallAdder,
 };
 use crate::mir_transform::modification::{BodyModificationUnit, JumpTargetModifier};
 use crate::visit::StatementKindVisitor;
@@ -27,8 +28,21 @@ impl<'tcx> MirPass<'tcx> for LeafPass {
         let mut modification = BodyModificationUnit::new(body.local_decls().next_index());
         let mut call_adder = RuntimeCallAdder::new(tcx, &mut modification);
         let mut call_adder = call_adder.in_body(body);
+        if tcx.entry_fn(()).expect("No entry function was found").0 == body.source.def_id() {
+            Self::handle_entry_function(
+                &mut call_adder
+                    .at(body.basic_blocks.indices().next().unwrap())
+                    .in_entry_fn(),
+            );
+        }
         VisitorFactory::make_body_visitor(&mut call_adder).visit_body(body);
         modification.commit(body);
+    }
+}
+
+impl LeafPass {
+    fn handle_entry_function(call_adder: &mut impl EntryFunctionHandler) {
+        call_adder.init_runtime_lib();
     }
 }
 
