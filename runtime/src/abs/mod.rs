@@ -30,28 +30,36 @@ pub enum UnaryOp {
 }
 
 pub(crate) trait Runtime: Sized {
-    type PlaceHandler: PlaceHandler;
-    type OperandHandler: OperandHandler;
-    type AssignmentHandler: AssignmentHandler<
-        Place = <Self::PlaceHandler as PlaceHandler>::Place,
-        Operand = <Self::OperandHandler as OperandHandler>::Operand,
-    >;
-    type BranchingHandler: BranchingHandler;
+    type PlaceHandler<'a>: PlaceHandler<Place = Self::Place>
+    where
+        Self: 'a;
+    type OperandHandler<'a>: OperandHandler<Place = Self::Place, Operand = Self::Operand>
+    where
+        Self: 'a;
+    type AssignmentHandler<'a>: AssignmentHandler<Place = Self::Place, Operand = Self::Operand>
+    where
+        Self: 'a;
+    type BranchingHandler<'a>: BranchingHandler
+    where
+        Self: 'a;
 
-    fn place(&mut self) -> Self::PlaceHandler;
+    type Place;
+    type Operand;
 
-    fn operand(&mut self) -> Self::OperandHandler;
+    fn place<'a>(&'a mut self) -> Self::PlaceHandler<'a>;
 
-    fn assign_to(
-        &mut self,
-        dest: <Self::PlaceHandler as PlaceHandler>::Place,
-    ) -> Self::AssignmentHandler;
+    fn operand<'a>(&'a mut self) -> Self::OperandHandler<'a>;
 
-    fn branch(
-        &mut self,
+    fn assign_to<'a>(
+        &'a mut self,
+        dest: <Self::AssignmentHandler<'a> as AssignmentHandler>::Place,
+    ) -> Self::AssignmentHandler<'a>;
+
+    fn branch<'a>(
+        &'a mut self,
         location: BasicBlockIndex,
-        discriminant: <Self::OperandHandler as OperandHandler>::Operand,
-    ) -> Self::BranchingHandler;
+        discriminant: <Self::OperandHandler<'static> as OperandHandler>::Operand,
+    ) -> Self::BranchingHandler<'a>;
 
     fn function<T: Function>() -> T;
 }
@@ -59,11 +67,13 @@ pub(crate) trait Runtime: Sized {
 pub(crate) trait PlaceHandler {
     type Place;
 
-    type ProjectionHandler: PlaceProjectionHandler;
+    type ProjectionHandler<'a>: PlaceProjectionHandler<Place = Self::Place>
+    where
+        Self: 'a;
 
     fn of_local(&mut self, local: Local) -> Self::Place;
 
-    fn project_on(&mut self, place: Self::Place) -> Self::ProjectionHandler;
+    fn project_on<'a>(&'a mut self, place: Self::Place) -> Self::ProjectionHandler<'a>;
 }
 
 pub(crate) trait PlaceProjectionHandler {
@@ -87,13 +97,15 @@ pub(crate) trait PlaceProjectionHandler {
 pub(crate) trait OperandHandler {
     type Operand;
     type Place;
-    type ConstantHandler;
+    type ConstantHandler<'a>: ConstantHandler<Operand = Self::Operand>
+    where
+        Self: 'a;
 
     fn copy_of(&mut self, place: Self::Place) -> Self::Operand;
 
     fn move_of(&mut self, place: Self::Place) -> Self::Operand;
 
-    fn const_from(&mut self) -> Self::ConstantHandler;
+    fn const_from<'a>(&'a mut self) -> Self::ConstantHandler<'a>;
 }
 
 pub(crate) trait ConstantHandler {
@@ -148,18 +160,26 @@ pub(crate) trait AssignmentHandler {
 }
 
 pub(crate) trait BranchingHandler {
-    type BoolBranchTakingHandler: BranchTakingHandler<bool>;
-    type IntBranchTakingHandler: BranchTakingHandler<u128>;
-    type CharBranchTakingHandler: BranchTakingHandler<char>;
-    type EnumBranchTakingHandler: BranchTakingHandler<VariantIndex>;
+    type BoolBranchTakingHandler<'a>: BranchTakingHandler<bool>
+    where
+        Self: 'a;
+    type IntBranchTakingHandler<'a>: BranchTakingHandler<u128>
+    where
+        Self: 'a;
+    type CharBranchTakingHandler<'a>: BranchTakingHandler<char>
+    where
+        Self: 'a;
+    type EnumBranchTakingHandler<'a>: BranchTakingHandler<VariantIndex>
+    where
+        Self: 'a;
 
-    fn on_bool(&mut self) -> Self::BoolBranchTakingHandler;
+    fn on_bool<'a>(&'a mut self) -> Self::BoolBranchTakingHandler<'a>;
 
-    fn on_int(&mut self) -> Self::IntBranchTakingHandler;
+    fn on_int<'a>(&'a mut self) -> Self::IntBranchTakingHandler<'a>;
 
-    fn on_char(&mut self) -> Self::CharBranchTakingHandler;
+    fn on_char<'a>(&'a mut self) -> Self::CharBranchTakingHandler<'a>;
 
-    fn on_enum(&mut self) -> Self::EnumBranchTakingHandler;
+    fn on_enum<'a>(&'a mut self) -> Self::EnumBranchTakingHandler<'a>;
 }
 
 pub(crate) trait BranchTakingHandler<T> {

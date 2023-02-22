@@ -3,31 +3,31 @@ use crate::abs::*;
 pub(crate) struct FakeRuntime {}
 
 impl Runtime for FakeRuntime {
-    type PlaceHandler = FakePlaceHandler;
-    type OperandHandler = FakeOperandHandler;
-    type AssignmentHandler = FakeAssignmentHandler;
-    type BranchingHandler = FakeBranchingHandler;
+    type PlaceHandler<'a> = FakePlaceHandler where Self: 'a;
+    type OperandHandler<'a> = FakeOperandHandler where Self : 'a;
+    type AssignmentHandler<'a> = FakeAssignmentHandler where Self : 'a;
+    type BranchingHandler<'a> = FakeBranchingHandler where Self : 'a;
 
-    fn place(&mut self) -> Self::PlaceHandler {
+    type Place = FakePlace;
+    type Operand = FakeOperand;
+
+    fn place(&mut self) -> Self::PlaceHandler<'_> {
         unimplemented!()
     }
 
-    fn operand(&mut self) -> Self::OperandHandler {
+    fn operand(&mut self) -> Self::OperandHandler<'_> {
         unimplemented!()
     }
 
-    fn assign_to(
-        &mut self,
-        dest: <Self::PlaceHandler as PlaceHandler>::Place,
-    ) -> Self::AssignmentHandler {
+    fn assign_to(&mut self, dest: FakePlace) -> Self::AssignmentHandler<'_> {
         unimplemented!()
     }
 
     fn branch(
         &mut self,
         location: BasicBlockIndex,
-        discriminant: <Self::OperandHandler as OperandHandler>::Operand,
-    ) -> Self::BranchingHandler {
+        discriminant: FakeOperand,
+    ) -> Self::BranchingHandler<'_> {
         todo!()
     }
 
@@ -39,15 +39,14 @@ impl Runtime for FakeRuntime {
 pub(crate) struct FakePlaceHandler {}
 
 impl PlaceHandler for FakePlaceHandler {
-    type ProjectionHandler = FakePlaceProjectionHandler;
-
-    type Place = <Self::ProjectionHandler as PlaceProjectionHandler>::Place;
+    type Place = FakePlace;
+    type ProjectionHandler<'a> = FakePlaceProjectionHandler where Self: 'a;
 
     fn of_local(&mut self, local: Local) -> Self::Place {
         unimplemented!()
     }
 
-    fn project_on(&mut self, place: Self::Place) -> Self::ProjectionHandler {
+    fn project_on(&mut self, place: Self::Place) -> Self::ProjectionHandler<'_> {
         unimplemented!()
     }
 }
@@ -93,7 +92,7 @@ impl OperandHandler for FakeOperandHandler {
 
     type Place = FakePlace;
 
-    type ConstantHandler = FakeConstantHandler;
+    type ConstantHandler<'a> = FakeConstantHandler where Self: 'a;
 
     fn copy_of(&mut self, place: Self::Place) -> Self::Operand {
         unimplemented!()
@@ -103,7 +102,7 @@ impl OperandHandler for FakeOperandHandler {
         unimplemented!()
     }
 
-    fn const_from(&mut self) -> Self::ConstantHandler {
+    fn const_from(&mut self) -> Self::ConstantHandler<'_> {
         unimplemented!()
     }
 }
@@ -203,25 +202,25 @@ impl AssignmentHandler for FakeAssignmentHandler {
 pub(crate) struct FakeBranchingHandler {}
 
 impl BranchingHandler for FakeBranchingHandler {
-    type BoolBranchTakingHandler = FakeBranchTakingHandler;
-    type IntBranchTakingHandler = FakeBranchTakingHandler;
-    type CharBranchTakingHandler = FakeBranchTakingHandler;
-    type EnumBranchTakingHandler = FakeBranchTakingHandler;
+    type BoolBranchTakingHandler<'a> = FakeBranchTakingHandler where Self : 'a;
+    type IntBranchTakingHandler<'a> = FakeBranchTakingHandler where Self : 'a;
+    type CharBranchTakingHandler<'a> = FakeBranchTakingHandler where Self : 'a;
+    type EnumBranchTakingHandler<'a> = FakeBranchTakingHandler where Self : 'a;
 
-    fn on_bool(&mut self) -> FakeBranchTakingHandler {
-        unimplemented!()
+    fn on_bool<'a>(&'a mut self) -> Self::BoolBranchTakingHandler<'a> {
+        todo!()
     }
 
-    fn on_int(&mut self) -> FakeBranchTakingHandler {
-        unimplemented!()
+    fn on_int<'a>(&'a mut self) -> Self::IntBranchTakingHandler<'a> {
+        todo!()
     }
 
-    fn on_char(&mut self) -> FakeBranchTakingHandler {
-        unimplemented!()
+    fn on_char<'a>(&'a mut self) -> Self::CharBranchTakingHandler<'a> {
+        todo!()
     }
 
-    fn on_enum(&mut self) -> FakeBranchTakingHandler {
-        unimplemented!()
+    fn on_enum<'a>(&'a mut self) -> Self::EnumBranchTakingHandler<'a> {
+        todo!()
     }
 }
 

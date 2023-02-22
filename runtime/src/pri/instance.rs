@@ -9,8 +9,9 @@ use std::{
 
 type RuntimeImpl = crate::backends::fake::FakeRuntime;
 
-type PlaceImpl = <<RuntimeImpl as Runtime>::PlaceHandler as PlaceHandler>::Place;
-type OperandImpl = <<RuntimeImpl as Runtime>::OperandHandler as OperandHandler>::Operand;
+type PlaceImpl = <<RuntimeImpl as Runtime>::PlaceHandler<'static> as PlaceHandler>::Place;
+type OperandImpl =
+    <<RuntimeImpl as Runtime>::OperandHandler<'static> as OperandHandler>::Operand;
 
 static INIT: Once = Once::new();
 #[cfg(runtime_access = "safe_mt")]
@@ -45,14 +46,16 @@ static mut OPERAND_REF_MANAGER: DefaultRefManager<OperandImpl> = DefaultRefManag
  * definite.
  */
 
-pub(super) fn push_place_ref(
-    get_place: impl FnOnce(<RuntimeImpl as Runtime>::PlaceHandler) -> PlaceImpl,
+pub(super) fn push_place_ref<'a>(
+    get_place: impl FnOnce(<RuntimeImpl as Runtime>::PlaceHandler<'a>) -> PlaceImpl,
 ) -> PlaceRef {
     let place = perform_on_runtime(|r| get_place(r.place()));
     perform_on_place_ref_manager(|rm| rm.push(place))
 }
 
-pub(super) fn assign_to_place_ref(dest: PlaceRef) -> <RuntimeImpl as Runtime>::AssignmentHandler {
+pub(super) fn assign_to_place_ref<'a>(
+    dest: PlaceRef,
+) -> <RuntimeImpl as Runtime>::AssignmentHandler<'a> {
     let dest = take_back_place_ref(dest);
     perform_on_runtime(|r| r.assign_to(dest))
 }
@@ -61,8 +64,8 @@ pub(super) fn take_back_place_ref(reference: PlaceRef) -> PlaceImpl {
     perform_on_place_ref_manager(|rm| rm.take_back(reference))
 }
 
-pub(super) fn push_operand_ref(
-    get_operand: impl FnOnce(<RuntimeImpl as Runtime>::OperandHandler) -> OperandImpl,
+pub(super) fn push_operand_ref<'a>(
+    get_operand: impl FnOnce(<RuntimeImpl as Runtime>::OperandHandler<'a>) -> OperandImpl,
 ) -> OperandRef {
     let operand = perform_on_runtime(|r| get_operand(r.operand()));
     perform_on_operand_ref_manager(|rm| rm.push(operand))
@@ -72,7 +75,7 @@ pub(super) fn take_back_operand_ref(reference: OperandRef) -> OperandImpl {
     perform_on_operand_ref_manager(|rm| rm.take_back(reference))
 }
 
-pub(super) fn branch(info: BranchingInfo) -> <RuntimeImpl as Runtime>::BranchingHandler {
+pub(super) fn branch<'a>(info: BranchingInfo) -> <RuntimeImpl as Runtime>::BranchingHandler<'a> {
     perform_on_runtime(|r| r.branch(info.node_location, take_back_operand_ref(info.discriminant)))
 }
 
