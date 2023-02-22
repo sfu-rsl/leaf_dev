@@ -1,25 +1,25 @@
 use super::utils::{DefaultRefManager, RefManager, UnsafeSync};
 use super::{BranchingInfo, OperandRef, PlaceRef};
-use crate::abs::{OperandHandler, PlaceHandler, Runtime};
+use crate::abs::{OperandHandler, PlaceHandler, RuntimeBackend};
 
 use std::{
     cell::RefCell,
     sync::{Mutex, Once},
 };
 
-type RuntimeImpl = crate::backends::fake::FakeRuntime;
+type BackendImpl = crate::backends::fake::FakeBackend;
 
-type PlaceImpl = <<RuntimeImpl as Runtime>::PlaceHandler<'static> as PlaceHandler>::Place;
+type PlaceImpl = <<BackendImpl as RuntimeBackend>::PlaceHandler<'static> as PlaceHandler>::Place;
 type OperandImpl =
-    <<RuntimeImpl as Runtime>::OperandHandler<'static> as OperandHandler>::Operand;
+    <<BackendImpl as RuntimeBackend>::OperandHandler<'static> as OperandHandler>::Operand;
 
 static INIT: Once = Once::new();
 #[cfg(runtime_access = "safe_mt")]
-static RUNTIME: Mutex<Option<RuntimeImpl>> = Mutex::new(None);
+static BACKEND: Mutex<Option<BackendImpl>> = Mutex::new(None);
 #[cfg(runtime_access = "safe_brt")]
-static RUNTIME: UnsafeSync<RefCell<Option<RuntimeImpl>>> = UnsafeSync::new(RefCell::new(None));
+static BACKEND: UnsafeSync<RefCell<Option<BackendImpl>>> = UnsafeSync::new(RefCell::new(None));
 #[cfg(runtime_access = "unsafe")]
-static mut RUNTIME: Option<RuntimeImpl> = None;
+static mut BACKEND: Option<BackendImpl> = None;
 
 #[cfg(any(runtime_access = "safe_mt", runtime_access = "safe_brt"))]
 thread_local! {
@@ -47,17 +47,17 @@ static mut OPERAND_REF_MANAGER: DefaultRefManager<OperandImpl> = DefaultRefManag
  */
 
 pub(super) fn push_place_ref<'a>(
-    get_place: impl FnOnce(<RuntimeImpl as Runtime>::PlaceHandler<'a>) -> PlaceImpl,
+    get_place: impl FnOnce(<BackendImpl as RuntimeBackend>::PlaceHandler<'a>) -> PlaceImpl,
 ) -> PlaceRef {
-    let place = perform_on_runtime(|r| get_place(r.place()));
+    let place = perform_on_backend(|r| get_place(r.place()));
     perform_on_place_ref_manager(|rm| rm.push(place))
 }
 
 pub(super) fn assign_to_place_ref<'a>(
     dest: PlaceRef,
-) -> <RuntimeImpl as Runtime>::AssignmentHandler<'a> {
+) -> <BackendImpl as RuntimeBackend>::AssignmentHandler<'a> {
     let dest = take_back_place_ref(dest);
-    perform_on_runtime(|r| r.assign_to(dest))
+    perform_on_backend(|r| r.assign_to(dest))
 }
 
 pub(super) fn take_back_place_ref(reference: PlaceRef) -> PlaceImpl {
@@ -65,9 +65,9 @@ pub(super) fn take_back_place_ref(reference: PlaceRef) -> PlaceImpl {
 }
 
 pub(super) fn push_operand_ref<'a>(
-    get_operand: impl FnOnce(<RuntimeImpl as Runtime>::OperandHandler<'a>) -> OperandImpl,
+    get_operand: impl FnOnce(<BackendImpl as RuntimeBackend>::OperandHandler<'a>) -> OperandImpl,
 ) -> OperandRef {
-    let operand = perform_on_runtime(|r| get_operand(r.operand()));
+    let operand = perform_on_backend(|r| get_operand(r.operand()));
     perform_on_operand_ref_manager(|rm| rm.push(operand))
 }
 
@@ -75,33 +75,35 @@ pub(super) fn take_back_operand_ref(reference: OperandRef) -> OperandImpl {
     perform_on_operand_ref_manager(|rm| rm.take_back(reference))
 }
 
-pub(super) fn branch<'a>(info: BranchingInfo) -> <RuntimeImpl as Runtime>::BranchingHandler<'a> {
-    perform_on_runtime(|r| r.branch(info.node_location, take_back_operand_ref(info.discriminant)))
+pub(super) fn branch<'a>(
+    info: BranchingInfo,
+) -> <BackendImpl as RuntimeBackend>::BranchingHandler<'a> {
+    perform_on_backend(|r| r.branch(info.node_location, take_back_operand_ref(info.discriminant)))
 }
 
 #[cfg(runtime_access = "safe_mt")]
-fn perform_on_runtime<T>(action: impl FnOnce(&mut RuntimeImpl) -> T) -> T {
-    let mut guard = RUNTIME.lock().unwrap();
-    check_and_perform_on_runtime(&mut guard, action)
+fn perform_on_backend<T>(action: impl FnOnce(&mut BackendImpl) -> T) -> T {
+    let mut guard = BACKEND.lock().unwrap();
+    check_and_perform_on_backend(&mut guard, action)
 }
 
 #[cfg(runtime_access = "safe_brt")]
-fn perform_on_runtime<T>(action: impl FnOnce(&mut RuntimeImpl) -> T) -> T {
-    let mut binding = RUNTIME.borrow_mut();
-    check_and_perform_on_runtime(&mut binding, action)
+fn perform_on_backend<T>(action: impl FnOnce(&mut BackendImpl) -> T) -> T {
+    let mut binding = BACKEND.borrow_mut();
+    check_and_perform_on_backend(&mut binding, action)
 }
 
 #[cfg(runtime_access = "unsafe")]
-fn perform_on_runtime<T>(action: impl FnOnce(&mut RuntimeImpl) -> T) -> T {
-    check_and_perform_on_runtime(unsafe { &mut RUNTIME }, action)
+fn perform_on_backend<T>(action: impl FnOnce(&mut BackendImpl) -> T) -> T {
+    check_and_perform_on_backend(unsafe { &mut BACKEND }, action)
 }
 
-fn check_and_perform_on_runtime<T>(
-    runtime: &mut Option<RuntimeImpl>,
-    action: impl FnOnce(&mut RuntimeImpl) -> T,
+fn check_and_perform_on_backend<T>(
+    backend: &mut Option<BackendImpl>,
+    action: impl FnOnce(&mut BackendImpl) -> T,
 ) -> T {
-    let runtime = runtime.as_mut().expect("Runtime is not initialized.");
-    action(runtime)
+    let backend = backend.as_mut().expect("Runtime is not initialized.");
+    action(backend)
 }
 
 #[cfg(any(runtime_access = "safe_mt", runtime_access = "safe_brt"))]

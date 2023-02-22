@@ -29,7 +29,7 @@ pub enum UnaryOp {
     Neg,
 }
 
-pub(crate) trait Runtime: Sized {
+pub(crate) trait RuntimeBackend: Sized {
     type PlaceHandler<'a>: PlaceHandler<Place = Self::Place>
     where
         Self: 'a;

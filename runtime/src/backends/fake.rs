@@ -1,8 +1,8 @@
 use crate::abs::*;
 
-pub(crate) struct FakeRuntime {}
+pub(crate) struct FakeBackend {}
 
-impl Runtime for FakeRuntime {
+impl RuntimeBackend for FakeBackend {
     type PlaceHandler<'a> = FakePlaceHandler where Self: 'a;
     type OperandHandler<'a> = FakeOperandHandler where Self : 'a;
     type AssignmentHandler<'a> = FakeAssignmentHandler where Self : 'a;
@@ -28,7 +28,7 @@ impl Runtime for FakeRuntime {
         location: BasicBlockIndex,
         discriminant: FakeOperand,
     ) -> Self::BranchingHandler<'_> {
-        todo!()
+        unimplemented!()
     }
 
     fn function<T: Function>() -> T {

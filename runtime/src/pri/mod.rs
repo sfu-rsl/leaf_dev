@@ -3,7 +3,7 @@ mod utils;
 
 use crate::abs::{
     AssignmentHandler, BasicBlockIndex, BinaryOp, BranchTakingHandler, BranchingHandler,
-    ConstantHandler, Local, OperandHandler, PlaceHandler, PlaceProjectionHandler, Runtime, UnaryOp,
+    ConstantHandler, Local, OperandHandler, PlaceHandler, PlaceProjectionHandler, UnaryOp,
     VariantIndex,
 };
 
@@ -22,7 +22,7 @@ pub static OPERAND_REF_TYPE_HOLDER: OperandRef = 0;
 pub static BINARY_OP_TYPE_HOLDER: BinaryOp = BinaryOp::Add;
 pub static UNARY_OP_TYPE_HOLDER: UnaryOp = UnaryOp::Neg;
 
-pub fn init_runtime() {
+pub fn init_runtime_lib() {
     todo!()
 }
 
