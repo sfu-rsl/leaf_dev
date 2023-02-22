@@ -1,5 +1,5 @@
 use super::utils::{DefaultRefManager, RefManager, UnsafeSync};
-use super::{OperandRef, PlaceRef};
+use super::{BranchingInfo, OperandRef, PlaceRef};
 use crate::abs::{OperandHandler, PlaceHandler, Runtime};
 
 use std::{
@@ -70,6 +70,10 @@ pub(super) fn push_operand_ref(
 
 pub(super) fn take_back_operand_ref(reference: OperandRef) -> OperandImpl {
     perform_on_operand_ref_manager(|rm| rm.take_back(reference))
+}
+
+pub(super) fn branch(info: BranchingInfo) -> <RuntimeImpl as Runtime>::BranchingHandler {
+    perform_on_runtime(|r| r.branch(info.node_location, take_back_operand_ref(info.discriminant)))
 }
 
 #[cfg(runtime_access = "safe_mt")]

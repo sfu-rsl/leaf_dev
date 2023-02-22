@@ -2,8 +2,9 @@ mod instance;
 mod utils;
 
 use crate::abs::{
-    AssignmentHandler, BinaryOp, ConstantHandler, Local, OperandHandler, PlaceHandler,
-    PlaceProjectionHandler, Runtime, UnaryOp,
+    AssignmentHandler, BasicBlockIndex, BinaryOp, BranchTakingHandler, BranchingHandler,
+    ConstantHandler, Local, OperandHandler, PlaceHandler, PlaceProjectionHandler, Runtime, UnaryOp,
+    VariantIndex,
 };
 
 use self::instance::*;
@@ -11,8 +12,6 @@ use self::instance::*;
 pub type Ref = u64;
 pub type PlaceRef = Ref;
 pub type OperandRef = Ref;
-
-pub type VariantIndex = u32;
 
 /*
  * These fields serve as exported symbols in the workaround to get the Tys for
@@ -22,9 +21,6 @@ pub static PLACE_REF_TYPE_HOLDER: PlaceRef = 0;
 pub static OPERAND_REF_TYPE_HOLDER: OperandRef = 0;
 pub static BINARY_OP_TYPE_HOLDER: BinaryOp = BinaryOp::Add;
 pub static UNARY_OP_TYPE_HOLDER: UnaryOp = UnaryOp::Neg;
-
-pub type BasicBlockIndex = u32;
-pub type BranchTarget = BasicBlockIndex;
 
 pub fn init_runtime() {
     todo!()
@@ -158,31 +154,31 @@ pub fn assign_aggregate_array(dest: PlaceRef, items: &[OperandRef]) {
 }
 
 pub fn take_branch_true(info: BranchingInfo) {
-    todo!()
+    branch(info).on_bool().take(true)
 }
 pub fn take_branch_false(info: BranchingInfo) {
-    todo!()
+    branch(info).on_bool().take(false)
 }
 
 pub fn take_branch_int(info: BranchingInfo, value_bit_rep: u128) {
-    todo!()
+    branch(info).on_int().take(value_bit_rep)
 }
 pub fn take_branch_ow_int(info: BranchingInfo, non_values: &[u128]) {
-    todo!()
+    branch(info).on_int().take_otherwise(non_values)
 }
 
 pub fn take_branch_char(info: BranchingInfo, value: char) {
-    todo!()
+    branch(info).on_char().take(value)
 }
 pub fn take_branch_ow_char(info: BranchingInfo, non_values: &[u128]) {
-    todo!()
+    branch(info).on_char().take_otherwise(non_values)
 }
 
 pub fn take_branch_enum_discriminant(info: BranchingInfo, index: VariantIndex) {
-    todo!()
+    branch(info).on_enum().take(index)
 }
 pub fn take_branch_ow_enum_discriminant(info: BranchingInfo, non_indices: &[VariantIndex]) {
-    todo!()
+    branch(info).on_enum().take_otherwise(non_indices)
 }
 
 pub fn call_func(func: OperandRef, args: &[OperandRef], destination: PlaceRef) {
