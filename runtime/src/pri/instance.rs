@@ -40,6 +40,11 @@ static OPERAND_REF_MANAGER: RefCell<DefaultRefManager<OperandImpl>> =
 #[cfg(runtime_access = "unsafe")]
 static mut OPERAND_REF_MANAGER: DefaultRefManager<OperandImpl> = DefaultRefManager::new();
 
+/* FIXME: Make these functions rely on abstract traits rather than concrete types.
+ * It may require some wrapper types to make borrowing/not borrowing of inner objects
+ * definite.
+ */
+
 pub(super) fn push_place_ref(
     get_place: impl FnOnce(<RuntimeImpl as Runtime>::PlaceHandler) -> PlaceImpl,
 ) -> PlaceRef {
@@ -88,8 +93,8 @@ fn check_and_perform_on_runtime<T>(
     runtime: &mut Option<RuntimeImpl>,
     action: impl FnOnce(&mut RuntimeImpl) -> T,
 ) -> T {
-    let mut runtime = runtime.as_mut().expect("Runtime is not initialized.");
-    action(&mut runtime)
+    let runtime = runtime.as_mut().expect("Runtime is not initialized.");
+    action(runtime)
 }
 
 #[cfg(any(runtime_access = "safe_mt", runtime_access = "safe_brt"))]
