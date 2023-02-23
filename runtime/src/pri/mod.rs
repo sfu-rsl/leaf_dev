@@ -90,7 +90,7 @@ pub fn ref_operand_const_char(value: char) -> OperandRef {
 pub fn ref_operand_const_func(id: u64) -> OperandRef {
     push_operand_ref(|mut o| o.const_from().func(id))
 }
-pub fn ref_operand_const_str(value: &str) -> OperandRef {
+pub fn ref_operand_const_str(value: &'static str) -> OperandRef {
     push_operand_ref(|mut o| o.const_from().str(value))
 }
 

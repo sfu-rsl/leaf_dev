@@ -122,7 +122,7 @@ pub(crate) trait ConstantHandler {
 
     fn float(&mut self, bit_rep: u128, ebits: u64, sbits: u64) -> Self::Operand;
 
-    fn str(&mut self, value: &str) -> Self::Operand;
+    fn str(&mut self, value: &'static str) -> Self::Operand;
 
     fn func(&mut self, id: u64) -> Self::Operand;
 }
