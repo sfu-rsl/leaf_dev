@@ -7,7 +7,7 @@ use std::{
     sync::{Mutex, Once},
 };
 
-type BackendImpl = crate::backends::fake::FakeBackend;
+type BackendImpl = crate::backends::basic::logger::LoggerBackend;
 
 type PlaceImpl = <<BackendImpl as RuntimeBackend>::PlaceHandler<'static> as PlaceHandler>::Place;
 type OperandImpl =
