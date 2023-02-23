@@ -1,5 +1,11 @@
 use crate::abs::{self, Local, PlaceHandler, PlaceProjectionHandler};
 
+/* FIXME: We should use a more efficient representation. As place is designed in
+ * in this way to be moved and not borrowed, in places where there is a borrow,
+ * cloning is mandatory which is expensive.
+ * An alternative is the structure used in the compiler itself, which stores a
+ * list of projections instead of recursive structure.
+ */
 #[derive(Debug, Clone)]
 pub(crate) enum Place {
     Local(abs::Local),
