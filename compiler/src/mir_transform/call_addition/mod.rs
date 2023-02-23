@@ -77,7 +77,7 @@ pub trait BlockInserter<'tcx> {
         &mut self,
         blocks: impl IntoIterator<Item = BasicBlockData<'tcx>>,
     ) -> Vec<BasicBlock> {
-        self.insert_blocks_with_stickiness(blocks, false)
+        self.insert_blocks_with_stickiness(blocks, true)
     }
 
     fn insert_blocks_with_stickiness(
