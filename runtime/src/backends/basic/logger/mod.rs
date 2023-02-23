@@ -242,11 +242,16 @@ impl LoggerBranchTakingHandler<'_> {
     }
 
     fn log_otherwise(&self, non_values: impl Iterator<Item = impl Display>) {
-        self.log(format!(
-            "{} not in {}",
-            self.discriminant,
-            comma_separated(non_values)
-        ));
+        let non_values = non_values.collect::<Vec<_>>();
+        if non_values.len() > 1 {
+            self.log(format!(
+                "{} not in {}",
+                self.discriminant,
+                comma_separated(non_values.iter())
+            ));
+        } else {
+            self.log(format!("{} != {}", self.discriminant, non_values[0]));
+        }
     }
 
     fn log(&self, message: impl Display) {
