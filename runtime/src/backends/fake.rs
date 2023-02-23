@@ -26,14 +26,14 @@ impl RuntimeBackend for FakeBackend {
         unimplemented!()
     }
 
-    fn assign_to(&mut self, dest: FakePlace) -> Self::AssignmentHandler<'_> {
+    fn assign_to(&mut self, dest: Self::Place) -> Self::AssignmentHandler<'_> {
         unimplemented!()
     }
 
     fn branch(
         &mut self,
         location: BasicBlockIndex,
-        discriminant: FakeOperand,
+        discriminant: Self::Operand,
     ) -> Self::BranchingHandler<'_> {
         unimplemented!()
     }
