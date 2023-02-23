@@ -88,7 +88,7 @@ impl DefaultPlaceProjectionHandler {
     fn create(&mut self, kind: ProjectionKind) -> Place {
         Place::Projection {
             kind,
-            on: Box::new(self.place),
+            on: Box::new(self.place.clone()),
         }
     }
 }
