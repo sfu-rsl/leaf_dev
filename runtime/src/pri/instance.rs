@@ -102,6 +102,10 @@ pub(super) fn branch<'a>(
     perform_on_backend(|r| r.branch(info.node_location, take_back_operand_ref(info.discriminant)))
 }
 
+pub(super) fn func_control<'a>() -> <BackendImpl as RuntimeBackend>::FunctionHandler<'a> {
+    perform_on_backend(|r| r.func_control())
+}
+
 #[cfg(runtime_access = "safe_mt")]
 fn perform_on_backend<T>(action: impl FnOnce(&mut BackendImpl) -> T) -> T {
     let mut guard = BACKEND.lock().unwrap();

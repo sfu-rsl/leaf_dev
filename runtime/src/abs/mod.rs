@@ -42,6 +42,9 @@ pub(crate) trait RuntimeBackend: Sized {
     type BranchingHandler<'a>: BranchingHandler
     where
         Self: 'a;
+    type FunctionHandler<'a>: FunctionHandler<Place = Self::Place, Operand = Self::Operand>
+    where
+        Self: 'a;
 
     type Place;
     type Operand;
@@ -61,7 +64,7 @@ pub(crate) trait RuntimeBackend: Sized {
         discriminant: <Self::OperandHandler<'static> as OperandHandler>::Operand,
     ) -> Self::BranchingHandler<'a>;
 
-    fn function<T: Function>() -> T;
+    fn func_control<'a>(&'a mut self) -> Self::FunctionHandler<'a>;
 }
 
 pub(crate) trait PlaceHandler {
@@ -188,4 +191,16 @@ pub(crate) trait BranchTakingHandler<T> {
     fn take_otherwise(&mut self, non_values: &[T]);
 }
 
-pub(crate) trait Function {}
+pub(crate) trait FunctionHandler {
+    type Place;
+    type Operand;
+
+    fn call(
+        &mut self,
+        func: Self::Operand,
+        args: impl Iterator<Item = Self::Operand>,
+        result_dest: Self::Place,
+    );
+
+    fn ret(&mut self);
+}

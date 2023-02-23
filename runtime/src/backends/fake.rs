@@ -13,6 +13,7 @@ impl RuntimeBackend for FakeBackend {
     type OperandHandler<'a> = FakeOperandHandler where Self : 'a;
     type AssignmentHandler<'a> = FakeAssignmentHandler where Self : 'a;
     type BranchingHandler<'a> = FakeBranchingHandler where Self : 'a;
+    type FunctionHandler<'a> = FakeFunctionHandler where Self: 'a;
 
     type Place = FakePlace;
     type Operand = FakeOperand;
@@ -37,7 +38,7 @@ impl RuntimeBackend for FakeBackend {
         unimplemented!()
     }
 
-    fn function<T: Function>() -> T {
+    fn func_control<'a>(&'a mut self) -> Self::FunctionHandler<'a> {
         unimplemented!()
     }
 }
@@ -268,6 +269,27 @@ impl BranchTakingHandler<VariantIndex> for FakeBranchTakingHandler {
     }
 
     fn take_otherwise(&mut self, non_values: &[VariantIndex]) {
+        unimplemented!()
+    }
+}
+
+pub(crate) struct FakeFunctionHandler {}
+
+impl FunctionHandler for FakeFunctionHandler {
+    type Place = FakePlace;
+
+    type Operand = FakeOperand;
+
+    fn call(
+        &mut self,
+        func: Self::Operand,
+        args: impl Iterator<Item = Self::Operand>,
+        result_dest: Self::Place,
+    ) {
+        unimplemented!()
+    }
+
+    fn ret(&mut self) {
         unimplemented!()
     }
 }

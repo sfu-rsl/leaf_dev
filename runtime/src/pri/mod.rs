@@ -3,8 +3,8 @@ mod utils;
 
 use crate::abs::{
     AssignmentHandler, BasicBlockIndex, BinaryOp, BranchTakingHandler, BranchingHandler,
-    ConstantHandler, Local, OperandHandler, PlaceHandler, PlaceProjectionHandler, UnaryOp,
-    VariantIndex,
+    ConstantHandler, FunctionHandler, Local, OperandHandler, PlaceHandler, PlaceProjectionHandler,
+    UnaryOp, VariantIndex,
 };
 
 use self::instance::*;
@@ -182,10 +182,14 @@ pub fn take_branch_ow_enum_discriminant(info: BranchingInfo, non_indices: &[Vari
 }
 
 pub fn call_func(func: OperandRef, args: &[OperandRef], destination: PlaceRef) {
-    todo!()
+    func_control().call(
+        take_back_operand_ref(func),
+        args.iter().map(|o| take_back_operand_ref(*o)),
+        take_back_place_ref(destination),
+    )
 }
 pub fn return_from_func() {
-    todo!()
+    func_control().ret()
 }
 
 pub struct BranchingInfo {
