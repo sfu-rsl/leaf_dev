@@ -2,16 +2,19 @@ use crate::abs::{ConstantHandler, OperandHandler};
 
 use super::place::Place;
 
+#[derive(Debug)]
 pub(crate) enum Operand {
-    Place { place: Place, usage: PlaceUsage },
+    Place(Place, PlaceUsage),
     Const(Constant),
 }
 
+#[derive(Debug)]
 pub(crate) enum PlaceUsage {
     Copy,
     Move,
 }
 
+#[derive(Debug)]
 pub(crate) enum Constant {
     Bool(bool),
     Char(char),
@@ -39,17 +42,11 @@ impl OperandHandler for DefaultOperandHandler {
     type ConstantHandler<'a> = DefaultConstantHandler;
 
     fn copy_of(&mut self, place: Self::Place) -> Self::Operand {
-        Operand::Place {
-            place,
-            usage: PlaceUsage::Copy,
-        }
+        Operand::Place(place, PlaceUsage::Copy)
     }
 
     fn move_of(&mut self, place: Self::Place) -> Self::Operand {
-        Operand::Place {
-            place,
-            usage: PlaceUsage::Move,
-        }
+        Operand::Place(place, PlaceUsage::Move)
     }
 
     fn const_from(&mut self) -> Self::ConstantHandler<'_> {
@@ -84,7 +81,7 @@ impl ConstantHandler for DefaultConstantHandler {
         })
     }
 
-    fn str(&mut self, value: &str) -> Self::Operand {
+    fn str(&mut self, value: &'static str) -> Self::Operand {
         Self::create(Constant::Str(value))
     }
 

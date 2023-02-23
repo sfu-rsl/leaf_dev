@@ -1,5 +1,6 @@
 use crate::abs::{self, Local, PlaceHandler, PlaceProjectionHandler};
 
+#[derive(Debug, Clone)]
 pub(crate) enum Place {
     Local(abs::Local),
     Projection {
@@ -9,6 +10,7 @@ pub(crate) enum Place {
     },
 }
 
+#[derive(Debug, Clone)]
 pub(crate) enum ProjectionKind {
     Deref,
     Field(u32),
