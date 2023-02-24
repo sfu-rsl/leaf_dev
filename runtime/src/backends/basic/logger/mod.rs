@@ -71,15 +71,15 @@ impl AssignmentHandler for LoggerAssignmentHandler {
     type Place = Place;
     type Operand = Operand;
 
-    fn use_of(&mut self, operand: Self::Operand) {
+    fn use_of(self, operand: Self::Operand) {
         self.log(operand);
     }
 
-    fn repeat_of(&mut self, operand: Self::Operand, count: usize) {
+    fn repeat_of(self, operand: Self::Operand, count: usize) {
         self.log(format!("[{operand}] * {count}"));
     }
 
-    fn ref_to(&mut self, place: Self::Place, is_mutable: bool) {
+    fn ref_to(self, place: Self::Place, is_mutable: bool) {
         self.log(format!(
             "&{} {}",
             if is_mutable { "mut" } else { "" },
@@ -87,11 +87,11 @@ impl AssignmentHandler for LoggerAssignmentHandler {
         ))
     }
 
-    fn thread_local_ref_to(&mut self) {
+    fn thread_local_ref_to(self) {
         todo!()
     }
 
-    fn address_of(&mut self, place: Self::Place, is_mutable: bool) {
+    fn address_of(self, place: Self::Place, is_mutable: bool) {
         self.log(format!(
             "addr {} {}",
             if is_mutable { "mut" } else { "" },
@@ -99,11 +99,11 @@ impl AssignmentHandler for LoggerAssignmentHandler {
         ))
     }
 
-    fn len_of(&mut self, place: Self::Place) {
+    fn len_of(self, place: Self::Place) {
         self.log(format!("len({place})"));
     }
 
-    fn numeric_cast_of(&mut self, operand: Self::Operand, is_to_float: bool, size: usize) {
+    fn numeric_cast_of(self, operand: Self::Operand, is_to_float: bool, size: usize) {
         self.log(format!(
             "{} as {}{}",
             operand,
@@ -112,12 +112,12 @@ impl AssignmentHandler for LoggerAssignmentHandler {
         ));
     }
 
-    fn cast_of(&mut self) {
+    fn cast_of(self) {
         todo!()
     }
 
     fn binary_op_between(
-        &mut self,
+        self,
         operator: BinaryOp,
         first: Self::Operand,
         second: Self::Operand,
@@ -132,15 +132,15 @@ impl AssignmentHandler for LoggerAssignmentHandler {
         ));
     }
 
-    fn unary_op_on(&mut self, operator: UnaryOp, operand: Self::Operand) {
+    fn unary_op_on(self, operator: UnaryOp, operand: Self::Operand) {
         self.log(format!("{operator}{operand}"));
     }
 
-    fn discriminant_of(&mut self, place: Self::Place) {
+    fn discriminant_of(self, place: Self::Place) {
         self.log(format!("{place}.discr"));
     }
 
-    fn array_from(&mut self, items: impl Iterator<Item = Self::Operand>) {
+    fn array_from(self, items: impl Iterator<Item = Self::Operand>) {
         self.log(format!("[{}]", comma_separated(items)));
     }
 }
@@ -157,55 +157,47 @@ pub(crate) struct LoggerBranchingHandler {
 }
 
 impl BranchingHandler for LoggerBranchingHandler {
-    type BoolBranchTakingHandler<'a> = LoggerBranchTakingHandler<'a>
-    where
-        Self: 'a;
+    type BoolBranchTakingHandler = LoggerBranchTakingHandler;
 
-    type IntBranchTakingHandler<'a> = LoggerBranchTakingHandler<'a>
-    where
-        Self: 'a;
+    type IntBranchTakingHandler = LoggerBranchTakingHandler;
 
-    type CharBranchTakingHandler<'a> = LoggerBranchTakingHandler<'a>
-    where
-        Self: 'a;
+    type CharBranchTakingHandler = LoggerBranchTakingHandler;
 
-    type EnumBranchTakingHandler<'a> = LoggerBranchTakingHandler<'a>
-    where
-        Self: 'a;
+    type EnumBranchTakingHandler = LoggerBranchTakingHandler;
 
-    fn on_bool<'a>(&'a mut self) -> Self::BoolBranchTakingHandler<'a> {
+    fn on_bool(self) -> Self::BoolBranchTakingHandler {
         self.create_branch_taking()
     }
 
-    fn on_int<'a>(&'a mut self) -> Self::IntBranchTakingHandler<'a> {
+    fn on_int(self) -> Self::IntBranchTakingHandler {
         self.create_branch_taking()
     }
 
-    fn on_char<'a>(&'a mut self) -> Self::CharBranchTakingHandler<'a> {
+    fn on_char(self) -> Self::CharBranchTakingHandler {
         self.create_branch_taking()
     }
 
-    fn on_enum<'a>(&'a mut self) -> Self::EnumBranchTakingHandler<'a> {
+    fn on_enum(self) -> Self::EnumBranchTakingHandler {
         self.create_branch_taking()
     }
 }
 
 impl LoggerBranchingHandler {
-    fn create_branch_taking(&self) -> LoggerBranchTakingHandler {
+    fn create_branch_taking(self) -> LoggerBranchTakingHandler {
         LoggerBranchTakingHandler {
             location: self.location,
-            discriminant: &self.discriminant,
+            discriminant: self.discriminant,
         }
     }
 }
 
-pub(crate) struct LoggerBranchTakingHandler<'a> {
+pub(crate) struct LoggerBranchTakingHandler {
     location: BasicBlockIndex,
-    discriminant: &'a Operand,
+    discriminant: Operand,
 }
 
-impl BranchTakingHandler<bool> for LoggerBranchTakingHandler<'_> {
-    fn take(&mut self, value: bool) {
+impl BranchTakingHandler<bool> for LoggerBranchTakingHandler {
+    fn take(self, value: bool) {
         self.log(format!(
             "{}{}",
             if value { "" } else { "!" },
@@ -213,7 +205,7 @@ impl BranchTakingHandler<bool> for LoggerBranchTakingHandler<'_> {
         ));
     }
 
-    fn take_otherwise(&mut self, non_values: &[bool]) {
+    fn take_otherwise(self, non_values: &[bool]) {
         self.take(!non_values[0])
     }
 }
@@ -221,12 +213,12 @@ impl BranchTakingHandler<bool> for LoggerBranchTakingHandler<'_> {
 macro_rules! impl_general_branch_taking_handler {
     ($($type:ty),*) => {
         $(
-            impl BranchTakingHandler<$type> for LoggerBranchTakingHandler<'_> {
-                fn take(&mut self, value: $type) {
+            impl BranchTakingHandler<$type> for LoggerBranchTakingHandler {
+                fn take(self, value: $type) {
                     self.log_eq(value);
                 }
 
-                fn take_otherwise(&mut self, non_values: &[$type]) {
+                fn take_otherwise(self, non_values: &[$type]) {
                     self.log_otherwise(non_values.iter())
                 }
             }
@@ -236,7 +228,7 @@ macro_rules! impl_general_branch_taking_handler {
 
 impl_general_branch_taking_handler!(u128, char, VariantIndex);
 
-impl LoggerBranchTakingHandler<'_> {
+impl LoggerBranchTakingHandler {
     fn log_eq(&self, value: impl Display) {
         self.log(format!("{} == {}", self.discriminant, value));
     }
@@ -267,7 +259,7 @@ impl FunctionHandler for LoggerFunctionHandler {
     type Operand = Operand;
 
     fn call(
-        &mut self,
+        self,
         func: Self::Operand,
         args: impl Iterator<Item = Self::Operand>,
         result_dest: Self::Place,
@@ -280,7 +272,7 @@ impl FunctionHandler for LoggerFunctionHandler {
         );
     }
 
-    fn ret(&mut self) {
+    fn ret(self) {
         log_info!("Returning");
     }
 }

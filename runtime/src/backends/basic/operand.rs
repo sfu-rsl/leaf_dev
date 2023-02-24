@@ -39,17 +39,17 @@ pub(crate) struct DefaultConstantHandler;
 impl OperandHandler for DefaultOperandHandler {
     type Operand = Operand;
     type Place = Place;
-    type ConstantHandler<'a> = DefaultConstantHandler;
+    type ConstantHandler = DefaultConstantHandler;
 
-    fn copy_of(&mut self, place: Self::Place) -> Self::Operand {
+    fn copy_of(self, place: Self::Place) -> Self::Operand {
         Operand::Place(place, PlaceUsage::Copy)
     }
 
-    fn move_of(&mut self, place: Self::Place) -> Self::Operand {
+    fn move_of(self, place: Self::Place) -> Self::Operand {
         Operand::Place(place, PlaceUsage::Move)
     }
 
-    fn const_from(&mut self) -> Self::ConstantHandler<'_> {
+    fn const_from(self) -> Self::ConstantHandler {
         DefaultConstantHandler
     }
 }
@@ -57,15 +57,15 @@ impl OperandHandler for DefaultOperandHandler {
 impl ConstantHandler for DefaultConstantHandler {
     type Operand = Operand;
 
-    fn bool(&mut self, value: bool) -> Self::Operand {
+    fn bool(self, value: bool) -> Self::Operand {
         Self::create(Constant::Bool(value))
     }
 
-    fn char(&mut self, value: char) -> Self::Operand {
+    fn char(self, value: char) -> Self::Operand {
         Self::create(Constant::Char(value))
     }
 
-    fn int(&mut self, bit_rep: u128, size: u64, is_signed: bool) -> Self::Operand {
+    fn int(self, bit_rep: u128, size: u64, is_signed: bool) -> Self::Operand {
         Self::create(Constant::Int {
             bit_rep,
             size,
@@ -73,7 +73,7 @@ impl ConstantHandler for DefaultConstantHandler {
         })
     }
 
-    fn float(&mut self, bit_rep: u128, ebits: u64, sbits: u64) -> Self::Operand {
+    fn float(self, bit_rep: u128, ebits: u64, sbits: u64) -> Self::Operand {
         Self::create(Constant::Float {
             bit_rep,
             ebits,
@@ -81,11 +81,11 @@ impl ConstantHandler for DefaultConstantHandler {
         })
     }
 
-    fn str(&mut self, value: &'static str) -> Self::Operand {
+    fn str(self, value: &'static str) -> Self::Operand {
         Self::create(Constant::Str(value))
     }
 
-    fn func(&mut self, id: u64) -> Self::Operand {
+    fn func(self, id: u64) -> Self::Operand {
         Self::create(Constant::Func(id))
     }
 }
