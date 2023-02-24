@@ -70,125 +70,113 @@ pub(crate) trait RuntimeBackend: Sized {
 pub(crate) trait PlaceHandler {
     type Place;
 
-    type ProjectionHandler<'a>: PlaceProjectionHandler<Place = Self::Place>
-    where
-        Self: 'a;
+    type ProjectionHandler: PlaceProjectionHandler<Place = Self::Place>;
 
-    fn of_local(&mut self, local: Local) -> Self::Place;
+    fn of_local(self, local: Local) -> Self::Place;
 
-    fn project_on<'a>(&'a mut self, place: Self::Place) -> Self::ProjectionHandler<'a>;
+    fn project_on(self, place: Self::Place) -> Self::ProjectionHandler;
 }
 
 pub(crate) trait PlaceProjectionHandler {
     type Place;
 
-    fn deref(&mut self) -> Self::Place;
+    fn deref(self) -> Self::Place;
 
-    fn for_field(&mut self, field: u32) -> Self::Place;
+    fn for_field(self, field: u32) -> Self::Place;
 
-    fn at_index(&mut self, index: Self::Place) -> Self::Place;
+    fn at_index(self, index: Self::Place) -> Self::Place;
 
-    fn at_constant_index(&mut self, offset: u64, min_length: u64, from_end: bool) -> Self::Place;
+    fn at_constant_index(self, offset: u64, min_length: u64, from_end: bool) -> Self::Place;
 
-    fn subslice(&mut self, from: u64, to: u64, from_end: bool) -> Self::Place;
+    fn subslice(self, from: u64, to: u64, from_end: bool) -> Self::Place;
 
-    fn downcast(&mut self, variant_index: u32) -> Self::Place;
+    fn downcast(self, variant_index: u32) -> Self::Place;
 
-    fn opaque_cast(&mut self) -> Self::Place;
+    fn opaque_cast(self) -> Self::Place;
 }
 
 pub(crate) trait OperandHandler {
     type Operand;
     type Place;
-    type ConstantHandler<'a>: ConstantHandler<Operand = Self::Operand>
-    where
-        Self: 'a;
+    type ConstantHandler: ConstantHandler<Operand = Self::Operand>;
 
-    fn copy_of(&mut self, place: Self::Place) -> Self::Operand;
+    fn copy_of(self, place: Self::Place) -> Self::Operand;
 
-    fn move_of(&mut self, place: Self::Place) -> Self::Operand;
+    fn move_of(self, place: Self::Place) -> Self::Operand;
 
-    fn const_from<'a>(&'a mut self) -> Self::ConstantHandler<'a>;
+    fn const_from(self) -> Self::ConstantHandler;
 }
 
 pub(crate) trait ConstantHandler {
     type Operand;
 
-    fn bool(&mut self, value: bool) -> Self::Operand;
+    fn bool(self, value: bool) -> Self::Operand;
 
-    fn char(&mut self, value: char) -> Self::Operand;
+    fn char(self, value: char) -> Self::Operand;
 
-    fn int(&mut self, bit_rep: u128, size: u64, is_signed: bool) -> Self::Operand;
+    fn int(self, bit_rep: u128, size: u64, is_signed: bool) -> Self::Operand;
 
-    fn float(&mut self, bit_rep: u128, ebits: u64, sbits: u64) -> Self::Operand;
+    fn float(self, bit_rep: u128, ebits: u64, sbits: u64) -> Self::Operand;
 
-    fn str(&mut self, value: &'static str) -> Self::Operand;
+    fn str(self, value: &'static str) -> Self::Operand;
 
-    fn func(&mut self, id: u64) -> Self::Operand;
+    fn func(self, id: u64) -> Self::Operand;
 }
 
 pub(crate) trait AssignmentHandler {
     type Place;
     type Operand;
 
-    fn use_of(&mut self, operand: Self::Operand);
+    fn use_of(self, operand: Self::Operand);
 
-    fn repeat_of(&mut self, operand: Self::Operand, count: usize);
+    fn repeat_of(self, operand: Self::Operand, count: usize);
 
-    fn ref_to(&mut self, place: Self::Place, is_mutable: bool);
+    fn ref_to(self, place: Self::Place, is_mutable: bool);
 
-    fn thread_local_ref_to(&mut self);
+    fn thread_local_ref_to(self);
 
-    fn address_of(&mut self, place: Self::Place, is_mutable: bool);
+    fn address_of(self, place: Self::Place, is_mutable: bool);
 
-    fn len_of(&mut self, place: Self::Place);
+    fn len_of(self, place: Self::Place);
 
-    fn numeric_cast_of(&mut self, operand: Self::Operand, is_to_float: bool, size: usize);
+    fn numeric_cast_of(self, operand: Self::Operand, is_to_float: bool, size: usize);
 
-    fn cast_of(&mut self);
+    fn cast_of(self);
 
     fn binary_op_between(
-        &mut self,
+        self,
         operator: BinaryOp,
         first: Self::Operand,
         second: Self::Operand,
         checked: bool,
     );
 
-    fn unary_op_on(&mut self, operator: UnaryOp, operand: Self::Operand);
+    fn unary_op_on(self, operator: UnaryOp, operand: Self::Operand);
 
-    fn discriminant_of(&mut self, place: Self::Place);
+    fn discriminant_of(self, place: Self::Place);
 
-    fn array_from(&mut self, items: impl Iterator<Item = Self::Operand>);
+    fn array_from(self, items: impl Iterator<Item = Self::Operand>);
 }
 
 pub(crate) trait BranchingHandler {
-    type BoolBranchTakingHandler<'a>: BranchTakingHandler<bool>
-    where
-        Self: 'a;
-    type IntBranchTakingHandler<'a>: BranchTakingHandler<u128>
-    where
-        Self: 'a;
-    type CharBranchTakingHandler<'a>: BranchTakingHandler<char>
-    where
-        Self: 'a;
-    type EnumBranchTakingHandler<'a>: BranchTakingHandler<VariantIndex>
-    where
-        Self: 'a;
+    type BoolBranchTakingHandler: BranchTakingHandler<bool>;
+    type IntBranchTakingHandler: BranchTakingHandler<u128>;
+    type CharBranchTakingHandler: BranchTakingHandler<char>;
+    type EnumBranchTakingHandler: BranchTakingHandler<VariantIndex>;
 
-    fn on_bool<'a>(&'a mut self) -> Self::BoolBranchTakingHandler<'a>;
+    fn on_bool(self) -> Self::BoolBranchTakingHandler;
 
-    fn on_int<'a>(&'a mut self) -> Self::IntBranchTakingHandler<'a>;
+    fn on_int(self) -> Self::IntBranchTakingHandler;
 
-    fn on_char<'a>(&'a mut self) -> Self::CharBranchTakingHandler<'a>;
+    fn on_char(self) -> Self::CharBranchTakingHandler;
 
-    fn on_enum<'a>(&'a mut self) -> Self::EnumBranchTakingHandler<'a>;
+    fn on_enum(self) -> Self::EnumBranchTakingHandler;
 }
 
 pub(crate) trait BranchTakingHandler<T> {
-    fn take(&mut self, value: T);
+    fn take(self, value: T);
 
-    fn take_otherwise(&mut self, non_values: &[T]);
+    fn take_otherwise(self, non_values: &[T]);
 }
 
 pub(crate) trait FunctionHandler {
@@ -196,11 +184,11 @@ pub(crate) trait FunctionHandler {
     type Operand;
 
     fn call(
-        &mut self,
+        self,
         func: Self::Operand,
         args: impl Iterator<Item = Self::Operand>,
         result_dest: Self::Place,
     );
 
-    fn ret(&mut self);
+    fn ret(self);
 }

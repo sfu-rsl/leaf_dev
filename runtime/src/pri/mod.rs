@@ -27,17 +27,17 @@ pub fn init_runtime_lib() {
 }
 
 pub fn ref_place_local(local: Local) -> PlaceRef {
-    push_place_ref(|mut p| p.of_local(local))
+    push_place_ref(|p| p.of_local(local))
 }
 
 pub fn ref_place_deref(place: PlaceRef) -> PlaceRef {
-    push_place_ref(|mut p| p.project_on(take_back_place_ref(place)).deref())
+    push_place_ref(|p| p.project_on(take_back_place_ref(place)).deref())
 }
 pub fn ref_place_field(place: PlaceRef, field: u32 /*, type */) -> PlaceRef {
-    push_place_ref(|mut p| p.project_on(take_back_place_ref(place)).for_field(field))
+    push_place_ref(|p| p.project_on(take_back_place_ref(place)).for_field(field))
 }
 pub fn ref_place_index(place: PlaceRef, index_place: PlaceRef) -> PlaceRef {
-    push_place_ref(|mut p| {
+    push_place_ref(|p| {
         p.project_on(take_back_place_ref(place))
             .at_index(take_back_place_ref(index_place))
     })
@@ -48,50 +48,50 @@ pub fn ref_place_constant_index(
     min_length: u64,
     from_end: bool,
 ) -> PlaceRef {
-    push_place_ref(|mut p| {
+    push_place_ref(|p| {
         p.project_on(take_back_place_ref(place))
             .at_constant_index(offset, min_length, from_end)
     })
 }
 pub fn ref_place_subslice(place: PlaceRef, from: u64, to: u64, from_end: bool) -> PlaceRef {
-    push_place_ref(|mut p| {
+    push_place_ref(|p| {
         p.project_on(take_back_place_ref(place))
             .subslice(from, to, from_end)
     })
 }
 pub fn ref_place_downcast(place: PlaceRef, variant_index: u32 /*, type */) -> PlaceRef {
-    push_place_ref(|mut p| {
+    push_place_ref(|p| {
         p.project_on(take_back_place_ref(place))
             .downcast(variant_index)
     })
 }
 pub fn ref_place_opaque_cast(place: PlaceRef /*, type */) -> PlaceRef {
-    push_place_ref(|mut p| p.project_on(take_back_place_ref(place)).opaque_cast())
+    push_place_ref(|p| p.project_on(take_back_place_ref(place)).opaque_cast())
 }
 
 pub fn ref_operand_copy(place: PlaceRef) -> OperandRef {
-    push_operand_ref(|mut o| o.copy_of(take_back_place_ref(place)))
+    push_operand_ref(|o| o.copy_of(take_back_place_ref(place)))
 }
 pub fn ref_operand_move(place: PlaceRef) -> OperandRef {
-    push_operand_ref(|mut o| o.move_of(take_back_place_ref(place)))
+    push_operand_ref(|o| o.move_of(take_back_place_ref(place)))
 }
 pub fn ref_operand_const_bool(value: bool) -> OperandRef {
-    push_operand_ref(|mut o| o.const_from().bool(value))
+    push_operand_ref(|o| o.const_from().bool(value))
 }
 pub fn ref_operand_const_int(bit_rep: u128, size: u64, is_signed: bool) -> OperandRef {
-    push_operand_ref(|mut o| o.const_from().int(bit_rep, size, is_signed))
+    push_operand_ref(|o| o.const_from().int(bit_rep, size, is_signed))
 }
 pub fn ref_operand_const_float(bit_rep: u128, ebits: u64, sbits: u64) -> OperandRef {
-    push_operand_ref(|mut o| o.const_from().float(bit_rep, ebits, sbits))
+    push_operand_ref(|o| o.const_from().float(bit_rep, ebits, sbits))
 }
 pub fn ref_operand_const_char(value: char) -> OperandRef {
-    push_operand_ref(|mut o| o.const_from().char(value))
+    push_operand_ref(|o| o.const_from().char(value))
 }
 pub fn ref_operand_const_func(id: u64) -> OperandRef {
-    push_operand_ref(|mut o| o.const_from().func(id))
+    push_operand_ref(|o| o.const_from().func(id))
 }
 pub fn ref_operand_const_str(value: &'static str) -> OperandRef {
-    push_operand_ref(|mut o| o.const_from().str(value))
+    push_operand_ref(|o| o.const_from().str(value))
 }
 
 pub fn assign_use(dest: PlaceRef, operand: OperandRef) {

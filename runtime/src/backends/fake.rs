@@ -38,7 +38,7 @@ impl RuntimeBackend for FakeBackend {
         unimplemented!()
     }
 
-    fn func_control<'a>(&'a mut self) -> Self::FunctionHandler<'a> {
+    fn func_control(&mut self) -> Self::FunctionHandler<'_> {
         unimplemented!()
     }
 }
@@ -47,13 +47,13 @@ pub(crate) struct FakePlaceHandler {}
 
 impl PlaceHandler for FakePlaceHandler {
     type Place = FakePlace;
-    type ProjectionHandler<'a> = FakePlaceProjectionHandler where Self: 'a;
+    type ProjectionHandler = FakePlaceProjectionHandler;
 
-    fn of_local(&mut self, local: Local) -> Self::Place {
+    fn of_local(self, local: Local) -> Self::Place {
         unimplemented!()
     }
 
-    fn project_on(&mut self, place: Self::Place) -> Self::ProjectionHandler<'_> {
+    fn project_on(self, place: Self::Place) -> Self::ProjectionHandler {
         unimplemented!()
     }
 }
@@ -63,31 +63,31 @@ pub(crate) struct FakePlaceProjectionHandler {}
 impl PlaceProjectionHandler for FakePlaceProjectionHandler {
     type Place = FakePlace;
 
-    fn deref(&mut self) -> Self::Place {
+    fn deref(self) -> Self::Place {
         unimplemented!()
     }
 
-    fn for_field(&mut self, field: u32) -> Self::Place {
+    fn for_field(self, field: u32) -> Self::Place {
         unimplemented!()
     }
 
-    fn at_index(&mut self, index: Self::Place) -> Self::Place {
+    fn at_index(self, index: Self::Place) -> Self::Place {
         unimplemented!()
     }
 
-    fn at_constant_index(&mut self, offset: u64, min_length: u64, from_end: bool) -> Self::Place {
+    fn at_constant_index(self, offset: u64, min_length: u64, from_end: bool) -> Self::Place {
         unimplemented!()
     }
 
-    fn subslice(&mut self, from: u64, to: u64, from_end: bool) -> Self::Place {
+    fn subslice(self, from: u64, to: u64, from_end: bool) -> Self::Place {
         unimplemented!()
     }
 
-    fn downcast(&mut self, variant_index: u32) -> Self::Place {
+    fn downcast(self, variant_index: u32) -> Self::Place {
         unimplemented!()
     }
 
-    fn opaque_cast(&mut self) -> Self::Place {
+    fn opaque_cast(self) -> Self::Place {
         unimplemented!()
     }
 }
@@ -99,17 +99,17 @@ impl OperandHandler for FakeOperandHandler {
 
     type Place = FakePlace;
 
-    type ConstantHandler<'a> = FakeConstantHandler where Self: 'a;
+    type ConstantHandler = FakeConstantHandler;
 
-    fn copy_of(&mut self, place: Self::Place) -> Self::Operand {
+    fn copy_of(self, place: Self::Place) -> Self::Operand {
         unimplemented!()
     }
 
-    fn move_of(&mut self, place: Self::Place) -> Self::Operand {
+    fn move_of(self, place: Self::Place) -> Self::Operand {
         unimplemented!()
     }
 
-    fn const_from(&mut self) -> Self::ConstantHandler<'_> {
+    fn const_from(self) -> Self::ConstantHandler {
         unimplemented!()
     }
 }
@@ -119,27 +119,27 @@ pub(crate) struct FakeConstantHandler {}
 impl ConstantHandler for FakeConstantHandler {
     type Operand = FakeOperand;
 
-    fn bool(&mut self, value: bool) -> Self::Operand {
+    fn bool(self, value: bool) -> Self::Operand {
         unimplemented!()
     }
 
-    fn char(&mut self, value: char) -> Self::Operand {
+    fn char(self, value: char) -> Self::Operand {
         unimplemented!()
     }
 
-    fn int(&mut self, bit_rep: u128, size: u64, is_signed: bool) -> Self::Operand {
+    fn int(self, bit_rep: u128, size: u64, is_signed: bool) -> Self::Operand {
         unimplemented!()
     }
 
-    fn float(&mut self, bit_rep: u128, ebits: u64, sbits: u64) -> Self::Operand {
+    fn float(self, bit_rep: u128, ebits: u64, sbits: u64) -> Self::Operand {
         unimplemented!()
     }
 
-    fn str(&mut self, value: &str) -> Self::Operand {
+    fn str(self, value: &str) -> Self::Operand {
         unimplemented!()
     }
 
-    fn func(&mut self, id: u64) -> Self::Operand {
+    fn func(self, id: u64) -> Self::Operand {
         unimplemented!()
     }
 }
@@ -151,40 +151,40 @@ impl AssignmentHandler for FakeAssignmentHandler {
 
     type Operand = FakeOperand;
 
-    fn use_of(&mut self, operand: Self::Operand) {
+    fn use_of(self, operand: Self::Operand) {
         unimplemented!()
     }
 
-    fn repeat_of(&mut self, operand: Self::Operand, count: usize) {
+    fn repeat_of(self, operand: Self::Operand, count: usize) {
         unimplemented!()
     }
 
-    fn ref_to(&mut self, place: Self::Place, is_mutable: bool) {
+    fn ref_to(self, place: Self::Place, is_mutable: bool) {
         unimplemented!()
     }
 
-    fn thread_local_ref_to(&mut self) {
+    fn thread_local_ref_to(self) {
         unimplemented!()
     }
 
-    fn address_of(&mut self, place: Self::Place, is_mutable: bool) {
+    fn address_of(self, place: Self::Place, is_mutable: bool) {
         unimplemented!()
     }
 
-    fn len_of(&mut self, place: Self::Place) {
+    fn len_of(self, place: Self::Place) {
         unimplemented!()
     }
 
-    fn numeric_cast_of(&mut self, operand: Self::Operand, is_to_float: bool, size: usize) {
+    fn numeric_cast_of(self, operand: Self::Operand, is_to_float: bool, size: usize) {
         unimplemented!()
     }
 
-    fn cast_of(&mut self) {
+    fn cast_of(self) {
         unimplemented!()
     }
 
     fn binary_op_between(
-        &mut self,
+        self,
         operator: BinaryOp,
         first: Self::Operand,
         second: Self::Operand,
@@ -193,15 +193,15 @@ impl AssignmentHandler for FakeAssignmentHandler {
         unimplemented!()
     }
 
-    fn unary_op_on(&mut self, operator: UnaryOp, operand: Self::Operand) {
+    fn unary_op_on(self, operator: UnaryOp, operand: Self::Operand) {
         unimplemented!()
     }
 
-    fn discriminant_of(&mut self, place: Self::Place) {
+    fn discriminant_of(self, place: Self::Place) {
         unimplemented!()
     }
 
-    fn array_from(&mut self, items: impl Iterator<Item = Self::Operand>) {
+    fn array_from(self, items: impl Iterator<Item = Self::Operand>) {
         unimplemented!()
     }
 }
@@ -209,24 +209,24 @@ impl AssignmentHandler for FakeAssignmentHandler {
 pub(crate) struct FakeBranchingHandler {}
 
 impl BranchingHandler for FakeBranchingHandler {
-    type BoolBranchTakingHandler<'a> = FakeBranchTakingHandler where Self : 'a;
-    type IntBranchTakingHandler<'a> = FakeBranchTakingHandler where Self : 'a;
-    type CharBranchTakingHandler<'a> = FakeBranchTakingHandler where Self : 'a;
-    type EnumBranchTakingHandler<'a> = FakeBranchTakingHandler where Self : 'a;
+    type BoolBranchTakingHandler = FakeBranchTakingHandler;
+    type IntBranchTakingHandler = FakeBranchTakingHandler;
+    type CharBranchTakingHandler = FakeBranchTakingHandler;
+    type EnumBranchTakingHandler = FakeBranchTakingHandler;
 
-    fn on_bool<'a>(&'a mut self) -> Self::BoolBranchTakingHandler<'a> {
+    fn on_bool(self) -> Self::BoolBranchTakingHandler {
         todo!()
     }
 
-    fn on_int<'a>(&'a mut self) -> Self::IntBranchTakingHandler<'a> {
+    fn on_int(self) -> Self::IntBranchTakingHandler {
         todo!()
     }
 
-    fn on_char<'a>(&'a mut self) -> Self::CharBranchTakingHandler<'a> {
+    fn on_char(self) -> Self::CharBranchTakingHandler {
         todo!()
     }
 
-    fn on_enum<'a>(&'a mut self) -> Self::EnumBranchTakingHandler<'a> {
+    fn on_enum(self) -> Self::EnumBranchTakingHandler {
         todo!()
     }
 }
@@ -234,41 +234,41 @@ impl BranchingHandler for FakeBranchingHandler {
 pub(crate) struct FakeBranchTakingHandler {}
 
 impl BranchTakingHandler<bool> for FakeBranchTakingHandler {
-    fn take(&mut self, value: bool) {
+    fn take(self, value: bool) {
         unimplemented!()
     }
 
-    fn take_otherwise(&mut self, non_values: &[bool]) {
+    fn take_otherwise(self, non_values: &[bool]) {
         unimplemented!()
     }
 }
 
 impl BranchTakingHandler<u128> for FakeBranchTakingHandler {
-    fn take(&mut self, value: u128) {
+    fn take(self, value: u128) {
         unimplemented!()
     }
 
-    fn take_otherwise(&mut self, non_values: &[u128]) {
+    fn take_otherwise(self, non_values: &[u128]) {
         unimplemented!()
     }
 }
 
 impl BranchTakingHandler<char> for FakeBranchTakingHandler {
-    fn take(&mut self, value: char) {
+    fn take(self, value: char) {
         unimplemented!()
     }
 
-    fn take_otherwise(&mut self, non_values: &[char]) {
+    fn take_otherwise(self, non_values: &[char]) {
         unimplemented!()
     }
 }
 
 impl BranchTakingHandler<VariantIndex> for FakeBranchTakingHandler {
-    fn take(&mut self, value: VariantIndex) {
+    fn take(self, value: VariantIndex) {
         unimplemented!()
     }
 
-    fn take_otherwise(&mut self, non_values: &[VariantIndex]) {
+    fn take_otherwise(self, non_values: &[VariantIndex]) {
         unimplemented!()
     }
 }
@@ -281,7 +281,7 @@ impl FunctionHandler for FakeFunctionHandler {
     type Operand = FakeOperand;
 
     fn call(
-        &mut self,
+        self,
         func: Self::Operand,
         args: impl Iterator<Item = Self::Operand>,
         result_dest: Self::Place,
@@ -289,7 +289,7 @@ impl FunctionHandler for FakeFunctionHandler {
         unimplemented!()
     }
 
-    fn ret(&mut self) {
+    fn ret(self) {
         unimplemented!()
     }
 }
