@@ -17,14 +17,24 @@ macro_rules! log_info {
     ($($arg:tt)+) => (println!($($arg)+))
 }
 
-pub(crate) struct LoggerBackend {}
+pub(crate) struct LoggerBackend {
+    call_manager: CallManager,
+}
+
+impl LoggerBackend {
+    pub fn new() -> Self {
+        Self {
+            call_manager: CallManager::new(),
+        }
+    }
+}
 
 impl RuntimeBackend for LoggerBackend {
     type PlaceHandler<'a> = DefaultPlaceHandler where Self: 'a;
     type OperandHandler<'a> = DefaultOperandHandler where Self : 'a;
     type AssignmentHandler<'a> = LoggerAssignmentHandler where Self : 'a;
     type BranchingHandler<'a> = LoggerBranchingHandler where Self : 'a;
-    type FunctionHandler<'a> = LoggerFunctionHandler where Self: 'a;
+    type FunctionHandler<'a> = LoggerFunctionHandler<'a> where Self: 'a;
 
     type Place = Place;
     type Operand = Operand;
@@ -53,13 +63,9 @@ impl RuntimeBackend for LoggerBackend {
     }
 
     fn func_control<'a>(&'a mut self) -> Self::FunctionHandler<'a> {
-        LoggerFunctionHandler
-    }
-}
-
-impl LoggerBackend {
-    pub fn new() -> Self {
-        Self {}
+        LoggerFunctionHandler {
+            call_manager: &mut self.call_manager,
+        }
     }
 }
 
@@ -251,9 +257,11 @@ impl LoggerBranchTakingHandler {
     }
 }
 
-pub(crate) struct LoggerFunctionHandler;
+pub(crate) struct LoggerFunctionHandler<'a> {
+    call_manager: &'a mut CallManager,
+}
 
-impl FunctionHandler for LoggerFunctionHandler {
+impl FunctionHandler for LoggerFunctionHandler<'_> {
     type Place = Place;
 
     type Operand = Operand;
@@ -270,10 +278,40 @@ impl FunctionHandler for LoggerFunctionHandler {
             comma_separated(args),
             result_dest
         );
+        self.call_manager
+            .notify_call(CallInfo { func, result_dest });
     }
 
     fn ret(self) {
-        log_info!("Returning");
+        let info = self.call_manager.notify_return();
+        log_info!(
+            "Returning from {} and storing result in {}",
+            info.func,
+            info.result_dest
+        );
+    }
+}
+
+struct CallInfo {
+    func: Operand,
+    result_dest: Place,
+}
+
+struct CallManager {
+    stack: Vec<CallInfo>,
+}
+
+impl CallManager {
+    fn new() -> Self {
+        Self { stack: Vec::new() }
+    }
+
+    fn notify_call(&mut self, call: CallInfo) {
+        self.stack.push(call);
+    }
+
+    fn notify_return(&mut self) -> CallInfo {
+        self.stack.pop().unwrap()
     }
 }
 
