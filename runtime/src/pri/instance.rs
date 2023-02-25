@@ -74,11 +74,12 @@ pub(super) fn push_place_ref<'a>(
     perform_on_place_ref_manager(|rm| rm.push(place))
 }
 
-pub(super) fn assign_to_place_ref<'a>(
+pub(super) fn assign_to<'a, T>(
     dest: PlaceRef,
-) -> <BackendImpl as RuntimeBackend>::AssignmentHandler<'a> {
+    assign_action: impl FnOnce(<BackendImpl as RuntimeBackend>::AssignmentHandler<'a>) -> T,
+) -> T {
     let dest = take_back_place_ref(dest);
-    perform_on_backend(|r| r.assign_to(dest))
+    perform_on_backend(|r| assign_action(r.assign_to(dest)))
 }
 
 pub(super) fn take_back_place_ref(reference: PlaceRef) -> PlaceImpl {
@@ -96,14 +97,23 @@ pub(super) fn take_back_operand_ref(reference: OperandRef) -> OperandImpl {
     perform_on_operand_ref_manager(|rm| rm.take_back(reference))
 }
 
-pub(super) fn branch<'a>(
+pub(super) fn branch<T>(
     info: BranchingInfo,
-) -> <BackendImpl as RuntimeBackend>::BranchingHandler<'a> {
-    perform_on_backend(|r| r.branch(info.node_location, take_back_operand_ref(info.discriminant)))
+    branch_action: impl FnOnce(<BackendImpl as RuntimeBackend>::BranchingHandler<'_>) -> T,
+) -> T {
+    perform_on_backend(|r| {
+        let handler = r.branch(info.node_location, take_back_operand_ref(info.discriminant));
+        branch_action(handler)
+    })
 }
 
-pub(super) fn func_control<'a>() -> <BackendImpl as RuntimeBackend>::FunctionHandler<'a> {
-    perform_on_backend(|r| r.func_control())
+pub(super) fn func_control<T>(
+    func_action: impl FnOnce(<BackendImpl as RuntimeBackend>::FunctionHandler<'_>) -> T,
+) -> T {
+    perform_on_backend(|r| {
+        let func_control = r.func_control();
+        func_action(func_control)
+    })
 }
 
 #[cfg(runtime_access = "safe_mt")]
@@ -119,7 +129,7 @@ fn perform_on_backend<T>(action: impl FnOnce(&mut BackendImpl) -> T) -> T {
 }
 
 #[cfg(runtime_access = "unsafe")]
-fn perform_on_backend<T>(action: impl FnOnce(&mut BackendImpl) -> T) -> T {
+fn perform_on_backend<T>(action: impl FnOnce(&'static mut BackendImpl) -> T) -> T {
     check_and_perform_on_backend(unsafe { &mut BACKEND }, action)
 }
 

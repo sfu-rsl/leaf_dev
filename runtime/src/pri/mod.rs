@@ -95,32 +95,36 @@ pub fn ref_operand_const_str(value: &'static str) -> OperandRef {
 }
 
 pub fn assign_use(dest: PlaceRef, operand: OperandRef) {
-    assign_to_place_ref(dest).use_of(take_back_operand_ref(operand))
+    assign_to(dest, |h| h.use_of(take_back_operand_ref(operand)))
 }
 pub fn assign_repeat(dest: PlaceRef, operand: OperandRef, count: usize /* constant */) {
-    assign_to_place_ref(dest).repeat_of(take_back_operand_ref(operand), count)
+    assign_to(dest, |h| h.repeat_of(take_back_operand_ref(operand), count))
 }
 pub fn assign_ref(dest: PlaceRef, place: PlaceRef, is_mutable: bool) {
-    assign_to_place_ref(dest).ref_to(take_back_place_ref(place), is_mutable)
+    assign_to(dest, |h| h.ref_to(take_back_place_ref(place), is_mutable))
 }
 pub fn assign_thread_local_ref(
     dest: PlaceRef, /* TODO: Complicated. MIRAI has some works on it. */
 ) {
-    assign_to_place_ref(dest).thread_local_ref_to()
+    assign_to(dest, |h| h.thread_local_ref_to())
 }
 pub fn assign_address_of(dest: PlaceRef, place: PlaceRef, is_mutable: bool) {
-    assign_to_place_ref(dest).address_of(take_back_place_ref(place), is_mutable)
+    assign_to(dest, |h| {
+        h.address_of(take_back_place_ref(place), is_mutable)
+    })
 }
 pub fn assign_len(dest: PlaceRef, place: PlaceRef) {
     // To be investigated. Not obvious whether it appears at all in the later stages.
-    assign_to_place_ref(dest).len_of(take_back_place_ref(place))
+    assign_to(dest, |h| h.len_of(take_back_place_ref(place)))
 }
 
 pub fn assign_cast_numeric(dest: PlaceRef, operand: OperandRef, is_to_float: bool, size: usize) {
-    assign_to_place_ref(dest).numeric_cast_of(take_back_operand_ref(operand), is_to_float, size)
+    assign_to(dest, |h| {
+        h.numeric_cast_of(take_back_operand_ref(operand), is_to_float, size)
+    })
 }
 pub fn assign_cast(dest: PlaceRef /* TODO: Other types of cast. */) {
-    assign_to_place_ref(dest).cast_of()
+    assign_to(dest, |h| h.cast_of())
 }
 
 pub fn assign_binary_op(
@@ -130,66 +134,74 @@ pub fn assign_binary_op(
     second: OperandRef,
     checked: bool,
 ) {
-    assign_to_place_ref(dest).binary_op_between(
-        operator,
-        take_back_operand_ref(first),
-        take_back_operand_ref(second),
-        checked,
-    )
+    assign_to(dest, |h| {
+        h.binary_op_between(
+            operator,
+            take_back_operand_ref(first),
+            take_back_operand_ref(second),
+            checked,
+        )
+    })
 }
 pub fn assign_unary_op(dest: PlaceRef, operator: UnaryOp, operand: OperandRef) {
-    assign_to_place_ref(dest).unary_op_on(operator, take_back_operand_ref(operand))
+    assign_to(dest, |h| {
+        h.unary_op_on(operator, take_back_operand_ref(operand))
+    })
 }
 
 pub fn set_discriminant(dest: PlaceRef, place: PlaceRef, variant_index: u32) {
     todo!()
 }
 pub fn assign_discriminant(dest: PlaceRef, place: PlaceRef) {
-    assign_to_place_ref(dest).discriminant_of(take_back_place_ref(place))
+    assign_to(dest, |h| h.discriminant_of(take_back_place_ref(place)))
 }
 
 // We use slice to simplify working with the interface.
 pub fn assign_aggregate_array(dest: PlaceRef, items: &[OperandRef]) {
-    assign_to_place_ref(dest).array_from(items.iter().map(|o| take_back_operand_ref(*o)))
+    assign_to(dest, |h| {
+        h.array_from(items.iter().map(|o| take_back_operand_ref(*o)))
+    })
 }
 
 pub fn take_branch_true(info: BranchingInfo) {
-    branch(info).on_bool().take(true)
+    branch(info, |h| h.on_bool().take(true))
 }
 pub fn take_branch_false(info: BranchingInfo) {
-    branch(info).on_bool().take(false)
+    branch(info, |h| h.on_bool().take(false))
 }
 
 pub fn take_branch_int(info: BranchingInfo, value_bit_rep: u128) {
-    branch(info).on_int().take(value_bit_rep)
+    branch(info, |h| h.on_int().take(value_bit_rep))
 }
 pub fn take_branch_ow_int(info: BranchingInfo, non_values: &[u128]) {
-    branch(info).on_int().take_otherwise(non_values)
+    branch(info, |h| h.on_int().take_otherwise(non_values))
 }
 
 pub fn take_branch_char(info: BranchingInfo, value: char) {
-    branch(info).on_char().take(value)
+    branch(info, |h| h.on_char().take(value))
 }
 pub fn take_branch_ow_char(info: BranchingInfo, non_values: &[u128]) {
-    branch(info).on_char().take_otherwise(non_values)
+    branch(info, |h| h.on_char().take_otherwise(non_values))
 }
 
 pub fn take_branch_enum_discriminant(info: BranchingInfo, index: VariantIndex) {
-    branch(info).on_enum().take(index)
+    branch(info, |h| h.on_enum().take(index))
 }
 pub fn take_branch_ow_enum_discriminant(info: BranchingInfo, non_indices: &[VariantIndex]) {
-    branch(info).on_enum().take_otherwise(non_indices)
+    branch(info, |h| h.on_enum().take_otherwise(non_indices))
 }
 
 pub fn call_func(func: OperandRef, args: &[OperandRef], destination: PlaceRef) {
-    func_control().call(
-        take_back_operand_ref(func),
-        args.iter().map(|o| take_back_operand_ref(*o)),
-        take_back_place_ref(destination),
-    )
+    func_control(|h| {
+        h.call(
+            take_back_operand_ref(func),
+            args.iter().map(|o| take_back_operand_ref(*o)),
+            take_back_place_ref(destination),
+        )
+    })
 }
 pub fn return_from_func() {
-    func_control().ret()
+    func_control(|h| h.ret())
 }
 
 pub struct BranchingInfo {
