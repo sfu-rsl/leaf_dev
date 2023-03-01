@@ -309,13 +309,10 @@ where
             rustc_middle::ty::ConstKind::Placeholder(_) => unreachable!("used in the borrow checker before `optimized_mir`; also MIRAI ignores this"),
             rustc_middle::ty::ConstKind::Unevaluated(_) => unreachable!("this is only used in the HIR"),
             rustc_middle::ty::ConstKind::Value(val_tree) => match val_tree {
-                rustc_middle::ty::ValTree::Leaf(scalar_int) => match scalar_int.try_to_uint(scalar_int.size()) {
-                    Ok(num) => num as u64,
-                    Err(size) => unreachable!("Scalar int would have inconsistent size of both {:?} and {:?}", size, scalar_int.size()),
-                },
+                rustc_middle::ty::ValTree::Leaf(scalar_int) => scalar_int.try_to_uint(scalar_int.size()).unwrap() as u64,
                 rustc_middle::ty::ValTree::Branch(_) => unreachable!("these are only for aggragate constants"),
             },
-            rustc_middle::ty::ConstKind::Error(_) => todo!("we should implement a reusable error reporting function"),
+            rustc_middle::ty::ConstKind::Error(_) => panic!("The const here could not be computed"),
             rustc_middle::ty::ConstKind::Expr(_) => unreachable!("this is unreachable because constant propagation"),
         };
         let operand_ref = self.call_adder.reference_operand(operand);

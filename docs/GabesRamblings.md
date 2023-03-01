@@ -15,7 +15,8 @@
 - optimizations run on the MIR
   - https://github.com/rust-lang/rust/blob/master/compiler/rustc_mir_transform/src/lib.rs#L545
   - as of 2023-02-15 we get the `body` we parse from `providers.optimized_mir` (see: https://rustc-dev-guide.rust-lang.org/mir/passes.html), so all of the above optimizations have been applied to it!
-  - MIR has no ZSTs!
+  - MIR has no assignments to ZST places
+    - this makes sense because one of the big goals of ZSTs is to remove functionality generically (https://doc.rust-lang.org/nomicon/exotic-sizes.html#zero-sized-types-zsts)
   - MIR has constant propagation applied to it already (it's not perfect though?) (at least two passes of constant propagation)
 - Unevaluated is only used in the HIR
   - https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/ty/enum.ConstKind.html
