@@ -127,7 +127,7 @@ pub trait OperandReferencer<'tcx> {
 pub trait Assigner {
     fn by_use(&mut self, operand: OperandRef);
 
-    fn by_repeat(&mut self, operand: OperandRef, count: u64);
+    fn by_repeat(&mut self, operand: OperandRef, count: ScalarInt);
 
     fn by_ref(&mut self, place: PlaceRef, is_mutable: bool);
 
@@ -671,12 +671,12 @@ where
         )
     }
 
-    fn by_repeat(&mut self, operand: OperandRef, count: u64) {
+    fn by_repeat(&mut self, operand: OperandRef, count: ScalarInt) {
         self.add_bb_for_assign_call(
             stringify!(pri::assign_repeat),
             vec![
                 operand::copy_for_local(operand.into()),
-                operand::const_from_uint(self.context.tcx(), count),
+                operand::const_from_scalar_int_unsigned(self.context.tcx(), count),
             ],
         )
     }
@@ -1167,6 +1167,19 @@ mod utils {
         use rustc_span::DUMMY_SP;
         use rustc_type_ir::UintTy;
 
+        fn uint_ty_from_bytes(size: usize) -> UintTy {
+            [
+                UintTy::U8,
+                UintTy::U16,
+                UintTy::U32,
+                UintTy::U64,
+                UintTy::U128,
+            ]
+            .into_iter()
+            .find(|t| (t.bit_width().unwrap() / 8) as usize == size)
+            .unwrap()
+        }
+
         pub fn const_from_uint<'tcx, T>(tcx: TyCtxt<'tcx>, value: T) -> Operand<'tcx>
         where
             T: Into<u128>,
@@ -1176,16 +1189,7 @@ mod utils {
                 ScalarInt::try_from_uint(value, rustc_abi::Size::from_bytes(size_of::<T>()))
                     .unwrap(),
                 tcx.mk_mach_uint(
-                    [
-                        UintTy::U8,
-                        UintTy::U16,
-                        UintTy::U32,
-                        UintTy::U64,
-                        UintTy::U128,
-                    ]
-                    .into_iter()
-                    .find(|t| (t.bit_width().unwrap() / 8) as usize == size_of::<T>())
-                    .unwrap(),
+                    uint_ty_from_bytes(size_of::<T>())
                 ),
             )
         }
@@ -1203,6 +1207,17 @@ mod utils {
             value: ScalarInt,
             ty: Ty<'tcx>,
         ) -> Operand<'tcx> {
+            Operand::const_from_scalar(tcx, ty, Scalar::Int(value), DUMMY_SP)
+        }
+
+        pub fn const_from_scalar_int_unsigned<'tcx>(
+            tcx: TyCtxt<'tcx>,
+            value: ScalarInt,
+        ) -> Operand<'tcx> {
+            // value must be unsigned
+            let ty = tcx.mk_mach_uint(
+                uint_ty_from_bytes(value.size().bytes_usize())
+            );
             Operand::const_from_scalar(tcx, ty, Scalar::Int(value), DUMMY_SP)
         }
 
