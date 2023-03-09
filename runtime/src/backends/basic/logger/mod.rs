@@ -7,7 +7,7 @@ use crate::abs::{
 
 use super::{
     operand::{DefaultOperandHandler, Operand, PlaceUsage},
-    place::{DefaultPlaceHandler, Place, ProjectionKind},
+    place::{DefaultPlaceHandler, Place, Projection},
 };
 
 macro_rules! log_info {
@@ -307,10 +307,10 @@ impl CallManager {
             /*
              * TODO: This is a hack to make sure that a call info exists for the
              * entry point. It will be investigated in #68.
-            */
+             */
             stack: vec![CallInfo {
                 func: Operand::Const(super::operand::Constant::Func(0)),
-                result_dest: Place::Local(0),
+                result_dest: Place::new(0),
             }],
         }
     }
@@ -333,29 +333,35 @@ impl Display for Place {
 struct PlaceFormatter;
 impl PlaceFormatter {
     fn format(f: &mut std::fmt::Formatter<'_>, place: &Place) -> std::fmt::Result {
-        match place {
-            Place::Local(local) => write!(f, "v{}", local),
-            Place::Projection { kind, on } => Self::pre(kind, f)
-                .and_then(|_| write!(f, "{}", on))
-                .and_then(|_| Self::post(kind, f)),
-        }
+        place
+            .projections
+            .iter()
+            .try_for_each(|proj| Self::pre(proj, f))
+            .and_then(|_| write!(f, "v{}", place.local))
+            .and_then(|_| {
+                place
+                    .projections
+                    .iter()
+                    .rev()
+                    .try_for_each(|proj| Self::post(proj, f))
+            })
     }
 
-    fn pre(pkind: &ProjectionKind, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match pkind {
-            ProjectionKind::Deref => f.write_str("*"),
+    fn pre(proj: &Projection, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match proj {
+            Projection::Deref => f.write_str("*"),
             _ => Result::Ok(()),
         }
     }
 
-    fn post(pkind: &ProjectionKind, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match pkind {
-            ProjectionKind::Field(field) => write!(f, ".{}", field),
-            ProjectionKind::Index(index) => write!(f, "[{}]", index),
-            ProjectionKind::Subslice { from, to, from_end } => {
+    fn post(proj: &Projection, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match proj {
+            Projection::Field(field) => write!(f, ".{}", field),
+            Projection::Index(index) => write!(f, "[{}]", index),
+            Projection::Subslice { from, to, from_end } => {
                 write!(f, "[{}..{}{}]", from, to, if *from_end { "^" } else { "" })
             }
-            ProjectionKind::ConstantIndex {
+            Projection::ConstantIndex {
                 offset,
                 min_length,
                 from_end,
@@ -368,7 +374,7 @@ impl PlaceFormatter {
                     if *from_end { "^" } else { "" }
                 )
             }
-            ProjectionKind::Downcast(variant) => write!(f, " as {}th", variant),
+            Projection::Downcast(variant) => write!(f, " as {}th", variant),
             _ => Result::Ok(()),
         }
     }

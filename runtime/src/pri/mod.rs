@@ -4,7 +4,7 @@ mod utils;
 use crate::abs::{
     AssignmentHandler, BasicBlockIndex, BinaryOp, BranchTakingHandler, BranchingHandler,
     ConstantHandler, FunctionHandler, Local, OperandHandler, PlaceHandler, PlaceProjectionHandler,
-    UnaryOp, VariantIndex,
+    UnaryOp, VariantIndex, FieldIndex,
 };
 
 use self::instance::*;
@@ -33,7 +33,7 @@ pub fn ref_place_local(local: Local) -> PlaceRef {
 pub fn ref_place_deref(place: PlaceRef) -> PlaceRef {
     push_place_ref(|p| p.project_on(take_back_place_ref(place)).deref())
 }
-pub fn ref_place_field(place: PlaceRef, field: u32 /*, type */) -> PlaceRef {
+pub fn ref_place_field(place: PlaceRef, field: FieldIndex /*, type */) -> PlaceRef {
     push_place_ref(|p| p.project_on(take_back_place_ref(place)).for_field(field))
 }
 pub fn ref_place_index(place: PlaceRef, index_place: PlaceRef) -> PlaceRef {

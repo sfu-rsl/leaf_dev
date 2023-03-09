@@ -1,7 +1,9 @@
 pub(crate) type Local = u32;
 pub type BasicBlockIndex = u32;
 pub type VariantIndex = u32;
+pub type FieldIndex = u32;
 
+#[derive(Clone, Copy)]
 #[derive(Debug)]
 pub enum BinaryOp {
     Add,
@@ -23,6 +25,7 @@ pub enum BinaryOp {
     Offset,
 }
 
+#[derive(Clone, Copy)]
 #[derive(Debug)]
 pub enum UnaryOp {
     Not,
@@ -82,7 +85,7 @@ pub(crate) trait PlaceProjectionHandler {
 
     fn deref(self) -> Self::Place;
 
-    fn for_field(self, field: u32) -> Self::Place;
+    fn for_field(self, field: FieldIndex) -> Self::Place;
 
     fn at_index(self, index: Self::Place) -> Self::Place;
 
