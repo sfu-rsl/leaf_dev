@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use crate::abs::{
     AssignmentHandler, BasicBlockIndex, BinaryOp, BranchTakingHandler, BranchingHandler,
-    FunctionHandler, RuntimeBackend, UnaryOp, VariantIndex,
+    DiscriminantSetter, FunctionHandler, RuntimeBackend, UnaryOp, VariantIndex,
 };
 
 use super::{
@@ -33,6 +33,7 @@ impl RuntimeBackend for LoggerBackend {
     type PlaceHandler<'a> = DefaultPlaceHandler where Self: 'a;
     type OperandHandler<'a> = DefaultOperandHandler where Self : 'a;
     type AssignmentHandler<'a> = LoggerAssignmentHandler where Self : 'a;
+    type DiscriminantSetter<'a> = LoggerDiscriminantSetter where Self : 'a;
     type BranchingHandler<'a> = LoggerBranchingHandler where Self : 'a;
     type FunctionHandler<'a> = LoggerFunctionHandler<'a> where Self: 'a;
 
@@ -49,6 +50,10 @@ impl RuntimeBackend for LoggerBackend {
 
     fn assign_to(&mut self, dest: Place) -> Self::AssignmentHandler<'_> {
         LoggerAssignmentHandler { destination: dest }
+    }
+
+    fn set_discriminant_for(&mut self, dest: Place) -> Self::DiscriminantSetter<'_> {
+        LoggerDiscriminantSetter { destination: dest }
     }
 
     fn branch(
@@ -154,6 +159,24 @@ impl AssignmentHandler for LoggerAssignmentHandler {
 impl LoggerAssignmentHandler {
     fn log(&self, message: impl Display) {
         log_info!("{} = {}", self.destination, message);
+    }
+}
+
+pub(crate) struct LoggerDiscriminantSetter {
+    destination: Place,
+}
+
+impl DiscriminantSetter for LoggerDiscriminantSetter {
+    type Place = Place;
+
+    fn variant_index(self, variant_index: VariantIndex) {
+        self.log(format!("index {variant_index}"))
+    }
+}
+
+impl LoggerDiscriminantSetter {
+    fn log(&self, message: impl Display) {
+        log_info!("{}.discr = {}", self.destination, message);
     }
 }
 
@@ -307,7 +330,7 @@ impl CallManager {
             /*
              * TODO: This is a hack to make sure that a call info exists for the
              * entry point. It will be investigated in #68.
-            */
+             */
             stack: vec![CallInfo {
                 func: Operand::Const(super::operand::Constant::Func(0)),
                 result_dest: Place::Local(0),

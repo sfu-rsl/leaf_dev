@@ -12,6 +12,7 @@ impl RuntimeBackend for FakeBackend {
     type PlaceHandler<'a> = FakePlaceHandler where Self: 'a;
     type OperandHandler<'a> = FakeOperandHandler where Self : 'a;
     type AssignmentHandler<'a> = FakeAssignmentHandler where Self : 'a;
+    type DiscriminantSetter<'a> = FakeDiscriminantSetter where Self : 'a;
     type BranchingHandler<'a> = FakeBranchingHandler where Self : 'a;
     type FunctionHandler<'a> = FakeFunctionHandler where Self: 'a;
 
@@ -27,6 +28,10 @@ impl RuntimeBackend for FakeBackend {
     }
 
     fn assign_to(&mut self, dest: Self::Place) -> Self::AssignmentHandler<'_> {
+        unimplemented!()
+    }
+
+    fn set_discriminant_for(&mut self, dest: Self::Place) -> Self::DiscriminantSetter<'_> {
         unimplemented!()
     }
 
@@ -202,6 +207,16 @@ impl AssignmentHandler for FakeAssignmentHandler {
     }
 
     fn array_from(self, items: impl Iterator<Item = Self::Operand>) {
+        unimplemented!()
+    }
+}
+
+pub(crate) struct FakeDiscriminantSetter {}
+
+impl DiscriminantSetter for FakeDiscriminantSetter {
+    type Place = FakePlace;
+
+    fn variant_index(self, _variant_index: VariantIndex) {
         unimplemented!()
     }
 }

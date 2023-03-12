@@ -3,8 +3,8 @@ mod utils;
 
 use crate::abs::{
     AssignmentHandler, BasicBlockIndex, BinaryOp, BranchTakingHandler, BranchingHandler,
-    ConstantHandler, FunctionHandler, Local, OperandHandler, PlaceHandler, PlaceProjectionHandler,
-    UnaryOp, VariantIndex,
+    ConstantHandler, DiscriminantSetter, FunctionHandler, Local, OperandHandler, PlaceHandler,
+    PlaceProjectionHandler, UnaryOp, VariantIndex,
 };
 
 use self::instance::*;
@@ -149,8 +149,8 @@ pub fn assign_unary_op(dest: PlaceRef, operator: UnaryOp, operand: OperandRef) {
     })
 }
 
-pub fn set_discriminant(dest: PlaceRef, place: PlaceRef, variant_index: u32) {
-    todo!()
+pub fn set_discriminant(dest: PlaceRef, variant_index: u32) {
+    set_discriminant_for(dest, |h| h.variant_index(variant_index))
 }
 pub fn assign_discriminant(dest: PlaceRef, place: PlaceRef) {
     assign_to(dest, |h| h.discriminant_of(take_back_place_ref(place)))
