@@ -8,8 +8,8 @@ use rustc_target::abi::VariantIdx;
 
 use crate::mir_transform::call_addition::{
     context_requirements as ctxtreqs, Assigner, BranchingHandler, BranchingReferencer,
-    EntryFunctionHandler, FunctionHandler, OperandRef, OperandReferencer, PlaceReferencer,
-    RuntimeCallAdder, DiscriminantSetter,
+    DiscriminantSetter, EntryFunctionHandler, FunctionHandler, OperandRef, OperandReferencer,
+    PlaceReferencer, RuntimeCallAdder,
 };
 use crate::mir_transform::modification::{BodyModificationUnit, JumpTargetModifier};
 use crate::visit::StatementKindVisitor;
@@ -163,7 +163,9 @@ where
 
     fn visit_set_discriminant(&mut self, place: &Place<'tcx>, variant_index: &VariantIdx) -> () {
         let destination = self.call_adder.reference_place(place);
-        self.call_adder.assign(destination).set_discriminant(destination, variant_index)
+        self.call_adder
+            .assign(destination)
+            .set_discriminant(destination, variant_index)
     }
 
     fn visit_deinit(&mut self, place: &Place<'tcx>) -> () {
@@ -301,7 +303,7 @@ where
     /// `Repeat(...)` Creates an array where each element is the value of the operand.
     fn visit_repeat(&mut self, operand: &Operand<'tcx>, count: &rustc_middle::ty::Const<'tcx>) {
         // Array specification: https://doc.rust-lang.org/std/primitive.array.html
-        // - Spec requires count is a non-negative compile-time constant size, so it must be 
+        // - Spec requires count is a non-negative compile-time constant size, so it must be
         //   of type usize https://doc.rust-lang.org/std/primitive.usize.html
         let scalar_int = match count.kind() {
             rustc_middle::ty::ConstKind::Param(_) => todo!("used in const generics, may come up again when supporting generic functions"),
@@ -317,9 +319,7 @@ where
             rustc_middle::ty::ConstKind::Expr(_) => unreachable!("this is unreachable because constant propagation"),
         };
         let operand_ref = self.call_adder.reference_operand(operand);
-        self.call_adder.by_repeat(
-            operand_ref, scalar_int,
-        )
+        self.call_adder.by_repeat(operand_ref, scalar_int)
     }
 
     fn visit_ref(

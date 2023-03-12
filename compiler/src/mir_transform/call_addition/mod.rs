@@ -1,7 +1,6 @@
 use std::{fmt::Debug, vec};
 
 use rustc_apfloat::{ieee, Float};
-use rustc_target::abi::VariantIdx;
 use rustc_const_eval::interpret::{ConstValue, Scalar};
 use rustc_middle::{
     mir::{
@@ -11,6 +10,7 @@ use rustc_middle::{
     ty::{GenericArg, ScalarInt, Ty, TyCtxt, TyKind},
 };
 use rustc_span::DUMMY_SP;
+use rustc_target::abi::VariantIdx;
 
 use self::{
     context::*,
@@ -805,9 +805,10 @@ where
     fn set_discriminant(&mut self, place: PlaceRef, variant_index: &VariantIdx) {
         self.add_bb_for_assign_call(
             stringify!(pri::set_discriminant),
-            vec![
-                operand::const_from_uint(self.context.tcx(), variant_index.as_u32()),
-            ],
+            vec![operand::const_from_uint(
+                self.context.tcx(),
+                variant_index.as_u32(),
+            )],
         )
     }
 }
@@ -1209,9 +1210,7 @@ mod utils {
                 tcx,
                 ScalarInt::try_from_uint(value, rustc_abi::Size::from_bytes(size_of::<T>()))
                     .unwrap(),
-                tcx.mk_mach_uint(
-                    uint_ty_from_bytes(size_of::<T>())
-                ),
+                tcx.mk_mach_uint(uint_ty_from_bytes(size_of::<T>())),
             )
         }
 
@@ -1236,9 +1235,7 @@ mod utils {
             value: ScalarInt,
         ) -> Operand<'tcx> {
             // value must be unsigned
-            let ty = tcx.mk_mach_uint(
-                uint_ty_from_bytes(value.size().bytes_usize())
-            );
+            let ty = tcx.mk_mach_uint(uint_ty_from_bytes(value.size().bytes_usize()));
             Operand::const_from_scalar(tcx, ty, Scalar::Int(value), DUMMY_SP)
         }
 
