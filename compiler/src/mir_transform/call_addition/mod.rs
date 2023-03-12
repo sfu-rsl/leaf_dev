@@ -1,6 +1,7 @@
 use std::{fmt::Debug, vec};
 
 use rustc_apfloat::{ieee, Float};
+use rustc_target::abi::VariantIdx;
 use rustc_const_eval::interpret::{ConstValue, Scalar};
 use rustc_middle::{
     mir::{
@@ -154,6 +155,10 @@ pub trait Assigner {
     fn by_discriminant(&mut self, place: PlaceRef);
 
     fn by_aggregate_array(&mut self, items: &[OperandRef]);
+}
+
+pub trait DiscriminantSetter {
+    fn set_discriminant(&mut self, place: PlaceRef, variant_index: &VariantIdx);
 }
 
 pub trait BranchingReferencer<'tcx> {
@@ -791,6 +796,22 @@ where
         )
     }
 }
+
+impl<'tcx, C> DiscriminantSetter for RuntimeCallAdder<C>
+where
+    Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
+    C: DestinationReferenceProvider + BodyLocalManager<'tcx> + TyContextProvider<'tcx>,
+{
+    fn set_discriminant(&mut self, place: PlaceRef, variant_index: &VariantIdx) {
+        self.add_bb_for_assign_call(
+            stringify!(pri::set_discriminant),
+            vec![
+                operand::const_from_uint(self.context.tcx(), variant_index.as_u32()),
+            ],
+        )
+    }
+}
+
 impl<'tcx, C> RuntimeCallAdder<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,

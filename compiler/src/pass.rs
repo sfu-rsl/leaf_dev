@@ -9,7 +9,7 @@ use rustc_target::abi::VariantIdx;
 use crate::mir_transform::call_addition::{
     context_requirements as ctxtreqs, Assigner, BranchingHandler, BranchingReferencer,
     EntryFunctionHandler, FunctionHandler, OperandRef, OperandReferencer, PlaceReferencer,
-    RuntimeCallAdder,
+    RuntimeCallAdder, DiscriminantSetter,
 };
 use crate::mir_transform::modification::{BodyModificationUnit, JumpTargetModifier};
 use crate::visit::StatementKindVisitor;
@@ -162,7 +162,8 @@ where
     }
 
     fn visit_set_discriminant(&mut self, place: &Place<'tcx>, variant_index: &VariantIdx) -> () {
-        Default::default()
+        let destination = self.call_adder.reference_place(place);
+        self.call_adder.assign(destination).set_discriminant(destination, variant_index)
     }
 
     fn visit_deinit(&mut self, place: &Place<'tcx>) -> () {
