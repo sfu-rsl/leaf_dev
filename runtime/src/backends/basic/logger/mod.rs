@@ -170,13 +170,7 @@ impl DiscriminantSetter for LoggerDiscriminantSetter {
     type Place = Place;
 
     fn variant_index(self, variant_index: VariantIndex) {
-        self.log(format!("index {variant_index}"))
-    }
-}
-
-impl LoggerDiscriminantSetter {
-    fn log(&self, message: impl Display) {
-        log_info!("{}.discr = {}", self.destination, message);
+        log_info!("{}.discr = index {}", self.destination, variant_index);
     }
 }
 
