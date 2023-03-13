@@ -156,6 +156,7 @@ pub trait Assigner {
 
     fn by_aggregate_array(&mut self, items: &[OperandRef]);
 
+    // Special case for SetDiscriminant StatementType since it is similar to a regular assignment
     fn its_discriminant_to(&mut self, variant_index: &VariantIdx);
 }
 
