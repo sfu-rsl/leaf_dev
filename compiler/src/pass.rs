@@ -165,7 +165,7 @@ where
         let destination = self.call_adder.reference_place(place);
         self.call_adder
             .assign(destination)
-            .set_discriminant(variant_index)
+            .its_discriminant_to(variant_index)
     }
 
     fn visit_deinit(&mut self, place: &Place<'tcx>) -> () {

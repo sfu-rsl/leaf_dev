@@ -158,7 +158,7 @@ pub trait Assigner {
 }
 
 pub trait DiscriminantSetter {
-    fn set_discriminant(&mut self, variant_index: &VariantIdx);
+    fn its_discriminant_to(&mut self, variant_index: &VariantIdx);
 }
 
 pub trait BranchingReferencer<'tcx> {
@@ -802,7 +802,7 @@ where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
     C: DestinationReferenceProvider + BodyLocalManager<'tcx> + TyContextProvider<'tcx>,
 {
-    fn set_discriminant(&mut self, variant_index: &VariantIdx) {
+    fn its_discriminant_to(&mut self, variant_index: &VariantIdx) {
         self.add_bb_for_assign_call(
             stringify!(pri::set_discriminant),
             vec![operand::const_from_uint(
