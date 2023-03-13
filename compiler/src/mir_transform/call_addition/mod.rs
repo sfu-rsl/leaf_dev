@@ -155,9 +155,7 @@ pub trait Assigner {
     fn by_discriminant(&mut self, place: PlaceRef);
 
     fn by_aggregate_array(&mut self, items: &[OperandRef]);
-}
 
-pub trait DiscriminantSetter {
     fn its_discriminant_to(&mut self, variant_index: &VariantIdx);
 }
 
@@ -795,13 +793,7 @@ where
             additional_statements.to_vec(),
         )
     }
-}
 
-impl<'tcx, C> DiscriminantSetter for RuntimeCallAdder<C>
-where
-    Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
-    C: DestinationReferenceProvider + BodyLocalManager<'tcx> + TyContextProvider<'tcx>,
-{
     fn its_discriminant_to(&mut self, variant_index: &VariantIdx) {
         self.add_bb_for_assign_call(
             stringify!(pri::set_discriminant),

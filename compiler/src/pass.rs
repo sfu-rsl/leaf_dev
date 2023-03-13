@@ -8,8 +8,8 @@ use rustc_target::abi::VariantIdx;
 
 use crate::mir_transform::call_addition::{
     context_requirements as ctxtreqs, Assigner, BranchingHandler, BranchingReferencer,
-    DiscriminantSetter, EntryFunctionHandler, FunctionHandler, OperandRef, OperandReferencer,
-    PlaceReferencer, RuntimeCallAdder,
+    EntryFunctionHandler, FunctionHandler, OperandRef, OperandReferencer, PlaceReferencer,
+    RuntimeCallAdder,
 };
 use crate::mir_transform::modification::{BodyModificationUnit, JumpTargetModifier};
 use crate::visit::StatementKindVisitor;
