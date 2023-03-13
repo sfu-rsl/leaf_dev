@@ -39,9 +39,6 @@ pub(crate) trait RuntimeBackend: Sized {
     type AssignmentHandler<'a>: AssignmentHandler<Place = Self::Place, Operand = Self::Operand>
     where
         Self: 'a;
-    type DiscriminantSetter<'a>: DiscriminantSetter<Place = Self::Place>
-    where
-        Self: 'a;
     type BranchingHandler<'a>: BranchingHandler
     where
         Self: 'a;
@@ -60,11 +57,6 @@ pub(crate) trait RuntimeBackend: Sized {
         &'a mut self,
         dest: <Self::AssignmentHandler<'a> as AssignmentHandler>::Place,
     ) -> Self::AssignmentHandler<'a>;
-
-    fn set_discriminant_for<'a>(
-        &'a mut self,
-        dest: <Self::DiscriminantSetter<'a> as DiscriminantSetter>::Place,
-    ) -> Self::DiscriminantSetter<'a>;
 
     fn branch<'a>(
         &'a mut self,
@@ -164,10 +156,6 @@ pub(crate) trait AssignmentHandler {
     fn discriminant_of(self, place: Self::Place);
 
     fn array_from(self, items: impl Iterator<Item = Self::Operand>);
-}
-
-pub(crate) trait DiscriminantSetter {
-    type Place;
 
     fn variant_index(self, variant_index: VariantIndex);
 }

@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use crate::abs::{
     AssignmentHandler, BasicBlockIndex, BinaryOp, BranchTakingHandler, BranchingHandler,
-    DiscriminantSetter, FunctionHandler, RuntimeBackend, UnaryOp, VariantIndex,
+    FunctionHandler, RuntimeBackend, UnaryOp, VariantIndex,
 };
 
 use super::{
@@ -33,7 +33,6 @@ impl RuntimeBackend for LoggerBackend {
     type PlaceHandler<'a> = DefaultPlaceHandler where Self: 'a;
     type OperandHandler<'a> = DefaultOperandHandler where Self : 'a;
     type AssignmentHandler<'a> = LoggerAssignmentHandler where Self : 'a;
-    type DiscriminantSetter<'a> = LoggerDiscriminantSetter where Self : 'a;
     type BranchingHandler<'a> = LoggerBranchingHandler where Self : 'a;
     type FunctionHandler<'a> = LoggerFunctionHandler<'a> where Self: 'a;
 
@@ -50,10 +49,6 @@ impl RuntimeBackend for LoggerBackend {
 
     fn assign_to(&mut self, dest: Place) -> Self::AssignmentHandler<'_> {
         LoggerAssignmentHandler { destination: dest }
-    }
-
-    fn set_discriminant_for(&mut self, dest: Place) -> Self::DiscriminantSetter<'_> {
-        LoggerDiscriminantSetter { destination: dest }
     }
 
     fn branch(
@@ -154,23 +149,15 @@ impl AssignmentHandler for LoggerAssignmentHandler {
     fn array_from(self, items: impl Iterator<Item = Self::Operand>) {
         self.log(format!("[{}]", comma_separated(items)));
     }
+
+    fn variant_index(self, variant_index: VariantIndex) {
+        log_info!("{}.discr = index {}", self.destination, variant_index);
+    }
 }
 
 impl LoggerAssignmentHandler {
     fn log(&self, message: impl Display) {
         log_info!("{} = {}", self.destination, message);
-    }
-}
-
-pub(crate) struct LoggerDiscriminantSetter {
-    destination: Place,
-}
-
-impl DiscriminantSetter for LoggerDiscriminantSetter {
-    type Place = Place;
-
-    fn variant_index(self, variant_index: VariantIndex) {
-        log_info!("{}.discr = index {}", self.destination, variant_index);
     }
 }
 

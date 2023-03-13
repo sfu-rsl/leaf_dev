@@ -82,14 +82,6 @@ pub(super) fn assign_to<'a, T>(
     perform_on_backend(|r| assign_action(r.assign_to(dest)))
 }
 
-pub(super) fn set_discriminant_for<'a, T>(
-    dest: PlaceRef,
-    discriminant_action: impl FnOnce(<BackendImpl as RuntimeBackend>::DiscriminantSetter<'a>) -> T,
-) -> T {
-    let dest = take_back_place_ref(dest);
-    perform_on_backend(|r| discriminant_action(r.set_discriminant_for(dest)))
-}
-
 pub(super) fn take_back_place_ref(reference: PlaceRef) -> PlaceImpl {
     perform_on_place_ref_manager(|rm| rm.take_back(reference))
 }
