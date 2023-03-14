@@ -1,11 +1,11 @@
-use std::rc::Rc;
+use std::{ops::Deref, rc::Rc};
 
-use crate::abs::{BinaryOp, FieldIndex, UnaryOp, VariantIndex};
+use crate::abs::{BinaryOp, FieldIndex, UnaryOp};
 
 use super::place::Place;
 
 pub(super) type ValueRef = Rc<Value>;
-pub(super) type SymValueRef = Rc<SymValue>;
+pub(super) type SymValueRef = SymValueGuard;
 
 #[derive(Clone, Debug)]
 pub(super) enum Value {
@@ -14,6 +14,10 @@ pub(super) enum Value {
 }
 
 impl Value {
+    pub fn from_const(value: ConstValue) -> Self {
+        Self::Concrete(ConcreteValue::from_const(value))
+    }
+
     pub(super) fn is_symbolic(&self) -> bool {
         matches!(self, Value::Symbolic(_))
     }
@@ -23,21 +27,20 @@ impl Value {
 pub(super) enum ConcreteValue {
     Const(ConstValue),
     Adt(AdtValue),
-    Array { len: u64, elements: Vec<ValueRef> },
+    Array(ArrayValue),
     Ref(RefValue),
+}
+
+impl ConcreteValue {
+    pub fn from_const(value: ConstValue) -> Self {
+        Self::Const(value)
+    }
 }
 
 impl ConcreteValue {
     pub fn try_to_adt(&mut self) -> Option<&mut AdtValue> {
         match self {
             Self::Adt(value) => Some(value),
-            _ => None,
-        }
-    }
-
-    pub fn try_to_array(&mut self) -> Option<&mut Vec<ValueRef>> {
-        match self {
-            Self::Array { elements, .. } => Some(elements),
             _ => None,
         }
     }
@@ -68,6 +71,91 @@ pub(super) enum ConstValue {
     Func(u64),
 }
 
+impl ConstValue {
+    pub fn unary_op(this: &Self, operator: UnaryOp) -> ConstValue {
+        match operator {
+            UnaryOp::Neg => match this {
+                Self::Int {
+                    bit_rep,
+                    size,
+                    is_signed: true,
+                } => Self::Int {
+                    bit_rep: todo!("Proposed value: {}", !bit_rep + 1),
+                    size: *size,
+                    is_signed: true,
+                },
+                Self::Float {
+                    bit_rep,
+                    ebits,
+                    sbits,
+                } => unimplemented!(),
+                _ => unreachable!("Negation of non-numeric constant is not possible."),
+            },
+            UnaryOp::Not => match this {
+                Self::Bool(value) => Self::Bool(!value),
+                Self::Int {
+                    bit_rep,
+                    size,
+                    is_signed,
+                } => Self::Int {
+                    bit_rep: !bit_rep,
+                    size: *size,
+                    is_signed: *is_signed,
+                },
+                _ => unreachable!("Not operand only works on boolean and integers."),
+            },
+        }
+    }
+
+    pub fn binary_op(first: &Self, second: &Self, operator: BinaryOp) -> ConstValue {
+        match operator {
+            BinaryOp::Add => match (first, second) {
+                (
+                    Self::Int {
+                        bit_rep: first,
+                        size: first_size,
+                        is_signed: first_signed,
+                    },
+                    Self::Int {
+                        bit_rep: second,
+                        size: second_size,
+                        is_signed: second_signed,
+                    },
+                ) => {
+                    assert!(
+                        first_size == second_size,
+                        "Addition of integers with different sizes is not expected."
+                    );
+                    assert!(
+                        first_signed == second_signed,
+                        "Addition of integers with different signed modes is not expected."
+                    );
+
+                    Self::Int {
+                        bit_rep: first + second,
+                        size: *first_size,
+                        is_signed: *first_signed,
+                    }
+                }
+                (
+                    Self::Float {
+                        bit_rep: first,
+                        ebits: first_ebits,
+                        sbits: first_sbits,
+                    },
+                    Self::Float {
+                        bit_rep: second,
+                        ebits: second_ebits,
+                        sbits: second_sbits,
+                    },
+                ) => unimplemented!(),
+                _ => unreachable!("Addition only works on integers."),
+            },
+            _ => unimplemented!(),
+        }
+    }
+}
+
 impl From<usize> for ConstValue {
     fn from(value: usize) -> Self {
         Self::Int {
@@ -81,7 +169,7 @@ impl From<usize> for ConstValue {
 #[derive(Clone, Debug)]
 pub(super) enum AdtKind {
     Struct,
-    Enum(VariantIndex),
+    Enum { discriminant: ValueRef },
 }
 
 #[derive(Clone, Debug)]
@@ -97,6 +185,18 @@ impl AdtValue {
             .take()
             .expect("Field value is taken out before.");
         self.fields[field] = Some(replace(value));
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct ArrayValue {
+    pub elements: Vec<ValueRef>,
+}
+
+impl ArrayValue {
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.elements.len()
     }
 }
 
@@ -147,15 +247,8 @@ pub(super) struct SymbolicVar {
 
 #[derive(Clone, Debug)]
 pub(super) enum Expr {
-    Unary {
-        op: UnaryOp,
-        expr: SymValueRef,
-    },
-    Binary {
-        op: BinaryOp,
-        left: SymValueRef,
-        right: ValueRef,
-    },
+    Unary(UnaryOp, SymValueRef),
+    Binary(BinaryOp, SymValueRef, ValueRef),
 
     Cast(/* TODO */),
 
@@ -166,7 +259,6 @@ pub(super) enum Expr {
         of: SymValueRef,
     },
 
-    ArrayInit(ArrayInitExpr),
     Index {
         on: ValueRef,
         index: ValueRef,
@@ -182,7 +274,22 @@ pub(super) enum Expr {
 }
 
 #[derive(Clone, Debug)]
-pub(super) enum ArrayInitExpr {
-    Repeat { element: ValueRef, count: usize },
-    Elements { elements: Vec<ValueRef> },
+pub(super) struct SymValueGuard(ValueRef);
+
+impl SymValueGuard {
+    pub fn new(value: ValueRef) -> Self {
+        assert!(value.is_symbolic(), "Value should be symbolic.");
+        Self(value)
+    }
+}
+
+impl Deref for SymValueGuard {
+    type Target = SymValue;
+
+    fn deref(&self) -> &Self::Target {
+        match &*self.0 {
+            Value::Symbolic(value) => value,
+            _ => unreachable!(),
+        }
+    }
 }

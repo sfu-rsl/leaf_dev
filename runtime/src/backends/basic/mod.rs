@@ -1,9 +1,4 @@
-use std::{
-    cell::{Cell, RefCell, RefMut},
-    collections::HashMap,
-    ops::{Deref, DerefMut},
-    rc::Rc,
-};
+use std::{collections::HashMap, mem};
 
 use crate::abs::{
     AssignmentHandler, BranchTakingHandler, BranchingHandler, FieldIndex, FunctionHandler, Local,
@@ -11,7 +6,9 @@ use crate::abs::{
 };
 
 use self::{
-    expr::{AdtKind, AdtValue, ConcreteValue, ConstValue, RefValue, Value},
+    expr::{
+        AdtKind, AdtValue, ArrayValue, ConcreteValue, ConstValue, RefValue, SymValueRef, Value,
+    },
     operand::{DefaultOperandHandler, Operand},
     place::{DefaultPlaceHandler, Place, Projection},
 };
@@ -87,12 +84,28 @@ impl AssignmentHandler for BasicAssignmentHandler<'_> {
     type Place = Place;
     type Operand = Operand;
 
-    fn use_of(self, operand: Self::Operand) {}
+    fn use_of(mut self, operand: Self::Operand) {
+        let value = self.get_operand_value(&operand);
+        self.set(value)
+    }
 
-    fn repeat_of(self, operand: Self::Operand, count: usize) {}
+    fn repeat_of(mut self, operand: Self::Operand, count: usize) {
+        let element_value = self.get_operand_value(&operand);
+        /* NOTE: As we don't expect the count to be a large number, we currently,
+         * don't optimize this by using a single element and a length.
+         */
+        let value = Value::Concrete(ConcreteValue::Array(ArrayValue {
+            elements: vec![element_value; count],
+        }));
+        self.set_value(value)
+    }
 
-    fn ref_to(self, place: Self::Place, is_mutable: bool) {
-        todo!()
+    fn ref_to(mut self, place: Self::Place, is_mutable: bool) {
+        self.set_value(Value::Concrete(ConcreteValue::Ref(if is_mutable {
+            RefValue::Mut(place)
+        } else {
+            RefValue::Immut(self.vars_state.copy_place(&place))
+        })))
     }
 
     fn thread_local_ref_to(self) {
@@ -103,8 +116,23 @@ impl AssignmentHandler for BasicAssignmentHandler<'_> {
         todo!()
     }
 
-    fn len_of(self, place: Self::Place) {
-        todo!()
+    fn len_of(mut self, place: Self::Place) {
+        let value = self.vars_state.copy_place(&place);
+        let len_value = match value.as_ref() {
+            Value::Concrete(ConcreteValue::Array(arr)) => {
+                let len = arr.len();
+                Value::Concrete(ConcreteValue::from_const(ConstValue::Int {
+                    bit_rep: len as u128,
+                    size: mem::size_of_val(&len) as u64 * 8,
+                    is_signed: false,
+                }))
+            }
+            Value::Symbolic(_) => Value::Symbolic(expr::SymValue::Expression(expr::Expr::Len(
+                SymValueRef::new(value),
+            ))),
+            _ => panic!("Length is supposed to be called on an array."),
+        };
+        self.set_value(len_value)
     }
 
     fn numeric_cast_of(self, operand: Self::Operand, is_to_float: bool, size: usize) {
@@ -116,108 +144,120 @@ impl AssignmentHandler for BasicAssignmentHandler<'_> {
     }
 
     fn binary_op_between(
-        self,
+        mut self,
         operator: crate::abs::BinaryOp,
         first: Self::Operand,
         second: Self::Operand,
         checked: bool,
     ) {
-        todo!()
+        let first_value = self.get_operand_value(&first);
+        let second_value = self.get_operand_value(&second);
+        let pair = if first_value.is_symbolic() {
+            (first_value, second_value)
+        } else {
+            (second_value, first_value)
+        };
+        if pair.0.is_symbolic() {
+            return self.set_value(Value::Symbolic(expr::SymValue::Expression(
+                expr::Expr::Binary(operator, SymValueRef::new(pair.0), pair.1),
+            )));
+        }
+
+        let value = match (pair.0.as_ref(), pair.1.as_ref()) {
+            (
+                Value::Concrete(ConcreteValue::Const(first_c)),
+                Value::Concrete(ConcreteValue::Const(second_c)),
+            ) => Value::from_const(ConstValue::binary_op(first_c, second_c, operator)),
+            _ => unreachable!("Binary operations are only supposed to be called on constants."),
+        };
+        self.set_value(value)
     }
 
-    fn unary_op_on(self, operator: crate::abs::UnaryOp, operand: Self::Operand) {
-        todo!()
+    fn unary_op_on(mut self, operator: crate::abs::UnaryOp, operand: Self::Operand) {
+        let value = self.get_operand_value(&operand);
+        if value.is_symbolic() {
+            return self.set_value(Value::Symbolic(expr::SymValue::Expression(
+                expr::Expr::Unary(operator, SymValueRef::new(value)),
+            )));
+        }
+
+        let value = match value.as_ref() {
+            Value::Concrete(ConcreteValue::Const(c)) => {
+                Value::from_const(ConstValue::unary_op(c, operator))
+            }
+            _ => unreachable!("Unary operations are only supposed to be called on constants."),
+        };
+        self.set_value(value)
     }
 
-    fn discriminant_of(self, place: Self::Place) {
-        todo!()
+    fn discriminant_of(mut self, place: Self::Place) {
+        let host_value = self.vars_state.get_place(&place);
+        match host_value.as_ref() {
+            Value::Concrete(ConcreteValue::Adt(AdtValue {
+                kind: AdtKind::Enum {
+                    discriminant: discr,
+                },
+                ..
+            })) => self.set(ValueRef::clone(discr)),
+            _ => unreachable!("Discriminant is only supposed to be called on enums."),
+        }
     }
 
-    fn array_from(self, items: impl Iterator<Item = Self::Operand>) {
-        todo!()
+    fn array_from(mut self, items: impl Iterator<Item = Self::Operand>) {
+        let value = Value::Concrete(ConcreteValue::Array(expr::ArrayValue {
+            elements: items.map(|e| self.get_operand_value(&e)).collect(),
+        }));
+        self.set_value(value)
     }
 }
 
 impl BasicAssignmentHandler<'_> {
-    fn get_dest_expr(self) -> ValueRef {
-        todo!()
-        // self.get_place_expr(self.dest)
+    fn set(&mut self, value: ValueRef) {
+        self.vars_state.set_place(&self.dest, value);
     }
 
-    fn get_operand_expr(
-        &self,
-        operand: <BasicAssignmentHandler as AssignmentHandler>::Operand,
+    fn set_value(&mut self, value: Value) {
+        self.set(ValueRef::new(value));
+    }
+
+    fn get_operand_value(
+        &mut self,
+        operand: &<BasicAssignmentHandler as AssignmentHandler>::Operand,
     ) -> ValueRef {
         match operand {
-            Operand::Place(place, _) => self.get_place_expr(place),
-            Operand::Const(constant) => ValueRef::new(Value::Concrete(todo!())),
+            Operand::Place(place, operand::PlaceUsage::Copy) => self.vars_state.copy_place(place),
+            Operand::Place(place, operand::PlaceUsage::Move) => self.vars_state.take_place(place),
+            Operand::Const(constant) => ValueRef::new(Value::Concrete(ConcreteValue::from_const(
+                self.get_constant_value(constant),
+            ))),
         }
     }
 
-    fn get_constant_expr(&self, constant: operand::Constant) -> ConstValue {
+    fn get_constant_value(&self, constant: &operand::Constant) -> ConstValue {
         match constant {
-            operand::Constant::Bool(value) => ConstValue::Bool(value),
-            operand::Constant::Char(value) => ConstValue::Char(value),
+            operand::Constant::Bool(value) => ConstValue::Bool(*value),
+            operand::Constant::Char(value) => ConstValue::Char(*value),
             operand::Constant::Int {
                 bit_rep,
                 size,
                 is_signed,
             } => ConstValue::Int {
-                bit_rep,
-                size,
-                is_signed,
+                bit_rep: *bit_rep,
+                size: *size,
+                is_signed: *is_signed,
             },
             operand::Constant::Float {
                 bit_rep,
                 ebits,
                 sbits,
             } => ConstValue::Float {
-                bit_rep,
-                ebits,
-                sbits,
+                bit_rep: *bit_rep,
+                ebits: *ebits,
+                sbits: *sbits,
             },
-            operand::Constant::Str(value) => ConstValue::Str(value),
-            operand::Constant::Func(value) => ConstValue::Func(value),
+            operand::Constant::Str(value) => ConstValue::Str(*value),
+            operand::Constant::Func(value) => ConstValue::Func(*value),
         }
-    }
-
-    fn get_place_expr(&self, place: Place) -> ValueRef {
-        todo!()
-    }
-
-    fn get_projection_expr(&self, kind: Projection, on: Place) -> Value {
-        return todo!();
-        let on_expr = self.get_place_expr(on);
-        // Value::NonConstant(match kind {
-        //     ProjectionKind::Deref => todo!(),
-        //     ProjectionKind::Field(field) => Expr::Field {
-        //         expr: on_expr,
-        //         field,
-        //     },
-        //     ProjectionKind::Index(index) => Expr::Index {
-        //         on: on_expr,
-        //         index: self.get_place_expr(*index),
-        //         from_end: false,
-        //     },
-        //     ProjectionKind::ConstantIndex {
-        //         offset,
-        //         min_length,
-        //         from_end,
-        //     } => Expr::Index {
-        //         // TODO: Check if min length can be used.
-        //         on: on_expr,
-        //         index: ValueRef::new(Value::Concrete(ConstValue::from(size_of_val(&offset)))),
-        //         from_end,
-        //     },
-        //     ProjectionKind::Subslice { from, to, from_end } => Expr::Slice {
-        //         of: on_expr,
-        //         from: ValueRef::new(Value::Concrete(ConstValue::from(size_of_val(&from)))),
-        //         to: ValueRef::new(Value::Concrete(ConstValue::from(size_of_val(&to)))),
-        //         from_end,
-        //     },
-        //     ProjectionKind::Downcast(_) => todo!(),
-        //     ProjectionKind::OpaqueCast => todo!(),
-        // })
     }
 }
 
@@ -352,12 +392,12 @@ impl MutableVariablesState {
         field_val
     }
 
-    pub fn set_place(&mut self, place: &Place, value: Value) {
+    pub fn set_place(&mut self, place: &Place, value: ValueRef) {
         let local = place.local();
         if !place.has_projection() {
-            self.locals.insert(local, ValueRef::new(value));
+            self.locals.insert(local, value);
         } else {
-            self.mut_place(place, |s, v| *v = ValueRef::new(value));
+            self.mut_place(place, |_, v| *v = value);
         }
     }
 
@@ -438,7 +478,7 @@ impl MutableVariablesState {
                     _ => panic!("{err}"),
                 },
                 Projection::Index(index) => match concrete {
-                    ConcreteValue::Array { elements, .. } => {
+                    ConcreteValue::Array(ArrayValue { elements }) => {
                         let index = self.copy_place(&index);
                         match index.as_ref() {
                             Value::Concrete(ConcreteValue::Const(ConstValue::Int {
@@ -459,7 +499,7 @@ impl MutableVariablesState {
                     min_length,
                     from_end,
                 } => match concrete {
-                    ConcreteValue::Array { elements, .. } => {
+                    ConcreteValue::Array(ArrayValue { elements }) => {
                         let offset = *offset as usize;
                         if *from_end {
                             &elements[elements.len() - offset]
@@ -557,7 +597,7 @@ impl MutableVariablesState {
                     _ => panic!("{err}"),
                 },
                 Projection::Index(index) => match concrete {
-                    ConcreteValue::Array { elements, .. } => {
+                    ConcreteValue::Array(ArrayValue { elements }) => {
                         let index = self.copy_place(&index);
                         match index.as_ref() {
                             Value::Concrete(ConcreteValue::Const(ConstValue::Int {
@@ -578,7 +618,7 @@ impl MutableVariablesState {
                     min_length,
                     from_end,
                 } => match concrete {
-                    ConcreteValue::Array { elements, .. } => {
+                    ConcreteValue::Array(ArrayValue { elements }) => {
                         let offset = *offset as usize;
                         if *from_end {
                             let len = elements.len();
