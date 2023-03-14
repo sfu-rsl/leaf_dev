@@ -198,8 +198,8 @@ impl AssignmentHandler for BasicAssignmentHandler<'_> {
                     discriminant: discr,
                 },
                 ..
-            })) => self.set(ValueRef::clone(discr)),
-            _ => unreachable!("Discriminant is only supposed to be called on enums."),
+            })) => self.set_value(Value::from_const(ConstValue::from(*discr))),
+            _ => unreachable!("Discriminant is only supposed to be called on (concrete) enums."),
         }
     }
 
@@ -208,6 +208,19 @@ impl AssignmentHandler for BasicAssignmentHandler<'_> {
             elements: items.map(|e| self.get_operand_value(&e)).collect(),
         }));
         self.set_value(value)
+    }
+
+    fn variant_index(self, variant_index: VariantIndex) {
+        self.vars_state
+            .mut_place(&self.dest, |_, v| match ValueRef::make_mut(v) {
+                Value::Concrete(ConcreteValue::Adt(AdtValue {
+                    kind: AdtKind::Enum { discriminant },
+                    ..
+                })) => *discriminant = variant_index,
+                _ => {
+                    unreachable!("Assigning variant index is only supposed to requested on enums.")
+                }
+            })
     }
 }
 

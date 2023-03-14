@@ -1,6 +1,6 @@
 use std::{ops::Deref, rc::Rc};
 
-use crate::abs::{BinaryOp, FieldIndex, UnaryOp};
+use crate::abs::{BinaryOp, FieldIndex, UnaryOp, VariantIndex};
 
 use super::place::Place;
 
@@ -156,20 +156,34 @@ impl ConstValue {
     }
 }
 
-impl From<usize> for ConstValue {
-    fn from(value: usize) -> Self {
-        Self::Int {
-            bit_rep: value as u128,
-            size: std::mem::size_of::<usize>() as u64 * 8,
-            is_signed: false,
-        }
-    }
+macro_rules! impl_from_uint {
+    ($($ty:ty),*) => {
+        $(
+            impl From<$ty> for ConstValue {
+                fn from(value: $ty) -> Self {
+                    Self::Int {
+                        bit_rep: value as u128,
+                        size: std::mem::size_of::<$ty>() as u64 * 8,
+                        is_signed: false,
+                    }
+                }
+            }
+        )*
+    };
 }
+
+impl_from_uint!(u8, u16, u32, u64, u128, usize);
 
 #[derive(Clone, Debug)]
 pub(super) enum AdtKind {
     Struct,
-    Enum { discriminant: ValueRef },
+    Enum {
+        /* NOTE: Even when the variant index is set based on a decision on a
+         * symbolic value, the discriminant is still a concrete value and the
+         * symbolic value will appear in the constraints.
+         */
+        discriminant: VariantIndex,
+    },
 }
 
 #[derive(Clone, Debug)]
