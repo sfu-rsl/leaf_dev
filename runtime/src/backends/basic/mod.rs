@@ -21,8 +21,6 @@ pub(crate) mod expr;
 pub(crate) mod operand;
 pub(crate) mod place;
 
-mod utils;
-
 pub(crate) mod logger;
 
 pub struct BasicBackend;
@@ -632,32 +630,5 @@ impl Constraint {
             Constraint::Bool(expr) => Constraint::Not(expr),
             Constraint::Not(expr) => Constraint::Bool(expr),
         }
-    }
-}
-
-struct ValueMutRef<'a> {
-    value: RefMut<'a, ValueRef>,
-    host: Option<Rc<RefCell<ValueRef>>>,
-    put_back: Box<dyn FnOnce(ValueRef) + 'a>,
-}
-
-impl<'a> Deref for ValueMutRef<'a> {
-    type Target = ValueRef;
-
-    fn deref(&self) -> &Self::Target {
-        &self.value.deref()
-    }
-}
-
-impl<'a> DerefMut for ValueMutRef<'a> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.value.deref_mut()
-    }
-}
-
-impl Drop for ValueMutRef<'_> {
-    fn drop(&mut self) {
-
-        // (self.put_back)(self.host.into_inner())
     }
 }
