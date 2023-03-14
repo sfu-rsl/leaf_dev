@@ -149,6 +149,10 @@ impl AssignmentHandler for LoggerAssignmentHandler {
     fn array_from(self, items: impl Iterator<Item = Self::Operand>) {
         self.log(format!("[{}]", comma_separated(items)));
     }
+
+    fn variant_index(self, variant_index: VariantIndex) {
+        log_info!("{}.discr = index {}", self.destination, variant_index);
+    }
 }
 
 impl LoggerAssignmentHandler {

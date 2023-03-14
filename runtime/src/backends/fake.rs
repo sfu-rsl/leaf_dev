@@ -204,6 +204,10 @@ impl AssignmentHandler for FakeAssignmentHandler {
     fn array_from(self, items: impl Iterator<Item = Self::Operand>) {
         unimplemented!()
     }
+
+    fn variant_index(self, variant_index: VariantIndex) {
+        unimplemented!()
+    }
 }
 
 pub(crate) struct FakeBranchingHandler {}

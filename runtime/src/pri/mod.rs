@@ -97,7 +97,7 @@ pub fn ref_operand_const_str(value: &'static str) -> OperandRef {
 pub fn assign_use(dest: PlaceRef, operand: OperandRef) {
     assign_to(dest, |h| h.use_of(take_back_operand_ref(operand)))
 }
-pub fn assign_repeat(dest: PlaceRef, operand: OperandRef, count: usize /* constant */) {
+pub fn assign_repeat(dest: PlaceRef, operand: OperandRef, count: usize) {
     assign_to(dest, |h| h.repeat_of(take_back_operand_ref(operand), count))
 }
 pub fn assign_ref(dest: PlaceRef, place: PlaceRef, is_mutable: bool) {
@@ -149,8 +149,8 @@ pub fn assign_unary_op(dest: PlaceRef, operator: UnaryOp, operand: OperandRef) {
     })
 }
 
-pub fn set_discriminant(dest: PlaceRef, place: PlaceRef, variant_index: u32) {
-    todo!()
+pub fn set_discriminant(dest: PlaceRef, variant_index: u32) {
+    assign_to(dest, |h| h.variant_index(variant_index))
 }
 pub fn assign_discriminant(dest: PlaceRef, place: PlaceRef) {
     assign_to(dest, |h| h.discriminant_of(take_back_place_ref(place)))

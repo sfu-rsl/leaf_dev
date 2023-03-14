@@ -159,6 +159,8 @@ pub(crate) trait AssignmentHandler {
     fn discriminant_of(self, place: Self::Place);
 
     fn array_from(self, items: impl Iterator<Item = Self::Operand>);
+
+    fn variant_index(self, variant_index: VariantIndex);
 }
 
 pub(crate) trait BranchingHandler {
