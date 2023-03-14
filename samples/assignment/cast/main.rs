@@ -46,6 +46,7 @@ fn get_foo() -> Foo {
     Foo::Bar
 }
 
+#[allow(dead_code)]
 enum Foo {
     Bar,
     Baz,
