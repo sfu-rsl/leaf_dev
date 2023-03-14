@@ -1,4 +1,4 @@
-use crate::abs::{self, Local, PlaceHandler, PlaceProjectionHandler, FieldIndex};
+use crate::abs::{Local, PlaceHandler, PlaceProjectionHandler, FieldIndex};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct Place {
@@ -8,8 +8,8 @@ pub(crate) struct Place {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum Projection {
-    Deref,
     Field(FieldIndex),
+    Deref,
     Index(Place),
     ConstantIndex {
         offset: u64,
