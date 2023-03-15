@@ -1,4 +1,4 @@
-use std::{collections::HashMap, mem};
+use std::{collections::HashMap, mem, rc::Rc};
 
 use crate::abs::{
     AssignmentHandler, BranchTakingHandler, BranchingHandler, FieldIndex, FunctionHandler, Local,
@@ -531,7 +531,7 @@ impl MutableVariablesState {
     }
 
     fn mut_place(&mut self, place: &Place, mutate: impl FnOnce(&Self, &mut ValueRef)) {
-        self.mut_place_iter(place.local(), place.projections.as_slice(), mutate);
+        self.mut_place_iter(place.local(), &place.projections, mutate);
     }
 
     fn mut_place_iter<'a, 'b>(
@@ -540,15 +540,19 @@ impl MutableVariablesState {
         projs: &'b [Projection],
         mutate: impl FnOnce(&Self, &mut ValueRef),
     ) {
+        // FIXME: Is there a way to avoid vector allocation?
+        let mut projs = projs.to_vec();
+
         // Up to the last deref, we only need the place. So no mutable borrow is needed.
-        if let Some(deref_index) = projs.iter().rposition(|p| matches!(p, Projection::Deref)) {
+        while let Some(deref_index) = projs.iter().rposition(|p| matches!(p, Projection::Deref)) {
             let value = self.get_place_iter(local, projs.iter().take(deref_index));
             match value.as_ref() {
                 Value::Concrete(ConcreteValue::Ref(RefValue::Mut(place))) => {
-                    self.mut_place(&place.clone(), |s, v| {
-                        mutate(s, s.apply_projs_mut(v, projs[deref_index + 1..].iter()));
-                    });
-                    return;
+                    /* NOTE: We are taking this approach because recursively
+                     * calling the function was leading to infinite recursion in
+                     * the compiler's borrow checker.
+                     */
+                    projs.splice(..=deref_index, place.projections.iter().cloned());
                 }
                 _ => panic!("The last deref is expected to be on a mutable reference."),
             }
@@ -611,7 +615,11 @@ impl MutableVariablesState {
                 },
                 Projection::Index(index) => match concrete {
                     ConcreteValue::Array(ArrayValue { elements }) => {
-                        let index = self.copy_place(&index);
+                        assert!(
+                            !index.has_projection(),
+                            "Index should be a simple local with no projection."
+                        );
+                        let index = self.get_place_iter(index.local(), std::iter::empty());
                         match index.as_ref() {
                             Value::Concrete(ConcreteValue::Const(ConstValue::Int {
                                 bit_rep,
