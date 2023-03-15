@@ -45,6 +45,9 @@ pub(crate) trait RuntimeBackend: Sized {
     type FunctionHandler<'a>: FunctionHandler<Place = Self::Place, Operand = Self::Operand>
     where
         Self: 'a;
+    type AssertionHandler<'a>: AssertionHandler<Operand = Self::Operand>
+        where
+            Self: 'a;
 
     type Place;
     type Operand;
@@ -65,6 +68,8 @@ pub(crate) trait RuntimeBackend: Sized {
     ) -> Self::BranchingHandler<'a>;
 
     fn func_control<'a>(&'a mut self) -> Self::FunctionHandler<'a>;
+
+    fn assert_control<'a>(&'a mut self) -> Self::AssertionHandler<'a>;
 }
 
 pub(crate) trait PlaceHandler {
@@ -193,4 +198,14 @@ pub(crate) trait FunctionHandler {
     );
 
     fn ret(self);
+}
+
+pub(crate) trait AssertionHandler {
+    type Operand;
+
+    fn assert(
+        self,
+        cond: Self::Operand,
+        expected: bool,
+    );
 }

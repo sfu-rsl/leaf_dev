@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use crate::abs::{
     AssignmentHandler, BasicBlockIndex, BinaryOp, BranchTakingHandler, BranchingHandler,
-    FunctionHandler, RuntimeBackend, UnaryOp, VariantIndex,
+    FunctionHandler, AssertionHandler, RuntimeBackend, UnaryOp, VariantIndex,
 };
 
 use super::{
@@ -31,10 +31,11 @@ impl LoggerBackend {
 
 impl RuntimeBackend for LoggerBackend {
     type PlaceHandler<'a> = DefaultPlaceHandler where Self: 'a;
-    type OperandHandler<'a> = DefaultOperandHandler where Self : 'a;
-    type AssignmentHandler<'a> = LoggerAssignmentHandler where Self : 'a;
-    type BranchingHandler<'a> = LoggerBranchingHandler where Self : 'a;
+    type OperandHandler<'a> = DefaultOperandHandler where Self: 'a;
+    type AssignmentHandler<'a> = LoggerAssignmentHandler where Self: 'a;
+    type BranchingHandler<'a> = LoggerBranchingHandler where Self: 'a;
     type FunctionHandler<'a> = LoggerFunctionHandler<'a> where Self: 'a;
+    type AssertionHandler<'a> = LoggerAssertionHandler where Self: 'a;
 
     type Place = Place;
     type Operand = Operand;
@@ -66,6 +67,10 @@ impl RuntimeBackend for LoggerBackend {
         LoggerFunctionHandler {
             call_manager: &mut self.call_manager,
         }
+    }
+
+    fn assert_control(&mut self) -> Self::AssertionHandler<'_> {
+        LoggerAssertionHandler { }
     }
 }
 
@@ -261,6 +266,8 @@ impl LoggerBranchTakingHandler {
     }
 }
 
+// -----------------------------------
+
 pub(crate) struct LoggerFunctionHandler<'a> {
     call_manager: &'a mut CallManager,
 }
@@ -327,6 +334,30 @@ impl CallManager {
         self.stack.pop().unwrap()
     }
 }
+
+// -----------------------------------
+
+pub(crate) struct LoggerAssertionHandler {
+
+}
+
+impl AssertionHandler for LoggerAssertionHandler {
+    type Operand = Operand;
+
+    fn assert(
+        self,
+        cond: Self::Operand,
+        expected: bool,
+    ) {
+        log_info!(
+            "Checking assertion {:?} == {}",
+            cond,
+            expected
+        );
+    }
+}
+
+// -----------------------------------
 
 impl Display for Place {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

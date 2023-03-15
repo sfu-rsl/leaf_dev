@@ -10,10 +10,11 @@ impl FakeBackend {
 
 impl RuntimeBackend for FakeBackend {
     type PlaceHandler<'a> = FakePlaceHandler where Self: 'a;
-    type OperandHandler<'a> = FakeOperandHandler where Self : 'a;
-    type AssignmentHandler<'a> = FakeAssignmentHandler where Self : 'a;
-    type BranchingHandler<'a> = FakeBranchingHandler where Self : 'a;
+    type OperandHandler<'a> = FakeOperandHandler where Self: 'a;
+    type AssignmentHandler<'a> = FakeAssignmentHandler where Self: 'a;
+    type BranchingHandler<'a> = FakeBranchingHandler where Self: 'a;
     type FunctionHandler<'a> = FakeFunctionHandler where Self: 'a;
+    type AssertionHandler<'a> = FakeAssertionHandler where Self: 'a;
 
     type Place = FakePlace;
     type Operand = FakeOperand;
@@ -39,6 +40,10 @@ impl RuntimeBackend for FakeBackend {
     }
 
     fn func_control(&mut self) -> Self::FunctionHandler<'_> {
+        unimplemented!()
+    }
+
+    fn assert_control(&mut self) -> Self::AssertionHandler<'_> {
         unimplemented!()
     }
 }
@@ -297,6 +302,21 @@ impl FunctionHandler for FakeFunctionHandler {
         unimplemented!()
     }
 }
+
+pub(crate) struct FakeAssertionHandler {}
+
+impl AssertionHandler for FakeAssertionHandler {
+    type Operand = FakeOperand;
+
+    fn assert(
+        self,
+        cond: Self::Operand,
+        expected: bool,
+    ) {
+        unimplemented!()
+    }
+}
+
 
 pub(crate) enum FakePlace {
     Local,

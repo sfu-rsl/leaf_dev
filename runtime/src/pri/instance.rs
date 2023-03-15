@@ -116,6 +116,15 @@ pub(super) fn func_control<T>(
     })
 }
 
+pub(super) fn assert_control<T>(
+    assert_action: impl FnOnce(<BackendImpl as RuntimeBackend>::AssertionHandler<'_>) -> T,
+) -> T {
+    perform_on_backend(|r| {
+        let assert_control = r.assert_control();
+        assert_action(assert_control)
+    })
+}
+
 #[cfg(runtime_access = "safe_mt")]
 fn perform_on_backend<T>(action: impl FnOnce(&mut BackendImpl) -> T) -> T {
     let mut guard = BACKEND.lock().unwrap();

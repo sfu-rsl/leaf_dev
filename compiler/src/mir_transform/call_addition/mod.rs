@@ -187,6 +187,14 @@ pub trait EntryFunctionHandler {
     fn init_runtime_lib(&mut self);
 }
 
+pub trait AssertionHandler {
+    fn check_assert(
+        &mut self,
+        cond: OperandRef,
+        expected: bool,
+    );
+}
+
 pub struct RuntimeCallAdder<C> {
     context: C,
 }
@@ -1069,6 +1077,27 @@ where
 
     fn return_from_func(&mut self) {
         let block = self.make_bb_for_call(stringify!(pri::return_from_func), vec![]);
+        self.insert_blocks([block]);
+    }
+}
+
+impl<'tcx, C> AssertionHandler for RuntimeCallAdder<C>
+where
+    Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
+    C: TyContextProvider<'tcx> + SpecialTypesProvider<'tcx> + BodyLocalManager<'tcx>,
+{
+    fn check_assert(&mut self, cond: OperandRef, expected: bool) {
+        let block = self.make_bb_for_call(
+            stringify!(pri::check_assert),
+            vec![
+                operand::move_for_local(cond.into()),
+                // this is a compile-time known value, so we can just pass it!
+                // NOTE: could call different functions based on the value of this to improve
+                //       performance, but it wouldn't really effect much...
+                operand::const_from_bool(self.context.tcx(), expected), 
+                //assert_desc,
+            ],
+        );
         self.insert_blocks([block]);
     }
 }

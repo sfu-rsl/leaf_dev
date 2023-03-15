@@ -3,7 +3,7 @@ mod utils;
 
 use crate::abs::{
     AssignmentHandler, BasicBlockIndex, BinaryOp, BranchTakingHandler, BranchingHandler,
-    ConstantHandler, FunctionHandler, Local, OperandHandler, PlaceHandler, PlaceProjectionHandler,
+    ConstantHandler, FunctionHandler, AssertionHandler, Local, OperandHandler, PlaceHandler, PlaceProjectionHandler,
     UnaryOp, VariantIndex,
 };
 
@@ -202,6 +202,15 @@ pub fn call_func(func: OperandRef, args: &[OperandRef], destination: PlaceRef) {
 }
 pub fn return_from_func() {
     func_control(|h| h.ret())
+}
+
+pub fn check_assert(cond: OperandRef, expected: bool/*, assert_kind: &str*/) {
+    assert_control(|h| {
+        h.assert(
+            take_back_operand_ref(cond),
+            expected,
+        )
+    })
 }
 
 pub struct BranchingInfo {
