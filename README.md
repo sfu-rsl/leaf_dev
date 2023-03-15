@@ -79,3 +79,14 @@ reach the `false` branch) using $x = 41$, $y=3$. Sure enough, $2x+6y = 2\cdot41 
 If we modify it so that we have $c = 5$ (note that $\gcd(2, 6) = 2$ does not divide $5$), and then
 recompile the example, then the binary will output `UNSAT`, which means the equation $2x+6y=5$
 cannot be satisfied (i.e. we cannot reach the `false` branch).
+
+## rust fmt
+
+For any project developers, please add a file named `pre-commit` in `.git/hooks/` with the following content:
+
+```sh
+#!/bin/sh
+cargo fmt
+```
+
+`.git/` is by definition not cloned with the rest of the repo.
