@@ -17,7 +17,7 @@ macro_rules! make_statement_kind_visitor {
             fn visit_statement_kind(&mut self, kind: & $($mutability)? StatementKind<'tcx>) -> T {
                 self.super_statement_kind(kind)
             }
-            
+
             fn visit_assign(&mut self, place: & $($mutability)? Place<'tcx>, rvalue: & $($mutability)? Rvalue<'tcx>) -> T {
                 Default::default()
             }
