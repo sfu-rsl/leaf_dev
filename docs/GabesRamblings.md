@@ -18,8 +18,9 @@
   - MIR has no assignments to ZST places
     - this makes sense because one of the big goals of ZSTs is to remove functionality generically (https://doc.rust-lang.org/nomicon/exotic-sizes.html#zero-sized-types-zsts)
   - MIR has constant propagation applied to it already (it's not perfect though?) (at least two passes of constant propagation)
-- Unevaluated is only used in the HIR
+- `rustc_middle::ty::ConstKind` is only used in the HIR
   - https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/ty/enum.ConstKind.html
+  - don't be confused with `rustc_middle::mir::ConstantKind`, which is used in println!("hello world")
   - 
 - Placeholders & Universes
   - https://rustc-dev-guide.rust-lang.org/borrow_check/region_inference/placeholders_and_universes.html?highlight=Placeholder#subtyping-and-placeholders
