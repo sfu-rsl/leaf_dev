@@ -20,7 +20,9 @@ pub(crate) mod place;
 
 pub(crate) mod logger;
 
-pub struct BasicBackend;
+pub struct BasicBackend {
+    vars_state: MutableVariablesState,
+}
 
 impl RuntimeBackend for BasicBackend {
     type PlaceHandler<'a> = DefaultPlaceHandler
@@ -48,18 +50,18 @@ impl RuntimeBackend for BasicBackend {
     type Operand = Operand;
 
     fn place<'a>(&'a mut self) -> Self::PlaceHandler<'a> {
-        todo!()
+        DefaultPlaceHandler
     }
 
     fn operand<'a>(&'a mut self) -> Self::OperandHandler<'a> {
-        todo!()
+        DefaultOperandHandler
     }
 
     fn assign_to<'a>(
         &'a mut self,
         dest: <Self::AssignmentHandler<'a> as crate::abs::AssignmentHandler>::Place,
     ) -> Self::AssignmentHandler<'a> {
-        todo!()
+        BasicAssignmentHandler::new(dest, &mut self.vars_state)
     }
 
     fn branch<'a>(
@@ -76,8 +78,14 @@ impl RuntimeBackend for BasicBackend {
 }
 
 pub(crate) struct BasicAssignmentHandler<'s> {
-    vars_state: &'s mut MutableVariablesState,
     dest: Place,
+    vars_state: &'s mut MutableVariablesState,
+}
+
+impl<'s> BasicAssignmentHandler<'s> {
+    fn new(dest: Place, vars_state: &'s mut MutableVariablesState) -> Self {
+        Self { dest, vars_state }
+    }
 }
 
 impl AssignmentHandler for BasicAssignmentHandler<'_> {
@@ -661,18 +669,6 @@ impl MutableVariablesState {
     #[inline]
     fn get_err_message(local: &Local) -> String {
         format!("Uninitialized, moved, or invalid local. {}", local)
-    }
-
-    #[inline]
-    fn get_mut(value_ref: &mut ValueRef, value_info: String) -> &mut Value {
-        ValueRef::get_mut(value_ref)
-            .expect(format!("Value ({}) should not be in use.", value_info).as_str())
-    }
-    #[inline]
-    fn peel_off(value_ref: ValueRef, value_info: String) -> Value {
-        ValueRef::try_unwrap(value_ref)
-            .ok()
-            .expect(format!("Value ({}) should not be in use.", value_info).as_str())
     }
 }
 
