@@ -135,10 +135,7 @@ impl AssignmentHandler for BasicAssignmentHandler<'_> {
                     is_signed: false,
                 }))
             }
-            Value::Symbolic(_) => Value::Symbolic(expr::SymValue::Expression(expr::Expr::Len(
-                SymValueRef::new(value),
-            ))),
-            _ => panic!("Length is supposed to be called on an array."),
+            _ => panic!("Length is supposed to be called on a (concrete) array."),
         };
         self.set_value(len_value)
     }
@@ -158,16 +155,23 @@ impl AssignmentHandler for BasicAssignmentHandler<'_> {
         second: Self::Operand,
         checked: bool,
     ) {
+        // TODO: Add support for checked operations.
+
         let first_value = self.get_operand_value(&first);
         let second_value = self.get_operand_value(&second);
         let pair = if first_value.is_symbolic() {
-            (first_value, second_value)
+            (first_value, second_value, false)
         } else {
-            (second_value, first_value)
+            (second_value, first_value, true)
         };
         if pair.0.is_symbolic() {
             return self.set_value(Value::Symbolic(expr::SymValue::Expression(
-                expr::Expr::Binary(operator, SymValueRef::new(pair.0), pair.1),
+                expr::Expr::Binary {
+                    operator,
+                    first: SymValueRef::new(pair.0),
+                    second: pair.1,
+                    is_flipped: pair.2,
+                },
             )));
         }
 
@@ -185,7 +189,10 @@ impl AssignmentHandler for BasicAssignmentHandler<'_> {
         let value = self.get_operand_value(&operand);
         if value.is_symbolic() {
             return self.set_value(Value::Symbolic(expr::SymValue::Expression(
-                expr::Expr::Unary(operator, SymValueRef::new(value)),
+                expr::Expr::Unary {
+                    operator,
+                    operand: SymValueRef::new(value),
+                },
             )));
         }
 

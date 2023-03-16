@@ -261,21 +261,25 @@ pub(super) struct SymbolicVar {
 
 #[derive(Clone, Debug)]
 pub(super) enum Expr {
-    Unary(UnaryOp, SymValueRef),
-    Binary(BinaryOp, SymValueRef, ValueRef),
+    Unary {
+        operator: UnaryOp,
+        operand: SymValueRef,
+    },
+    Binary {
+        operator: BinaryOp,
+        first: SymValueRef,
+        second: ValueRef,
+        is_flipped: bool,
+    },
 
     Cast(/* TODO */),
 
     AddrOf(/* TODO */),
     Deref(SymValueRef),
 
-    Discriminant {
-        of: SymValueRef,
-    },
-
     Index {
         on: ValueRef,
-        index: ValueRef,
+        index: SymValueRef,
         from_end: bool,
     },
     Slice {
@@ -284,7 +288,6 @@ pub(super) enum Expr {
         to: ValueRef,
         from_end: bool,
     },
-    Len(SymValueRef),
 }
 
 #[derive(Clone, Debug)]
