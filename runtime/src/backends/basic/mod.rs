@@ -1,13 +1,14 @@
 use std::{collections::HashMap, mem, rc::Rc};
 
 use crate::abs::{
-    AssignmentHandler, BranchTakingHandler, BranchingHandler, FieldIndex, FunctionHandler, Local,
-    RuntimeBackend, VariantIndex,
+    AssignmentHandler, BasicBlockIndex, BinaryOp, BranchTakingHandler, BranchingHandler,
+    BranchingHandler2, FieldIndex, FunctionHandler, Local, RuntimeBackend, UnaryOp, VariantIndex,
 };
 
 use self::{
     expr::{
-        AdtKind, AdtValue, ArrayValue, ConcreteValue, ConstValue, RefValue, SymValueRef, Value,
+        AdtKind, AdtValue, ArrayValue, ConcreteValue, ConstValue, Expr, RefValue, SymValue,
+        SymValueRef, Value,
     },
     operand::{DefaultOperandHandler, Operand},
     place::{DefaultPlaceHandler, Place, Projection},
@@ -22,6 +23,7 @@ pub(crate) mod logger;
 
 pub struct BasicBackend {
     vars_state: MutableVariablesState,
+    constraint_manager: ConstraintManager,
 }
 
 impl RuntimeBackend for BasicBackend {
@@ -37,7 +39,7 @@ impl RuntimeBackend for BasicBackend {
     where
         Self: 'a;
 
-    type BranchingHandler<'a> = BasicBranchingHandler
+    type BranchingHandler<'a> = BasicBranchingHandler<'a>
     where
         Self: 'a;
 
@@ -69,7 +71,11 @@ impl RuntimeBackend for BasicBackend {
         location: crate::abs::BasicBlockIndex,
         discriminant: <Self::OperandHandler<'static> as crate::abs::OperandHandler>::Operand,
     ) -> Self::BranchingHandler<'a> {
-        todo!()
+        BasicBranchingHandler::new(
+            location,
+            get_operand_value(&mut self.vars_state, &discriminant),
+            &mut self.constraint_manager,
+        )
     }
 
     fn func_control<'a>(&'a mut self) -> Self::FunctionHandler<'a> {
@@ -165,14 +171,12 @@ impl AssignmentHandler for BasicAssignmentHandler<'_> {
             (second_value, first_value, true)
         };
         if pair.0.is_symbolic() {
-            return self.set_value(Value::Symbolic(expr::SymValue::Expression(
-                expr::Expr::Binary {
-                    operator,
-                    first: SymValueRef::new(pair.0),
-                    second: pair.1,
-                    is_flipped: pair.2,
-                },
-            )));
+            return self.set_value(Value::Symbolic(SymValue::Expression(Expr::Binary {
+                operator,
+                first: SymValueRef::new(pair.0),
+                second: pair.1,
+                is_flipped: pair.2,
+            })));
         }
 
         let value = match (pair.0.as_ref(), pair.1.as_ref()) {
@@ -188,12 +192,10 @@ impl AssignmentHandler for BasicAssignmentHandler<'_> {
     fn unary_op_on(mut self, operator: crate::abs::UnaryOp, operand: Self::Operand) {
         let value = self.get_operand_value(&operand);
         if value.is_symbolic() {
-            return self.set_value(Value::Symbolic(expr::SymValue::Expression(
-                expr::Expr::Unary {
-                    operator,
-                    operand: SymValueRef::new(value),
-                },
-            )));
+            return self.set_value(Value::Symbolic(SymValue::Expression(Expr::Unary {
+                operator,
+                operand: SymValueRef::new(value),
+            })));
         }
 
         let value = match value.as_ref() {
@@ -219,7 +221,7 @@ impl AssignmentHandler for BasicAssignmentHandler<'_> {
     }
 
     fn array_from(mut self, items: impl Iterator<Item = Self::Operand>) {
-        let value = Value::Concrete(ConcreteValue::Array(expr::ArrayValue {
+        let value = Value::Concrete(ConcreteValue::Array(ArrayValue {
             elements: items.map(|e| self.get_operand_value(&e)).collect(),
         }));
         self.set_value(value)
@@ -252,112 +254,122 @@ impl BasicAssignmentHandler<'_> {
         &mut self,
         operand: &<BasicAssignmentHandler as AssignmentHandler>::Operand,
     ) -> ValueRef {
-        match operand {
-            Operand::Place(place, operand::PlaceUsage::Copy) => self.vars_state.copy_place(place),
-            Operand::Place(place, operand::PlaceUsage::Move) => self.vars_state.take_place(place),
-            Operand::Const(constant) => ValueRef::new(Value::Concrete(ConcreteValue::from_const(
-                self.get_constant_value(constant),
-            ))),
-        }
+        get_operand_value(self.vars_state, operand)
     }
+}
 
-    fn get_constant_value(&self, constant: &operand::Constant) -> ConstValue {
-        match constant {
-            operand::Constant::Bool(value) => ConstValue::Bool(*value),
-            operand::Constant::Char(value) => ConstValue::Char(*value),
-            operand::Constant::Int {
-                bit_rep,
-                size,
-                is_signed,
-            } => ConstValue::Int {
-                bit_rep: *bit_rep,
-                size: *size,
-                is_signed: *is_signed,
-            },
-            operand::Constant::Float {
-                bit_rep,
-                ebits,
-                sbits,
-            } => ConstValue::Float {
-                bit_rep: *bit_rep,
-                ebits: *ebits,
-                sbits: *sbits,
-            },
-            operand::Constant::Str(value) => ConstValue::Str(*value),
-            operand::Constant::Func(value) => ConstValue::Func(*value),
+pub(crate) struct BasicBranchingHandler<'a> {
+    location: BasicBlockIndex,
+    discriminant: ValueRef,
+    constraint_manager: &'a mut ConstraintManager,
+}
+
+impl<'a> BasicBranchingHandler<'a> {
+    fn new(
+        location: BasicBlockIndex,
+        discriminant: ValueRef,
+        constraint_manager: &'a mut ConstraintManager,
+    ) -> Self {
+        Self {
+            location,
+            discriminant,
+            constraint_manager,
         }
     }
 }
 
-pub(crate) struct BasicBranchingHandler;
+impl<'a> BranchingHandler for BasicBranchingHandler<'a> {
+    type BoolBranchTakingHandler = BasicBranchTakingHandler<'a>;
 
-impl BranchingHandler for BasicBranchingHandler {
-    type BoolBranchTakingHandler = BasicBranchTakingHandler;
+    type IntBranchTakingHandler = BasicBranchTakingHandler<'a>;
 
-    type IntBranchTakingHandler = BasicBranchTakingHandler;
+    type CharBranchTakingHandler = BasicBranchTakingHandler<'a>;
 
-    type CharBranchTakingHandler = BasicBranchTakingHandler;
-
-    type EnumBranchTakingHandler = BasicBranchTakingHandler;
+    type EnumBranchTakingHandler = BasicBranchTakingHandler<'a>;
 
     fn on_bool(self) -> Self::BoolBranchTakingHandler {
-        todo!()
+        BasicBranchTakingHandler { parent: self }
     }
 
     fn on_int(self) -> Self::IntBranchTakingHandler {
-        todo!()
+        BasicBranchTakingHandler { parent: self }
     }
 
     fn on_char(self) -> Self::CharBranchTakingHandler {
-        todo!()
+        BasicBranchTakingHandler { parent: self }
     }
 
     fn on_enum(self) -> Self::EnumBranchTakingHandler {
-        todo!()
+        BasicBranchTakingHandler { parent: self }
     }
 }
 
-pub(crate) struct BasicBranchTakingHandler;
+pub(crate) struct BasicBranchTakingHandler<'a> {
+    parent: BasicBranchingHandler<'a>,
+}
 
-impl BranchTakingHandler<bool> for BasicBranchTakingHandler {
+impl BranchTakingHandler<bool> for BasicBranchTakingHandler<'_> {
     fn take(self, value: bool) {
-        todo!()
+        /* FIXME: Bad smell! The branching traits structure prevents
+         * us from having a simpler and cleaner handler.
+         */
+        if !self.parent.discriminant.is_symbolic() {
+            return;
+        }
+
+        let mut constraint = Constraint::Bool(self.parent.discriminant);
+        if !value {
+            constraint = constraint.not();
+        }
+
+        self.parent.constraint_manager.add(constraint);
     }
 
     fn take_otherwise(self, non_values: &[bool]) {
-        todo!()
+        // FIXME: Duplicate code
+        self.take(!non_values[0])
     }
 }
 
-impl BranchTakingHandler<u128> for BasicBranchTakingHandler {
-    fn take(self, value: u128) {
-        todo!()
-    }
+macro_rules! impl_general_branch_taking_handler {
+    ($($type:ty),*) => {
+        $(
+            impl BranchTakingHandler<$type> for BasicBranchTakingHandler<'_> {
+                fn take(self, value: $type) {
+                    if !self.parent.discriminant.is_symbolic() {
+                        return;
+                    }
 
-    fn take_otherwise(self, non_values: &[u128]) {
-        todo!()
-    }
+                    let expr = Expr::Binary {
+                        operator: BinaryOp::Eq,
+                        first: SymValueRef::new(self.parent.discriminant),
+                        second: ValueRef::new(Value::from_const(ConstValue::from(value))),
+                        is_flipped: false,
+                    };
+                    self.parent.constraint_manager.add(Constraint::Bool(ValueRef::new(Value::Symbolic(SymValue::Expression(expr)))));
+                }
+
+                fn take_otherwise(self, non_values: &[$type]) {
+                    if !self.parent.discriminant.is_symbolic() {
+                        return;
+                    }
+
+                    for value in non_values {
+                        let expr = Expr::Binary {
+                            operator: BinaryOp::Ne,
+                            first: SymValueRef::new(self.parent.discriminant.clone()),
+                            second: ValueRef::new(Value::from_const(ConstValue::from(*value))),
+                            is_flipped: false,
+                        };
+                        self.parent.constraint_manager.add(Constraint::Bool(ValueRef::new(Value::Symbolic(SymValue::Expression(expr)))));
+                    }
+                }
+            }
+        )*
+    };
 }
 
-impl BranchTakingHandler<char> for BasicBranchTakingHandler {
-    fn take(self, value: char) {
-        todo!()
-    }
-
-    fn take_otherwise(self, non_values: &[char]) {
-        todo!()
-    }
-}
-
-impl BranchTakingHandler<VariantIndex> for BasicBranchTakingHandler {
-    fn take(self, value: VariantIndex) {
-        todo!()
-    }
-
-    fn take_otherwise(self, non_values: &[VariantIndex]) {
-        todo!()
-    }
-}
+impl_general_branch_taking_handler!(u128, char, VariantIndex);
 
 pub(crate) struct BasicFunctionHandler;
 
@@ -679,13 +691,9 @@ impl MutableVariablesState {
     }
 }
 
-struct ConstraintManager {
-    constraints: Vec<Constraint>,
-}
-
 enum Constraint {
-    Bool(expr::ValueRef),
-    Not(expr::ValueRef),
+    Bool(ValueRef),
+    Not(ValueRef),
 }
 
 impl Constraint {
@@ -694,5 +702,52 @@ impl Constraint {
             Constraint::Bool(expr) => Constraint::Not(expr),
             Constraint::Not(expr) => Constraint::Bool(expr),
         }
+    }
+}
+
+struct ConstraintManager {
+    constraints: Vec<Constraint>,
+}
+
+impl ConstraintManager {
+    pub fn add(&mut self, constraint: Constraint) {
+        self.constraints.push(constraint);
+    }
+}
+
+fn get_operand_value(vars_state: &mut MutableVariablesState, operand: &Operand) -> ValueRef {
+    match operand {
+        Operand::Place(place, operand::PlaceUsage::Copy) => vars_state.copy_place(place),
+        Operand::Place(place, operand::PlaceUsage::Move) => vars_state.take_place(place),
+        Operand::Const(constant) => ValueRef::new(Value::Concrete(ConcreteValue::from_const(
+            get_constant_value(constant),
+        ))),
+    }
+}
+
+fn get_constant_value(constant: &operand::Constant) -> ConstValue {
+    match constant {
+        operand::Constant::Bool(value) => ConstValue::Bool(*value),
+        operand::Constant::Char(value) => ConstValue::Char(*value),
+        operand::Constant::Int {
+            bit_rep,
+            size,
+            is_signed,
+        } => ConstValue::Int {
+            bit_rep: *bit_rep,
+            size: *size,
+            is_signed: *is_signed,
+        },
+        operand::Constant::Float {
+            bit_rep,
+            ebits,
+            sbits,
+        } => ConstValue::Float {
+            bit_rep: *bit_rep,
+            ebits: *ebits,
+            sbits: *sbits,
+        },
+        operand::Constant::Str(value) => ConstValue::Str(*value),
+        operand::Constant::Func(value) => ConstValue::Func(*value),
     }
 }

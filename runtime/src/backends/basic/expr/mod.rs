@@ -174,6 +174,12 @@ macro_rules! impl_from_uint {
 
 impl_from_uint!(u8, u16, u32, u64, u128, usize);
 
+impl From<char> for ConstValue {
+    fn from(value: char) -> Self {
+        Self::Char(value)
+    }
+}
+
 #[derive(Clone, Debug)]
 pub(super) enum AdtKind {
     Struct,
