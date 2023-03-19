@@ -82,11 +82,10 @@ cannot be satisfied (i.e. we cannot reach the `false` branch).
 
 ## rust fmt
 
-For any project developers, please add a file named `pre-commit` in `.git/hooks/` with the following content:
+For any project developers, please make sure to copy all hooks from `.github/hooks/` to `.git/hooks/` via the following command, assuming you're in leaf's root directory:
 
 ```sh
-#!/bin/sh
-cargo fmt
+cp .github/hooks/pre-commit .git/hooks/pre-commit
 ```
 
-`.git/` is by definition not cloned with the rest of the repo.
+`.git/` is not cloned with the rest of the repo.

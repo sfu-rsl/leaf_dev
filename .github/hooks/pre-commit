@@ -1,0 +1,8 @@
+#!/bin/sh
+# NOTE: be sure to copy this file to `.git/hooks/pre-commit`
+changed_files=$(git diff --name-only --cached)
+for filename in $changed_files
+do
+    rustfmt $filename
+    git add $filename 
+done
