@@ -32,5 +32,9 @@
   - rust has a trait solver called chalk which various logic rules https://rustc-dev-guide.rust-lang.org/traits/chalk.html 
   - trait solving (aka trait resolution maybe?) revolves around pairing generic function (or struct) implementations with the parameters passed to them & determining if they satisfy the trait bounds required. https://rustc-dev-guide.rust-lang.org/traits/resolution.html#major-concepts
   - trait solving and type checking are both likely done in the HIR phase https://rustc-dev-guide.rust-lang.org/type-checking.html
-
-- 
+- Assertions
+  - Automatic assertions such as Overflow or division by zero checks are removes in release mode
+  - https://doc.rust-lang.org/beta/nightly-rustc/rustc_middle/mir/enum.AssertKind.html
+  - TODO: verify this formally, not just experimentally
+  - TODO: also verify this for the assert macro
+  
