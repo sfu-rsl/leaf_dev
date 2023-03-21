@@ -2,7 +2,7 @@ use std::{collections::HashMap, mem, rc::Rc};
 
 use crate::abs::{
     AssignmentHandler, BasicBlockIndex, BinaryOp, BranchTakingHandler, BranchingHandler,
-    BranchingHandler2, FieldIndex, FunctionHandler, Local, RuntimeBackend, UnaryOp, VariantIndex,
+    FieldIndex, FunctionHandler, Local, RuntimeBackend, UnaryOp, VariantIndex,
 };
 
 use self::{
@@ -22,8 +22,17 @@ pub(crate) mod place;
 pub(crate) mod logger;
 
 pub struct BasicBackend {
-    vars_state: MutableVariablesState,
     constraint_manager: ConstraintManager,
+    call_stack_manager: CallStackManager,
+}
+
+impl BasicBackend {
+    pub fn new() -> Self {
+        Self {
+            constraint_manager: ConstraintManager::new(),
+            call_stack_manager: CallStackManager::new(),
+        }
+    }
 }
 
 impl RuntimeBackend for BasicBackend {
@@ -43,7 +52,7 @@ impl RuntimeBackend for BasicBackend {
     where
         Self: 'a;
 
-    type FunctionHandler<'a> = BasicFunctionHandler
+    type FunctionHandler<'a> = BasicFunctionHandler<'a>
     where
         Self: 'a;
 
@@ -63,7 +72,7 @@ impl RuntimeBackend for BasicBackend {
         &'a mut self,
         dest: <Self::AssignmentHandler<'a> as crate::abs::AssignmentHandler>::Place,
     ) -> Self::AssignmentHandler<'a> {
-        BasicAssignmentHandler::new(dest, &mut self.vars_state)
+        BasicAssignmentHandler::new(dest, self.current_vars_state())
     }
 
     fn branch<'a>(
@@ -73,13 +82,19 @@ impl RuntimeBackend for BasicBackend {
     ) -> Self::BranchingHandler<'a> {
         BasicBranchingHandler::new(
             location,
-            get_operand_value(&mut self.vars_state, &discriminant),
+            get_operand_value(self.current_vars_state(), &discriminant),
             &mut self.constraint_manager,
         )
     }
 
     fn func_control<'a>(&'a mut self) -> Self::FunctionHandler<'a> {
-        todo!()
+        BasicFunctionHandler::new(&mut self.call_stack_manager)
+    }
+}
+
+impl BasicBackend {
+    fn current_vars_state(&mut self) -> &mut MutableVariablesState {
+        self.call_stack_manager.top()
     }
 }
 
@@ -371,9 +386,17 @@ macro_rules! impl_general_branch_taking_handler {
 
 impl_general_branch_taking_handler!(u128, char, VariantIndex);
 
-pub(crate) struct BasicFunctionHandler;
+pub(crate) struct BasicFunctionHandler<'a> {
+    call_stack_manager: &'a mut CallStackManager,
+}
 
-impl FunctionHandler for BasicFunctionHandler {
+impl<'a> BasicFunctionHandler<'a> {
+    fn new(call_stack_manager: &'a mut CallStackManager) -> Self {
+        Self { call_stack_manager }
+    }
+}
+
+impl FunctionHandler for BasicFunctionHandler<'_> {
     type Place = Place;
     type Operand = Operand;
 
@@ -383,11 +406,18 @@ impl FunctionHandler for BasicFunctionHandler {
         args: impl Iterator<Item = Self::Operand>,
         result_dest: Self::Place,
     ) {
-        todo!()
+        // TODO: Put arguments in the variables state.
+        self.call_stack_manager.push(result_dest)
     }
 
     fn ret(self) {
-        todo!()
+        let (result_dest, returned_val) = self.call_stack_manager.pop();
+        /* FIXME: May require a cleaner approach. */
+        if !self.call_stack_manager.is_empty() {
+            self.call_stack_manager
+                .top()
+                .set_place(&result_dest, returned_val)
+        }
     }
 }
 
@@ -710,8 +740,60 @@ struct ConstraintManager {
 }
 
 impl ConstraintManager {
+    fn new() -> Self {
+        Self {
+            constraints: Vec::new(),
+        }
+    }
+
     pub fn add(&mut self, constraint: Constraint) {
         self.constraints.push(constraint);
+    }
+}
+
+struct CallStackManager {
+    stack: Vec<CallStackFrame>,
+}
+
+struct CallStackFrame {
+    vars_state: MutableVariablesState,
+    result_dest: Place,
+}
+
+impl CallStackManager {
+    fn new() -> Self {
+        let mut instance = Self { stack: Vec::new() };
+        /* TODO: This is a hack to make sure that a call info exists for the
+         * entry point. It will be investigated in #68.
+         */
+        instance.push(Place::new(0));
+        instance
+    }
+
+    fn push(&mut self, result_dest: Place) {
+        self.stack.push(CallStackFrame {
+            vars_state: MutableVariablesState::new(),
+            result_dest,
+        });
+    }
+
+    fn pop(&mut self) -> (Place, ValueRef) {
+        let frame = self.stack.pop().expect("Call stack is empty.");
+        let mut vars_state = frame.vars_state;
+        // TODO: Clean up after better management of special local variables.
+        (frame.result_dest, vars_state.take_place(&Place::new(0)))
+    }
+
+    fn top(&mut self) -> &mut MutableVariablesState {
+        &mut self
+            .stack
+            .last_mut()
+            .expect("Call stack is empty.")
+            .vars_state
+    }
+
+    fn is_empty(&self) -> bool {
+        self.stack.is_empty()
     }
 }
 
