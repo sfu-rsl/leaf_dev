@@ -1,8 +1,21 @@
 #!/bin/sh
 # NOTE: be sure to copy this file to `.git/hooks/pre-commit`
 changed_files=$(git diff --name-only --cached)
+found_changes=false
 for filename in $changed_files
 do
-    rustfmt $filename
-    git add $filename 
-done
+    results=$(rustfmt $filename -l)
+    if [ ! -z "$results" ]; then # check if results isn't empty
+        echo "file formatted with rustfmt:"
+        echo $results
+        found_changes=true
+    fi
+done 
+
+if $found_changes; then
+    echo ""
+    echo "Please address changes before comitting again"
+    exit 1
+else
+    echo "success"
+fi
