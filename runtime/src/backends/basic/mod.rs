@@ -8,7 +8,7 @@ use crate::abs::{
 use self::{
     expr::{
         AdtKind, AdtValue, ArrayValue, ConcreteValue, ConstValue, Expr, RefValue, SymValue,
-        SymValueRef, Value,
+        SymValueRef, SymbolicVar, Value,
     },
     operand::{DefaultOperandHandler, Operand},
     place::{DefaultPlaceHandler, Place, Projection},
@@ -414,9 +414,11 @@ impl FunctionHandler for BasicFunctionHandler<'_> {
         let (result_dest, returned_val) = self.call_stack_manager.pop();
         /* FIXME: May require a cleaner approach. */
         if !self.call_stack_manager.is_empty() {
-            self.call_stack_manager
-                .top()
-                .set_place(&result_dest, returned_val)
+            if let Some(returned_val) = returned_val {
+                self.call_stack_manager
+                    .top()
+                    .set_place(&result_dest, returned_val)
+            }
         }
     }
 }
@@ -439,16 +441,18 @@ impl MutableVariablesState {
     }
 
     pub fn take_place(&mut self, place: &Place) -> ValueRef {
+        self.try_take_place(place)
+            .expect(Self::get_err_message(&place.local()).as_str())
+    }
+
+    pub fn try_take_place(&mut self, place: &Place) -> Option<ValueRef> {
         let local = place.local();
-        let value = self
-            .locals
-            .remove(&local)
-            .expect(Self::get_err_message(&local).as_str());
+        let value = self.locals.remove(&local)?;
 
         let mut value = value;
 
         if !place.has_projection() {
-            return value;
+            return Some(value);
         }
 
         let (last, projs) = place.projections.split_last().unwrap();
@@ -459,7 +463,7 @@ impl MutableVariablesState {
 
         let field_val = Self::take_field(self.apply_projs_mut(&mut value, projs.iter()), last);
         self.locals.insert(local, value);
-        field_val
+        Some(field_val)
     }
 
     pub fn set_place(&mut self, place: &Place, value: ValueRef) {
@@ -721,6 +725,7 @@ impl MutableVariablesState {
     }
 }
 
+#[derive(Debug, Clone)]
 enum Constraint {
     Bool(ValueRef),
     Not(ValueRef),
@@ -747,6 +752,7 @@ impl ConstraintManager {
     }
 
     pub fn add(&mut self, constraint: Constraint) {
+        println!("Adding constraint: {:?}", &constraint);
         self.constraints.push(constraint);
     }
 }
@@ -777,11 +783,11 @@ impl CallStackManager {
         });
     }
 
-    fn pop(&mut self) -> (Place, ValueRef) {
+    fn pop(&mut self) -> (Place, Option<ValueRef>) {
         let frame = self.stack.pop().expect("Call stack is empty.");
         let mut vars_state = frame.vars_state;
         // TODO: Clean up after better management of special local variables.
-        (frame.result_dest, vars_state.take_place(&Place::new(0)))
+        (frame.result_dest, vars_state.try_take_place(&Place::new(0)))
     }
 
     fn top(&mut self) -> &mut MutableVariablesState {
