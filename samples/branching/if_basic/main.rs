@@ -1,5 +1,8 @@
+use runtime::annotations::Symbolizable;
+
 fn main() {
-    let x = get_num();
+    let x = get_num().as_symbolic();
+    let y = get_num();
 
     let condition = x == 5;
     if condition {
@@ -8,6 +11,10 @@ fn main() {
 
     if !condition {
         foo(false);
+    }
+
+    if x == y {
+        foo(0);
     }
 
     if x % 2 == 1 {
