@@ -2,7 +2,7 @@ use std::{ops::Deref, rc::Rc};
 
 use crate::abs::{BinaryOp, FieldIndex, UnaryOp, VariantIndex};
 
-use super::place::Place;
+use super::{operand, place::Place};
 
 pub(super) type ValueRef = Rc<Value>;
 pub(super) type SymValueRef = SymValueGuard;
@@ -151,7 +151,7 @@ impl ConstValue {
                 ) => unimplemented!(),
                 _ => unreachable!("Addition only works on integers."),
             },
-            _ => unimplemented!(),
+            _ => unimplemented!("{:?} {:?} {:?}", first, second, operator),
         }
     }
 }
@@ -263,6 +263,38 @@ pub(super) enum SymValue {
 #[derive(Clone, Copy, Debug)]
 pub(super) struct SymbolicVar {
     id: u64,
+    ty: SymbolicVarType,
+}
+
+impl SymbolicVar {
+    pub fn new(id: u64, ty: SymbolicVarType) -> Self {
+        Self { id, ty }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(super) enum SymbolicVarType {
+    Bool,
+    Char,
+    Int { size: u64, is_signed: bool },
+    Float { ebits: u64, sbits: u64 },
+}
+
+impl From<&operand::Symbolic> for SymbolicVarType {
+    fn from(value: &operand::Symbolic) -> Self {
+        match value {
+            operand::Symbolic::Bool => Self::Bool,
+            operand::Symbolic::Char => Self::Char,
+            operand::Symbolic::Int { size, is_signed } => Self::Int {
+                size: *size,
+                is_signed: *is_signed,
+            },
+            operand::Symbolic::Float { ebits, sbits } => Self::Float {
+                ebits: *ebits,
+                sbits: *sbits,
+            },
+        }
+    }
 }
 
 #[derive(Clone, Debug)]

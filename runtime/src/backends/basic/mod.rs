@@ -804,6 +804,9 @@ fn get_operand_value(vars_state: &mut MutableVariablesState, operand: &Operand) 
         Operand::Const(constant) => ValueRef::new(Value::Concrete(ConcreteValue::from_const(
             get_constant_value(constant),
         ))),
+        Operand::Symbolic(sym) => ValueRef::new(Value::Symbolic(SymValue::Variable(
+            SymbolicVar::new(0, sym.into()),
+        ))),
     }
 }
 

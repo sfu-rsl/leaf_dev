@@ -391,8 +391,8 @@ impl Display for Operand {
                 PlaceUsage::Copy => write!(f, "C({})", place),
                 PlaceUsage::Move => write!(f, "{}", place),
             },
-            Operand::Const(constant) => write!(f, "{:?}", constant),
-            _ => Result::Ok(()),
+            Operand::Const(constant) => write!(f, "Const::{:?}", constant),
+            Operand::Symbolic(symbolic) => write!(f, "Symbolic::{:?}", symbolic),
         }
     }
 }

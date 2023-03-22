@@ -3,8 +3,7 @@ pub type BasicBlockIndex = u32;
 pub type VariantIndex = u32;
 pub type FieldIndex = u32;
 
-#[derive(Clone, Copy)]
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum BinaryOp {
     Add,
     Sub,
@@ -25,8 +24,7 @@ pub enum BinaryOp {
     Offset,
 }
 
-#[derive(Clone, Copy)]
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum UnaryOp {
     Not,
     Neg,
@@ -102,12 +100,15 @@ pub(crate) trait OperandHandler {
     type Operand;
     type Place;
     type ConstantHandler: ConstantHandler<Operand = Self::Operand>;
+    type SymbolicHandler: SymbolicHandler<Operand = Self::Operand>;
 
     fn copy_of(self, place: Self::Place) -> Self::Operand;
 
     fn move_of(self, place: Self::Place) -> Self::Operand;
 
     fn const_from(self) -> Self::ConstantHandler;
+
+    fn symbolic(self) -> Self::SymbolicHandler;
 }
 
 pub(crate) trait ConstantHandler {
@@ -124,6 +125,18 @@ pub(crate) trait ConstantHandler {
     fn str(self, value: &'static str) -> Self::Operand;
 
     fn func(self, id: u64) -> Self::Operand;
+}
+
+pub(crate) trait SymbolicHandler {
+    type Operand;
+
+    fn bool(self) -> Self::Operand;
+
+    fn char(self) -> Self::Operand;
+
+    fn int(self, size: u64, is_signed: bool) -> Self::Operand;
+
+    fn float(self, ebits: u64, sbits: u64) -> Self::Operand;
 }
 
 pub(crate) trait AssignmentHandler {

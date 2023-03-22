@@ -3,8 +3,8 @@ mod utils;
 
 use crate::abs::{
     AssignmentHandler, BasicBlockIndex, BinaryOp, BranchTakingHandler, BranchingHandler,
-    ConstantHandler, FunctionHandler, Local, OperandHandler, PlaceHandler, PlaceProjectionHandler,
-    UnaryOp, VariantIndex, FieldIndex,
+    ConstantHandler, FieldIndex, FunctionHandler, Local, OperandHandler, PlaceHandler,
+    PlaceProjectionHandler, SymbolicHandler, UnaryOp, VariantIndex,
 };
 
 use self::instance::*;
@@ -92,6 +92,18 @@ pub fn ref_operand_const_func(id: u64) -> OperandRef {
 }
 pub fn ref_operand_const_str(value: &'static str) -> OperandRef {
     push_operand_ref(|o| o.const_from().str(value))
+}
+pub fn ref_operand_sym_bool() -> OperandRef {
+    push_operand_ref(|o| o.symbolic().bool())
+}
+pub fn ref_operand_sym_int(size: u64, is_signed: bool) -> OperandRef {
+    push_operand_ref(|o| o.symbolic().int(size, is_signed))
+}
+pub fn ref_operand_sym_float(ebits: u64, sbits: u64) -> OperandRef {
+    push_operand_ref(|o| o.symbolic().float(ebits, sbits))
+}
+pub fn ref_operand_sym_char() -> OperandRef {
+    push_operand_ref(|o| o.symbolic().char())
 }
 
 pub fn assign_use(dest: PlaceRef, operand: OperandRef) {
