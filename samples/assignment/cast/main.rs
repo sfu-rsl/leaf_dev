@@ -4,11 +4,11 @@ fn main() {
     let a = get_int();
     let b = a as f32; // IntToFloat
     let c = a as u32; // IntToInt
-    
+
     let d = get_float();
     let e = d as f32; // FloatToFloat
     let f = d as u32; // FloatToInt
-    
+
     let g = get_foo();
     let h = g as u32; // IntToInt
 
