@@ -1,4 +1,7 @@
-use crate::abs::{Local, PlaceHandler, PlaceProjectionHandler, FieldIndex};
+use crate::abs::{
+    backend::{PlaceHandler, PlaceProjectionHandler},
+    FieldIndex, Local,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct Place {

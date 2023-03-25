@@ -1,9 +1,6 @@
-use std::{collections::HashMap, mem, rc::Rc};
+use std::{collections::HashMap, mem};
 
-use crate::abs::{
-    AssignmentHandler, BasicBlockIndex, BinaryOp, BranchTakingHandler, BranchingHandler,
-    FieldIndex, FunctionHandler, Local, RuntimeBackend, UnaryOp, VariantIndex,
-};
+use crate::abs::{backend::*, BasicBlockIndex, BinaryOp, FieldIndex, Local, UnaryOp, VariantIndex};
 
 use self::{
     expr::{
@@ -70,7 +67,7 @@ impl RuntimeBackend for BasicBackend {
 
     fn assign_to<'a>(
         &'a mut self,
-        dest: <Self::AssignmentHandler<'a> as crate::abs::AssignmentHandler>::Place,
+        dest: <Self::AssignmentHandler<'a> as AssignmentHandler>::Place,
     ) -> Self::AssignmentHandler<'a> {
         BasicAssignmentHandler::new(dest, self.current_vars_state())
     }
@@ -78,7 +75,7 @@ impl RuntimeBackend for BasicBackend {
     fn branch<'a>(
         &'a mut self,
         location: crate::abs::BasicBlockIndex,
-        discriminant: <Self::OperandHandler<'static> as crate::abs::OperandHandler>::Operand,
+        discriminant: <Self::OperandHandler<'static> as OperandHandler>::Operand,
     ) -> Self::BranchingHandler<'a> {
         BasicBranchingHandler::new(
             location,
@@ -204,7 +201,7 @@ impl AssignmentHandler for BasicAssignmentHandler<'_> {
         self.set_value(value)
     }
 
-    fn unary_op_on(mut self, operator: crate::abs::UnaryOp, operand: Self::Operand) {
+    fn unary_op_on(mut self, operator: UnaryOp, operand: Self::Operand) {
         let value = self.get_operand_value(&operand);
         if value.is_symbolic() {
             return self.set_value(Value::Symbolic(SymValue::Expression(Expr::Unary {

@@ -1,4 +1,4 @@
-use crate::abs::{ConstantHandler, OperandHandler, SymbolicHandler};
+use crate::abs::backend::{ConstantHandler, OperandHandler, SymbolicHandler};
 
 use super::place::Place;
 

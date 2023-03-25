@@ -1,6 +1,6 @@
 use super::utils::{DefaultRefManager, RefManager, UnsafeSync};
 use super::{BranchingInfo, OperandRef, PlaceRef};
-use crate::abs::{OperandHandler, PlaceHandler, RuntimeBackend};
+use crate::abs::backend::{OperandHandler, PlaceHandler, RuntimeBackend};
 
 use std::{
     cell::RefCell,

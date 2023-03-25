@@ -1,4 +1,4 @@
-use crate::abs::*;
+use crate::abs::{backend::*, BasicBlockIndex, BinaryOp, Local, UnaryOp, VariantIndex};
 
 pub(crate) struct FakeBackend {}
 
