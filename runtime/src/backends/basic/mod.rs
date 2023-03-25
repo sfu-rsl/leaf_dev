@@ -1,3 +1,8 @@
+pub(crate) mod expr;
+pub(crate) mod logger;
+pub(crate) mod operand;
+pub(crate) mod place;
+
 use std::{collections::HashMap, mem};
 
 use crate::abs::{backend::*, BasicBlockIndex, BinaryOp, FieldIndex, Local, UnaryOp, VariantIndex};
@@ -10,13 +15,6 @@ use self::{
     operand::{DefaultOperandHandler, Operand},
     place::{DefaultPlaceHandler, Place, Projection},
 };
-
-pub(crate) mod expr;
-
-pub(crate) mod operand;
-pub(crate) mod place;
-
-pub(crate) mod logger;
 
 pub struct BasicBackend {
     constraint_manager: ConstraintManager,
