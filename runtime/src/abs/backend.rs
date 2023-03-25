@@ -1,4 +1,6 @@
-use super::{BasicBlockIndex, BinaryOp, FieldIndex, Local, UnaryOp, VariantIndex};
+use std::collections::HashMap;
+
+use super::{BasicBlockIndex, BinaryOp, Constraint, FieldIndex, Local, UnaryOp, VariantIndex};
 
 pub(crate) trait RuntimeBackend: Sized {
     type PlaceHandler<'a>: PlaceHandler<Place = Self::Place>
@@ -179,4 +181,37 @@ pub(crate) trait FunctionHandler {
     );
 
     fn ret(self);
+}
+
+pub(crate) trait TraceManager {
+    type Step;
+    type Value;
+
+    fn notify_step(
+        &mut self,
+        step: Self::Step,
+        new_constraints: impl Iterator<Item = Constraint<Self::Value>>,
+    );
+}
+
+pub(crate) trait PathInterestChecker {
+    type Step;
+
+    fn is_interesting(&self, path: &[Self::Step]) -> bool;
+}
+
+pub(crate) trait Solver {
+    type SymVarId;
+    type Value;
+
+    fn check(
+        &mut self,
+        constraints: &[Constraint<Self::Value>],
+    ) -> SolveResult<Self::SymVarId, Self::Value>;
+}
+
+pub(crate) enum SolveResult<I, V> {
+    Sat(HashMap<I, V>),
+    Unsat,
+    Unknown,
 }
