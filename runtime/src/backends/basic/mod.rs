@@ -722,20 +722,7 @@ impl MutableVariablesState {
     }
 }
 
-#[derive(Debug, Clone)]
-enum Constraint {
-    Bool(ValueRef),
-    Not(ValueRef),
-}
-
-impl Constraint {
-    fn not(self) -> Constraint {
-        match self {
-            Constraint::Bool(expr) => Constraint::Not(expr),
-            Constraint::Not(expr) => Constraint::Bool(expr),
-        }
-    }
-}
+type Constraint = crate::abs::Constraint<ValueRef>;
 
 struct ConstraintManager {
     constraints: Vec<Constraint>,

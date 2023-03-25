@@ -31,3 +31,18 @@ pub enum UnaryOp {
     Not,
     Neg,
 }
+
+#[derive(Debug, Clone)]
+pub(crate) enum Constraint<V> {
+    Bool(V),
+    Not(V),
+}
+
+impl<V> Constraint<V> {
+    pub fn not(self) -> Constraint<V> {
+        match self {
+            Constraint::Bool(expr) => Constraint::Not(expr),
+            Constraint::Not(expr) => Constraint::Bool(expr),
+        }
+    }
+}
