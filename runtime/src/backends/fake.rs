@@ -1,4 +1,4 @@
-use crate::abs::*;
+use crate::abs::{backend::*, BasicBlockIndex, BinaryOp, Local, UnaryOp, VariantIndex};
 
 pub(crate) struct FakeBackend {}
 
@@ -101,6 +101,8 @@ impl OperandHandler for FakeOperandHandler {
 
     type ConstantHandler = FakeConstantHandler;
 
+    type SymbolicHandler = FakeSymbolicHandler;
+
     fn copy_of(self, place: Self::Place) -> Self::Operand {
         unimplemented!()
     }
@@ -110,11 +112,15 @@ impl OperandHandler for FakeOperandHandler {
     }
 
     fn const_from(self) -> Self::ConstantHandler {
-        unimplemented!()
+        FakeConstantHandler
+    }
+
+    fn symbolic(self) -> Self::SymbolicHandler {
+        FakeSymbolicHandler
     }
 }
 
-pub(crate) struct FakeConstantHandler {}
+pub(crate) struct FakeConstantHandler;
 
 impl ConstantHandler for FakeConstantHandler {
     type Operand = FakeOperand;
@@ -140,6 +146,28 @@ impl ConstantHandler for FakeConstantHandler {
     }
 
     fn func(self, id: u64) -> Self::Operand {
+        unimplemented!()
+    }
+}
+
+pub(crate) struct FakeSymbolicHandler;
+
+impl SymbolicHandler for FakeSymbolicHandler {
+    type Operand = FakeOperand;
+
+    fn bool(self) -> Self::Operand {
+        unimplemented!()
+    }
+
+    fn char(self) -> Self::Operand {
+        unimplemented!()
+    }
+
+    fn int(self, size: u64, is_signed: bool) -> Self::Operand {
+        unimplemented!()
+    }
+
+    fn float(self, ebits: u64, sbits: u64) -> Self::Operand {
         unimplemented!()
     }
 }

@@ -1,26 +1,19 @@
-use crate::abs::{self, Local, PlaceHandler, PlaceProjectionHandler};
+use crate::abs::{
+    backend::{PlaceHandler, PlaceProjectionHandler},
+    FieldIndex, Local,
+};
 
-/* FIXME: We should use a more efficient representation. As place is designed in
- * in this way to be moved and not borrowed, in places where there is a borrow,
- * cloning is mandatory which is expensive.
- * An alternative is the structure used in the compiler itself, which stores a
- * list of projections instead of recursive structure.
- */
-#[derive(Debug, Clone)]
-pub(crate) enum Place {
-    Local(abs::Local),
-    Projection {
-        kind: ProjectionKind,
-        // We use box to break infinite recursion.
-        on: Box<Place>,
-    },
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) struct Place {
+    pub local: Local,
+    pub projections: Vec<Projection>,
 }
 
-#[derive(Debug, Clone)]
-pub(crate) enum ProjectionKind {
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) enum Projection {
+    Field(FieldIndex),
     Deref,
-    Field(u32),
-    Index(Box<Place>),
+    Index(Place),
     ConstantIndex {
         offset: u64,
         min_length: u64,
@@ -35,6 +28,39 @@ pub(crate) enum ProjectionKind {
     OpaqueCast,
 }
 
+impl Place {
+    pub fn new(local: Local) -> Self {
+        Self {
+            local,
+            /* As most of the places are just locals, we try not to allocate at start. */
+            projections: Vec::with_capacity(0),
+        }
+    }
+
+    pub fn local(&self) -> Local {
+        self.local
+    }
+
+    pub fn has_projection(&self) -> bool {
+        !self.projections.is_empty()
+    }
+
+    pub fn with_projection(self, projection: Projection) -> Self {
+        let mut projections = self.projections;
+        projections.push(projection);
+        Self {
+            local: self.local,
+            projections,
+        }
+    }
+}
+
+impl Projection {
+    pub fn is_field(&self) -> bool {
+        matches!(self, Projection::Field(_))
+    }
+}
+
 pub(crate) struct DefaultPlaceHandler;
 
 pub(crate) struct DefaultPlaceProjectionHandler {
@@ -46,7 +72,7 @@ impl PlaceHandler for DefaultPlaceHandler {
     type ProjectionHandler = DefaultPlaceProjectionHandler;
 
     fn of_local(self, local: Local) -> Self::Place {
-        Place::Local(local)
+        Place::new(local)
     }
 
     fn project_on(self, place: Self::Place) -> Self::ProjectionHandler {
@@ -58,19 +84,19 @@ impl PlaceProjectionHandler for DefaultPlaceProjectionHandler {
     type Place = Place;
 
     fn deref(self) -> Self::Place {
-        self.create(ProjectionKind::Deref)
+        self.create(Projection::Deref)
     }
 
-    fn for_field(self, field: u32) -> Self::Place {
-        self.create(ProjectionKind::Field(field))
+    fn for_field(self, field: FieldIndex) -> Self::Place {
+        self.create(Projection::Field(field))
     }
 
     fn at_index(self, index: Self::Place) -> Self::Place {
-        self.create(ProjectionKind::Index(Box::new(index)))
+        self.create(Projection::Index(index))
     }
 
     fn at_constant_index(self, offset: u64, min_length: u64, from_end: bool) -> Self::Place {
-        self.create(ProjectionKind::ConstantIndex {
+        self.create(Projection::ConstantIndex {
             offset,
             min_length,
             from_end,
@@ -78,23 +104,20 @@ impl PlaceProjectionHandler for DefaultPlaceProjectionHandler {
     }
 
     fn subslice(self, from: u64, to: u64, from_end: bool) -> Self::Place {
-        self.create(ProjectionKind::Subslice { from, to, from_end })
+        self.create(Projection::Subslice { from, to, from_end })
     }
 
     fn downcast(self, variant_index: u32) -> Self::Place {
-        self.create(ProjectionKind::Downcast(variant_index))
+        self.create(Projection::Downcast(variant_index))
     }
 
     fn opaque_cast(self) -> Self::Place {
-        self.create(ProjectionKind::OpaqueCast)
+        self.create(Projection::OpaqueCast)
     }
 }
 
 impl DefaultPlaceProjectionHandler {
-    fn create(self, kind: ProjectionKind) -> Place {
-        Place::Projection {
-            kind,
-            on: Box::new(self.place),
-        }
+    fn create(self, proj: Projection) -> Place {
+        self.place.with_projection(proj)
     }
 }

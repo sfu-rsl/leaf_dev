@@ -1,4 +1,4 @@
-use crate::abs::{ConstantHandler, OperandHandler};
+use crate::abs::backend::{ConstantHandler, OperandHandler, SymbolicHandler};
 
 use super::place::Place;
 
@@ -6,6 +6,7 @@ use super::place::Place;
 pub(crate) enum Operand {
     Place(Place, PlaceUsage),
     Const(Constant),
+    Symbolic(Symbolic),
 }
 
 #[derive(Debug)]
@@ -32,6 +33,14 @@ pub(crate) enum Constant {
     Func(u64),
 }
 
+#[derive(Debug)]
+pub(crate) enum Symbolic {
+    Bool,
+    Char,
+    Int { size: u64, is_signed: bool },
+    Float { ebits: u64, sbits: u64 },
+}
+
 pub(crate) struct DefaultOperandHandler;
 
 pub(crate) struct DefaultConstantHandler;
@@ -40,6 +49,7 @@ impl OperandHandler for DefaultOperandHandler {
     type Operand = Operand;
     type Place = Place;
     type ConstantHandler = DefaultConstantHandler;
+    type SymbolicHandler = DefaultSymbolicHandler;
 
     fn copy_of(self, place: Self::Place) -> Self::Operand {
         Operand::Place(place, PlaceUsage::Copy)
@@ -51,6 +61,10 @@ impl OperandHandler for DefaultOperandHandler {
 
     fn const_from(self) -> Self::ConstantHandler {
         DefaultConstantHandler
+    }
+
+    fn symbolic(self) -> Self::SymbolicHandler {
+        DefaultSymbolicHandler
     }
 }
 
@@ -93,5 +107,33 @@ impl ConstantHandler for DefaultConstantHandler {
 impl DefaultConstantHandler {
     fn create(constant: Constant) -> Operand {
         Operand::Const(constant)
+    }
+}
+
+pub(crate) struct DefaultSymbolicHandler;
+
+impl SymbolicHandler for DefaultSymbolicHandler {
+    type Operand = Operand;
+
+    fn bool(self) -> Self::Operand {
+        Self::create(Symbolic::Bool)
+    }
+
+    fn char(self) -> Self::Operand {
+        Self::create(Symbolic::Char)
+    }
+
+    fn int(self, size: u64, is_signed: bool) -> Self::Operand {
+        Self::create(Symbolic::Int { size, is_signed })
+    }
+
+    fn float(self, ebits: u64, sbits: u64) -> Self::Operand {
+        Self::create(Symbolic::Float { ebits, sbits })
+    }
+}
+
+impl DefaultSymbolicHandler {
+    fn create(symbolic: Symbolic) -> Operand {
+        Operand::Symbolic(symbolic)
     }
 }

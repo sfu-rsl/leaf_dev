@@ -1,11 +1,7 @@
 mod instance;
 mod utils;
 
-use crate::abs::{
-    AssignmentHandler, BasicBlockIndex, BinaryOp, BranchTakingHandler, BranchingHandler,
-    ConstantHandler, FunctionHandler, Local, OperandHandler, PlaceHandler, PlaceProjectionHandler,
-    UnaryOp, VariantIndex,
-};
+use crate::abs::{backend::*, BasicBlockIndex, BinaryOp, FieldIndex, Local, UnaryOp, VariantIndex};
 
 use self::instance::*;
 
@@ -33,7 +29,7 @@ pub fn ref_place_local(local: Local) -> PlaceRef {
 pub fn ref_place_deref(place: PlaceRef) -> PlaceRef {
     push_place_ref(|p| p.project_on(take_back_place_ref(place)).deref())
 }
-pub fn ref_place_field(place: PlaceRef, field: u32 /*, type */) -> PlaceRef {
+pub fn ref_place_field(place: PlaceRef, field: FieldIndex /*, type */) -> PlaceRef {
     push_place_ref(|p| p.project_on(take_back_place_ref(place)).for_field(field))
 }
 pub fn ref_place_index(place: PlaceRef, index_place: PlaceRef) -> PlaceRef {
@@ -92,6 +88,18 @@ pub fn ref_operand_const_func(id: u64) -> OperandRef {
 }
 pub fn ref_operand_const_str(value: &'static str) -> OperandRef {
     push_operand_ref(|o| o.const_from().str(value))
+}
+pub fn ref_operand_sym_bool() -> OperandRef {
+    push_operand_ref(|o| o.symbolic().bool())
+}
+pub fn ref_operand_sym_int(size: u64, is_signed: bool) -> OperandRef {
+    push_operand_ref(|o| o.symbolic().int(size, is_signed))
+}
+pub fn ref_operand_sym_float(ebits: u64, sbits: u64) -> OperandRef {
+    push_operand_ref(|o| o.symbolic().float(ebits, sbits))
+}
+pub fn ref_operand_sym_char() -> OperandRef {
+    push_operand_ref(|o| o.symbolic().char())
 }
 
 pub fn assign_use(dest: PlaceRef, operand: OperandRef) {
