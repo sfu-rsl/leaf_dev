@@ -4,7 +4,7 @@
 #![feature(assert_matches)]
 #![feature(iterator_try_collect)]
 
-pub mod pri;
 pub mod abs;
 pub mod annotations;
 mod backends;
+pub mod pri;

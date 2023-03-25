@@ -6,3 +6,9 @@ target
 
 .vscode
 .idea
+
+samples/playground
+
+*.mir
+*.ll
+*.bc

@@ -918,7 +918,9 @@ where
                 )],
             )
         } else {
-            unreachable!("Branching node discriminant is supposed to be either bool, int, char, or enum discriminant.")
+            unreachable!(
+                "Branching node discriminant is supposed to be either bool, int, char, or enum discriminant."
+            )
         };
 
         let block = self.make_bb_for_call_with_target(
@@ -978,7 +980,9 @@ where
                     }),
                 )
             } else {
-                unreachable!("Branching node discriminant is supposed to be either bool, int, char, or enum discriminant.")
+                unreachable!(
+                    "Branching node discriminant is supposed to be either bool, int, char, or enum discriminant."
+                )
             };
 
             let (non_values_local, assign_statement) = self.add_and_assign_local_for_ow_non_values(
