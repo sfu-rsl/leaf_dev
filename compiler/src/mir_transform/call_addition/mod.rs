@@ -7,10 +7,10 @@ use rustc_middle::{
         BasicBlock, BasicBlockData, BinOp, Body, Constant, ConstantKind, HasLocalDecls, Local,
         Operand, Place, ProjectionElem, SourceInfo, Statement, Terminator, TerminatorKind, UnOp,
     },
-    ty::{GenericArg, ScalarInt, Ty, TyCtxt, TyKind},
+    ty::{layout::IntegerExt, GenericArg, Int, ScalarInt, Ty, TyCtxt, TyKind, Uint},
 };
 use rustc_span::DUMMY_SP;
-use rustc_target::abi::VariantIdx;
+use rustc_target::abi::{Integer, VariantIdx};
 
 use self::{
     context::*,
@@ -138,7 +138,7 @@ pub trait Assigner {
 
     fn by_len(&mut self, place: PlaceRef);
 
-    fn by_cast_numeric(&mut self, operand: OperandRef, is_to_float: bool, size: u64);
+    fn by_cast_numeric(&mut self, operand: OperandRef, ty: Ty);
 
     fn by_cast(&mut self, operand: OperandRef, is_to_float: bool, size: u64);
 
@@ -716,13 +716,34 @@ where
         )
     }
 
-    fn by_cast_numeric(&mut self, operand: OperandRef, is_to_float: bool, size: u64) {
+    fn by_cast_numeric(&mut self, operand: OperandRef, ty: Ty) {
+        let tcx = self.context.tcx();
+
+        if ty.is_floating_point() {
+            todo!("Floating point casts are not supported yet.")
+        }
+
+        let (size, is_to_signed) = if ty.is_numeric() {
+            let (int, signed) = match *ty.kind() {
+                Int(ity) => (Integer::from_int_ty(&tcx, ity), true),
+                Uint(uty) => (Integer::from_uint_ty(&tcx, uty), false),
+                _ => panic!("non integer discriminant"),
+            };
+            (int.size().bits(), signed)
+        } else if ty.is_char() {
+            // might want to break this out into a separate case otherwise the runtime won't be able to tell we casted to a char
+            (16, false)
+        } else {
+            unreachable!("cast_numeric called for non-numeric type");
+        };
+
         self.add_bb_for_assign_call(
             stringify!(pri::assign_cast_numeric),
             vec![
                 operand::copy_for_local(operand.into()),
-                operand::const_from_bool(self.context.tcx(), is_to_float),
-                operand::const_from_uint(self.context.tcx(), size),
+                operand::const_from_bool(tcx, false),
+                operand::const_from_bool(tcx, is_to_signed),
+                operand::const_from_uint(tcx, size),
             ],
         )
     }

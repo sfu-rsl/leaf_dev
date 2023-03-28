@@ -5,13 +5,13 @@ fn main() {
     let c = a as u32; // IntToInt
 
     let g = get_foo();
-    let h = g as u32; // IntToInt
+    let h = g as u16; // IntToInt
 
     let i = get_bool();
-    let j = i as u32; // IntToInt
+    let j = i as u8; // IntToInt
 
     let k = get_char();
-    let l = k as u32; // IntToInt
+    let l = k as u64; // IntToInt
 
     let m = get_u8();
     let n = m as char; // IntToInt

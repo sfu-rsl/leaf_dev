@@ -156,7 +156,13 @@ impl AssignmentHandler for BasicAssignmentHandler<'_> {
         self.set_value(len_value)
     }
 
-    fn numeric_cast_of(self, operand: Self::Operand, is_to_float: bool, size: usize) {
+    fn numeric_cast_of(
+        self,
+        operand: Self::Operand,
+        is_to_float: bool,
+        is_to_signed: bool,
+        size: usize,
+    ) {
         todo!()
     }
 
