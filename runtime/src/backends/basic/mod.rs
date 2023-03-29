@@ -2,6 +2,7 @@ pub(crate) mod expr;
 pub(crate) mod logger;
 pub(crate) mod operand;
 pub(crate) mod place;
+pub(crate) mod trace;
 
 use std::{collections::HashMap, mem};
 
@@ -14,11 +15,13 @@ use self::{
     },
     operand::{DefaultOperandHandler, Operand},
     place::{DefaultPlaceHandler, Place, Projection},
+    trace::BasicTraceManager,
 };
 
 pub struct BasicBackend {
     constraint_manager: ConstraintManager,
     call_stack_manager: CallStackManager,
+    trace_manager: Box<dyn TraceManager<Step = BasicBlockIndex, Value = ValueRef>>,
 }
 
 impl BasicBackend {
@@ -26,6 +29,7 @@ impl BasicBackend {
         Self {
             constraint_manager: ConstraintManager::new(),
             call_stack_manager: CallStackManager::new(),
+            trace_manager: Box::new(BasicTraceManager::new()),
         }
     }
 }
@@ -364,15 +368,28 @@ macro_rules! impl_general_branch_taking_handler {
                         return;
                     }
 
-                    for value in non_values {
-                        let expr = Expr::Binary {
-                            operator: BinaryOp::Ne,
-                            first: SymValueRef::new(self.parent.discriminant.clone()),
-                            second: ValueRef::new(Value::from_const(ConstValue::from(*value))),
-                            is_flipped: false,
-                        };
-                        self.parent.constraint_manager.add(Constraint::Bool(ValueRef::new(Value::Symbolic(SymValue::Expression(expr)))));
-                    }
+                    /* Converting all non-equalities into a single constraint to not lose
+                    * semantics.
+                    */
+                    self.parent.constraint_manager.add(Constraint::Bool(
+                        non_values
+                            .into_iter()
+                            .map(|v| Expr::Binary {
+                                operator: BinaryOp::Ne,
+                                first: SymValueRef::new(self.parent.discriminant.clone()),
+                                second: ValueRef::new(Value::from_const(ConstValue::from(*v as u8))),
+                                is_flipped: false,
+                            })
+                            .reduce(|acc, e| Expr::Binary {
+                                operator: BinaryOp::BitAnd,
+                                first: acc.as_value_ref(),
+                                second: e.as_value_ref().0,
+                                is_flipped: false,
+                            })
+                            .unwrap()
+                            .as_value_ref()
+                            .0,
+                    ));
                 }
             }
         )*
