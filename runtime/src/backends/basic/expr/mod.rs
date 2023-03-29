@@ -4,11 +4,11 @@ use crate::abs::{BinaryOp, FieldIndex, UnaryOp, VariantIndex};
 
 use super::{operand, place::Place};
 
-pub(super) type ValueRef = Rc<Value>;
-pub(super) type SymValueRef = SymValueGuard;
+pub(crate) type ValueRef = Rc<Value>;
+pub(crate) type SymValueRef = SymValueGuard;
 
 #[derive(Clone, Debug)]
-pub(super) enum Value {
+pub(crate) enum Value {
     Concrete(ConcreteValue),
     Symbolic(SymValue),
 }
@@ -18,13 +18,13 @@ impl Value {
         Self::Concrete(ConcreteValue::from_const(value))
     }
 
-    pub(super) fn is_symbolic(&self) -> bool {
+    pub(crate) fn is_symbolic(&self) -> bool {
         matches!(self, Value::Symbolic(_))
     }
 }
 
 #[derive(Clone, Debug)]
-pub(super) enum ConcreteValue {
+pub(crate) enum ConcreteValue {
     Const(ConstValue),
     Adt(AdtValue),
     Array(ArrayValue),
@@ -54,7 +54,7 @@ impl ConcreteValue {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(super) enum ConstValue {
+pub(crate) enum ConstValue {
     Bool(bool),
     Char(char),
     Int {
@@ -181,7 +181,7 @@ impl From<char> for ConstValue {
 }
 
 #[derive(Clone, Debug)]
-pub(super) enum AdtKind {
+pub(crate) enum AdtKind {
     Struct,
     Enum {
         /* NOTE: Even when the variant index is set based on a decision on a
@@ -193,7 +193,7 @@ pub(super) enum AdtKind {
 }
 
 #[derive(Clone, Debug)]
-pub(super) struct AdtValue {
+pub(crate) struct AdtValue {
     pub kind: AdtKind,
     pub fields: Vec<Option<ValueRef>>,
 }
@@ -209,7 +209,7 @@ impl AdtValue {
 }
 
 #[derive(Clone, Debug)]
-pub(super) struct ArrayValue {
+pub(crate) struct ArrayValue {
     pub elements: Vec<ValueRef>,
 }
 
@@ -221,7 +221,7 @@ impl ArrayValue {
 }
 
 #[derive(Clone, Debug)]
-pub(super) enum RefValue {
+pub(crate) enum RefValue {
     /* NOTE:
      * Is it possible to omit Ref?
      * Immutable references can be directly represented as ValueRefs (with not recursive indirection).
@@ -255,25 +255,25 @@ impl RefValue {
 }
 
 #[derive(Clone, Debug)]
-pub(super) enum SymValue {
+pub(crate) enum SymValue {
     Variable(SymbolicVar),
     Expression(Expr),
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(super) struct SymbolicVar {
-    id: u64,
-    ty: SymbolicVarType,
+pub(crate) struct SymbolicVar {
+    pub id: u32,
+    pub ty: SymbolicVarType,
 }
 
 impl SymbolicVar {
-    pub fn new(id: u64, ty: SymbolicVarType) -> Self {
+    pub fn new(id: u32, ty: SymbolicVarType) -> Self {
         Self { id, ty }
     }
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(super) enum SymbolicVarType {
+pub(crate) enum SymbolicVarType {
     Bool,
     Char,
     Int { size: u64, is_signed: bool },
@@ -298,7 +298,7 @@ impl From<&operand::Symbolic> for SymbolicVarType {
 }
 
 #[derive(Clone, Debug)]
-pub(super) enum Expr {
+pub(crate) enum Expr {
     Unary {
         operator: UnaryOp,
         operand: SymValueRef,
@@ -329,7 +329,7 @@ pub(super) enum Expr {
 }
 
 #[derive(Clone, Debug)]
-pub(super) struct SymValueGuard(ValueRef);
+pub(crate) struct SymValueGuard(ValueRef);
 
 impl SymValueGuard {
     pub fn new(value: ValueRef) -> Self {

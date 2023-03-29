@@ -8,3 +8,4 @@ pub mod abs;
 pub mod annotations;
 mod backends;
 pub mod pri;
+mod solvers;

@@ -215,3 +215,7 @@ pub(crate) enum SolveResult<I, V> {
     Unsat,
     Unknown,
 }
+
+pub(crate) trait ValueTranslator<From, To> {
+    fn translate(&mut self, value: &From) -> To;
+}

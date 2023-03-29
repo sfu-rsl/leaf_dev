@@ -39,10 +39,17 @@ pub(crate) enum Constraint<V> {
 }
 
 impl<V> Constraint<V> {
+    pub fn destruct(&self) -> (&V, bool) {
+        match self {
+            Constraint::Bool(value) => (value, false),
+            Constraint::Not(value) => (value, true),
+        }
+    }
+
     pub fn not(self) -> Constraint<V> {
         match self {
-            Constraint::Bool(expr) => Constraint::Not(expr),
-            Constraint::Not(expr) => Constraint::Bool(expr),
+            Constraint::Bool(value) => Constraint::Not(value),
+            Constraint::Not(value) => Constraint::Bool(value),
         }
     }
 }
