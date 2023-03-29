@@ -185,12 +185,16 @@ pub(crate) trait FunctionHandler {
     type Place;
     type Operand;
 
-    fn call(
+    fn before_call_func(
         self,
         func: Self::Operand,
         args: impl Iterator<Item = Self::Operand>,
         result_dest: Self::Place,
     );
 
+    fn enter_func(self);
+
     fn ret(self);
+
+    fn after_call_func(self);
 }

@@ -284,7 +284,7 @@ impl FunctionHandler for FakeFunctionHandler {
 
     type Operand = FakeOperand;
 
-    fn call(
+    fn before_call_func(
         self,
         func: Self::Operand,
         args: impl Iterator<Item = Self::Operand>,
@@ -293,7 +293,15 @@ impl FunctionHandler for FakeFunctionHandler {
         unimplemented!()
     }
 
+    fn enter_func(self) {
+        unimplemented!()
+    }
+
     fn ret(self) {
+        unimplemented!()
+    }
+
+    fn after_call_func(self) {
         unimplemented!()
     }
 }

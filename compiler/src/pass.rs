@@ -18,6 +18,7 @@ use crate::visit::{RvalueVisitor, TerminatorKindVisitor};
 pub struct LeafPass;
 
 impl<'tcx> MirPass<'tcx> for LeafPass {
+    // NOTE: this function is called for every Body (function) in the program
     fn run_pass(
         &self,
         tcx: rustc_middle::ty::TyCtxt<'tcx>,
@@ -35,6 +36,10 @@ impl<'tcx> MirPass<'tcx> for LeafPass {
                     .in_entry_fn(),
             );
         }
+        // TODO: maybe detect if this body is a function or promoted block or something?
+        call_adder
+            .at(body.basic_blocks.indices().next().unwrap())
+            .enter_func();
         VisitorFactory::make_body_visitor(&mut call_adder).visit_body(body);
         modification.commit(body);
     }
@@ -243,7 +248,16 @@ where
             .collect::<Vec<OperandRef>>();
         let dest_ref = self.call_adder.reference_place(destination);
         self.call_adder
-            .call_func(func_ref, arg_refs.iter().copied(), dest_ref);
+            .before_call_func(func_ref, arg_refs.iter().copied(), dest_ref);
+
+        if let Some(target) = target {
+            self.call_adder.after_call_func(target);
+        } else {
+            // This branch is only triggered by hitting a divergent function:
+            // https://doc.rust-lang.org/rust-by-example/fn/diverging.html
+            // (this means the program will exit immediately)
+            log::warn!("visit_call() had no target, so couldn't insert block");
+        }
     }
 
     fn visit_assert(

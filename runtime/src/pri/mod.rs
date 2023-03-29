@@ -191,17 +191,23 @@ pub fn take_branch_ow_enum_discriminant(info: BranchingInfo, non_indices: &[Vari
     branch(info, |h| h.on_enum().take_otherwise(non_indices))
 }
 
-pub fn call_func(func: OperandRef, args: &[OperandRef], destination: PlaceRef) {
+pub fn before_call_func(func: OperandRef, args: &[OperandRef], destination: PlaceRef) {
     func_control(|h| {
-        h.call(
+        h.before_call_func(
             take_back_operand_ref(func),
             args.iter().map(|o| take_back_operand_ref(*o)),
             take_back_place_ref(destination),
         )
-    })
+    });
+}
+pub fn enter_func() {
+    func_control(|h| h.enter_func())
 }
 pub fn return_from_func() {
     func_control(|h| h.ret())
+}
+pub fn after_call_func() {
+    func_control(|h| h.after_call_func())
 }
 
 pub struct BranchingInfo {

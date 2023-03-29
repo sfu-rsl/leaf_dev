@@ -270,26 +270,44 @@ impl FunctionHandler for LoggerFunctionHandler<'_> {
 
     type Operand = Operand;
 
-    fn call(
+    fn before_call_func(
         self,
         func: Self::Operand,
         args: impl Iterator<Item = Self::Operand>,
         result_dest: Self::Place,
     ) {
         log_info!(
-            "Calling {}({}) -> {}",
+            "Just before call {}({}) -> {}",
             func,
             comma_separated(args),
             result_dest
         );
         self.call_manager
-            .notify_call(CallInfo { func, result_dest });
+            .notify_before_call(CallInfo { func, result_dest });
+    }
+
+    fn enter_func(self) {
+        let info = self.call_manager.notify_enter_call();
+        log_info!(
+            "Entered function {} and storing result in {}",
+            info.func,
+            info.result_dest
+        );
     }
 
     fn ret(self) {
         let info = self.call_manager.notify_return();
         log_info!(
             "Returning from {} and storing result in {}",
+            info.func,
+            info.result_dest
+        );
+    }
+
+    fn after_call_func(self) {
+        let info = self.call_manager.notify_after_call();
+        log_info!(
+            "Exited function {} and storing result in {}",
             info.func,
             info.result_dest
         );
@@ -319,11 +337,20 @@ impl CallManager {
         }
     }
 
-    fn notify_call(&mut self, call: CallInfo) {
+    fn notify_before_call(&mut self, call: CallInfo) {
         self.stack.push(call);
     }
 
-    fn notify_return(&mut self) -> CallInfo {
+    fn notify_enter_call(&self) -> &CallInfo {
+        // peek at the top of the stack
+        self.stack.last().unwrap()
+    }
+
+    fn notify_return(&self) -> &CallInfo {
+        self.stack.last().unwrap()
+    }
+
+    fn notify_after_call(&mut self) -> CallInfo {
         self.stack.pop().unwrap()
     }
 }

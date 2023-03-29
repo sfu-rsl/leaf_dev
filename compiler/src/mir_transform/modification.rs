@@ -23,6 +23,8 @@ struct NewBasicBlock<'tcx> {
 pub struct BodyModificationUnit<'tcx> {
     next_local_index: Local,
     new_locals: Vec<NewLocalDecl<'tcx>>,
+    // new_blocks maps BasicBlocks from MIR already in the AST to a list of new basic blocks we'll
+    // insert just before it.
     new_blocks: HashMap<BasicBlock, Vec<NewBasicBlock<'tcx>>>,
     new_block_count: u32,
     jump_modifications:
@@ -178,7 +180,7 @@ impl<'tcx> BodyBlockManager<'tcx> for BodyModificationUnit<'tcx> {
         Vec::from_iter(
             chunk[(chunk.len() - block_count as usize)..]
                 .iter()
-                .map(|x| x.pseudo_index),
+                .map(|nbb| nbb.pseudo_index),
         )
     }
 }

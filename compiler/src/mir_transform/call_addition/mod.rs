@@ -173,14 +173,18 @@ pub trait BranchingHandler {
 }
 
 pub trait FunctionHandler {
-    fn call_func(
+    fn before_call_func(
         &mut self,
         func: OperandRef,
         arguments: impl Iterator<Item = OperandRef>,
         destination: PlaceRef,
     );
 
+    fn enter_func(&mut self);
+
     fn return_from_func(&mut self);
+
+    fn after_call_func(&mut self, target: &BasicBlock);
 }
 
 pub trait EntryFunctionHandler {
@@ -285,7 +289,6 @@ where
         let result_local = self
             .context
             .add_local(self.context.get_pri_func_info(func_name).ret_ty);
-
         (
             self.make_call_bb(func_name, args, Place::from(result_local), target),
             result_local,
@@ -1042,9 +1045,14 @@ where
 impl<'tcx, C> FunctionHandler for RuntimeCallAdder<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
-    C: TyContextProvider<'tcx> + SpecialTypesProvider<'tcx> + BodyLocalManager<'tcx>,
+    C: TyContextProvider<'tcx>
+        + SpecialTypesProvider<'tcx>
+        + BodyLocalManager<'tcx>
+        + BodyBlockManager<'tcx>
+        + LocationProvider
+        + JumpTargetModifier,
 {
-    fn call_func(
+    fn before_call_func(
         &mut self,
         func: OperandRef,
         arguments: impl Iterator<Item = OperandRef>,
@@ -1060,7 +1068,7 @@ where
                 .collect(),
         );
         let mut block = self.make_bb_for_call(
-            stringify!(pri::call_func),
+            stringify!(pri::before_call_func),
             vec![
                 operand::copy_for_local(func.into()),
                 operand::move_for_local(arguments_local),
@@ -1071,9 +1079,26 @@ where
         self.insert_blocks([block]);
     }
 
+    fn enter_func(&mut self) {
+        let block = self.make_bb_for_call(stringify!(pri::enter_func), vec![]);
+        self.insert_blocks([block]);
+    }
+
     fn return_from_func(&mut self) {
         let block = self.make_bb_for_call(stringify!(pri::return_from_func), vec![]);
         self.insert_blocks([block]);
+    }
+
+    fn after_call_func(&mut self, target: &BasicBlock) {
+        let block = self.make_bb_for_call_with_target(
+            stringify!(pri::after_call_func),
+            vec![],
+            Some(*target),
+        );
+        // NOTE: this inserts the call in non-linear order, but it still maintains the correct chain of jumps
+        let new_block_index = self.context.insert_blocks_before(*target, [block], false)[0];
+        self.context
+            .modify_jump_target(self.context.location(), *target, new_block_index);
     }
 }
 
