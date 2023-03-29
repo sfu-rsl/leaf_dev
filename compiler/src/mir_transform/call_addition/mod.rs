@@ -724,12 +724,7 @@ where
         }
 
         let (size, is_to_signed) = if ty.is_numeric() {
-            let (int, signed) = match *ty.kind() {
-                Int(ity) => (Integer::from_int_ty(&tcx, ity), true),
-                Uint(uty) => (Integer::from_uint_ty(&tcx, uty), false),
-                _ => panic!("non integer discriminant"),
-            };
-            (int.size().bits(), signed)
+            utils::ty::int_size_and_signed(tcx, ty)
         } else if ty.is_char() {
             // might want to break this out into a separate case otherwise the runtime won't be able to tell we casted to a char
             (16, false)
@@ -1363,10 +1358,20 @@ mod utils {
     }
 
     pub mod ty {
-        use rustc_middle::ty::{Ty, TyCtxt};
+        use rustc_middle::ty::{layout::IntegerExt, Int, Ty, TyCtxt, Uint};
+        use rustc_target::abi::Integer;
 
         pub fn mk_imm_ref<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>) -> Ty<'tcx> {
             tcx.mk_imm_ref(tcx.lifetimes.re_erased, ty)
+        }
+
+        pub fn int_size_and_signed(tcx: TyCtxt, ty: Ty) -> (u64, bool) {
+            let (int, signed) = match ty.kind() {
+                Int(ity) => (Integer::from_int_ty(&tcx, *ity), true),
+                Uint(uty) => (Integer::from_uint_ty(&tcx, *uty), false),
+                _ => panic!("non integer discriminant"),
+            };
+            (int.size().bits(), signed)
         }
     }
 
