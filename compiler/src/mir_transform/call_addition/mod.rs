@@ -718,29 +718,37 @@ where
 
     fn by_cast_numeric(&mut self, operand: OperandRef, ty: Ty) {
         let tcx = self.context.tcx();
+        let is_char = ty.is_char();
 
-        if ty.is_floating_point() {
+        if ty.is_numeric() {
+            let (bits, is_signed) = utils::ty::int_size_and_signed(tcx, ty);
+
+            self.add_bb_for_assign_call(
+                stringify!(pri::assign_cast_integer),
+                vec![
+                    operand::copy_for_local(operand.into()),
+                    operand::const_from_bool(tcx, is_signed),
+                    operand::const_from_bool(tcx, is_char),
+                    operand::const_from_uint(tcx, bits),
+                ],
+            )
+        } else if is_char {
+            let is_signed = false;
+
+            self.add_bb_for_assign_call(
+                stringify!(pri::assign_cast_integer),
+                vec![
+                    operand::copy_for_local(operand.into()),
+                    operand::const_from_bool(tcx, is_signed),
+                    operand::const_from_bool(tcx, is_char),
+                    operand::const_from_uint(tcx, 16_u64),
+                ],
+            )
+        } else if ty.is_floating_point() {
             todo!("Floating point casts are not supported yet.")
-        }
-
-        let (size, is_to_signed) = if ty.is_numeric() {
-            utils::ty::int_size_and_signed(tcx, ty)
-        } else if ty.is_char() {
-            // might want to break this out into a separate case otherwise the runtime won't be able to tell we casted to a char
-            (16, false)
         } else {
             unreachable!("cast_numeric called for non-numeric type");
         };
-
-        self.add_bb_for_assign_call(
-            stringify!(pri::assign_cast_numeric),
-            vec![
-                operand::copy_for_local(operand.into()),
-                operand::const_from_bool(tcx, false),
-                operand::const_from_bool(tcx, is_to_signed),
-                operand::const_from_uint(tcx, size),
-            ],
-        )
     }
 
     fn by_cast(&mut self, operand: OperandRef, is_to_float: bool, size: u64) {

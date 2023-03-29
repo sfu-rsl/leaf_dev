@@ -126,22 +126,24 @@ pub fn assign_len(dest: PlaceRef, place: PlaceRef) {
     assign_to(dest, |h| h.len_of(take_back_place_ref(place)))
 }
 
-pub fn assign_cast_numeric(
+pub fn assign_cast_integer(
     dest: PlaceRef,
     operand: OperandRef,
-    is_to_float: bool,
-    is_to_signed: bool,
-    size: usize,
+    is_signed: bool,
+    is_char: bool,
+    bits: u64,
 ) {
     assign_to(dest, |h| {
-        h.numeric_cast_of(
-            take_back_operand_ref(operand),
-            is_to_float,
-            is_to_signed,
-            size,
-        )
+        h.integer_cast_of(take_back_operand_ref(operand), is_signed, is_char, bits)
     })
 }
+
+pub fn assign_cast_float(dest: PlaceRef, operand: OperandRef, bits: u64) {
+    assign_to(dest, |h| {
+        h.float_cast_of(take_back_operand_ref(operand), bits)
+    })
+}
+
 pub fn assign_cast(dest: PlaceRef /* TODO: Other types of cast. */) {
     assign_to(dest, |h| h.cast_of())
 }
