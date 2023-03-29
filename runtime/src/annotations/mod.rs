@@ -34,7 +34,7 @@ macro_rules! impl_symbolizable_int {
         $(
             impl Symbolizable for $ty {
                 fn symbolize() {
-                    let operand_ref = pri::ref_operand_sym_int(size_of::<$ty>() as u64, $signed);
+                    let operand_ref = pri::ref_operand_sym_int(size_of::<$ty>() as u64 * 8, $signed);
                     return_sym_operand(operand_ref);
                 }
             }
