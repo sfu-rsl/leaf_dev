@@ -7,7 +7,8 @@
 pub mod abs;
 pub mod annotations;
 mod backends;
-mod outgen;
-mod pathics;
+pub(crate) mod outgen;
+pub(crate) mod pathics;
 pub mod pri;
-mod solvers;
+pub(crate) mod solvers;
+pub(crate) mod trace;

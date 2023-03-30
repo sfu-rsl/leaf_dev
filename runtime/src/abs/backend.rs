@@ -183,15 +183,8 @@ pub(crate) trait FunctionHandler {
     fn ret(self);
 }
 
-pub(crate) trait TraceManager {
-    type Step;
-    type Value;
-
-    fn notify_step(
-        &mut self,
-        step: Self::Step,
-        new_constraints: impl Iterator<Item = Constraint<Self::Value>>,
-    );
+pub(crate) trait TraceManager<S, V> {
+    fn notify_step(&mut self, step: S, new_constraints: Vec<Constraint<V>>);
 }
 
 pub(crate) trait PathInterestChecker<S> {
@@ -219,5 +212,5 @@ pub(crate) trait ValueTranslator<From, To> {
 }
 
 pub(crate) trait OutputGenerator<I, V> {
-    fn generate(&mut self, values: Vec<(I, V)>);
+    fn generate(&mut self, values: Vec<(&I, &V)>);
 }
