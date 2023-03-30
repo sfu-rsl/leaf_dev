@@ -260,6 +260,18 @@ pub(crate) enum SymValue {
     Expression(Expr),
 }
 
+impl SymValue {
+    #[inline]
+    pub fn as_value(self) -> Value {
+        Value::Symbolic(self)
+    }
+
+    #[inline]
+    pub fn as_value_ref(self) -> SymValueRef {
+        SymValueGuard::new(ValueRef::new(self.as_value()))
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct SymbolicVar {
     pub id: u32,
@@ -328,8 +340,20 @@ pub(crate) enum Expr {
     },
 }
 
+impl Expr {
+    #[inline]
+    pub fn as_sym_value(self) -> SymValue {
+        SymValue::Expression(self)
+    }
+
+    #[inline]
+    pub fn as_value_ref(self) -> SymValueRef {
+        self.as_sym_value().as_value_ref()
+    }
+}
+
 #[derive(Clone, Debug)]
-pub(crate) struct SymValueGuard(ValueRef);
+pub(crate) struct SymValueGuard(pub ValueRef);
 
 impl SymValueGuard {
     pub fn new(value: ValueRef) -> Self {
