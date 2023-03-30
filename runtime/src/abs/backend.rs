@@ -217,3 +217,7 @@ pub(crate) enum SolveResult<I, V> {
 pub(crate) trait ValueTranslator<From, To> {
     fn translate(&mut self, value: &From) -> To;
 }
+
+pub(crate) trait OutputGenerator<I, V> {
+    fn generate(&mut self, values: Vec<(I, V)>);
+}

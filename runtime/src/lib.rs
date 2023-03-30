@@ -7,6 +7,7 @@
 pub mod abs;
 pub mod annotations;
 mod backends;
+mod outgen;
 mod pathics;
 pub mod pri;
 mod solvers;
