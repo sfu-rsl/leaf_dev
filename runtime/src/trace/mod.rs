@@ -1,7 +1,7 @@
+use std::collections::HashMap;
 use std::fmt::Debug;
 use std::ops::Index;
 use std::slice::SliceIndex;
-use std::{collections::HashMap};
 
 use crate::{
     abs::{

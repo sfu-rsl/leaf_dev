@@ -2,11 +2,13 @@ pub(crate) mod expr;
 pub(crate) mod logger;
 pub(crate) mod operand;
 pub(crate) mod place;
-pub(crate) mod trace;
 
 use std::{collections::HashMap, mem};
 
-use crate::abs::{backend::*, BasicBlockIndex, BinaryOp, FieldIndex, Local, UnaryOp, VariantIndex};
+use crate::{
+    abs::{self, backend::*, BasicBlockIndex, BinaryOp, FieldIndex, Local, UnaryOp, VariantIndex},
+    trace::ImmediateTraceManager,
+};
 
 use self::{
     expr::{
@@ -15,21 +17,24 @@ use self::{
     },
     operand::{DefaultOperandHandler, Operand},
     place::{DefaultPlaceHandler, Place, Projection},
-    trace::BasicTraceManager,
 };
 
+type TraceManager = Box<dyn abs::backend::TraceManager<BasicBlockIndex, ValueRef>>;
+
 pub struct BasicBackend {
-    constraint_manager: ConstraintManager,
     call_stack_manager: CallStackManager,
-    trace_manager: Box<dyn TraceManager<Step = BasicBlockIndex, Value = ValueRef>>,
+    trace_manager: TraceManager,
+    current_constraints: Vec<Constraint>,
 }
 
 impl BasicBackend {
     pub fn new() -> Self {
         Self {
-            constraint_manager: ConstraintManager::new(),
             call_stack_manager: CallStackManager::new(),
-            trace_manager: Box::new(BasicTraceManager::new()),
+            trace_manager: Box::new(
+                ImmediateTraceManager::<BasicBlockIndex, ValueRef, u32>::new_basic(),
+            ),
+            current_constraints: Vec::new(),
         }
     }
 }
@@ -82,7 +87,8 @@ impl RuntimeBackend for BasicBackend {
         BasicBranchingHandler::new(
             location,
             get_operand_value(self.current_vars_state(), &discriminant),
-            &mut self.constraint_manager,
+            &mut self.trace_manager,
+            &mut self.current_constraints,
         )
     }
 
@@ -275,20 +281,31 @@ impl BasicAssignmentHandler<'_> {
 pub(crate) struct BasicBranchingHandler<'a> {
     location: BasicBlockIndex,
     discriminant: ValueRef,
-    constraint_manager: &'a mut ConstraintManager,
+    trace_manager: &'a mut TraceManager,
+    current_constraints: &'a mut Vec<Constraint>,
 }
 
 impl<'a> BasicBranchingHandler<'a> {
     fn new(
         location: BasicBlockIndex,
         discriminant: ValueRef,
-        constraint_manager: &'a mut ConstraintManager,
+        trace_manager: &'a mut TraceManager,
+        current_constraints: &'a mut Vec<Constraint>,
     ) -> Self {
         Self {
             location,
             discriminant,
-            constraint_manager,
+            trace_manager,
+            current_constraints,
         }
+    }
+
+    fn notify_constraint(&mut self, constraint: Constraint) {
+        self.current_constraints.push(constraint);
+        self.trace_manager.notify_step(
+            0, /* TODO: The unique index of the block we have entered. */
+            self.current_constraints.drain(..).collect(),
+        );
     }
 }
 
@@ -323,7 +340,7 @@ pub(crate) struct BasicBranchTakingHandler<'a> {
 }
 
 impl BranchTakingHandler<bool> for BasicBranchTakingHandler<'_> {
-    fn take(self, value: bool) {
+    fn take(mut self, value: bool) {
         /* FIXME: Bad smell! The branching traits structure prevents
          * us from having a simpler and cleaner handler.
          */
@@ -331,12 +348,12 @@ impl BranchTakingHandler<bool> for BasicBranchTakingHandler<'_> {
             return;
         }
 
-        let mut constraint = Constraint::Bool(self.parent.discriminant);
+        let mut constraint = Constraint::Bool(self.parent.discriminant.clone());
         if !value {
             constraint = constraint.not();
         }
 
-        self.parent.constraint_manager.add(constraint);
+        self.parent.notify_constraint(constraint);
     }
 
     fn take_otherwise(self, non_values: &[bool]) {
@@ -349,21 +366,22 @@ macro_rules! impl_general_branch_taking_handler {
     ($($type:ty),*) => {
         $(
             impl BranchTakingHandler<$type> for BasicBranchTakingHandler<'_> {
-                fn take(self, value: $type) {
+                fn take(mut self, value: $type) {
                     if !self.parent.discriminant.is_symbolic() {
                         return;
                     }
 
                     let expr = Expr::Binary {
                         operator: BinaryOp::Eq,
-                        first: SymValueRef::new(self.parent.discriminant),
+                        first: SymValueRef::new(self.parent.discriminant.clone()),
                         second: ValueRef::new(Value::from_const(ConstValue::from(value))),
                         is_flipped: false,
                     };
-                    self.parent.constraint_manager.add(Constraint::Bool(ValueRef::new(Value::Symbolic(SymValue::Expression(expr)))));
+                    let constraint = Constraint::Bool(expr.as_value_ref().0);
+                    self.parent.notify_constraint(constraint);
                 }
 
-                fn take_otherwise(self, non_values: &[$type]) {
+                fn take_otherwise(mut self, non_values: &[$type]) {
                     if !self.parent.discriminant.is_symbolic() {
                         return;
                     }
@@ -371,7 +389,7 @@ macro_rules! impl_general_branch_taking_handler {
                     /* Converting all non-equalities into a single constraint to not lose
                     * semantics.
                     */
-                    self.parent.constraint_manager.add(Constraint::Bool(
+                    let constraint = Constraint::Bool(
                         non_values
                             .into_iter()
                             .map(|v| Expr::Binary {
@@ -389,7 +407,8 @@ macro_rules! impl_general_branch_taking_handler {
                             .unwrap()
                             .as_value_ref()
                             .0,
-                    ));
+                    );
+                    self.parent.notify_constraint(constraint);
                 }
             }
         )*
@@ -738,23 +757,6 @@ impl MutableVariablesState {
 }
 
 type Constraint = crate::abs::Constraint<ValueRef>;
-
-struct ConstraintManager {
-    constraints: Vec<Constraint>,
-}
-
-impl ConstraintManager {
-    fn new() -> Self {
-        Self {
-            constraints: Vec::new(),
-        }
-    }
-
-    pub fn add(&mut self, constraint: Constraint) {
-        println!("Adding constraint: {:?}", &constraint);
-        self.constraints.push(constraint);
-    }
-}
 
 struct CallStackManager {
     stack: Vec<CallStackFrame>,
