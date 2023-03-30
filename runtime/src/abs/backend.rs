@@ -194,10 +194,8 @@ pub(crate) trait TraceManager {
     );
 }
 
-pub(crate) trait PathInterestChecker {
-    type Step;
-
-    fn is_interesting(&self, path: &[Self::Step]) -> bool;
+pub(crate) trait PathInterestChecker<S> {
+    fn is_interesting(&self, path: &[S]) -> bool;
 }
 
 pub(crate) trait Solver {
