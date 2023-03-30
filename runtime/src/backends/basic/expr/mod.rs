@@ -154,6 +154,33 @@ impl ConstValue {
             _ => unimplemented!("{:?} {:?} {:?}", first, second, operator),
         }
     }
+
+    pub fn cast(this: &Self, to_size: u64, is_to_signed: bool, is_to_char: bool) -> ConstValue {
+        if is_to_char {
+            match this {
+                Self::Int { bit_rep, size, .. } => {
+                    assert!(
+                        *size == 8,
+                        "Casting integer to char only works on 8-bit integers."
+                    );
+                    assert!(
+                        !is_to_signed,
+                        "Casting integer to char only works on unsigned integers."
+                    );
+
+                    Self::Char(*bit_rep as u8 as char)
+                }
+                _ => unreachable!("Casting non-u8 to char is not possible."),
+            }
+        } else {
+            todo!(
+                "Cast {:?} to size {} and signed {}",
+                this,
+                to_size,
+                is_to_signed
+            );
+        }
+    }
 }
 
 macro_rules! impl_from_uint {
@@ -310,7 +337,10 @@ pub(super) enum Expr {
         is_flipped: bool,
     },
 
-    Cast(/* TODO */),
+    Cast {
+        from: SymValueRef,
+        to: SymbolicVarType,
+    },
 
     AddrOf(/* TODO */),
     Deref(SymValueRef),

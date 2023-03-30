@@ -156,8 +156,46 @@ impl AssignmentHandler for BasicAssignmentHandler<'_> {
         self.set_value(len_value)
     }
 
-    fn integer_cast_of(self, operand: Self::Operand, is_signed: bool, is_char: bool, bits: u64) {
-        todo!()
+    fn integer_cast_of(
+        mut self,
+        operand: Self::Operand,
+        is_signed: bool,
+        is_char: bool,
+        bits: u64,
+    ) {
+        println!(
+            "Integer cast of {operand:?} to {bits:?} bits, signed: {is_signed}, char: {is_char}"
+        );
+        let value = self.get_operand_value(&operand);
+        println!("Value before: {value:?}");
+
+        if value.is_symbolic() {
+            return if is_char {
+                self.set_value(Value::Symbolic(SymValue::Expression(Expr::Cast {
+                    from: SymValueRef::new(value),
+                    to: expr::SymbolicVarType::Char,
+                })))
+            } else {
+                self.set_value(Value::Symbolic(SymValue::Expression(Expr::Cast {
+                    from: SymValueRef::new(value),
+                    to: expr::SymbolicVarType::Int {
+                        is_signed,
+                        size: bits,
+                    },
+                })))
+            };
+        }
+
+        let value = match value.as_ref() {
+            Value::Concrete(ConcreteValue::Const(c)) => {
+                Value::from_const(ConstValue::cast(c, bits, is_signed, is_char))
+            }
+            _ => unreachable!("Integer cast is supposed to be called on a (concrete) constant."),
+        };
+
+        println!("Value after: {value:?}");
+
+        self.set_value(value)
     }
 
     fn float_cast_of(self, operand: Self::Operand, bits: u64) {
