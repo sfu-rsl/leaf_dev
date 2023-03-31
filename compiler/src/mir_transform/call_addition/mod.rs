@@ -720,7 +720,7 @@ where
         let tcx = self.context.tcx();
         let is_char = ty.is_char();
 
-        if ty.is_numeric() {
+        if ty.is_integral() {
             let (bits, is_signed) = utils::ty::int_size_and_signed(tcx, ty);
 
             self.add_bb_for_assign_call(
