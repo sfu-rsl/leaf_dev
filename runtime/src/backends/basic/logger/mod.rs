@@ -106,13 +106,16 @@ impl AssignmentHandler for LoggerAssignmentHandler {
         self.log(format!("len({place})"));
     }
 
-    fn integer_cast_of(self, operand: Self::Operand, is_signed: bool, is_char: bool, bits: u64) {
+    fn char_cast_of(self, operand: Self::Operand) {
+        self.log(format!("{operand} as char"));
+    }
+
+    fn integer_cast_of(self, operand: Self::Operand, is_signed: bool, bits: u64) {
         self.log(format!(
-            "{} as {}{}{}",
+            "{} as {}{}",
             operand,
             if is_signed { "i" } else { "u" },
             bits,
-            if is_char { " (char)" } else { "" }
         ));
     }
 

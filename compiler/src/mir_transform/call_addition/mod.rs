@@ -7,10 +7,10 @@ use rustc_middle::{
         BasicBlock, BasicBlockData, BinOp, Body, Constant, ConstantKind, HasLocalDecls, Local,
         Operand, Place, ProjectionElem, SourceInfo, Statement, Terminator, TerminatorKind, UnOp,
     },
-    ty::{layout::IntegerExt, GenericArg, Int, ScalarInt, Ty, TyCtxt, TyKind, Uint},
+    ty::{GenericArg, ScalarInt, Ty, TyCtxt, TyKind},
 };
 use rustc_span::DUMMY_SP;
-use rustc_target::abi::{Integer, VariantIdx};
+use rustc_target::abi::VariantIdx;
 
 use self::{
     context::*,
@@ -137,6 +137,8 @@ pub trait Assigner {
     fn by_address_of(&mut self, place: PlaceRef, is_mutable: bool);
 
     fn by_len(&mut self, place: PlaceRef);
+
+    fn by_cast_char(&mut self, operand: OperandRef);
 
     fn by_cast_numeric(&mut self, operand: OperandRef, ty: Ty);
 
@@ -716,9 +718,15 @@ where
         )
     }
 
+    fn by_cast_char(&mut self, operand: OperandRef) {
+        self.add_bb_for_assign_call(
+            stringify!(pri::assign_cast_char),
+            vec![operand::copy_for_local(operand.into())],
+        )
+    }
+
     fn by_cast_numeric(&mut self, operand: OperandRef, ty: Ty) {
         let tcx = self.context.tcx();
-        let is_char = ty.is_char();
 
         if ty.is_integral() {
             let (bits, is_signed) = utils::ty::int_size_and_signed(tcx, ty);
@@ -728,20 +736,7 @@ where
                 vec![
                     operand::copy_for_local(operand.into()),
                     operand::const_from_bool(tcx, is_signed),
-                    operand::const_from_bool(tcx, is_char),
                     operand::const_from_uint(tcx, bits),
-                ],
-            )
-        } else if is_char {
-            let is_signed = false;
-
-            self.add_bb_for_assign_call(
-                stringify!(pri::assign_cast_integer),
-                vec![
-                    operand::copy_for_local(operand.into()),
-                    operand::const_from_bool(tcx, is_signed),
-                    operand::const_from_bool(tcx, is_char),
-                    operand::const_from_uint(tcx, 16_u64),
                 ],
             )
         } else if ty.is_floating_point() {

@@ -126,15 +126,13 @@ pub fn assign_len(dest: PlaceRef, place: PlaceRef) {
     assign_to(dest, |h| h.len_of(take_back_place_ref(place)))
 }
 
-pub fn assign_cast_integer(
-    dest: PlaceRef,
-    operand: OperandRef,
-    is_signed: bool,
-    is_char: bool,
-    bits: u64,
-) {
+pub fn assign_cast_char(dest: PlaceRef, operand: OperandRef) {
+    assign_to(dest, |h| h.char_cast_of(take_back_operand_ref(operand)))
+}
+
+pub fn assign_cast_integer(dest: PlaceRef, operand: OperandRef, is_signed: bool, bits: u64) {
     assign_to(dest, |h| {
-        h.integer_cast_of(take_back_operand_ref(operand), is_signed, is_char, bits)
+        h.integer_cast_of(take_back_operand_ref(operand), is_signed, bits)
     })
 }
 

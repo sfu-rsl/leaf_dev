@@ -125,7 +125,9 @@ pub(crate) trait AssignmentHandler {
 
     fn len_of(self, place: Self::Place);
 
-    fn integer_cast_of(self, operand: Self::Operand, is_signed: bool, is_char: bool, bits: u64);
+    fn char_cast_of(self, operand: Self::Operand);
+
+    fn integer_cast_of(self, operand: Self::Operand, is_signed: bool, bits: u64);
 
     fn float_cast_of(self, operand: Self::Operand, bits: u64);
 

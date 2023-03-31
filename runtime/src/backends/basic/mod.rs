@@ -156,39 +156,48 @@ impl AssignmentHandler for BasicAssignmentHandler<'_> {
         self.set_value(len_value)
     }
 
-    fn integer_cast_of(
-        mut self,
-        operand: Self::Operand,
-        is_signed: bool,
-        is_char: bool,
-        bits: u64,
-    ) {
-        println!(
-            "Integer cast of {operand:?} to {bits:?} bits, signed: {is_signed}, char: {is_char}"
-        );
+    fn char_cast_of(mut self, operand: Self::Operand) {
         let value = self.get_operand_value(&operand);
         println!("Value before: {value:?}");
 
         if value.is_symbolic() {
-            return if is_char {
-                self.set_value(Value::Symbolic(SymValue::Expression(Expr::Cast {
-                    from: SymValueRef::new(value),
-                    to: expr::SymbolicVarType::Char,
-                })))
-            } else {
-                self.set_value(Value::Symbolic(SymValue::Expression(Expr::Cast {
-                    from: SymValueRef::new(value),
-                    to: expr::SymbolicVarType::Int {
-                        is_signed,
-                        size: bits,
-                    },
-                })))
-            };
+            return self.set_value(Value::Symbolic(SymValue::Expression(Expr::Cast {
+                from: SymValueRef::new(value),
+                to: expr::SymbolicVarType::Char,
+            })));
+        }
+
+        let value = match value.as_ref() {
+            Value::Concrete(ConcreteValue::Const(ConstValue::Int { bit_rep, .. })) => {
+                let char_value = *bit_rep as u8 as char;
+                Value::Concrete(ConcreteValue::from_const(ConstValue::Char(char_value)))
+            }
+            _ => panic!("Char cast is supposed to be called on a (concrete) integer."),
+        };
+
+        println!("Value after: {value:?}");
+
+        self.set_value(value)
+    }
+
+    fn integer_cast_of(mut self, operand: Self::Operand, is_signed: bool, bits: u64) {
+        println!("Integer cast of {operand:?} to {bits:?} bits, signed: {is_signed}");
+        let value = self.get_operand_value(&operand);
+        println!("Value before: {value:?}");
+
+        if value.is_symbolic() {
+            return self.set_value(Value::Symbolic(SymValue::Expression(Expr::Cast {
+                from: SymValueRef::new(value),
+                to: expr::SymbolicVarType::Int {
+                    is_signed,
+                    size: bits,
+                },
+            })));
         }
 
         let value = match value.as_ref() {
             Value::Concrete(ConcreteValue::Const(c)) => {
-                Value::from_const(ConstValue::cast(c, bits, is_signed, is_char))
+                Value::from_const(ConstValue::integer_cast(c, bits, is_signed))
             }
             _ => unreachable!("Integer cast is supposed to be called on a (concrete) constant."),
         };

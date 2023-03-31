@@ -372,7 +372,11 @@ where
         let operand_ref = self.call_adder.reference_operand(operand);
         match kind {
             CastKind::IntToInt => {
-                self.call_adder.by_cast_numeric(operand_ref, *ty);
+                if ty.is_char() {
+                    self.call_adder.by_cast_char(operand_ref);
+                } else {
+                    self.call_adder.by_cast_numeric(operand_ref, *ty);
+                }
             }
             CastKind::IntToFloat => todo!("Support IntToFloat casts"),
             CastKind::FloatToInt => todo!("Support FloatToInt casts"),
