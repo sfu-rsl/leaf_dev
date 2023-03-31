@@ -1,8 +1,8 @@
 #![allow(unused_variables)]
 
 fn main() {
-    // let a = get_int();
-    // let c = a as u32; // IntToInt
+    let a = get_int();
+    let c = a as u32; // IntToInt
 
     // let g = get_foo();
     // let h = g as u16; // IntToInt

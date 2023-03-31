@@ -173,12 +173,22 @@ impl ConstValue {
                 _ => unreachable!("Casting non-u8 to char is not possible."),
             }
         } else {
-            todo!(
-                "Cast {:?} to size {} and signed {}",
-                this,
-                to_size,
-                is_to_signed
-            );
+            match this {
+                /* This seems overly simple but when the number is originally cast to the u128 to get its bit representation,
+                 * this covers any of the casting that would need to be done here. If the original number was unsigned then
+                 * the leading bits of the u128 will be 0s and if it was signed then the leading bits will be 1s to handle
+                 * the sign extension. Now here when we track the actual cast that needs to be done, the target type has at
+                 * most 128 bits so we can just truncate the leading bits to get the correct bit representation. The
+                 * truncation is handled by just recording the size of the target type.
+                 */
+                Self::Int { bit_rep, .. } => Self::Int {
+                    bit_rep: *bit_rep,
+                    size: to_size,
+                    is_signed: is_to_signed,
+                },
+                Self::Float { .. } => unimplemented!(),
+                _ => unreachable!("Casting non-integer to integer is not possible."),
+            }
         }
     }
 }
