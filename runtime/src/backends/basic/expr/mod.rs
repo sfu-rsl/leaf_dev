@@ -186,6 +186,16 @@ impl ConstValue {
                     size: to_size,
                     is_signed: is_to_signed,
                 },
+                Self::Bool(value) => Self::Int {
+                    bit_rep: *value as u128,
+                    size: to_size,
+                    is_signed: is_to_signed,
+                },
+                Self::Char(value) => Self::Int {
+                    bit_rep: *value as u128,
+                    size: to_size,
+                    is_signed: is_to_signed,
+                },
                 Self::Float { .. } => unimplemented!(),
                 _ => unreachable!("Casting non-integer to integer is not possible."),
             }
