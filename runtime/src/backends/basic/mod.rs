@@ -158,7 +158,6 @@ impl AssignmentHandler for BasicAssignmentHandler<'_> {
 
     fn char_cast_of(mut self, operand: Self::Operand) {
         let value = self.get_operand_value(&operand);
-        println!("Value before: {value:?}");
 
         if value.is_symbolic() {
             return self.set_value(Value::Symbolic(SymValue::Expression(Expr::Cast {
@@ -175,15 +174,11 @@ impl AssignmentHandler for BasicAssignmentHandler<'_> {
             _ => panic!("Char cast is supposed to be called on a (concrete) integer."),
         };
 
-        println!("Value after: {value:?}");
-
         self.set_value(value)
     }
 
     fn integer_cast_of(mut self, operand: Self::Operand, is_signed: bool, bits: u64) {
-        println!("Integer cast of {operand:?} to {bits:?} bits, signed: {is_signed}");
         let value = self.get_operand_value(&operand);
-        println!("Value before: {value:?}");
 
         if value.is_symbolic() {
             return self.set_value(Value::Symbolic(SymValue::Expression(Expr::Cast {
@@ -201,8 +196,6 @@ impl AssignmentHandler for BasicAssignmentHandler<'_> {
             }
             _ => unreachable!("Integer cast is supposed to be called on a (concrete) constant."),
         };
-
-        println!("Value after: {value:?}");
 
         self.set_value(value)
     }
