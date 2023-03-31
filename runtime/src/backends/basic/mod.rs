@@ -237,17 +237,14 @@ impl AssignmentHandler for BasicAssignmentHandler<'_> {
         self.set_value(value)
     }
 
-    fn variant_index(self, variant_index: VariantIndex) {
-        self.vars_state
-            .mut_place(&self.dest, |_, v| match ValueRef::make_mut(v) {
-                Value::Concrete(ConcreteValue::Adt(AdtValue {
-                    kind: AdtKind::Enum { discriminant },
-                    ..
-                })) => *discriminant = variant_index,
-                _ => {
-                    unreachable!("Assigning variant index is only supposed to requested on enums.")
-                }
-            })
+    fn variant_index(mut self, variant_index: VariantIndex) {
+        let value = Value::Concrete(ConcreteValue::Adt(AdtValue {
+            kind: AdtKind::Enum {
+                discriminant: variant_index,
+            },
+            fields: vec![],
+        }));
+        self.set_value(value)
     }
 }
 

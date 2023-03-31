@@ -1,7 +1,8 @@
 fn main() {
-    let x = Bar::Second;
+    let _x = Bar::First;
 }
 
+#[allow(dead_code)]
 enum Bar {
     First,
     Second,
