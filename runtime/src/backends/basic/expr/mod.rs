@@ -196,8 +196,8 @@ impl ConstValue {
                     size: to_size,
                     is_signed: is_to_signed,
                 },
-                Self::Float { .. } => unimplemented!(),
-                _ => unreachable!("Casting non-integer to integer is not possible."),
+                Self::Float { .. } => todo!("Casting float to integer is not implemented yet."),
+                _ => unreachable!("Casting {this:?} to integer is not possible."),
             }
         }
     }
