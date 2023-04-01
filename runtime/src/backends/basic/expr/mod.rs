@@ -6,6 +6,7 @@ use super::{operand, place::Place};
 
 pub(crate) type ValueRef = Rc<Value>;
 pub(crate) type SymValueRef = SymValueGuard;
+pub(crate) type SymVarId = u32;
 
 #[derive(Clone, Debug)]
 pub(crate) enum Value {
@@ -274,12 +275,12 @@ impl SymValue {
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct SymbolicVar {
-    pub id: u32,
+    pub id: SymVarId,
     pub ty: SymbolicVarType,
 }
 
 impl SymbolicVar {
-    pub fn new(id: u32, ty: SymbolicVarType) -> Self {
+    pub fn new(id: SymVarId, ty: SymbolicVarType) -> Self {
         Self { id, ty }
     }
 }

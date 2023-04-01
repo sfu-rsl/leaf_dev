@@ -1,11 +1,11 @@
-use std::{cell::RefCell, collections::HashMap, marker::PhantomData, rc::Rc};
+use std::{collections::HashMap, hash::Hash};
 
 use crate::{
-    abs::{
-        backend::{self, ValueTranslator},
-        Constraint,
+    abs::backend::{self, ValueTranslator},
+    backends::basic::{
+        self,
+        expr::{SymVarId, ValueRef},
     },
-    backends::basic::{self, expr::ValueRef},
 };
 use z3::{
     self,
@@ -91,56 +91,82 @@ impl Into<ValueRef> for AstNode<'_> {
     }
 }
 
-type VariableId = u32;
-type AstPair<'ctx> = (ast::Bool<'ctx>, HashMap<VariableId, AstNode<'ctx>>);
+type AstPair<'ctx, I> = (ast::Bool<'ctx>, HashMap<I, AstNode<'ctx>>);
 
-pub(crate) struct Z3Solver<'ctx, V> {
-    solver: Solver<'ctx>,
-    translator: Box<dyn ValueTranslator<V, AstPair<'ctx>>>,
-    phantom: PhantomData<V>,
+struct Z3Solver<'ctx, V, I> {
+    context: &'ctx Context,
+    translator: Box<dyn ValueTranslator<V, AstPair<'ctx, I>> + 'ctx>,
+    solver: Option<Solver<'ctx>>,
 }
 
-impl<'ctx, V> Z3Solver<'ctx, V> {
+impl<'ctx, V, I> Z3Solver<'ctx, V, I> {
     pub fn new(
-        solver: Solver<'ctx>,
-        translator: Box<dyn ValueTranslator<V, AstPair<'ctx>>>,
+        context: &'ctx Context,
+        translator: Box<dyn ValueTranslator<V, AstPair<'ctx, I>> + 'ctx>,
     ) -> Self {
         Self {
-            solver,
+            context,
             translator,
-            phantom: PhantomData,
+            solver: None,
         }
     }
 }
 
-impl<'ctx, V> backend::Solver for Z3Solver<'ctx, V>
+impl<'ctx> Z3Solver<'ctx, ValueRef, SymVarId> {
+    pub fn new_basic(context: &'ctx Context) -> Self {
+        Self::new(
+            context,
+            Box::new(translators::Z3ValueTranslator::new(context)),
+        )
+    }
+}
+
+impl<'ctx, V, I> backend::Solver<V, I> for Z3Solver<'ctx, V, I>
 where
     V: From<AstNode<'ctx>>,
+    I: Eq + Hash,
+    Self: 'ctx,
 {
-    type SymVarId = u32;
+    fn check(&mut self, constraints: &[crate::abs::Constraint<V>]) -> backend::SolveResult<I, V> {
+        self.solver
+            .get_or_insert_with(|| Solver::new(&self.context));
 
-    type Value = V;
+        let mut all_vars = HashMap::<I, AstNode>::new();
+        let asts = constraints
+            .iter()
+            .map(|constraint| {
+                let (value, is_negated) = constraint.destruct();
+                let (ast, variables) = self.translator.translate(value);
+                all_vars.extend(variables);
+                if is_negated { ast.not() } else { ast }
+            })
+            .collect::<Vec<_>>();
 
-    fn check(
-        &mut self,
-        constraints: &[crate::abs::Constraint<Self::Value>],
-    ) -> backend::SolveResult<Self::SymVarId, Self::Value> {
-        self.solver.reset();
+        let result = self.check_using(&self.solver.as_ref().unwrap(), &asts, all_vars);
+        result
+    }
+}
 
-        let mut all_vars = HashMap::<VariableId, AstNode>::new();
+impl<'ctx, V, I> Z3Solver<'_, V, I>
+where
+    V: From<AstNode<'ctx>>,
+    I: Eq + Hash,
+{
+    fn check_using(
+        &self,
+        solver: &Solver<'ctx>,
+        constraints: &[ast::Bool<'ctx>],
+        vars: HashMap<I, AstNode<'ctx>>,
+    ) -> backend::SolveResult<I, V> {
         for constraint in constraints {
-            let (value, is_negated) = constraint.destruct();
-            let (ast, variables) = self.translator.translate(value);
-            all_vars.extend(variables);
-            self.solver
-                .assert(&(if is_negated { ast.not() } else { ast }));
+            solver.assert(constraint);
         }
 
-        match self.solver.check() {
+        match solver.check() {
             SatResult::Sat => {
-                let model = self.solver.get_model().unwrap();
+                let model = solver.get_model().unwrap();
                 let mut values = HashMap::new();
-                for (id, node) in all_vars {
+                for (id, node) in vars {
                     let value = match node {
                         AstNode::Bool(ast) => AstNode::Bool(model.eval(&ast, true).unwrap()),
                         AstNode::BitVector { ast, is_signed } => AstNode::BitVector {
@@ -160,22 +186,21 @@ where
 
 mod translators {
     use std::{
-        clone,
         collections::HashMap,
         mem::{discriminant, size_of},
         ops::Not,
     };
 
     use z3::{
-        ast::{self, Ast, Dynamic},
+        ast::{self, Ast},
         Context,
     };
 
     use crate::{
         abs::{backend::ValueTranslator, BinaryOp, UnaryOp},
         backends::basic::expr::{
-            ConcreteValue, ConstValue, Expr, SymValue, SymbolicVar, SymbolicVarType, Value,
-            ValueRef,
+            ConcreteValue, ConstValue, Expr, SymValue, SymVarId, SymbolicVar, SymbolicVarType,
+            Value, ValueRef,
         },
     };
 
@@ -185,11 +210,20 @@ mod translators {
 
     pub(crate) struct Z3ValueTranslator<'ctx> {
         context: &'ctx Context,
-        variables: HashMap<u32, AstNode<'ctx>>,
+        variables: HashMap<SymVarId, AstNode<'ctx>>,
     }
 
-    impl<'ctx> ValueTranslator<ValueRef, AstPair<'ctx>> for Z3ValueTranslator<'ctx> {
-        fn translate(&mut self, value: &ValueRef) -> AstPair<'ctx> {
+    impl<'ctx> Z3ValueTranslator<'ctx> {
+        pub(crate) fn new(context: &'ctx Context) -> Self {
+            Self {
+                context,
+                variables: HashMap::new(),
+            }
+        }
+    }
+
+    impl<'ctx> ValueTranslator<ValueRef, AstPair<'ctx, SymVarId>> for Z3ValueTranslator<'ctx> {
+        fn translate(&mut self, value: &ValueRef) -> AstPair<'ctx, SymVarId> {
             let ast = self.translate_value(value);
             match ast {
                 AstNode::Bool(ast) => (ast, self.variables.drain().collect()),
@@ -212,9 +246,11 @@ mod translators {
         fn translate_concrete(&mut self, concrete: &ConcreteValue) -> AstNode<'ctx> {
             match concrete {
                 ConcreteValue::Const(c) => self.translate_const(c),
-                ConcreteValue::Adt(a) => todo!(),
-                ConcreteValue::Array(a) => todo!(),
-                ConcreteValue::Ref(r) => todo!(),
+                ConcreteValue::Adt(_) => {
+                    unimplemented!("Expressions involving ADTs directly are not supported.")
+                }
+                ConcreteValue::Array(_) => todo!(),
+                ConcreteValue::Ref(_) => todo!(),
             }
         }
 

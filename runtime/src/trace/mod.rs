@@ -16,7 +16,7 @@ pub(crate) struct ImmediateTraceManager<S, V, I> {
     trace: Vec<S>,
     constraints: Vec<Constraint<V>>,
     path_interest_checker: Box<dyn PathInterestChecker<S>>,
-    solver: Box<dyn Solver<Value = V, SymVarId = I>>,
+    solver: Box<dyn Solver<V, I>>,
     check_optimistic: bool,
     output_generator: Box<dyn OutputGenerator<I, V>>,
 }
@@ -24,7 +24,7 @@ pub(crate) struct ImmediateTraceManager<S, V, I> {
 impl<S, V, I> ImmediateTraceManager<S, V, I> {
     pub fn new(
         path_interest_checker: Box<dyn PathInterestChecker<S>>,
-        solver: Box<dyn Solver<Value = V, SymVarId = I>>,
+        solver: Box<dyn Solver<V, I>>,
         check_optimistic: bool,
         output_generator: Box<dyn OutputGenerator<I, V>>,
     ) -> Self {

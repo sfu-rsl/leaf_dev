@@ -191,14 +191,8 @@ pub(crate) trait PathInterestChecker<S> {
     fn is_interesting(&self, path: &[S]) -> bool;
 }
 
-pub(crate) trait Solver {
-    type SymVarId;
-    type Value;
-
-    fn check(
-        &mut self,
-        constraints: &[Constraint<Self::Value>],
-    ) -> SolveResult<Self::SymVarId, Self::Value>;
+pub(crate) trait Solver<V, I> {
+    fn check(&mut self, constraints: &[Constraint<V>]) -> SolveResult<I, V>;
 }
 
 pub(crate) enum SolveResult<I, V> {
