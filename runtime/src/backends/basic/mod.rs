@@ -237,6 +237,8 @@ impl AssignmentHandler for BasicAssignmentHandler<'_> {
         self.set_value(value)
     }
 
+    // TODO: Need to add support for the Deinit MIR instruction to have this working properly.
+    // This solution works for now to avoid crashes when samples are run.
     fn variant_index(mut self, variant_index: VariantIndex) {
         let value = Value::Concrete(ConcreteValue::Adt(AdtValue {
             kind: AdtKind::Enum {
