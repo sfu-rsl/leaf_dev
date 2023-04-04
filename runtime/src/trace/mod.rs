@@ -52,8 +52,14 @@ impl<S> ImmediateTraceManager<S, ValueRef, SymVarId> {
     }
 }
 
-impl<S, V, I> TraceManager<S, V> for ImmediateTraceManager<S, V, I> {
+impl<S: Debug, V: Debug, I> TraceManager<S, V> for ImmediateTraceManager<S, V, I> {
     fn notify_step(&mut self, step: S, new_constraints: Vec<Constraint<V>>) {
+        log_info!(
+            "Took step: {:?} with constraints {:?}",
+            step,
+            &new_constraints
+        );
+
         self.trace.push(step);
 
         if new_constraints.is_empty() {
