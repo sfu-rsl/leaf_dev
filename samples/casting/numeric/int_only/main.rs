@@ -10,9 +10,6 @@ fn main() {
     let e = get_uint();
     let f = e as u8;
 
-    // let g = get_foo();
-    // let h = g as u16;
-
     let i = get_bool();
     let j = i as u8;
 
@@ -29,16 +26,6 @@ fn get_int() -> isize {
 
 fn get_uint() -> usize {
     1000
-}
-
-#[allow(dead_code)]
-enum Foo {
-    Bar,
-    Baz,
-}
-
-fn get_foo() -> Foo {
-    Foo::Bar
 }
 
 fn get_bool() -> bool {
