@@ -8,8 +8,11 @@ use crate::{
         backend::{OutputGenerator, PathInterestChecker, SolveResult, Solver, TraceManager},
         Constraint,
     },
+    backends::basic::expr::{SymVarId, ValueRef},
     outgen::LoggerOutputGenerator,
     pathics::AllPathInterestChecker,
+    solvers::z3::Z3Solver,
+    utils::logging::log_info,
 };
 
 pub(crate) struct ImmediateTraceManager<S, V, I> {
@@ -38,11 +41,11 @@ impl<S, V, I> ImmediateTraceManager<S, V, I> {
         }
     }
 }
-impl<S, V: Debug, I: Debug> ImmediateTraceManager<S, V, I> {
+impl<S> ImmediateTraceManager<S, ValueRef, SymVarId> {
     pub fn new_basic() -> Self {
         Self::new(
             Box::new(AllPathInterestChecker),
-            todo!(),
+            Box::new(Z3Solver::new_basic()),
             true,
             Box::new(LoggerOutputGenerator),
         )

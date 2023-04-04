@@ -335,6 +335,7 @@ name = "runtime"
 version = "0.1.0"
 dependencies = [
  "env_logger 0.10.0",
+ "lazy_static",
  "log",
  "paste",
  "z3",

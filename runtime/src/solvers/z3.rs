@@ -1,4 +1,4 @@
-use std::{collections::HashMap, hash::Hash};
+use std::{borrow::Borrow, collections::HashMap, hash::Hash};
 
 use crate::{
     abs::backend::{self, ValueTranslator},
@@ -6,11 +6,13 @@ use crate::{
         self,
         expr::{SymVarId, ValueRef},
     },
+    utils::UnsafeSync,
 };
+use lazy_static::lazy_static;
 use z3::{
     self,
     ast::{self, Dynamic},
-    Context, SatResult, Solver,
+    Config, Context, SatResult, Solver,
 };
 
 /* NOTE: Why not using `Dynamic`?
@@ -62,14 +64,14 @@ impl<'ctx> AstNode<'ctx> {
     }
 }
 
-impl Into<ValueRef> for AstNode<'_> {
-    fn into(self) -> ValueRef {
-        match self {
-            Self::Bool(ast) => basic::expr::Value::Concrete(basic::expr::ConcreteValue::Const(
+impl<'ctx> From<AstNode<'ctx>> for ValueRef {
+    fn from(ast: AstNode<'ctx>) -> Self {
+        match ast {
+            AstNode::Bool(ast) => basic::expr::Value::Concrete(basic::expr::ConcreteValue::Const(
                 basic::expr::ConstValue::Bool(ast.as_bool().unwrap()),
             ))
             .into(),
-            Self::BitVector { ast, is_signed } => {
+            AstNode::BitVector { ast, is_signed } => {
                 // TODO: Add support for up to 128-bit integers.
                 let value = if is_signed {
                     let bytes = ast.as_i64().unwrap().to_be_bytes();
@@ -93,7 +95,19 @@ impl Into<ValueRef> for AstNode<'_> {
 
 type AstPair<'ctx, I> = (ast::Bool<'ctx>, HashMap<I, AstNode<'ctx>>);
 
-struct Z3Solver<'ctx, V, I> {
+lazy_static! {
+    /* FIXME: Can we have a safer and still clean approach?
+     * Before making changes, note that getting a reference to the context in the
+     * Z3Solver has helped us to avoid the need for translator factory and be
+     * able to generate solvers on demand.
+     * Initial guess is that it should be possible to maintain the instance of
+     * context inside the solver using interior mutability. RefCell was tried
+     * and I wasn't successful.
+     */
+    static ref CONTEXT: UnsafeSync<Context> = UnsafeSync::new(Context::new(&Config::default()));
+}
+
+pub(crate) struct Z3Solver<'ctx, V, I> {
     context: &'ctx Context,
     translator: Box<dyn ValueTranslator<V, AstPair<'ctx, I>> + 'ctx>,
     solver: Option<Solver<'ctx>>,
@@ -113,7 +127,8 @@ impl<'ctx, V, I> Z3Solver<'ctx, V, I> {
 }
 
 impl<'ctx> Z3Solver<'ctx, ValueRef, SymVarId> {
-    pub fn new_basic(context: &'ctx Context) -> Self {
+    pub fn new_basic() -> Self {
+        let context = CONTEXT.borrow();
         Self::new(
             context,
             Box::new(translators::Z3ValueTranslator::new(context)),
