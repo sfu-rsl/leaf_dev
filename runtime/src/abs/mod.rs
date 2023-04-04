@@ -32,6 +32,22 @@ pub enum UnaryOp {
     Neg,
 }
 
+pub(crate) struct BranchingMetadata {
+    pub node_location: BasicBlockIndex,
+    /* NOTE: If more type was passed (such as reporting type for all local variables),
+     * this field wouldn't be required. The main usage is for integer types, where
+     * they are all compared to an u128. Also, if the backend is able to record
+     * type information on the expressions, this field doesn't give any additional
+     * information.
+     */
+    pub discr_as_int: DiscriminantAsIntType,
+}
+
+pub struct DiscriminantAsIntType {
+    pub bit_size: u64,
+    pub is_signed: bool,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) enum Constraint<V> {
     Bool(V),

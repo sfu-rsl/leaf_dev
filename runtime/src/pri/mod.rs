@@ -1,7 +1,10 @@
 mod instance;
 mod utils;
 
-use crate::abs::{backend::*, BasicBlockIndex, BinaryOp, FieldIndex, Local, UnaryOp, VariantIndex};
+use crate::abs::{
+    backend::*, BasicBlockIndex, BinaryOp, BranchingMetadata, DiscriminantAsIntType, FieldIndex,
+    Local, UnaryOp, VariantIndex,
+};
 
 use self::instance::*;
 
@@ -213,15 +216,26 @@ pub fn return_from_func() {
 }
 
 pub struct BranchingInfo {
-    pub node_location: BasicBlockIndex,
     pub discriminant: OperandRef,
+    metadata: BranchingMetadata,
 }
 
 impl BranchingInfo {
-    pub fn new(node_location: BasicBlockIndex, discriminant: OperandRef) -> Self {
+    pub fn new(
+        node_location: BasicBlockIndex,
+        discriminant: OperandRef,
+        discr_bit_size: u64,
+        discr_is_signed: bool,
+    ) -> Self {
         Self {
-            node_location,
             discriminant,
+            metadata: BranchingMetadata {
+                node_location,
+                discr_as_int: DiscriminantAsIntType {
+                    bit_size: discr_bit_size,
+                    is_signed: discr_is_signed,
+                },
+            },
         }
     }
 }

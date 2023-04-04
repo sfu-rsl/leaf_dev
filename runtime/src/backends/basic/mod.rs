@@ -6,7 +6,10 @@ pub(crate) mod place;
 use std::{collections::HashMap, mem};
 
 use crate::{
-    abs::{self, backend::*, BasicBlockIndex, BinaryOp, FieldIndex, Local, UnaryOp, VariantIndex},
+    abs::{
+        self, backend::*, BasicBlockIndex, BinaryOp, BranchingMetadata, FieldIndex, Local, UnaryOp,
+        VariantIndex,
+    },
     trace::ImmediateTraceManager,
 };
 
@@ -81,12 +84,12 @@ impl RuntimeBackend for BasicBackend {
 
     fn branch<'a>(
         &'a mut self,
-        location: crate::abs::BasicBlockIndex,
         discriminant: <Self::OperandHandler<'static> as OperandHandler>::Operand,
+        metadata: abs::BranchingMetadata,
     ) -> Self::BranchingHandler<'a> {
         BasicBranchingHandler::new(
-            location,
             get_operand_value(self.current_vars_state(), &discriminant),
+            metadata,
             &mut self.trace_manager,
             &mut self.current_constraints,
         )
@@ -279,22 +282,22 @@ impl BasicAssignmentHandler<'_> {
 }
 
 pub(crate) struct BasicBranchingHandler<'a> {
-    location: BasicBlockIndex,
     discriminant: ValueRef,
+    metadata: BranchingMetadata,
     trace_manager: &'a mut TraceManager,
     current_constraints: &'a mut Vec<Constraint>,
 }
 
 impl<'a> BasicBranchingHandler<'a> {
     fn new(
-        location: BasicBlockIndex,
         discriminant: ValueRef,
+        metadata: BranchingMetadata,
         trace_manager: &'a mut TraceManager,
         current_constraints: &'a mut Vec<Constraint>,
     ) -> Self {
         Self {
-            location,
             discriminant,
+            metadata,
             trace_manager,
             current_constraints,
         }
@@ -339,6 +342,22 @@ pub(crate) struct BasicBranchTakingHandler<'a> {
     parent: BasicBranchingHandler<'a>,
 }
 
+impl BasicBranchTakingHandler<'_> {
+    fn create_equality_expr(&self, value: u128, eq: bool) -> Expr {
+        let discr_as_int = &self.parent.metadata.discr_as_int;
+        Expr::Binary {
+            operator: if eq { BinaryOp::Eq } else { BinaryOp::Ne },
+            first: SymValueRef::new(self.parent.discriminant.clone()),
+            second: ValueRef::new(Value::from_const(ConstValue::Int {
+                bit_rep: value,
+                size: discr_as_int.bit_size,
+                is_signed: discr_as_int.is_signed,
+            })),
+            is_flipped: false,
+        }
+    }
+}
+
 impl BranchTakingHandler<bool> for BasicBranchTakingHandler<'_> {
     fn take(mut self, value: bool) {
         /* FIXME: Bad smell! The branching traits structure prevents
@@ -371,12 +390,7 @@ macro_rules! impl_general_branch_taking_handler {
                         return;
                     }
 
-                    let expr = Expr::Binary {
-                        operator: BinaryOp::Eq,
-                        first: SymValueRef::new(self.parent.discriminant.clone()),
-                        second: ValueRef::new(Value::from_const(ConstValue::from(value))),
-                        is_flipped: false,
-                    };
+                    let expr = self.create_equality_expr(value as u128, true);
                     let constraint = Constraint::Bool(expr.as_value_ref().0);
                     self.parent.notify_constraint(constraint);
                 }
@@ -392,12 +406,7 @@ macro_rules! impl_general_branch_taking_handler {
                     let constraint = Constraint::Bool(
                         non_values
                             .into_iter()
-                            .map(|v| Expr::Binary {
-                                operator: BinaryOp::Ne,
-                                first: SymValueRef::new(self.parent.discriminant.clone()),
-                                second: ValueRef::new(Value::from_const(ConstValue::from(*v as u8))),
-                                is_flipped: false,
-                            })
+                            .map(|v| self.create_equality_expr(*v as u128, false))
                             .reduce(|acc, e| Expr::Binary {
                                 operator: BinaryOp::BitAnd,
                                 first: acc.as_value_ref(),

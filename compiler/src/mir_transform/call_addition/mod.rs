@@ -865,12 +865,15 @@ where
         let tcx = self.context.tcx();
         let operand_ref = self.reference_operand(discr);
         let ty = discr.ty(self.context.local_decls(), tcx);
+        let discr_size = get_size_no_env(tcx, ty).bits();
         let node_location = self.context.location();
         let (block, info_store_var) = self.make_bb_for_call_with_ret(
             stringify!(pri::BranchingInfo::new),
             vec![
                 operand::const_from_uint(tcx, u32::from(node_location)),
                 operand::copy_for_local(operand_ref.into()),
+                operand::const_from_uint(tcx, discr_size),
+                operand::const_from_bool(tcx, ty.is_signed()),
             ],
         );
         self.insert_blocks([block]);
@@ -904,7 +907,7 @@ where
                 )
             }
         } else if discr_ty.is_integral() {
-            // TODO: Detect discriminant
+            // TODO: Distinguish enum discriminant
             (
                 stringify!(pri::take_branch_int),
                 vec![operand::const_from_uint(self.context.tcx(), value)],
@@ -962,7 +965,7 @@ where
                 Ty<'tcx>,
                 Box<dyn Fn(u128) -> Operand<'tcx>>,
             ) = if discr_ty.is_integral() {
-                // TODO: Detect discriminant
+                // TODO: Distinguish enum discriminant
                 (
                     stringify!(pri::take_branch_ow_int),
                     tcx.types.u128,
@@ -1342,10 +1345,20 @@ mod utils {
     }
 
     pub mod ty {
-        use rustc_middle::ty::{Ty, TyCtxt};
+        use rustc_abi::Size;
+        use rustc_middle::ty::{ParamEnv, ParamEnvAnd, Ty, TyCtxt};
 
         pub fn mk_imm_ref<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>) -> Ty<'tcx> {
             tcx.mk_imm_ref(tcx.lifetimes.re_erased, ty)
+        }
+
+        pub fn get_size_no_env<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>) -> Size {
+            tcx.layout_of(ParamEnvAnd {
+                param_env: ParamEnv::empty(),
+                value: ty,
+            })
+            .unwrap()
+            .size
         }
     }
 

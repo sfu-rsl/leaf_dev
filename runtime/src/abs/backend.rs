@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use super::{BasicBlockIndex, BinaryOp, Constraint, FieldIndex, Local, UnaryOp, VariantIndex};
+use super::{BinaryOp, BranchingMetadata, Constraint, FieldIndex, Local, UnaryOp, VariantIndex};
 
 pub(crate) trait RuntimeBackend: Sized {
     type PlaceHandler<'a>: PlaceHandler<Place = Self::Place>
@@ -33,8 +33,8 @@ pub(crate) trait RuntimeBackend: Sized {
 
     fn branch<'a>(
         &'a mut self,
-        location: BasicBlockIndex,
         discriminant: <Self::OperandHandler<'static> as OperandHandler>::Operand,
+        metadata: BranchingMetadata,
     ) -> Self::BranchingHandler<'a>;
 
     fn func_control<'a>(&'a mut self) -> Self::FunctionHandler<'a>;
