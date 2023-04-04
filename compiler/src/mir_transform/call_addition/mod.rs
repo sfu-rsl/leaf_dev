@@ -14,7 +14,7 @@ use rustc_target::abi::VariantIdx;
 
 use self::{
     context::*,
-    utils::{assignment::rvalue, *},
+    utils::{ty::get_size_no_env, *},
 };
 use super::modification::{
     self, BodyBlockManager, BodyLocalManager, BodyModificationUnit, JumpTargetModifier,
