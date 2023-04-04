@@ -12,3 +12,4 @@ pub(crate) mod pathics;
 pub mod pri;
 pub(crate) mod solvers;
 pub(crate) mod trace;
+pub(crate) mod utils;
