@@ -1,6 +1,5 @@
-use rustc_middle::mir::visit::MutVisitor;
 use rustc_middle::mir::{
-    self, visit::Visitor, BasicBlock, BasicBlockData, HasLocalDecls, Local, Location, MirPass,
+    self, visit::Visitor, BasicBlock, BasicBlockData, CastKind, HasLocalDecls, Location, MirPass,
     Operand, Place, Rvalue,
 };
 
@@ -366,11 +365,29 @@ where
 
     fn visit_cast(
         &mut self,
-        kind: &rustc_middle::mir::CastKind,
+        kind: &CastKind,
         operand: &Operand<'tcx>,
         ty: &rustc_middle::ty::Ty<'tcx>,
     ) {
-        todo!()
+        let operand_ref = self.call_adder.reference_operand(operand);
+        match kind {
+            CastKind::IntToInt => {
+                if ty.is_char() {
+                    self.call_adder.by_cast_char(operand_ref);
+                } else {
+                    self.call_adder.by_cast_numeric(operand_ref, *ty);
+                }
+            }
+            CastKind::IntToFloat => todo!("Support IntToFloat casts"),
+            CastKind::FloatToInt => todo!("Support FloatToInt casts"),
+            CastKind::FloatToFloat => todo!("Support FloatToFloat casts"),
+            CastKind::PointerExposeAddress => todo!("Support PointerExposeAddress casts"),
+            CastKind::PointerFromExposedAddress => todo!("Support PointerFromExposedAddress casts"),
+            CastKind::Pointer { .. } => todo!("Support Pointer casts"), // One of these subtypes includes casting an array to a slice
+            CastKind::PtrToPtr => todo!("Support PtrToPtr casts"),
+            CastKind::FnPtrToPtr => todo!("Support FnPtrToPtr casts"),
+            CastKind::DynStar => todo!("Support DynStar casts"),
+        }
     }
 
     fn visit_binary_op(&mut self, op: &mir::BinOp, operands: &Box<(Operand<'tcx>, Operand<'tcx>)>) {

@@ -138,7 +138,9 @@ pub trait Assigner {
 
     fn by_len(&mut self, place: PlaceRef);
 
-    fn by_cast_numeric(&mut self, operand: OperandRef, is_to_float: bool, size: u64);
+    fn by_cast_char(&mut self, operand: OperandRef);
+
+    fn by_cast_numeric(&mut self, operand: OperandRef, ty: Ty);
 
     fn by_cast(&mut self, operand: OperandRef, is_to_float: bool, size: u64);
 
@@ -716,15 +718,32 @@ where
         )
     }
 
-    fn by_cast_numeric(&mut self, operand: OperandRef, is_to_float: bool, size: u64) {
+    fn by_cast_char(&mut self, operand: OperandRef) {
         self.add_bb_for_assign_call(
-            stringify!(pri::assign_cast_numeric),
-            vec![
-                operand::copy_for_local(operand.into()),
-                operand::const_from_bool(self.context.tcx(), is_to_float),
-                operand::const_from_uint(self.context.tcx(), size),
-            ],
+            stringify!(pri::assign_cast_char),
+            vec![operand::copy_for_local(operand.into())],
         )
+    }
+
+    fn by_cast_numeric(&mut self, operand: OperandRef, ty: Ty) {
+        let tcx = self.context.tcx();
+
+        if ty.is_integral() {
+            let (bits, is_signed) = utils::ty::int_size_and_signed(tcx, ty);
+
+            self.add_bb_for_assign_call(
+                stringify!(pri::assign_cast_integer),
+                vec![
+                    operand::copy_for_local(operand.into()),
+                    operand::const_from_bool(tcx, is_signed),
+                    operand::const_from_uint(tcx, bits),
+                ],
+            )
+        } else if ty.is_floating_point() {
+            todo!("Floating point casts are not supported yet.")
+        } else {
+            unreachable!("cast_numeric called for non-numeric type");
+        };
     }
 
     fn by_cast(&mut self, operand: OperandRef, is_to_float: bool, size: u64) {
@@ -1346,7 +1365,8 @@ mod utils {
 
     pub mod ty {
         use rustc_abi::Size;
-        use rustc_middle::ty::{ParamEnv, ParamEnvAnd, Ty, TyCtxt};
+        use rustc_middle::ty::{ParamEnv, ParamEnvAnd, layout::IntegerExt, Int, Ty, TyCtxt, Uint};
+        use rustc_target::abi::Integer;
 
         pub fn mk_imm_ref<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>) -> Ty<'tcx> {
             tcx.mk_imm_ref(tcx.lifetimes.re_erased, ty)
@@ -1359,6 +1379,15 @@ mod utils {
             })
             .unwrap()
             .size
+        }
+
+        pub fn int_size_and_signed(tcx: TyCtxt, ty: Ty) -> (u64, bool) {
+            let (int, signed) = match ty.kind() {
+                Int(ity) => (Integer::from_int_ty(&tcx, *ity), true),
+                Uint(uty) => (Integer::from_uint_ty(&tcx, *uty), false),
+                _ => panic!("non integer discriminant"),
+            };
+            (int.size().bits(), signed)
         }
     }
 

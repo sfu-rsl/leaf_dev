@@ -155,6 +155,35 @@ impl ConstValue {
             _ => unimplemented!("{:?} {:?} {:?}", first, second, operator),
         }
     }
+
+    pub fn integer_cast(this: &Self, to_size: u64, is_to_signed: bool) -> ConstValue {
+        match this {
+            /* This seems overly simple but when the number is originally cast to the u128 to get its bit representation,
+             * this covers any of the casting that would need to be done here. If the original number was unsigned then
+             * the leading bits of the u128 will be 0s and if it was signed then the leading bits will be 1s to handle
+             * the sign extension. Now here when we track the actual cast that needs to be done, the target type has at
+             * most 128 bits so we can just truncate the leading bits to get the correct bit representation. The
+             * truncation is handled by just recording the size of the target type.
+             */
+            Self::Int { bit_rep, .. } => Self::Int {
+                bit_rep: *bit_rep,
+                size: to_size,
+                is_signed: is_to_signed,
+            },
+            Self::Bool(value) => Self::Int {
+                bit_rep: *value as u128,
+                size: to_size,
+                is_signed: is_to_signed,
+            },
+            Self::Char(value) => Self::Int {
+                bit_rep: *value as u128,
+                size: to_size,
+                is_signed: is_to_signed,
+            },
+            Self::Float { .. } => todo!("Casting float to integer is not implemented yet."),
+            _ => unreachable!("Casting {this:?} to integer is not possible."),
+        }
+    }
 }
 
 macro_rules! impl_from_uint {
@@ -323,7 +352,10 @@ pub(crate) enum Expr {
         is_flipped: bool,
     },
 
-    Cast(/* TODO */),
+    Cast {
+        from: SymValueRef,
+        to: SymbolicVarType,
+    },
 
     AddrOf(/* TODO */),
     Deref(SymValueRef),

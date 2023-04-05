@@ -169,7 +169,51 @@ impl AssignmentHandler for BasicAssignmentHandler<'_> {
         self.set_value(len_value)
     }
 
-    fn numeric_cast_of(self, operand: Self::Operand, is_to_float: bool, size: usize) {
+    fn char_cast_of(mut self, operand: Self::Operand) {
+        let value = self.get_operand_value(&operand);
+
+        if value.is_symbolic() {
+            return self.set_value(Value::Symbolic(SymValue::Expression(Expr::Cast {
+                from: SymValueRef::new(value),
+                to: expr::SymbolicVarType::Char,
+            })));
+        }
+
+        let value = match value.as_ref() {
+            Value::Concrete(ConcreteValue::Const(ConstValue::Int { bit_rep, .. })) => {
+                let char_value = *bit_rep as u8 as char;
+                Value::Concrete(ConcreteValue::from_const(ConstValue::Char(char_value)))
+            }
+            _ => panic!("Char cast is supposed to be called on a (concrete) integer."),
+        };
+
+        self.set_value(value)
+    }
+
+    fn integer_cast_of(mut self, operand: Self::Operand, is_signed: bool, bits: u64) {
+        let value = self.get_operand_value(&operand);
+
+        if value.is_symbolic() {
+            return self.set_value(Value::Symbolic(SymValue::Expression(Expr::Cast {
+                from: SymValueRef::new(value),
+                to: expr::SymbolicVarType::Int {
+                    is_signed,
+                    size: bits,
+                },
+            })));
+        }
+
+        let value = match value.as_ref() {
+            Value::Concrete(ConcreteValue::Const(c)) => {
+                Value::from_const(ConstValue::integer_cast(c, bits, is_signed))
+            }
+            _ => unreachable!("Integer cast is supposed to be called on a (concrete) constant."),
+        };
+
+        self.set_value(value)
+    }
+
+    fn float_cast_of(self, operand: Self::Operand, bits: u64) {
         todo!()
     }
 
@@ -250,17 +294,16 @@ impl AssignmentHandler for BasicAssignmentHandler<'_> {
         self.set_value(value)
     }
 
-    fn variant_index(self, variant_index: VariantIndex) {
-        self.vars_state
-            .mut_place(&self.dest, |_, v| match ValueRef::make_mut(v) {
-                Value::Concrete(ConcreteValue::Adt(AdtValue {
-                    kind: AdtKind::Enum { discriminant },
-                    ..
-                })) => *discriminant = variant_index,
-                _ => {
-                    unreachable!("Assigning variant index is only supposed to requested on enums.")
-                }
-            })
+    // TODO: Need to add support for the Deinit MIR instruction to have this working properly.
+    // This solution works for now to avoid crashes when samples are run.
+    fn variant_index(mut self, variant_index: VariantIndex) {
+        let value = Value::Concrete(ConcreteValue::Adt(AdtValue {
+            kind: AdtKind::Enum {
+                discriminant: variant_index,
+            },
+            fields: vec![],
+        }));
+        self.set_value(value)
     }
 }
 

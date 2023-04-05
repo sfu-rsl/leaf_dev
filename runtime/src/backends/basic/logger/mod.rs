@@ -101,13 +101,21 @@ impl AssignmentHandler for LoggerAssignmentHandler {
         self.log(format!("len({place})"));
     }
 
-    fn numeric_cast_of(self, operand: Self::Operand, is_to_float: bool, size: usize) {
+    fn char_cast_of(self, operand: Self::Operand) {
+        self.log(format!("{operand} as char"));
+    }
+
+    fn integer_cast_of(self, operand: Self::Operand, is_signed: bool, bits: u64) {
         self.log(format!(
             "{} as {}{}",
             operand,
-            if is_to_float { "f" } else { "i" },
-            size
+            if is_signed { "i" } else { "u" },
+            bits,
         ));
+    }
+
+    fn float_cast_of(self, operand: Self::Operand, bits: u64) {
+        self.log(format!("{operand} as f{bits}"));
     }
 
     fn cast_of(self) {
