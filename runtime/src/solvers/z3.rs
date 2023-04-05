@@ -359,7 +359,7 @@ mod translators {
                     };
                     self.translate_binary_expr(operator, left, right)
                 }
-                Expr::Cast() => todo!(),
+                Expr::Cast { from, to } => todo!(),
                 Expr::AddrOf() => todo!(),
                 Expr::Deref(_) => todo!(),
                 Expr::Index {
