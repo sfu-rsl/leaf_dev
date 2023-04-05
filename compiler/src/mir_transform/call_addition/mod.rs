@@ -14,7 +14,7 @@ use rustc_target::abi::VariantIdx;
 
 use self::{
     context::*,
-    utils::{ty::get_size_no_env, *},
+    utils::{ty::size_of, *},
 };
 use super::modification::{
     self, BodyBlockManager, BodyLocalManager, BodyModificationUnit, JumpTargetModifier,
@@ -125,7 +125,7 @@ pub trait OperandReferencer<'tcx> {
     fn reference_operand(&mut self, operand: &Operand<'tcx>) -> OperandRef;
 }
 
-pub trait Assigner {
+pub trait Assigner<'tcx> {
     fn by_use(&mut self, operand: OperandRef);
 
     fn by_repeat(&mut self, operand: OperandRef, count: ScalarInt);
@@ -140,7 +140,7 @@ pub trait Assigner {
 
     fn by_cast_char(&mut self, operand: OperandRef);
 
-    fn by_cast_numeric(&mut self, operand: OperandRef, ty: Ty);
+    fn by_cast_numeric(&mut self, operand: OperandRef, ty: Ty<'tcx>);
 
     fn by_cast(&mut self, operand: OperandRef, is_to_float: bool, size: u64);
 
@@ -665,7 +665,7 @@ where
     }
 }
 
-impl<'tcx, C> Assigner for RuntimeCallAdder<C>
+impl<'tcx, C> Assigner<'tcx> for RuntimeCallAdder<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
     C: DestinationReferenceProvider + LocationProvider + BaseContext<'tcx>,
@@ -725,11 +725,12 @@ where
         )
     }
 
-    fn by_cast_numeric(&mut self, operand: OperandRef, ty: Ty) {
+    fn by_cast_numeric(&mut self, operand: OperandRef, ty: Ty<'tcx>) {
         let tcx = self.context.tcx();
 
         if ty.is_integral() {
-            let (bits, is_signed) = utils::ty::int_size_and_signed(tcx, ty);
+            let is_signed = ty.is_signed();
+            let bits = utils::ty::size_of(tcx, ty).bits();
 
             self.add_bb_for_assign_call(
                 stringify!(pri::assign_cast_integer),
@@ -884,7 +885,7 @@ where
         let tcx = self.context.tcx();
         let operand_ref = self.reference_operand(discr);
         let ty = discr.ty(self.context.local_decls(), tcx);
-        let discr_size = get_size_no_env(tcx, ty).bits();
+        let discr_size = size_of(tcx, ty).bits();
         let node_location = self.context.location();
         let (block, info_store_var) = self.make_bb_for_call_with_ret(
             stringify!(pri::BranchingInfo::new),
@@ -1365,29 +1366,19 @@ mod utils {
 
     pub mod ty {
         use rustc_abi::Size;
-        use rustc_middle::ty::{layout::IntegerExt, Int, ParamEnv, ParamEnvAnd, Ty, TyCtxt, Uint};
-        use rustc_target::abi::Integer;
+        use rustc_middle::ty::{ParamEnv, ParamEnvAnd, Ty, TyCtxt};
 
         pub fn mk_imm_ref<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>) -> Ty<'tcx> {
             tcx.mk_imm_ref(tcx.lifetimes.re_erased, ty)
         }
 
-        pub fn get_size_no_env<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>) -> Size {
+        pub fn size_of<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>) -> Size {
             tcx.layout_of(ParamEnvAnd {
                 param_env: ParamEnv::empty(),
                 value: ty,
             })
             .unwrap()
             .size
-        }
-
-        pub fn int_size_and_signed(tcx: TyCtxt, ty: Ty) -> (u64, bool) {
-            let (int, signed) = match ty.kind() {
-                Int(ity) => (Integer::from_int_ty(&tcx, *ity), true),
-                Uint(uty) => (Integer::from_uint_ty(&tcx, *uty), false),
-                _ => panic!("non integer discriminant"),
-            };
-            (int.size().bits(), signed)
         }
     }
 
