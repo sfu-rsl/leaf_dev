@@ -1,7 +1,7 @@
 use std::{borrow::Borrow, collections::HashMap, hash::Hash};
 
 use crate::{
-    abs::backend::{self, ValueTranslator},
+    abs::{backend, Translator},
     backends::basic::{
         self,
         expr::{SymVarId, ValueRef},
@@ -109,14 +109,14 @@ lazy_static! {
 
 pub(crate) struct Z3Solver<'ctx, V, I> {
     context: &'ctx Context,
-    translator: Box<dyn ValueTranslator<V, AstPair<'ctx, I>> + 'ctx>,
+    translator: Box<dyn Translator<V, AstPair<'ctx, I>> + 'ctx>,
     solver: Option<Solver<'ctx>>,
 }
 
 impl<'ctx, V, I> Z3Solver<'ctx, V, I> {
     pub fn new(
         context: &'ctx Context,
-        translator: Box<dyn ValueTranslator<V, AstPair<'ctx, I>> + 'ctx>,
+        translator: Box<dyn Translator<V, AstPair<'ctx, I>> + 'ctx>,
     ) -> Self {
         Self {
             context,
@@ -212,7 +212,7 @@ mod translators {
     };
 
     use crate::{
-        abs::{backend::ValueTranslator, BinaryOp, UnaryOp},
+        abs::{BinaryOp, Translator, UnaryOp},
         backends::basic::expr::{
             ConcreteValue, ConstValue, Expr, SymValue, SymVarId, SymbolicVar, SymbolicVarType,
             Value, ValueRef,
@@ -237,7 +237,7 @@ mod translators {
         }
     }
 
-    impl<'ctx> ValueTranslator<ValueRef, AstPair<'ctx, SymVarId>> for Z3ValueTranslator<'ctx> {
+    impl<'ctx> Translator<ValueRef, AstPair<'ctx, SymVarId>> for Z3ValueTranslator<'ctx> {
         fn translate(&mut self, value: &ValueRef) -> AstPair<'ctx, SymVarId> {
             let ast = self.translate_value(value);
             match ast {
