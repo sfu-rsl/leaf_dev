@@ -260,7 +260,7 @@ impl<'tcx> BodyModificationUnit<'tcx> {
 
         for (i, block) in current_blocks.into_iter().enumerate() {
             let i = BasicBlock::from(i);
-            let mut top_index = i;
+            let mut top_index = blocks.next_index();
             if new_blocks.peek().is_some_and(|(index, _)| *index == i) {
                 let (_, mut chunk) = new_blocks.next().unwrap();
                 blocks.extend_reserve(chunk.len());
