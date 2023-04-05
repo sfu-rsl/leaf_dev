@@ -1365,7 +1365,7 @@ mod utils {
 
     pub mod ty {
         use rustc_abi::Size;
-        use rustc_middle::ty::{ParamEnv, ParamEnvAnd, layout::IntegerExt, Int, Ty, TyCtxt, Uint};
+        use rustc_middle::ty::{layout::IntegerExt, Int, ParamEnv, ParamEnvAnd, Ty, TyCtxt, Uint};
         use rustc_target::abi::Integer;
 
         pub fn mk_imm_ref<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>) -> Ty<'tcx> {
