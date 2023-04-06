@@ -143,8 +143,7 @@ where
     Self: 'ctx,
 {
     fn check(&mut self, constraints: &[crate::abs::Constraint<V>]) -> backend::SolveResult<I, V> {
-        self.solver
-            .get_or_insert_with(|| Solver::new(self.context));
+        self.solver.get_or_insert_with(|| Solver::new(self.context));
 
         let mut all_vars = HashMap::<I, AstNode>::new();
         let asts = constraints
@@ -242,9 +241,7 @@ mod translators {
             let ast = self.translate_value(value);
             match ast {
                 AstNode::Bool(ast) => (ast, self.variables.drain().collect()),
-                _ => panic!(
-                    "Expected the value to be a boolean expression but it is a {ast:#?}.",
-                ),
+                _ => panic!("Expected the value to be a boolean expression but it is a {ast:#?}.",),
             }
         }
     }
@@ -322,6 +319,10 @@ mod translators {
         }
 
         fn translate_symbolic_var(&mut self, var: &SymbolicVar) -> AstNode<'ctx> {
+            self.translate_symbolic_var_and_record(var)
+        }
+
+        fn translate_symbolic_var_and_record(&mut self, var: &SymbolicVar) -> AstNode<'ctx> {
             let node = match var.ty {
                 SymbolicVarType::Bool => ast::Bool::new_const(self.context, var.id).into(),
                 SymbolicVarType::Char => {
