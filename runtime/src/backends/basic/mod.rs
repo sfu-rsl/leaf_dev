@@ -37,9 +37,7 @@ impl BasicBackend {
             call_stack_manager: CallStackManager::new(),
             trace_manager: Box::new(
                 ImmediateTraceManager::<BasicBlockIndex, ValueRef, u32>::new_basic(Box::new(
-                    Z3Solver::new_in_global_context(|ctx| {
-                        Box::new(expr::translators::z3::Z3ValueTranslator::new(ctx))
-                    }),
+                    Z3Solver::new_in_global_context(),
                 )),
             ),
             current_constraints: Vec::new(),

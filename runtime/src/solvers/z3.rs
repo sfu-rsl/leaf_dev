@@ -1,9 +1,6 @@
 use std::{borrow::Borrow, collections::HashMap, hash::Hash};
 
-use crate::{
-    abs::{backend, Translator},
-    utils::UnsafeSync,
-};
+use crate::{abs::backend, utils::UnsafeSync};
 use lazy_static::lazy_static;
 use z3::{
     self,
@@ -60,7 +57,7 @@ impl<'ctx> AstNode<'ctx> {
     }
 }
 
-pub(crate) type AstPair<'ctx, I> = (ast::Bool<'ctx>, HashMap<I, AstNode<'ctx>>);
+pub(crate) struct AstPair<'ctx, I>(pub ast::Bool<'ctx>, pub HashMap<I, AstNode<'ctx>>);
 
 lazy_static! {
     /* FIXME: Can we have a safer and still clean approach?
@@ -76,34 +73,28 @@ lazy_static! {
 
 pub(crate) struct Z3Solver<'ctx, V, I> {
     context: &'ctx Context,
-    translator: Box<dyn Translator<V, AstPair<'ctx, I>> + 'ctx>,
     solver: Option<Solver<'ctx>>,
+    _phantom: std::marker::PhantomData<(V, I)>,
 }
 
 impl<'ctx, V, I> Z3Solver<'ctx, V, I> {
-    pub fn new(
-        context: &'ctx Context,
-        translator: Box<dyn Translator<V, AstPair<'ctx, I>> + 'ctx>,
-    ) -> Self {
+    pub fn new(context: &'ctx Context) -> Self {
         Self {
             context,
-            translator,
             solver: None,
+            _phantom: std::marker::PhantomData,
         }
     }
 
-    pub fn new_in_global_context(
-        translator_factory: impl FnOnce(
-            &'ctx Context,
-        ) -> Box<dyn Translator<V, AstPair<'ctx, I>> + 'ctx>,
-    ) -> Self {
+    pub fn new_in_global_context() -> Self {
         let context = CONTEXT.borrow();
-        Self::new(context, translator_factory(&context))
+        Self::new(context)
     }
 }
 
 impl<'ctx, V, I> backend::Solver<V, I> for Z3Solver<'ctx, V, I>
 where
+    AstPair<'ctx, I>: for<'v> From<(&'v V, &'ctx Context)>,
     V: From<AstNode<'ctx>>,
     I: Eq + Hash,
     Self: 'ctx,
@@ -116,7 +107,7 @@ where
             .iter()
             .map(|constraint| {
                 let (value, is_negated) = constraint.destruct();
-                let (ast, variables) = self.translator.translate(value);
+                let AstPair(ast, variables) = From::from((value, self.context));
                 all_vars.extend(variables);
                 if is_negated { ast.not() } else { ast }
             })

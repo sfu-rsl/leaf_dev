@@ -11,7 +11,7 @@ pub(crate) mod z3 {
     };
 
     use crate::{
-        abs::{BinaryOp, Translator, UnaryOp},
+        abs::{BinaryOp, UnaryOp},
         backends::basic::expr::{
             ConcreteValue, ConstValue, Expr, SymValue, SymVarId, SymbolicVar, SymbolicVarType,
             Value, ValueRef,
@@ -21,6 +21,14 @@ pub(crate) mod z3 {
     use crate::solvers::z3::{AstNode, AstPair};
 
     const CHAR_BIT_SIZE: u32 = size_of::<char>() as u32 * 8;
+
+    impl<'ctx> From<(&ValueRef, &'ctx Context)> for AstPair<'ctx, SymVarId> {
+        fn from(value_with_context: (&ValueRef, &'ctx Context)) -> Self {
+            let (value, context) = value_with_context;
+            let mut translator = Z3ValueTranslator::new(context);
+            translator.translate(value)
+        }
+    }
 
     pub(crate) struct Z3ValueTranslator<'ctx> {
         context: &'ctx Context,
@@ -36,11 +44,11 @@ pub(crate) mod z3 {
         }
     }
 
-    impl<'ctx> Translator<ValueRef, AstPair<'ctx, SymVarId>> for Z3ValueTranslator<'ctx> {
+    impl<'ctx> Z3ValueTranslator<'ctx> {
         fn translate(&mut self, value: &ValueRef) -> AstPair<'ctx, SymVarId> {
             let ast = self.translate_value(value);
             match ast {
-                AstNode::Bool(ast) => (ast, self.variables.drain().collect()),
+                AstNode::Bool(ast) => AstPair(ast, self.variables.drain().collect()),
                 _ => panic!("Expected the value to be a boolean expression but it is a {ast:#?}.",),
             }
         }

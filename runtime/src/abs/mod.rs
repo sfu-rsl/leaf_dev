@@ -69,7 +69,3 @@ impl<V> Constraint<V> {
         }
     }
 }
-
-pub(crate) trait Translator<From, To> {
-    fn translate(&mut self, value: &From) -> To;
-}
