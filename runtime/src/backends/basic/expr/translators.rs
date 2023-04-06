@@ -21,6 +21,7 @@ pub(crate) mod z3 {
     use crate::solvers::z3::{AstNode, AstPair};
 
     const CHAR_BIT_SIZE: u32 = size_of::<char>() as u32 * 8;
+    const TO_CHAR_BIT_SIZE: u32 = 8; // Can only cast to a char from a u8
 
     impl<'ctx> From<(&ValueRef, &'ctx Context)> for AstPair<'ctx, SymVarId> {
         fn from(value_with_context: (&ValueRef, &'ctx Context)) -> Self {
@@ -286,7 +287,15 @@ pub(crate) mod z3 {
             to: &SymbolicVarType,
         ) -> AstNode<'ctx> {
             match to {
-                SymbolicVarType::Char => todo!(),
+                SymbolicVarType::Char => {
+                    let from = from.as_bit_vector();
+                    let size = from.get_size();
+                    if size != TO_CHAR_BIT_SIZE {
+                        panic!("Cast from {size} to char is not supported.");
+                    }
+                    let ast = from.zero_ext(CHAR_BIT_SIZE - TO_CHAR_BIT_SIZE);
+                    AstNode::from_bv(ast, false)
+                }
                 SymbolicVarType::Int { size, is_signed } => {
                     let size = *size as u32;
                     match from {
