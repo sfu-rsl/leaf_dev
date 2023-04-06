@@ -34,7 +34,7 @@ pub enum UnaryOp {
 
 pub(crate) struct BranchingMetadata {
     pub node_location: BasicBlockIndex,
-    /* NOTE: If more type was passed (such as reporting type for all local variables),
+    /* NOTE: If more type information was passed (such as reporting type for all local variables),
      * this field wouldn't be required. The main usage is for integer types, where
      * they are all compared to an u128. Also, if the backend is able to record
      * type information on the expressions, this field doesn't give any additional
