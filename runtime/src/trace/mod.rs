@@ -8,10 +8,8 @@ use crate::{
         backend::{OutputGenerator, PathInterestChecker, SolveResult, Solver, TraceManager},
         Constraint,
     },
-    backends::basic::expr::{SymVarId, ValueRef},
     outgen::LoggerOutputGenerator,
     pathics::AllPathInterestChecker,
-    solvers::z3::Z3Solver,
     utils::logging::log_info,
 };
 
@@ -41,11 +39,11 @@ impl<S, V, I> ImmediateTraceManager<S, V, I> {
         }
     }
 }
-impl<S> ImmediateTraceManager<S, ValueRef, SymVarId> {
-    pub fn new_basic() -> Self {
+impl<S, V: Debug, I: Debug> ImmediateTraceManager<S, V, I> {
+    pub fn new_basic(solver: Box<dyn Solver<V, I>>) -> Self {
         Self::new(
             Box::new(AllPathInterestChecker),
-            Box::new(Z3Solver::new_basic()),
+            solver,
             true,
             Box::new(LoggerOutputGenerator),
         )
