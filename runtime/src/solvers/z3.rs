@@ -75,7 +75,7 @@ impl<'ctx> From<AstNode<'ctx>> for ValueRef {
                 // TODO: Add support for up to 128-bit integers.
                 let value = if is_signed {
                     let bytes = ast.as_i64().unwrap().to_be_bytes();
-                    let mut extended = [0 as u8; 16];
+                    let mut extended = [0_u8; 16];
                     extended[8..].copy_from_slice(&bytes);
                     u128::from_be_bytes(extended)
                 } else {
@@ -144,7 +144,7 @@ where
 {
     fn check(&mut self, constraints: &[crate::abs::Constraint<V>]) -> backend::SolveResult<I, V> {
         self.solver
-            .get_or_insert_with(|| Solver::new(&self.context));
+            .get_or_insert_with(|| Solver::new(self.context));
 
         let mut all_vars = HashMap::<I, AstNode>::new();
         let asts = constraints
@@ -157,7 +157,7 @@ where
             })
             .collect::<Vec<_>>();
 
-        let result = self.check_using(&self.solver.as_ref().unwrap(), &asts, all_vars);
+        let result = self.check_using(self.solver.as_ref().unwrap(), &asts, all_vars);
         result
     }
 }
@@ -243,8 +243,7 @@ mod translators {
             match ast {
                 AstNode::Bool(ast) => (ast, self.variables.drain().collect()),
                 _ => panic!(
-                    "Expected the value to be a boolean expression but it is a {:#?}.",
-                    ast
+                    "Expected the value to be a boolean expression but it is a {ast:#?}.",
                 ),
             }
         }
