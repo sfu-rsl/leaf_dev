@@ -166,11 +166,11 @@ pub(crate) mod z3 {
                         (first, second)
                     };
                     self.translate_binary_expr(operator, left, right)
-                },
+                }
                 Expr::Cast { from, to } => {
                     let from = self.translate_symbolic(from);
                     self.translate_cast_expr(from, to)
-                },
+                }
                 Expr::AddrOf() => todo!(),
                 Expr::Deref(_) => todo!(),
                 Expr::Index {
@@ -286,12 +286,25 @@ pub(crate) mod z3 {
             to: &SymbolicVarType,
         ) -> AstNode<'ctx> {
             match to {
-                SymbolicVarType::Bool => todo!(),
                 SymbolicVarType::Char => todo!(),
-                SymbolicVarType::Int { size, .. } => {
+                SymbolicVarType::Int { size, is_signed } => {
                     let size = *size as u32;
                     match from {
-                        AstNode::Bool(_) => todo!(),
+                        AstNode::Bool(_) => {
+                            let from = from.as_bool();
+                            let ast = if *is_signed {
+                                from.ite(
+                                    &ast::BV::from_i64(from.get_ctx(), 1, size),
+                                    &ast::BV::from_i64(from.get_ctx(), 0, size),
+                                )
+                            } else {
+                                from.ite(
+                                    &ast::BV::from_u64(from.get_ctx(), 1, size),
+                                    &ast::BV::from_u64(from.get_ctx(), 0, size),
+                                )
+                            };
+                            AstNode::from_bv(ast, *is_signed)
+                        }
                         AstNode::BitVector { ast, is_signed } => {
                             let old_size = ast.get_size();
                             if size > old_size {
@@ -311,6 +324,7 @@ pub(crate) mod z3 {
                     }
                 }
                 SymbolicVarType::Float { ebits, sbits } => todo!(),
+                _ => unreachable!("Casting from int to {to:#?} is not supported."),
             }
         }
     }
