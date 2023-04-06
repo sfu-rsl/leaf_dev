@@ -166,8 +166,11 @@ pub(crate) mod z3 {
                         (first, second)
                     };
                     self.translate_binary_expr(operator, left, right)
-                }
-                Expr::Cast { from, to } => todo!(),
+                },
+                Expr::Cast { from, to } => {
+                    let from = self.translate_symbolic(from);
+                    self.translate_cast_expr(from, to)
+                },
                 Expr::AddrOf() => todo!(),
                 Expr::Deref(_) => todo!(),
                 Expr::Index {
@@ -274,6 +277,40 @@ pub(crate) mod z3 {
                         logical_func(left, right).into()
                     }
                 }
+            }
+        }
+
+        fn translate_cast_expr(
+            &mut self,
+            from: AstNode<'ctx>,
+            to: &SymbolicVarType,
+        ) -> AstNode<'ctx> {
+            match to {
+                SymbolicVarType::Bool => todo!(),
+                SymbolicVarType::Char => todo!(),
+                SymbolicVarType::Int { size, .. } => {
+                    let size = *size as u32;
+                    match from {
+                        AstNode::Bool(_) => todo!(),
+                        AstNode::BitVector { ast, is_signed } => {
+                            let old_size = ast.get_size();
+                            if size > old_size {
+                                let bits_to_add = size - old_size;
+                                let ast = if is_signed {
+                                    ast.sign_ext(bits_to_add)
+                                } else {
+                                    ast.zero_ext(bits_to_add)
+                                };
+                                AstNode::from_bv(ast, is_signed)
+                            } else {
+                                // This also handles the case where size == old_size since all bits will be extracted
+                                // and the sign will be updated.
+                                AstNode::from_bv(ast.extract(size - 1, 0), is_signed)
+                            }
+                        }
+                    }
+                }
+                SymbolicVarType::Float { ebits, sbits } => todo!(),
             }
         }
     }
