@@ -1,18 +1,13 @@
 use std::fmt::Display;
 
-use crate::abs::{backend::*, BasicBlockIndex, BinaryOp, UnaryOp, VariantIndex};
+use crate::abs::{backend::*, BinaryOp, BranchingMetadata, UnaryOp, VariantIndex};
 
 use super::{
     operand::{DefaultOperandHandler, Operand, PlaceUsage},
     place::{DefaultPlaceHandler, Place, Projection},
 };
 
-macro_rules! log_info {
-    // Currently, we haven't added the support for transitive dependencies. Thus,
-    // the logger library doesn't work.
-    // ($($arg:tt)+) => (log::info!($($arg)+))
-    ($($arg:tt)+) => (println!($($arg)+))
-}
+use crate::utils::logging::log_info;
 
 pub(crate) struct LoggerBackend {
     call_manager: CallManager,
@@ -50,12 +45,12 @@ impl RuntimeBackend for LoggerBackend {
 
     fn branch(
         &mut self,
-        location: BasicBlockIndex,
         discriminant: Operand,
+        metadata: BranchingMetadata,
     ) -> Self::BranchingHandler<'_> {
         LoggerBranchingHandler {
-            location,
             discriminant,
+            metadata,
         }
     }
 
@@ -167,8 +162,8 @@ impl LoggerAssignmentHandler {
 }
 
 pub(crate) struct LoggerBranchingHandler {
-    location: BasicBlockIndex,
     discriminant: Operand,
+    metadata: BranchingMetadata,
 }
 
 impl BranchingHandler for LoggerBranchingHandler {
@@ -200,15 +195,15 @@ impl BranchingHandler for LoggerBranchingHandler {
 impl LoggerBranchingHandler {
     fn create_branch_taking(self) -> LoggerBranchTakingHandler {
         LoggerBranchTakingHandler {
-            location: self.location,
             discriminant: self.discriminant,
+            metadata: self.metadata,
         }
     }
 }
 
 pub(crate) struct LoggerBranchTakingHandler {
-    location: BasicBlockIndex,
     discriminant: Operand,
+    metadata: BranchingMetadata,
 }
 
 impl BranchTakingHandler<bool> for LoggerBranchTakingHandler {
@@ -262,7 +257,11 @@ impl LoggerBranchTakingHandler {
     }
 
     fn log(&self, message: impl Display) {
-        log_info!("Took branch at {} because {}", self.location, message);
+        log_info!(
+            "Took branch at {} because {}",
+            self.metadata.node_location,
+            message
+        );
     }
 }
 

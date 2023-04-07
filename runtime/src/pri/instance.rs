@@ -102,7 +102,7 @@ pub(super) fn branch<T>(
     branch_action: impl FnOnce(<BackendImpl as RuntimeBackend>::BranchingHandler<'_>) -> T,
 ) -> T {
     perform_on_backend(|r| {
-        let handler = r.branch(info.node_location, take_back_operand_ref(info.discriminant));
+        let handler = r.branch(take_back_operand_ref(info.discriminant), info.metadata);
         branch_action(handler)
     })
 }

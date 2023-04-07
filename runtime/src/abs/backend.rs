@@ -1,4 +1,6 @@
-use super::{BasicBlockIndex, BinaryOp, FieldIndex, Local, UnaryOp, VariantIndex};
+use std::collections::HashMap;
+
+use super::{BinaryOp, BranchingMetadata, Constraint, FieldIndex, Local, UnaryOp, VariantIndex};
 
 pub(crate) trait RuntimeBackend: Sized {
     type PlaceHandler<'a>: PlaceHandler<Place = Self::Place>
@@ -31,8 +33,8 @@ pub(crate) trait RuntimeBackend: Sized {
 
     fn branch<'a>(
         &'a mut self,
-        location: BasicBlockIndex,
         discriminant: <Self::OperandHandler<'static> as OperandHandler>::Operand,
+        metadata: BranchingMetadata,
     ) -> Self::BranchingHandler<'a>;
 
     fn func_control<'a>(&'a mut self) -> Self::FunctionHandler<'a>;
@@ -183,4 +185,26 @@ pub(crate) trait FunctionHandler {
     );
 
     fn ret(self);
+}
+
+pub(crate) trait TraceManager<S, V> {
+    fn notify_step(&mut self, step: S, new_constraints: Vec<Constraint<V>>);
+}
+
+pub(crate) trait PathInterestChecker<S> {
+    fn is_interesting(&self, path: &[S]) -> bool;
+}
+
+pub(crate) trait Solver<V, I> {
+    fn check(&mut self, constraints: &[Constraint<V>]) -> SolveResult<I, V>;
+}
+
+pub(crate) enum SolveResult<I, V> {
+    Sat(HashMap<I, V>),
+    Unsat,
+    Unknown,
+}
+
+pub(crate) trait OutputGenerator<I, V> {
+    fn generate(&mut self, values: Vec<(&I, &V)>);
 }

@@ -5,7 +5,14 @@ pub(crate) mod place;
 
 use std::{collections::HashMap, mem};
 
-use crate::abs::{backend::*, BasicBlockIndex, BinaryOp, FieldIndex, Local, UnaryOp, VariantIndex};
+use crate::{
+    abs::{
+        self, backend::*, BasicBlockIndex, BinaryOp, BranchingMetadata, DiscriminantAsIntType,
+        FieldIndex, Local, UnaryOp, VariantIndex,
+    },
+    solvers::z3::Z3Solver,
+    trace::ImmediateTraceManager,
+};
 
 use self::{
     expr::{
@@ -16,16 +23,24 @@ use self::{
     place::{DefaultPlaceHandler, Place, Projection},
 };
 
+type TraceManager = Box<dyn abs::backend::TraceManager<BasicBlockIndex, ValueRef>>;
+
 pub struct BasicBackend {
-    constraint_manager: ConstraintManager,
     call_stack_manager: CallStackManager,
+    trace_manager: TraceManager,
+    current_constraints: Vec<Constraint>,
 }
 
 impl BasicBackend {
     pub fn new() -> Self {
         Self {
-            constraint_manager: ConstraintManager::new(),
             call_stack_manager: CallStackManager::new(),
+            trace_manager: Box::new(
+                ImmediateTraceManager::<BasicBlockIndex, ValueRef, u32>::new_basic(Box::new(
+                    Z3Solver::new_in_global_context(),
+                )),
+            ),
+            current_constraints: Vec::new(),
         }
     }
 }
@@ -72,13 +87,14 @@ impl RuntimeBackend for BasicBackend {
 
     fn branch<'a>(
         &'a mut self,
-        location: crate::abs::BasicBlockIndex,
         discriminant: <Self::OperandHandler<'static> as OperandHandler>::Operand,
+        metadata: abs::BranchingMetadata,
     ) -> Self::BranchingHandler<'a> {
         BasicBranchingHandler::new(
-            location,
             get_operand_value(self.current_vars_state(), &discriminant),
-            &mut self.constraint_manager,
+            metadata,
+            &mut self.trace_manager,
+            &mut self.current_constraints,
         )
     }
 
@@ -312,22 +328,33 @@ impl BasicAssignmentHandler<'_> {
 }
 
 pub(crate) struct BasicBranchingHandler<'a> {
-    location: BasicBlockIndex,
     discriminant: ValueRef,
-    constraint_manager: &'a mut ConstraintManager,
+    metadata: BranchingMetadata,
+    trace_manager: &'a mut TraceManager,
+    current_constraints: &'a mut Vec<Constraint>,
 }
 
 impl<'a> BasicBranchingHandler<'a> {
     fn new(
-        location: BasicBlockIndex,
         discriminant: ValueRef,
-        constraint_manager: &'a mut ConstraintManager,
+        metadata: BranchingMetadata,
+        trace_manager: &'a mut TraceManager,
+        current_constraints: &'a mut Vec<Constraint>,
     ) -> Self {
         Self {
-            location,
             discriminant,
-            constraint_manager,
+            metadata,
+            trace_manager,
+            current_constraints,
         }
+    }
+
+    fn notify_constraint(&mut self, constraint: Constraint) {
+        self.current_constraints.push(constraint);
+        self.trace_manager.notify_step(
+            0, /* TODO: The unique index of the block we have entered. */
+            self.current_constraints.drain(..).collect(),
+        );
     }
 }
 
@@ -361,8 +388,20 @@ pub(crate) struct BasicBranchTakingHandler<'a> {
     parent: BasicBranchingHandler<'a>,
 }
 
+impl BasicBranchTakingHandler<'_> {
+    fn create_equality_expr(&self, value: impl BranchCaseValue, eq: bool) -> Expr {
+        let discr_as_int = &self.parent.metadata.discr_as_int;
+        Expr::Binary {
+            operator: if eq { BinaryOp::Eq } else { BinaryOp::Ne },
+            first: SymValueRef::new(self.parent.discriminant.clone()),
+            second: ValueRef::new(Value::from_const(value.into_const(discr_as_int))),
+            is_flipped: false,
+        }
+    }
+}
+
 impl BranchTakingHandler<bool> for BasicBranchTakingHandler<'_> {
-    fn take(self, value: bool) {
+    fn take(mut self, value: bool) {
         /* FIXME: Bad smell! The branching traits structure prevents
          * us from having a simpler and cleaner handler.
          */
@@ -370,12 +409,12 @@ impl BranchTakingHandler<bool> for BasicBranchTakingHandler<'_> {
             return;
         }
 
-        let mut constraint = Constraint::Bool(self.parent.discriminant);
+        let mut constraint = Constraint::Bool(self.parent.discriminant.clone());
         if !value {
             constraint = constraint.not();
         }
 
-        self.parent.constraint_manager.add(constraint);
+        self.parent.notify_constraint(constraint);
     }
 
     fn take_otherwise(self, non_values: &[bool]) {
@@ -388,34 +427,39 @@ macro_rules! impl_general_branch_taking_handler {
     ($($type:ty),*) => {
         $(
             impl BranchTakingHandler<$type> for BasicBranchTakingHandler<'_> {
-                fn take(self, value: $type) {
+                fn take(mut self, value: $type) {
                     if !self.parent.discriminant.is_symbolic() {
                         return;
                     }
 
-                    let expr = Expr::Binary {
-                        operator: BinaryOp::Eq,
-                        first: SymValueRef::new(self.parent.discriminant),
-                        second: ValueRef::new(Value::from_const(ConstValue::from(value))),
-                        is_flipped: false,
-                    };
-                    self.parent.constraint_manager.add(Constraint::Bool(ValueRef::new(Value::Symbolic(SymValue::Expression(expr)))));
+                    let expr = self.create_equality_expr(value as u128, true);
+                    let constraint = Constraint::Bool(expr.as_value_ref().0);
+                    self.parent.notify_constraint(constraint);
                 }
 
-                fn take_otherwise(self, non_values: &[$type]) {
+                fn take_otherwise(mut self, non_values: &[$type]) {
                     if !self.parent.discriminant.is_symbolic() {
                         return;
                     }
 
-                    for value in non_values {
-                        let expr = Expr::Binary {
-                            operator: BinaryOp::Ne,
-                            first: SymValueRef::new(self.parent.discriminant.clone()),
-                            second: ValueRef::new(Value::from_const(ConstValue::from(*value))),
-                            is_flipped: false,
-                        };
-                        self.parent.constraint_manager.add(Constraint::Bool(ValueRef::new(Value::Symbolic(SymValue::Expression(expr)))));
-                    }
+                    /* Converting all non-equalities into a single constraint to not lose
+                    * semantics.
+                    */
+                    let constraint = Constraint::Bool(
+                        non_values
+                            .into_iter()
+                            .map(|v| self.create_equality_expr(*v, false))
+                            .reduce(|acc, e| Expr::Binary {
+                                operator: BinaryOp::BitAnd,
+                                first: acc.as_value_ref(),
+                                second: e.as_value_ref().0,
+                                is_flipped: false,
+                            })
+                            .unwrap()
+                            .as_value_ref()
+                            .0,
+                    );
+                    self.parent.notify_constraint(constraint);
                 }
             }
         )*
@@ -423,6 +467,34 @@ macro_rules! impl_general_branch_taking_handler {
 }
 
 impl_general_branch_taking_handler!(u128, char, VariantIndex);
+
+trait BranchCaseValue {
+    fn into_const(self, discr_as_int: &DiscriminantAsIntType) -> ConstValue;
+}
+
+impl BranchCaseValue for char {
+    fn into_const(self, _discr_as_int: &DiscriminantAsIntType) -> ConstValue {
+        ConstValue::Char(self)
+    }
+}
+
+macro_rules! impl_int_branch_case_value {
+    ($($type:ty),*) => {
+        $(
+            impl BranchCaseValue for $type {
+                fn into_const(self, discr_as_int: &DiscriminantAsIntType) -> ConstValue {
+                    ConstValue::Int {
+                        bit_rep: self as u128,
+                        size: discr_as_int.bit_size,
+                        is_signed: discr_as_int.is_signed,
+                    }
+                }
+            }
+        )*
+    };
+}
+
+impl_int_branch_case_value!(u128, VariantIndex);
 
 pub(crate) struct BasicFunctionHandler<'a> {
     call_stack_manager: &'a mut CallStackManager,
@@ -764,23 +836,6 @@ impl MutableVariablesState {
 }
 
 type Constraint = crate::abs::Constraint<ValueRef>;
-
-struct ConstraintManager {
-    constraints: Vec<Constraint>,
-}
-
-impl ConstraintManager {
-    fn new() -> Self {
-        Self {
-            constraints: Vec::new(),
-        }
-    }
-
-    pub fn add(&mut self, constraint: Constraint) {
-        println!("Adding constraint: {:?}", &constraint);
-        self.constraints.push(constraint);
-    }
-}
 
 struct CallStackManager {
     stack: Vec<CallStackFrame>,

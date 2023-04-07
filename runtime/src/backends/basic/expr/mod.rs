@@ -1,11 +1,14 @@
+pub(super) mod translators;
+
 use std::{ops::Deref, rc::Rc};
 
-use crate::abs::{BinaryOp, FieldIndex, UnaryOp, VariantIndex};
+use super::abs::{BinaryOp, FieldIndex, UnaryOp, VariantIndex};
 
 use super::{operand, place::Place};
 
 pub(super) type ValueRef = Rc<Value>;
 pub(super) type SymValueRef = SymValueGuard;
+pub(super) type SymVarId = u32;
 
 #[derive(Clone, Debug)]
 pub(super) enum Value {
@@ -289,14 +292,26 @@ pub(super) enum SymValue {
     Expression(Expr),
 }
 
+impl SymValue {
+    #[inline]
+    pub fn as_value(self) -> Value {
+        Value::Symbolic(self)
+    }
+
+    #[inline]
+    pub fn as_value_ref(self) -> SymValueRef {
+        SymValueGuard::new(ValueRef::new(self.as_value()))
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub(super) struct SymbolicVar {
-    id: u64,
-    ty: SymbolicVarType,
+    pub id: SymVarId,
+    pub ty: SymbolicVarType,
 }
 
 impl SymbolicVar {
-    pub fn new(id: u64, ty: SymbolicVarType) -> Self {
+    pub fn new(id: SymVarId, ty: SymbolicVarType) -> Self {
         Self { id, ty }
     }
 }
@@ -360,8 +375,20 @@ pub(super) enum Expr {
     },
 }
 
+impl Expr {
+    #[inline]
+    pub fn as_sym_value(self) -> SymValue {
+        SymValue::Expression(self)
+    }
+
+    #[inline]
+    pub fn as_value_ref(self) -> SymValueRef {
+        self.as_sym_value().as_value_ref()
+    }
+}
+
 #[derive(Clone, Debug)]
-pub(super) struct SymValueGuard(ValueRef);
+pub(super) struct SymValueGuard(pub ValueRef);
 
 impl SymValueGuard {
     pub fn new(value: ValueRef) -> Self {
