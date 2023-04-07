@@ -202,7 +202,7 @@ pub fn take_branch_ow_int(info: BranchingInfo, non_values: &[u128]) {
 pub fn take_branch_char(info: BranchingInfo, value: char) {
     branch(info, |h| h.on_char().take(value))
 }
-pub fn take_branch_ow_char(info: BranchingInfo, non_values: &[u128]) {
+pub fn take_branch_ow_char(info: BranchingInfo, non_values: &[char]) {
     branch(info, |h| h.on_char().take_otherwise(non_values))
 }
 

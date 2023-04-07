@@ -7,8 +7,8 @@ use std::{collections::HashMap, mem};
 
 use crate::{
     abs::{
-        self, backend::*, BasicBlockIndex, BinaryOp, BranchingMetadata, FieldIndex, Local, UnaryOp,
-        VariantIndex,
+        self, backend::*, BasicBlockIndex, BinaryOp, BranchingMetadata, DiscriminantAsIntType,
+        FieldIndex, Local, UnaryOp, VariantIndex,
     },
     solvers::z3::Z3Solver,
     trace::ImmediateTraceManager,
@@ -389,16 +389,12 @@ pub(crate) struct BasicBranchTakingHandler<'a> {
 }
 
 impl BasicBranchTakingHandler<'_> {
-    fn create_equality_expr(&self, value: u128, eq: bool) -> Expr {
+    fn create_equality_expr(&self, value: impl BranchCaseValue, eq: bool) -> Expr {
         let discr_as_int = &self.parent.metadata.discr_as_int;
         Expr::Binary {
             operator: if eq { BinaryOp::Eq } else { BinaryOp::Ne },
             first: SymValueRef::new(self.parent.discriminant.clone()),
-            second: ValueRef::new(Value::from_const(ConstValue::Int {
-                bit_rep: value,
-                size: discr_as_int.bit_size,
-                is_signed: discr_as_int.is_signed,
-            })),
+            second: ValueRef::new(Value::from_const(value.into_const(discr_as_int))),
             is_flipped: false,
         }
     }
@@ -452,7 +448,7 @@ macro_rules! impl_general_branch_taking_handler {
                     let constraint = Constraint::Bool(
                         non_values
                             .into_iter()
-                            .map(|v| self.create_equality_expr(*v as u128, false))
+                            .map(|v| self.create_equality_expr(*v, false))
                             .reduce(|acc, e| Expr::Binary {
                                 operator: BinaryOp::BitAnd,
                                 first: acc.as_value_ref(),
@@ -471,6 +467,34 @@ macro_rules! impl_general_branch_taking_handler {
 }
 
 impl_general_branch_taking_handler!(u128, char, VariantIndex);
+
+trait BranchCaseValue {
+    fn into_const(self, discr_as_int: &DiscriminantAsIntType) -> ConstValue;
+}
+
+impl BranchCaseValue for char {
+    fn into_const(self, _discr_as_int: &DiscriminantAsIntType) -> ConstValue {
+        ConstValue::Char(self)
+    }
+}
+
+macro_rules! impl_int_branch_case_value {
+    ($($type:ty),*) => {
+        $(
+            impl BranchCaseValue for $type {
+                fn into_const(self, discr_as_int: &DiscriminantAsIntType) -> ConstValue {
+                    ConstValue::Int {
+                        bit_rep: self as u128,
+                        size: discr_as_int.bit_size,
+                        is_signed: discr_as_int.is_signed,
+                    }
+                }
+            }
+        )*
+    };
+}
+
+impl_int_branch_case_value!(u128, VariantIndex);
 
 pub(crate) struct BasicFunctionHandler<'a> {
     call_stack_manager: &'a mut CallStackManager,
