@@ -110,12 +110,8 @@ pub(crate) mod z3 {
                         true,
                     )
                 }
-                ConstValue::Float {
-                    bit_rep,
-                    ebits,
-                    sbits,
-                } => todo!(),
-                ConstValue::Str(s) => todo!(),
+                ConstValue::Float { .. } => todo!(),
+                ConstValue::Str(_) => todo!(),
                 ConstValue::Func(_) => todo!(),
             }
         }
@@ -141,7 +137,7 @@ pub(crate) mod z3 {
                     ast::BV::new_const(self.context, var.id, size as u32),
                     is_signed,
                 ),
-                SymbolicVarType::Float { ebits, sbits } => todo!(),
+                SymbolicVarType::Float { .. } => todo!(),
             };
             self.variables.insert(var.id, node.clone());
             node
@@ -174,17 +170,8 @@ pub(crate) mod z3 {
                 }
                 Expr::AddrOf() => todo!(),
                 Expr::Deref(_) => todo!(),
-                Expr::Index {
-                    on,
-                    index,
-                    from_end,
-                } => todo!(),
-                Expr::Slice {
-                    of,
-                    from,
-                    to,
-                    from_end,
-                } => todo!(),
+                Expr::Index { .. } => todo!(),
+                Expr::Slice { .. } => todo!(),
             }
         }
 
@@ -333,7 +320,7 @@ pub(crate) mod z3 {
                         }
                     }
                 }
-                SymbolicVarType::Float { ebits, sbits } => todo!(),
+                SymbolicVarType::Float { .. } => todo!(),
                 _ => unreachable!("Casting from int to {to:#?} is not supported."),
             }
         }
