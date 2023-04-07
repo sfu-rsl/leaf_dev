@@ -290,9 +290,10 @@ pub(crate) mod z3 {
                 SymbolicVarType::Char => {
                     let from = from.as_bit_vector();
                     let size = from.get_size();
-                    if size != TO_CHAR_BIT_SIZE {
-                        panic!("Cast from {size} to char is not supported.");
-                    }
+                    debug_assert!(
+                        size == TO_CHAR_BIT_SIZE,
+                        "Cast from {size} to char is not supported."
+                    );
                     let ast = from.zero_ext(CHAR_BIT_SIZE - TO_CHAR_BIT_SIZE);
                     AstNode::from_bv(ast, false)
                 }
