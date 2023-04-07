@@ -22,9 +22,9 @@ pub(crate) trait RuntimeBackend: Sized {
     type Place;
     type Operand;
 
-    fn place<'a>(&'a mut self) -> Self::PlaceHandler<'a>;
+    fn place(&mut self) -> Self::PlaceHandler<'_>;
 
-    fn operand<'a>(&'a mut self) -> Self::OperandHandler<'a>;
+    fn operand(&mut self) -> Self::OperandHandler<'_>;
 
     fn assign_to<'a>(
         &'a mut self,
@@ -37,7 +37,7 @@ pub(crate) trait RuntimeBackend: Sized {
         metadata: BranchingMetadata,
     ) -> Self::BranchingHandler<'a>;
 
-    fn func_control<'a>(&'a mut self) -> Self::FunctionHandler<'a>;
+    fn func_control(&mut self) -> Self::FunctionHandler<'_>;
 }
 
 pub(crate) trait PlaceHandler {

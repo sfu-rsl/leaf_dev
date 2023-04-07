@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap, marker::PhantomData, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, marker::PhantomData};
 
 use crate::visit::{self, TerminatorKindMutVisitor};
 use rustc_ast::Mutability;
@@ -136,7 +136,7 @@ impl JumpModificationConstraint {
     fn sat_score(&self, target: &JumpTargetAttribute) -> Option<u32> {
         match self {
             JumpModificationConstraint::None => Some(0),
-            _ => self.eq(&target).then_some(u32::MAX),
+            _ => self.eq(target).then_some(u32::MAX),
         }
     }
 }
@@ -147,7 +147,7 @@ impl<'tcx> BodyLocalManager<'tcx> for BodyModificationUnit<'tcx> {
         T: Into<NewLocalDecl<'tcx>>,
     {
         self.new_locals.push(decl_info.into());
-        Local::from(self.next_local_index + (self.new_locals.len() - 1))
+        self.next_local_index + (self.new_locals.len() - 1)
     }
 }
 
@@ -213,7 +213,7 @@ impl<'tcx> BodyModificationUnit<'tcx> {
         Self::update_jumps_pre_insert(
             Iterator::chain(
                 body.basic_blocks_mut().iter_enumerated_mut(),
-                (&mut self.new_blocks)
+                self.new_blocks
                     .values_mut()
                     .flatten()
                     .map(|p| (p.pseudo_index, &mut p.data)),
@@ -335,7 +335,7 @@ impl<'tcx> BodyModificationUnit<'tcx> {
     ) where
         'tcx: 'b,
     {
-        let mut index_rc = RefCell::new(BasicBlock::from(0 as u32));
+        let index_rc = RefCell::new(BasicBlock::from(0_u32));
         let map = |target: BasicBlock, attr: &JumpTargetAttribute| -> Option<BasicBlock> {
             if update_next && target == NEXT_BLOCK {
                 Some(*index_rc.borrow() + 1)
@@ -348,10 +348,7 @@ impl<'tcx> BodyModificationUnit<'tcx> {
             *index_rc.borrow_mut() = index;
             let update_count = updater.update_terminator(block.terminator_mut());
             if !sanity_check(index, update_count) {
-                panic!(
-                    "Update count of {} was not acceptable at index {:?}",
-                    update_count, index
-                );
+                panic!("Update count of {update_count} was not acceptable at index {index:?}");
             }
         }
     }
@@ -401,8 +398,7 @@ where
     ) {
         // Because of API limitations we have to take this weird approach.
         let values: Vec<u128> = targets.iter().map(|(v, _)| v).collect();
-        let mut index = 0;
-        for target in targets.all_targets_mut() {
+        for (index, target) in targets.all_targets_mut().iter_mut().enumerate() {
             if index < values.len() {
                 self.update_with_attr(
                     &mut *target,
@@ -411,7 +407,6 @@ where
             } else {
                 self.update_with_attr(&mut *target, JumpTargetAttribute::SwitchOtherwise);
             }
-            index += 1;
         }
     }
 
@@ -439,13 +434,13 @@ where
     fn visit_call(
         &mut self,
         _func: &mut Operand<'tcx>,
-        _args: &mut Vec<Operand<'tcx>>,
+        _args: &mut [Operand<'tcx>],
         _destination: &mut Place<'tcx>,
         target: &mut Option<BasicBlock>,
         _cleanup: &mut Option<BasicBlock>,
         _from_hir_call: bool,
         _fn_span: Span,
-    ) -> () {
+    ) {
         self.update_maybe(target);
     }
 
@@ -493,7 +488,7 @@ where
     fn visit_inline_asm(
         &mut self,
         _template: &mut &[rustc_ast::InlineAsmTemplatePiece],
-        _operands: &mut Vec<rustc_middle::mir::InlineAsmOperand<'tcx>>,
+        _operands: &mut [rustc_middle::mir::InlineAsmOperand<'tcx>],
         _options: &mut rustc_ast::InlineAsmOptions,
         _line_spans: &'tcx [Span],
         destination: &mut Option<BasicBlock>,
@@ -511,7 +506,7 @@ where
     pub fn update_terminator(&mut self, terminator: &mut Terminator<'tcx>) -> usize {
         self.count = 0;
         Self::visit_terminator_kind(self, &mut terminator.kind);
-        return self.count;
+        self.count
     }
 
     fn update(&mut self, target: &mut BasicBlock) {

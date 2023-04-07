@@ -54,7 +54,7 @@ impl RuntimeBackend for LoggerBackend {
         }
     }
 
-    fn func_control<'a>(&'a mut self) -> Self::FunctionHandler<'a> {
+    fn func_control(&mut self) -> Self::FunctionHandler<'_> {
         LoggerFunctionHandler {
             call_manager: &mut self.call_manager,
         }
@@ -333,14 +333,14 @@ impl CallManager {
 }
 
 impl Display for Place {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         PlaceFormatter::format(f, self)
     }
 }
 
 struct PlaceFormatter;
 impl PlaceFormatter {
-    fn format(f: &mut std::fmt::Formatter<'_>, place: &Place) -> std::fmt::Result {
+    fn format(f: &mut std::fmt::Formatter, place: &Place) -> std::fmt::Result {
         place
             .projections
             .iter()
@@ -355,17 +355,17 @@ impl PlaceFormatter {
             })
     }
 
-    fn pre(proj: &Projection, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn pre(proj: &Projection, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match proj {
             Projection::Deref => f.write_str("*"),
             _ => Result::Ok(()),
         }
     }
 
-    fn post(proj: &Projection, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn post(proj: &Projection, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match proj {
-            Projection::Field(field) => write!(f, ".{}", field),
-            Projection::Index(index) => write!(f, "[{}]", index),
+            Projection::Field(field) => write!(f, ".{field}"),
+            Projection::Index(index) => write!(f, "[{index}]"),
             Projection::Subslice { from, to, from_end } => {
                 write!(f, "[{}..{}{}]", from, to, if *from_end { "^" } else { "" })
             }
@@ -382,27 +382,27 @@ impl PlaceFormatter {
                     if *from_end { "^" } else { "" }
                 )
             }
-            Projection::Downcast(variant) => write!(f, " as {}th", variant),
+            Projection::Downcast(variant) => write!(f, " as {variant}th"),
             _ => Result::Ok(()),
         }
     }
 }
 
 impl Display for Operand {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Operand::Place(place, usage) => match usage {
-                PlaceUsage::Copy => write!(f, "C({})", place),
-                PlaceUsage::Move => write!(f, "{}", place),
+                PlaceUsage::Copy => write!(f, "C({place})"),
+                PlaceUsage::Move => write!(f, "{place}"),
             },
-            Operand::Const(constant) => write!(f, "Const::{:?}", constant),
-            Operand::Symbolic(symbolic) => write!(f, "Symbolic::{:?}", symbolic),
+            Operand::Const(constant) => write!(f, "Const::{constant:?}"),
+            Operand::Symbolic(symbolic) => write!(f, "Symbolic::{symbolic:?}"),
         }
     }
 }
 
 impl Display for BinaryOp {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         f.write_str(match self {
             BinaryOp::Add => "+",
             BinaryOp::Sub => "-",
@@ -426,7 +426,7 @@ impl Display for BinaryOp {
 }
 
 impl Display for UnaryOp {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         f.write_str(match self {
             UnaryOp::Not => "!",
             UnaryOp::Neg => "-",
@@ -435,7 +435,5 @@ impl Display for UnaryOp {
 }
 
 fn comma_separated<T: Display>(iter: impl Iterator<Item = T>) -> String {
-    iter.map(|t| format!("{}", t))
-        .collect::<Vec<_>>()
-        .join(", ")
+    iter.map(|t| format!("{t}")).collect::<Vec<_>>().join(", ")
 }

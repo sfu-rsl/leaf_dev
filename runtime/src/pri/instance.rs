@@ -2,6 +2,7 @@ use super::utils::{DefaultRefManager, RefManager, UnsafeSync};
 use super::{BranchingInfo, OperandRef, PlaceRef};
 use crate::abs::backend::{OperandHandler, PlaceHandler, RuntimeBackend};
 
+#[allow(unused_imports)] // Mutex is detected as unused unless runtime_access is set to safe_mt
 use std::{
     cell::RefCell,
     sync::{Mutex, Once},

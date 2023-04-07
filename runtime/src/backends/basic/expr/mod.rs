@@ -87,11 +87,7 @@ impl ConstValue {
                     size: *size,
                     is_signed: true,
                 },
-                Self::Float {
-                    bit_rep,
-                    ebits,
-                    sbits,
-                } => unimplemented!(),
+                Self::Float { .. } => unimplemented!(),
                 _ => unreachable!("Negation of non-numeric constant is not possible."),
             },
             UnaryOp::Not => match this {
@@ -140,18 +136,7 @@ impl ConstValue {
                         is_signed: *first_signed,
                     }
                 }
-                (
-                    Self::Float {
-                        bit_rep: first,
-                        ebits: first_ebits,
-                        sbits: first_sbits,
-                    },
-                    Self::Float {
-                        bit_rep: second,
-                        ebits: second_ebits,
-                        sbits: second_sbits,
-                    },
-                ) => unimplemented!(),
+                (Self::Float { .. }, Self::Float { .. }) => unimplemented!(),
                 _ => unreachable!("Addition only works on integers."),
             },
             _ => unimplemented!("{:?} {:?} {:?}", first, second, operator),

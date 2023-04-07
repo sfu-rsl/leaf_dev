@@ -70,11 +70,11 @@ impl RuntimeBackend for BasicBackend {
 
     type Operand = Operand;
 
-    fn place<'a>(&'a mut self) -> Self::PlaceHandler<'a> {
+    fn place(&mut self) -> Self::PlaceHandler<'_> {
         DefaultPlaceHandler
     }
 
-    fn operand<'a>(&'a mut self) -> Self::OperandHandler<'a> {
+    fn operand(&mut self) -> Self::OperandHandler<'_> {
         DefaultOperandHandler
     }
 
@@ -98,7 +98,7 @@ impl RuntimeBackend for BasicBackend {
         )
     }
 
-    fn func_control<'a>(&'a mut self) -> Self::FunctionHandler<'a> {
+    fn func_control(&mut self) -> Self::FunctionHandler<'_> {
         BasicFunctionHandler::new(&mut self.call_stack_manager)
     }
 }
@@ -152,7 +152,7 @@ impl AssignmentHandler for BasicAssignmentHandler<'_> {
         todo!()
     }
 
-    fn address_of(self, place: Self::Place, is_mutable: bool) {
+    fn address_of(self, _place: Self::Place, _is_mutable: bool) {
         todo!()
     }
 
@@ -216,7 +216,7 @@ impl AssignmentHandler for BasicAssignmentHandler<'_> {
         self.set_value(value)
     }
 
-    fn float_cast_of(self, operand: Self::Operand, bits: u64) {
+    fn float_cast_of(self, _operand: Self::Operand, _bits: u64) {
         todo!()
     }
 
@@ -229,7 +229,7 @@ impl AssignmentHandler for BasicAssignmentHandler<'_> {
         operator: crate::abs::BinaryOp,
         first: Self::Operand,
         second: Self::Operand,
-        checked: bool,
+        _checked: bool,
     ) {
         // TODO: Add support for checked operations.
 
@@ -512,8 +512,8 @@ impl FunctionHandler for BasicFunctionHandler<'_> {
 
     fn call(
         self,
-        func: Self::Operand,
-        args: impl Iterator<Item = Self::Operand>,
+        _func: Self::Operand,
+        _args: impl Iterator<Item = Self::Operand>,
         result_dest: Self::Place,
     ) {
         // TODO: Put arguments in the variables state.
@@ -552,7 +552,7 @@ impl MutableVariablesState {
 
     pub fn take_place(&mut self, place: &Place) -> ValueRef {
         self.try_take_place(place)
-            .expect(Self::get_err_message(&place.local()).as_str())
+            .unwrap_or_else(|| panic!("{}", Self::get_err_message(&place.local())))
     }
 
     pub fn try_take_place(&mut self, place: &Place) -> Option<ValueRef> {
@@ -600,9 +600,9 @@ impl MutableVariablesState {
             Value::Concrete(ConcreteValue::Adt(AdtValue {
                 kind: AdtKind::Struct,
                 ref mut fields,
-            })) => (&mut fields[field as usize])
+            })) => fields[field as usize]
                 .take()
-                .expect((format!("Field should not be moved before. {field}")).as_str()),
+                .unwrap_or_else(|| panic!("Field should not be moved before. {field}")),
             Value::Symbolic(_) => {
                 unimplemented!("Partial move on symbolic values is not currently supported.")
             }
@@ -610,7 +610,7 @@ impl MutableVariablesState {
         }
     }
 
-    fn get_place<'b>(&self, place: &Place) -> &ValueRef {
+    fn get_place(&self, place: &Place) -> &ValueRef {
         self.get_place_iter(place.local(), place.projections.iter())
     }
 
@@ -625,20 +625,20 @@ impl MutableVariablesState {
         let host = &self
             .locals
             .get(&local)
-            .expect(Self::get_err_message(&local).as_str());
+            .unwrap_or_else(|| panic!("{}", Self::get_err_message(&local)));
         self.apply_projs(host, projs)
     }
 
     fn apply_projs<'a, 'b>(
         &'a self,
         host: &'a ValueRef,
-        mut projs: impl Iterator<Item = &'b Projection>,
+        projs: impl Iterator<Item = &'b Projection>,
     ) -> &'_ ValueRef
     where
         'a: 'b,
     {
         let mut current = host;
-        while let Some(proj) = projs.next() {
+        for proj in projs {
             let concrete = match current.as_ref() {
                 Value::Symbolic(_) => {
                     unimplemented!("Projectable symbolic values are not supported yet.")
@@ -656,19 +656,18 @@ impl MutableVariablesState {
                     _ => panic!("{err}"),
                 },
                 Projection::Field(field) => match concrete {
-                    ConcreteValue::Adt(AdtValue { fields, .. }) => (&fields[*field as usize])
+                    ConcreteValue::Adt(AdtValue { fields, .. }) => fields[*field as usize]
                         .as_ref()
-                        .expect((format!("Field should not be moved before. {field}")).as_str()),
+                        .unwrap_or_else(|| panic!("Field should not be moved before. {field}")),
                     _ => panic!("{err}"),
                 },
                 Projection::Index(index) => match concrete {
                     ConcreteValue::Array(ArrayValue { elements }) => {
-                        let index = self.copy_place(&index);
+                        let index = self.copy_place(index);
                         match index.as_ref() {
                             Value::Concrete(ConcreteValue::Const(ConstValue::Int {
                                 bit_rep,
-                                size,
-                                is_signed,
+                                ..
                             })) => &elements[*bit_rep as usize],
                             Value::Symbolic(_) => {
                                 todo!("Symbolic array index is not supported yet.")
@@ -679,9 +678,7 @@ impl MutableVariablesState {
                     _ => panic!("{err}"),
                 },
                 Projection::ConstantIndex {
-                    offset,
-                    min_length,
-                    from_end,
+                    offset, from_end, ..
                 } => match concrete {
                     ConcreteValue::Array(ArrayValue { elements }) => {
                         let offset = *offset as usize;
@@ -693,7 +690,7 @@ impl MutableVariablesState {
                     }
                     _ => panic!("{err}"),
                 },
-                Projection::Subslice { from, to, from_end } => todo!(),
+                Projection::Subslice { .. } => todo!(),
                 Projection::Downcast(_) => todo!(),
                 Projection::OpaqueCast => todo!(),
             };
@@ -705,10 +702,10 @@ impl MutableVariablesState {
         self.mut_place_iter(place.local(), &place.projections, mutate);
     }
 
-    fn mut_place_iter<'a, 'b>(
-        &'a mut self,
+    fn mut_place_iter(
+        &mut self,
         local: Local,
-        projs: &'b [Projection],
+        projs: &[Projection],
         mutate: impl FnOnce(&Self, &mut ValueRef),
     ) {
         // FIXME: Is there a way to avoid vector allocation?
@@ -739,7 +736,7 @@ impl MutableVariablesState {
         let mut local_value = self
             .locals
             .remove(&local)
-            .expect(Self::get_err_message(&local).as_str());
+            .unwrap_or_else(|| panic!("{}", Self::get_err_message(&local)));
         let value = self.apply_projs_mut(&mut local_value, projs.iter());
         mutate(self, value);
         self.locals.insert(local, local_value);
@@ -748,20 +745,20 @@ impl MutableVariablesState {
     fn apply_projs_mut<'a, 'b>(
         &'a self,
         host: &'a mut ValueRef,
-        mut projs: impl Iterator<Item = &'b Projection>,
+        projs: impl Iterator<Item = &'b Projection>,
     ) -> &'_ mut ValueRef
     where
         'a: 'b,
     {
         let mut current = host;
-        while let Some(proj) = projs.next() {
+        for proj in projs {
             /* NOTE: Alive copies on projectable types does not seem to be possible.
              * For compound types, it is not observed in the MIR. Only immutable ref
              * can be copied, which is not possible to be given to this function.
              * Therefore, we expect that make_mut is not going to clone when there
              * are some projections.
              */
-            let original_addr = ValueRef::as_ptr(&current);
+            let original_addr = ValueRef::as_ptr(current);
             let current_value = ValueRef::make_mut(current);
             debug_assert_eq!(original_addr, current_value);
             let concrete = match current_value {
@@ -779,9 +776,9 @@ impl MutableVariablesState {
                     panic!("Deref is not expected to be here. Consider calling get_place_mut.")
                 }
                 Projection::Field(field) => match concrete {
-                    ConcreteValue::Adt(AdtValue { fields, .. }) => (&mut fields[*field as usize])
+                    ConcreteValue::Adt(AdtValue { fields, .. }) => fields[*field as usize]
                         .as_mut()
-                        .expect((format!("Field should not be moved before. {field}")).as_str()),
+                        .unwrap_or_else(|| panic!("Field should not be moved before. {field}")),
                     _ => panic!("{err}"),
                 },
                 Projection::Index(index) => match concrete {
@@ -794,8 +791,7 @@ impl MutableVariablesState {
                         match index.as_ref() {
                             Value::Concrete(ConcreteValue::Const(ConstValue::Int {
                                 bit_rep,
-                                size,
-                                is_signed,
+                                ..
                             })) => &mut elements[*bit_rep as usize],
                             Value::Symbolic(_) => {
                                 todo!("Symbolic array index is not supported yet.")
@@ -806,9 +802,7 @@ impl MutableVariablesState {
                     _ => panic!("{err}"),
                 },
                 Projection::ConstantIndex {
-                    offset,
-                    min_length,
-                    from_end,
+                    offset, from_end, ..
                 } => match concrete {
                     ConcreteValue::Array(ArrayValue { elements }) => {
                         let offset = *offset as usize;
@@ -821,7 +815,7 @@ impl MutableVariablesState {
                     }
                     _ => panic!("{err}"),
                 },
-                Projection::Subslice { from, to, from_end } => todo!(),
+                Projection::Subslice { .. } => todo!(),
                 Projection::Downcast(_) => todo!(),
                 Projection::OpaqueCast => todo!(),
             };
@@ -831,7 +825,7 @@ impl MutableVariablesState {
 
     #[inline]
     fn get_err_message(local: &Local) -> String {
-        format!("Uninitialized, moved, or invalid local. {}", local)
+        format!("Uninitialized, moved, or invalid local. {local}")
     }
 }
 
@@ -918,7 +912,7 @@ fn get_constant_value(constant: &operand::Constant) -> ConstValue {
             ebits: *ebits,
             sbits: *sbits,
         },
-        operand::Constant::Str(value) => ConstValue::Str(*value),
+        operand::Constant::Str(value) => ConstValue::Str(value),
         operand::Constant::Func(value) => ConstValue::Func(*value),
     }
 }

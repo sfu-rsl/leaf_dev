@@ -51,9 +51,7 @@ use rustc_span::{
     symbol::{Ident, Symbol},
     DUMMY_SP,
 };
-use std::{borrow::BorrowMut, path::PathBuf};
-
-use crate::pass::LeafPass;
+use std::path::PathBuf;
 
 pub struct RunCompiler;
 
@@ -67,7 +65,7 @@ impl RunCompiler {
         let home = option_env!("RUSTUP_HOME").or(option_env!("MULTIRUST_HOME"));
         let toolchain = option_env!("RUSTUP_TOOLCHAIN").or(option_env!("MULTIRUST_TOOLCHAIN"));
         let sysroot = match (home, toolchain) {
-            (Some(home), Some(toolchain)) => format!("{}/toolchains/{}", home, toolchain),
+            (Some(home), Some(toolchain)) => format!("{home}/toolchains/{toolchain}"),
             _ => option_env!("RUST_SYSROOT")
                 .expect("To build without rustup, set the `RUST_SYSROOT` env var at build time")
                 .to_owned(),
@@ -101,9 +99,7 @@ impl RunCompiler {
                 args.push(String::from("--extern"));
                 args.push(format!(
                     "runtime={}",
-                    path.join(file_name.file_name())
-                        .to_string_lossy()
-                        .to_string()
+                    path.join(file_name.file_name()).to_string_lossy()
                 ));
             });
 
@@ -122,11 +118,8 @@ impl RunCompiler {
             },
         };
         rustc_driver::install_ice_hook();
-        let exit_code = rustc_driver::catch_with_exit_code(|| {
-            rustc_driver::RunCompiler::new(args, &mut cb).run()
-        });
 
-        exit_code
+        rustc_driver::catch_with_exit_code(|| rustc_driver::RunCompiler::new(args, &mut cb).run())
     }
 }
 
@@ -218,16 +211,12 @@ impl rustc_driver::Callbacks for Callbacks {
 }
 
 impl Callbacks {
-    fn pass_through_leaf<'tcx>(
-        &self,
-        compiler: &rustc_interface::interface::Compiler,
-        tcx: TyCtxt<'tcx>,
-    ) {
+    fn pass_through_leaf(&self, _compiler: &rustc_interface::interface::Compiler, tcx: TyCtxt<'_>) {
         use rustc_middle::mir::MirPass;
-        let pass: Box<dyn MirPass> = Box::new(pass::LeafPass {});
+        let _pass: Box<dyn MirPass> = Box::new(pass::LeafPass {});
 
         for local_def_id in tcx.hir().body_owners() {
-            let def_id = local_def_id.to_def_id();
+            let _def_id = local_def_id.to_def_id();
             // let id: WithOptConstParam<LocalDefId> = rustc_middle::ty::WithOptConstParam::unknown(def_id);
             // let def = rustc_middle::ty::InstanceDef::Item(id);
             // let body = tcx.mir_borrowck_opt_const_arg(id).borrow_mut();
@@ -269,11 +258,11 @@ impl Callbacks {
     // https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/mir/struct.BasicBlockData.html
     fn visit_basic_block(&mut self, basic_block: &mir::BasicBlockData) {
         for statement in &basic_block.statements {
-            self.visit_statement(&statement);
+            self.visit_statement(statement);
         }
     }
 
-    fn visit_statement(&mut self, statement: &mir::Statement) {
+    fn visit_statement(&mut self, _statement: &mir::Statement) {
         // Note: According to https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/mir/enum.StatementKind.html
         // not all StatementKinds are allowed at every MirPhase
         if let LeafConfig::UnitTest = &mut self.config {
@@ -289,7 +278,7 @@ fn local_optimized_mir<'tcx>(
     let mut providers = Providers::default();
     rustc_mir_transform::provide(&mut providers);
     // Cloning here is probably not ideal but couldn't find a different way
-    let mut body = (providers.optimized_mir)(tcx, opt_mir).clone();
+    let body = (providers.optimized_mir)(tcx, opt_mir).clone();
 
     let mut body = tcx.alloc_steal_mir(body).steal();
     use rustc_middle::mir::MirPass;
@@ -300,7 +289,7 @@ fn local_optimized_mir<'tcx>(
 }
 
 /*
- * TODO: Bring this back.
+ * //TODO: Bring this back.
 fn extern_optimized_mir<'tcx>(
     tcx: TyCtxt<'tcx>,
     opt_mir: query::query_keys::optimized_mir<'tcx>,

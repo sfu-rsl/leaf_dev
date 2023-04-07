@@ -227,7 +227,7 @@ impl<C> RuntimeCallAdder<C> {
         RuntimeCallAdder {
             context: AtLocationContext {
                 base: &mut self.context,
-                location: location,
+                location,
             },
         }
     }
@@ -500,7 +500,7 @@ where
                 ))
                 .prepend(additional_blocks)
             }
-            Operand::Constant(constant) => self.internal_reference_const_operand(&constant),
+            Operand::Constant(constant) => self.internal_reference_const_operand(constant),
         }
     }
 
@@ -524,10 +524,8 @@ where
         match value {
             ConstValue::Scalar(scalar) => self.internal_reference_scalar_const_operand(scalar, ty),
             ConstValue::ZeroSized => self.internal_reference_zero_sized_const_operand(ty),
-            ConstValue::Slice { .. } => {
-                self.internal_reference_slice_const_operand(value.clone(), ty)
-            }
-            ConstValue::ByRef { alloc, offset } => todo!(),
+            ConstValue::Slice { .. } => self.internal_reference_slice_const_operand(value, ty),
+            ConstValue::ByRef { .. } => todo!(),
         }
     }
 
@@ -552,7 +550,7 @@ where
                 stringify!(pri::ref_operand_const_bool),
                 vec![operand::const_from_scalar_int(
                     self.context.tcx(),
-                    scalar.clone(),
+                    scalar,
                     ty,
                 )],
             )
@@ -594,7 +592,7 @@ where
                 stringify!(pri::ref_operand_const_char),
                 vec![operand::const_from_scalar_int(
                     self.context.tcx(),
-                    scalar.clone(),
+                    scalar,
                     ty,
                 )],
             )
@@ -730,7 +728,7 @@ where
 
         if ty.is_integral() {
             let is_signed = ty.is_signed();
-            let bits = utils::ty::size_of(tcx, ty).bits();
+            let bits = size_of(tcx, ty).bits();
 
             self.add_bb_for_assign_call(
                 stringify!(pri::assign_cast_integer),
@@ -747,7 +745,7 @@ where
         };
     }
 
-    fn by_cast(&mut self, operand: OperandRef, is_to_float: bool, size: u64) {
+    fn by_cast(&mut self, _operand: OperandRef, _is_to_float: bool, _size: u64) {
         todo!()
     }
 
@@ -870,8 +868,7 @@ where
         T: Debug,
     {
         let local = self.context.add_local(enum_ty);
-        let statements =
-            enums::set_variant_to_local(enum_ty, format!("{:?}", value).as_str(), local);
+        let statements = enums::set_variant_to_local(enum_ty, format!("{value:?}").as_str(), local);
         (local, statements)
     }
 }
@@ -1057,7 +1054,7 @@ where
             self.context.tcx(),
             &mut self.context,
             value_ty,
-            non_values.map(|nv| value_to_operand(nv)).collect(),
+            non_values.map(value_to_operand).collect(),
         )
     }
 }
@@ -1187,7 +1184,7 @@ impl<'tcx> From<(BasicBlockData<'tcx>, Local)> for BlocksAndResult<'tcx> {
 }
 
 mod utils {
-    use runtime::pri;
+
     use rustc_middle::{
         mir::{self, Local, Operand, Place, Statement},
         ty::{Ty, TyCtxt},
@@ -1222,7 +1219,7 @@ mod utils {
             .unwrap()
         }
 
-        pub fn const_from_uint<'tcx, T>(tcx: TyCtxt<'tcx>, value: T) -> Operand<'tcx>
+        pub fn const_from_uint<T>(tcx: TyCtxt, value: T) -> Operand
         where
             T: Into<u128>,
         {
@@ -1234,11 +1231,11 @@ mod utils {
             )
         }
 
-        pub fn const_from_bool<'tcx>(tcx: TyCtxt<'tcx>, value: bool) -> Operand<'tcx> {
+        pub fn const_from_bool(tcx: TyCtxt, value: bool) -> Operand {
             const_from_scalar_int(tcx, ScalarInt::from(value), tcx.types.bool)
         }
 
-        pub fn const_from_char<'tcx>(tcx: TyCtxt<'tcx>, value: char) -> Operand<'tcx> {
+        pub fn const_from_char(tcx: TyCtxt, value: char) -> Operand {
             const_from_scalar_int(tcx, ScalarInt::from(value), tcx.types.char)
         }
 
@@ -1250,10 +1247,7 @@ mod utils {
             Operand::const_from_scalar(tcx, ty, Scalar::Int(value), DUMMY_SP)
         }
 
-        pub fn const_from_scalar_int_unsigned<'tcx>(
-            tcx: TyCtxt<'tcx>,
-            value: ScalarInt,
-        ) -> Operand<'tcx> {
+        pub fn const_from_scalar_int_unsigned(tcx: TyCtxt, value: ScalarInt) -> Operand {
             // value must be unsigned
             let ty = tcx.mk_mach_uint(uint_ty_from_bytes(value.size().bytes_usize()));
             Operand::const_from_scalar(tcx, ty, Scalar::Int(value), DUMMY_SP)
@@ -1272,7 +1266,7 @@ mod utils {
             if copy {
                 Operand::Copy(place)
             } else {
-                Operand::Move(Place::from(place))
+                Operand::Move(place)
             }
         }
     }
@@ -1308,7 +1302,7 @@ mod utils {
             vec![deinit, disc]
         }
 
-        pub fn get_variant_index_by_name<'tcx>(ty: Ty<'tcx>, variant_name: &str) -> VariantIdx {
+        pub fn get_variant_index_by_name(ty: Ty, variant_name: &str) -> VariantIdx {
             let adt_def = match ty.kind() {
                 TyKind::Adt(def, _) => def,
                 _ => unreachable!(),
@@ -1317,25 +1311,22 @@ mod utils {
                 .variants()
                 .iter()
                 .find(|d| d.name.as_str() == variant_name)
-                .expect(
-                    format!("Variant could not be found with name `{}`.", variant_name).as_str(),
-                );
+                .unwrap_or_else(|| {
+                    panic!("Variant could not be found with name `{variant_name}`.")
+                });
             adt_def.variant_index_with_id(def.def_id)
         }
     }
 
     pub mod assignment {
 
-        use rustc_middle::mir::{Local, Place, Rvalue, SourceInfo, Statement, StatementKind};
+        use rustc_middle::mir::{Place, Rvalue, SourceInfo, Statement, StatementKind};
         use rustc_span::DUMMY_SP;
 
         pub mod rvalue {
-            use super::super::operand;
+
             use rustc_middle::{
-                mir::{
-                    AggregateKind, BorrowKind, CastKind, Local, Operand, Place, Rvalue, SourceInfo,
-                    Statement, StatementKind,
-                },
+                mir::{AggregateKind, BorrowKind, CastKind, Operand, Place, Rvalue},
                 ty::{adjustment::PointerCast, Ty, TyCtxt},
             };
 
@@ -1343,11 +1334,7 @@ mod utils {
                 Rvalue::Ref(tcx.lifetimes.re_erased, BorrowKind::Shared, target)
             }
 
-            pub fn cast_to_unsize<'tcx>(
-                tcx: TyCtxt<'tcx>,
-                operand: Operand<'tcx>,
-                to_ty: Ty<'tcx>,
-            ) -> Rvalue<'tcx> {
+            pub fn cast_to_unsize<'tcx>(operand: Operand<'tcx>, to_ty: Ty<'tcx>) -> Rvalue<'tcx> {
                 Rvalue::Cast(CastKind::Pointer(PointerCast::Unsize), operand, to_ty)
             }
 
@@ -1403,7 +1390,7 @@ mod utils {
         let cast_local = local_manager.add_local(slice_ty);
         let cast_assign = assignment::create(
             Place::from(cast_local),
-            rvalue::cast_to_unsize(tcx, operand::move_for_local(ref_local), slice_ty),
+            rvalue::cast_to_unsize(operand::move_for_local(ref_local), slice_ty),
         );
 
         (cast_local, [array_assign, ref_assign, cast_assign])

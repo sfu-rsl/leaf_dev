@@ -156,25 +156,22 @@ impl<'tcx, C> StatementKindVisitor<'tcx, ()> for LeafStatementKindVisitor<C>
 where
     C: ctxtreqs::ForPlaceRef<'tcx> + ctxtreqs::ForOperandRef<'tcx>,
 {
-    fn visit_assign(&mut self, place: &Place<'tcx>, rvalue: &Rvalue<'tcx>) -> () {
+    fn visit_assign(&mut self, place: &Place<'tcx>, rvalue: &Rvalue<'tcx>) {
         VisitorFactory::make_assignment_visitor(&mut self.call_adder, place).visit_rvalue(rvalue)
     }
 
-    fn visit_set_discriminant(&mut self, place: &Place<'tcx>, variant_index: &VariantIdx) -> () {
+    fn visit_set_discriminant(&mut self, place: &Place<'tcx>, variant_index: &VariantIdx) {
         let destination = self.call_adder.reference_place(place);
         self.call_adder
             .assign(destination)
             .its_discriminant_to(variant_index)
     }
 
-    fn visit_deinit(&mut self, place: &Place<'tcx>) -> () {
+    fn visit_deinit(&mut self, _place: &Place<'tcx>) {
         Default::default()
     }
 
-    fn visit_intrinsic(
-        &mut self,
-        intrinsic: &rustc_middle::mir::NonDivergingIntrinsic<'tcx>,
-    ) -> () {
+    fn visit_intrinsic(&mut self, _intrinsic: &rustc_middle::mir::NonDivergingIntrinsic<'tcx>) {
         Default::default()
     }
 }
@@ -189,7 +186,7 @@ where
         + ctxtreqs::ForFunctionCalling<'tcx>
         + ctxtreqs::ForReturning<'tcx>,
 {
-    fn visit_switch_int(&mut self, discr: &Operand<'tcx>, targets: &mir::SwitchTargets) -> () {
+    fn visit_switch_int(&mut self, discr: &Operand<'tcx>, targets: &mir::SwitchTargets) {
         let switch_info = self.call_adder.store_branching_info(discr);
         let mut call_adder = self.call_adder.branch(switch_info);
         for (value, target) in targets.iter() {
@@ -197,44 +194,44 @@ where
         }
         call_adder
             .at(targets.otherwise())
-            .take_otherwise(targets.iter().map(|v| v.0).into_iter());
+            .take_otherwise(targets.iter().map(|v| v.0));
     }
 
-    fn visit_resume(&mut self) -> () {
+    fn visit_resume(&mut self) {
         Default::default()
     }
 
-    fn visit_abort(&mut self) -> () {
+    fn visit_abort(&mut self) {
         Default::default()
     }
 
-    fn visit_return(&mut self) -> () {
+    fn visit_return(&mut self) {
         self.call_adder.return_from_func();
     }
 
-    fn visit_unreachable(&mut self) -> () {
+    fn visit_unreachable(&mut self) {
         Default::default()
     }
 
     fn visit_drop(
         &mut self,
-        place: &Place<'tcx>,
-        target: &BasicBlock,
-        unwind: &Option<BasicBlock>,
-    ) -> () {
+        _place: &Place<'tcx>,
+        _target: &BasicBlock,
+        _unwind: &Option<BasicBlock>,
+    ) {
         Default::default()
     }
 
     fn visit_call(
         &mut self,
         func: &Operand<'tcx>,
-        args: &Vec<Operand<'tcx>>,
+        args: &[Operand<'tcx>],
         destination: &Place<'tcx>,
-        target: &Option<BasicBlock>,
-        cleanup: &Option<BasicBlock>,
-        from_hir_call: bool,
-        fn_span: rustc_span::Span,
-    ) -> () {
+        _target: &Option<BasicBlock>,
+        _cleanup: &Option<BasicBlock>,
+        _from_hir_call: bool,
+        _fn_span: rustc_span::Span,
+    ) {
         let func_ref = self.call_adder.reference_operand(func);
         let arg_refs = args
             .iter()
@@ -247,38 +244,38 @@ where
 
     fn visit_assert(
         &mut self,
-        cond: &Operand<'tcx>,
-        expected: &bool,
-        msg: &mir::AssertMessage<'tcx>,
-        target: &BasicBlock,
-        cleanup: &Option<BasicBlock>,
-    ) -> () {
+        _cond: &Operand<'tcx>,
+        _expected: &bool,
+        _msg: &mir::AssertMessage<'tcx>,
+        _target: &BasicBlock,
+        _cleanup: &Option<BasicBlock>,
+    ) {
         Default::default()
     }
 
     fn visit_yield(
         &mut self,
-        value: &Operand<'tcx>,
-        resume: &BasicBlock,
-        resume_arg: &Place<'tcx>,
-        drop: &Option<BasicBlock>,
-    ) -> () {
+        _value: &Operand<'tcx>,
+        _resume: &BasicBlock,
+        _resume_arg: &Place<'tcx>,
+        _drop: &Option<BasicBlock>,
+    ) {
         Default::default()
     }
 
-    fn visit_generator_drop(&mut self) -> () {
+    fn visit_generator_drop(&mut self) {
         Default::default()
     }
 
     fn visit_inline_asm(
         &mut self,
-        template: &&[rustc_ast::InlineAsmTemplatePiece],
-        operands: &Vec<mir::InlineAsmOperand<'tcx>>,
-        options: &rustc_ast::InlineAsmOptions,
-        line_spans: &'tcx [rustc_span::Span],
-        destination: &Option<BasicBlock>,
-        cleanup: &Option<BasicBlock>,
-    ) -> () {
+        _template: &&[rustc_ast::InlineAsmTemplatePiece],
+        _operands: &[mir::InlineAsmOperand<'tcx>],
+        _options: &rustc_ast::InlineAsmOptions,
+        _line_spans: &'tcx [rustc_span::Span],
+        _destination: &Option<BasicBlock>,
+        _cleanup: &Option<BasicBlock>,
+    ) {
         Default::default()
     }
 }
@@ -421,7 +418,7 @@ where
         self.call_adder.by_discriminant(place_ref)
     }
 
-    fn visit_aggregate(&mut self, kind: &Box<mir::AggregateKind>, operands: &Vec<Operand<'tcx>>) {
+    fn visit_aggregate(&mut self, kind: &Box<mir::AggregateKind>, operands: &[Operand<'tcx>]) {
         // Based on compiler documents it is the only possible type that can reach here.
         assert!(matches!(kind, box mir::AggregateKind::Array(_)));
 
@@ -432,11 +429,15 @@ where
         self.call_adder.by_aggregate_array(items.as_slice())
     }
 
-    fn visit_shallow_init_box(&mut self, operand: &Operand<'tcx>, ty: &rustc_middle::ty::Ty<'tcx>) {
+    fn visit_shallow_init_box(
+        &mut self,
+        _operand: &Operand<'tcx>,
+        _ty: &rustc_middle::ty::Ty<'tcx>,
+    ) {
         todo!("Not sure yet.")
     }
 
-    fn visit_copy_for_deref(&mut self, place: &Place<'tcx>) {
+    fn visit_copy_for_deref(&mut self, _place: &Place<'tcx>) {
         todo!("Not sure yet.")
     }
 }
@@ -448,7 +449,7 @@ where
     fn visit_binary_op_general(
         &mut self,
         op: &mir::BinOp,
-        operands: &Box<(Operand<'tcx>, Operand<'tcx>)>,
+        operands: &(Operand<'tcx>, Operand<'tcx>),
         checked: bool,
     ) {
         let first_ref = self.call_adder.reference_operand(&operands.0);
