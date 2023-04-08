@@ -279,13 +279,13 @@ pub(super) enum SymValue {
 
 impl SymValue {
     #[inline]
-    pub fn as_value(self) -> Value {
+    pub fn into_value(self) -> Value {
         Value::Symbolic(self)
     }
 
     #[inline]
-    pub fn as_value_ref(self) -> SymValueRef {
-        SymValueGuard::new(ValueRef::new(self.as_value()))
+    pub fn into_value_ref(self) -> SymValueRef {
+        SymValueGuard::new(ValueRef::new(self.into_value()))
     }
 }
 
@@ -362,13 +362,13 @@ pub(super) enum Expr {
 
 impl Expr {
     #[inline]
-    pub fn as_sym_value(self) -> SymValue {
+    pub fn into_sym_value(self) -> SymValue {
         SymValue::Expression(self)
     }
 
     #[inline]
-    pub fn as_value_ref(self) -> SymValueRef {
-        self.as_sym_value().as_value_ref()
+    pub fn into_value_ref(self) -> SymValueRef {
+        self.into_sym_value().into_value_ref()
     }
 }
 

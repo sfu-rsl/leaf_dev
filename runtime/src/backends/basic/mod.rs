@@ -433,7 +433,7 @@ macro_rules! impl_general_branch_taking_handler {
                     }
 
                     let expr = self.create_equality_expr(value as u128, true);
-                    let constraint = Constraint::Bool(expr.as_value_ref().0);
+                    let constraint = Constraint::Bool(expr.into_value_ref().0);
                     self.parent.notify_constraint(constraint);
                 }
 
@@ -451,12 +451,12 @@ macro_rules! impl_general_branch_taking_handler {
                             .map(|v| self.create_equality_expr(*v, false))
                             .reduce(|acc, e| Expr::Binary {
                                 operator: BinaryOp::BitAnd,
-                                first: acc.as_value_ref(),
-                                second: e.as_value_ref().0,
+                                first: acc.into_value_ref(),
+                                second: e.into_value_ref().0,
                                 is_flipped: false,
                             })
                             .unwrap()
-                            .as_value_ref()
+                            .into_value_ref()
                             .0,
                     );
                     self.parent.notify_constraint(constraint);
