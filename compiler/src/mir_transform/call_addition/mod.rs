@@ -104,9 +104,9 @@ macro_rules! make_local_wrapper {
                 Self(value)
             }
         }
-        impl Into<Local> for $name {
-            fn into(self) -> Local {
-                self.0
+        impl From<$name> for Local {
+            fn from(value: $name) -> Self {
+                value.0
             }
         }
     };
