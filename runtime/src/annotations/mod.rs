@@ -7,7 +7,7 @@ use paste::paste;
 pub trait Symbolizable: Sized {
     fn symbolize();
 
-    fn and_symbolically(self) -> Self {
+    fn mark_symbolic(self) -> Self {
         Self::symbolize();
         self
     }

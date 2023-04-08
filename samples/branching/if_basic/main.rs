@@ -1,7 +1,7 @@
 use runtime::annotations::Symbolizable;
 
 fn main() {
-    let x = get_num().as_symbolic();
+    let x = get_num().mark_symbolic();
     let y = get_num();
 
     let condition = x == 5;
