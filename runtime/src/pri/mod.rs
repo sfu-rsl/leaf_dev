@@ -2,9 +2,9 @@ mod instance;
 mod utils;
 
 use crate::abs::{
-    AssignmentHandler, BasicBlockIndex, BinaryOp, BranchTakingHandler, BranchingHandler,
-    ConstantHandler, FunctionHandler, AssertionHandler, Local, OperandHandler, PlaceHandler, PlaceProjectionHandler,
-    UnaryOp, VariantIndex,
+    AssignmentHandler, BasicBlockIndex, BinaryOp, BranchHandler, BranchTakingHandler,
+    ConditionalBranchHandler, ConstantHandler, FunctionHandler, Local, OperandHandler,
+    PlaceHandler, PlaceProjectionHandler, UnaryOp, VariantIndex,
 };
 
 use self::instance::*;
@@ -164,31 +164,31 @@ pub fn assign_aggregate_array(dest: PlaceRef, items: &[OperandRef]) {
 }
 
 pub fn take_branch_true(info: BranchingInfo) {
-    branch(info, |h| h.on_bool().take(true))
+    conditional(info, |h| h.on_bool().take(true))
 }
 pub fn take_branch_false(info: BranchingInfo) {
-    branch(info, |h| h.on_bool().take(false))
+    conditional(info, |h| h.on_bool().take(false))
 }
 
 pub fn take_branch_int(info: BranchingInfo, value_bit_rep: u128) {
-    branch(info, |h| h.on_int().take(value_bit_rep))
+    conditional(info, |h| h.on_int().take(value_bit_rep))
 }
 pub fn take_branch_ow_int(info: BranchingInfo, non_values: &[u128]) {
-    branch(info, |h| h.on_int().take_otherwise(non_values))
+    conditional(info, |h| h.on_int().take_otherwise(non_values))
 }
 
 pub fn take_branch_char(info: BranchingInfo, value: char) {
-    branch(info, |h| h.on_char().take(value))
+    conditional(info, |h| h.on_char().take(value))
 }
 pub fn take_branch_ow_char(info: BranchingInfo, non_values: &[u128]) {
-    branch(info, |h| h.on_char().take_otherwise(non_values))
+    conditional(info, |h| h.on_char().take_otherwise(non_values))
 }
 
 pub fn take_branch_enum_discriminant(info: BranchingInfo, index: VariantIndex) {
-    branch(info, |h| h.on_enum().take(index))
+    conditional(info, |h| h.on_enum().take(index))
 }
 pub fn take_branch_ow_enum_discriminant(info: BranchingInfo, non_indices: &[VariantIndex]) {
-    branch(info, |h| h.on_enum().take_otherwise(non_indices))
+    conditional(info, |h| h.on_enum().take_otherwise(non_indices))
 }
 
 pub fn call_func(func: OperandRef, args: &[OperandRef], destination: PlaceRef) {
@@ -204,13 +204,8 @@ pub fn return_from_func() {
     func_control(|h| h.ret())
 }
 
-pub fn check_assert(cond: OperandRef, expected: bool/*, assert_kind: &str*/) {
-    assert_control(|h| {
-        h.assert(
-            take_back_operand_ref(cond),
-            expected,
-        )
-    })
+pub fn check_assert(cond: OperandRef, expected: bool /*, assert_kind: &str*/) {
+    branch(|h| h.assert(take_back_operand_ref(cond), expected))
 }
 
 pub struct BranchingInfo {

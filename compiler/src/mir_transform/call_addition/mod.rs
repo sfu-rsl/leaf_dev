@@ -188,11 +188,7 @@ pub trait EntryFunctionHandler {
 }
 
 pub trait AssertionHandler {
-    fn check_assert(
-        &mut self,
-        cond: OperandRef,
-        expected: bool,
-    );
+    fn check_assert(&mut self, cond: OperandRef, expected: bool);
 }
 
 pub struct RuntimeCallAdder<C> {
@@ -1092,9 +1088,9 @@ where
             vec![
                 operand::move_for_local(cond.into()),
                 // this is a compile-time known value, so we can just pass it!
-                // NOTE: could call different functions based on the value of this to improve
-                //       performance, but it wouldn't really effect much...
-                operand::const_from_bool(self.context.tcx(), expected), 
+                // NOTE: we could call different functions based on the value of this to improve
+                //       performance, but it wouldn't really affect much...
+                operand::const_from_bool(self.context.tcx(), expected),
                 //assert_desc,
             ],
         );

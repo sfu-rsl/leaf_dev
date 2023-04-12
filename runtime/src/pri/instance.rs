@@ -1,6 +1,6 @@
 use super::utils::{DefaultRefManager, RefManager, UnsafeSync};
 use super::{BranchingInfo, OperandRef, PlaceRef};
-use crate::abs::{OperandHandler, PlaceHandler, RuntimeBackend};
+use crate::abs::{BranchHandler, OperandHandler, PlaceHandler, RuntimeBackend};
 
 use std::{
     cell::RefCell,
@@ -98,12 +98,23 @@ pub(super) fn take_back_operand_ref(reference: OperandRef) -> OperandImpl {
 }
 
 pub(super) fn branch<T>(
-    info: BranchingInfo,
-    branch_action: impl FnOnce(<BackendImpl as RuntimeBackend>::BranchingHandler<'_>) -> T,
+    branch_action: impl FnOnce(<BackendImpl as RuntimeBackend>::BranchHandler<'_>) -> T,
 ) -> T {
     perform_on_backend(|r| {
-        let handler = r.branch(info.node_location, take_back_operand_ref(info.discriminant));
+        let handler = r.branch();
         branch_action(handler)
+    })
+}
+
+pub(super) fn conditional<T>(
+    info: BranchingInfo,
+    conditional_action: impl FnOnce(
+        <<BackendImpl as RuntimeBackend>::BranchHandler<'static> as BranchHandler>::ConditionalBranchHandler,
+    ) -> T,
+) -> T {
+    branch(|b| {
+        let handler = b.conditional(info.node_location, take_back_operand_ref(info.discriminant));
+        conditional_action(handler)
     })
 }
 
@@ -113,15 +124,6 @@ pub(super) fn func_control<T>(
     perform_on_backend(|r| {
         let func_control = r.func_control();
         func_action(func_control)
-    })
-}
-
-pub(super) fn assert_control<T>(
-    assert_action: impl FnOnce(<BackendImpl as RuntimeBackend>::AssertionHandler<'_>) -> T,
-) -> T {
-    perform_on_backend(|r| {
-        let assert_control = r.assert_control();
-        assert_action(assert_control)
     })
 }
 
