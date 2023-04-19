@@ -33,7 +33,7 @@ pub(crate) trait RuntimeBackend: Sized {
 
     fn branch<'a>(&'a mut self) -> Self::BranchingHandler<'a>;
 
-    fn func_control<'a>(&'a mut self) -> Self::FunctionHandler<'a>;
+    fn func_control(&mut self) -> Self::FunctionHandler<'_>;
 }
 
 pub(crate) trait PlaceHandler {
