@@ -1,13 +1,14 @@
 use super::utils::{DefaultRefManager, RefManager, UnsafeSync};
 use super::{BranchingInfo, OperandRef, PlaceRef};
-use crate::abs::{BranchHandler, OperandHandler, PlaceHandler, RuntimeBackend};
+use crate::abs::backend::{BranchHandler, OperandHandler, PlaceHandler, RuntimeBackend};
 
+#[allow(unused_imports)] // Mutex is detected as unused unless runtime_access is set to safe_mt
 use std::{
     cell::RefCell,
     sync::{Mutex, Once},
 };
 
-type BackendImpl = crate::backends::basic::logger::LoggerBackend;
+type BackendImpl = crate::backends::basic::BasicBackend;
 
 type PlaceImpl = <<BackendImpl as RuntimeBackend>::PlaceHandler<'static> as PlaceHandler>::Place;
 type OperandImpl =
@@ -74,9 +75,9 @@ pub(super) fn push_place_ref<'a>(
     perform_on_place_ref_manager(|rm| rm.push(place))
 }
 
-pub(super) fn assign_to<'a, T>(
+pub(super) fn assign_to<T>(
     dest: PlaceRef,
-    assign_action: impl FnOnce(<BackendImpl as RuntimeBackend>::AssignmentHandler<'a>) -> T,
+    assign_action: impl FnOnce(<BackendImpl as RuntimeBackend>::AssignmentHandler<'_>) -> T,
 ) -> T {
     let dest = take_back_place_ref(dest);
     perform_on_backend(|r| assign_action(r.assign_to(dest)))
@@ -113,7 +114,7 @@ pub(super) fn conditional<T>(
     ) -> T,
 ) -> T {
     branch(|b| {
-        let handler = b.conditional(info.node_location, take_back_operand_ref(info.discriminant));
+        let handler = b.conditional(info.metadata, take_back_operand_ref(info.discriminant));
         conditional_action(handler)
     })
 }

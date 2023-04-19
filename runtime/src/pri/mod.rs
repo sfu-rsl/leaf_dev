@@ -2,9 +2,10 @@ mod instance;
 mod utils;
 
 use crate::abs::{
-    AssignmentHandler, BasicBlockIndex, BinaryOp, BranchHandler, BranchTakingHandler,
-    ConditionalBranchHandler, ConstantHandler, FunctionHandler, Local, OperandHandler,
-    PlaceHandler, PlaceProjectionHandler, UnaryOp, VariantIndex,
+    backend::*, AssignmentHandler, BasicBlockIndex, BasicBlockIndex, BinaryOp, BranchHandler,
+    BranchTakingHandler, BranchingMetadata, ConditionalBranchHandler, ConstantHandler,
+    DiscriminantAsIntType, FieldIndex, FunctionHandler, Local, OperandHandler, PlaceHandler,
+    PlaceProjectionHandler, UnaryOp, VariantIndex,
 };
 
 use self::instance::*;
@@ -33,7 +34,7 @@ pub fn ref_place_local(local: Local) -> PlaceRef {
 pub fn ref_place_deref(place: PlaceRef) -> PlaceRef {
     push_place_ref(|p| p.project_on(take_back_place_ref(place)).deref())
 }
-pub fn ref_place_field(place: PlaceRef, field: u32 /*, type */) -> PlaceRef {
+pub fn ref_place_field(place: PlaceRef, field: FieldIndex /*, type */) -> PlaceRef {
     push_place_ref(|p| p.project_on(take_back_place_ref(place)).for_field(field))
 }
 pub fn ref_place_index(place: PlaceRef, index_place: PlaceRef) -> PlaceRef {
@@ -93,6 +94,18 @@ pub fn ref_operand_const_func(id: u64) -> OperandRef {
 pub fn ref_operand_const_str(value: &'static str) -> OperandRef {
     push_operand_ref(|o| o.const_from().str(value))
 }
+pub fn ref_operand_sym_bool() -> OperandRef {
+    push_operand_ref(|o| o.symbolic().bool())
+}
+pub fn ref_operand_sym_int(size: u64, is_signed: bool) -> OperandRef {
+    push_operand_ref(|o| o.symbolic().int(size, is_signed))
+}
+pub fn ref_operand_sym_float(ebits: u64, sbits: u64) -> OperandRef {
+    push_operand_ref(|o| o.symbolic().float(ebits, sbits))
+}
+pub fn ref_operand_sym_char() -> OperandRef {
+    push_operand_ref(|o| o.symbolic().char())
+}
 
 pub fn assign_use(dest: PlaceRef, operand: OperandRef) {
     assign_to(dest, |h| h.use_of(take_back_operand_ref(operand)))
@@ -118,11 +131,22 @@ pub fn assign_len(dest: PlaceRef, place: PlaceRef) {
     assign_to(dest, |h| h.len_of(take_back_place_ref(place)))
 }
 
-pub fn assign_cast_numeric(dest: PlaceRef, operand: OperandRef, is_to_float: bool, size: usize) {
+pub fn assign_cast_char(dest: PlaceRef, operand: OperandRef) {
+    assign_to(dest, |h| h.char_cast_of(take_back_operand_ref(operand)))
+}
+
+pub fn assign_cast_integer(dest: PlaceRef, operand: OperandRef, is_signed: bool, bits: u64) {
     assign_to(dest, |h| {
-        h.numeric_cast_of(take_back_operand_ref(operand), is_to_float, size)
+        h.integer_cast_of(take_back_operand_ref(operand), is_signed, bits)
     })
 }
+
+pub fn assign_cast_float(dest: PlaceRef, operand: OperandRef, bits: u64) {
+    assign_to(dest, |h| {
+        h.float_cast_of(take_back_operand_ref(operand), bits)
+    })
+}
+
 pub fn assign_cast(dest: PlaceRef /* TODO: Other types of cast. */) {
     assign_to(dest, |h| h.cast_of())
 }
@@ -180,7 +204,7 @@ pub fn take_branch_ow_int(info: BranchingInfo, non_values: &[u128]) {
 pub fn take_branch_char(info: BranchingInfo, value: char) {
     conditional(info, |h| h.on_char().take(value))
 }
-pub fn take_branch_ow_char(info: BranchingInfo, non_values: &[u128]) {
+pub fn take_branch_ow_char(info: BranchingInfo, non_values: &[char]) {
     conditional(info, |h| h.on_char().take_otherwise(non_values))
 }
 
@@ -209,15 +233,26 @@ pub fn check_assert(cond: OperandRef, expected: bool /*, assert_kind: &str*/) {
 }
 
 pub struct BranchingInfo {
-    pub node_location: BasicBlockIndex,
     pub discriminant: OperandRef,
+    metadata: BranchingMetadata,
 }
 
 impl BranchingInfo {
-    pub fn new(node_location: BasicBlockIndex, discriminant: OperandRef) -> Self {
+    pub fn new(
+        node_location: BasicBlockIndex,
+        discriminant: OperandRef,
+        discr_bit_size: u64,
+        discr_is_signed: bool,
+    ) -> Self {
         Self {
-            node_location,
             discriminant,
+            metadata: BranchingMetadata {
+                node_location,
+                discr_as_int: DiscriminantAsIntType {
+                    bit_size: discr_bit_size,
+                    is_signed: discr_is_signed,
+                },
+            },
         }
     }
 }

@@ -1,21 +1,17 @@
 use std::fmt::Display;
 
 use crate::abs::{
-    AssignmentHandler, BasicBlockIndex, BinaryOp, BranchHandler, BranchTakingHandler,
-    ConditionalBranchHandler, FunctionHandler, RuntimeBackend, UnaryOp, VariantIndex,
+    backend::*, AssignmentHandler, BasicBlockIndex, BinaryOp, BranchHandler, BranchTakingHandler,
+    BranchingMetadata, ConditionalBranchHandler, FunctionHandler, RuntimeBackend, UnaryOp,
+    VariantIndex,
 };
 
 use super::{
     operand::{DefaultOperandHandler, Operand, PlaceUsage},
-    place::{DefaultPlaceHandler, Place, ProjectionKind},
+    place::{DefaultPlaceHandler, Place, Projection},
 };
 
-macro_rules! log_info {
-    // Currently, we haven't added the support for transitive dependencies. Thus,
-    // the logger library doesn't work.
-    // ($($arg:tt)+) => (log::info!($($arg)+))
-    ($($arg:tt)+) => (println!($($arg)+))
-}
+use crate::utils::logging::log_info;
 
 pub(crate) struct LoggerBackend {
     call_manager: CallManager,
@@ -55,7 +51,7 @@ impl RuntimeBackend for LoggerBackend {
         LoggerBranchHandler {}
     }
 
-    fn func_control<'a>(&'a mut self) -> Self::FunctionHandler<'a> {
+    fn func_control(&mut self) -> Self::FunctionHandler<'_> {
         LoggerFunctionHandler {
             call_manager: &mut self.call_manager,
         }
@@ -104,13 +100,21 @@ impl AssignmentHandler for LoggerAssignmentHandler {
         self.log(format!("len({place})"));
     }
 
-    fn numeric_cast_of(self, operand: Self::Operand, is_to_float: bool, size: usize) {
+    fn char_cast_of(self, operand: Self::Operand) {
+        self.log(format!("{operand} as char"));
+    }
+
+    fn integer_cast_of(self, operand: Self::Operand, is_signed: bool, bits: u64) {
         self.log(format!(
             "{} as {}{}",
             operand,
-            if is_to_float { "f" } else { "i" },
-            size
+            if is_signed { "i" } else { "u" },
+            bits,
         ));
+    }
+
+    fn float_cast_of(self, operand: Self::Operand, bits: u64) {
+        self.log(format!("{operand} as f{bits}"));
     }
 
     fn cast_of(self) {
@@ -166,11 +170,11 @@ impl BranchHandler for LoggerBranchHandler {
 
     fn conditional(
         self,
-        location: BasicBlockIndex,
+        metadata: BranchingMetadata,
         discriminant: Self::Operand,
     ) -> Self::ConditionalBranchHandler {
         Self::ConditionalBranchHandler {
-            location,
+            metadata,
             discriminant,
         }
     }
@@ -181,15 +185,15 @@ impl BranchHandler for LoggerBranchHandler {
 }
 
 pub(crate) struct LoggerConditionalBranchHandler {
-    location: BasicBlockIndex,
     discriminant: Operand,
+    metadata: BranchingMetadata,
 }
 
 impl LoggerConditionalBranchHandler {
     fn create_branch_taking(self) -> LoggerBranchTakingHandler {
         LoggerBranchTakingHandler {
-            location: self.location,
             discriminant: self.discriminant,
+            metadata: self.metadata,
         }
     }
 }
@@ -215,8 +219,8 @@ impl ConditionalBranchHandler for LoggerConditionalBranchHandler {
 }
 
 pub(crate) struct LoggerBranchTakingHandler {
-    location: BasicBlockIndex,
     discriminant: Operand,
+    metadata: BranchingMetadata,
 }
 
 impl BranchTakingHandler<bool> for LoggerBranchTakingHandler {
@@ -270,7 +274,11 @@ impl LoggerBranchTakingHandler {
     }
 
     fn log(&self, message: impl Display) {
-        log_info!("Took branch at {} because {}", self.location, message);
+        log_info!(
+            "Took branch at {} because {}",
+            self.metadata.node_location,
+            message
+        );
     }
 }
 
@@ -329,7 +337,7 @@ impl CallManager {
              */
             stack: vec![CallInfo {
                 func: Operand::Const(super::operand::Constant::Func(0)),
-                result_dest: Place::Local(0),
+                result_dest: Place::new(0),
             }],
         }
     }
@@ -346,37 +354,43 @@ impl CallManager {
 // -----------------------------------
 
 impl Display for Place {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         PlaceFormatter::format(f, self)
     }
 }
 
 struct PlaceFormatter;
 impl PlaceFormatter {
-    fn format(f: &mut std::fmt::Formatter<'_>, place: &Place) -> std::fmt::Result {
-        match place {
-            Place::Local(local) => write!(f, "v{}", local),
-            Place::Projection { kind, on } => Self::pre(kind, f)
-                .and_then(|_| write!(f, "{}", on))
-                .and_then(|_| Self::post(kind, f)),
-        }
+    fn format(f: &mut std::fmt::Formatter, place: &Place) -> std::fmt::Result {
+        place
+            .projections
+            .iter()
+            .try_for_each(|proj| Self::pre(proj, f))
+            .and_then(|_| write!(f, "v{}", place.local))
+            .and_then(|_| {
+                place
+                    .projections
+                    .iter()
+                    .rev()
+                    .try_for_each(|proj| Self::post(proj, f))
+            })
     }
 
-    fn pre(pkind: &ProjectionKind, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match pkind {
-            ProjectionKind::Deref => f.write_str("*"),
+    fn pre(proj: &Projection, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match proj {
+            Projection::Deref => f.write_str("*"),
             _ => Result::Ok(()),
         }
     }
 
-    fn post(pkind: &ProjectionKind, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match pkind {
-            ProjectionKind::Field(field) => write!(f, ".{}", field),
-            ProjectionKind::Index(index) => write!(f, "[{}]", index),
-            ProjectionKind::Subslice { from, to, from_end } => {
+    fn post(proj: &Projection, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match proj {
+            Projection::Field(field) => write!(f, ".{field}"),
+            Projection::Index(index) => write!(f, "[{index}]"),
+            Projection::Subslice { from, to, from_end } => {
                 write!(f, "[{}..{}{}]", from, to, if *from_end { "^" } else { "" })
             }
-            ProjectionKind::ConstantIndex {
+            Projection::ConstantIndex {
                 offset,
                 min_length,
                 from_end,
@@ -389,27 +403,27 @@ impl PlaceFormatter {
                     if *from_end { "^" } else { "" }
                 )
             }
-            ProjectionKind::Downcast(variant) => write!(f, " as {}th", variant),
+            Projection::Downcast(variant) => write!(f, " as {variant}th"),
             _ => Result::Ok(()),
         }
     }
 }
 
 impl Display for Operand {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Operand::Place(place, usage) => match usage {
-                PlaceUsage::Copy => write!(f, "C({})", place),
-                PlaceUsage::Move => write!(f, "{}", place),
+                PlaceUsage::Copy => write!(f, "C({place})"),
+                PlaceUsage::Move => write!(f, "{place}"),
             },
-            Operand::Const(constant) => write!(f, "{:?}", constant),
-            _ => Result::Ok(()),
+            Operand::Const(constant) => write!(f, "Const::{constant:?}"),
+            Operand::Symbolic(symbolic) => write!(f, "Symbolic::{symbolic:?}"),
         }
     }
 }
 
 impl Display for BinaryOp {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         f.write_str(match self {
             BinaryOp::Add => "+",
             BinaryOp::Sub => "-",
@@ -433,7 +447,7 @@ impl Display for BinaryOp {
 }
 
 impl Display for UnaryOp {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         f.write_str(match self {
             UnaryOp::Not => "!",
             UnaryOp::Neg => "-",
@@ -442,7 +456,5 @@ impl Display for UnaryOp {
 }
 
 fn comma_separated<T: Display>(iter: impl Iterator<Item = T>) -> String {
-    iter.map(|t| format!("{}", t))
-        .collect::<Vec<_>>()
-        .join(", ")
+    iter.map(|t| format!("{t}")).collect::<Vec<_>>().join(", ")
 }
