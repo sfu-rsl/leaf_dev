@@ -12,7 +12,7 @@ pub(crate) trait RuntimeBackend: Sized {
     type AssignmentHandler<'a>: AssignmentHandler<Place = Self::Place, Operand = Self::Operand>
     where
         Self: 'a;
-    type BranchingHandler<'a>: BranchingHandler
+    type BranchingHandler<'a>: BranchingHandler<Operand = Self::Operand>
     where
         Self: 'a;
     type FunctionHandler<'a>: FunctionHandler<Place = Self::Place, Operand = Self::Operand>
@@ -31,13 +31,9 @@ pub(crate) trait RuntimeBackend: Sized {
         dest: <Self::AssignmentHandler<'a> as AssignmentHandler>::Place,
     ) -> Self::AssignmentHandler<'a>;
 
-    fn branch<'a>(
-        &'a mut self,
-        discriminant: <Self::OperandHandler<'static> as OperandHandler>::Operand,
-        metadata: BranchingMetadata,
-    ) -> Self::BranchingHandler<'a>;
+    fn branch<'a>(&'a mut self) -> Self::BranchingHandler<'a>;
 
-    fn func_control(&mut self) -> Self::FunctionHandler<'_>;
+    fn func_control<'a>(&'a mut self) -> Self::FunctionHandler<'a>;
 }
 
 pub(crate) trait PlaceHandler {
@@ -152,24 +148,34 @@ pub(crate) trait AssignmentHandler {
     fn variant_index(self, variant_index: VariantIndex);
 }
 
+// https://en.wikipedia.org/wiki/Branch_(computer_science)
 pub(crate) trait BranchingHandler {
+    type Operand;
+    type ConditionalBranchingHandler: ConditionalBranchingHandler;
+
+    fn conditional(
+        self,
+        discriminant: Self::Operand,
+        metadata: BranchingMetadata,
+    ) -> Self::ConditionalBranchingHandler;
+
+    fn assert(self, cond: Self::Operand, expected: bool);
+}
+
+pub(crate) trait ConditionalBranchingHandler {
     type BoolBranchTakingHandler: BranchTakingHandler<bool>;
     type IntBranchTakingHandler: BranchTakingHandler<u128>;
     type CharBranchTakingHandler: BranchTakingHandler<char>;
     type EnumBranchTakingHandler: BranchTakingHandler<VariantIndex>;
 
     fn on_bool(self) -> Self::BoolBranchTakingHandler;
-
     fn on_int(self) -> Self::IntBranchTakingHandler;
-
     fn on_char(self) -> Self::CharBranchTakingHandler;
-
     fn on_enum(self) -> Self::EnumBranchTakingHandler;
 }
 
 pub(crate) trait BranchTakingHandler<T> {
     fn take(self, value: T);
-
     fn take_otherwise(self, non_values: &[T]);
 }
 

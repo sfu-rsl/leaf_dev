@@ -1,10 +1,6 @@
 use std::fmt::Display;
 
-use crate::abs::{
-    backend::*, AssignmentHandler, BasicBlockIndex, BinaryOp, BranchHandler, BranchTakingHandler,
-    BranchingMetadata, ConditionalBranchHandler, FunctionHandler, RuntimeBackend, UnaryOp,
-    VariantIndex,
-};
+use crate::abs::{backend::*, BinaryOp, BranchingMetadata, UnaryOp, VariantIndex};
 
 use super::{
     operand::{DefaultOperandHandler, Operand, PlaceUsage},
@@ -29,7 +25,7 @@ impl RuntimeBackend for LoggerBackend {
     type PlaceHandler<'a> = DefaultPlaceHandler where Self: 'a;
     type OperandHandler<'a> = DefaultOperandHandler where Self: 'a;
     type AssignmentHandler<'a> = LoggerAssignmentHandler where Self: 'a;
-    type BranchHandler<'a> = LoggerBranchHandler where Self: 'a;
+    type BranchingHandler<'a> = LoggerBranchingHandler where Self: 'a;
     type FunctionHandler<'a> = LoggerFunctionHandler<'a> where Self: 'a;
 
     type Place = Place;
@@ -47,8 +43,8 @@ impl RuntimeBackend for LoggerBackend {
         LoggerAssignmentHandler { destination: dest }
     }
 
-    fn branch(&mut self) -> Self::BranchHandler<'_> {
-        LoggerBranchHandler {}
+    fn branch(&mut self) -> Self::BranchingHandler<'_> {
+        LoggerBranchingHandler {}
     }
 
     fn func_control(&mut self) -> Self::FunctionHandler<'_> {
@@ -162,20 +158,20 @@ impl LoggerAssignmentHandler {
 
 // -----------------------------------
 
-pub(crate) struct LoggerBranchHandler {}
+pub(crate) struct LoggerBranchingHandler {}
 
-impl BranchHandler for LoggerBranchHandler {
+impl BranchingHandler for LoggerBranchingHandler {
     type Operand = Operand;
-    type ConditionalBranchHandler = LoggerConditionalBranchHandler;
+    type ConditionalBranchingHandler = LoggerConditionalBranchingHandler;
 
     fn conditional(
         self,
-        metadata: BranchingMetadata,
         discriminant: Self::Operand,
-    ) -> Self::ConditionalBranchHandler {
-        Self::ConditionalBranchHandler {
-            metadata,
+        metadata: BranchingMetadata,
+    ) -> Self::ConditionalBranchingHandler {
+        Self::ConditionalBranchingHandler {
             discriminant,
+            metadata,
         }
     }
 
@@ -184,12 +180,12 @@ impl BranchHandler for LoggerBranchHandler {
     }
 }
 
-pub(crate) struct LoggerConditionalBranchHandler {
+pub(crate) struct LoggerConditionalBranchingHandler {
     discriminant: Operand,
     metadata: BranchingMetadata,
 }
 
-impl LoggerConditionalBranchHandler {
+impl LoggerConditionalBranchingHandler {
     fn create_branch_taking(self) -> LoggerBranchTakingHandler {
         LoggerBranchTakingHandler {
             discriminant: self.discriminant,
@@ -198,7 +194,7 @@ impl LoggerConditionalBranchHandler {
     }
 }
 
-impl ConditionalBranchHandler for LoggerConditionalBranchHandler {
+impl ConditionalBranchingHandler for LoggerConditionalBranchingHandler {
     type BoolBranchTakingHandler = LoggerBranchTakingHandler;
     type IntBranchTakingHandler = LoggerBranchTakingHandler;
     type CharBranchTakingHandler = LoggerBranchTakingHandler;

@@ -2,10 +2,8 @@ mod instance;
 mod utils;
 
 use crate::abs::{
-    backend::*, AssignmentHandler, BasicBlockIndex, BasicBlockIndex, BinaryOp, BranchHandler,
-    BranchTakingHandler, BranchingMetadata, ConditionalBranchHandler, ConstantHandler,
-    DiscriminantAsIntType, FieldIndex, FunctionHandler, Local, OperandHandler, PlaceHandler,
-    PlaceProjectionHandler, UnaryOp, VariantIndex,
+    backend::*, BasicBlockIndex, BinaryOp, BranchingMetadata, DiscriminantAsIntType, FieldIndex,
+    Local, UnaryOp, VariantIndex,
 };
 
 use self::instance::*;
