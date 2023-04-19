@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
-use super::{BinaryOp, BranchingMetadata, Constraint, FieldIndex, Local, UnaryOp, VariantIndex};
+use super::{
+    AssertKind, BinaryOp, BranchingMetadata, Constraint, FieldIndex, Local, UnaryOp, VariantIndex,
+};
 
 pub(crate) trait RuntimeBackend: Sized {
     type PlaceHandler<'a>: PlaceHandler<Place = Self::Place>
@@ -159,7 +161,7 @@ pub(crate) trait BranchingHandler {
         metadata: BranchingMetadata,
     ) -> Self::ConditionalBranchingHandler;
 
-    fn assert(self, cond: Self::Operand, expected: bool);
+    fn assert(self, cond: Self::Operand, expected: bool, assert_kind: AssertKind<Self::Operand>);
 }
 
 pub(crate) trait ConditionalBranchingHandler {

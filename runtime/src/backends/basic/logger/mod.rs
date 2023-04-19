@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use crate::abs::{backend::*, BinaryOp, BranchingMetadata, UnaryOp, VariantIndex};
+use crate::abs::{backend::*, AssertKind, BinaryOp, BranchingMetadata, UnaryOp, VariantIndex};
 
 use super::{
     operand::{DefaultOperandHandler, Operand, PlaceUsage},
@@ -175,7 +175,7 @@ impl BranchingHandler for LoggerBranchingHandler {
         }
     }
 
-    fn assert(self, cond: Self::Operand, expected: bool) {
+    fn assert(self, cond: Self::Operand, expected: bool, assert_kind: AssertKind<Self::Operand>) {
         log_info!("Checking assertion {:?} == {}", cond, expected);
     }
 }

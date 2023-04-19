@@ -9,6 +9,8 @@ target
 
 samples/playground
 
+*.pdb
+*.exe
 *.mir
 *.ll
 *.bc

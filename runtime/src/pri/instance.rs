@@ -11,7 +11,7 @@ use std::{
 type BackendImpl = crate::backends::basic::BasicBackend;
 
 type PlaceImpl = <<BackendImpl as RuntimeBackend>::PlaceHandler<'static> as PlaceHandler>::Place;
-type OperandImpl =
+pub(super) type OperandImpl =
     <<BackendImpl as RuntimeBackend>::OperandHandler<'static> as OperandHandler>::Operand;
 
 static INIT: Once = Once::new();

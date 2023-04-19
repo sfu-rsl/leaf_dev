@@ -246,32 +246,14 @@ where
         &mut self,
         cond: &Operand<'tcx>,
         expected: &bool,
-        _msg: &mir::AssertMessage<'tcx>,
+        msg: &mir::AssertMessage<'tcx>,
         // we ignore target because this is concolic execution, not symbolic (program execution guides location)
         _target: &BasicBlock,
         _cleanup: &Option<BasicBlock>,
     ) -> () {
         let cond_ref = self.call_adder.reference_operand(cond);
-
-        log::debug!("looking at assert message: '{:?}'", _msg);
-
-        // NOTE: we'll probably want to implement a function that sends the below struct to the pri
-        /*
-        match msg {
-            rustc_middle::mir::AssertKind::BoundsCheck{ len, index } => todo!(),
-            rustc_middle::mir::AssertKind::Overflow(binOp, op1, op2) => {
-                let op1_ref = self.call_adder.reference_operand(op1);
-                let op2_ref = self.call_adder.reference_operand(op2);
-            },
-            rustc_middle::mir::AssertKind::OverflowNeg(op) => todo!(),
-            rustc_middle::mir::AssertKind::DivisionByZero(op) => todo!(),
-            rustc_middle::mir::AssertKind::RemainderByZero(op) => todo!(),
-            rustc_middle::mir::AssertKind::ResumedAfterReturn(generatorKind) => todo!(),
-            rustc_middle::mir::AssertKind::ResumedAfterPanic(generatorKind) => todo!(),
-        };
-        */
-
-        self.call_adder.check_assert(cond_ref, *expected);
+        log::debug!("looking at assert message: '{:?}'", msg);
+        self.call_adder.check_assert(cond_ref, *expected, msg);
     }
 
     fn visit_yield(

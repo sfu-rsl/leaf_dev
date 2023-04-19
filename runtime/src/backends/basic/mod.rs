@@ -7,8 +7,8 @@ use std::{collections::HashMap, mem};
 
 use crate::{
     abs::{
-        self, backend::*, BasicBlockIndex, BinaryOp, BranchingMetadata, DiscriminantAsIntType,
-        FieldIndex, Local, UnaryOp, VariantIndex,
+        self, backend::*, AssertKind, BasicBlockIndex, BinaryOp, BranchingMetadata,
+        DiscriminantAsIntType, FieldIndex, Local, UnaryOp, VariantIndex,
     },
     solvers::z3::Z3Solver,
     trace::ImmediateTraceManager,
@@ -346,7 +346,7 @@ impl<'a> BranchingHandler for BasicBranchingHandler<'a> {
         )
     }
 
-    fn assert(self, cond: Self::Operand, expected: bool) {
+    fn assert(self, cond: Self::Operand, expected: bool, assert_kind: AssertKind<Self::Operand>) {
         todo!("implement logic for assertions")
     }
 }

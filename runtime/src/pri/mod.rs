@@ -2,8 +2,8 @@ mod instance;
 mod utils;
 
 use crate::abs::{
-    backend::*, BasicBlockIndex, BinaryOp, BranchingMetadata, DiscriminantAsIntType, FieldIndex,
-    Local, UnaryOp, VariantIndex,
+    backend::*, AssertKind, BasicBlockIndex, BinaryOp, BranchingMetadata, DiscriminantAsIntType,
+    FieldIndex, Local, UnaryOp, VariantIndex,
 };
 
 use self::instance::*;
@@ -226,8 +226,50 @@ pub fn return_from_func() {
     func_control(|h| h.ret())
 }
 
-pub fn check_assert(cond: OperandRef, expected: bool /*, assert_kind: &str*/) {
-    branch(|h| h.assert(take_back_operand_ref(cond), expected))
+pub fn check_assert_bounds_check(
+    cond: OperandRef,
+    expected: bool,
+    len: OperandRef,
+    index: OperandRef,
+) {
+    let assert_kind = AssertKind::BoundsCheck {
+        len: take_back_operand_ref(len),
+        index: take_back_operand_ref(index),
+    };
+    check_assert(cond, expected, assert_kind)
+}
+pub fn check_assert_overflow(
+    cond: OperandRef,
+    expected: bool,
+    operator: BinaryOp,
+    op1: OperandRef,
+    op2: OperandRef,
+) {
+    let assert_kind = AssertKind::Overflow(
+        operator,
+        take_back_operand_ref(op1),
+        take_back_operand_ref(op2),
+    );
+    check_assert(cond, expected, assert_kind)
+}
+pub fn check_assert_overflow_neg(cond: OperandRef, expected: bool, op: OperandRef) {
+    let assert_kind = AssertKind::OverflowNeg(take_back_operand_ref(op));
+    check_assert(cond, expected, assert_kind)
+}
+pub fn check_assert_div_by_zero(cond: OperandRef, expected: bool, op: OperandRef) {
+    let assert_kind = AssertKind::DivisionByZero(take_back_operand_ref(op));
+    check_assert(cond, expected, assert_kind)
+}
+pub fn check_assert_rem_by_zero(cond: OperandRef, expected: bool, op: OperandRef) {
+    let assert_kind = AssertKind::RemainderByZero(take_back_operand_ref(op));
+    check_assert(cond, expected, assert_kind)
+}
+fn check_assert(
+    cond: OperandRef,
+    expected: bool,
+    assert_kind: AssertKind<crate::pri::instance::OperandImpl>,
+) {
+    branch(|h| h.assert(take_back_operand_ref(cond), expected, assert_kind))
 }
 
 pub struct BranchingInfo {
