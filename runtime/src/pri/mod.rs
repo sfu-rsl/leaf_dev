@@ -264,11 +264,7 @@ pub fn check_assert_rem_by_zero(cond: OperandRef, expected: bool, op: OperandRef
     let assert_kind = AssertKind::RemainderByZero(take_back_operand_ref(op));
     check_assert(cond, expected, assert_kind)
 }
-fn check_assert(
-    cond: OperandRef,
-    expected: bool,
-    assert_kind: AssertKind<crate::pri::instance::OperandImpl>,
-) {
+fn check_assert(cond: OperandRef, expected: bool, assert_kind: AssertKind<OperandImpl>) {
     branch(|h| h.assert(take_back_operand_ref(cond), expected, assert_kind))
 }
 
