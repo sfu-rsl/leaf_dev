@@ -215,7 +215,7 @@ pub fn take_branch_ow_enum_discriminant(info: BranchingInfo, non_indices: &[Vari
 
 pub fn before_call_func(func: OperandRef, args: &[OperandRef], destination: PlaceRef) {
     func_control(|h| {
-        h.before_call_func(
+        h.before_call(
             take_back_operand_ref(func),
             args.iter().map(|o| take_back_operand_ref(*o)),
             take_back_place_ref(destination),
@@ -223,13 +223,13 @@ pub fn before_call_func(func: OperandRef, args: &[OperandRef], destination: Plac
     });
 }
 pub fn enter_func() {
-    func_control(|h| h.enter_func())
+    func_control(|h| h.enter())
 }
 pub fn return_from_func() {
     func_control(|h| h.ret())
 }
 pub fn after_call_func() {
-    func_control(|h| h.after_call_func())
+    func_control(|h| h.after_call())
 }
 
 pub fn check_assert_bounds_check(

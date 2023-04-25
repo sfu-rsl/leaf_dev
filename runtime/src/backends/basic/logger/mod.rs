@@ -293,7 +293,7 @@ impl FunctionHandler for LoggerFunctionHandler<'_> {
     type Place = Place;
     type Operand = Operand;
 
-    fn before_call_func(
+    fn before_call(
         self,
         func: Self::Operand,
         args: impl Iterator<Item = Self::Operand>,
@@ -309,7 +309,7 @@ impl FunctionHandler for LoggerFunctionHandler<'_> {
             .notify_before_call(CallInfo { func, result_dest });
     }
 
-    fn enter_func(self) {
+    fn enter(self) {
         let info = self.call_manager.notify_enter_call();
         log_info!(
             "Entered function {} and storing result in {}",
@@ -327,7 +327,7 @@ impl FunctionHandler for LoggerFunctionHandler<'_> {
         );
     }
 
-    fn after_call_func(self) {
+    fn after_call(self) {
         let info = self.call_manager.notify_after_call();
         log_info!(
             "Exited function {} and storing result in {}",

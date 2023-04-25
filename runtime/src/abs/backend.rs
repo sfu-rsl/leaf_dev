@@ -185,18 +185,18 @@ pub(crate) trait FunctionHandler {
     type Place;
     type Operand;
 
-    fn before_call_func(
+    fn before_call(
         self,
         func: Self::Operand,
         args: impl Iterator<Item = Self::Operand>,
         result_dest: Self::Place,
     );
 
-    fn enter_func(self);
+    fn enter(self);
 
     fn ret(self);
 
-    fn after_call_func(self);
+    fn after_call(self);
 }
 
 pub(crate) trait TraceManager<S, V> {

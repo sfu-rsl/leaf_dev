@@ -528,7 +528,7 @@ impl FunctionHandler for BasicFunctionHandler<'_> {
     type Place = Place;
     type Operand = Operand;
 
-    fn before_call_func(
+    fn before_call(
         self,
         _func: Self::Operand,
         _args: impl Iterator<Item = Self::Operand>,
@@ -538,7 +538,7 @@ impl FunctionHandler for BasicFunctionHandler<'_> {
         self.call_stack_manager.push(result_dest)
     }
 
-    fn enter_func(self) {
+    fn enter(self) {
         let _info = self.call_stack_manager.top();
     }
 
@@ -546,7 +546,7 @@ impl FunctionHandler for BasicFunctionHandler<'_> {
         let _info = self.call_stack_manager.top();
     }
 
-    fn after_call_func(self) {
+    fn after_call(self) {
         let (result_dest, returned_val) = self.call_stack_manager.pop();
         /* FIXME: May require a cleaner approach. */
         if !self.call_stack_manager.is_empty() {
