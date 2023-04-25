@@ -1,7 +1,13 @@
 fn main() {
-    let mut x: usize = 10;
-    if 10 % 3 == 2 {
-        x = 1;
+    let mut x: u8 = 7;
+    loop {
+        x *= x;
+        if x % 2 == 0 {
+            break;
+        }
     }
-    let y = x - 1;
+
+    use_num(x);
 }
+
+fn use_num(x: u8) {}
