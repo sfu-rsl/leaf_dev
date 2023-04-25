@@ -14,7 +14,7 @@ use rustc_target::abi::VariantIdx;
 
 use self::{
     context::*,
-    utils::{assignment::rvalue, *},
+    utils::{ty::size_of, *},
 };
 use super::modification::{
     self, BodyBlockManager, BodyLocalManager, BodyModificationUnit, JumpTargetModifier,
@@ -104,9 +104,9 @@ macro_rules! make_local_wrapper {
                 Self(value)
             }
         }
-        impl Into<Local> for $name {
-            fn into(self) -> Local {
-                self.0
+        impl From<$name> for Local {
+            fn from(value: $name) -> Self {
+                value.0
             }
         }
     };
@@ -125,7 +125,7 @@ pub trait OperandReferencer<'tcx> {
     fn reference_operand(&mut self, operand: &Operand<'tcx>) -> OperandRef;
 }
 
-pub trait Assigner {
+pub trait Assigner<'tcx> {
     fn by_use(&mut self, operand: OperandRef);
 
     fn by_repeat(&mut self, operand: OperandRef, count: ScalarInt);
@@ -138,7 +138,9 @@ pub trait Assigner {
 
     fn by_len(&mut self, place: PlaceRef);
 
-    fn by_cast_numeric(&mut self, operand: OperandRef, is_to_float: bool, size: u64);
+    fn by_cast_char(&mut self, operand: OperandRef);
+
+    fn by_cast_numeric(&mut self, operand: OperandRef, ty: Ty<'tcx>);
 
     fn by_cast(&mut self, operand: OperandRef, is_to_float: bool, size: u64);
 
@@ -191,6 +193,20 @@ pub trait EntryFunctionHandler {
     fn init_runtime_lib(&mut self);
 }
 
+pub trait AssertionHandler<'tcx> {
+    fn check_assert(
+        &mut self,
+        cond: OperandRef,
+        expected: bool,
+        msg: &rustc_middle::mir::AssertMessage<'tcx>,
+    );
+
+    fn reference_assert_kind(
+        &mut self,
+        msg: &rustc_middle::mir::AssertMessage<'tcx>,
+    ) -> (&'static str, Vec<Operand<'tcx>>, Vec<Statement<'tcx>>);
+}
+
 pub struct RuntimeCallAdder<C> {
     context: C,
 }
@@ -229,7 +245,7 @@ impl<C> RuntimeCallAdder<C> {
         RuntimeCallAdder {
             context: AtLocationContext {
                 base: &mut self.context,
-                location: location,
+                location,
             },
         }
     }
@@ -501,7 +517,7 @@ where
                 ))
                 .prepend(additional_blocks)
             }
-            Operand::Constant(constant) => self.internal_reference_const_operand(&constant),
+            Operand::Constant(constant) => self.internal_reference_const_operand(constant),
         }
     }
 
@@ -525,10 +541,8 @@ where
         match value {
             ConstValue::Scalar(scalar) => self.internal_reference_scalar_const_operand(scalar, ty),
             ConstValue::ZeroSized => self.internal_reference_zero_sized_const_operand(ty),
-            ConstValue::Slice { .. } => {
-                self.internal_reference_slice_const_operand(value.clone(), ty)
-            }
-            ConstValue::ByRef { alloc, offset } => todo!(),
+            ConstValue::Slice { .. } => self.internal_reference_slice_const_operand(value, ty),
+            ConstValue::ByRef { .. } => todo!(),
         }
     }
 
@@ -553,7 +567,7 @@ where
                 stringify!(pri::ref_operand_const_bool),
                 vec![operand::const_from_scalar_int(
                     self.context.tcx(),
-                    scalar.clone(),
+                    scalar,
                     ty,
                 )],
             )
@@ -595,7 +609,7 @@ where
                 stringify!(pri::ref_operand_const_char),
                 vec![operand::const_from_scalar_int(
                     self.context.tcx(),
-                    scalar.clone(),
+                    scalar,
                     ty,
                 )],
             )
@@ -666,7 +680,7 @@ where
     }
 }
 
-impl<'tcx, C> Assigner for RuntimeCallAdder<C>
+impl<'tcx, C> Assigner<'tcx> for RuntimeCallAdder<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
     C: DestinationReferenceProvider + LocationProvider + BaseContext<'tcx>,
@@ -719,18 +733,36 @@ where
         )
     }
 
-    fn by_cast_numeric(&mut self, operand: OperandRef, is_to_float: bool, size: u64) {
+    fn by_cast_char(&mut self, operand: OperandRef) {
         self.add_bb_for_assign_call(
-            stringify!(pri::assign_cast_numeric),
-            vec![
-                operand::copy_for_local(operand.into()),
-                operand::const_from_bool(self.context.tcx(), is_to_float),
-                operand::const_from_uint(self.context.tcx(), size),
-            ],
+            stringify!(pri::assign_cast_char),
+            vec![operand::copy_for_local(operand.into())],
         )
     }
 
-    fn by_cast(&mut self, operand: OperandRef, is_to_float: bool, size: u64) {
+    fn by_cast_numeric(&mut self, operand: OperandRef, ty: Ty<'tcx>) {
+        let tcx = self.context.tcx();
+
+        if ty.is_integral() {
+            let is_signed = ty.is_signed();
+            let bits = size_of(tcx, ty).bits();
+
+            self.add_bb_for_assign_call(
+                stringify!(pri::assign_cast_integer),
+                vec![
+                    operand::copy_for_local(operand.into()),
+                    operand::const_from_bool(tcx, is_signed),
+                    operand::const_from_uint(tcx, bits),
+                ],
+            )
+        } else if ty.is_floating_point() {
+            todo!("Floating point casts are not supported yet.")
+        } else {
+            unreachable!("cast_numeric called for non-numeric type");
+        };
+    }
+
+    fn by_cast(&mut self, _operand: OperandRef, _is_to_float: bool, _size: u64) {
         todo!()
     }
 
@@ -853,8 +885,7 @@ where
         T: Debug,
     {
         let local = self.context.add_local(enum_ty);
-        let statements =
-            enums::set_variant_to_local(enum_ty, format!("{:?}", value).as_str(), local);
+        let statements = enums::set_variant_to_local(enum_ty, format!("{value:?}").as_str(), local);
         (local, statements)
     }
 }
@@ -868,12 +899,15 @@ where
         let tcx = self.context.tcx();
         let operand_ref = self.reference_operand(discr);
         let ty = discr.ty(self.context.local_decls(), tcx);
+        let discr_size = size_of(tcx, ty).bits();
         let node_location = self.context.location();
         let (block, info_store_var) = self.make_bb_for_call_with_ret(
             stringify!(pri::BranchingInfo::new),
             vec![
                 operand::const_from_uint(tcx, u32::from(node_location)),
                 operand::copy_for_local(operand_ref.into()),
+                operand::const_from_uint(tcx, discr_size),
+                operand::const_from_bool(tcx, ty.is_signed()),
             ],
         );
         self.insert_blocks([block]);
@@ -907,7 +941,7 @@ where
                 )
             }
         } else if discr_ty.is_integral() {
-            // TODO: Detect discriminant
+            // TODO: Distinguish enum discriminant
             (
                 stringify!(pri::take_branch_int),
                 vec![operand::const_from_uint(self.context.tcx(), value)],
@@ -965,7 +999,7 @@ where
                 Ty<'tcx>,
                 Box<dyn Fn(u128) -> Operand<'tcx>>,
             ) = if discr_ty.is_integral() {
-                // TODO: Detect discriminant
+                // TODO: Distinguish enum discriminant
                 (
                     stringify!(pri::take_branch_ow_int),
                     tcx.types.u128,
@@ -1037,7 +1071,7 @@ where
             self.context.tcx(),
             &mut self.context,
             value_ty,
-            non_values.map(|nv| value_to_operand(nv)).collect(),
+            non_values.map(value_to_operand).collect(),
         )
     }
 }
@@ -1100,6 +1134,109 @@ where
                 .insert_blocks_after(self.context.location(), [block], false)[0];
         self.context
             .modify_jump_target(self.context.location(), *target, new_block_index);
+    }
+}
+
+impl<'tcx, C> AssertionHandler<'tcx> for RuntimeCallAdder<C>
+where
+    Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
+    C: TyContextProvider<'tcx> + SpecialTypesProvider<'tcx> + BodyLocalManager<'tcx>,
+{
+    fn check_assert(
+        &mut self,
+        cond: OperandRef,
+        expected: bool,
+        msg: &rustc_middle::mir::AssertMessage<'tcx>,
+    ) {
+        let (func_name, mut additional_operands, additional_statements) =
+            self.reference_assert_kind(msg);
+
+        let mut operands = vec![
+            operand::move_for_local(cond.into()),
+            // this is a compile-time known value, so we can just pass it!
+            // NOTE: we could call different functions based on the value of this to improve
+            //       performance, but it wouldn't really affect much...
+            operand::const_from_bool(self.context.tcx(), expected),
+        ];
+        operands.append(&mut additional_operands);
+
+        let mut block = self.make_bb_for_call(func_name, operands);
+        block.statements.extend(additional_statements);
+        self.insert_blocks([block]);
+    }
+
+    fn reference_assert_kind(
+        &mut self,
+        msg: &rustc_middle::mir::AssertMessage<'tcx>,
+    ) -> (&'static str, Vec<Operand<'tcx>>, Vec<Statement<'tcx>>) {
+        match msg {
+            rustc_middle::mir::AssertKind::BoundsCheck { len, index } => {
+                let len_ref = self.reference_operand(len);
+                let index_ref = self.reference_operand(index);
+                (
+                    stringify!(pri::check_assert_bounds_check),
+                    vec![
+                        operand::copy_for_local(len_ref.into()),
+                        operand::copy_for_local(index_ref.into()),
+                    ],
+                    vec![],
+                )
+            }
+            rustc_middle::mir::AssertKind::Overflow(bin_op, op1, op2) => {
+                let binary_op_ty = self.context.pri_special_types().binary_op;
+                let operator = convert_mir_binop_to_pri(bin_op);
+                let operator_local = self.context.add_local(binary_op_ty);
+                let additional_statements = enums::set_variant_to_local(
+                    binary_op_ty,
+                    format!("{operator:?}").as_str(),
+                    operator_local,
+                );
+
+                let op1_ref = self.reference_operand(op1);
+                let op2_ref = self.reference_operand(op2);
+                (
+                    stringify!(pri::check_assert_overflow),
+                    vec![
+                        // TODO: double check that moves and copies here are correct
+                        operand::move_for_local(operator_local),
+                        operand::copy_for_local(op1_ref.into()),
+                        operand::copy_for_local(op2_ref.into()),
+                    ],
+                    additional_statements,
+                )
+            }
+            rustc_middle::mir::AssertKind::OverflowNeg(op) => {
+                let op_ref = self.reference_operand(op);
+                (
+                    stringify!(pri::check_assert_overflow_neg),
+                    vec![operand::copy_for_local(op_ref.into())],
+                    vec![],
+                )
+            }
+            rustc_middle::mir::AssertKind::DivisionByZero(op) => {
+                let op_ref = self.reference_operand(op);
+                (
+                    stringify!(pri::check_assert_div_by_zero),
+                    vec![operand::copy_for_local(op_ref.into())],
+                    vec![],
+                )
+            }
+            rustc_middle::mir::AssertKind::RemainderByZero(op) => {
+                let op_ref = self.reference_operand(op);
+                (
+                    stringify!(pri::check_assert_rem_by_zero),
+                    vec![operand::copy_for_local(op_ref.into())],
+                    vec![],
+                )
+            }
+            rustc_middle::mir::AssertKind::ResumedAfterReturn(_generator_kind) => {
+                // NOTE: check if these exist in HIR only
+                todo!("research if this is unreachable or not; likely it's not reachable")
+            }
+            rustc_middle::mir::AssertKind::ResumedAfterPanic(_generator_kind) => {
+                todo!("research if this is unreachable or not; likely it's not reachable")
+            }
+        }
     }
 }
 
@@ -1190,7 +1327,7 @@ impl<'tcx> From<(BasicBlockData<'tcx>, Local)> for BlocksAndResult<'tcx> {
 }
 
 mod utils {
-    use runtime::pri;
+
     use rustc_middle::{
         mir::{self, Local, Operand, Place, Statement},
         ty::{Ty, TyCtxt},
@@ -1225,7 +1362,7 @@ mod utils {
             .unwrap()
         }
 
-        pub fn const_from_uint<'tcx, T>(tcx: TyCtxt<'tcx>, value: T) -> Operand<'tcx>
+        pub fn const_from_uint<T>(tcx: TyCtxt, value: T) -> Operand
         where
             T: Into<u128>,
         {
@@ -1237,11 +1374,11 @@ mod utils {
             )
         }
 
-        pub fn const_from_bool<'tcx>(tcx: TyCtxt<'tcx>, value: bool) -> Operand<'tcx> {
+        pub fn const_from_bool(tcx: TyCtxt, value: bool) -> Operand {
             const_from_scalar_int(tcx, ScalarInt::from(value), tcx.types.bool)
         }
 
-        pub fn const_from_char<'tcx>(tcx: TyCtxt<'tcx>, value: char) -> Operand<'tcx> {
+        pub fn const_from_char(tcx: TyCtxt, value: char) -> Operand {
             const_from_scalar_int(tcx, ScalarInt::from(value), tcx.types.char)
         }
 
@@ -1253,10 +1390,7 @@ mod utils {
             Operand::const_from_scalar(tcx, ty, Scalar::Int(value), DUMMY_SP)
         }
 
-        pub fn const_from_scalar_int_unsigned<'tcx>(
-            tcx: TyCtxt<'tcx>,
-            value: ScalarInt,
-        ) -> Operand<'tcx> {
+        pub fn const_from_scalar_int_unsigned(tcx: TyCtxt, value: ScalarInt) -> Operand {
             // value must be unsigned
             let ty = tcx.mk_mach_uint(uint_ty_from_bytes(value.size().bytes_usize()));
             Operand::const_from_scalar(tcx, ty, Scalar::Int(value), DUMMY_SP)
@@ -1275,7 +1409,7 @@ mod utils {
             if copy {
                 Operand::Copy(place)
             } else {
-                Operand::Move(Place::from(place))
+                Operand::Move(place)
             }
         }
     }
@@ -1311,7 +1445,7 @@ mod utils {
             vec![deinit, disc]
         }
 
-        pub fn get_variant_index_by_name<'tcx>(ty: Ty<'tcx>, variant_name: &str) -> VariantIdx {
+        pub fn get_variant_index_by_name(ty: Ty, variant_name: &str) -> VariantIdx {
             let adt_def = match ty.kind() {
                 TyKind::Adt(def, _) => def,
                 _ => unreachable!(),
@@ -1320,25 +1454,22 @@ mod utils {
                 .variants()
                 .iter()
                 .find(|d| d.name.as_str() == variant_name)
-                .expect(
-                    format!("Variant could not be found with name `{}`.", variant_name).as_str(),
-                );
+                .unwrap_or_else(|| {
+                    panic!("Variant could not be found with name `{variant_name}`.")
+                });
             adt_def.variant_index_with_id(def.def_id)
         }
     }
 
     pub mod assignment {
 
-        use rustc_middle::mir::{Local, Place, Rvalue, SourceInfo, Statement, StatementKind};
+        use rustc_middle::mir::{Place, Rvalue, SourceInfo, Statement, StatementKind};
         use rustc_span::DUMMY_SP;
 
         pub mod rvalue {
-            use super::super::operand;
+
             use rustc_middle::{
-                mir::{
-                    AggregateKind, BorrowKind, CastKind, Local, Operand, Place, Rvalue, SourceInfo,
-                    Statement, StatementKind,
-                },
+                mir::{AggregateKind, BorrowKind, CastKind, Operand, Place, Rvalue},
                 ty::{adjustment::PointerCast, Ty, TyCtxt},
             };
 
@@ -1346,11 +1477,7 @@ mod utils {
                 Rvalue::Ref(tcx.lifetimes.re_erased, BorrowKind::Shared, target)
             }
 
-            pub fn cast_to_unsize<'tcx>(
-                tcx: TyCtxt<'tcx>,
-                operand: Operand<'tcx>,
-                to_ty: Ty<'tcx>,
-            ) -> Rvalue<'tcx> {
+            pub fn cast_to_unsize<'tcx>(operand: Operand<'tcx>, to_ty: Ty<'tcx>) -> Rvalue<'tcx> {
                 Rvalue::Cast(CastKind::Pointer(PointerCast::Unsize), operand, to_ty)
             }
 
@@ -1368,10 +1495,20 @@ mod utils {
     }
 
     pub mod ty {
-        use rustc_middle::ty::{Ty, TyCtxt};
+        use rustc_abi::Size;
+        use rustc_middle::ty::{ParamEnv, ParamEnvAnd, Ty, TyCtxt};
 
         pub fn mk_imm_ref<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>) -> Ty<'tcx> {
             tcx.mk_imm_ref(tcx.lifetimes.re_erased, ty)
+        }
+
+        pub fn size_of<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>) -> Size {
+            tcx.layout_of(ParamEnvAnd {
+                param_env: ParamEnv::empty(),
+                value: ty,
+            })
+            .unwrap()
+            .size
         }
     }
 
@@ -1396,7 +1533,7 @@ mod utils {
         let cast_local = local_manager.add_local(slice_ty);
         let cast_assign = assignment::create(
             Place::from(cast_local),
-            rvalue::cast_to_unsize(tcx, operand::move_for_local(ref_local), slice_ty),
+            rvalue::cast_to_unsize(operand::move_for_local(ref_local), slice_ty),
         );
 
         (cast_local, [array_assign, ref_assign, cast_assign])

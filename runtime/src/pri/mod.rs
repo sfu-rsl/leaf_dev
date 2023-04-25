@@ -2,9 +2,8 @@ mod instance;
 mod utils;
 
 use crate::abs::{
-    AssignmentHandler, BasicBlockIndex, BinaryOp, BranchTakingHandler, BranchingHandler,
-    ConstantHandler, FunctionHandler, Local, OperandHandler, PlaceHandler, PlaceProjectionHandler,
-    UnaryOp, VariantIndex,
+    backend::*, AssertKind, BasicBlockIndex, BinaryOp, BranchingMetadata, DiscriminantAsIntType,
+    FieldIndex, Local, UnaryOp, VariantIndex,
 };
 
 use self::instance::*;
@@ -33,7 +32,7 @@ pub fn ref_place_local(local: Local) -> PlaceRef {
 pub fn ref_place_deref(place: PlaceRef) -> PlaceRef {
     push_place_ref(|p| p.project_on(take_back_place_ref(place)).deref())
 }
-pub fn ref_place_field(place: PlaceRef, field: u32 /*, type */) -> PlaceRef {
+pub fn ref_place_field(place: PlaceRef, field: FieldIndex /*, type */) -> PlaceRef {
     push_place_ref(|p| p.project_on(take_back_place_ref(place)).for_field(field))
 }
 pub fn ref_place_index(place: PlaceRef, index_place: PlaceRef) -> PlaceRef {
@@ -93,6 +92,18 @@ pub fn ref_operand_const_func(id: u64) -> OperandRef {
 pub fn ref_operand_const_str(value: &'static str) -> OperandRef {
     push_operand_ref(|o| o.const_from().str(value))
 }
+pub fn ref_operand_sym_bool() -> OperandRef {
+    push_operand_ref(|o| o.symbolic().bool())
+}
+pub fn ref_operand_sym_int(size: u64, is_signed: bool) -> OperandRef {
+    push_operand_ref(|o| o.symbolic().int(size, is_signed))
+}
+pub fn ref_operand_sym_float(ebits: u64, sbits: u64) -> OperandRef {
+    push_operand_ref(|o| o.symbolic().float(ebits, sbits))
+}
+pub fn ref_operand_sym_char() -> OperandRef {
+    push_operand_ref(|o| o.symbolic().char())
+}
 
 pub fn assign_use(dest: PlaceRef, operand: OperandRef) {
     assign_to(dest, |h| h.use_of(take_back_operand_ref(operand)))
@@ -118,11 +129,22 @@ pub fn assign_len(dest: PlaceRef, place: PlaceRef) {
     assign_to(dest, |h| h.len_of(take_back_place_ref(place)))
 }
 
-pub fn assign_cast_numeric(dest: PlaceRef, operand: OperandRef, is_to_float: bool, size: usize) {
+pub fn assign_cast_char(dest: PlaceRef, operand: OperandRef) {
+    assign_to(dest, |h| h.char_cast_of(take_back_operand_ref(operand)))
+}
+
+pub fn assign_cast_integer(dest: PlaceRef, operand: OperandRef, is_signed: bool, bits: u64) {
     assign_to(dest, |h| {
-        h.numeric_cast_of(take_back_operand_ref(operand), is_to_float, size)
+        h.integer_cast_of(take_back_operand_ref(operand), is_signed, bits)
     })
 }
+
+pub fn assign_cast_float(dest: PlaceRef, operand: OperandRef, bits: u64) {
+    assign_to(dest, |h| {
+        h.float_cast_of(take_back_operand_ref(operand), bits)
+    })
+}
+
 pub fn assign_cast(dest: PlaceRef /* TODO: Other types of cast. */) {
     assign_to(dest, |h| h.cast_of())
 }
@@ -164,31 +186,31 @@ pub fn assign_aggregate_array(dest: PlaceRef, items: &[OperandRef]) {
 }
 
 pub fn take_branch_true(info: BranchingInfo) {
-    branch(info, |h| h.on_bool().take(true))
+    conditional(info, |h| h.on_bool().take(true))
 }
 pub fn take_branch_false(info: BranchingInfo) {
-    branch(info, |h| h.on_bool().take(false))
+    conditional(info, |h| h.on_bool().take(false))
 }
 
 pub fn take_branch_int(info: BranchingInfo, value_bit_rep: u128) {
-    branch(info, |h| h.on_int().take(value_bit_rep))
+    conditional(info, |h| h.on_int().take(value_bit_rep))
 }
 pub fn take_branch_ow_int(info: BranchingInfo, non_values: &[u128]) {
-    branch(info, |h| h.on_int().take_otherwise(non_values))
+    conditional(info, |h| h.on_int().take_otherwise(non_values))
 }
 
 pub fn take_branch_char(info: BranchingInfo, value: char) {
-    branch(info, |h| h.on_char().take(value))
+    conditional(info, |h| h.on_char().take(value))
 }
-pub fn take_branch_ow_char(info: BranchingInfo, non_values: &[u128]) {
-    branch(info, |h| h.on_char().take_otherwise(non_values))
+pub fn take_branch_ow_char(info: BranchingInfo, non_values: &[char]) {
+    conditional(info, |h| h.on_char().take_otherwise(non_values))
 }
 
 pub fn take_branch_enum_discriminant(info: BranchingInfo, index: VariantIndex) {
-    branch(info, |h| h.on_enum().take(index))
+    conditional(info, |h| h.on_enum().take(index))
 }
 pub fn take_branch_ow_enum_discriminant(info: BranchingInfo, non_indices: &[VariantIndex]) {
-    branch(info, |h| h.on_enum().take_otherwise(non_indices))
+    conditional(info, |h| h.on_enum().take_otherwise(non_indices))
 }
 
 pub fn before_call_func(func: OperandRef, args: &[OperandRef], destination: PlaceRef) {
@@ -210,16 +232,69 @@ pub fn after_call_func() {
     func_control(|h| h.after_call_func())
 }
 
+pub fn check_assert_bounds_check(
+    cond: OperandRef,
+    expected: bool,
+    len: OperandRef,
+    index: OperandRef,
+) {
+    let assert_kind = AssertKind::BoundsCheck {
+        len: take_back_operand_ref(len),
+        index: take_back_operand_ref(index),
+    };
+    check_assert(cond, expected, assert_kind)
+}
+pub fn check_assert_overflow(
+    cond: OperandRef,
+    expected: bool,
+    operator: BinaryOp,
+    first: OperandRef,
+    second: OperandRef,
+) {
+    let assert_kind = AssertKind::Overflow(
+        operator,
+        take_back_operand_ref(first),
+        take_back_operand_ref(second),
+    );
+    check_assert(cond, expected, assert_kind)
+}
+pub fn check_assert_overflow_neg(cond: OperandRef, expected: bool, operand: OperandRef) {
+    let assert_kind = AssertKind::OverflowNeg(take_back_operand_ref(operand));
+    check_assert(cond, expected, assert_kind)
+}
+pub fn check_assert_div_by_zero(cond: OperandRef, expected: bool, operand: OperandRef) {
+    let assert_kind = AssertKind::DivisionByZero(take_back_operand_ref(operand));
+    check_assert(cond, expected, assert_kind)
+}
+pub fn check_assert_rem_by_zero(cond: OperandRef, expected: bool, operand: OperandRef) {
+    let assert_kind = AssertKind::RemainderByZero(take_back_operand_ref(operand));
+    check_assert(cond, expected, assert_kind)
+}
+fn check_assert(cond: OperandRef, expected: bool, assert_kind: AssertKind<OperandImpl>) {
+    branch(|h| h.assert(take_back_operand_ref(cond), expected, assert_kind))
+}
+
 pub struct BranchingInfo {
-    pub node_location: BasicBlockIndex,
     pub discriminant: OperandRef,
+    metadata: BranchingMetadata,
 }
 
 impl BranchingInfo {
-    pub fn new(node_location: BasicBlockIndex, discriminant: OperandRef) -> Self {
+    pub fn new(
+        node_location: BasicBlockIndex,
+        discriminant: OperandRef,
+        discr_bit_size: u64,
+        discr_is_signed: bool,
+    ) -> Self {
         Self {
-            node_location,
             discriminant,
+            metadata: BranchingMetadata {
+                node_location,
+                discr_as_int: DiscriminantAsIntType {
+                    bit_size: discr_bit_size,
+                    is_signed: discr_is_signed,
+                },
+            },
         }
     }
 }

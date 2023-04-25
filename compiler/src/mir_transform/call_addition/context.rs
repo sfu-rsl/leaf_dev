@@ -12,7 +12,7 @@ use crate::mir_transform::modification::{
     self, BodyBlockManager, BodyLocalManager, BodyModificationUnit, JumpTargetModifier,
 };
 
-use super::{OperandRef, PlaceRef};
+use super::PlaceRef;
 
 pub trait TyContextProvider<'tcx> {
     fn tcx(&self) -> TyCtxt<'tcx>;
@@ -138,7 +138,7 @@ impl<'tcx, 'm> DefaultContext<'tcx, 'm> {
             .collect();
 
         let get_ty =
-            |name: &str| -> Ty<'tcx> { tcx.type_of(def_ids.get(&name.replace(" ", "")).unwrap()) };
+            |name: &str| -> Ty<'tcx> { tcx.type_of(def_ids.get(&name.replace(' ', "")).unwrap()) };
         SpecialTypes {
             place_ref: get_ty(stringify!(runtime::pri::PLACE_REF_TYPE_HOLDER)),
             operand_ref: get_ty(stringify!(runtime::pri::OPERAND_REF_TYPE_HOLDER)),
@@ -148,18 +148,16 @@ impl<'tcx, 'm> DefaultContext<'tcx, 'm> {
     }
 
     fn get_exported_symbols_of_pri(tcx: TyCtxt<'tcx>) -> Vec<DefId> {
-        let crate_num = tcx
+        let crate_num = *tcx
             .crates(())
             .iter()
             .find(|cnum| tcx.crate_name(**cnum).as_str() == stringify!(runtime))
-            .expect(
-                format!(
+            .unwrap_or_else(|| {
+                panic!(
                     "{} crate is not added as a dependency.",
                     stringify!(runtime)
                 )
-                .as_str(),
-            )
-            .clone();
+            });
 
         tcx.exported_symbols(crate_num)
             .iter()
@@ -232,8 +230,8 @@ impl JumpTargetModifier for DefaultContext<'_, '_> {
 impl<'tcx> FunctionInfoProvider<'tcx> for DefaultContext<'tcx, '_> {
     fn get_pri_func_info(&self, func_name: &str) -> &FunctionInfo<'tcx> {
         self.pri_functions
-            .get(&("runtime::".to_owned() + &func_name.replace(" ", ""))) // FIXME
-            .expect(format!("Invalid pri function name: `{}`.", func_name).as_str())
+            .get(&("runtime::".to_owned() + &func_name.replace(' ', ""))) // FIXME
+            .unwrap_or_else(|| panic!("Invalid pri function name: `{func_name}`."))
     }
 }
 
@@ -255,13 +253,13 @@ pub struct InBodyContext<'b, 'tcx, 'bd, B> {
     pub(super) body: &'bd mir::Body<'tcx>,
 }
 
-impl<'tcx, 'bd, B> BodyProvider<'tcx> for InBodyContext<'_, 'tcx, '_, B> {
+impl<'tcx, B> BodyProvider<'tcx> for InBodyContext<'_, 'tcx, '_, B> {
     fn body(&self) -> &mir::Body<'tcx> {
         self.body
     }
 }
 
-impl<'tcx, 'bd, B> mir::HasLocalDecls<'tcx> for InBodyContext<'_, 'tcx, '_, B> {
+impl<'tcx, B> mir::HasLocalDecls<'tcx> for InBodyContext<'_, 'tcx, '_, B> {
     fn local_decls(&self) -> &mir::LocalDecls<'tcx> {
         self.body().local_decls()
     }

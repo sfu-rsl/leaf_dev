@@ -151,10 +151,11 @@ macro_rules! make_terminator_kind_visitor {
                 Default::default()
             }
 
+            #[allow(clippy::too_many_arguments)]
             fn visit_call(
                 &mut self,
                 func: & $($mutability)? Operand<'tcx>,
-                args: & $($mutability)? Vec<Operand<'tcx>>,
+                args: & $($mutability)? [Operand<'tcx>],
                 destination: & $($mutability)? Place<'tcx>,
                 target: & $($mutability)? Option<BasicBlock>,
                 cleanup: & $($mutability)? Option<BasicBlock>,
@@ -208,7 +209,7 @@ macro_rules! make_terminator_kind_visitor {
             fn visit_inline_asm(
                 &mut self,
                 template: & $($mutability)? &[InlineAsmTemplatePiece],
-                operands: & $($mutability)? Vec<InlineAsmOperand<'tcx>>,
+                operands: & $($mutability)? [InlineAsmOperand<'tcx>],
                 options: & $($mutability)? InlineAsmOptions,
                 line_spans: &'tcx [Span],
                 destination: & $($mutability)? Option<BasicBlock>,
@@ -388,7 +389,7 @@ macro_rules! make_rvalue_visitor {
             fn visit_aggregate(
                 &mut self,
                 kind: & $($mutability)? Box<AggregateKind>,
-                operands: & $($mutability)? Vec<Operand<'tcx>>,
+                operands: & $($mutability)? [Operand<'tcx>],
             ) -> T {
                 Default::default()
             }
