@@ -176,7 +176,12 @@ impl BranchingHandler for LoggerBranchingHandler {
     }
 
     fn assert(self, cond: Self::Operand, expected: bool, assert_kind: AssertKind<Self::Operand>) {
-        log_info!("Checking assertion {:?} == {}", cond, expected);
+        log_info!(
+            "Asserting {:?} based on {:?} == {}",
+            assert_kind,
+            cond,
+            expected
+        );
     }
 }
 

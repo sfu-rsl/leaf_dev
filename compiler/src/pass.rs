@@ -250,7 +250,7 @@ where
         // we ignore target because this is concolic execution, not symbolic (program execution guides location)
         _target: &BasicBlock,
         _cleanup: &Option<BasicBlock>,
-    ) -> () {
+    ) {
         let cond_ref = self.call_adder.reference_operand(cond);
         log::debug!("looking at assert message: '{:?}'", msg);
         self.call_adder.check_assert(cond_ref, *expected, msg);

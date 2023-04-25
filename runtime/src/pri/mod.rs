@@ -242,26 +242,26 @@ pub fn check_assert_overflow(
     cond: OperandRef,
     expected: bool,
     operator: BinaryOp,
-    op1: OperandRef,
-    op2: OperandRef,
+    first: OperandRef,
+    second: OperandRef,
 ) {
     let assert_kind = AssertKind::Overflow(
         operator,
-        take_back_operand_ref(op1),
-        take_back_operand_ref(op2),
+        take_back_operand_ref(first),
+        take_back_operand_ref(second),
     );
     check_assert(cond, expected, assert_kind)
 }
-pub fn check_assert_overflow_neg(cond: OperandRef, expected: bool, op: OperandRef) {
-    let assert_kind = AssertKind::OverflowNeg(take_back_operand_ref(op));
+pub fn check_assert_overflow_neg(cond: OperandRef, expected: bool, operand: OperandRef) {
+    let assert_kind = AssertKind::OverflowNeg(take_back_operand_ref(operand));
     check_assert(cond, expected, assert_kind)
 }
-pub fn check_assert_div_by_zero(cond: OperandRef, expected: bool, op: OperandRef) {
-    let assert_kind = AssertKind::DivisionByZero(take_back_operand_ref(op));
+pub fn check_assert_div_by_zero(cond: OperandRef, expected: bool, operand: OperandRef) {
+    let assert_kind = AssertKind::DivisionByZero(take_back_operand_ref(operand));
     check_assert(cond, expected, assert_kind)
 }
-pub fn check_assert_rem_by_zero(cond: OperandRef, expected: bool, op: OperandRef) {
-    let assert_kind = AssertKind::RemainderByZero(take_back_operand_ref(op));
+pub fn check_assert_rem_by_zero(cond: OperandRef, expected: bool, operand: OperandRef) {
+    let assert_kind = AssertKind::RemainderByZero(take_back_operand_ref(operand));
     check_assert(cond, expected, assert_kind)
 }
 fn check_assert(cond: OperandRef, expected: bool, assert_kind: AssertKind<OperandImpl>) {
