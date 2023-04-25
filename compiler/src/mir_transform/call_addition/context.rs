@@ -201,6 +201,19 @@ impl<'tcx, 'm> BodyBlockManager<'tcx> for DefaultContext<'tcx, 'm> {
         self.modification_unit
             .insert_blocks_before(index, blocks, sticky)
     }
+
+    fn insert_blocks_after<I>(
+        &mut self,
+        index: BasicBlock,
+        blocks: I,
+        sticky: bool,
+    ) -> Vec<BasicBlock>
+    where
+        I: IntoIterator<Item = BasicBlockData<'tcx>>,
+    {
+        self.modification_unit
+            .insert_blocks_after(index, blocks, sticky)
+    }
 }
 
 impl JumpTargetModifier for DefaultContext<'_, '_> {
@@ -346,6 +359,19 @@ macro_rules! impl_block_manager {
                 I: IntoIterator<Item = BasicBlockData<'tcx>>,
             {
                 self.base.insert_blocks_before(index, blocks, sticky)
+            }
+
+            fn insert_blocks_after<I>(
+                &mut self,
+                index: BasicBlock,
+                blocks: I,
+                sticky: bool,
+            ) -> Vec<BasicBlock>
+            where
+                I: IntoIterator<Item = BasicBlockData<'tcx>>,
+            {
+                self.base
+                    .insert_blocks_after(index, blocks, sticky)
             }
         }
     };

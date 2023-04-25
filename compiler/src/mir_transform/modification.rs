@@ -2,7 +2,7 @@ use std::{cell::RefCell, collections::HashMap, marker::PhantomData, rc::Rc};
 
 use crate::visit::{self, TerminatorKindMutVisitor};
 use rustc_ast::Mutability;
-use rustc_index::vec::IndexVec;
+use rustc_index::vec::{Idx, IndexVec};
 use rustc_middle::{
     mir::{
         BasicBlock, BasicBlockData, Body, Local, LocalDecl, LocalDecls, Operand, Place, SourceInfo,
@@ -85,6 +85,15 @@ pub trait BodyLocalManager<'tcx> {
 
 pub trait BodyBlockManager<'tcx> {
     fn insert_blocks_before<I>(
+        &mut self,
+        index: BasicBlock,
+        blocks: I,
+        sticky: bool,
+    ) -> Vec<BasicBlock>
+    where
+        I: IntoIterator<Item = BasicBlockData<'tcx>>;
+
+    fn insert_blocks_after<I>(
         &mut self,
         index: BasicBlock,
         blocks: I,
@@ -183,6 +192,20 @@ impl<'tcx> BodyBlockManager<'tcx> for BodyModificationUnit<'tcx> {
                 .map(|nbb| nbb.pseudo_index),
         )
     }
+
+    // blocks will be inserted after index+1 if it exists
+    fn insert_blocks_after<I>(
+        &mut self,
+        index: BasicBlock,
+        blocks: I,
+        sticky: bool,
+    ) -> Vec<BasicBlock>
+    where
+        I: IntoIterator<Item = BasicBlockData<'tcx>>,
+    {
+        let next_bb_index = index.plus(1);
+        self.insert_blocks_before(next_bb_index, blocks, sticky)
+    }
 }
 
 impl JumpTargetModifier for BodyModificationUnit<'_> {
@@ -209,9 +232,11 @@ impl JumpTargetModifier for BodyModificationUnit<'_> {
 }
 
 impl<'tcx> BodyModificationUnit<'tcx> {
+    // No blocks actually get added to the MIR of the current body until this function gets called.
     pub fn commit(mut self, body: &mut Body<'tcx>) {
         Self::add_new_locals(&mut body.local_decls, self.new_locals);
 
+        // this function applies any jump modifications to terminators of blocks as specified
         Self::update_jumps_pre_insert(
             Iterator::chain(
                 body.basic_blocks_mut().iter_enumerated_mut(),
@@ -247,6 +272,7 @@ impl<'tcx> BodyModificationUnit<'tcx> {
                         block: BasicBlockData<'tcx>,
                         before_index: BasicBlock,
                         after_index: Option<BasicBlock>| {
+            // IndexVec::push(block) returns the new index of block in the vector
             let new_index = blocks.push(block);
             let new_index = after_index.unwrap_or(new_index);
             if new_index != before_index {
@@ -269,6 +295,7 @@ impl<'tcx> BodyModificationUnit<'tcx> {
                 for non_sticky in chunk.drain_filter(|b| !b.is_sticky) {
                     push(blocks, non_sticky.data, non_sticky.pseudo_index, None);
                 }
+                // this finds the index of the top most stick block & uses it as the target for all other blocks to jump to
                 top_index = blocks.next_index();
                 for sticky in chunk.drain_filter(|b| b.is_sticky) {
                     push(blocks, sticky.data, sticky.pseudo_index, None);
@@ -280,7 +307,10 @@ impl<'tcx> BodyModificationUnit<'tcx> {
         }
 
         // Currently, we only consider insertion of blocks before original blocks.
-        assert!(new_blocks.peek().is_none());
+        assert!(
+            new_blocks.peek().is_none(),
+            "make sure that no blocks are inserted after the last bb"
+        );
 
         index_mapping
     }
@@ -337,7 +367,7 @@ impl<'tcx> BodyModificationUnit<'tcx> {
     ) where
         'tcx: 'b,
     {
-        let mut index_rc = RefCell::new(BasicBlock::from(0 as u32));
+        let index_rc = RefCell::new(BasicBlock::from(0 as u32));
         let map = |target: BasicBlock, attr: &JumpTargetAttribute| -> Option<BasicBlock> {
             if update_next && target == NEXT_BLOCK {
                 Some(*index_rc.borrow() + 1)
@@ -526,16 +556,13 @@ where
 
     fn update_with_attr(&mut self, target: &mut BasicBlock, target_attr: JumpTargetAttribute) {
         let new_index = (self.index_mapping)(*target, &target_attr);
-        if new_index.is_none() {
-            return;
-        }
-        let new_index = new_index.unwrap();
-
-        log::debug!("Updating jump target from {:?} to {:?}", target, new_index);
-        *target = new_index;
-        self.count += 1;
-        if self.recursive {
-            self.update(target);
+        if let Some(new_index) = new_index {
+            log::debug!("Updating jump target from {:?} to {:?}", target, new_index);
+            *target = new_index;
+            self.count += 1;
+            if self.recursive {
+                self.update(target);
+            }
         }
     }
 

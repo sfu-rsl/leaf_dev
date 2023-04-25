@@ -1095,8 +1095,9 @@ where
             vec![],
             Some(*target),
         );
-        // NOTE: this inserts the call in non-linear order, but it still maintains the correct chain of jumps
-        let new_block_index = self.context.insert_blocks_before(*target, [block], false)[0];
+        let new_block_index =
+            self.context
+                .insert_blocks_after(self.context.location(), [block], false)[0];
         self.context
             .modify_jump_target(self.context.location(), *target, new_block_index);
     }
