@@ -1,6 +1,6 @@
 use super::utils::{DefaultRefManager, RefManager, UnsafeSync};
 use super::{BranchingInfo, OperandRef, PlaceRef};
-use crate::abs::backend::{OperandHandler, PlaceHandler, RuntimeBackend};
+use crate::abs::backend::{BranchingHandler, OperandHandler, PlaceHandler, RuntimeBackend};
 
 #[allow(unused_imports)] // Mutex is detected as unused unless runtime_access is set to safe_mt
 use std::{
@@ -11,7 +11,7 @@ use std::{
 type BackendImpl = crate::backends::basic::BasicBackend;
 
 type PlaceImpl = <<BackendImpl as RuntimeBackend>::PlaceHandler<'static> as PlaceHandler>::Place;
-type OperandImpl =
+pub(super) type OperandImpl =
     <<BackendImpl as RuntimeBackend>::OperandHandler<'static> as OperandHandler>::Operand;
 
 static INIT: Once = Once::new();
@@ -99,12 +99,23 @@ pub(super) fn take_back_operand_ref(reference: OperandRef) -> OperandImpl {
 }
 
 pub(super) fn branch<T>(
-    info: BranchingInfo,
     branch_action: impl FnOnce(<BackendImpl as RuntimeBackend>::BranchingHandler<'_>) -> T,
 ) -> T {
     perform_on_backend(|r| {
-        let handler = r.branch(take_back_operand_ref(info.discriminant), info.metadata);
+        let handler = r.branch();
         branch_action(handler)
+    })
+}
+
+pub(super) fn conditional<T>(
+    info: BranchingInfo,
+    conditional_action: impl FnOnce(
+        <<BackendImpl as RuntimeBackend>::BranchingHandler<'_> as BranchingHandler>::ConditionalBranchingHandler,
+    ) -> T,
+) -> T {
+    branch(|b| {
+        let handler = b.conditional(take_back_operand_ref(info.discriminant), info.metadata);
+        conditional_action(handler)
     })
 }
 

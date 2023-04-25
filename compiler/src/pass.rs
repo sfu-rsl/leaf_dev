@@ -6,9 +6,9 @@ use rustc_middle::mir::{
 use rustc_target::abi::VariantIdx;
 
 use crate::mir_transform::call_addition::{
-    context_requirements as ctxtreqs, Assigner, BranchingHandler, BranchingReferencer,
-    EntryFunctionHandler, FunctionHandler, OperandRef, OperandReferencer, PlaceReferencer,
-    RuntimeCallAdder,
+    context_requirements as ctxtreqs, AssertionHandler, Assigner, BranchingHandler,
+    BranchingReferencer, EntryFunctionHandler, FunctionHandler, OperandRef, OperandReferencer,
+    PlaceReferencer, RuntimeCallAdder,
 };
 use crate::mir_transform::modification::{BodyModificationUnit, JumpTargetModifier};
 use crate::visit::StatementKindVisitor;
@@ -244,13 +244,16 @@ where
 
     fn visit_assert(
         &mut self,
-        _cond: &Operand<'tcx>,
-        _expected: &bool,
-        _msg: &mir::AssertMessage<'tcx>,
+        cond: &Operand<'tcx>,
+        expected: &bool,
+        msg: &mir::AssertMessage<'tcx>,
+        // we ignore target because this is concolic execution, not symbolic (program execution guides location)
         _target: &BasicBlock,
         _cleanup: &Option<BasicBlock>,
     ) {
-        Default::default()
+        let cond_ref = self.call_adder.reference_operand(cond);
+        log::debug!("looking at assert message: '{:?}'", msg);
+        self.call_adder.check_assert(cond_ref, *expected, msg);
     }
 
     fn visit_yield(

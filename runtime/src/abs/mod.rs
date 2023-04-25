@@ -32,6 +32,17 @@ pub enum UnaryOp {
     Neg,
 }
 
+#[derive(Debug)]
+pub enum AssertKind<Operand> {
+    BoundsCheck { len: Operand, index: Operand },
+    Overflow(BinaryOp, Operand, Operand),
+    OverflowNeg(Operand),
+    DivisionByZero(Operand),
+    RemainderByZero(Operand),
+    ResumedAfterReturn(Operand), // NOTE: TODO: check if these exist in HIR only
+    ResumedAfterPanic(Operand),  // NOTE: TODO: check if these exist in HIR only
+}
+
 pub(crate) struct BranchingMetadata {
     pub node_location: BasicBlockIndex,
     /* NOTE: If more type information was passed (such as reporting type for all local variables),

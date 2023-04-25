@@ -2,8 +2,8 @@ mod instance;
 mod utils;
 
 use crate::abs::{
-    backend::*, BasicBlockIndex, BinaryOp, BranchingMetadata, DiscriminantAsIntType, FieldIndex,
-    Local, UnaryOp, VariantIndex,
+    backend::*, AssertKind, BasicBlockIndex, BinaryOp, BranchingMetadata, DiscriminantAsIntType,
+    FieldIndex, Local, UnaryOp, VariantIndex,
 };
 
 use self::instance::*;
@@ -186,31 +186,31 @@ pub fn assign_aggregate_array(dest: PlaceRef, items: &[OperandRef]) {
 }
 
 pub fn take_branch_true(info: BranchingInfo) {
-    branch(info, |h| h.on_bool().take(true))
+    conditional(info, |h| h.on_bool().take(true))
 }
 pub fn take_branch_false(info: BranchingInfo) {
-    branch(info, |h| h.on_bool().take(false))
+    conditional(info, |h| h.on_bool().take(false))
 }
 
 pub fn take_branch_int(info: BranchingInfo, value_bit_rep: u128) {
-    branch(info, |h| h.on_int().take(value_bit_rep))
+    conditional(info, |h| h.on_int().take(value_bit_rep))
 }
 pub fn take_branch_ow_int(info: BranchingInfo, non_values: &[u128]) {
-    branch(info, |h| h.on_int().take_otherwise(non_values))
+    conditional(info, |h| h.on_int().take_otherwise(non_values))
 }
 
 pub fn take_branch_char(info: BranchingInfo, value: char) {
-    branch(info, |h| h.on_char().take(value))
+    conditional(info, |h| h.on_char().take(value))
 }
 pub fn take_branch_ow_char(info: BranchingInfo, non_values: &[char]) {
-    branch(info, |h| h.on_char().take_otherwise(non_values))
+    conditional(info, |h| h.on_char().take_otherwise(non_values))
 }
 
 pub fn take_branch_enum_discriminant(info: BranchingInfo, index: VariantIndex) {
-    branch(info, |h| h.on_enum().take(index))
+    conditional(info, |h| h.on_enum().take(index))
 }
 pub fn take_branch_ow_enum_discriminant(info: BranchingInfo, non_indices: &[VariantIndex]) {
-    branch(info, |h| h.on_enum().take_otherwise(non_indices))
+    conditional(info, |h| h.on_enum().take_otherwise(non_indices))
 }
 
 pub fn call_func(func: OperandRef, args: &[OperandRef], destination: PlaceRef) {
@@ -224,6 +224,48 @@ pub fn call_func(func: OperandRef, args: &[OperandRef], destination: PlaceRef) {
 }
 pub fn return_from_func() {
     func_control(|h| h.ret())
+}
+
+pub fn check_assert_bounds_check(
+    cond: OperandRef,
+    expected: bool,
+    len: OperandRef,
+    index: OperandRef,
+) {
+    let assert_kind = AssertKind::BoundsCheck {
+        len: take_back_operand_ref(len),
+        index: take_back_operand_ref(index),
+    };
+    check_assert(cond, expected, assert_kind)
+}
+pub fn check_assert_overflow(
+    cond: OperandRef,
+    expected: bool,
+    operator: BinaryOp,
+    first: OperandRef,
+    second: OperandRef,
+) {
+    let assert_kind = AssertKind::Overflow(
+        operator,
+        take_back_operand_ref(first),
+        take_back_operand_ref(second),
+    );
+    check_assert(cond, expected, assert_kind)
+}
+pub fn check_assert_overflow_neg(cond: OperandRef, expected: bool, operand: OperandRef) {
+    let assert_kind = AssertKind::OverflowNeg(take_back_operand_ref(operand));
+    check_assert(cond, expected, assert_kind)
+}
+pub fn check_assert_div_by_zero(cond: OperandRef, expected: bool, operand: OperandRef) {
+    let assert_kind = AssertKind::DivisionByZero(take_back_operand_ref(operand));
+    check_assert(cond, expected, assert_kind)
+}
+pub fn check_assert_rem_by_zero(cond: OperandRef, expected: bool, operand: OperandRef) {
+    let assert_kind = AssertKind::RemainderByZero(take_back_operand_ref(operand));
+    check_assert(cond, expected, assert_kind)
+}
+fn check_assert(cond: OperandRef, expected: bool, assert_kind: AssertKind<OperandImpl>) {
+    branch(|h| h.assert(take_back_operand_ref(cond), expected, assert_kind))
 }
 
 pub struct BranchingInfo {

@@ -189,6 +189,20 @@ pub trait EntryFunctionHandler {
     fn init_runtime_lib(&mut self);
 }
 
+pub trait AssertionHandler<'tcx> {
+    fn check_assert(
+        &mut self,
+        cond: OperandRef,
+        expected: bool,
+        msg: &rustc_middle::mir::AssertMessage<'tcx>,
+    );
+
+    fn reference_assert_kind(
+        &mut self,
+        msg: &rustc_middle::mir::AssertMessage<'tcx>,
+    ) -> (&'static str, Vec<Operand<'tcx>>, Vec<Statement<'tcx>>);
+}
+
 pub struct RuntimeCallAdder<C> {
     context: C,
 }
@@ -1094,6 +1108,109 @@ where
     fn return_from_func(&mut self) {
         let block = self.make_bb_for_call(stringify!(pri::return_from_func), vec![]);
         self.insert_blocks([block]);
+    }
+}
+
+impl<'tcx, C> AssertionHandler<'tcx> for RuntimeCallAdder<C>
+where
+    Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
+    C: TyContextProvider<'tcx> + SpecialTypesProvider<'tcx> + BodyLocalManager<'tcx>,
+{
+    fn check_assert(
+        &mut self,
+        cond: OperandRef,
+        expected: bool,
+        msg: &rustc_middle::mir::AssertMessage<'tcx>,
+    ) {
+        let (func_name, mut additional_operands, additional_statements) =
+            self.reference_assert_kind(msg);
+
+        let mut operands = vec![
+            operand::move_for_local(cond.into()),
+            // this is a compile-time known value, so we can just pass it!
+            // NOTE: we could call different functions based on the value of this to improve
+            //       performance, but it wouldn't really affect much...
+            operand::const_from_bool(self.context.tcx(), expected),
+        ];
+        operands.append(&mut additional_operands);
+
+        let mut block = self.make_bb_for_call(func_name, operands);
+        block.statements.extend(additional_statements);
+        self.insert_blocks([block]);
+    }
+
+    fn reference_assert_kind(
+        &mut self,
+        msg: &rustc_middle::mir::AssertMessage<'tcx>,
+    ) -> (&'static str, Vec<Operand<'tcx>>, Vec<Statement<'tcx>>) {
+        match msg {
+            rustc_middle::mir::AssertKind::BoundsCheck { len, index } => {
+                let len_ref = self.reference_operand(len);
+                let index_ref = self.reference_operand(index);
+                (
+                    stringify!(pri::check_assert_bounds_check),
+                    vec![
+                        operand::copy_for_local(len_ref.into()),
+                        operand::copy_for_local(index_ref.into()),
+                    ],
+                    vec![],
+                )
+            }
+            rustc_middle::mir::AssertKind::Overflow(bin_op, op1, op2) => {
+                let binary_op_ty = self.context.pri_special_types().binary_op;
+                let operator = convert_mir_binop_to_pri(bin_op);
+                let operator_local = self.context.add_local(binary_op_ty);
+                let additional_statements = enums::set_variant_to_local(
+                    binary_op_ty,
+                    format!("{operator:?}").as_str(),
+                    operator_local,
+                );
+
+                let op1_ref = self.reference_operand(op1);
+                let op2_ref = self.reference_operand(op2);
+                (
+                    stringify!(pri::check_assert_overflow),
+                    vec![
+                        // TODO: double check that moves and copies here are correct
+                        operand::move_for_local(operator_local),
+                        operand::copy_for_local(op1_ref.into()),
+                        operand::copy_for_local(op2_ref.into()),
+                    ],
+                    additional_statements,
+                )
+            }
+            rustc_middle::mir::AssertKind::OverflowNeg(op) => {
+                let op_ref = self.reference_operand(op);
+                (
+                    stringify!(pri::check_assert_overflow_neg),
+                    vec![operand::copy_for_local(op_ref.into())],
+                    vec![],
+                )
+            }
+            rustc_middle::mir::AssertKind::DivisionByZero(op) => {
+                let op_ref = self.reference_operand(op);
+                (
+                    stringify!(pri::check_assert_div_by_zero),
+                    vec![operand::copy_for_local(op_ref.into())],
+                    vec![],
+                )
+            }
+            rustc_middle::mir::AssertKind::RemainderByZero(op) => {
+                let op_ref = self.reference_operand(op);
+                (
+                    stringify!(pri::check_assert_rem_by_zero),
+                    vec![operand::copy_for_local(op_ref.into())],
+                    vec![],
+                )
+            }
+            rustc_middle::mir::AssertKind::ResumedAfterReturn(_generator_kind) => {
+                // NOTE: check if these exist in HIR only
+                todo!("research if this is unreachable or not; likely it's not reachable")
+            }
+            rustc_middle::mir::AssertKind::ResumedAfterPanic(_generator_kind) => {
+                todo!("research if this is unreachable or not; likely it's not reachable")
+            }
+        }
     }
 }
 

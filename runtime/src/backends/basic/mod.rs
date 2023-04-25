@@ -7,8 +7,8 @@ use std::{collections::HashMap, mem};
 
 use crate::{
     abs::{
-        self, backend::*, BasicBlockIndex, BinaryOp, BranchingMetadata, DiscriminantAsIntType,
-        FieldIndex, Local, UnaryOp, VariantIndex,
+        self, backend::*, AssertKind, BasicBlockIndex, BinaryOp, BranchingMetadata,
+        DiscriminantAsIntType, FieldIndex, Local, UnaryOp, VariantIndex,
     },
     solvers::z3::Z3Solver,
     trace::ImmediateTraceManager,
@@ -85,17 +85,12 @@ impl RuntimeBackend for BasicBackend {
         BasicAssignmentHandler::new(dest, self.current_vars_state())
     }
 
-    fn branch<'a>(
-        &'a mut self,
-        discriminant: <Self::OperandHandler<'static> as OperandHandler>::Operand,
-        metadata: abs::BranchingMetadata,
-    ) -> Self::BranchingHandler<'a> {
-        BasicBranchingHandler::new(
-            get_operand_value(self.current_vars_state(), &discriminant),
-            metadata,
-            &mut self.trace_manager,
-            &mut self.current_constraints,
-        )
+    fn branch<'a>(&'a mut self) -> Self::BranchingHandler<'a> {
+        BasicBranchingHandler {
+            call_stack_manager: &mut self.call_stack_manager,
+            trace_manager: &mut self.trace_manager,
+            current_constraints: &mut self.current_constraints,
+        }
     }
 
     fn func_control(&mut self) -> Self::FunctionHandler<'_> {
@@ -328,13 +323,42 @@ impl BasicAssignmentHandler<'_> {
 }
 
 pub(crate) struct BasicBranchingHandler<'a> {
+    call_stack_manager: &'a mut CallStackManager,
+    trace_manager: &'a mut TraceManager,
+    current_constraints: &'a mut Vec<Constraint>,
+}
+
+impl<'a> BranchingHandler for BasicBranchingHandler<'a> {
+    type Operand = Operand;
+    type ConditionalBranchingHandler = BasicConditionalBranchingHandler<'a>;
+
+    fn conditional(
+        self,
+        discriminant: Operand,
+        metadata: abs::BranchingMetadata,
+    ) -> Self::ConditionalBranchingHandler {
+        let disc = get_operand_value(self.call_stack_manager.top(), &discriminant);
+        BasicConditionalBranchingHandler::new(
+            disc,
+            metadata,
+            self.trace_manager,
+            self.current_constraints,
+        )
+    }
+
+    fn assert(self, cond: Self::Operand, expected: bool, assert_kind: AssertKind<Self::Operand>) {
+        todo!("implement logic for assertions")
+    }
+}
+
+pub(crate) struct BasicConditionalBranchingHandler<'a> {
     discriminant: ValueRef,
     metadata: BranchingMetadata,
     trace_manager: &'a mut TraceManager,
     current_constraints: &'a mut Vec<Constraint>,
 }
 
-impl<'a> BasicBranchingHandler<'a> {
+impl<'a> BasicConditionalBranchingHandler<'a> {
     fn new(
         discriminant: ValueRef,
         metadata: BranchingMetadata,
@@ -358,34 +382,28 @@ impl<'a> BasicBranchingHandler<'a> {
     }
 }
 
-impl<'a> BranchingHandler for BasicBranchingHandler<'a> {
+impl<'a> ConditionalBranchingHandler for BasicConditionalBranchingHandler<'a> {
     type BoolBranchTakingHandler = BasicBranchTakingHandler<'a>;
-
     type IntBranchTakingHandler = BasicBranchTakingHandler<'a>;
-
     type CharBranchTakingHandler = BasicBranchTakingHandler<'a>;
-
     type EnumBranchTakingHandler = BasicBranchTakingHandler<'a>;
 
     fn on_bool(self) -> Self::BoolBranchTakingHandler {
         BasicBranchTakingHandler { parent: self }
     }
-
     fn on_int(self) -> Self::IntBranchTakingHandler {
         BasicBranchTakingHandler { parent: self }
     }
-
     fn on_char(self) -> Self::CharBranchTakingHandler {
         BasicBranchTakingHandler { parent: self }
     }
-
     fn on_enum(self) -> Self::EnumBranchTakingHandler {
         BasicBranchTakingHandler { parent: self }
     }
 }
 
 pub(crate) struct BasicBranchTakingHandler<'a> {
-    parent: BasicBranchingHandler<'a>,
+    parent: BasicConditionalBranchingHandler<'a>,
 }
 
 impl BasicBranchTakingHandler<'_> {

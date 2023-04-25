@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use crate::abs::{backend::*, BinaryOp, BranchingMetadata, UnaryOp, VariantIndex};
+use crate::abs::{backend::*, AssertKind, BinaryOp, BranchingMetadata, UnaryOp, VariantIndex};
 
 use super::{
     operand::{DefaultOperandHandler, Operand, PlaceUsage},
@@ -23,9 +23,9 @@ impl LoggerBackend {
 
 impl RuntimeBackend for LoggerBackend {
     type PlaceHandler<'a> = DefaultPlaceHandler where Self: 'a;
-    type OperandHandler<'a> = DefaultOperandHandler where Self : 'a;
-    type AssignmentHandler<'a> = LoggerAssignmentHandler where Self : 'a;
-    type BranchingHandler<'a> = LoggerBranchingHandler where Self : 'a;
+    type OperandHandler<'a> = DefaultOperandHandler where Self: 'a;
+    type AssignmentHandler<'a> = LoggerAssignmentHandler where Self: 'a;
+    type BranchingHandler<'a> = LoggerBranchingHandler where Self: 'a;
     type FunctionHandler<'a> = LoggerFunctionHandler<'a> where Self: 'a;
 
     type Place = Place;
@@ -43,15 +43,8 @@ impl RuntimeBackend for LoggerBackend {
         LoggerAssignmentHandler { destination: dest }
     }
 
-    fn branch(
-        &mut self,
-        discriminant: Operand,
-        metadata: BranchingMetadata,
-    ) -> Self::BranchingHandler<'_> {
-        LoggerBranchingHandler {
-            discriminant,
-            metadata,
-        }
+    fn branch(&mut self) -> Self::BranchingHandler<'_> {
+        LoggerBranchingHandler {}
     }
 
     fn func_control(&mut self) -> Self::FunctionHandler<'_> {
@@ -60,6 +53,8 @@ impl RuntimeBackend for LoggerBackend {
         }
     }
 }
+
+// -----------------------------------
 
 pub(crate) struct LoggerAssignmentHandler {
     destination: Place,
@@ -161,43 +156,66 @@ impl LoggerAssignmentHandler {
     }
 }
 
-pub(crate) struct LoggerBranchingHandler {
+// -----------------------------------
+
+pub(crate) struct LoggerBranchingHandler {}
+
+impl BranchingHandler for LoggerBranchingHandler {
+    type Operand = Operand;
+    type ConditionalBranchingHandler = LoggerConditionalBranchingHandler;
+
+    fn conditional(
+        self,
+        discriminant: Self::Operand,
+        metadata: BranchingMetadata,
+    ) -> Self::ConditionalBranchingHandler {
+        Self::ConditionalBranchingHandler {
+            discriminant,
+            metadata,
+        }
+    }
+
+    fn assert(self, cond: Self::Operand, expected: bool, assert_kind: AssertKind<Self::Operand>) {
+        log_info!(
+            "Asserting {:?} based on {:?} == {}",
+            assert_kind,
+            cond,
+            expected
+        );
+    }
+}
+
+pub(crate) struct LoggerConditionalBranchingHandler {
     discriminant: Operand,
     metadata: BranchingMetadata,
 }
 
-impl BranchingHandler for LoggerBranchingHandler {
-    type BoolBranchTakingHandler = LoggerBranchTakingHandler;
-
-    type IntBranchTakingHandler = LoggerBranchTakingHandler;
-
-    type CharBranchTakingHandler = LoggerBranchTakingHandler;
-
-    type EnumBranchTakingHandler = LoggerBranchTakingHandler;
-
-    fn on_bool(self) -> Self::BoolBranchTakingHandler {
-        self.create_branch_taking()
-    }
-
-    fn on_int(self) -> Self::IntBranchTakingHandler {
-        self.create_branch_taking()
-    }
-
-    fn on_char(self) -> Self::CharBranchTakingHandler {
-        self.create_branch_taking()
-    }
-
-    fn on_enum(self) -> Self::EnumBranchTakingHandler {
-        self.create_branch_taking()
-    }
-}
-
-impl LoggerBranchingHandler {
+impl LoggerConditionalBranchingHandler {
     fn create_branch_taking(self) -> LoggerBranchTakingHandler {
         LoggerBranchTakingHandler {
             discriminant: self.discriminant,
             metadata: self.metadata,
         }
+    }
+}
+
+impl ConditionalBranchingHandler for LoggerConditionalBranchingHandler {
+    type BoolBranchTakingHandler = LoggerBranchTakingHandler;
+    type IntBranchTakingHandler = LoggerBranchTakingHandler;
+    type CharBranchTakingHandler = LoggerBranchTakingHandler;
+    type EnumBranchTakingHandler = LoggerBranchTakingHandler;
+
+    fn on_bool(self) -> Self::BoolBranchTakingHandler {
+        self.create_branch_taking()
+    }
+    fn on_int(self) -> Self::IntBranchTakingHandler {
+        self.create_branch_taking()
+    }
+    fn on_char(self) -> Self::CharBranchTakingHandler {
+        self.create_branch_taking()
+    }
+    fn on_enum(self) -> Self::EnumBranchTakingHandler {
+        self.create_branch_taking()
     }
 }
 
@@ -265,6 +283,8 @@ impl LoggerBranchTakingHandler {
     }
 }
 
+// -----------------------------------
+
 pub(crate) struct LoggerFunctionHandler<'a> {
     call_manager: &'a mut CallManager,
 }
@@ -331,6 +351,8 @@ impl CallManager {
         self.stack.pop().unwrap()
     }
 }
+
+// -----------------------------------
 
 impl Display for Place {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
