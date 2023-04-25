@@ -291,7 +291,6 @@ pub(crate) struct LoggerFunctionHandler<'a> {
 
 impl FunctionHandler for LoggerFunctionHandler<'_> {
     type Place = Place;
-
     type Operand = Operand;
 
     fn before_call_func(

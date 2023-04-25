@@ -232,7 +232,7 @@ where
         func: &Operand<'tcx>,
         args: &[Operand<'tcx>],
         destination: &Place<'tcx>,
-        _target: &Option<BasicBlock>,
+        target: &Option<BasicBlock>,
         _cleanup: &Option<BasicBlock>,
         _from_hir_call: bool,
         _fn_span: rustc_span::Span,
