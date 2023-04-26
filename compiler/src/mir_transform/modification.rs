@@ -23,10 +23,12 @@ struct NewBasicBlock<'tcx> {
 pub struct BodyModificationUnit<'tcx> {
     next_local_index: Local,
     new_locals: Vec<NewLocalDecl<'tcx>>,
-    // new_blocks maps BasicBlocks from MIR already in the AST to a list of new basic blocks we'll
-    // insert just before it.
-    new_blocks: HashMap<BasicBlock, Vec<NewBasicBlock<'tcx>>>,
-    new_block_count: u32,
+    // new_blocks_before maps BasicBlocks from MIR already in the AST to a list of new basic blocks
+    // we'll insert just before it.
+    new_blocks_before: HashMap<BasicBlock, Vec<NewBasicBlock<'tcx>>>,
+    new_blocks_before_count: u32, // the sum of lengths of Vectors in its Hashmap
+    new_blocks_after: HashMap<BasicBlock, Vec<NewBasicBlock<'tcx>>>,
+    new_blocks_after_count: u32,
     jump_modifications:
         HashMap<BasicBlock, Vec<(BasicBlock, JumpModificationConstraint, BasicBlock)>>,
 }
@@ -36,8 +38,10 @@ impl<'tcx> BodyModificationUnit<'tcx> {
         Self {
             next_local_index: nex_local_index,
             new_locals: Vec::new(),
-            new_blocks: HashMap::new(),
-            new_block_count: 0,
+            new_blocks_before: HashMap::new(),
+            new_blocks_before_count: 0,
+            new_blocks_after: HashMap::new(),
+            new_blocks_after_count: 0,
             jump_modifications: HashMap::new(),
         }
     }
@@ -93,14 +97,7 @@ pub trait BodyBlockManager<'tcx> {
     where
         I: IntoIterator<Item = BasicBlockData<'tcx>>;
 
-    fn insert_blocks_after<I>(
-        &mut self,
-        index: BasicBlock,
-        blocks: I,
-        sticky: bool,
-    ) -> Vec<BasicBlock>
-    where
-        I: IntoIterator<Item = BasicBlockData<'tcx>>;
+    fn insert_block_after(&mut self, index: BasicBlock, block: BasicBlockData<'tcx>) -> BasicBlock;
 }
 
 pub trait JumpTargetModifier {
@@ -172,20 +169,20 @@ impl<'tcx> BodyBlockManager<'tcx> for BodyModificationUnit<'tcx> {
     where
         I: IntoIterator<Item = BasicBlockData<'tcx>>,
     {
-        let chunk = self.new_blocks.entry(index).or_insert_with(Vec::new);
+        let chunk = self.new_blocks_before.entry(index).or_insert_with(Vec::new);
         let block_count: u32 = {
-            let count_before = chunk.len();
+            let starting_count = chunk.len();
             // Associating temporary indices to the new blocks, so they can be referenced if needed.
             chunk.extend(blocks.into_iter().enumerate().map(|(i, b)| NewBasicBlock {
                 pseudo_index: BasicBlock::from(
-                    BasicBlock::MAX_AS_U32 - 1 - self.new_block_count - i as u32,
+                    BasicBlock::MAX_AS_U32 - 1 - self.new_blocks_before_count - i as u32,
                 ),
                 data: b,
                 is_sticky: sticky,
             }));
-            (chunk.len() - count_before).try_into().unwrap()
+            (chunk.len() - starting_count).try_into().unwrap()
         };
-        self.new_block_count += block_count;
+        self.new_blocks_before_count += block_count;
         Vec::from_iter(
             chunk[(chunk.len() - block_count as usize)..]
                 .iter()
@@ -193,18 +190,50 @@ impl<'tcx> BodyBlockManager<'tcx> for BodyModificationUnit<'tcx> {
         )
     }
 
-    // blocks will be inserted after index+1 if it exists
-    fn insert_blocks_after<I>(
-        &mut self,
-        index: BasicBlock,
-        blocks: I,
-        sticky: bool,
-    ) -> Vec<BasicBlock>
-    where
-        I: IntoIterator<Item = BasicBlockData<'tcx>>,
-    {
-        let next_bb_index = index.plus(1);
-        self.insert_blocks_before(next_bb_index, blocks, sticky)
+    // TODO: either raise error or add support for when the index bb has two or more targets
+    // TODO: update block to blocks & add support for vector inputs
+    // blocks will be inserted directly after the block & in a row
+    fn insert_block_after(&mut self, index: BasicBlock, block: BasicBlockData<'tcx>) -> BasicBlock {
+        // TODO: fill this out with all the blocks & turn into its own function?
+        let maybe_target = match block.terminator.as_ref().unwrap().kind {
+            rustc_middle::mir::TerminatorKind::Call {
+                func: _,
+                args: _,
+                destination: _,
+                target,
+                cleanup: _,
+                from_hir_call: _,
+                fn_span: _,
+            } => target,
+            _ => None,
+        };
+
+        let chunk = self.new_blocks_after.entry(index).or_insert_with(Vec::new);
+        let new_block_count: u32 = {
+            let starting_count = chunk.len();
+            // Associating temporary indices to the new blocks, so they can be referenced if needed.
+            chunk.push(NewBasicBlock {
+                pseudo_index: BasicBlock::from(
+                    BasicBlock::MAX_AS_U32 - 1 - self.new_blocks_after_count,
+                ),
+                data: block,
+                is_sticky: false, // sticky means nothing in this context
+            });
+            (chunk.len() - starting_count).try_into().unwrap()
+        };
+        let pseudo_index = chunk[chunk.len() - 1].pseudo_index;
+
+        if let Some(target) = maybe_target {
+            self.jump_modifications
+                .entry(index)
+                .or_insert_with(|| Vec::with_capacity(1))
+                .push((target, JumpModificationConstraint::None, pseudo_index));
+        } else {
+            todo!("should the lack of existance of a target be an error or not?")
+        }
+
+        self.new_blocks_after_count += new_block_count;
+        pseudo_index
     }
 }
 
@@ -240,7 +269,7 @@ impl<'tcx> BodyModificationUnit<'tcx> {
         Self::update_jumps_pre_insert(
             Iterator::chain(
                 body.basic_blocks_mut().iter_enumerated_mut(),
-                self.new_blocks
+                self.new_blocks_before
                     .values_mut()
                     .flatten()
                     .map(|p| (p.pseudo_index, &mut p.data)),
@@ -248,8 +277,12 @@ impl<'tcx> BodyModificationUnit<'tcx> {
             &self.jump_modifications,
         );
 
-        if !self.new_blocks.is_empty() {
-            let index_mapping = Self::insert_new_blocks(body.basic_blocks_mut(), self.new_blocks);
+        if !self.new_blocks_before.is_empty() {
+            let index_mapping = Self::insert_new_blocks(
+                body.basic_blocks_mut(),
+                self.new_blocks_before,
+                self.new_blocks_after,
+            );
             Self::update_jumps_post_insert(body.basic_blocks_mut(), index_mapping);
         }
     }
@@ -265,14 +298,14 @@ impl<'tcx> BodyModificationUnit<'tcx> {
 
     fn insert_new_blocks(
         blocks: &mut IndexVec<BasicBlock, BasicBlockData<'tcx>>,
-        new_blocks: impl IntoIterator<Item = (BasicBlock, Vec<NewBasicBlock<'tcx>>)>,
+        new_blocks_before: impl IntoIterator<Item = (BasicBlock, Vec<NewBasicBlock<'tcx>>)>,
+        new_blocks_after: impl IntoIterator<Item = (BasicBlock, Vec<NewBasicBlock<'tcx>>)>,
     ) -> HashMap<BasicBlock, BasicBlock> {
         let mut index_mapping = HashMap::<BasicBlock, BasicBlock>::new();
         let mut push = |blocks: &mut IndexVec<BasicBlock, BasicBlockData<'tcx>>,
                         block: BasicBlockData<'tcx>,
                         before_index: BasicBlock,
                         after_index: Option<BasicBlock>| {
-            // IndexVec::push(block) returns the new index of block in the vector
             let new_index = blocks.push(block);
             let new_index = after_index.unwrap_or(new_index);
             if new_index != before_index {
@@ -282,20 +315,30 @@ impl<'tcx> BodyModificationUnit<'tcx> {
 
         let current_blocks = Vec::from_iter(blocks.drain(..));
 
-        let mut new_blocks = Vec::from_iter(new_blocks);
-        new_blocks.sort_by_key(|p| p.0);
-        let mut new_blocks = new_blocks.into_iter().peekable();
+        let mut new_blocks_before = {
+            let mut new_blocks_before = Vec::from_iter(new_blocks_before);
+            new_blocks_before.sort_by_key(|p| p.0);
+            new_blocks_before.into_iter().peekable()
+        };
+        let mut new_blocks_after = {
+            let mut new_blocks_after = Vec::from_iter(new_blocks_after);
+            new_blocks_after.sort_by_key(|p| p.0);
+            new_blocks_after.into_iter().peekable()
+        };
 
         for (i, block) in current_blocks.into_iter().enumerate() {
             let i = BasicBlock::from(i);
             let mut top_index = blocks.next_index();
-            if new_blocks.peek().is_some_and(|(index, _)| *index == i) {
-                let (_, mut chunk) = new_blocks.next().unwrap();
+
+            if new_blocks_before
+                .peek()
+                .is_some_and(|(index, _)| *index == i)
+            {
+                let (_, mut chunk) = new_blocks_before.next().unwrap();
                 blocks.extend_reserve(chunk.len());
                 for non_sticky in chunk.drain_filter(|b| !b.is_sticky) {
                     push(blocks, non_sticky.data, non_sticky.pseudo_index, None);
                 }
-                // this finds the index of the top most stick block & uses it as the target for all other blocks to jump to
                 top_index = blocks.next_index();
                 for sticky in chunk.drain_filter(|b| b.is_sticky) {
                     push(blocks, sticky.data, sticky.pseudo_index, None);
@@ -303,13 +346,26 @@ impl<'tcx> BodyModificationUnit<'tcx> {
                 debug_assert!(chunk.is_empty());
             }
 
+            // after_index is the new place that any jumps will target instead of i
             push(blocks, block, i, Some(top_index));
+
+            // TODO: double check that this works as expected when more than one block is added
+            if new_blocks_after
+                .peek()
+                .is_some_and(|(index, _)| *index == i)
+            {
+                let (_, mut chunk) = new_blocks_after.next().unwrap();
+                blocks.extend_reserve(chunk.len());
+                for bb in chunk.drain(..) {
+                    push(blocks, bb.data, bb.pseudo_index, None);
+                }
+            }
         }
 
-        // Currently, we only consider insertion of blocks before original blocks.
+        // We only consider the insertion of blocks before the last block in this body (usually a return)
         assert!(
-            new_blocks.peek().is_none(),
-            "make sure that no blocks are inserted after the last bb"
+            new_blocks_before.peek().is_none() && new_blocks_after.peek().is_none(),
+            "Found unexpected blocks that would be inserted after the last basic block"
         );
 
         index_mapping

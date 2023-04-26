@@ -35,7 +35,8 @@ impl<'tcx> MirPass<'tcx> for LeafPass {
                     .in_entry_fn(),
             );
         }
-        // TODO: maybe detect if this body is a function or promoted block or something?
+        // TODO: figure out what a promoted block is / means
+        let is_promoted_block = body.source.promoted.is_some();
         call_adder
             .at(body.basic_blocks.indices().next().unwrap())
             .enter_func();
@@ -247,6 +248,7 @@ where
             .before_call_func(func_ref, arg_refs.iter().copied(), dest_ref);
 
         if let Some(target) = target {
+            //self.call_adder.after_call_func(target);
             self.call_adder.after_call_func(target);
         } else {
             // This branch is only triggered by hitting a divergent function:
