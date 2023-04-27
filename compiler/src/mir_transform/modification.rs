@@ -26,9 +26,8 @@ pub struct BodyModificationUnit<'tcx> {
     // new_blocks_before maps BasicBlocks from MIR already in the AST to a list of new basic blocks
     // we'll insert just before it.
     new_blocks_before: HashMap<BasicBlock, Vec<NewBasicBlock<'tcx>>>,
-    new_blocks_before_count: u32, // the sum of lengths of Vectors in its Hashmap
     new_blocks_after: HashMap<BasicBlock, Vec<NewBasicBlock<'tcx>>>,
-    new_blocks_after_count: u32,
+    new_blocks_count: u32, // this count is used to
     jump_modifications:
         HashMap<BasicBlock, Vec<(BasicBlock, JumpModificationConstraint, BasicBlock)>>,
 }
@@ -39,9 +38,8 @@ impl<'tcx> BodyModificationUnit<'tcx> {
             next_local_index: nex_local_index,
             new_locals: Vec::new(),
             new_blocks_before: HashMap::new(),
-            new_blocks_before_count: 0,
             new_blocks_after: HashMap::new(),
-            new_blocks_after_count: 0,
+            new_blocks_count: 0,
             jump_modifications: HashMap::new(),
         }
     }
@@ -175,14 +173,14 @@ impl<'tcx> BodyBlockManager<'tcx> for BodyModificationUnit<'tcx> {
             // Associating temporary indices to the new blocks, so they can be referenced if needed.
             chunk.extend(blocks.into_iter().enumerate().map(|(i, b)| NewBasicBlock {
                 pseudo_index: BasicBlock::from(
-                    BasicBlock::MAX_AS_U32 - 1 - self.new_blocks_before_count - i as u32,
+                    BasicBlock::MAX_AS_U32 - 1 - self.new_blocks_count - i as u32,
                 ),
                 data: b,
                 is_sticky: sticky,
             }));
             (chunk.len() - starting_count).try_into().unwrap()
         };
-        self.new_blocks_before_count += block_count;
+        self.new_blocks_count += block_count;
         Vec::from_iter(
             chunk[(chunk.len() - block_count as usize)..]
                 .iter()
@@ -190,49 +188,56 @@ impl<'tcx> BodyBlockManager<'tcx> for BodyModificationUnit<'tcx> {
         )
     }
 
-    // TODO: either raise error or add support for when the index bb has two or more targets
     // TODO: update block to blocks & add support for vector inputs
-    // blocks will be inserted directly after the block & in a row
+    // block will be inserted after index, and index will jump to block. If multiple blocks are inserted, only
+    // the last block will get to decide where to jump.
     fn insert_block_after(&mut self, index: BasicBlock, block: BasicBlockData<'tcx>) -> BasicBlock {
-        // TODO: fill this out with all the blocks & turn into its own function?
-        let maybe_target = match block.terminator.as_ref().unwrap().kind {
-            rustc_middle::mir::TerminatorKind::Call {
-                func: _,
-                args: _,
-                destination: _,
-                target,
-                cleanup: _,
-                from_hir_call: _,
-                fn_span: _,
-            } => target,
-            _ => None,
-        };
-
         let chunk = self.new_blocks_after.entry(index).or_insert_with(Vec::new);
         let new_block_count: u32 = {
             let starting_count = chunk.len();
             // Associating temporary indices to the new blocks, so they can be referenced if needed.
             chunk.push(NewBasicBlock {
-                pseudo_index: BasicBlock::from(
-                    BasicBlock::MAX_AS_U32 - 1 - self.new_blocks_after_count,
-                ),
+                pseudo_index: BasicBlock::from(BasicBlock::MAX_AS_U32 - 1 - self.new_blocks_count),
                 data: block,
                 is_sticky: false, // sticky means nothing in this context
             });
             (chunk.len() - starting_count).try_into().unwrap()
         };
-        let pseudo_index = chunk[chunk.len() - 1].pseudo_index;
+        let pseudo_index = chunk.last().unwrap().pseudo_index;
 
-        if let Some(target) = maybe_target {
+        // TODO: when adding support for inserting multiple blocks, make sure to fix this case
+        let len = chunk.len();
+        if len == 1 {
+            let mut successors = chunk[len - 1]
+                .data
+                .terminator
+                .as_ref()
+                .unwrap()
+                .successors();
+            let target = successors.next().expect("block must have a successor");
+            assert!(
+                successors.next().is_none(),
+                "Unexpected insertion after a block with multiple succesors."
+            );
+
+            // only the first block inserted is jumped to by index
             self.jump_modifications
                 .entry(index)
                 .or_insert_with(|| Vec::with_capacity(1))
                 .push((target, JumpModificationConstraint::None, pseudo_index));
         } else {
-            todo!("should the lack of existance of a target be an error or not?")
+            // the 2nd top block must now be reset to its default successor
+            *chunk[len - 2]
+                .data
+                .terminator
+                .as_mut()
+                .unwrap()
+                .successors_mut()
+                .next()
+                .unwrap() = NEXT_BLOCK;
         }
 
-        self.new_blocks_after_count += new_block_count;
+        self.new_blocks_count += new_block_count;
         pseudo_index
     }
 }
@@ -277,7 +282,7 @@ impl<'tcx> BodyModificationUnit<'tcx> {
             &self.jump_modifications,
         );
 
-        if !self.new_blocks_before.is_empty() {
+        if !(self.new_blocks_before.is_empty() && self.new_blocks_after.is_empty()) {
             let index_mapping = Self::insert_new_blocks(
                 body.basic_blocks_mut(),
                 self.new_blocks_before,
@@ -349,7 +354,6 @@ impl<'tcx> BodyModificationUnit<'tcx> {
             // after_index is the new place that any jumps will target instead of i
             push(blocks, block, i, Some(top_index));
 
-            // TODO: double check that this works as expected when more than one block is added
             if new_blocks_after
                 .peek()
                 .is_some_and(|(index, _)| *index == i)

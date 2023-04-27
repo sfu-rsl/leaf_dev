@@ -1129,11 +1129,8 @@ where
             vec![],
             Some(*target),
         );
-        let new_block_index = self
-            .context
+        self.context
             .insert_block_after(self.context.location(), block);
-        //self.context
-        //    .modify_jump_target(self.context.location(), *target, new_block_index);
     }
 }
 

@@ -248,7 +248,6 @@ where
             .before_call_func(func_ref, arg_refs.iter().copied(), dest_ref);
 
         if let Some(target) = target {
-            //self.call_adder.after_call_func(target);
             self.call_adder.after_call_func(target);
         } else {
             // This branch is only triggered by hitting a divergent function:
