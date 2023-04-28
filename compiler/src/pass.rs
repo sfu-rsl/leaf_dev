@@ -35,8 +35,8 @@ impl<'tcx> MirPass<'tcx> for LeafPass {
                     .in_entry_fn(),
             );
         }
-        // TODO: figure out what a promoted block is / means
-        let is_promoted_block = body.source.promoted.is_some();
+        // TODO: determine if body will ever be a promoted block
+        let _is_promoted_block = body.source.promoted.is_some();
         call_adder
             .at(body.basic_blocks.indices().next().unwrap())
             .enter_func();
