@@ -247,8 +247,8 @@ where
         self.call_adder
             .before_call_func(func_ref, arg_refs.iter().copied(), dest_ref);
 
-        if let Some(target) = target {
-            self.call_adder.after_call_func(target);
+        if target.is_some() {
+            self.call_adder.after_call_func();
         } else {
             // This branch is only triggered by hitting a divergent function:
             // https://doc.rust-lang.org/rust-by-example/fn/diverging.html

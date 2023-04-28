@@ -1,6 +1,9 @@
-use std::{cell::RefCell, collections::HashMap, marker::PhantomData};
+use std::{cell::RefCell, collections::HashMap, marker::PhantomData, ops::Add};
 
-use crate::visit::{self, TerminatorKindMutVisitor};
+use crate::{
+    mir_transform::call_addition::context_requirements::Basic,
+    visit::{self, TerminatorKindMutVisitor},
+};
 use rustc_ast::Mutability;
 use rustc_index::vec::{Idx, IndexVec};
 use rustc_middle::{
@@ -189,8 +192,8 @@ impl<'tcx> BodyBlockManager<'tcx> for BodyModificationUnit<'tcx> {
     }
 
     // TODO: update block to blocks & add support for vector inputs
-    // block will be inserted after index, and index will jump to block. If multiple blocks are inserted, only
-    // the last block will get to decide where to jump.
+    // block will be inserted after index, and index will jump to block. The last block inserted jumps
+    // to index's jump target.
     fn insert_block_after(&mut self, index: BasicBlock, block: BasicBlockData<'tcx>) -> BasicBlock {
         let chunk = self.new_blocks_after.entry(index).or_insert_with(Vec::new);
         let new_block_count: u32 = {
@@ -203,42 +206,8 @@ impl<'tcx> BodyBlockManager<'tcx> for BodyModificationUnit<'tcx> {
             });
             (chunk.len() - starting_count).try_into().unwrap()
         };
-        let pseudo_index = chunk.last().unwrap().pseudo_index;
-
-        // TODO: when adding support for inserting multiple blocks, make sure to fix this case
-        let len = chunk.len();
-        if len == 1 {
-            let mut successors = chunk[len - 1]
-                .data
-                .terminator
-                .as_ref()
-                .unwrap()
-                .successors();
-            let target = successors.next().expect("block must have a successor");
-            assert!(
-                successors.next().is_none(),
-                "Unexpected insertion after a block with multiple succesors."
-            );
-
-            // only the first block inserted is jumped to by index
-            self.jump_modifications
-                .entry(index)
-                .or_insert_with(|| Vec::with_capacity(1))
-                .push((target, JumpModificationConstraint::None, pseudo_index));
-        } else {
-            // the 2nd top block must now be reset to its default successor
-            *chunk[len - 2]
-                .data
-                .terminator
-                .as_mut()
-                .unwrap()
-                .successors_mut()
-                .next()
-                .unwrap() = NEXT_BLOCK;
-        }
-
         self.new_blocks_count += new_block_count;
-        pseudo_index
+        chunk.last().unwrap().pseudo_index
     }
 }
 
@@ -331,7 +300,7 @@ impl<'tcx> BodyModificationUnit<'tcx> {
             new_blocks_after.into_iter().peekable()
         };
 
-        for (i, block) in current_blocks.into_iter().enumerate() {
+        for (i, original_block) in current_blocks.into_iter().enumerate() {
             let i = BasicBlock::from(i);
             let mut top_index = blocks.next_index();
 
@@ -351,16 +320,54 @@ impl<'tcx> BodyModificationUnit<'tcx> {
                 debug_assert!(chunk.is_empty());
             }
 
-            // after_index is the new place that any jumps will target instead of i
-            push(blocks, block, i, Some(top_index));
+            // top_index is the new place that any jumps will target instead of i
+            let original_block_index = blocks.next_index();
+            push(blocks, original_block, i, Some(top_index));
 
             if new_blocks_after
                 .peek()
                 .is_some_and(|(index, _)| *index == i)
             {
+                let original_block_target: BasicBlock = {
+                    let mut original_block = blocks.get_mut(original_block_index);
+                    let mut successors = original_block
+                        .as_mut()
+                        .unwrap()
+                        .terminator
+                        .as_mut()
+                        .unwrap()
+                        .successors_mut();
+                    let target: &mut BasicBlock = successors.next().unwrap();
+
+                    assert!(
+                        successors.next().is_none(),
+                        "Unexpected insertion after a block with multiple succesors."
+                    );
+
+                    // update target of the original block & save old value
+                    let original_block_target = *target;
+                    *target = NEXT_BLOCK; //original_block_index.add(1);
+                    original_block_target
+                };
+
                 let (_, mut chunk) = new_blocks_after.next().unwrap();
-                blocks.extend_reserve(chunk.len());
-                for bb in chunk.drain(..) {
+                let chunk_len = chunk.len();
+                blocks.extend_reserve(chunk_len);
+                for (i, mut bb) in chunk.drain(..).enumerate() {
+                    let target = if i == (chunk_len - 1) {
+                        // the last item in the list jumps to block
+                        original_block_target
+                    } else {
+                        NEXT_BLOCK
+                    };
+                    let mut successors = bb.data.terminator.as_mut().unwrap().successors_mut();
+                    *successors.next().unwrap() = target;
+
+                    assert!(
+                        successors.next().is_none(),
+                        "expected block with single successor"
+                    );
+
                     push(blocks, bb.data, bb.pseudo_index, None);
                 }
             }

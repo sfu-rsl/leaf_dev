@@ -186,7 +186,7 @@ pub trait FunctionHandler {
 
     fn return_from_func(&mut self);
 
-    fn after_call_func(&mut self, target: &BasicBlock);
+    fn after_call_func(&mut self);
 }
 
 pub trait EntryFunctionHandler {
@@ -1123,12 +1123,8 @@ where
         self.insert_blocks([block]);
     }
 
-    fn after_call_func(&mut self, target: &BasicBlock) {
-        let block = self.make_bb_for_call_with_target(
-            stringify!(pri::after_call_func),
-            vec![],
-            Some(*target),
-        );
+    fn after_call_func(&mut self) {
+        let block = self.make_bb_for_call(stringify!(pri::after_call_func), vec![]);
         self.context
             .insert_block_after(self.context.location(), block);
     }
