@@ -1126,7 +1126,7 @@ where
     fn after_call_func(&mut self) {
         let block = self.make_bb_for_call(stringify!(pri::after_call_func), vec![]);
         self.context
-            .insert_block_after(self.context.location(), block);
+            .insert_blocks_after(self.context.location(), [block]);
     }
 }
 

@@ -200,8 +200,11 @@ impl<'tcx, 'm> BodyBlockManager<'tcx> for DefaultContext<'tcx, 'm> {
             .insert_blocks_before(index, blocks, sticky)
     }
 
-    fn insert_block_after(&mut self, index: BasicBlock, block: BasicBlockData<'tcx>) -> BasicBlock {
-        self.modification_unit.insert_block_after(index, block)
+    fn insert_blocks_after<I>(&mut self, index: BasicBlock, blocks: I) -> Vec<BasicBlock>
+    where
+        I: IntoIterator<Item = BasicBlockData<'tcx>>,
+    {
+        self.modification_unit.insert_blocks_after(index, blocks)
     }
 }
 
@@ -350,8 +353,11 @@ macro_rules! impl_block_manager {
                 self.base.insert_blocks_before(index, blocks, sticky)
             }
 
-            fn insert_block_after(&mut self, index: BasicBlock, block: BasicBlockData<'tcx>) -> BasicBlock {
-                self.base.insert_block_after(index, block)
+            fn insert_blocks_after<I>(&mut self, index: BasicBlock, blocks: I) -> Vec<BasicBlock>
+            where
+                I: IntoIterator<Item = BasicBlockData<'tcx>>,
+            {
+                self.base.insert_blocks_after(index, blocks)
             }
         }
     };
