@@ -136,9 +136,445 @@ impl ConstValue {
                         is_signed: *first_signed,
                     }
                 }
+
+                (Self::Float { .. }, Self::Float { .. }) => unimplemented!(),
+
+
+                _ => unreachable!("Addition only works on integers."),
+            },
+
+            BinaryOp::Sub => match (first, second) {
+                (
+                    Self::Int {
+                        bit_rep: first,
+                        size: first_size,
+                        is_signed: first_signed,
+                    },
+                    Self::Int {
+                        bit_rep: second,
+                        size: second_size,
+                        is_signed: second_signed,
+                    },
+                ) => {
+                    assert!(
+                        first_size == second_size,
+                        "Subtraction of integers with different sizes is not expected."
+                    );
+                    assert!(
+                        first_signed == second_signed,
+                        "Subtraction of integers with different signed modes is not expected."
+                    );
+
+                    Self::Int {
+                        bit_rep: first - second,
+                        size: *first_size,
+                        is_signed: *first_signed,
+                    }
+                }
+                (Self::Float { .. }, Self::Float { .. }) => unimplemented!(),
+                _ => unreachable!("Subtraction only works on integers."),
+            },
+
+            BinaryOp::Mul => match (first, second) {
+                (
+                    Self::Int {
+                        bit_rep: first,
+                        size: first_size,
+                        is_signed: first_signed,
+                    },
+                    Self::Int {
+                        bit_rep: second,
+                        size: second_size,
+                        is_signed: second_signed,
+                    },
+                ) => {
+                    assert!(
+                        first_size == second_size,
+                        "Multiplication of integers with different sizes is not expected."
+                    );
+                    assert!(
+                        first_signed == second_signed,
+                        "Multiplication of integers with different signed modes is not expected."
+                    );
+
+                    Self::Int {
+                        bit_rep: first * second,
+                        size: *first_size,
+                        is_signed: *first_signed,
+                    }
+                }
+                (Self::Float { .. }, Self::Float { .. }) => unimplemented!(),
+                _ => unreachable!("Multiplication only works on integers."),
+            },
+
+            BinaryOp::Div => match (first, second) {
+                (
+                    Self::Int {
+                        bit_rep: first,
+                        size: first_size,
+                        is_signed: first_signed,
+                    },
+                    Self::Int {
+                        bit_rep: second,
+                        size: second_size,
+                        is_signed: second_signed,
+                    },
+                ) => {
+                    assert!(
+                        first_size == second_size,
+                        "Division of integers with different sizes is not expected."
+                    );
+                    assert!(
+                        first_signed == second_signed,
+                        "Division of integers with different signed modes is not expected."
+                    );
+
+                    Self::Int {
+                        bit_rep: first / second,
+                        size: *first_size,
+                        is_signed: *first_signed,
+                    }
+                }
                 (Self::Float { .. }, Self::Float { .. }) => unimplemented!(),
                 _ => unreachable!("Addition only works on integers."),
             },
+
+            BinaryOp::Rem => match (first, second) {
+                (
+                    Self::Int {
+                        bit_rep: first,
+                        size: first_size,
+                        is_signed: first_signed,
+                    },
+                    Self::Int {
+                        bit_rep: second,
+                        size: second_size,
+                        is_signed: second_signed,
+                    },
+                ) => {
+                    assert!(
+                        first_size == second_size,
+                        "Remainder of integers with different sizes is not expected."
+                    );
+                    assert!(
+                        first_signed == second_signed,
+                        "Remainder of integers with different signed modes is not expected."
+                    );
+
+                    Self::Int {
+                        bit_rep: first % second,
+                        size: *first_size,
+                        is_signed: *first_signed,
+                    }
+                }
+                (Self::Float { .. }, Self::Float { .. }) => unimplemented!(),
+                _ => unreachable!("Remainder only works on integers."),
+            },
+
+            BinaryOp::BitXor => match (first, second) {
+                (
+                    Self::Int {
+                        bit_rep: first,
+                        size: first_size,
+                        is_signed: first_signed,
+                    },
+                    Self::Int {
+                        bit_rep: second,
+                        size: second_size,
+                        is_signed: second_signed,
+                    },
+                ) => {
+                    assert!(
+                        first_size == second_size,
+                        "Bitwise XOR of integers with different sizes is not expected."
+                    );
+                    assert!(
+                        first_signed == second_signed,
+                        "Bitwise XOR of integers with different signed modes is not expected."
+                    );
+
+                    Self::Int {
+                        bit_rep: first ^ second,
+                        size: *first_size,
+                        is_signed: *first_signed,
+                    }
+                }
+                (Self::Float { .. }, Self::Float { .. }) => unimplemented!(),
+                _ => unreachable!("Bitwise XOR only works on integers."),
+            },
+
+            BinaryOp::BitAnd => match (first, second) {
+                (
+                    Self::Int {
+                        bit_rep: first,
+                        size: first_size,
+                        is_signed: first_signed,
+                    },
+                    Self::Int {
+                        bit_rep: second,
+                        size: second_size,
+                        is_signed: second_signed,
+                    },
+                ) => {
+                    assert!(
+                        first_size == second_size,
+                        "Bitwise AND of integers with different sizes is not expected."
+                    );
+                    assert!(
+                        first_signed == second_signed,
+                        "Bitwise AND of integers with different signed modes is not expected."
+                    );
+
+                    Self::Int {
+                        bit_rep: first & second,
+                        size: *first_size,
+                        is_signed: *first_signed,
+                    }
+                }
+                (Self::Float { .. }, Self::Float { .. }) => unimplemented!(),
+                
+                _ => unreachable!("Bitwise AND only works on integers."),
+            },
+
+            BinaryOp::BitOr => match (first, second) {
+                (
+                    Self::Int {
+                        bit_rep: first,
+                        size: first_size,
+                        is_signed: first_signed,
+                    },
+                    Self::Int {
+                        bit_rep: second,
+                        size: second_size,
+                        is_signed: second_signed,
+                    },
+                ) => {
+                    assert!(
+                        first_size == second_size,
+                        "Bitwise OR of integers with different sizes is not expected."
+                    );
+                    assert!(
+                        first_signed == second_signed,
+                        "Bitwise OR of integers with different signed modes is not expected."
+                    );
+
+                    Self::Int {
+                        bit_rep: first | second,
+                        size: *first_size,
+                        is_signed: *first_signed,
+                    }
+                }
+                (Self::Float { .. }, Self::Float { .. }) => unimplemented!(),
+                _ => unreachable!("Bitwise OR only works on integers."),
+            },
+
+            BinaryOp::Shl => match (first, second) {
+                (
+                    Self::Int {
+                        bit_rep: first,
+                        size: first_size,
+                        is_signed: first_signed,
+                    },
+                    Self::Int {
+                        bit_rep: second,
+                        size: second_size,
+                        is_signed: second_signed,
+                    },
+                ) => {
+                    assert!(
+                        *second_signed == false,
+                        "Shifting a negative value is not expected."
+                    );
+
+                    Self::Int {
+                        bit_rep: first << second,
+                        size: *first_size,
+                        is_signed: *first_signed,
+                    }
+                }
+                (Self::Float { .. }, Self::Float { .. }) => unimplemented!(),
+                _ => unreachable!("Addition only works on integers."),
+            },
+
+            BinaryOp::Shr => match (first, second) {
+                (
+                    Self::Int {
+                        bit_rep: first,
+                        size: first_size,
+                        is_signed: first_signed,
+                    },
+                    Self::Int {
+                        bit_rep: second,
+                        size: second_size,
+                        is_signed: second_signed,
+                    },
+                ) => {
+                    assert!(
+                        *second_signed == false,
+                        "Shifting by a negative value is not expected."
+                    );
+
+                    Self::Int {
+                        bit_rep: first >> second,
+                        size: *first_size,
+                        is_signed: *first_signed,
+                    }
+                }
+                (Self::Float { .. }, Self::Float { .. }) => unimplemented!(),
+                _ => unreachable!("Shift right only works on integers."),
+            },
+
+            BinaryOp::Eq => match (first, second) {
+                (
+                    Self::Int {
+                        bit_rep: first,
+                        size: first_size,
+                        is_signed: first_signed,
+                    },
+                    Self::Int {
+                        bit_rep: second,
+                        size: second_size,
+                        is_signed: second_signed,
+                    },
+                ) => {
+                    assert!(
+                        first_size == second_size,
+                        "Equality of integers with different sizes is not expected."
+                    );
+
+                    Self::Bool(first == second)
+                }
+
+                (Self::Float { .. }, Self::Float { .. }) => unimplemented!(),
+
+                _ => unreachable!("Equality only works on integers."),
+            },
+
+            BinaryOp::Lt => match (first, second) {
+                (
+                    Self::Int {
+                        bit_rep: first,
+                        size: first_size,
+                        is_signed: first_signed,
+                    },
+                    Self::Int {
+                        bit_rep: second,
+                        size: second_size,
+                        is_signed: second_signed,
+                    },
+                ) => {
+                    assert!(
+                        first_size == second_size,
+                        "Comparison of integers with different sizes is not expected."
+                    );
+
+                    Self::Bool(first < second)
+                }
+
+                (Self::Float { .. }, Self::Float { .. }) => unimplemented!(),
+                _ => unreachable!("Comparison only works on integers."),
+            },
+
+            BinaryOp::Le => match (first, second) {
+                (
+                    Self::Int {
+                        bit_rep: first,
+                        size: first_size,
+                        is_signed: first_signed,
+                    },
+                    Self::Int {
+                        bit_rep: second,
+                        size: second_size,
+                        is_signed: second_signed,
+                    },
+                ) => {
+                    assert!(
+                        first_size == second_size,
+                        "Comparison of integers with different sizes is not expected."
+                    );
+
+                    Self::Bool(first <= second)
+                }
+
+                (Self::Float { .. }, Self::Float { .. }) => unimplemented!(),
+                _ => unreachable!("Equality only works on integers."),
+            },
+
+            BinaryOp::Ne => match (first, second) {
+                (
+                    Self::Int {
+                        bit_rep: first,
+                        size: first_size,
+                        is_signed: first_signed,
+                    },
+                    Self::Int {
+                        bit_rep: second,
+                        size: second_size,
+                        is_signed: second_signed,
+                    },
+                ) => {
+                    assert!(
+                        first_size == second_size,
+                        "Comparison of integers with different sizes is not expected."
+                    );
+
+                    Self::Bool(first != second)
+                }
+
+                (Self::Float { .. }, Self::Float { .. }) => unimplemented!(),
+                _ => unreachable!("Equality only works on integers."),
+            },
+
+            BinaryOp::Ge => match (first, second) {
+                (
+                    Self::Int {
+                        bit_rep: first,
+                        size: first_size,
+                        is_signed: first_signed,
+                    },
+                    Self::Int {
+                        bit_rep: second,
+                        size: second_size,
+                        is_signed: second_signed,
+                    },
+                ) => {
+                    assert!(
+                        first_size == second_size,
+                        "Comparison of integers with different sizes is not expected."
+                    );
+
+                    Self::Bool(first >= second)
+                }
+
+                (Self::Float { .. }, Self::Float { .. }) => unimplemented!(),
+                _ => unreachable!("Equality only works on integers."),
+            },
+
+            BinaryOp::Gt => match (first, second) {
+                (
+                    Self::Int {
+                        bit_rep: first,
+                        size: first_size,
+                        is_signed: first_signed,
+                    },
+                    Self::Int {
+                        bit_rep: second,
+                        size: second_size,
+                        is_signed: second_signed,
+                    },
+                ) => {
+                    assert!(
+                        first_size == second_size,
+                        "Comparison of integers with different sizes is not expected."
+                    );
+
+                    Self::Bool(first >= second)
+                }
+
+                (Self::Float { .. }, Self::Float { .. }) => unimplemented!(),
+                _ => unreachable!("Equality only works on integers."),
+            },
+
             _ => unimplemented!("{:?} {:?} {:?}", first, second, operator),
         }
     }
