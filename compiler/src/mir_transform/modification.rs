@@ -1,11 +1,11 @@
-use std::{cell::RefCell, collections::HashMap, marker::PhantomData, ops::Add};
+use std::{cell::RefCell, collections::HashMap, marker::PhantomData};
 
 use crate::{
     mir_transform::call_addition::context_requirements::Basic,
     visit::{self, TerminatorKindMutVisitor},
 };
 use rustc_ast::Mutability;
-use rustc_index::vec::{Idx, IndexVec};
+use rustc_index::vec::IndexVec;
 use rustc_middle::{
     mir::{
         BasicBlock, BasicBlockData, Body, Local, LocalDecl, LocalDecls, Operand, Place, SourceInfo,
