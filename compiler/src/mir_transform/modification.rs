@@ -286,30 +286,15 @@ impl<'tcx> BodyModificationUnit<'tcx> {
         new_blocks_after: impl IntoIterator<Item = (BasicBlock, Vec<NewBasicBlock<'tcx>>)>,
     ) -> HashMap<BasicBlock, BasicBlock> {
         let mut index_mapping = HashMap::<BasicBlock, BasicBlock>::new();
-        let mut push = |blocks: &mut IndexVec<BasicBlock, BasicBlockData<'tcx>>,
-                        block: BasicBlockData<'tcx>,
-                        before_index: BasicBlock,
-                        after_index: Option<BasicBlock>| {
-            let new_index = blocks.push(block);
-            let new_index = after_index.unwrap_or(new_index);
-            if new_index != before_index {
-                index_mapping.insert(before_index, new_index);
-            }
-        };
+
+        let mut new_blocks_before = Vec::from_iter(new_blocks_before);
+        let mut new_blocks_after = Vec::from_iter(new_blocks_after);
+        new_blocks_before.sort_by_key(|p| p.0);
+        new_blocks_after.sort_by_key(|p| p.0);
+        let mut new_blocks_before = new_blocks_before.into_iter().peekable();
+        let mut new_blocks_after = new_blocks_after.into_iter().peekable();
 
         let current_blocks = Vec::from_iter(blocks.drain(..));
-
-        let (mut new_blocks_before, mut new_blocks_after) = {
-            let mut new_blocks_before = Vec::from_iter(new_blocks_before);
-            let mut new_blocks_after = Vec::from_iter(new_blocks_after);
-            new_blocks_before.sort_by_key(|p| p.0);
-            new_blocks_after.sort_by_key(|p| p.0);
-            (
-                new_blocks_before.into_iter().peekable(),
-                new_blocks_after.into_iter().peekable(),
-            )
-        };
-
         for (i, original_block) in current_blocks.into_iter().enumerate() {
             let i = BasicBlock::from(i);
             let mut top_index = blocks.next_index();
@@ -318,67 +303,34 @@ impl<'tcx> BodyModificationUnit<'tcx> {
                 .peek()
                 .is_some_and(|(index, _)| *index == i)
             {
-                let (_, mut chunk) = new_blocks_before.next().unwrap();
-                blocks.extend_reserve(chunk.len());
-                for non_sticky in chunk.drain_filter(|b| !b.is_sticky) {
-                    push(blocks, non_sticky.data, non_sticky.pseudo_index, None);
-                }
-                top_index = blocks.next_index();
-                for sticky in chunk.drain_filter(|b| b.is_sticky) {
-                    push(blocks, sticky.data, sticky.pseudo_index, None);
-                }
-                debug_assert!(chunk.is_empty());
+                Self::insert_blocks_before(
+                    &mut index_mapping,
+                    blocks,
+                    &mut new_blocks_before,
+                    &mut top_index,
+                );
             }
 
             // top_index is the new place that any jumps will target instead of i
             let original_block_index = blocks.next_index();
-            push(blocks, original_block, i, Some(top_index));
+            Self::push_with_index_mapping(
+                &mut index_mapping,
+                blocks,
+                original_block,
+                i,
+                Some(top_index),
+            );
 
             if new_blocks_after
                 .peek()
                 .is_some_and(|(index, _)| *index == i)
             {
-                let original_block_target: BasicBlock = {
-                    let mut original_block = blocks.get_mut(original_block_index);
-                    let mut successors = original_block
-                        .as_mut()
-                        .unwrap()
-                        .terminator
-                        .as_mut()
-                        .unwrap()
-                        .successors_mut();
-                    let target: &mut BasicBlock = successors.next().unwrap();
-
-                    assert!(
-                        successors.next().is_none(),
-                        "Unexpected insertion after a block with multiple succesors."
-                    );
-
-                    // update jump target of the original block & save original target
-                    let original_block_target = *target;
-                    *target = NEXT_BLOCK;
-                    original_block_target
-                };
-
-                let (_, mut chunk) = new_blocks_after.next().unwrap();
-                let chunk_len = chunk.len();
-                blocks.extend_reserve(chunk_len);
-                for (i, mut bb) in chunk.drain(..).enumerate() {
-                    let target = if i == (chunk_len - 1) {
-                        original_block_target
-                    } else {
-                        NEXT_BLOCK
-                    };
-                    let mut successors = bb.data.terminator.as_mut().unwrap().successors_mut();
-                    *successors.next().unwrap() = target;
-
-                    assert!(
-                        successors.next().is_none(),
-                        "Expected block with single successor"
-                    );
-
-                    push(blocks, bb.data, bb.pseudo_index, None);
-                }
+                Self::insert_blocks_after(
+                    &mut index_mapping,
+                    blocks,
+                    &mut new_blocks_after,
+                    original_block_index,
+                );
             }
         }
 
@@ -389,6 +341,100 @@ impl<'tcx> BodyModificationUnit<'tcx> {
         );
 
         index_mapping
+    }
+
+    fn insert_blocks_before<I>(
+        index_mapping: &mut HashMap<BasicBlock, BasicBlock>,
+        blocks: &mut IndexVec<BasicBlock, BasicBlockData<'tcx>>,
+        new_blocks: &mut std::iter::Peekable<I>,
+        top_index: &mut BasicBlock,
+    ) where
+        I: Iterator<Item = (BasicBlock, Vec<NewBasicBlock<'tcx>>)>,
+    {
+        let (_, mut chunk) = new_blocks.next().unwrap();
+        blocks.extend_reserve(chunk.len());
+        for non_sticky in chunk.drain_filter(|b| !b.is_sticky) {
+            Self::push_with_index_mapping(
+                index_mapping,
+                blocks,
+                non_sticky.data,
+                non_sticky.pseudo_index,
+                None,
+            );
+        }
+        *top_index = blocks.next_index();
+        for sticky in chunk.drain_filter(|b| b.is_sticky) {
+            Self::push_with_index_mapping(
+                index_mapping,
+                blocks,
+                sticky.data,
+                sticky.pseudo_index,
+                None,
+            );
+        }
+        debug_assert!(chunk.is_empty());
+    }
+
+    fn insert_blocks_after<I>(
+        index_mapping: &mut HashMap<BasicBlock, BasicBlock>,
+        blocks: &mut IndexVec<BasicBlock, BasicBlockData<'tcx>>,
+        new_blocks: &mut std::iter::Peekable<I>,
+        original_block_index: BasicBlock,
+    ) where
+        I: Iterator<Item = (BasicBlock, Vec<NewBasicBlock<'tcx>>)>,
+    {
+        let original_block_target: BasicBlock = {
+            let mut original_block = blocks.get_mut(original_block_index);
+            let mut successors = original_block
+                .as_mut()
+                .unwrap()
+                .terminator
+                .as_mut()
+                .unwrap()
+                .successors_mut();
+            let target: &mut BasicBlock = successors.next().unwrap();
+
+            assert!(
+                successors.next().is_none(),
+                "Unexpected insertion after a block with multiple succesors."
+            );
+
+            // update jump target of the original block & save original target
+            let original_block_target = *target;
+            *target = NEXT_BLOCK;
+            original_block_target
+        };
+
+        let (_, mut chunk) = new_blocks.next().unwrap();
+        let chunk_len = chunk.len();
+        blocks.extend_reserve(chunk_len);
+        for (i, mut bb) in chunk.drain(..).enumerate() {
+            if i == chunk_len - 1 {
+                let mut successors = bb.data.terminator.as_mut().unwrap().successors_mut();
+                *successors.next().unwrap() = original_block_target;
+
+                assert!(
+                    successors.next().is_none(),
+                    "Expected block with single successor"
+                );
+            }
+
+            Self::push_with_index_mapping(index_mapping, blocks, bb.data, bb.pseudo_index, None);
+        }
+    }
+
+    fn push_with_index_mapping(
+        index_mapping: &mut HashMap<BasicBlock, BasicBlock>,
+        blocks: &mut IndexVec<BasicBlock, BasicBlockData<'tcx>>,
+        block: BasicBlockData<'tcx>,
+        before_index: BasicBlock,
+        after_index: Option<BasicBlock>,
+    ) {
+        let new_index = blocks.push(block);
+        let new_index = after_index.unwrap_or(new_index);
+        if new_index != before_index {
+            index_mapping.insert(before_index, new_index);
+        }
     }
 
     fn update_jumps_pre_insert<'b>(
