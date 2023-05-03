@@ -868,12 +868,7 @@ struct CallStackFrame {
 
 impl CallStackManager {
     fn new() -> Self {
-        let mut instance = Self { stack: Vec::new() };
-        /* TODO: This is a hack to make sure that a call info exists for the
-         * entry point. It will be investigated in #68.
-         */
-        instance.push(Place::new(0));
-        instance
+        Self { stack: Vec::new() }
     }
 
     fn push(&mut self, result_dest: Place) {

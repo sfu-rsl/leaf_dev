@@ -34,6 +34,20 @@ impl<'tcx> MirPass<'tcx> for LeafPass {
                     .at(body.basic_blocks.indices().next().unwrap())
                     .in_entry_fn(),
             );
+
+            let func = Operand::function_handle(
+                tcx,
+                body.source.def_id(),
+                ::std::iter::empty(),
+                body.span, // for error reporting uses
+            );
+
+            let func_ref = call_adder
+                .at(body.basic_blocks.indices().next().unwrap())
+                .reference_operand(&func);
+            call_adder
+                .at(body.basic_blocks.indices().next().unwrap())
+                .before_call_func(func_ref, ::std::iter::empty(), None);
         }
         // TODO: determine if body will ever be a promoted block
         let _is_promoted_block = body.source.promoted.is_some();
@@ -245,7 +259,7 @@ where
             .collect::<Vec<OperandRef>>();
         let dest_ref = self.call_adder.reference_place(destination);
         self.call_adder
-            .before_call_func(func_ref, arg_refs.iter().copied(), dest_ref);
+            .before_call_func(func_ref, arg_refs.iter().copied(), Some(dest_ref));
 
         if target.is_some() {
             self.call_adder.after_call_func();

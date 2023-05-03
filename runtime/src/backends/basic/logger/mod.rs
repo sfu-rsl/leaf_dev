@@ -348,16 +348,7 @@ struct CallManager {
 
 impl CallManager {
     fn new() -> Self {
-        Self {
-            /*
-             * TODO: This is a hack to make sure that a call info exists for the
-             * entry point. It will be investigated in #68.
-             */
-            stack: vec![CallInfo {
-                func: Operand::Const(super::operand::Constant::Func(0)),
-                result_dest: Place::new(0),
-            }],
-        }
+        Self { stack: vec![] }
     }
 
     fn notify_before_call(&mut self, call: CallInfo) {

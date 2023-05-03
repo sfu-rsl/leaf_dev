@@ -179,7 +179,7 @@ pub trait FunctionHandler {
         &mut self,
         func: OperandRef,
         arguments: impl Iterator<Item = OperandRef>,
-        destination: PlaceRef,
+        destination: Option<PlaceRef>,
     );
 
     fn enter_func(&mut self);
@@ -1090,7 +1090,7 @@ where
         &mut self,
         func: OperandRef,
         arguments: impl Iterator<Item = OperandRef>,
-        destination: PlaceRef,
+        destination: Option<PlaceRef>, // if none, we default to the 0 local (return type)
     ) {
         let operand_ref_ty = self.context.pri_special_types().operand_ref;
         let (arguments_local, additional_statements) = prepare_operand_for_slice(
@@ -1106,7 +1106,10 @@ where
             vec![
                 operand::copy_for_local(func.into()),
                 operand::move_for_local(arguments_local),
-                operand::copy_for_local(destination.into()),
+                operand::copy_for_local(match destination {
+                    Some(dest) => dest.into(),
+                    None => <Local as rustc_index::vec::Idx>::new(0),
+                }),
             ],
         );
         block.statements.extend(additional_statements);
