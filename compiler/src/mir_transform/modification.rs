@@ -1,4 +1,6 @@
-use std::{cell::RefCell, collections::HashMap, marker::PhantomData};
+use std::{
+    cell::RefCell, collections::HashMap, iter::Peekable, marker::PhantomData, vec::IntoIter,
+};
 
 use crate::{
     mir_transform::call_addition::context_requirements::Basic,
@@ -285,14 +287,18 @@ impl<'tcx> BodyModificationUnit<'tcx> {
         new_blocks_before: impl IntoIterator<Item = (BasicBlock, Vec<NewBasicBlock<'tcx>>)>,
         new_blocks_after: impl IntoIterator<Item = (BasicBlock, Vec<NewBasicBlock<'tcx>>)>,
     ) -> HashMap<BasicBlock, BasicBlock> {
+        fn sorted_and_peekable<'tcx>(
+            into_iter: impl IntoIterator<Item = (BasicBlock, Vec<NewBasicBlock<'tcx>>)>,
+        ) -> Peekable<IntoIter<(BasicBlock, Vec<NewBasicBlock<'tcx>>)>> {
+            let mut vec = Vec::from_iter(into_iter);
+            vec.sort_by_key(|p: &(BasicBlock, Vec<NewBasicBlock<'_>>)| p.0);
+            vec.into_iter().peekable()
+        }
+
         let mut index_mapping = HashMap::<BasicBlock, BasicBlock>::new();
 
-        let mut new_blocks_before = Vec::from_iter(new_blocks_before);
-        let mut new_blocks_after = Vec::from_iter(new_blocks_after);
-        new_blocks_before.sort_by_key(|p| p.0);
-        new_blocks_after.sort_by_key(|p| p.0);
-        let mut new_blocks_before = new_blocks_before.into_iter().peekable();
-        let mut new_blocks_after = new_blocks_after.into_iter().peekable();
+        let mut new_blocks_before = sorted_and_peekable(new_blocks_before);
+        let mut new_blocks_after = sorted_and_peekable(new_blocks_after);
 
         let current_blocks = Vec::from_iter(blocks.drain(..));
         for (i, original_block) in current_blocks.into_iter().enumerate() {
