@@ -516,11 +516,19 @@ impl_int_branch_case_value!(u128, VariantIndex);
 
 pub(crate) struct BasicFunctionHandler<'a> {
     call_stack_manager: &'a mut CallStackManager,
+    current_call_info: Option<Place>,
+    result_dest: Option<Place>,
+    returned_val: Option<ValueRef>,
 }
 
 impl<'a> BasicFunctionHandler<'a> {
     fn new(call_stack_manager: &'a mut CallStackManager) -> Self {
-        Self { call_stack_manager }
+        Self {
+            call_stack_manager,
+            current_call_info: None,
+            result_dest: None,
+            returned_val: None,
+        }
     }
 }
 
@@ -529,32 +537,33 @@ impl FunctionHandler for BasicFunctionHandler<'_> {
     type Operand = Operand;
 
     fn before_call(
-        self,
+        mut self,
         _func: Self::Operand,
         _args: impl Iterator<Item = Self::Operand>,
         result_dest: Self::Place,
     ) {
         // TODO: Put arguments in the variables state.
-        self.call_stack_manager.push(result_dest)
+        self.current_call_info = Some(result_dest);
     }
 
     fn enter(self) {
-        let _info = self.call_stack_manager.top();
+        let call_info = self.current_call_info.unwrap();
+        self.call_stack_manager.push(call_info);
     }
 
-    fn ret(self) {
-        let _info = self.call_stack_manager.top();
+    fn ret(mut self) {
+        let (result_dest, returned_val) = self.call_stack_manager.pop();
+        self.result_dest = Some(result_dest);
+        self.returned_val = returned_val;
     }
 
     fn after_call(self) {
-        let (result_dest, returned_val) = self.call_stack_manager.pop();
         /* FIXME: May require a cleaner approach. */
-        if !self.call_stack_manager.is_empty() {
-            if let Some(returned_val) = returned_val {
-                self.call_stack_manager
-                    .top()
-                    .set_place(&result_dest, returned_val)
-            }
+        // self.call_stack_manager will never be empty because up to 1 after_call is added after each before_call
+        if let Some(returned_val) = self.returned_val {
+            self.call_stack_manager
+                .top()
+                .set_place(&self.result_dest.unwrap(), returned_val)
         }
     }
 }
