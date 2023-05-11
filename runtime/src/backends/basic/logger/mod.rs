@@ -1,10 +1,12 @@
 use std::fmt::Display;
 
-use crate::abs::{backend::*, AssertKind, BinaryOp, BranchingMetadata, UnaryOp, VariantIndex};
+use crate::abs::{
+    backend::*, AssertKind, BinaryOp, BranchingMetadata, Local, UnaryOp, VariantIndex,
+};
 
 use super::{
     operand::{DefaultOperandHandler, Operand, PlaceUsage},
-    place::{DefaultPlaceHandler, Place, Projection},
+    place::{LocalKind, LoggerPlaceHandler, Place, Projection},
 };
 
 use crate::utils::logging::log_info;
@@ -22,7 +24,7 @@ impl LoggerBackend {
 }
 
 impl RuntimeBackend for LoggerBackend {
-    type PlaceHandler<'a> = DefaultPlaceHandler where Self: 'a;
+    type PlaceHandler<'a> = LoggerPlaceHandler<'a> where Self: 'a;
     type OperandHandler<'a> = DefaultOperandHandler where Self: 'a;
     type AssignmentHandler<'a> = LoggerAssignmentHandler where Self: 'a;
     type BranchingHandler<'a> = LoggerBranchingHandler where Self: 'a;
@@ -32,7 +34,9 @@ impl RuntimeBackend for LoggerBackend {
     type Operand = Operand;
 
     fn place(&mut self) -> Self::PlaceHandler<'_> {
-        DefaultPlaceHandler
+        LoggerPlaceHandler {
+            call_manager: &mut self.call_manager,
+        }
     }
 
     fn operand(&mut self) -> Self::OperandHandler<'_> {
@@ -300,14 +304,18 @@ impl FunctionHandler for LoggerFunctionHandler<'_> {
         args: impl Iterator<Item = Self::Operand>,
         result_dest: Self::Place,
     ) {
+        let args: Vec<Self::Operand> = args.collect();
         log_info!(
             "Calling {}({}) -> {}",
             func,
-            comma_separated(args),
+            comma_separated(args.iter()),
             result_dest
         );
-        self.call_manager
-            .notify_call(CallInfo { func, result_dest });
+        self.call_manager.notify_call(CallInfo {
+            func,
+            result_dest,
+            num_args: args.len() as u32,
+        });
     }
 
     fn ret(self) {
@@ -322,10 +330,11 @@ impl FunctionHandler for LoggerFunctionHandler<'_> {
 
 struct CallInfo {
     func: Operand,
+    num_args: u32,
     result_dest: Place,
 }
 
-struct CallManager {
+pub(crate) struct CallManager {
     stack: Vec<CallInfo>,
 }
 
@@ -338,8 +347,22 @@ impl CallManager {
              */
             stack: vec![CallInfo {
                 func: Operand::Const(super::operand::Constant::Func(0)),
-                result_dest: Place::new(0),
+                num_args: 0,
+                result_dest: Place::new(LocalKind::ReturnValue),
             }],
+        }
+    }
+
+    pub fn to_local_kind(&self, local: Local) -> LocalKind {
+        let stack_frame = self.stack.last().expect("Call stack is empty.");
+        if local == 0_u32 {
+            LocalKind::ReturnValue
+        } else if local <= stack_frame.num_args {
+            // the 1st argument should be numbered as the 0th
+            LocalKind::Argument(local - 1)
+        } else {
+            // the 1st normal local (technically nth) should be numbered as 0th
+            LocalKind::Normal(local - stack_frame.num_args - 1)
         }
     }
 

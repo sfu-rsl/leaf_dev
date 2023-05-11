@@ -20,7 +20,7 @@ use self::{
         SymValueRef, SymbolicVar, Value,
     },
     operand::{DefaultOperandHandler, Operand},
-    place::{DefaultPlaceHandler, Place, Projection},
+    place::{BasicPlaceHandler, LocalKind, Place, Projection},
 };
 
 type TraceManager = Box<dyn abs::backend::TraceManager<BasicBlockIndex, ValueRef>>;
@@ -46,7 +46,7 @@ impl BasicBackend {
 }
 
 impl RuntimeBackend for BasicBackend {
-    type PlaceHandler<'a> = DefaultPlaceHandler
+    type PlaceHandler<'a> = BasicPlaceHandler<'a>
     where
         Self: 'a;
 
@@ -71,7 +71,9 @@ impl RuntimeBackend for BasicBackend {
     type Operand = Operand;
 
     fn place(&mut self) -> Self::PlaceHandler<'_> {
-        DefaultPlaceHandler
+        BasicPlaceHandler {
+            call_stack_manager: &mut self.call_stack_manager,
+        }
     }
 
     fn operand(&mut self) -> Self::OperandHandler<'_> {
@@ -531,11 +533,12 @@ impl FunctionHandler for BasicFunctionHandler<'_> {
     fn call(
         self,
         _func: Self::Operand,
-        _args: impl Iterator<Item = Self::Operand>,
+        args: impl Iterator<Item = Self::Operand>,
         result_dest: Self::Place,
     ) {
         // TODO: Put arguments in the variables state.
-        self.call_stack_manager.push(result_dest)
+        self.call_stack_manager
+            .push(result_dest, args.count() as u32)
     }
 
     fn ret(self) {
@@ -554,7 +557,7 @@ impl FunctionHandler for BasicFunctionHandler<'_> {
 type ValueRef = expr::ValueRef;
 
 struct MutableVariablesState {
-    locals: HashMap<Local, ValueRef>,
+    locals: HashMap<LocalKind, ValueRef>,
 }
 
 impl MutableVariablesState {
@@ -634,7 +637,7 @@ impl MutableVariablesState {
 
     fn get_place_iter<'a, 'b>(
         &'a self,
-        local: Local,
+        local: LocalKind,
         projs: impl Iterator<Item = &'b Projection>,
     ) -> &ValueRef
     where
@@ -722,7 +725,7 @@ impl MutableVariablesState {
 
     fn mut_place_iter(
         &mut self,
-        local: Local,
+        local: LocalKind,
         projs: &[Projection],
         mutate: impl FnOnce(&Self, &mut ValueRef),
     ) {
@@ -842,8 +845,8 @@ impl MutableVariablesState {
     }
 
     #[inline]
-    fn get_err_message(local: &Local) -> String {
-        format!("Uninitialized, moved, or invalid local. {local}")
+    fn get_err_message(local_kind: &LocalKind) -> String {
+        format!("Uninitialized, moved, or invalid local. {local_kind}")
     }
 }
 
@@ -855,6 +858,7 @@ struct CallStackManager {
 
 struct CallStackFrame {
     vars_state: MutableVariablesState,
+    num_args: u32,
     result_dest: Place,
 }
 
@@ -864,13 +868,14 @@ impl CallStackManager {
         /* TODO: This is a hack to make sure that a call info exists for the
          * entry point. It will be investigated in #68.
          */
-        instance.push(Place::new(0));
+        instance.push(Place::new(LocalKind::ReturnValue), 0);
         instance
     }
 
-    fn push(&mut self, result_dest: Place) {
+    fn push(&mut self, result_dest: Place, num_args: u32) {
         self.stack.push(CallStackFrame {
             vars_state: MutableVariablesState::new(),
+            num_args,
             result_dest,
         });
     }
@@ -879,7 +884,10 @@ impl CallStackManager {
         let frame = self.stack.pop().expect("Call stack is empty.");
         let mut vars_state = frame.vars_state;
         // TODO: Clean up after better management of special local variables.
-        (frame.result_dest, vars_state.try_take_place(&Place::new(0)))
+        (
+            frame.result_dest,
+            vars_state.try_take_place(&Place::new(LocalKind::ReturnValue)),
+        )
     }
 
     fn top(&mut self) -> &mut MutableVariablesState {
@@ -888,6 +896,19 @@ impl CallStackManager {
             .last_mut()
             .expect("Call stack is empty.")
             .vars_state
+    }
+
+    pub fn to_local_kind(&self, local: Local) -> LocalKind {
+        let stack_frame = self.stack.last().expect("Call stack is empty.");
+        if local == 0_u32 {
+            LocalKind::ReturnValue
+        } else if local <= stack_frame.num_args {
+            // the 1st argument should be numbered as the 0th
+            LocalKind::Argument(local - 1)
+        } else {
+            // the 1st normal local (technically nth) should be numbered as 0th
+            LocalKind::Normal(local - stack_frame.num_args - 1)
+        }
     }
 
     fn is_empty(&self) -> bool {

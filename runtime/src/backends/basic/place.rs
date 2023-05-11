@@ -5,8 +5,20 @@ use crate::abs::{
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct Place {
-    pub local: Local,
+    pub local: LocalKind,
     pub projections: Vec<Projection>,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub(crate) enum LocalKind {
+    ReturnValue,   // 0
+    Argument(u32), // 1-n
+    Normal(u32),   // > n
+}
+impl std::fmt::Display for LocalKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -29,7 +41,7 @@ pub(crate) enum Projection {
 }
 
 impl Place {
-    pub fn new(local: Local) -> Self {
+    pub fn new(local: LocalKind) -> Self {
         Self {
             local,
             /* As most of the places are just locals, we try not to allocate at start. */
@@ -37,7 +49,7 @@ impl Place {
         }
     }
 
-    pub fn local(&self) -> Local {
+    pub fn local(&self) -> LocalKind {
         self.local
     }
 
@@ -61,23 +73,50 @@ impl Projection {
     }
 }
 
-pub(crate) struct DefaultPlaceHandler;
+// ---------------------------------------
 
-pub(crate) struct DefaultPlaceProjectionHandler {
-    place: Place,
+pub(crate) struct BasicPlaceHandler<'a> {
+    pub(super) call_stack_manager: &'a mut super::CallStackManager,
 }
 
-impl PlaceHandler for DefaultPlaceHandler {
+impl PlaceHandler for BasicPlaceHandler<'_> {
     type Place = Place;
     type ProjectionHandler = DefaultPlaceProjectionHandler;
 
     fn of_local(self, local: Local) -> Self::Place {
-        Place::new(local)
+        let local_kind = self.call_stack_manager.to_local_kind(local);
+        Place::new(local_kind)
     }
 
     fn project_on(self, place: Self::Place) -> Self::ProjectionHandler {
         DefaultPlaceProjectionHandler { place }
     }
+}
+
+// ---------------------------------------
+
+pub(crate) struct LoggerPlaceHandler<'a> {
+    pub(super) call_manager: &'a mut super::logger::CallManager,
+}
+
+impl PlaceHandler for LoggerPlaceHandler<'_> {
+    type Place = Place;
+    type ProjectionHandler = DefaultPlaceProjectionHandler;
+
+    fn of_local(self, local: Local) -> Self::Place {
+        let local_kind = self.call_manager.to_local_kind(local);
+        Place::new(local_kind)
+    }
+
+    fn project_on(self, place: Self::Place) -> Self::ProjectionHandler {
+        DefaultPlaceProjectionHandler { place }
+    }
+}
+
+// ---------------------------------------
+
+pub(crate) struct DefaultPlaceProjectionHandler {
+    place: Place,
 }
 
 impl PlaceProjectionHandler for DefaultPlaceProjectionHandler {
