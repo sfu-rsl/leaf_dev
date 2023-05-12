@@ -5,6 +5,7 @@ use rustc_middle::mir::{
 
 use rustc_target::abi::VariantIdx;
 
+use crate::mir_transform::call_addition::context::BodyProvider;
 use crate::mir_transform::call_addition::{
     context_requirements as ctxtreqs, AssertionHandler, Assigner, BranchingHandler,
     BranchingReferencer, EntryFunctionHandler, FunctionHandler, OperandRef, OperandReferencer,
@@ -52,7 +53,7 @@ impl VisitorFactory {
         call_adder: &'c mut RuntimeCallAdder<BC>,
     ) -> impl Visitor<'tcx> + 'c
     where
-        BC: ctxtreqs::Basic<'tcx> + JumpTargetModifier,
+        BC: ctxtreqs::Basic<'tcx> + JumpTargetModifier + BodyProvider<'tcx>,
     {
         LeafBodyVisitor {
             call_adder: RuntimeCallAdder::borrow_from(call_adder),
@@ -64,7 +65,7 @@ impl VisitorFactory {
         block: BasicBlock,
     ) -> impl Visitor<'tcx> + 'c
     where
-        BC: ctxtreqs::Basic<'tcx> + JumpTargetModifier,
+        BC: ctxtreqs::Basic<'tcx> + JumpTargetModifier + BodyProvider<'tcx>,
     {
         LeafBasicBlockVisitor {
             call_adder: call_adder.at(block),
@@ -75,7 +76,7 @@ impl VisitorFactory {
         call_adder: &'b mut RuntimeCallAdder<BC>,
     ) -> impl StatementKindVisitor<'tcx, ()> + 'b
     where
-        BC: ctxtreqs::ForPlaceRef<'tcx> + ctxtreqs::ForOperandRef<'tcx>,
+        BC: ctxtreqs::ForPlaceRef<'tcx> + ctxtreqs::ForOperandRef<'tcx> + BodyProvider<'tcx>,
     {
         LeafStatementKindVisitor {
             call_adder: RuntimeCallAdder::borrow_from(call_adder),
@@ -88,7 +89,8 @@ impl VisitorFactory {
     where
         BC: ctxtreqs::ForPlaceRef<'tcx>
             + ctxtreqs::ForOperandRef<'tcx>
-            + ctxtreqs::ForBranching<'tcx>,
+            + ctxtreqs::ForBranching<'tcx>
+            + BodyProvider<'tcx>,
     {
         LeafTerminatorKindVisitor {
             call_adder: RuntimeCallAdder::borrow_from(call_adder),
@@ -100,7 +102,7 @@ impl VisitorFactory {
         destination: &Place<'tcx>,
     ) -> impl RvalueVisitor<'tcx, ()> + 'b
     where
-        BC: ctxtreqs::ForPlaceRef<'tcx> + ctxtreqs::ForOperandRef<'tcx>,
+        BC: ctxtreqs::ForPlaceRef<'tcx> + ctxtreqs::ForOperandRef<'tcx> + BodyProvider<'tcx>,
     {
         let dest_ref = call_adder.reference_place(destination);
         LeafAssignmentVisitor {
@@ -121,7 +123,7 @@ make_general_visitor!(LeafBodyVisitor);
 
 impl<'tcx, C> Visitor<'tcx> for LeafBodyVisitor<C>
 where
-    C: ctxtreqs::Basic<'tcx> + JumpTargetModifier,
+    C: ctxtreqs::Basic<'tcx> + JumpTargetModifier + BodyProvider<'tcx>,
 {
     fn visit_basic_block_data(&mut self, block: BasicBlock, data: &BasicBlockData<'tcx>) {
         VisitorFactory::make_basic_block_visitor(&mut self.call_adder, block)
@@ -133,7 +135,10 @@ make_general_visitor!(LeafBasicBlockVisitor);
 
 impl<'tcx, C> Visitor<'tcx> for LeafBasicBlockVisitor<C>
 where
-    C: ctxtreqs::ForPlaceRef<'tcx> + ctxtreqs::ForOperandRef<'tcx> + JumpTargetModifier,
+    C: ctxtreqs::ForPlaceRef<'tcx>
+        + ctxtreqs::ForOperandRef<'tcx>
+        + JumpTargetModifier
+        + BodyProvider<'tcx>,
 {
     fn visit_statement(
         &mut self,
@@ -154,7 +159,7 @@ make_general_visitor!(LeafStatementKindVisitor);
 
 impl<'tcx, C> StatementKindVisitor<'tcx, ()> for LeafStatementKindVisitor<C>
 where
-    C: ctxtreqs::ForPlaceRef<'tcx> + ctxtreqs::ForOperandRef<'tcx>,
+    C: ctxtreqs::ForPlaceRef<'tcx> + ctxtreqs::ForOperandRef<'tcx> + BodyProvider<'tcx>,
 {
     fn visit_assign(&mut self, place: &Place<'tcx>, rvalue: &Rvalue<'tcx>) {
         VisitorFactory::make_assignment_visitor(&mut self.call_adder, place).visit_rvalue(rvalue)
@@ -184,7 +189,8 @@ where
         + ctxtreqs::ForPlaceRef<'tcx>
         + ctxtreqs::ForBranching<'tcx>
         + ctxtreqs::ForFunctionCalling<'tcx>
-        + ctxtreqs::ForReturning<'tcx>,
+        + ctxtreqs::ForReturning<'tcx>
+        + BodyProvider<'tcx>,
 {
     fn visit_switch_int(&mut self, discr: &Operand<'tcx>, targets: &mir::SwitchTargets) {
         let switch_info = self.call_adder.store_branching_info(discr);
@@ -287,7 +293,10 @@ make_general_visitor!(LeafAssignmentVisitor);
 
 impl<'tcx, C> RvalueVisitor<'tcx, ()> for LeafAssignmentVisitor<C>
 where
-    C: ctxtreqs::ForPlaceRef<'tcx> + ctxtreqs::ForOperandRef<'tcx> + ctxtreqs::ForAssignment<'tcx>,
+    C: ctxtreqs::ForPlaceRef<'tcx>
+        + ctxtreqs::ForOperandRef<'tcx>
+        + ctxtreqs::ForAssignment<'tcx>
+        + BodyProvider<'tcx>,
 {
     fn visit_rvalue(&mut self, rvalue: &Rvalue<'tcx>) {
         log::debug!("Visiting Rvalue: {:#?}", rvalue);
@@ -447,7 +456,7 @@ where
 
 impl<'tcx, C> LeafAssignmentVisitor<C>
 where
-    C: ctxtreqs::ForOperandRef<'tcx> + ctxtreqs::ForAssignment<'tcx>,
+    C: ctxtreqs::ForOperandRef<'tcx> + ctxtreqs::ForAssignment<'tcx> + BodyProvider<'tcx>,
 {
     fn visit_binary_op_general(
         &mut self,

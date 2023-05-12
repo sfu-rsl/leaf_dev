@@ -17,7 +17,11 @@ pub(crate) enum LocalKind {
 }
 impl std::fmt::Display for LocalKind {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        match self {
+            Self::ReturnValue => write!(f, "ReturnValue"),
+            Self::Argument(local) => write!(f, "Arg({})", local),
+            Self::Normal(local) => write!(f, "Var({})", local),
+        }
     }
 }
 
@@ -73,18 +77,14 @@ impl Projection {
     }
 }
 
-// ---------------------------------------
+pub(crate) struct DefaultPlaceHandler {}
 
-pub(crate) struct BasicPlaceHandler<'a> {
-    pub(super) call_stack_manager: &'a mut super::CallStackManager,
-}
-
-impl PlaceHandler for BasicPlaceHandler<'_> {
+impl PlaceHandler for DefaultPlaceHandler {
     type Place = Place;
+    type LocalKind = LocalKind;
     type ProjectionHandler = DefaultPlaceProjectionHandler;
 
-    fn of_local(self, local: Local) -> Self::Place {
-        let local_kind = self.call_stack_manager.to_local_kind(local);
+    fn of_local(self, local_kind: Self::LocalKind) -> Self::Place {
         Place::new(local_kind)
     }
 
@@ -92,28 +92,6 @@ impl PlaceHandler for BasicPlaceHandler<'_> {
         DefaultPlaceProjectionHandler { place }
     }
 }
-
-// ---------------------------------------
-
-pub(crate) struct LoggerPlaceHandler<'a> {
-    pub(super) call_manager: &'a mut super::logger::CallManager,
-}
-
-impl PlaceHandler for LoggerPlaceHandler<'_> {
-    type Place = Place;
-    type ProjectionHandler = DefaultPlaceProjectionHandler;
-
-    fn of_local(self, local: Local) -> Self::Place {
-        let local_kind = self.call_manager.to_local_kind(local);
-        Place::new(local_kind)
-    }
-
-    fn project_on(self, place: Self::Place) -> Self::ProjectionHandler {
-        DefaultPlaceProjectionHandler { place }
-    }
-}
-
-// ---------------------------------------
 
 pub(crate) struct DefaultPlaceProjectionHandler {
     place: Place,

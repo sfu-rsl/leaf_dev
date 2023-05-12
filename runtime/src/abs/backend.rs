@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use super::{
-    AssertKind, BinaryOp, BranchingMetadata, Constraint, FieldIndex, Local, UnaryOp, VariantIndex,
+    AssertKind, BinaryOp, BranchingMetadata, Constraint, FieldIndex, UnaryOp, VariantIndex,
 };
 
 pub(crate) trait RuntimeBackend: Sized {
@@ -40,10 +40,10 @@ pub(crate) trait RuntimeBackend: Sized {
 
 pub(crate) trait PlaceHandler {
     type Place;
-
+    type LocalKind;
     type ProjectionHandler: PlaceProjectionHandler<Place = Self::Place>;
 
-    fn of_local(self, local: Local) -> Self::Place;
+    fn of_local(self, local_kind: Self::LocalKind) -> Self::Place;
 
     fn project_on(self, place: Self::Place) -> Self::ProjectionHandler;
 }

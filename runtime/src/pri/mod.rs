@@ -29,10 +29,13 @@ pub fn init_runtime_lib() {
 }
 
 pub fn ref_place_return_value() -> PlaceRef {
-    push_place_ref(|p| p.of_local(0))
+    push_place_ref(|p| p.of_local(LocalKind::ReturnValue))
+}
+pub fn ref_place_argument(local: Local) -> PlaceRef {
+    push_place_ref(|p| p.of_local(LocalKind::Argument(local)))
 }
 pub fn ref_place_local(local: Local) -> PlaceRef {
-    push_place_ref(|p| p.of_local(local))
+    push_place_ref(|p| p.of_local(LocalKind::Normal(local)))
 }
 
 pub fn ref_place_deref(place: PlaceRef) -> PlaceRef {

@@ -375,7 +375,7 @@ where
 impl<'tcx, C> PlaceReferencer<'tcx> for RuntimeCallAdder<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
-    C: TyContextProvider<'tcx>,
+    C: TyContextProvider<'tcx> + BodyProvider<'tcx>,
 {
     fn reference_place(&mut self, place: &Place<'tcx>) -> PlaceRef {
         let BlocksAndResult(new_blocks, reference) = self.internal_reference_place(place);
@@ -386,17 +386,25 @@ where
 impl<'tcx, C> RuntimeCallAdder<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
-    C: TyContextProvider<'tcx>,
+    C: TyContextProvider<'tcx> + BodyProvider<'tcx>,
 {
     fn internal_reference_place(&mut self, place: &Place<'tcx>) -> BlocksAndResult<'tcx> {
+        let local = u32::from(place.local);
+        let func_name = if local == 0_u32 {
+            stringify!(pri::ref_place_return_value)
+        } else if local <= self.context.body().arg_count as u32 {
+            stringify!(pri::ref_place_argument)
+        } else {
+            stringify!(pri::ref_place_local)
+        };
+        let args = if local == 0_u32 {
+            vec![]
+        } else {
+            vec![operand::const_from_uint(self.context.tcx(), local)]
+        };
+
         let mut new_blocks = vec![];
-        let (call_block, mut current_ref) = self.make_bb_for_place_ref_call(
-            stringify!(pri::ref_place_local),
-            vec![operand::const_from_uint(
-                self.context.tcx(),
-                u32::from(place.local),
-            )],
-        );
+        let (call_block, mut current_ref) = self.make_bb_for_place_ref_call(func_name, args);
         new_blocks.push(call_block);
 
         for (_, proj) in place.iter_projections() {
@@ -483,7 +491,7 @@ where
 impl<'tcx, C> OperandReferencer<'tcx> for RuntimeCallAdder<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
-    C: TyContextProvider<'tcx>,
+    C: TyContextProvider<'tcx> + BodyProvider<'tcx>,
 {
     fn reference_operand(&mut self, operand: &Operand<'tcx>) -> OperandRef {
         let BlocksAndResult(new_blocks, reference) = self.internal_reference_operand(operand);
@@ -494,7 +502,7 @@ where
 impl<'tcx, C> RuntimeCallAdder<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
-    C: TyContextProvider<'tcx>,
+    C: TyContextProvider<'tcx> + BodyProvider<'tcx>,
 {
     fn internal_reference_operand(&mut self, operand: &Operand<'tcx>) -> BlocksAndResult<'tcx> {
         match operand {
@@ -1114,7 +1122,10 @@ where
 impl<'tcx, C> AssertionHandler<'tcx> for RuntimeCallAdder<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
-    C: TyContextProvider<'tcx> + SpecialTypesProvider<'tcx> + BodyLocalManager<'tcx>,
+    C: TyContextProvider<'tcx>
+        + SpecialTypesProvider<'tcx>
+        + BodyLocalManager<'tcx>
+        + BodyProvider<'tcx>,
 {
     fn check_assert(
         &mut self,
