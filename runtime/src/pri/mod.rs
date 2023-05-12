@@ -1,12 +1,9 @@
 mod instance;
 mod utils;
 
-use crate::{
-    abs::{
-        backend::*, AssertKind, BasicBlockIndex, BinaryOp, BranchingMetadata,
-        DiscriminantAsIntType, FieldIndex, Local, UnaryOp, VariantIndex,
-    },
-    backends::basic::place::LocalKind,
+use crate::abs::{
+    backend::*, AssertKind, BasicBlockIndex, BinaryOp, BranchingMetadata, DiscriminantAsIntType,
+    FieldIndex, Local, UnaryOp, VariantIndex,
 };
 
 use self::instance::*;
@@ -29,13 +26,13 @@ pub fn init_runtime_lib() {
 }
 
 pub fn ref_place_return_value() -> PlaceRef {
-    push_place_ref(|p| p.of_local(LocalKind::ReturnValue))
+    push_place_ref(|p| p.of_local(Local::ReturnValue))
 }
-pub fn ref_place_argument(local: Local) -> PlaceRef {
-    push_place_ref(|p| p.of_local(LocalKind::Argument(local)))
+pub fn ref_place_argument(local_index: u32) -> PlaceRef {
+    push_place_ref(|p| p.of_local(Local::Argument(local_index)))
 }
-pub fn ref_place_local(local: Local) -> PlaceRef {
-    push_place_ref(|p| p.of_local(LocalKind::Normal(local)))
+pub fn ref_place_local(local_index: u32) -> PlaceRef {
+    push_place_ref(|p| p.of_local(Local::Normal(local_index)))
 }
 
 pub fn ref_place_deref(place: PlaceRef) -> PlaceRef {

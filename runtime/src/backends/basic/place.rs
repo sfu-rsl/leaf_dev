@@ -5,24 +5,8 @@ use crate::abs::{
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct Place {
-    pub local: LocalKind,
+    pub local: Local,
     pub projections: Vec<Projection>,
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub(crate) enum LocalKind {
-    ReturnValue,   // 0
-    Argument(u32), // 1-n
-    Normal(u32),   // > n
-}
-impl std::fmt::Display for LocalKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            Self::ReturnValue => write!(f, "ReturnValue"),
-            Self::Argument(local) => write!(f, "Arg({})", local),
-            Self::Normal(local) => write!(f, "Var({})", local),
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -45,7 +29,7 @@ pub(crate) enum Projection {
 }
 
 impl Place {
-    pub fn new(local: LocalKind) -> Self {
+    pub fn new(local: Local) -> Self {
         Self {
             local,
             /* As most of the places are just locals, we try not to allocate at start. */
@@ -53,7 +37,7 @@ impl Place {
         }
     }
 
-    pub fn local(&self) -> LocalKind {
+    pub fn local(&self) -> Local {
         self.local
     }
 
@@ -81,11 +65,10 @@ pub(crate) struct DefaultPlaceHandler {}
 
 impl PlaceHandler for DefaultPlaceHandler {
     type Place = Place;
-    type LocalKind = LocalKind;
     type ProjectionHandler = DefaultPlaceProjectionHandler;
 
-    fn of_local(self, local_kind: Self::LocalKind) -> Self::Place {
-        Place::new(local_kind)
+    fn of_local(self, local: Local) -> Self::Place {
+        Place::new(local)
     }
 
     fn project_on(self, place: Self::Place) -> Self::ProjectionHandler {

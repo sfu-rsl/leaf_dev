@@ -390,7 +390,8 @@ where
 {
     fn internal_reference_place(&mut self, place: &Place<'tcx>) -> BlocksAndResult<'tcx> {
         let local = u32::from(place.local);
-        let func_name = if local == 0_u32 {
+        const RETURN_VALUE: u32 = 0;
+        let func_name = if local == RETURN_VALUE {
             stringify!(pri::ref_place_return_value)
         } else if local <= self.context.body().arg_count as u32 {
             stringify!(pri::ref_place_argument)
@@ -1263,11 +1264,14 @@ pub mod context_requirements {
     {
     }
 
-    pub trait ForPlaceRef<'tcx>: LocationProvider + BaseContext<'tcx> {}
-    impl<'tcx, C> ForPlaceRef<'tcx> for C where C: LocationProvider + BaseContext<'tcx> {}
+    pub trait ForPlaceRef<'tcx>: LocationProvider + BaseContext<'tcx> + BodyProvider<'tcx> {}
+    impl<'tcx, C> ForPlaceRef<'tcx> for C where
+        C: LocationProvider + BaseContext<'tcx> + BodyProvider<'tcx>
+    {
+    }
 
-    pub trait ForOperandRef<'tcx>: LocationProvider + BaseContext<'tcx> {}
-    impl<'tcx, C> ForOperandRef<'tcx> for C where C: LocationProvider + BaseContext<'tcx> {}
+    pub trait ForOperandRef<'tcx>: ForPlaceRef<'tcx> {}
+    impl<'tcx, C> ForOperandRef<'tcx> for C where C: ForPlaceRef<'tcx> {}
 
     pub trait ForAssignment<'tcx>:
         DestinationReferenceProvider + LocationProvider + BaseContext<'tcx>

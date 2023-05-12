@@ -6,7 +6,7 @@ use crate::abs::{
 
 use super::{
     operand::{DefaultOperandHandler, Operand, PlaceUsage},
-    place::{DefaultPlaceHandler, LocalKind, Place, Projection},
+    place::{DefaultPlaceHandler, Place, Projection},
 };
 
 use crate::utils::logging::log_info;
@@ -340,7 +340,7 @@ impl CallManager {
              */
             stack: vec![CallInfo {
                 func: Operand::Const(super::operand::Constant::Func(0)),
-                result_dest: Place::new(LocalKind::ReturnValue),
+                result_dest: Place::new(Local::ReturnValue),
             }],
         }
     }

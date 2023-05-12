@@ -20,7 +20,7 @@ use self::{
         SymValueRef, SymbolicVar, Value,
     },
     operand::{DefaultOperandHandler, Operand},
-    place::{DefaultPlaceHandler, LocalKind, Place, Projection},
+    place::{DefaultPlaceHandler, Place, Projection},
 };
 
 type TraceManager = Box<dyn abs::backend::TraceManager<BasicBlockIndex, ValueRef>>;
@@ -554,7 +554,7 @@ impl FunctionHandler for BasicFunctionHandler<'_> {
 type ValueRef = expr::ValueRef;
 
 struct MutableVariablesState {
-    locals: HashMap<LocalKind, ValueRef>,
+    locals: HashMap<Local, ValueRef>,
 }
 
 impl MutableVariablesState {
@@ -634,7 +634,7 @@ impl MutableVariablesState {
 
     fn get_place_iter<'a, 'b>(
         &'a self,
-        local: LocalKind,
+        local: Local,
         projs: impl Iterator<Item = &'b Projection>,
     ) -> &ValueRef
     where
@@ -722,7 +722,7 @@ impl MutableVariablesState {
 
     fn mut_place_iter(
         &mut self,
-        local: LocalKind,
+        local: Local,
         projs: &[Projection],
         mutate: impl FnOnce(&Self, &mut ValueRef),
     ) {
@@ -842,8 +842,8 @@ impl MutableVariablesState {
     }
 
     #[inline]
-    fn get_err_message(local_kind: &LocalKind) -> String {
-        format!("Uninitialized, moved, or invalid local. {local_kind}")
+    fn get_err_message(local: &Local) -> String {
+        format!("Uninitialized, moved, or invalid local. {local}")
     }
 }
 
@@ -864,7 +864,7 @@ impl CallStackManager {
         /* TODO: This is a hack to make sure that a call info exists for the
          * entry point. It will be investigated in #68.
          */
-        instance.push(Place::new(LocalKind::ReturnValue));
+        instance.push(Place::new(Local::ReturnValue));
         instance
     }
 
@@ -881,7 +881,7 @@ impl CallStackManager {
         // TODO: Clean up after better management of special local variables.
         (
             frame.result_dest,
-            vars_state.try_take_place(&Place::new(LocalKind::ReturnValue)),
+            vars_state.try_take_place(&Place::new(Local::ReturnValue)),
         )
     }
 
