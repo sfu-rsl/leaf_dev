@@ -302,18 +302,14 @@ impl FunctionHandler for LoggerFunctionHandler<'_> {
         args: impl Iterator<Item = Self::Operand>,
         result_dest: Self::Place,
     ) {
-        let args: Vec<Self::Operand> = args.collect();
         log_info!(
             "Calling {}({}) -> {}",
             func,
-            comma_separated(args.iter()),
+            comma_separated(args),
             result_dest
         );
-        self.call_manager.notify_call(CallInfo {
-            func,
-            result_dest,
-            num_args: args.len() as u32,
-        });
+        self.call_manager
+            .notify_call(CallInfo { func, result_dest });
     }
 
     fn ret(self) {
@@ -328,11 +324,10 @@ impl FunctionHandler for LoggerFunctionHandler<'_> {
 
 struct CallInfo {
     func: Operand,
-    num_args: u32,
     result_dest: Place,
 }
 
-pub(crate) struct CallManager {
+struct CallManager {
     stack: Vec<CallInfo>,
 }
 
@@ -345,22 +340,8 @@ impl CallManager {
              */
             stack: vec![CallInfo {
                 func: Operand::Const(super::operand::Constant::Func(0)),
-                num_args: 0,
                 result_dest: Place::new(LocalKind::ReturnValue),
             }],
-        }
-    }
-
-    pub fn to_local_kind(&self, local: Local) -> LocalKind {
-        let stack_frame = self.stack.last().expect("Call stack is empty.");
-        if local == 0_u32 {
-            LocalKind::ReturnValue
-        } else if local <= stack_frame.num_args {
-            // the 1st argument should be numbered as the 0th
-            LocalKind::Argument(local - 1)
-        } else {
-            // the 1st normal local (technically nth) should be numbered as 0th
-            LocalKind::Normal(local - stack_frame.num_args - 1)
         }
     }
 
