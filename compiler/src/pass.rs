@@ -35,25 +35,27 @@ impl<'tcx> MirPass<'tcx> for LeafPass {
                     .in_entry_fn(),
             );
 
+            // report that the entry function was "called" as a special case
             let func = Operand::function_handle(
                 tcx,
                 body.source.def_id(),
                 ::std::iter::empty(),
-                body.span, // for error reporting uses
+                body.span, // for error handling
             );
-
             let func_ref = call_adder
                 .at(body.basic_blocks.indices().next().unwrap())
                 .reference_operand(&func);
             call_adder
                 .at(body.basic_blocks.indices().next().unwrap())
-                .before_call_func(func_ref, ::std::iter::empty(), None);
+                .before_call_func(func_ref, ::std::iter::empty());
         }
+
         // TODO: determine if body will ever be a promoted block
         let _is_promoted_block = body.source.promoted.is_some();
         call_adder
             .at(body.basic_blocks.indices().next().unwrap())
             .enter_func();
+
         VisitorFactory::make_body_visitor(&mut call_adder).visit_body(body);
         modification.commit(body);
     }
@@ -257,12 +259,11 @@ where
             .iter()
             .map(|a| self.call_adder.reference_operand(a))
             .collect::<Vec<OperandRef>>();
-        let dest_ref = self.call_adder.reference_place(destination);
         self.call_adder
-            .before_call_func(func_ref, arg_refs.iter().copied(), Some(dest_ref));
+            .before_call_func(func_ref, arg_refs.iter().copied());
 
         if target.is_some() {
-            self.call_adder.after_call_func();
+            self.call_adder.after_call_func(destination);
         } else {
             // This branch is only triggered by hitting a divergent function:
             // https://doc.rust-lang.org/rust-by-example/fn/diverging.html

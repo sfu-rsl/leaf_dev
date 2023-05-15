@@ -293,53 +293,33 @@ impl FunctionHandler for LoggerFunctionHandler<'_> {
     type Place = Place;
     type Operand = Operand;
 
-    fn before_call(
-        self,
-        func: Self::Operand,
-        args: impl Iterator<Item = Self::Operand>,
-        result_dest: Self::Place,
-    ) {
-        log_info!(
-            "Just before call {}({}) -> {}",
-            func,
-            comma_separated(args),
-            result_dest
-        );
-        self.call_manager
-            .notify_before_call(CallInfo { func, result_dest });
+    fn before_call(self, func: Self::Operand, args: impl Iterator<Item = Self::Operand>) {
+        log_info!("Just before call {}({})", func, comma_separated(args));
+        self.call_manager.notify_before_call(CallInfo { func });
     }
 
     fn enter(self) {
         let info = self.call_manager.notify_enter_call();
-        log_info!(
-            "Entered function {} and storing result in {}",
-            info.func,
-            info.result_dest
-        );
+        log_info!("Entered function {}", info.func);
     }
 
     fn ret(self) {
         let info = self.call_manager.notify_return();
-        log_info!(
-            "Returning from {} and storing result in {}",
-            info.func,
-            info.result_dest
-        );
+        log_info!("Returning from {}", info.func);
     }
 
-    fn after_call(self) {
+    fn after_call(self, result_dest: Self::Place) {
         let info = self.call_manager.notify_after_call();
         log_info!(
             "Exited function {} and storing result in {}",
             info.func,
-            info.result_dest
+            result_dest
         );
     }
 }
 
 struct CallInfo {
     func: Operand,
-    result_dest: Place,
 }
 
 struct CallManager {

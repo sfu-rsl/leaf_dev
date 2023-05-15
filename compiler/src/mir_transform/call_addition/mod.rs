@@ -174,19 +174,14 @@ pub trait BranchingHandler {
         I::IntoIter: ExactSizeIterator<Item = u128>;
 }
 
-pub trait FunctionHandler {
-    fn before_call_func(
-        &mut self,
-        func: OperandRef,
-        arguments: impl Iterator<Item = OperandRef>,
-        destination: Option<PlaceRef>,
-    );
+pub trait FunctionHandler<'tcx> {
+    fn before_call_func(&mut self, func: OperandRef, arguments: impl Iterator<Item = OperandRef>);
 
     fn enter_func(&mut self);
 
     fn return_from_func(&mut self);
 
-    fn after_call_func(&mut self);
+    fn after_call_func(&mut self, destination: &Place<'tcx>);
 }
 
 pub trait EntryFunctionHandler {
@@ -1076,7 +1071,7 @@ where
     }
 }
 
-impl<'tcx, C> FunctionHandler for RuntimeCallAdder<C>
+impl<'tcx, C> FunctionHandler<'tcx> for RuntimeCallAdder<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
     C: TyContextProvider<'tcx>
@@ -1086,12 +1081,7 @@ where
         + LocationProvider
         + JumpTargetModifier,
 {
-    fn before_call_func(
-        &mut self,
-        func: OperandRef,
-        arguments: impl Iterator<Item = OperandRef>,
-        destination: Option<PlaceRef>, // if none, we default to the 0 local (return type)
-    ) {
+    fn before_call_func(&mut self, func: OperandRef, arguments: impl Iterator<Item = OperandRef>) {
         let operand_ref_ty = self.context.pri_special_types().operand_ref;
         let (arguments_local, additional_statements) = prepare_operand_for_slice(
             self.context.tcx(),
@@ -1106,10 +1096,6 @@ where
             vec![
                 operand::copy_for_local(func.into()),
                 operand::move_for_local(arguments_local),
-                operand::copy_for_local(match destination {
-                    Some(dest) => dest.into(),
-                    None => <Local as rustc_index::vec::Idx>::new(0),
-                }),
             ],
         );
         block.statements.extend(additional_statements);
@@ -1126,10 +1112,16 @@ where
         self.insert_blocks([block]);
     }
 
-    fn after_call_func(&mut self) {
-        let block = self.make_bb_for_call(stringify!(pri::after_call_func), vec![]);
+    fn after_call_func(&mut self, destination: &Place<'tcx>) {
+        // we want the place reference to be after the function call as well
+        let BlocksAndResult(mut blocks, dest_ref) = self.internal_reference_place(destination);
+        let after_call_block = self.make_bb_for_call(
+            stringify!(pri::after_call_func),
+            vec![operand::copy_for_local(dest_ref.into())],
+        );
+        blocks.push(after_call_block);
         self.context
-            .insert_blocks_after(self.context.location(), [block]);
+            .insert_blocks_after(self.context.location(), blocks);
     }
 }
 
