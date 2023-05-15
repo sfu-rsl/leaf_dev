@@ -540,7 +540,6 @@ impl FunctionHandler for BasicFunctionHandler<'_> {
     }
 
     fn enter(self) {
-        //let call_info = self.current_call_info.unwrap();
         self.call_stack_manager.push();
     }
 
@@ -556,6 +555,8 @@ impl FunctionHandler for BasicFunctionHandler<'_> {
                 self.call_stack_manager
                     .top()
                     .set_place(&result_dest, returned_val)
+            } else {
+                todo!("handle the case when an external function is called")
             }
         }
 
