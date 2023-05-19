@@ -13,8 +13,13 @@ pub type PlaceRef = Ref;
 pub type OperandRef = Ref;
 
 /*
- * These fields serve as exported symbols in the workaround to get the Tys for
- * the desired types in the compiler.
+ * This field serves as a marker to find the module in the compiler easier.
+ */
+pub static MODULE_MARKER: u8 = 0;
+
+/*
+ * These fields serve as exported symbols to get the types of the desired
+ * arguments easier in the compiler.
  */
 pub static PLACE_REF_TYPE_HOLDER: PlaceRef = 0;
 pub static OPERAND_REF_TYPE_HOLDER: OperandRef = 0;

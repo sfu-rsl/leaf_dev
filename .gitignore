@@ -11,6 +11,8 @@ samples/playground
 
 *.pdb
 *.exe
+*.out
+*.o
 *.mir
 *.ll
 *.bc
