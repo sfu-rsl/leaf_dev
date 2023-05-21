@@ -1089,7 +1089,8 @@ where
         + BodyLocalManager<'tcx>
         + BodyBlockManager<'tcx>
         + LocationProvider
-        + JumpTargetModifier,
+        + JumpTargetModifier
+        + BodyProvider<'tcx>,
 {
     fn before_call_func(&mut self, func: OperandRef, arguments: impl Iterator<Item = OperandRef>) {
         let operand_ref_ty = self.context.pri_special_types().operand_ref;

@@ -236,7 +236,6 @@ where
         args: &[Operand<'tcx>],
         destination: &Place<'tcx>,
         target: &Option<BasicBlock>,
-        _cleanup: &Option<BasicBlock>,
         _unwind: &UnwindAction,
         _from_hir_call: bool,
         _fn_span: rustc_span::Span,

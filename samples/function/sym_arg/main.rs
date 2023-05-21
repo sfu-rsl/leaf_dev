@@ -2,7 +2,7 @@ use runtime::annotations::Symbolizable;
 
 fn main() {
     let x = 10.mark_symbolic();
-    check(x, 5);
+    calc(x, 5);
 }
 
 fn calc(x: i32, y: i32) {
