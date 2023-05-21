@@ -71,7 +71,7 @@ impl RuntimeBackend for BasicBackend {
     type Operand = Operand;
 
     fn place(&mut self) -> Self::PlaceHandler<'_> {
-        DefaultPlaceHandler
+        DefaultPlaceHandler {}
     }
 
     fn operand(&mut self) -> Self::OperandHandler<'_> {
@@ -872,7 +872,7 @@ struct CallStackFrame {
 
 impl CallStackManager {
     fn new() -> Self {
-        Self { stack: Vec::new() }
+        Self { stack: vec![] }
     }
 
     fn push(&mut self) {
@@ -885,7 +885,7 @@ impl CallStackManager {
         let frame = self.stack.pop().expect("Call stack is empty.");
         let mut vars_state = frame.vars_state;
         // TODO: Clean up after better management of special local variables.
-        vars_state.try_take_place(&Place::new(0))
+        vars_state.try_take_place(&Place::new(Local::ReturnValue))
     }
 
     fn top(&mut self) -> &mut MutableVariablesState {

@@ -1,11 +1,15 @@
 #![feature(rustc_private)]
 #![feature(custom_mir)]
 #![feature(let_chains)]
-#![feature(is_some_and)]
 #![feature(extend_one)]
 #![feature(box_patterns)]
 #![feature(drain_filter)]
 #![deny(rustc::internal)]
+#![feature(iter_order_by)]
+
+mod mir_transform;
+mod pass;
+mod visit;
 
 extern crate rustc_abi;
 extern crate rustc_apfloat;
@@ -24,33 +28,22 @@ extern crate rustc_target;
 extern crate rustc_type_ir;
 extern crate thin_vec;
 
-mod mir_transform;
-mod pass;
-mod visit;
-
-use rustc_ast::{
-    ast::{Item, ItemKind, Visibility, VisibilityKind},
-    ptr::P,
-    DUMMY_NODE_ID,
-};
 use rustc_driver::Compilation;
-// use rustc_hir::def_id::LocalDefId;
 use rustc_interface::{
     interface::{Compiler, Config},
     Queries,
 };
-
 use rustc_middle::{
-    mir,
-    ty::{
-        query::{query_keys, query_values, Providers},
-        InstanceDef, TyCtxt, WithOptConstParam,
-    },
+    mir::Body,
+    query::{AsLocalKey, Providers},
+    ty::TyCtxt,
 };
 use rustc_span::{
+    def_id::DefId,
     symbol::{Ident, Symbol},
     DUMMY_SP,
 };
+
 use std::path::PathBuf;
 
 pub struct RunCompiler;
@@ -117,7 +110,7 @@ impl RunCompiler {
                 LeafConfig::Normal
             },
         };
-        rustc_driver::install_ice_hook();
+        rustc_driver::install_ice_hook("https://github.com/sfu-rsl/leaf/issues/new", |_| ());
 
         rustc_driver::catch_with_exit_code(|| rustc_driver::RunCompiler::new(args, &mut cb).run())
     }
@@ -145,14 +138,9 @@ impl rustc_driver::Callbacks for Callbacks {
             }
         }
 
-        if let LeafConfig::UnitTest = self.config {
-            // Skip optimizing MIR for unit tests.
-            return;
-        }
-
         config.override_queries = Some(|_session, lprov, _eprov| {
+            // TODO: Compare this approach with after_analysis.
             lprov.optimized_mir = local_optimized_mir;
-            //eprov.optimized_mir = extern_optimized_mir; // TODO: Bring this back (see below).
         });
     }
 
@@ -163,16 +151,12 @@ impl rustc_driver::Callbacks for Callbacks {
     ) -> Compilation {
         compiler.session().abort_if_errors();
 
-        if let LeafConfig::UnitTest = self.config {
-            queries
-                .global_ctxt()
-                .unwrap()
-                .get_mut()
-                .enter(|tcx| self.visit_mir_body(tcx));
-            return Compilation::Stop;
-        }
+        // The following adds "extern crate runtime" to the parsed AST.
+        use rustc_ast::{
+            ast::{Item, ItemKind, Visibility, VisibilityKind, DUMMY_NODE_ID},
+            ptr::P,
+        };
 
-        // The following adds a new statement "extern crate runtime" to the parsed AST as a new item.
         let mut steal = queries.parse().unwrap();
         let items = &mut steal.get_mut().items;
         let item = Item {
@@ -192,89 +176,9 @@ impl rustc_driver::Callbacks for Callbacks {
 
         Compilation::Continue
     }
-
-    fn after_analysis<'tcx>(
-        &mut self,
-        compiler: &rustc_interface::interface::Compiler,
-        queries: &'tcx Queries<'tcx>,
-    ) -> Compilation {
-        compiler.session().abort_if_errors();
-
-        queries
-            .global_ctxt()
-            .unwrap()
-            .get_mut()
-            .enter(|tcx| self.pass_through_leaf(compiler, tcx));
-
-        Compilation::Continue
-    }
 }
 
-impl Callbacks {
-    fn pass_through_leaf(&self, _compiler: &rustc_interface::interface::Compiler, tcx: TyCtxt<'_>) {
-        use rustc_middle::mir::MirPass;
-        let _pass: Box<dyn MirPass> = Box::new(pass::LeafPass {});
-
-        for local_def_id in tcx.hir().body_owners() {
-            let _def_id = local_def_id.to_def_id();
-            // let id: WithOptConstParam<LocalDefId> = rustc_middle::ty::WithOptConstParam::unknown(def_id);
-            // let def = rustc_middle::ty::InstanceDef::Item(id);
-            // let body = tcx.mir_borrowck_opt_const_arg(id).borrow_mut();
-            // pass.run_pass(tcx, body);
-        }
-    }
-}
-
-impl Callbacks {
-    // https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/mir/struct.Body.html
-    fn visit_mir_body(&mut self, tcx: TyCtxt) {
-        for body_id in tcx.hir().body_owners() {
-            let id = WithOptConstParam::unknown(body_id.to_def_id());
-            let def = InstanceDef::Item(id);
-            let body = tcx.instance_mir(def);
-            let phase = body.phase;
-            log::debug!("Phase: {phase:?}");
-            self.visit_basic_blocks(body);
-        }
-    }
-
-    fn visit_basic_blocks(&mut self, body: &mir::Body) {
-        // LocalDecls has all the local variable definitions including parameters.
-        // https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/mir/type.LocalDecls.html
-        self.visit_local_decls(&body.local_decls);
-
-        // Basic blocks have statements.
-        // for basic_block in body.basic_blocks_mut().iter() {
-        //     self.visit_basic_block(basic_block);
-        // }
-    }
-
-    fn visit_local_decls(&mut self, local_decls: &mir::LocalDecls) {
-        for local_decl in local_decls {
-            log::debug!("{local_decl:?}");
-        }
-    }
-
-    // https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/mir/struct.BasicBlockData.html
-    fn visit_basic_block(&mut self, basic_block: &mir::BasicBlockData) {
-        for statement in &basic_block.statements {
-            self.visit_statement(statement);
-        }
-    }
-
-    fn visit_statement(&mut self, _statement: &mir::Statement) {
-        // Note: According to https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/mir/enum.StatementKind.html
-        // not all StatementKinds are allowed at every MirPhase
-        if let LeafConfig::UnitTest = &mut self.config {
-            // statement_list.push((&statement.kind).into());
-        }
-    }
-}
-
-fn local_optimized_mir<'tcx>(
-    tcx: TyCtxt<'tcx>,
-    opt_mir: query_keys::optimized_mir<'tcx>,
-) -> query_values::optimized_mir<'tcx> {
+fn local_optimized_mir(tcx: TyCtxt, opt_mir: <DefId as AsLocalKey>::LocalKey) -> &Body {
     let mut providers = Providers::default();
     rustc_mir_transform::provide(&mut providers);
     // Cloning here is probably not ideal but couldn't find a different way
@@ -305,18 +209,5 @@ fn extern_optimized_mir<'tcx>(
     transform_basic_blocks(&tcx, &mut basic_blocks, &mut local_decls);
 
     tcx.arena.alloc(body)
-
-    // Not removing this to keep it as an example on how to get DefId for a function.
-    //
-    //let def_id = body.source.def_id();
-    //match tcx.def_path_str(def_id).as_str() {
-    //    "add_this" => {
-    //        debug!("skipping add_this");
-    //    }
-    //    _ => {
-    //        let (mut basic_blocks, mut local_decls) = body.basic_blocks_and_local_decls_mut();
-    //        Self::transform_basic_blocks(&tcx, &mut basic_blocks, &mut local_decls);
-    //    }
-    //}
 }
 */

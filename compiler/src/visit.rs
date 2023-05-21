@@ -1,9 +1,12 @@
+use rustc_abi::FieldIdx;
 use rustc_ast::{InlineAsmOptions, InlineAsmTemplatePiece, Mutability};
+use rustc_index::IndexVec;
 use rustc_middle::{
     mir::{
         AggregateKind, AssertMessage, BasicBlock, BinOp, BorrowKind, CastKind, Coverage,
         FakeReadCause, InlineAsmOperand, Local, NonDivergingIntrinsic, NullOp, Operand, Place,
-        RetagKind, Rvalue, StatementKind, SwitchTargets, TerminatorKind, UnOp, UserTypeProjection,
+        RetagKind, Rvalue, StatementKind, SwitchTargets, TerminatorKind, UnOp, UnwindAction,
+        UserTypeProjection,
     },
     ty::{Const, Region, Ty, Variance},
 };
@@ -50,6 +53,10 @@ macro_rules! make_statement_kind_visitor {
                 Default::default()
             }
 
+            fn visit_place_mention(&mut self, place: & $($mutability)? Place<'tcx>) -> T {
+                Default::default()
+            }
+
             fn visit_ascribe_user_type(
                 &mut self,
                 place: & $($mutability)? Place<'tcx>,
@@ -64,6 +71,10 @@ macro_rules! make_statement_kind_visitor {
             }
 
             fn visit_intrinsic(&mut self, intrinsic: & $($mutability)? NonDivergingIntrinsic<'tcx>) -> T {
+                Default::default()
+            }
+
+            fn visit_const_eval_counter(&mut self) -> T {
                 Default::default()
             }
 
@@ -85,11 +96,13 @@ macro_rules! make_statement_kind_visitor {
                     StatementKind::StorageLive(local) => self.visit_storage_live(local),
                     StatementKind::StorageDead(local) => self.visit_storage_dead(local),
                     StatementKind::Retag(kind, place) => self.visit_retag(kind, place),
+                    StatementKind::PlaceMention(place) => self.visit_place_mention(place),
                     StatementKind::AscribeUserType(box (place, user_type_proj), variance) => {
                         self.visit_ascribe_user_type(place, user_type_proj, variance)
                     }
                     StatementKind::Coverage(coverage) => self.visit_coverage(coverage),
                     StatementKind::Intrinsic(intrinsic) => self.visit_intrinsic(intrinsic),
+                    StatementKind::ConstEvalCounter => self.visit_const_eval_counter(),
                     StatementKind::Nop => self.visit_nop(),
                 }
             }
@@ -120,7 +133,7 @@ macro_rules! make_terminator_kind_visitor {
                 Default::default()
             }
 
-            fn visit_abort(&mut self) -> T {
+            fn visit_terminate(&mut self) -> T {
                 Default::default()
             }
 
@@ -136,7 +149,7 @@ macro_rules! make_terminator_kind_visitor {
                 &mut self,
                 place: & $($mutability)? Place<'tcx>,
                 target: & $($mutability)? BasicBlock,
-                unwind: & $($mutability)? Option<BasicBlock>,
+                unwind: & $($mutability)? UnwindAction,
             ) -> T {
                 Default::default()
             }
@@ -146,7 +159,7 @@ macro_rules! make_terminator_kind_visitor {
                 place: & $($mutability)? Place<'tcx>,
                 value: & $($mutability)? Operand<'tcx>,
                 target: & $($mutability)? BasicBlock,
-                unwind: & $($mutability)? Option<BasicBlock>,
+                unwind: & $($mutability)? UnwindAction,
             ) -> T {
                 Default::default()
             }
@@ -158,7 +171,7 @@ macro_rules! make_terminator_kind_visitor {
                 args: & $($mutability)? [Operand<'tcx>],
                 destination: & $($mutability)? Place<'tcx>,
                 target: & $($mutability)? Option<BasicBlock>,
-                cleanup: & $($mutability)? Option<BasicBlock>,
+                unwind: & $($mutability)? UnwindAction,
                 from_hir_call: bool,
                 fn_span: Span,
             ) -> T {
@@ -171,7 +184,7 @@ macro_rules! make_terminator_kind_visitor {
                 expected: & $($mutability)? bool,
                 msg: & $($mutability)? AssertMessage<'tcx>,
                 target: & $($mutability)? BasicBlock,
-                cleanup: & $($mutability)? Option<BasicBlock>,
+                unwind: & $($mutability)? UnwindAction,
             ) -> T {
                 Default::default()
             }
@@ -201,7 +214,7 @@ macro_rules! make_terminator_kind_visitor {
             fn visit_false_unwind(
                 &mut self,
                 real_target: & $($mutability)? BasicBlock,
-                unwind: & $($mutability)? Option<BasicBlock>,
+                unwind: & $($mutability)? UnwindAction,
             ) -> T {
                 Default::default()
             }
@@ -213,7 +226,7 @@ macro_rules! make_terminator_kind_visitor {
                 options: & $($mutability)? InlineAsmOptions,
                 line_spans: &'tcx [Span],
                 destination: & $($mutability)? Option<BasicBlock>,
-                cleanup: & $($mutability)? Option<BasicBlock>,
+                unwind: & $($mutability)? UnwindAction,
             ) -> T {
                 Default::default()
             }
@@ -226,7 +239,7 @@ macro_rules! make_terminator_kind_visitor {
                         ref $($mutability)? targets,
                     } => self.visit_switch_int(discr, targets),
                     TerminatorKind::Resume => self.visit_resume(),
-                    TerminatorKind::Abort => self.visit_abort(),
+                    TerminatorKind::Terminate => self.visit_terminate(),
                     TerminatorKind::Return => self.visit_return(),
                     TerminatorKind::Unreachable => self.visit_unreachable(),
                     TerminatorKind::Drop {
@@ -234,18 +247,12 @@ macro_rules! make_terminator_kind_visitor {
                         ref $($mutability)? target,
                         ref $($mutability)? unwind,
                     } => self.visit_drop(place, target, unwind),
-                    TerminatorKind::DropAndReplace {
-                        ref $($mutability)? place,
-                        ref $($mutability)? value,
-                        ref $($mutability)? target,
-                        ref $($mutability)? unwind,
-                    } => self.visit_drop_and_replace(place, value, target, unwind),
                     TerminatorKind::Call {
                         func,
                         args,
                         ref $($mutability)? destination,
                         ref $($mutability)? target,
-                        ref $($mutability)? cleanup,
+                        ref $($mutability)? unwind,
                         from_hir_call,
                         fn_span,
                     } => self.visit_call(
@@ -253,7 +260,7 @@ macro_rules! make_terminator_kind_visitor {
                         args,
                         destination,
                         target,
-                        cleanup,
+                        unwind,
                         *from_hir_call,
                         *fn_span,
                     ),
@@ -262,8 +269,8 @@ macro_rules! make_terminator_kind_visitor {
                         ref $($mutability)? expected,
                         ref $($mutability)? msg,
                         ref $($mutability)? target,
-                        ref $($mutability)? cleanup,
-                    } => self.visit_assert(cond, expected, msg, target, cleanup),
+                        ref $($mutability)? unwind,
+                    } => self.visit_assert(cond, expected, msg, target, unwind),
                     TerminatorKind::Yield {
                         ref $($mutability)? value,
                         ref $($mutability)? resume,
@@ -285,14 +292,14 @@ macro_rules! make_terminator_kind_visitor {
                         ref $($mutability)? options,
                         line_spans,
                         ref $($mutability)? destination,
-                        ref $($mutability)? cleanup,
+                        ref $($mutability)? unwind,
                     } => self.visit_inline_asm(
                         template,
                         operands,
                         options,
                         line_spans,
                         destination,
-                        cleanup,
+                        unwind,
                     ),
                 }
             }
@@ -389,7 +396,7 @@ macro_rules! make_rvalue_visitor {
             fn visit_aggregate(
                 &mut self,
                 kind: & $($mutability)? Box<AggregateKind>,
-                operands: & $($mutability)? [Operand<'tcx>],
+                operands: & $($mutability)? IndexVec<FieldIdx, Operand<'tcx>>,
             ) -> T {
                 Default::default()
             }

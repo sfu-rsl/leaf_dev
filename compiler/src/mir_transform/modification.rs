@@ -6,18 +6,19 @@ use crate::{
     mir_transform::call_addition::context_requirements::Basic,
     visit::{self, TerminatorKindMutVisitor},
 };
+
 use rustc_ast::Mutability;
-use rustc_index::vec::IndexVec;
+use rustc_index::IndexVec;
 use rustc_middle::{
     mir::{
-        BasicBlock, BasicBlockData, Body, Local, LocalDecl, LocalDecls, Operand, Place, SourceInfo,
-        Terminator,
+        BasicBlock, BasicBlockData, Body, ClearCrossCrate, Local, LocalDecl, Operand, Place,
+        SourceInfo, Terminator, UnwindAction,
     },
     ty::Ty,
 };
 use rustc_span::Span;
 
-pub const NEXT_BLOCK: BasicBlock = BasicBlock::MAX;
+pub(crate) const NEXT_BLOCK: BasicBlock = BasicBlock::MAX;
 
 struct NewBasicBlock<'tcx> {
     pseudo_index: BasicBlock,
@@ -25,7 +26,7 @@ struct NewBasicBlock<'tcx> {
     is_sticky: bool,
 }
 
-pub struct BodyModificationUnit<'tcx> {
+pub(crate) struct BodyModificationUnit<'tcx> {
     next_local_index: Local,
     new_locals: Vec<NewLocalDecl<'tcx>>,
     // new_blocks_before maps BasicBlocks from MIR already in the AST to a list of new basic blocks
@@ -86,7 +87,7 @@ impl<'tcx> BodyModificationUnit<'tcx> {
     }
 }
 
-pub struct NewLocalDecl<'tcx>(LocalDecl<'tcx>);
+pub(crate) struct NewLocalDecl<'tcx>(LocalDecl<'tcx>);
 
 impl<'tcx> From<LocalDecl<'tcx>> for NewLocalDecl<'tcx> {
     fn from(value: LocalDecl<'tcx>) -> Self {
@@ -98,9 +99,8 @@ impl<'tcx> From<(Mutability, Ty<'tcx>, SourceInfo)> for NewLocalDecl<'tcx> {
     fn from(value: (Mutability, Ty<'tcx>, SourceInfo)) -> Self {
         LocalDecl {
             mutability: value.0,
-            local_info: None,
+            local_info: ClearCrossCrate::Clear,
             internal: true,
-            is_block_tail: None,
             ty: value.1,
             user_ty: None,
             source_info: value.2,
@@ -120,13 +120,13 @@ impl<'tcx> From<Ty<'tcx>> for NewLocalDecl<'tcx> {
     }
 }
 
-pub trait BodyLocalManager<'tcx> {
+pub(crate) trait BodyLocalManager<'tcx> {
     fn add_local<T>(&mut self, decl_info: T) -> Local
     where
         T: Into<NewLocalDecl<'tcx>>;
 }
 
-pub trait BodyBlockManager<'tcx> {
+pub(crate) trait BodyBlockManager<'tcx> {
     fn insert_blocks_before<I>(
         &mut self,
         index: BasicBlock,
@@ -141,7 +141,7 @@ pub trait BodyBlockManager<'tcx> {
         I: IntoIterator<Item = BasicBlockData<'tcx>>;
 }
 
-pub trait JumpTargetModifier {
+pub(crate) trait JumpTargetModifier {
     fn modify_jump_target(
         &mut self,
         terminator_location: BasicBlock,
@@ -166,7 +166,7 @@ pub trait JumpTargetModifier {
 }
 
 #[derive(PartialEq, Eq)]
-pub enum JumpModificationConstraint {
+pub(crate) enum JumpModificationConstraint {
     None,
     SwitchValue(u128),
     SwitchOtherwise,
@@ -273,7 +273,10 @@ impl<'tcx> BodyModificationUnit<'tcx> {
         }
     }
 
-    fn add_new_locals(locals: &mut LocalDecls<'tcx>, new_locals: Vec<NewLocalDecl<'tcx>>) {
+    fn add_new_locals(
+        locals: &mut IndexVec<Local, LocalDecl<'tcx>>,
+        new_locals: Vec<NewLocalDecl<'tcx>>,
+    ) {
         let first_index = locals.len();
         for (i, local) in new_locals.into_iter().enumerate() {
             let index = locals.push(local.0);
@@ -522,7 +525,6 @@ where
     M: MapFunc,
 {
     index_mapping: M,
-    next_index: BasicBlock,
     count: usize,
     recursive: bool,
     phantom: PhantomData<&'tcx ()>,
@@ -535,7 +537,6 @@ where
     fn new(index_mapping: M, recursive: bool) -> Self {
         Self {
             index_mapping,
-            next_index: NEXT_BLOCK,
             count: 0,
             recursive,
             phantom: PhantomData,
@@ -574,10 +575,10 @@ where
         &mut self,
         _place: &mut rustc_middle::mir::Place<'tcx>,
         target: &mut BasicBlock,
-        unwind: &mut Option<BasicBlock>,
+        unwind: &mut UnwindAction,
     ) {
         self.update(target);
-        self.update_maybe(unwind);
+        self.update_maybe(unwind.basic_block());
     }
 
     fn visit_drop_and_replace(
@@ -585,10 +586,10 @@ where
         _place: &mut rustc_middle::mir::Place<'tcx>,
         _value: &mut rustc_middle::mir::Operand<'tcx>,
         target: &mut BasicBlock,
-        unwind: &mut Option<BasicBlock>,
+        unwind: &mut UnwindAction,
     ) {
         self.update(target);
-        self.update_maybe(unwind);
+        self.update_maybe(unwind.basic_block());
     }
 
     fn visit_call(
@@ -597,11 +598,11 @@ where
         _args: &mut [Operand<'tcx>],
         _destination: &mut Place<'tcx>,
         target: &mut Option<BasicBlock>,
-        _cleanup: &mut Option<BasicBlock>,
+        _unwind: &mut UnwindAction,
         _from_hir_call: bool,
         _fn_span: Span,
     ) {
-        self.update_maybe(target);
+        self.update_maybe(target.as_mut());
     }
 
     fn visit_assert(
@@ -610,10 +611,10 @@ where
         _expected: &mut bool,
         _msg: &mut rustc_middle::mir::AssertMessage<'tcx>,
         target: &mut BasicBlock,
-        cleanup: &mut Option<BasicBlock>,
+        unwind: &mut UnwindAction,
     ) {
         self.update(target);
-        self.update_maybe(cleanup);
+        self.update_maybe(unwind.basic_block());
     }
 
     fn visit_yield(
@@ -624,7 +625,7 @@ where
         drop: &mut Option<BasicBlock>,
     ) {
         self.update(resume);
-        self.update_maybe(drop);
+        self.update_maybe(drop.as_mut());
     }
 
     fn visit_false_edge(
@@ -636,13 +637,9 @@ where
         self.update(imaginary_target);
     }
 
-    fn visit_false_unwind(
-        &mut self,
-        real_target: &mut BasicBlock,
-        unwind: &mut Option<BasicBlock>,
-    ) {
+    fn visit_false_unwind(&mut self, real_target: &mut BasicBlock, unwind: &mut UnwindAction) {
         self.update(real_target);
-        self.update_maybe(unwind);
+        self.update_maybe(unwind.basic_block());
     }
 
     fn visit_inline_asm(
@@ -652,10 +649,10 @@ where
         _options: &mut rustc_ast::InlineAsmOptions,
         _line_spans: &'tcx [Span],
         destination: &mut Option<BasicBlock>,
-        cleanup: &mut Option<BasicBlock>,
+        unwind: &mut UnwindAction,
     ) {
-        self.update_maybe(destination);
-        self.update_maybe(cleanup);
+        self.update_maybe(destination.as_mut());
+        self.update_maybe(unwind.basic_block());
     }
 }
 
@@ -673,7 +670,7 @@ where
         self.update_with_attr(target, JumpTargetAttribute::None)
     }
 
-    fn update_maybe(&mut self, target: &mut Option<BasicBlock>) {
+    fn update_maybe(&mut self, target: Option<&mut BasicBlock>) {
         self.update_maybe_with_attr(target, JumpTargetAttribute::None)
     }
 
@@ -691,11 +688,24 @@ where
 
     fn update_maybe_with_attr(
         &mut self,
-        target: &mut Option<BasicBlock>,
+        target: Option<&mut BasicBlock>,
         target_attr: JumpTargetAttribute,
     ) {
-        if let Some(t) = target.as_mut() {
+        if let Some(t) = target {
             self.update_with_attr(t, target_attr);
+        }
+    }
+}
+
+trait UnwindActionExt {
+    fn basic_block(&mut self) -> Option<&mut BasicBlock>;
+}
+
+impl UnwindActionExt for UnwindAction {
+    fn basic_block(&mut self) -> Option<&mut BasicBlock> {
+        match self {
+            UnwindAction::Cleanup(target) => Some(target),
+            _ => None,
         }
     }
 }

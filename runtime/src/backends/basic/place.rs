@@ -61,11 +61,7 @@ impl Projection {
     }
 }
 
-pub(crate) struct DefaultPlaceHandler;
-
-pub(crate) struct DefaultPlaceProjectionHandler {
-    place: Place,
-}
+pub(crate) struct DefaultPlaceHandler {}
 
 impl PlaceHandler for DefaultPlaceHandler {
     type Place = Place;
@@ -78,6 +74,10 @@ impl PlaceHandler for DefaultPlaceHandler {
     fn project_on(self, place: Self::Place) -> Self::ProjectionHandler {
         DefaultPlaceProjectionHandler { place }
     }
+}
+
+pub(crate) struct DefaultPlaceProjectionHandler {
+    place: Place,
 }
 
 impl PlaceProjectionHandler for DefaultPlaceProjectionHandler {

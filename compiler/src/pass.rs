@@ -1,18 +1,17 @@
+use rustc_abi::{FieldIdx, VariantIdx};
+use rustc_index::IndexVec;
 use rustc_middle::mir::{
     self, visit::Visitor, BasicBlock, BasicBlockData, CastKind, HasLocalDecls, Location, MirPass,
-    Operand, Place, Rvalue,
+    Operand, Place, Rvalue, UnwindAction,
 };
 
-use rustc_target::abi::VariantIdx;
-
-use crate::mir_transform::call_addition::{
-    context_requirements as ctxtreqs, AssertionHandler, Assigner, BranchingHandler,
-    BranchingReferencer, EntryFunctionHandler, FunctionHandler, OperandRef, OperandReferencer,
-    PlaceReferencer, RuntimeCallAdder,
+use crate::{
+    mir_transform::{
+        call_addition::{context::BodyProvider, context_requirements as ctxtreqs, *},
+        modification::{BodyModificationUnit, JumpTargetModifier},
+    },
+    visit::*,
 };
-use crate::mir_transform::modification::{BodyModificationUnit, JumpTargetModifier};
-use crate::visit::StatementKindVisitor;
-use crate::visit::{RvalueVisitor, TerminatorKindVisitor};
 
 pub struct LeafPass;
 
@@ -74,7 +73,7 @@ impl VisitorFactory {
         call_adder: &'c mut RuntimeCallAdder<BC>,
     ) -> impl Visitor<'tcx> + 'c
     where
-        BC: ctxtreqs::Basic<'tcx> + JumpTargetModifier,
+        BC: ctxtreqs::Basic<'tcx> + JumpTargetModifier + BodyProvider<'tcx>,
     {
         LeafBodyVisitor {
             call_adder: RuntimeCallAdder::borrow_from(call_adder),
@@ -86,7 +85,7 @@ impl VisitorFactory {
         block: BasicBlock,
     ) -> impl Visitor<'tcx> + 'c
     where
-        BC: ctxtreqs::Basic<'tcx> + JumpTargetModifier,
+        BC: ctxtreqs::Basic<'tcx> + JumpTargetModifier + BodyProvider<'tcx>,
     {
         LeafBasicBlockVisitor {
             call_adder: call_adder.at(block),
@@ -143,7 +142,7 @@ make_general_visitor!(LeafBodyVisitor);
 
 impl<'tcx, C> Visitor<'tcx> for LeafBodyVisitor<C>
 where
-    C: ctxtreqs::Basic<'tcx> + JumpTargetModifier,
+    C: ctxtreqs::Basic<'tcx> + JumpTargetModifier + BodyProvider<'tcx>,
 {
     fn visit_basic_block_data(&mut self, block: BasicBlock, data: &BasicBlockData<'tcx>) {
         VisitorFactory::make_basic_block_visitor(&mut self.call_adder, block)
@@ -219,14 +218,6 @@ where
             .take_otherwise(targets.iter().map(|v| v.0));
     }
 
-    fn visit_resume(&mut self) {
-        Default::default()
-    }
-
-    fn visit_abort(&mut self) {
-        Default::default()
-    }
-
     fn visit_return(&mut self) {
         self.call_adder.return_from_func();
     }
@@ -235,12 +226,7 @@ where
         Default::default()
     }
 
-    fn visit_drop(
-        &mut self,
-        _place: &Place<'tcx>,
-        _target: &BasicBlock,
-        _unwind: &Option<BasicBlock>,
-    ) {
+    fn visit_drop(&mut self, _place: &Place<'tcx>, _target: &BasicBlock, _unwind: &UnwindAction) {
         Default::default()
     }
 
@@ -251,6 +237,7 @@ where
         destination: &Place<'tcx>,
         target: &Option<BasicBlock>,
         _cleanup: &Option<BasicBlock>,
+        _unwind: &UnwindAction,
         _from_hir_call: bool,
         _fn_span: rustc_span::Span,
     ) {
@@ -279,7 +266,7 @@ where
         msg: &mir::AssertMessage<'tcx>,
         // we ignore target because this is concolic execution, not symbolic (program execution guides location)
         _target: &BasicBlock,
-        _cleanup: &Option<BasicBlock>,
+        _unwind: &UnwindAction,
     ) {
         let cond_ref = self.call_adder.reference_operand(cond);
         log::debug!("looking at assert message: '{:?}'", msg);
@@ -307,7 +294,7 @@ where
         _options: &rustc_ast::InlineAsmOptions,
         _line_spans: &'tcx [rustc_span::Span],
         _destination: &Option<BasicBlock>,
-        _cleanup: &Option<BasicBlock>,
+        _unwind: &UnwindAction,
     ) {
         Default::default()
     }
@@ -353,7 +340,7 @@ where
             rustc_middle::ty::ConstKind::Value(val_tree) => match val_tree {
                 rustc_middle::ty::ValTree::Leaf(scalar_int) => scalar_int,
                 rustc_middle::ty::ValTree::Branch(_) => {
-                    unreachable!("these are only for aggragate constants")
+                    unreachable!("these are only for aggregate constants")
                 }
             },
             rustc_middle::ty::ConstKind::Error(_) => panic!("The const here could not be computed"),
@@ -417,6 +404,7 @@ where
             CastKind::PtrToPtr => todo!("Support PtrToPtr casts"),
             CastKind::FnPtrToPtr => todo!("Support FnPtrToPtr casts"),
             CastKind::DynStar => todo!("Support DynStar casts"),
+            CastKind::Transmute => todo!("Support transmute casts"),
         }
     }
 
@@ -451,15 +439,29 @@ where
         self.call_adder.by_discriminant(place_ref)
     }
 
-    fn visit_aggregate(&mut self, kind: &Box<mir::AggregateKind>, operands: &[Operand<'tcx>]) {
-        // Based on compiler documents it is the only possible type that can reach here.
-        assert!(matches!(kind, box mir::AggregateKind::Array(_)));
-
-        let items: Vec<OperandRef> = operands
+    fn visit_aggregate(
+        &mut self,
+        kind: &Box<mir::AggregateKind>,
+        operands: &IndexVec<FieldIdx, Operand<'tcx>>,
+    ) {
+        let operands: Vec<OperandRef> = operands
             .iter()
             .map(|o| self.call_adder.reference_operand(o))
             .collect();
-        self.call_adder.by_aggregate_array(items.as_slice())
+
+        let mut add_call: Box<dyn FnMut(&[OperandRef])> = match kind.as_ref() {
+            mir::AggregateKind::Array(_) => {
+                Box::new(|elements| self.call_adder.by_aggregate_array(elements))
+            }
+            mir::AggregateKind::Tuple => Box::new(|_elements| todo!("Add support for tuples.")),
+            mir::AggregateKind::Adt(_, _, _, _, _) => {
+                Box::new(|_fields| todo!("Add support for ADTs."))
+            }
+            mir::AggregateKind::Closure(_, _) => todo!("Closures are not supported yet."),
+            mir::AggregateKind::Generator(_, _, _) => todo!("Generators are not supported yet."),
+        };
+
+        add_call(operands.as_slice())
     }
 
     fn visit_shallow_init_box(

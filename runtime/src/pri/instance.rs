@@ -9,6 +9,7 @@ use std::{
 };
 
 type BackendImpl = crate::backends::basic::BasicBackend;
+//type BackendImpl = crate::backends::basic::logger::LoggerBackend; // for DEBUG
 
 type PlaceImpl = <<BackendImpl as RuntimeBackend>::PlaceHandler<'static> as PlaceHandler>::Place;
 pub(super) type OperandImpl =
@@ -68,10 +69,13 @@ pub(super) fn init_backend() {
  * definite.
  */
 
-pub(super) fn push_place_ref<'a>(
-    get_place: impl FnOnce(<BackendImpl as RuntimeBackend>::PlaceHandler<'a>) -> PlaceImpl,
+pub(super) fn push_place_ref(
+    get_place: impl FnOnce(<BackendImpl as RuntimeBackend>::PlaceHandler<'_>) -> PlaceImpl,
 ) -> PlaceRef {
-    let place = perform_on_backend(|r| get_place(r.place()));
+    let place = perform_on_backend(|r| {
+        let handler = r.place();
+        get_place(handler)
+    });
     perform_on_place_ref_manager(|rm| rm.push(place))
 }
 

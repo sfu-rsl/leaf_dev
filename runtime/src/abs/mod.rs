@@ -1,9 +1,25 @@
 pub(crate) mod backend;
 
-pub(crate) type Local = u32;
+pub(crate) type LocalIndex = u32;
 pub type BasicBlockIndex = u32;
 pub type VariantIndex = u32;
 pub type FieldIndex = u32;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum Local {
+    ReturnValue,          // 0
+    Argument(LocalIndex), // 1-n
+    Normal(LocalIndex),   // > n
+}
+impl std::fmt::Display for Local {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::ReturnValue => write!(f, "ReturnValue"),
+            Self::Argument(local) => write!(f, "Arg({})", local),
+            Self::Normal(local) => write!(f, "Var({})", local),
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug)]
 pub enum BinaryOp {

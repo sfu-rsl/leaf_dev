@@ -2,7 +2,6 @@ use std::collections::HashMap;
 
 use rustc_hir::def::DefKind;
 use rustc_middle::{
-    middle::exported_symbols,
     mir::{self, BasicBlock, BasicBlockData, HasLocalDecls, Local},
     ty::{Ty, TyCtxt},
 };
@@ -67,7 +66,7 @@ pub trait SwitchInfoProvider<'tcx> {
  * This is the minimal required context that we expect for call adding.
  *(Otherwise, we will not be able to add new call blocks to the MIR.)
  */
-pub trait BaseContext<'tcx>
+pub(crate) trait BaseContext<'tcx>
 where
     Self: TyContextProvider<'tcx>
         + BodyLocalManager<'tcx>
@@ -88,7 +87,7 @@ impl<'tcx, C> BaseContext<'tcx> for C where
 {
 }
 
-pub struct DefaultContext<'tcx, 'm> {
+pub(crate) struct DefaultContext<'tcx, 'm> {
     tcx: TyCtxt<'tcx>,
     modification_unit: &'m mut BodyModificationUnit<'tcx>,
     pri_functions: HashMap<String, FunctionInfo<'tcx>>,
@@ -106,7 +105,7 @@ impl<'tcx, 'm> DefaultContext<'tcx, 'm> {
     }
 
     fn extract_functions(tcx: TyCtxt<'tcx>) -> HashMap<String, FunctionInfo<'tcx>> {
-        DefaultContext::get_exported_symbols_of_pri(tcx)
+        DefaultContext::get_pri_exported_symbols(tcx)
             .into_iter()
             .filter(|def_id| matches!(tcx.def_kind(def_id), DefKind::Fn | DefKind::AssocFn))
             .map(|def_id| {
@@ -114,7 +113,14 @@ impl<'tcx, 'm> DefaultContext<'tcx, 'm> {
                     tcx.def_path_str(def_id),
                     FunctionInfo {
                         def_id,
-                        ret_ty: tcx.fn_sig(def_id).output().skip_binder(),
+                        ret_ty: tcx
+                            .fn_sig(def_id)
+                            .skip_binder()
+                            .output()
+                            .no_bound_vars()
+                            .expect(
+                                "PRI functions are not expected to have bound vars (generics).",
+                            ),
                     },
                 )
             })
@@ -131,14 +137,17 @@ impl<'tcx, 'm> DefaultContext<'tcx, 'm> {
          * types and are accessible.
          * However, there should be some functions in TyCtxt that will list these items for us.
          */
-        let def_ids: HashMap<String, DefId> = DefaultContext::get_exported_symbols_of_pri(tcx)
+        let def_ids: HashMap<String, DefId> = DefaultContext::get_pri_exported_symbols(tcx)
             .into_iter()
             .filter(|def_id| matches!(tcx.def_kind(def_id), DefKind::Static(_)))
             .map(|def_id| (tcx.def_path_str(def_id), def_id))
             .collect();
 
-        let get_ty =
-            |name: &str| -> Ty<'tcx> { tcx.type_of(def_ids.get(&name.replace(' ', "")).unwrap()) };
+        let get_ty = |name: &str| -> Ty<'tcx> {
+            tcx.type_of(def_ids.get(&name.replace(' ', "")).unwrap())
+                .no_bound_vars()
+                .expect("PRI special types are not expected to have bound vars (generics).")
+        };
         SpecialTypes {
             place_ref: get_ty(stringify!(runtime::pri::PLACE_REF_TYPE_HOLDER)),
             operand_ref: get_ty(stringify!(runtime::pri::OPERAND_REF_TYPE_HOLDER)),
@@ -147,7 +156,27 @@ impl<'tcx, 'm> DefaultContext<'tcx, 'm> {
         }
     }
 
-    fn get_exported_symbols_of_pri(tcx: TyCtxt<'tcx>) -> Vec<DefId> {
+    fn get_pri_exported_symbols(tcx: TyCtxt<'tcx>) -> Vec<DefId> {
+        use rustc_hir::definitions::{DefPathData, DisambiguatedDefPathData};
+        use rustc_middle::middle::exported_symbols::ExportedSymbol;
+
+        fn def_id<'a>(symbol: &'a ExportedSymbol) -> Option<&'a DefId> {
+            match symbol {
+                ExportedSymbol::NonGeneric(def_id) | ExportedSymbol::Generic(def_id, _) => {
+                    Some(def_id)
+                }
+                _ => None,
+            }
+        }
+
+        fn module(tcx: TyCtxt, def_id: &DefId) -> impl Iterator<Item = DisambiguatedDefPathData> {
+            tcx.def_path(*def_id)
+                .data
+                .into_iter()
+                .take_while(|p| matches!(p.data, DefPathData::TypeNs(_)))
+        }
+
+        // Finding the runtime crate.
         let crate_num = *tcx
             .crates(())
             .iter()
@@ -159,14 +188,25 @@ impl<'tcx, 'm> DefaultContext<'tcx, 'm> {
                 )
             });
 
-        tcx.exported_symbols(crate_num)
+        let runtime_symbols = tcx
+            .exported_symbols(crate_num)
             .iter()
-            .filter_map(|(exported_symbol, _)| match exported_symbol {
-                exported_symbols::ExportedSymbol::NonGeneric(def_id)
-                | exported_symbols::ExportedSymbol::Generic(def_id, _) => Some(def_id),
-                _ => None,
-            })
+            .filter_map(|(s, _)| def_id(s))
             .cloned()
+            .filter(|def_id| def_id.krate == crate_num);
+
+        // Finding the pri module.
+        let pri_module = {
+            let name = stringify!(runtime::pri::MODULE_MARKER).replace(' ', "");
+            let marker_id = runtime_symbols
+                .clone()
+                .find(|def_id| tcx.def_path_str(def_id) == name)
+                .expect("The pri module should contain the marker symbol.");
+            module(tcx, &marker_id).collect::<Vec<_>>()
+        };
+
+        runtime_symbols
+            .filter(|def_id| module(tcx, def_id).eq_by(&pri_module, |a, b| &a == b))
             .collect()
     }
 }

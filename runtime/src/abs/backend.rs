@@ -40,7 +40,6 @@ pub(crate) trait RuntimeBackend: Sized {
 
 pub(crate) trait PlaceHandler {
     type Place;
-
     type ProjectionHandler: PlaceProjectionHandler<Place = Self::Place>;
 
     fn of_local(self, local: Local) -> Self::Place;

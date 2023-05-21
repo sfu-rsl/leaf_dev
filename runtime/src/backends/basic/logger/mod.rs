@@ -1,6 +1,8 @@
 use std::fmt::Display;
 
-use crate::abs::{backend::*, AssertKind, BinaryOp, BranchingMetadata, UnaryOp, VariantIndex};
+use crate::abs::{
+    backend::*, AssertKind, BinaryOp, BranchingMetadata, Local, UnaryOp, VariantIndex,
+};
 
 use super::{
     operand::{DefaultOperandHandler, Operand, PlaceUsage},
@@ -32,7 +34,7 @@ impl RuntimeBackend for LoggerBackend {
     type Operand = Operand;
 
     fn place(&mut self) -> Self::PlaceHandler<'_> {
-        DefaultPlaceHandler
+        DefaultPlaceHandler {}
     }
 
     fn operand(&mut self) -> Self::OperandHandler<'_> {
@@ -364,7 +366,7 @@ impl PlaceFormatter {
             .projections
             .iter()
             .try_for_each(|proj| Self::pre(proj, f))
-            .and_then(|_| write!(f, "v{}", place.local))
+            .and_then(|_| write!(f, "{}", place.local))
             .and_then(|_| {
                 place
                     .projections

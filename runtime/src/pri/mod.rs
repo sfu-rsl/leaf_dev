@@ -3,7 +3,7 @@ mod utils;
 
 use crate::abs::{
     backend::*, AssertKind, BasicBlockIndex, BinaryOp, BranchingMetadata, DiscriminantAsIntType,
-    FieldIndex, Local, UnaryOp, VariantIndex,
+    FieldIndex, Local, LocalIndex, UnaryOp, VariantIndex,
 };
 
 use self::instance::*;
@@ -13,8 +13,13 @@ pub type PlaceRef = Ref;
 pub type OperandRef = Ref;
 
 /*
- * These fields serve as exported symbols in the workaround to get the Tys for
- * the desired types in the compiler.
+ * This field serves as a marker to find the module in the compiler easier.
+ */
+pub static MODULE_MARKER: u8 = 0;
+
+/*
+ * These fields serve as exported symbols to get the types of the desired
+ * arguments easier in the compiler.
  */
 pub static PLACE_REF_TYPE_HOLDER: PlaceRef = 0;
 pub static OPERAND_REF_TYPE_HOLDER: OperandRef = 0;
@@ -25,8 +30,14 @@ pub fn init_runtime_lib() {
     init_backend()
 }
 
-pub fn ref_place_local(local: Local) -> PlaceRef {
-    push_place_ref(|p| p.of_local(local))
+pub fn ref_place_return_value() -> PlaceRef {
+    push_place_ref(|p| p.of_local(Local::ReturnValue))
+}
+pub fn ref_place_argument(local_index: LocalIndex) -> PlaceRef {
+    push_place_ref(|p| p.of_local(Local::Argument(local_index)))
+}
+pub fn ref_place_local(local_index: LocalIndex) -> PlaceRef {
+    push_place_ref(|p| p.of_local(Local::Normal(local_index)))
 }
 
 pub fn ref_place_deref(place: PlaceRef) -> PlaceRef {

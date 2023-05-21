@@ -6,6 +6,7 @@ use rustc_middle::{
     mir::{
         BasicBlock, BasicBlockData, BinOp, Body, Constant, ConstantKind, HasLocalDecls, Local,
         Operand, Place, ProjectionElem, SourceInfo, Statement, Terminator, TerminatorKind, UnOp,
+        UnwindAction,
     },
     ty::{GenericArg, ScalarInt, Ty, TyCtxt, TyKind},
 };
@@ -20,7 +21,7 @@ use super::modification::{
     self, BodyBlockManager, BodyLocalManager, BodyModificationUnit, JumpTargetModifier,
 };
 
-pub mod context;
+pub(crate) mod context;
 
 /*
  * Contexts and RuntimeCallAdder.
@@ -38,7 +39,7 @@ pub mod context;
  * from `RuntimeCallAdder` for various call adding situations.
  */
 
-pub trait MirCallAdder<'tcx> {
+pub(crate) trait MirCallAdder<'tcx> {
     fn make_bb_for_call(
         &mut self,
         func_name: &str,
@@ -73,7 +74,7 @@ pub trait MirCallAdder<'tcx> {
     ) -> (BasicBlockData<'tcx>, Local);
 }
 
-pub trait BlockInserter<'tcx> {
+pub(crate) trait BlockInserter<'tcx> {
     fn insert_blocks(
         &mut self,
         blocks: impl IntoIterator<Item = BasicBlockData<'tcx>>,
@@ -114,18 +115,18 @@ macro_rules! make_local_wrapper {
 make_local_wrapper!(PlaceRef);
 make_local_wrapper!(OperandRef);
 
-pub trait PlaceReferencer<'tcx>
+pub(crate) trait PlaceReferencer<'tcx>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
 {
     fn reference_place(&mut self, place: &Place<'tcx>) -> PlaceRef;
 }
 
-pub trait OperandReferencer<'tcx> {
+pub(crate) trait OperandReferencer<'tcx> {
     fn reference_operand(&mut self, operand: &Operand<'tcx>) -> OperandRef;
 }
 
-pub trait Assigner<'tcx> {
+pub(crate) trait Assigner<'tcx> {
     fn by_use(&mut self, operand: OperandRef);
 
     fn by_repeat(&mut self, operand: OperandRef, count: ScalarInt);
@@ -162,10 +163,10 @@ pub trait Assigner<'tcx> {
     fn its_discriminant_to(&mut self, variant_index: &VariantIdx);
 }
 
-pub trait BranchingReferencer<'tcx> {
+pub(crate) trait BranchingReferencer<'tcx> {
     fn store_branching_info(&mut self, discr: &Operand<'tcx>) -> SwitchInfo<'tcx>;
 }
-pub trait BranchingHandler {
+pub(crate) trait BranchingHandler {
     fn take_by_value(&mut self, value: u128);
 
     fn take_otherwise<I>(&mut self, non_values: I)
@@ -184,11 +185,11 @@ pub trait FunctionHandler<'tcx> {
     fn after_call_func(&mut self, destination: &Place<'tcx>);
 }
 
-pub trait EntryFunctionHandler {
+pub(crate) trait EntryFunctionHandler {
     fn init_runtime_lib(&mut self);
 }
 
-pub trait AssertionHandler<'tcx> {
+pub(crate) trait AssertionHandler<'tcx> {
     fn check_assert(
         &mut self,
         cond: OperandRef,
@@ -202,7 +203,7 @@ pub trait AssertionHandler<'tcx> {
     ) -> (&'static str, Vec<Operand<'tcx>>, Vec<Statement<'tcx>>);
 }
 
-pub struct RuntimeCallAdder<C> {
+pub(crate) struct RuntimeCallAdder<C> {
     context: C,
 }
 
@@ -348,7 +349,7 @@ where
                 args,
                 destination,
                 target: Some(target.unwrap_or(modification::NEXT_BLOCK)),
-                cleanup: None,
+                unwind: UnwindAction::Continue,
                 from_hir_call: true,
                 fn_span: DUMMY_SP,
             },
@@ -373,7 +374,7 @@ where
 impl<'tcx, C> PlaceReferencer<'tcx> for RuntimeCallAdder<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
-    C: TyContextProvider<'tcx>,
+    C: TyContextProvider<'tcx> + BodyProvider<'tcx>,
 {
     fn reference_place(&mut self, place: &Place<'tcx>) -> PlaceRef {
         let BlocksAndResult(new_blocks, reference) = self.internal_reference_place(place);
@@ -384,17 +385,26 @@ where
 impl<'tcx, C> RuntimeCallAdder<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
-    C: TyContextProvider<'tcx>,
+    C: TyContextProvider<'tcx> + BodyProvider<'tcx>,
 {
     fn internal_reference_place(&mut self, place: &Place<'tcx>) -> BlocksAndResult<'tcx> {
+        let local = u32::from(place.local);
+        const RETURN_VALUE: u32 = 0;
+        let func_name = if local == RETURN_VALUE {
+            stringify!(pri::ref_place_return_value)
+        } else if local <= self.context.body().arg_count as u32 {
+            stringify!(pri::ref_place_argument)
+        } else {
+            stringify!(pri::ref_place_local)
+        };
+        let args = if local == 0_u32 {
+            vec![]
+        } else {
+            vec![operand::const_from_uint(self.context.tcx(), local)]
+        };
+
         let mut new_blocks = vec![];
-        let (call_block, mut current_ref) = self.make_bb_for_place_ref_call(
-            stringify!(pri::ref_place_local),
-            vec![operand::const_from_uint(
-                self.context.tcx(),
-                u32::from(place.local),
-            )],
-        );
+        let (call_block, mut current_ref) = self.make_bb_for_place_ref_call(func_name, args);
         new_blocks.push(call_block);
 
         for (_, proj) in place.iter_projections() {
@@ -481,7 +491,7 @@ where
 impl<'tcx, C> OperandReferencer<'tcx> for RuntimeCallAdder<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
-    C: TyContextProvider<'tcx>,
+    C: TyContextProvider<'tcx> + BodyProvider<'tcx>,
 {
     fn reference_operand(&mut self, operand: &Operand<'tcx>) -> OperandRef {
         let BlocksAndResult(new_blocks, reference) = self.internal_reference_operand(operand);
@@ -492,7 +502,7 @@ where
 impl<'tcx, C> RuntimeCallAdder<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
-    C: TyContextProvider<'tcx>,
+    C: TyContextProvider<'tcx> + BodyProvider<'tcx>,
 {
     fn internal_reference_operand(&mut self, operand: &Operand<'tcx>) -> BlocksAndResult<'tcx> {
         match operand {
@@ -653,7 +663,7 @@ where
         substs: &&rustc_middle::ty::List<GenericArg>,
     ) -> BlocksAndResult<'tcx> {
         if !substs.is_empty() {
-            todo!("Generic functions are not supported yet.");
+            log::warn!("Referencing a function with substitution variables (generic).");
         }
 
         /* NOTE: Until we find a better way to represent a function we use  the def id. */
@@ -1128,7 +1138,10 @@ where
 impl<'tcx, C> AssertionHandler<'tcx> for RuntimeCallAdder<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
-    C: TyContextProvider<'tcx> + SpecialTypesProvider<'tcx> + BodyLocalManager<'tcx>,
+    C: TyContextProvider<'tcx>
+        + SpecialTypesProvider<'tcx>
+        + BodyLocalManager<'tcx>
+        + BodyProvider<'tcx>,
 {
     fn check_assert(
         &mut self,
@@ -1157,8 +1170,9 @@ where
         &mut self,
         msg: &rustc_middle::mir::AssertMessage<'tcx>,
     ) -> (&'static str, Vec<Operand<'tcx>>, Vec<Statement<'tcx>>) {
+        use rustc_middle::mir::AssertKind;
         match msg {
-            rustc_middle::mir::AssertKind::BoundsCheck { len, index } => {
+            AssertKind::BoundsCheck { len, index } => {
                 let len_ref = self.reference_operand(len);
                 let index_ref = self.reference_operand(index);
                 (
@@ -1170,7 +1184,7 @@ where
                     vec![],
                 )
             }
-            rustc_middle::mir::AssertKind::Overflow(bin_op, op1, op2) => {
+            AssertKind::Overflow(bin_op, op1, op2) => {
                 let binary_op_ty = self.context.pri_special_types().binary_op;
                 let operator = convert_mir_binop_to_pri(bin_op);
                 let operator_local = self.context.add_local(binary_op_ty);
@@ -1193,7 +1207,7 @@ where
                     additional_statements,
                 )
             }
-            rustc_middle::mir::AssertKind::OverflowNeg(op) => {
+            AssertKind::OverflowNeg(op) => {
                 let op_ref = self.reference_operand(op);
                 (
                     stringify!(pri::check_assert_overflow_neg),
@@ -1201,7 +1215,7 @@ where
                     vec![],
                 )
             }
-            rustc_middle::mir::AssertKind::DivisionByZero(op) => {
+            AssertKind::DivisionByZero(op) => {
                 let op_ref = self.reference_operand(op);
                 (
                     stringify!(pri::check_assert_div_by_zero),
@@ -1209,7 +1223,7 @@ where
                     vec![],
                 )
             }
-            rustc_middle::mir::AssertKind::RemainderByZero(op) => {
+            AssertKind::RemainderByZero(op) => {
                 let op_ref = self.reference_operand(op);
                 (
                     stringify!(pri::check_assert_rem_by_zero),
@@ -1217,12 +1231,15 @@ where
                     vec![],
                 )
             }
-            rustc_middle::mir::AssertKind::ResumedAfterReturn(_generator_kind) => {
+            AssertKind::ResumedAfterReturn(_generator_kind) => {
                 // NOTE: check if these exist in HIR only
                 todo!("research if this is unreachable or not; likely it's not reachable")
             }
-            rustc_middle::mir::AssertKind::ResumedAfterPanic(_generator_kind) => {
+            AssertKind::ResumedAfterPanic(_generator_kind) => {
                 todo!("research if this is unreachable or not; likely it's not reachable")
+            }
+            AssertKind::MisalignedPointerDereference { .. } => {
+                todo!("investigate when pointers are supported")
             }
         }
     }
@@ -1244,10 +1261,10 @@ where
  * certain feature will be available in `RuntimeCallAdder` when its context
  * implement that set of traits.
  */
-pub mod context_requirements {
+pub(crate) mod context_requirements {
     use super::{context::*, *};
 
-    pub trait Basic<'tcx>:
+    pub(crate) trait Basic<'tcx>:
         TyContextProvider<'tcx>
         + BodyLocalManager<'tcx>
         + BodyBlockManager<'tcx>
@@ -1266,13 +1283,19 @@ pub mod context_requirements {
     {
     }
 
-    pub trait ForPlaceRef<'tcx>: LocationProvider + BaseContext<'tcx> {}
-    impl<'tcx, C> ForPlaceRef<'tcx> for C where C: LocationProvider + BaseContext<'tcx> {}
+    pub(crate) trait ForPlaceRef<'tcx>:
+        LocationProvider + BaseContext<'tcx> + BodyProvider<'tcx>
+    {
+    }
+    impl<'tcx, C> ForPlaceRef<'tcx> for C where
+        C: LocationProvider + BaseContext<'tcx> + BodyProvider<'tcx>
+    {
+    }
 
-    pub trait ForOperandRef<'tcx>: LocationProvider + BaseContext<'tcx> {}
-    impl<'tcx, C> ForOperandRef<'tcx> for C where C: LocationProvider + BaseContext<'tcx> {}
+    pub(crate) trait ForOperandRef<'tcx>: ForPlaceRef<'tcx> {}
+    impl<'tcx, C> ForOperandRef<'tcx> for C where C: ForPlaceRef<'tcx> {}
 
-    pub trait ForAssignment<'tcx>:
+    pub(crate) trait ForAssignment<'tcx>:
         DestinationReferenceProvider + LocationProvider + BaseContext<'tcx>
     {
     }
@@ -1281,7 +1304,7 @@ pub mod context_requirements {
     {
     }
 
-    pub trait ForBranching<'tcx>:
+    pub(crate) trait ForBranching<'tcx>:
         LocationProvider + BaseContext<'tcx> + JumpTargetModifier
     {
     }
@@ -1290,13 +1313,13 @@ pub mod context_requirements {
     {
     }
 
-    pub trait ForFunctionCalling<'tcx>: BaseContext<'tcx> {}
+    pub(crate) trait ForFunctionCalling<'tcx>: BaseContext<'tcx> {}
     impl<'tcx, C> ForFunctionCalling<'tcx> for C where C: BaseContext<'tcx> {}
 
-    pub trait ForReturning<'tcx>: BaseContext<'tcx> {}
+    pub(crate) trait ForReturning<'tcx>: BaseContext<'tcx> {}
     impl<'tcx, C> ForReturning<'tcx> for C where C: BaseContext<'tcx> {}
 
-    pub trait ForEntryFunction<'tcx>: BaseContext<'tcx> + InEntryFunction {}
+    pub(crate) trait ForEntryFunction<'tcx>: BaseContext<'tcx> + InEntryFunction {}
     impl<'tcx, C> ForEntryFunction<'tcx> for C where C: BaseContext<'tcx> + InEntryFunction {}
 }
 
@@ -1325,7 +1348,7 @@ mod utils {
 
     use self::assignment::rvalue;
 
-    pub mod operand {
+    pub(super) mod operand {
 
         use std::mem::size_of;
 
@@ -1402,7 +1425,7 @@ mod utils {
         }
     }
 
-    pub mod enums {
+    pub(super) mod enums {
         use rustc_middle::{
             mir::{Local, Place, SourceInfo, Statement},
             ty::{Ty, TyKind},
@@ -1449,13 +1472,14 @@ mod utils {
         }
     }
 
-    pub mod assignment {
+    pub(super) mod assignment {
 
         use rustc_middle::mir::{Place, Rvalue, SourceInfo, Statement, StatementKind};
         use rustc_span::DUMMY_SP;
 
-        pub mod rvalue {
+        pub(super) mod rvalue {
 
+            use rustc_index::IndexVec;
             use rustc_middle::{
                 mir::{AggregateKind, BorrowKind, CastKind, Operand, Place, Rvalue},
                 ty::{adjustment::PointerCast, Ty, TyCtxt},
@@ -1470,7 +1494,10 @@ mod utils {
             }
 
             pub fn array<'tcx>(ty: Ty<'tcx>, items: Vec<Operand<'tcx>>) -> Rvalue<'tcx> {
-                Rvalue::Aggregate(Box::new(AggregateKind::Array(ty)), items)
+                Rvalue::Aggregate(
+                    Box::new(AggregateKind::Array(ty)),
+                    IndexVec::from_raw(items),
+                )
             }
         }
 
@@ -1482,7 +1509,7 @@ mod utils {
         }
     }
 
-    pub mod ty {
+    pub(super) mod ty {
         use rustc_abi::Size;
         use rustc_middle::ty::{ParamEnv, ParamEnvAnd, Ty, TyCtxt};
 
@@ -1500,7 +1527,7 @@ mod utils {
         }
     }
 
-    pub fn prepare_operand_for_slice<'tcx>(
+    pub(super) fn prepare_operand_for_slice<'tcx>(
         tcx: TyCtxt<'tcx>,
         local_manager: &mut impl BodyLocalManager<'tcx>,
         item_ty: Ty<'tcx>,
@@ -1527,7 +1554,7 @@ mod utils {
         (cast_local, [array_assign, ref_assign, cast_assign])
     }
 
-    pub fn convert_mir_binop_to_pri(op: &mir::BinOp) -> runtime::abs::BinaryOp {
+    pub(super) fn convert_mir_binop_to_pri(op: &mir::BinOp) -> runtime::abs::BinaryOp {
         match op {
             mir::BinOp::Add => runtime::abs::BinaryOp::Add,
             mir::BinOp::Sub => runtime::abs::BinaryOp::Sub,
@@ -1549,7 +1576,7 @@ mod utils {
         }
     }
 
-    pub fn convert_mir_unop_to_pri(op: &mir::UnOp) -> runtime::abs::UnaryOp {
+    pub(super) fn convert_mir_unop_to_pri(op: &mir::UnOp) -> runtime::abs::UnaryOp {
         match op {
             mir::UnOp::Not => runtime::abs::UnaryOp::Not,
             mir::UnOp::Neg => runtime::abs::UnaryOp::Neg,
