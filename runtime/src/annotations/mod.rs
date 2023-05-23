@@ -64,6 +64,7 @@ impl_symbolizable_float!(f32, f64);
 
 fn return_sym_operand(operand_ref: OperandRef) {
     /* FIXME: Add a better support. This looks like a workaround. */
+    pri::enter_func();
     let local_ref = pri::ref_place_return_value();
     pri::assign_use(local_ref, operand_ref);
     pri::return_from_func();

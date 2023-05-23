@@ -516,17 +516,11 @@ impl_int_branch_case_value!(u128, VariantIndex);
 
 pub(crate) struct BasicFunctionHandler<'a> {
     call_stack_manager: &'a mut CallStackManager,
-    current_call_info: Option<()>,
-    returned_val: Option<ValueRef>,
 }
 
 impl<'a> BasicFunctionHandler<'a> {
     fn new(call_stack_manager: &'a mut CallStackManager) -> Self {
-        Self {
-            call_stack_manager,
-            current_call_info: None,
-            returned_val: None,
-        }
+        Self { call_stack_manager }
     }
 }
 
@@ -534,33 +528,36 @@ impl FunctionHandler for BasicFunctionHandler<'_> {
     type Place = Place;
     type Operand = Operand;
 
-    fn before_call(mut self, _func: Self::Operand, _args: impl Iterator<Item = Self::Operand>) {
-        // TODO: Put arguments in the variables state.
-        self.current_call_info = Some(());
+    fn before_call(self, _func: Self::Operand, args: impl Iterator<Item = Self::Operand>) {
+        self.call_stack_manager.update_call_info(args.collect());
     }
 
     fn enter(self) {
-        self.call_stack_manager.push();
+        self.call_stack_manager.push_stack_frame();
     }
 
-    fn ret(mut self) {
-        let returned_val = self.call_stack_manager.pop();
-        self.returned_val = returned_val;
+    fn ret(self) {
+        self.call_stack_manager.pop_stack_frame();
     }
 
-    fn after_call(mut self, result_dest: Self::Place) {
+    fn after_call(self, result_dest: Self::Place) {
         /* FIXME: May require a cleaner approach. */
+
+        let (returned_val, is_external_function) = self.call_stack_manager.get_return_info();
+
         if !self.call_stack_manager.is_empty() {
-            if let Some(returned_val) = self.returned_val {
-                self.call_stack_manager
-                    .top()
-                    .set_place(&result_dest, returned_val)
-            } else {
+            if is_external_function {
                 todo!("handle the case when an external function is called")
+            } else {
+                if let Some(returned_val) = returned_val {
+                    self.call_stack_manager
+                        .top()
+                        .set_place(&result_dest, returned_val)
+                } else {
+                    // this is the case where a function has no return value
+                }
             }
         }
-
-        self.returned_val = None;
     }
 }
 
@@ -864,6 +861,9 @@ type Constraint = crate::abs::Constraint<ValueRef>;
 
 struct CallStackManager {
     stack: Vec<CallStackFrame>,
+    current_call_info: Vec<Operand>,
+    returned_val: Option<ValueRef>,
+    is_external_function: bool,
 }
 
 struct CallStackFrame {
@@ -872,20 +872,47 @@ struct CallStackFrame {
 
 impl CallStackManager {
     fn new() -> Self {
-        Self { stack: vec![] }
+        Self {
+            stack: vec![],
+            current_call_info: vec![],
+            returned_val: None,
+            is_external_function: true,
+        }
     }
 
-    fn push(&mut self) {
-        self.stack.push(CallStackFrame {
-            vars_state: MutableVariablesState::new(),
-        });
+    fn update_call_info(&mut self, call_info: Vec<Operand>) {
+        self.current_call_info = call_info;
     }
 
-    fn pop(&mut self) -> Option<ValueRef> {
-        let frame = self.stack.pop().expect("Call stack is empty.");
-        let mut vars_state = frame.vars_state;
-        // TODO: Clean up after better management of special local variables.
-        vars_state.try_take_place(&Place::new(Local::ReturnValue))
+    fn push_stack_frame(&mut self) {
+        let mut vars_state = MutableVariablesState::new();
+
+        // set places for the arguments in the new frame using values from the current frame
+        let operands: Vec<Operand> = self.current_call_info.drain(..).collect();
+        for (i, operand) in operands.iter().enumerate() {
+            let value = get_operand_value(self.top(), &operand);
+            let local_index = (i + 1) as u32;
+            let place = &Place::new(Local::Argument(local_index));
+            vars_state.set_place(place, value);
+        }
+
+        self.stack.push(CallStackFrame { vars_state });
+    }
+
+    fn pop_stack_frame(&mut self) {
+        self.returned_val = self.top().try_take_place(&Place::new(Local::ReturnValue));
+        self.is_external_function = false;
+        self.stack.pop();
+    }
+
+    fn get_return_info(&mut self) -> (Option<ValueRef>, bool) {
+        let returned_val = self.returned_val.clone();
+        let is_external_function = self.is_external_function;
+
+        self.returned_val = None;
+        self.is_external_function = true;
+
+        (returned_val, is_external_function)
     }
 
     fn top(&mut self) -> &mut MutableVariablesState {
