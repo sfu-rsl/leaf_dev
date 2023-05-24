@@ -293,38 +293,35 @@ pub(crate) struct LoggerFunctionHandler<'a> {
 
 impl FunctionHandler for LoggerFunctionHandler<'_> {
     type Place = Place;
-
     type Operand = Operand;
 
-    fn call(
-        self,
-        func: Self::Operand,
-        args: impl Iterator<Item = Self::Operand>,
-        result_dest: Self::Place,
-    ) {
-        log_info!(
-            "Calling {}({}) -> {}",
-            func,
-            comma_separated(args),
-            result_dest
-        );
-        self.call_manager
-            .notify_call(CallInfo { func, result_dest });
+    fn before_call(self, func: Self::Operand, args: impl Iterator<Item = Self::Operand>) {
+        log_info!("Just before call {}({})", func, comma_separated(args));
+        self.call_manager.notify_before_call(CallInfo { func });
+    }
+
+    fn enter(self) {
+        let info = self.call_manager.notify_enter_call();
+        log_info!("Entered function {}", info.func);
     }
 
     fn ret(self) {
         let info = self.call_manager.notify_return();
+        log_info!("Returning from {}", info.func);
+    }
+
+    fn after_call(self, result_dest: Self::Place) {
+        let info = self.call_manager.notify_after_call();
         log_info!(
-            "Returning from {} and storing result in {}",
+            "Exited function {} and storing result in {}",
             info.func,
-            info.result_dest
+            result_dest
         );
     }
 }
 
 struct CallInfo {
     func: Operand,
-    result_dest: Place,
 }
 
 struct CallManager {
@@ -333,23 +330,23 @@ struct CallManager {
 
 impl CallManager {
     fn new() -> Self {
-        Self {
-            /*
-             * TODO: This is a hack to make sure that a call info exists for the
-             * entry point. It will be investigated in #68.
-             */
-            stack: vec![CallInfo {
-                func: Operand::Const(super::operand::Constant::Func(0)),
-                result_dest: Place::new(Local::ReturnValue),
-            }],
-        }
+        Self { stack: vec![] }
     }
 
-    fn notify_call(&mut self, call: CallInfo) {
+    fn notify_before_call(&mut self, call: CallInfo) {
         self.stack.push(call);
     }
 
-    fn notify_return(&mut self) -> CallInfo {
+    fn notify_enter_call(&self) -> &CallInfo {
+        // peek at the top of the stack
+        self.stack.last().unwrap()
+    }
+
+    fn notify_return(&self) -> &CallInfo {
+        self.stack.last().unwrap()
+    }
+
+    fn notify_after_call(&mut self) -> CallInfo {
         self.stack.pop().unwrap()
     }
 }

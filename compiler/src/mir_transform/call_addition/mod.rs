@@ -175,15 +175,14 @@ pub(crate) trait BranchingHandler {
         I::IntoIter: ExactSizeIterator<Item = u128>;
 }
 
-pub(crate) trait FunctionHandler {
-    fn call_func(
-        &mut self,
-        func: OperandRef,
-        arguments: impl Iterator<Item = OperandRef>,
-        destination: PlaceRef,
-    );
+pub trait FunctionHandler<'tcx> {
+    fn before_call_func(&mut self, func: OperandRef, arguments: impl Iterator<Item = OperandRef>);
+
+    fn enter_func(&mut self);
 
     fn return_from_func(&mut self);
+
+    fn after_call_func(&mut self, destination: &Place<'tcx>);
 }
 
 pub(crate) trait EntryFunctionHandler {
@@ -302,7 +301,6 @@ where
         let result_local = self
             .context
             .add_local(self.context.get_pri_func_info(func_name).ret_ty);
-
         (
             self.make_call_bb(func_name, args, Place::from(result_local), target),
             result_local,
@@ -1083,17 +1081,18 @@ where
     }
 }
 
-impl<'tcx, C> FunctionHandler for RuntimeCallAdder<C>
+impl<'tcx, C> FunctionHandler<'tcx> for RuntimeCallAdder<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
-    C: TyContextProvider<'tcx> + SpecialTypesProvider<'tcx> + BodyLocalManager<'tcx>,
+    C: TyContextProvider<'tcx>
+        + SpecialTypesProvider<'tcx>
+        + BodyLocalManager<'tcx>
+        + BodyBlockManager<'tcx>
+        + LocationProvider
+        + JumpTargetModifier
+        + BodyProvider<'tcx>,
 {
-    fn call_func(
-        &mut self,
-        func: OperandRef,
-        arguments: impl Iterator<Item = OperandRef>,
-        destination: PlaceRef,
-    ) {
+    fn before_call_func(&mut self, func: OperandRef, arguments: impl Iterator<Item = OperandRef>) {
         let operand_ref_ty = self.context.pri_special_types().operand_ref;
         let (arguments_local, additional_statements) = prepare_operand_for_slice(
             self.context.tcx(),
@@ -1104,20 +1103,36 @@ where
                 .collect(),
         );
         let mut block = self.make_bb_for_call(
-            stringify!(pri::call_func),
+            stringify!(pri::before_call_func),
             vec![
                 operand::copy_for_local(func.into()),
                 operand::move_for_local(arguments_local),
-                operand::copy_for_local(destination.into()),
             ],
         );
         block.statements.extend(additional_statements);
         self.insert_blocks([block]);
     }
 
+    fn enter_func(&mut self) {
+        let block = self.make_bb_for_call(stringify!(pri::enter_func), vec![]);
+        self.insert_blocks([block]);
+    }
+
     fn return_from_func(&mut self) {
         let block = self.make_bb_for_call(stringify!(pri::return_from_func), vec![]);
         self.insert_blocks([block]);
+    }
+
+    fn after_call_func(&mut self, destination: &Place<'tcx>) {
+        // we want the place reference to be after the function call as well
+        let BlocksAndResult(mut blocks, dest_ref) = self.internal_reference_place(destination);
+        let after_call_block = self.make_bb_for_call(
+            stringify!(pri::after_call_func),
+            vec![operand::copy_for_local(dest_ref.into())],
+        );
+        blocks.push(after_call_block);
+        self.context
+            .insert_blocks_after(self.context.location(), blocks);
     }
 }
 

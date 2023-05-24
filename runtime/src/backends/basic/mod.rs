@@ -1,3 +1,4 @@
+mod call;
 pub(crate) mod expr;
 pub(crate) mod logger;
 pub(crate) mod operand;
@@ -15,6 +16,7 @@ use crate::{
 };
 
 use self::{
+    call::CallStackManager,
     expr::{
         AdtKind, AdtValue, ArrayValue, ConcreteValue, ConstValue, Expr, RefValue, SymValue,
         SymValueRef, SymbolicVar, Value,
@@ -528,24 +530,31 @@ impl FunctionHandler for BasicFunctionHandler<'_> {
     type Place = Place;
     type Operand = Operand;
 
-    fn call(
-        self,
-        _func: Self::Operand,
-        _args: impl Iterator<Item = Self::Operand>,
-        result_dest: Self::Place,
-    ) {
-        // TODO: Put arguments in the variables state.
-        self.call_stack_manager.push(result_dest)
+    fn before_call(self, _func: Self::Operand, args: impl Iterator<Item = Self::Operand>) {
+        self.call_stack_manager.update_args(args.collect());
+    }
+
+    fn enter(self) {
+        self.call_stack_manager.push_stack_frame();
     }
 
     fn ret(self) {
-        let (result_dest, returned_val) = self.call_stack_manager.pop();
+        self.call_stack_manager.pop_stack_frame();
+    }
+
+    fn after_call(self, result_dest: Self::Place) {
         /* FIXME: May require a cleaner approach. */
-        if !self.call_stack_manager.is_empty() {
+
+        let (returned_val, is_external_function) = self.call_stack_manager.get_return_info();
+        if is_external_function {
+            todo!("handle the case when an external function is called")
+        } else {
             if let Some(returned_val) = returned_val {
                 self.call_stack_manager
                     .top()
                     .set_place(&result_dest, returned_val)
+            } else {
+                // this is the case where a function has no return value
             }
         }
     }
@@ -848,55 +857,6 @@ impl MutableVariablesState {
 }
 
 type Constraint = crate::abs::Constraint<ValueRef>;
-
-struct CallStackManager {
-    stack: Vec<CallStackFrame>,
-}
-
-struct CallStackFrame {
-    vars_state: MutableVariablesState,
-    result_dest: Place,
-}
-
-impl CallStackManager {
-    fn new() -> Self {
-        let mut instance = Self { stack: Vec::new() };
-        /* TODO: This is a hack to make sure that a call info exists for the
-         * entry point. It will be investigated in #68.
-         */
-        instance.push(Place::new(Local::ReturnValue));
-        instance
-    }
-
-    fn push(&mut self, result_dest: Place) {
-        self.stack.push(CallStackFrame {
-            vars_state: MutableVariablesState::new(),
-            result_dest,
-        });
-    }
-
-    fn pop(&mut self) -> (Place, Option<ValueRef>) {
-        let frame = self.stack.pop().expect("Call stack is empty.");
-        let mut vars_state = frame.vars_state;
-        // TODO: Clean up after better management of special local variables.
-        (
-            frame.result_dest,
-            vars_state.try_take_place(&Place::new(Local::ReturnValue)),
-        )
-    }
-
-    fn top(&mut self) -> &mut MutableVariablesState {
-        &mut self
-            .stack
-            .last_mut()
-            .expect("Call stack is empty.")
-            .vars_state
-    }
-
-    fn is_empty(&self) -> bool {
-        self.stack.is_empty()
-    }
-}
 
 fn get_operand_value(vars_state: &mut MutableVariablesState, operand: &Operand) -> ValueRef {
     match operand {

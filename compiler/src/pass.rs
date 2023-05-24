@@ -16,6 +16,7 @@ use crate::{
 pub struct LeafPass;
 
 impl<'tcx> MirPass<'tcx> for LeafPass {
+    // NOTE: this function is called for every Body (function) in the program
     fn run_pass(
         &self,
         tcx: rustc_middle::ty::TyCtxt<'tcx>,
@@ -32,7 +33,28 @@ impl<'tcx> MirPass<'tcx> for LeafPass {
                     .at(body.basic_blocks.indices().next().unwrap())
                     .in_entry_fn(),
             );
+
+            // report that the entry function was "called" as a special case
+            let func = Operand::function_handle(
+                tcx,
+                body.source.def_id(),
+                ::std::iter::empty(),
+                body.span, // for error handling
+            );
+            let func_ref = call_adder
+                .at(body.basic_blocks.indices().next().unwrap())
+                .reference_operand(&func);
+            call_adder
+                .at(body.basic_blocks.indices().next().unwrap())
+                .before_call_func(func_ref, ::std::iter::empty());
         }
+
+        // TODO: determine if body will ever be a promoted block
+        let _is_promoted_block = body.source.promoted.is_some();
+        call_adder
+            .at(body.basic_blocks.indices().next().unwrap())
+            .enter_func();
+
         VisitorFactory::make_body_visitor(&mut call_adder).visit_body(body);
         modification.commit(body);
     }
@@ -213,7 +235,7 @@ where
         func: &Operand<'tcx>,
         args: &[Operand<'tcx>],
         destination: &Place<'tcx>,
-        _target: &Option<BasicBlock>,
+        target: &Option<BasicBlock>,
         _unwind: &UnwindAction,
         _from_hir_call: bool,
         _fn_span: rustc_span::Span,
@@ -223,9 +245,17 @@ where
             .iter()
             .map(|a| self.call_adder.reference_operand(a))
             .collect::<Vec<OperandRef>>();
-        let dest_ref = self.call_adder.reference_place(destination);
         self.call_adder
-            .call_func(func_ref, arg_refs.iter().copied(), dest_ref);
+            .before_call_func(func_ref, arg_refs.iter().copied());
+
+        if target.is_some() {
+            self.call_adder.after_call_func(destination);
+        } else {
+            // This branch is only triggered by hitting a divergent function:
+            // https://doc.rust-lang.org/rust-by-example/fn/diverging.html
+            // (this means the program will exit immediately)
+            log::warn!("visit_call() had no target, so couldn't insert block");
+        }
     }
 
     fn visit_assert(
@@ -309,7 +339,7 @@ where
             rustc_middle::ty::ConstKind::Value(val_tree) => match val_tree {
                 rustc_middle::ty::ValTree::Leaf(scalar_int) => scalar_int,
                 rustc_middle::ty::ValTree::Branch(_) => {
-                    unreachable!("these are only for aggragate constants")
+                    unreachable!("these are only for aggregate constants")
                 }
             },
             rustc_middle::ty::ConstKind::Error(_) => panic!("The const here could not be computed"),
