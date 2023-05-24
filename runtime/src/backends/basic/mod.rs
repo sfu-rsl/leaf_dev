@@ -529,7 +529,7 @@ impl FunctionHandler for BasicFunctionHandler<'_> {
     type Operand = Operand;
 
     fn before_call(self, _func: Self::Operand, args: impl Iterator<Item = Self::Operand>) {
-        self.call_stack_manager.update_call_info(args.collect());
+        self.call_stack_manager.update_args(args.collect());
     }
 
     fn enter(self) {
@@ -544,18 +544,15 @@ impl FunctionHandler for BasicFunctionHandler<'_> {
         /* FIXME: May require a cleaner approach. */
 
         let (returned_val, is_external_function) = self.call_stack_manager.get_return_info();
-
-        if !self.call_stack_manager.is_empty() {
-            if is_external_function {
-                todo!("handle the case when an external function is called")
+        if is_external_function {
+            todo!("handle the case when an external function is called")
+        } else {
+            if let Some(returned_val) = returned_val {
+                self.call_stack_manager
+                    .top()
+                    .set_place(&result_dest, returned_val)
             } else {
-                if let Some(returned_val) = returned_val {
-                    self.call_stack_manager
-                        .top()
-                        .set_place(&result_dest, returned_val)
-                } else {
-                    // this is the case where a function has no return value
-                }
+                // this is the case where a function has no return value
             }
         }
     }
@@ -861,35 +858,41 @@ type Constraint = crate::abs::Constraint<ValueRef>;
 
 struct CallStackManager {
     stack: Vec<CallStackFrame>,
-    current_call_info: Vec<Operand>,
-    returned_val: Option<ValueRef>,
-    is_external_function: bool,
+    call_info: CallInfo,
 }
 
 struct CallStackFrame {
     vars_state: MutableVariablesState,
 }
 
+struct CallInfo {
+    passed_args: Vec<Operand>,
+    returned_val: Option<ValueRef>,
+    is_external: bool,
+}
+
 impl CallStackManager {
     fn new() -> Self {
         Self {
             stack: vec![],
-            current_call_info: vec![],
-            returned_val: None,
-            is_external_function: true,
+            call_info: CallInfo {
+                passed_args: vec![],
+                returned_val: None,
+                is_external: true,
+            },
         }
     }
 
-    fn update_call_info(&mut self, call_info: Vec<Operand>) {
-        self.current_call_info = call_info;
+    fn update_args(&mut self, args: Vec<Operand>) {
+        self.call_info.passed_args = args;
     }
 
     fn push_stack_frame(&mut self) {
         let mut vars_state = MutableVariablesState::new();
 
         // set places for the arguments in the new frame using values from the current frame
-        let operands: Vec<Operand> = self.current_call_info.drain(..).collect();
-        for (i, operand) in operands.iter().enumerate() {
+        let passed_args: Vec<Operand> = self.call_info.passed_args.drain(..).collect();
+        for (i, operand) in passed_args.iter().enumerate() {
             let value = get_operand_value(self.top(), &operand);
             let local_index = (i + 1) as u32;
             let place = &Place::new(Local::Argument(local_index));
@@ -900,19 +903,17 @@ impl CallStackManager {
     }
 
     fn pop_stack_frame(&mut self) {
-        self.returned_val = self.top().try_take_place(&Place::new(Local::ReturnValue));
-        self.is_external_function = false;
+        self.call_info.returned_val = self.top().try_take_place(&Place::new(Local::ReturnValue));
+        self.call_info.is_external = false;
         self.stack.pop();
     }
 
     fn get_return_info(&mut self) -> (Option<ValueRef>, bool) {
-        let returned_val = self.returned_val.clone();
-        let is_external_function = self.is_external_function;
+        let returned_val = self.call_info.returned_val.take();
+        let is_external = self.call_info.is_external;
+        self.call_info.is_external = true;
 
-        self.returned_val = None;
-        self.is_external_function = true;
-
-        (returned_val, is_external_function)
+        (returned_val, is_external)
     }
 
     fn top(&mut self) -> &mut MutableVariablesState {
