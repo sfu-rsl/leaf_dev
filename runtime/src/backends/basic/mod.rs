@@ -860,8 +860,9 @@ type Constraint = crate::abs::Constraint<ValueRef>;
 
 fn get_operand_value(vars_state: &mut MutableVariablesState, operand: &Operand) -> ValueRef {
     match operand {
-        Operand::Place(place, operand::PlaceUsage::Copy) => vars_state.copy_place(place),
-        Operand::Place(place, operand::PlaceUsage::Move) => vars_state.take_place(place),
+        // copy and move are the same, but only for now. see: https://github.com/rust-lang/unsafe-code-guidelines/issues/188
+        Operand::Place(place, operand::PlaceUsage::Copy)
+        | Operand::Place(place, operand::PlaceUsage::Move) => vars_state.copy_place(place),
         Operand::Const(constant) => ValueRef::new(Value::Concrete(ConcreteValue::from_const(
             get_constant_value(constant),
         ))),

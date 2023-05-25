@@ -902,7 +902,7 @@ where
 {
     fn store_branching_info(&mut self, discr: &Operand<'tcx>) -> SwitchInfo<'tcx> {
         let tcx = self.context.tcx();
-        let operand_ref = self.reference_operand(&discr.to_copy());
+        let operand_ref = self.reference_operand(discr);
         let ty = discr.ty(self.context.local_decls(), tcx);
         let discr_size = size_of(tcx, ty).bits();
         let node_location = self.context.location();
