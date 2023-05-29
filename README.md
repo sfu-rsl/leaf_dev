@@ -1,91 +1,102 @@
 # leaf
 
-Concolic execution for Rust using MIR (mid-level IR). Project is in very early stages.
+Concolic execution for Rust using MIR (mid-level IR). The project is in very early stages.
 
-As a brief overview, leafc is used to compile a Rust program. It compiles the program normally, but
-also modifies the code and injects various function calls from leafrt (leaf runtime).
+As a brief overview, `leafc` is used instead of `rustc` to compile a Rust program. It compiles the program normally, but
+also modifies the code and injects various function calls to the `runtime` via the pri (program runtime interface).
 
 ## Setup
 
-Install Rust development components:
+### Prerequisites:
+- Install rust https://www.rust-lang.org/tools/install & python3
+- For Linux:
+  - install cmake, clang, and distutils: `apt install cmake clang python3-distutils`
+- For Windows: 
+  - install cmake: https://cmake.org/download/ (download .msi installer)
+  - install clang:
+    - A. (1) install Visual Studio Build Tools https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2022 (2) open Visual Studio Installer (3) under Visual Studio Build Tools press modify (4) under workloads, and Desktop development with C++, select "C++ Clang tools for Windows", then install it
+    - B. if A doesn't work, try installing llvm via choco: https://community.chocolatey.org/packages/llvm (make sure to `cargo clean` after switching installations)
 
-``` 
-rustup component add rust-src rustc-dev llvm-tools-preview 
+### Run Simple Example:
+- `git clone git@github.com:sfu-rsl/leaf.git`
+- `cd <your-path>/leaf/` 
+- `cargo build` (z3-sys may elapse up to 10 mins as it compiles)
+- `cd ./samples/function/sym_arg/`
+- `cargo run ./main.rs` 
+  - or `cargo run -- -O ./main.rs` to compile `main.rs` in release mode
+  - Note that any options after `--` will be passed directly to `rustc`
+- After the sample is compiled, an output binary `main` will be generated. We can run this as follows:
+  - `.\main.exe` or `./main`
+- The output from leaf should be as follows (at the time of writing):
+```rust
+Took step: 0 with constraints [Not(Symbolic(Expression(Binary { operator: Lt, first: SymValueGuard(Symbolic(Variable(SymbolicVar { id: 0, ty: Int { size: 32, is_signed: true } }))), second: Concrete(Const(Int { bit_rep: 5, size: 32, is_signed: true })), is_flipped: false })))]
+Found a solution:
+0 = Concrete(
+    Const(
+        Int {
+            bit_rep: 4,
+            size: 32,
+            is_signed: true,
+        },
+    ),
+)
 ```
 
-## Running an example
+## More Examples
 
-Here's a guide on how to use leafc on one of the examples. We are interested in the `diophantine`
-example.  In this example, we have the linear diophantine equation $ax + by = c$, where $a$, $b$,
-and $c$ are given integers, and $x$ and $y$ are integer variables. We want to determine whether
-$ax + by = c$ has a solution in $x$ and $y$. It can be proved that $ax + by = c$ has solution(s)
-in the integers if and only if $\gcd(a,b)$ divides $c$.
+### Debug Info:
+- To see debug logging from the leaf compiler, set the environment variable `RUST_LOG=debug`
+  - linux: `export RUST_LOG=debug`
+  - powershell: `$Env:RUST_LOG="debug"`
+- `cd ./samples/function/sym_arg/`
+- `cargo run ./main.rs`
+- The output from cargo should appear appended as follows (at the time of writing):
+```
+[2023-05-29T06:41:42Z INFO  compiler::pass] Running leaf pass on body at ./samples/function/sym_arg/main.rs:3:1: 6:2 (#0)
+[2023-05-29T06:41:42Z WARN  compiler::mir_transform::call_addition] Referencing a function with substitution variables (generic).
+[2023-05-29T06:41:42Z DEBUG compiler::pass] Visiting Rvalue: _1
+...
+[2023-05-29T06:41:42Z INFO  compiler::pass] Running leaf pass on body at ./samples/function/sym_arg/main.rs:18:1: 18:12 (#0)
+[2023-05-29T06:41:42Z DEBUG compiler::mir_transform::modification] Updating jump target from bb4294967040 to bb1
+[2023-05-29T06:41:42Z DEBUG compiler::mir_transform::modification] Updating jump target from bb4294967040 to bb2
+```
 
-The default values for the program are:
+### Emit MIR:
+- `cd ./samples/function/sym_arg/`
+- `cargo run -- --emit=mir ./main.rs`
+- open main.mir
 
-```rust 
+### Example Reasoning:
+- Let's look at the example located at `./samples/function/sym_arg/main.rs`
+```rust
+use runtime::annotations::Symbolizable;
+
 fn main() {
-    let a = 2;
-    let b = 6;
-    let c = 100;
-    // x and y treated as symbolic variables, although there's currently no code to run this
-    // program multiple times with different values.
-    // We have to use `get_int()` here in order to avoid optimization of the if-statement below.
-    let leaf_symbolic_x = get_int();
-    let leaf_symbolic_y = get_int();
-
-    if a * leaf_symbolic_x + b * leaf_symbolic_y != c {
-        "ax + by == c is not satisfied"
-    } else {
-        "ax + by == c is satisfied"
-    };
+    let x = 10.mark_symbolic();
+    calc(x, 5);
 }
+
+fn calc(x: i32, y: i32) {
+    if x < y { // line 9
+        foo();
+    } else {
+        bar();
+    }
+}
+
+fn foo() {}
+
+fn bar() {}
 ```
+- 10 is the only symbolic value in the program, as converted with `mark_symbolic()`. The rest are concrete
+- The solution found above of `0 = Concrete(Const(Int { bit_rep: 4, ... } ))` reflects that the 0th symbolic variable takes the value `4`, which satisfies the negation of the condition `!(x < 5)` (line 9), since `10 < 5 => false` is evaluated by the program. `x = 4` satisfies `x < 5` and would take the program down a new execution path.
 
-In the root directory of the project, run the following to compile an example program using leafc:
+## Rustfmt
 
-``` 
-RUST_LOG=debug cargo run leafc/examples/diophantine/main.rs 
-```
-
-After the example is compiled, `main` will be the output binary. We can run this, and it produces a
-bunch of output from the injected leafrt code. We highligt the relevant output for the if-statement:
-
-```
-Reaching the false branch is possible
-model: main_9 -> 2
-a -> 2
-leaf_symbolic_x -> 41
-main_13 -> 6
-b -> 6
-leaf_symbolic_y -> 3
-main_17 -> 100
-c -> 100
-get_c_0 -> 100
-main_6 -> false
-main_7 -> 100
-main_16 -> 100
-main_11 -> 82
-main_10 -> 41
-main_12 -> 18
-main_14 -> 3
-main_8 -> 82
-main_15 -> 18
-```
-
-We can see that the calls to the SMT solver has found that $2x+6y=100$ can be satisfied (i.e. we can
-reach the `false` branch) using $x = 41$, $y=3$. Sure enough, $2x+6y = 2\cdot41 + 6\cdot3 = 82 + 18 = 100$.
-
-If we modify it so that we have $c = 5$ (note that $\gcd(2, 6) = 2$ does not divide $5$), and then
-recompile the example, then the binary will output `UNSAT`, which means the equation $2x+6y=5$
-cannot be satisfied (i.e. we cannot reach the `false` branch).
-
-## rust fmt
-
-For any project developers, please make sure to copy all hooks from `.github/hooks/` to `.git/hooks/` via the following command, assuming you're in leaf's root directory:
+To any project developers, please make sure to copy all hooks from `.github/hooks/` to `.git/hooks/` via the following command, assuming you're in leaf's root directory:
 
 ```sh
 cp .github/hooks/pre-commit .git/hooks/pre-commit
 ```
 
-`.git/` is not cloned with the rest of the repo.
+Also note that `.git/` is not cloned with the rest of the repo.
