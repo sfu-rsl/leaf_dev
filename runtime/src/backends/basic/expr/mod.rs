@@ -88,16 +88,20 @@ pub fn assert_sign_equality(first_signed: &bool, second_signed: &bool) {
     );
 }
 
-/* pub fn garbage_bits_removal_constants(value: &u128, value_size: &u64) -> u128{
-    
-    let mut result = *value;
-    let shift_value = 128 - *value_size;
+pub fn are_positive(first: &u128, second: &u128) -> (bool, bool) {
+    let mut first_positive: bool = true;
+    let mut second_positive: bool = true;
+    let mask: u128 = 1;
+    if (first >> 127) & mask == 1 {
+        first_positive = false;
+    }
 
-    result = result << shift_value;
+    if (second >> 127) & mask == 1 {
+        second_positive = false;
+    }
 
-    return result;
-} */
-
+    return (first_positive, second_positive);
+}
 
 impl ConstValue {
     pub fn unary_op(this: &Self, operator: UnaryOp) -> ConstValue {
@@ -133,34 +137,77 @@ impl ConstValue {
 
     pub fn binary_op(first: &Self, second: &Self, operator: BinaryOp) -> ConstValue {
         match operator {
-            BinaryOp::Add       | BinaryOp::Sub     | BinaryOp::Mul     | 
-            BinaryOp::Div       | BinaryOp::Rem     | BinaryOp::BitXor  | 
-            BinaryOp::BitAnd    | BinaryOp::BitOr   => {
+            BinaryOp::Add
+            | BinaryOp::Sub
+            | BinaryOp::Mul
+            | BinaryOp::Div
+            | BinaryOp::Rem
+            | BinaryOp::BitXor
+            | BinaryOp::BitAnd
+            | BinaryOp::BitOr => match (first, second) {
+                (
+                    Self::Int {
+                        bit_rep: first,
+                        size: first_size,
+                        is_signed: first_signed,
+                    },
+                    Self::Int {
+                        bit_rep: second,
+                        size: second_size,
+                        is_signed: second_signed,
+                    },
+                ) => {
+                    assert_size_equality(first_size, second_size);
 
+                    let result = match operator {
+                        BinaryOp::Add => first + second,
+                        BinaryOp::Sub => first - second,
+                        BinaryOp::Mul => first * second,
+                        BinaryOp::Div => first / second,
+                        BinaryOp::Rem => first % second,
+                        BinaryOp::BitXor => first ^ second,
+                        BinaryOp::BitAnd => first & second,
+                        BinaryOp::BitOr => first | second,
+                        _ => unreachable!(),
+                    };
+
+                    Self::Int {
+                        bit_rep: result,
+                        size: *first_size,
+                        is_signed: *first_signed,
+                    }
+                }
+
+                (Self::Float { .. }, Self::Float { .. }) => unimplemented!(),
+
+                (Self::Bool(first_value), Self::Bool(second_value)) => {
+                    let result = match operator {
+                        BinaryOp::BitXor => first_value ^ second_value,
+                        BinaryOp::BitAnd => first_value & second_value,
+                        BinaryOp::BitOr => first_value | second_value,
+                        _ => unreachable!(),
+                    };
+                    Self::Bool(result)
+                }
+
+                _ => unreachable!(),
+            },
+
+            BinaryOp::Shl | BinaryOp::Shr => {
                 match (first, second) {
-                    (Self::Int { 
-                        bit_rep: first, 
-                        size: first_size, 
-                        is_signed: first_signed },
-
-                     Self::Int { 
-                        bit_rep: second, 
-                        size: second_size, 
-                        is_signed: second_signed }) 
-                     
-                     => {
-
-                        assert_size_equality(first_size, second_size);
-        
+                    (
+                        Self::Int {
+                            bit_rep: first,
+                            size: first_size,
+                            is_signed: first_signed,
+                        },
+                        Self::Int {
+                            bit_rep: second,
+                            size: second_size,
+                            is_signed: second_signed,
+                        },
+                    ) => {
                         let result = match operator {
-                            BinaryOp::Add => first + second,
-                            BinaryOp::Sub => first - second,
-                            BinaryOp::Mul => first * second,
-                            BinaryOp::Div => first / second,
-                            BinaryOp::Rem => first % second,
-                            BinaryOp::BitXor => first ^ second,
-                            BinaryOp::BitAnd => first & second,
-                            BinaryOp::BitOr => first | second,
                             BinaryOp::Shl => {
                                 assert!(
                                     !*second_signed,
@@ -175,142 +222,100 @@ impl ConstValue {
                                 ); //TODO we can get rid of this assertion in the future
                                 first >> second
                             }
-                            BinaryOp::Eq => (first == second) as u128,
-                            BinaryOp::Lt => (first < second) as u128,
-                            BinaryOp::Le => (first <= second) as u128,
-                            BinaryOp::Ne => (first != second) as u128,
-                            BinaryOp::Ge => (first >= second) as u128,
-                            BinaryOp::Gt => (first > second) as u128,
+
                             _ => unreachable!(),
                         };
-        
+
                         Self::Int {
                             bit_rep: result,
                             size: *first_size,
                             is_signed: *first_signed,
                         }
                     }
-                    
+
                     (Self::Float { .. }, Self::Float { .. }) => unimplemented!(),
 
-                    (Self::Bool(first_value), Self::Bool(second_value)) => 
-                    {
-                        let result = match operator {
-                            BinaryOp::BitXor => first_value ^ second_value,
-                            BinaryOp::BitAnd => first_value & second_value,
-                            BinaryOp::BitOr => first_value | second_value,
-                            _ => unreachable!(),
-                        };
-                        Self::Bool(result)
-                    }
+                    (Self::Bool { .. }, Self::Bool { .. }) => unimplemented!(),
 
-                    _ => unreachable!(),
+                    _ => unimplemented!(),
                 }
-            },
-            
-                
-            BinaryOp::Shl       | BinaryOp::Shr    => {
-                match (first, second) {
-                    (Self::Int { 
-                        bit_rep: first, 
-                        size: first_size, 
-                        is_signed: first_signed },
-
-                     Self::Int { 
-                        bit_rep: second, 
-                        size: second_size, 
-                        is_signed: second_signed }) => {
-
-                            let result = match operator {
-                                BinaryOp::Shl => {
-                                    assert!(
-                                        !*second_signed,
-                                        "Shifting a negative value is not expected."
-                                    ); //TODO we can get rid of this assertion in the future
-                                    first << second
-                                }
-                                BinaryOp::Shr => {
-                                    assert!(
-                                        !*second_signed,
-                                        "Shifting by a negative value is not expected."
-                                    ); //TODO we can get rid of this assertion in the future
-                                    first >> second
-                                }
-
-                                _ => unreachable!(),
-                        
-                            };
-
-                            Self::Int {
-                                bit_rep: result,
-                                size: *first_size,
-                                is_signed: *first_signed,
-                            }
-
-                        },
-
-                        (Self::Float { .. }, Self::Float { .. }) => unimplemented!(),
-
-                        (Self::Bool { .. }, Self::Bool { .. }) => unimplemented!(),
-                        
-                        _ => unimplemented!(),
-
-                }
-
-            },
-
-
-            BinaryOp::Eq        |   BinaryOp::Lt        | BinaryOp::Le |       
-            BinaryOp::Ne        |   BinaryOp::Ge        | BinaryOp::Gt       => {
-                match (first, second) {
-                    (Self::Int { 
-                        bit_rep: first, 
-                        size: first_size, 
-                        is_signed: first_signed },
-
-                     Self::Int { 
-                        bit_rep: second, 
-                        size: second_size, 
-                        is_signed: second_signed }) => {
-
-                            assert_size_equality(first_size, second_size);
-                            assert_sign_equality(first_signed, second_signed);
-
-                            let result = match operator {
-                                    BinaryOp::Eq => (first == second),
-                                    BinaryOp::Lt => (first < second),
-                                    BinaryOp::Le => (first <= second),
-                                    BinaryOp::Ne => (first != second),
-                                    BinaryOp::Ge => (first >= second),
-                                    BinaryOp::Gt => (first > second),
-                                    _ => unreachable!(),
-                            };
-
-                                Self::Bool(result)
-                        },
-
-                        (Self::Float { .. }, Self::Float { .. }) => unimplemented!(),
-
-                        (Self::Bool (first_value ), Self::Bool ( second_value )) => {
-                            let result = match operator {
-                                BinaryOp::Eq => first_value == second_value,
-                                BinaryOp::Ne => first_value != second_value,
-                                _ => unreachable!(),
-                            };
-                            Self::Bool(result)
-                        },
-                        
-                        _ => unimplemented!(),
-
-                }
-
-            },
-
-            _ => unimplemented!("{:?} {:?} {:?}", first, second, operator)
-
             }
-            
+
+            BinaryOp::Eq
+            | BinaryOp::Lt
+            | BinaryOp::Le
+            | BinaryOp::Ne
+            | BinaryOp::Ge
+            | BinaryOp::Gt => match (first, second) {
+                (
+                    Self::Int {
+                        bit_rep: first,
+                        size: first_size,
+                        is_signed: first_signed,
+                    },
+                    Self::Int {
+                        bit_rep: second,
+                        size: second_size,
+                        is_signed: second_signed,
+                    },
+                ) => {
+                    assert_size_equality(first_size, second_size);
+                    assert_sign_equality(first_signed, second_signed);
+
+                    let signs = are_positive(first, second);
+
+                    let result: bool = match signs {
+                        (true, true) | (false, false) => match operator {
+                            BinaryOp::Eq => (first == second),
+                            BinaryOp::Lt => (first < second),
+                            BinaryOp::Le => (first <= second),
+                            BinaryOp::Ne => (first != second),
+                            BinaryOp::Ge => (first >= second),
+                            BinaryOp::Gt => (first > second),
+                            _ => unreachable!(),
+                        },
+                        (false, true) => match operator {
+                            BinaryOp::Eq => false,
+                            BinaryOp::Lt => true,
+                            BinaryOp::Le => true,
+                            BinaryOp::Ne => true,
+                            BinaryOp::Ge => false,
+                            BinaryOp::Gt => false,
+                            _ => unreachable!(),
+                        },
+                        (true, false) => match operator {
+                            BinaryOp::Eq => false,
+                            BinaryOp::Lt => false,
+                            BinaryOp::Le => false,
+                            BinaryOp::Ne => true,
+                            BinaryOp::Ge => true,
+                            BinaryOp::Gt => true,
+                            _ => unreachable!(),
+                        },
+
+                        _ => unreachable!(),
+                    };
+
+                    Self::Bool(result)
+                }
+
+                (Self::Float { .. }, Self::Float { .. }) => unimplemented!(),
+
+                (Self::Bool(first_value), Self::Bool(second_value)) => {
+                    let result = match operator {
+                        BinaryOp::Eq => first_value == second_value,
+                        BinaryOp::Ne => first_value != second_value,
+                        _ => unreachable!(),
+                    };
+                    Self::Bool(result)
+                }
+
+                _ => unimplemented!(),
+            },
+
+            _ => unimplemented!("{:?} {:?} {:?}", first, second, operator),
         }
+    }
 
     pub fn integer_cast(this: &Self, to_size: u64, is_to_signed: bool) -> ConstValue {
         match this {
