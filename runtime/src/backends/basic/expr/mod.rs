@@ -1,5 +1,6 @@
 pub(super) mod translators;
 
+use std::result;
 use std::{ops::Deref, rc::Rc};
 
 use super::abs::{BinaryOp, FieldIndex, UnaryOp, VariantIndex};
@@ -76,31 +77,54 @@ pub(super) enum ConstValue {
 
 pub fn assert_size_equality(first_size: &u64, second_size: &u64) {
     assert!(
-        first_size == second_size,
+        *first_size == *second_size,
         "Size equality assertion on integers failed, this is regarding binary_op function for constants."
     );
 }
 
 pub fn assert_sign_equality(first_signed: &bool, second_signed: &bool) {
     assert!(
-        first_signed == second_signed,
+        *first_signed == *second_signed,
         "Sign equality assertion on integers failed, this is regarding binary_op function for constants."
     );
 }
 
-pub fn are_positive(first: &u128, second: &u128) -> (bool, bool) {
+pub fn are_positive(
+    first: &u128,
+    first_size: &u64,
+    second: &u128,
+    second_size: &u64,
+) -> (bool, bool) {
     let mut first_positive: bool = true;
     let mut second_positive: bool = true;
     let mask: u128 = 1;
-    if (first >> 127) & mask == 1 {
+
+    if (*first >> (*first_size - 1)) & mask == 1 {
         first_positive = false;
     }
 
-    if (second >> 127) & mask == 1 {
+    if (*second >> (*second_size - 1)) & mask == 1 {
         second_positive = false;
     }
 
     return (first_positive, second_positive);
+}
+
+pub fn interpret_values(bit_rep: &u128, size: &u64) -> i128 {
+    let mask: u128 = (1 << (*size - 1)) - 1; // Create a mask of 1s with the given size except the sign bit
+    let sign_mask: u128 = 1 << (*size - 1); // Create a mask for the sign bit, for example 1000...0
+    let sign_extend: u128 = (!mask) & sign_mask; // Create a sign extension mask, it would be something like 000...010...000
+
+    let sign_bit: bool = (*bit_rep & sign_mask) != 0;
+    let value = *bit_rep & mask;
+
+    let signed_value = if sign_bit {
+        (value | sign_extend) as i128
+    } else {
+        value as i128
+    };
+
+    signed_value
 }
 
 impl ConstValue {
@@ -262,34 +286,77 @@ impl ConstValue {
                     assert_size_equality(first_size, second_size);
                     assert_sign_equality(first_signed, second_signed);
 
-                    let signs = are_positive(first, second);
+                    let signs = are_positive(first, first_size, second, second_size);
 
-                    let result: bool = match signs {
-                        (true, true) | (false, false) => match operator {
-                            BinaryOp::Eq => (first == second),
-                            BinaryOp::Lt => (first < second),
-                            BinaryOp::Le => (first <= second),
-                            BinaryOp::Ne => (first != second),
-                            BinaryOp::Ge => (first >= second),
-                            BinaryOp::Gt => (first > second),
+                    let result: bool = match first_signed {
+                        false => match operator {
+                            BinaryOp::Eq => first == second,
+                            BinaryOp::Lt => first < second,
+                            BinaryOp::Le => first <= second,
+                            BinaryOp::Ne => first != second,
+                            BinaryOp::Ge => first >= second,
+                            BinaryOp::Gt => first > second,
                             _ => unreachable!(),
                         },
-                        (false, true) => match operator {
-                            BinaryOp::Eq => false,
-                            BinaryOp::Lt => true,
-                            BinaryOp::Le => true,
-                            BinaryOp::Ne => true,
-                            BinaryOp::Ge => false,
-                            BinaryOp::Gt => false,
-                            _ => unreachable!(),
-                        },
-                        (true, false) => match operator {
-                            BinaryOp::Eq => false,
-                            BinaryOp::Lt => false,
-                            BinaryOp::Le => false,
-                            BinaryOp::Ne => true,
-                            BinaryOp::Ge => true,
-                            BinaryOp::Gt => true,
+
+                        true => match signs {
+                            (true, true) => match operator {
+                                BinaryOp::Eq => first == second,
+                                BinaryOp::Lt => first < second,
+                                BinaryOp::Le => first <= second,
+                                BinaryOp::Ne => first != second,
+                                BinaryOp::Ge => first >= second,
+                                BinaryOp::Gt => first > second,
+                                _ => unreachable!(),
+                            },
+
+                            (false, false) => match operator {
+                                BinaryOp::Eq => {
+                                    interpret_values(first, first_size)
+                                        == interpret_values(second, second_size)
+                                }
+                                BinaryOp::Lt => {
+                                    interpret_values(first, first_size)
+                                        < interpret_values(second, second_size)
+                                }
+                                BinaryOp::Le => {
+                                    interpret_values(first, first_size)
+                                        <= interpret_values(second, second_size)
+                                }
+                                BinaryOp::Ne => {
+                                    interpret_values(first, first_size)
+                                        != interpret_values(second, second_size)
+                                }
+                                BinaryOp::Ge => {
+                                    interpret_values(first, first_size)
+                                        >= interpret_values(second, second_size)
+                                }
+                                BinaryOp::Gt => {
+                                    interpret_values(first, first_size)
+                                        > interpret_values(second, second_size)
+                                }
+                                _ => unreachable!(),
+                            },
+
+                            (false, true) => match operator {
+                                BinaryOp::Eq => false,
+                                BinaryOp::Lt => true,
+                                BinaryOp::Le => true,
+                                BinaryOp::Ne => true,
+                                BinaryOp::Ge => false,
+                                BinaryOp::Gt => false,
+                                _ => unreachable!(),
+                            },
+                            (true, false) => match operator {
+                                BinaryOp::Eq => false,
+                                BinaryOp::Lt => false,
+                                BinaryOp::Le => false,
+                                BinaryOp::Ne => true,
+                                BinaryOp::Ge => true,
+                                BinaryOp::Gt => true,
+                                _ => unreachable!(),
+                            },
+
                             _ => unreachable!(),
                         },
 
