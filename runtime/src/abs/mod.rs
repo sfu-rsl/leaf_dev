@@ -1,4 +1,5 @@
 pub(crate) mod backend;
+pub(crate) mod expr;
 
 pub(crate) type LocalIndex = u32;
 pub type BasicBlockIndex = u32;

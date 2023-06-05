@@ -55,12 +55,6 @@ impl Place {
     }
 }
 
-impl Projection {
-    pub fn is_field(&self) -> bool {
-        matches!(self, Projection::Field(_))
-    }
-}
-
 pub(crate) struct DefaultPlaceHandler {}
 
 impl PlaceHandler for DefaultPlaceHandler {

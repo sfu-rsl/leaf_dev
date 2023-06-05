@@ -13,8 +13,8 @@ pub(crate) mod z3 {
     use crate::{
         abs::{BinaryOp, UnaryOp},
         backends::basic::expr::{
-            ConcreteValue, ConstValue, Expr, SymValue, SymVarId, SymbolicVar, SymbolicVarType,
-            Value, ValueRef,
+            ConcreteValue, ConstValue, Expr, SymBinaryOperands, SymValue, SymVarId, SymbolicVar,
+            SymbolicVarType, Value, ValueRef,
         },
     };
 
@@ -149,18 +149,14 @@ pub(crate) mod z3 {
                     let operand = self.translate_symbolic(operand);
                     self.translate_unary_expr(operator, operand)
                 }
-                Expr::Binary {
-                    operator,
-                    first,
-                    second,
-                    is_flipped,
-                } => {
-                    let first = self.translate_symbolic(first);
-                    let second = self.translate_value(second);
-                    let (left, right) = if *is_flipped {
-                        (second, first)
-                    } else {
-                        (first, second)
+                Expr::Binary { operator, operands } => {
+                    let (left, right) = match operands {
+                        SymBinaryOperands::Orig { first, second } => {
+                            (self.translate_symbolic(first), self.translate_value(second))
+                        }
+                        SymBinaryOperands::Rev { first, second } => {
+                            (self.translate_value(first), self.translate_symbolic(second))
+                        }
                     };
                     self.translate_binary_expr(operator, left, right)
                 }
@@ -169,9 +165,8 @@ pub(crate) mod z3 {
                     self.translate_cast_expr(from, to)
                 }
                 Expr::AddrOf() => todo!(),
-                Expr::Deref(_) => todo!(),
-                Expr::Index { .. } => todo!(),
-                Expr::Slice { .. } => todo!(),
+                Expr::Len { .. } => todo!(),
+                Expr::Projection(_) => todo!(),
             }
         }
 

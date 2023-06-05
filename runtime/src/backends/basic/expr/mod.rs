@@ -1,34 +1,36 @@
+pub(super) mod builders;
+pub(super) mod proj;
 pub(super) mod translators;
+pub(crate) mod utils;
 
-use std::result;
-use std::{ops::Deref, rc::Rc};
+use std::{assert_matches::assert_matches, ops::Deref, rc::Rc};
 
-use super::abs::{BinaryOp, FieldIndex, UnaryOp, VariantIndex};
+use crate::abs::{BinaryOp, FieldIndex, UnaryOp, VariantIndex};
+
+use self::utils::define_reversible_pair;
 
 use super::{operand, place::Place};
 
-pub(super) type ValueRef = Rc<Value>;
-pub(super) type SymValueRef = SymValueGuard;
-pub(super) type SymVarId = u32;
+pub(crate) type ValueRef = Rc<Value>;
+pub(crate) type ConcreteValueRef = ConcreteValueGuard<ValueRef>;
+pub(crate) type ConcreteValueMutRef<'a> = ConcreteValueGuard<&'a mut ValueRef>;
+pub(crate) type SymValueRef = SymValueGuard<ValueRef>;
+pub(crate) type SymVarId = u32;
 
 #[derive(Clone, Debug)]
-pub(super) enum Value {
+pub(crate) enum Value {
     Concrete(ConcreteValue),
     Symbolic(SymValue),
 }
 
 impl Value {
-    pub fn from_const(value: ConstValue) -> Self {
-        Self::Concrete(ConcreteValue::from_const(value))
-    }
-
-    pub(super) fn is_symbolic(&self) -> bool {
+    pub(crate) fn is_symbolic(&self) -> bool {
         matches!(self, Value::Symbolic(_))
     }
 }
 
 #[derive(Clone, Debug)]
-pub(super) enum ConcreteValue {
+pub(crate) enum ConcreteValue {
     Const(ConstValue),
     Adt(AdtValue),
     Array(ArrayValue),
@@ -41,24 +43,10 @@ impl ConcreteValue {
     }
 }
 
-impl ConcreteValue {
-    pub fn try_to_adt(&mut self) -> Option<&mut AdtValue> {
-        match self {
-            Self::Adt(value) => Some(value),
-            _ => None,
-        }
-    }
-
-    pub fn try_to_ref(&self) -> Option<&RefValue> {
-        match self {
-            Self::Ref(value) => Some(value),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub(super) enum ConstValue {
+// FIXME: Remove this after adding support for floats.
+#[allow(unused)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ConstValue {
     Bool(bool),
     Char(char),
     Int {
@@ -75,59 +63,23 @@ pub(super) enum ConstValue {
     Func(u64),
 }
 
-pub fn assert_size_equality(first_size: &u64, second_size: &u64) {
-    assert!(
-        *first_size == *second_size,
-        "Size equality assertion on integers failed, this is regarding binary_op function for constants."
-    );
-}
-
-pub fn assert_sign_equality(first_signed: &bool, second_signed: &bool) {
-    assert!(
-        *first_signed == *second_signed,
-        "Sign equality assertion on integers failed, this is regarding binary_op function for constants."
-    );
-}
-
-pub fn are_positive(
-    first: &u128,
-    first_size: &u64,
-    second: &u128,
-    second_size: &u64,
-) -> (bool, bool) {
-    let mut first_positive: bool = true;
-    let mut second_positive: bool = true;
-    let mask: u128 = 1;
-
-    if (*first >> (*first_size - 1)) & mask == 1 {
-        first_positive = false;
-    }
-
-    if (*second >> (*second_size - 1)) & mask == 1 {
-        second_positive = false;
-    }
-
-    return (first_positive, second_positive);
-}
-
-pub fn interpret_values(bit_rep: &u128, size: &u64) -> i128 {
-    let mask: u128 = (1 << (*size - 1)) - 1; // Create a mask of 1s with the given size except the sign bit
-    let sign_mask: u128 = 1 << (*size - 1); // Create a mask for the sign bit, for example 1000...0
-    let sign_extend: u128 = (!mask) & sign_mask; // Create a sign extension mask, it would be something like 000...010...000
-
-    let sign_bit: bool = (*bit_rep & sign_mask) != 0;
-    let value = *bit_rep & mask;
-
-    let signed_value = if sign_bit {
-        (value | sign_extend) as i128
-    } else {
-        value as i128
-    };
-
-    signed_value
-}
-
 impl ConstValue {
+    pub fn is_zero(&self) -> bool {
+        match self {
+            Self::Int { bit_rep, .. } => *bit_rep == 0,
+            Self::Float { .. } => todo!(),
+            _ => unreachable!("Only numerical values can be checked for zero."),
+        }
+    }
+
+    pub fn is_one(&self) -> bool {
+        match self {
+            Self::Int { bit_rep, .. } => *bit_rep == 1,
+            Self::Float { .. } => todo!(),
+            _ => unreachable!("Only numerical values can be checked for one."),
+        }
+    }
+
     pub fn unary_op(this: &Self, operator: UnaryOp) -> ConstValue {
         match operator {
             UnaryOp::Neg => match this {
@@ -168,223 +120,20 @@ impl ConstValue {
             | BinaryOp::Rem
             | BinaryOp::BitXor
             | BinaryOp::BitAnd
-            | BinaryOp::BitOr => match (first, second) {
-                (
-                    Self::Int {
-                        bit_rep: first,
-                        size: first_size,
-                        is_signed: first_signed,
-                    },
-                    Self::Int {
-                        bit_rep: second,
-                        size: second_size,
-                        is_signed: second_signed,
-                    },
-                ) => {
-                    assert_size_equality(first_size, second_size);
-
-                    let result = match operator {
-                        BinaryOp::Add => first + second,
-                        BinaryOp::Sub => first - second,
-                        BinaryOp::Mul => first * second,
-                        BinaryOp::Div => first / second,
-                        BinaryOp::Rem => first % second,
-                        BinaryOp::BitXor => first ^ second,
-                        BinaryOp::BitAnd => first & second,
-                        BinaryOp::BitOr => first | second,
-                        _ => unreachable!(),
-                    };
-
-                    Self::Int {
-                        bit_rep: result,
-                        size: *first_size,
-                        is_signed: *first_signed,
-                    }
-                }
-
-                (Self::Float { .. }, Self::Float { .. }) => unimplemented!(),
-
-                (Self::Bool(first_value), Self::Bool(second_value)) => {
-                    let result = match operator {
-                        BinaryOp::BitXor => first_value ^ second_value,
-                        BinaryOp::BitAnd => first_value & second_value,
-                        BinaryOp::BitOr => first_value | second_value,
-                        _ => unreachable!(),
-                    };
-                    Self::Bool(result)
-                }
-
-                _ => unreachable!(),
-            },
-
-            BinaryOp::Shl | BinaryOp::Shr => {
-                match (first, second) {
-                    (
-                        Self::Int {
-                            bit_rep: first,
-                            size: first_size,
-                            is_signed: first_signed,
-                        },
-                        Self::Int {
-                            bit_rep: second,
-                            size: second_size,
-                            is_signed: second_signed,
-                        },
-                    ) => {
-                        let result = match operator {
-                            BinaryOp::Shl => {
-                                assert!(
-                                    !*second_signed,
-                                    "Shifting a negative value is not expected."
-                                ); //TODO we can get rid of this assertion in the future
-                                first << second
-                            }
-                            BinaryOp::Shr => {
-                                assert!(
-                                    !*second_signed,
-                                    "Shifting by a negative value is not expected."
-                                ); //TODO we can get rid of this assertion in the future
-                                first >> second
-                            }
-
-                            _ => unreachable!(),
-                        };
-
-                        Self::Int {
-                            bit_rep: result,
-                            size: *first_size,
-                            is_signed: *first_signed,
-                        }
-                    }
-
-                    (Self::Float { .. }, Self::Float { .. }) => unimplemented!(),
-
-                    (Self::Bool { .. }, Self::Bool { .. }) => unimplemented!(),
-
-                    _ => unimplemented!(),
-                }
-            }
-
+            | BinaryOp::BitOr => Self::binary_op_ar(first, second, operator),
+            BinaryOp::Shl | BinaryOp::Shr => Self::binary_op_shift(first, second, operator),
             BinaryOp::Eq
             | BinaryOp::Lt
             | BinaryOp::Le
             | BinaryOp::Ne
             | BinaryOp::Ge
-            | BinaryOp::Gt => match (first, second) {
-                (
-                    Self::Int {
-                        bit_rep: first,
-                        size: first_size,
-                        is_signed: first_signed,
-                    },
-                    Self::Int {
-                        bit_rep: second,
-                        size: second_size,
-                        is_signed: second_signed,
-                    },
-                ) => {
-                    assert_size_equality(first_size, second_size);
-                    assert_sign_equality(first_signed, second_signed);
-
-                    let signs = are_positive(first, first_size, second, second_size);
-
-                    let result: bool = match first_signed {
-                        false => match operator {
-                            BinaryOp::Eq => first == second,
-                            BinaryOp::Lt => first < second,
-                            BinaryOp::Le => first <= second,
-                            BinaryOp::Ne => first != second,
-                            BinaryOp::Ge => first >= second,
-                            BinaryOp::Gt => first > second,
-                            _ => unreachable!(),
-                        },
-
-                        true => match signs {
-                            (true, true) => match operator {
-                                BinaryOp::Eq => first == second,
-                                BinaryOp::Lt => first < second,
-                                BinaryOp::Le => first <= second,
-                                BinaryOp::Ne => first != second,
-                                BinaryOp::Ge => first >= second,
-                                BinaryOp::Gt => first > second,
-                                _ => unreachable!(),
-                            },
-
-                            (false, false) => match operator {
-                                BinaryOp::Eq => {
-                                    interpret_values(first, first_size)
-                                        == interpret_values(second, second_size)
-                                }
-                                BinaryOp::Lt => {
-                                    interpret_values(first, first_size)
-                                        < interpret_values(second, second_size)
-                                }
-                                BinaryOp::Le => {
-                                    interpret_values(first, first_size)
-                                        <= interpret_values(second, second_size)
-                                }
-                                BinaryOp::Ne => {
-                                    interpret_values(first, first_size)
-                                        != interpret_values(second, second_size)
-                                }
-                                BinaryOp::Ge => {
-                                    interpret_values(first, first_size)
-                                        >= interpret_values(second, second_size)
-                                }
-                                BinaryOp::Gt => {
-                                    interpret_values(first, first_size)
-                                        > interpret_values(second, second_size)
-                                }
-                                _ => unreachable!(),
-                            },
-
-                            (false, true) => match operator {
-                                BinaryOp::Eq => false,
-                                BinaryOp::Lt => true,
-                                BinaryOp::Le => true,
-                                BinaryOp::Ne => true,
-                                BinaryOp::Ge => false,
-                                BinaryOp::Gt => false,
-                                _ => unreachable!(),
-                            },
-                            (true, false) => match operator {
-                                BinaryOp::Eq => false,
-                                BinaryOp::Lt => false,
-                                BinaryOp::Le => false,
-                                BinaryOp::Ne => true,
-                                BinaryOp::Ge => true,
-                                BinaryOp::Gt => true,
-                                _ => unreachable!(),
-                            },
-
-                            _ => unreachable!(),
-                        },
-
-                        _ => unreachable!(),
-                    };
-
-                    Self::Bool(result)
-                }
-
-                (Self::Float { .. }, Self::Float { .. }) => unimplemented!(),
-
-                (Self::Bool(first_value), Self::Bool(second_value)) => {
-                    let result = match operator {
-                        BinaryOp::Eq => first_value == second_value,
-                        BinaryOp::Ne => first_value != second_value,
-                        _ => unreachable!(),
-                    };
-                    Self::Bool(result)
-                }
-
-                _ => unimplemented!(),
-            },
+            | BinaryOp::Gt => ConstValue::Bool(Self::binary_op_cmp(first, second, operator)),
 
             _ => unimplemented!("{:?} {:?} {:?}", first, second, operator),
         }
     }
 
-    pub fn integer_cast(this: &Self, to_size: u64, is_to_signed: bool) -> ConstValue {
+    pub fn integer_cast(this: &Self, to_size: u64, is_to_signed: bool) -> Self {
         match this {
             /* This seems overly simple but when the number is originally cast to the u128 to get its bit representation,
              * this covers any of the casting that would need to be done here. If the original number was unsigned then
@@ -412,6 +161,202 @@ impl ConstValue {
             _ => unreachable!("Casting {this:?} to integer is not possible."),
         }
     }
+
+    fn binary_op_ar(first: &Self, second: &Self, operator: BinaryOp) -> Self {
+        match (first, second) {
+            (
+                Self::Int {
+                    bit_rep: first,
+                    size: first_size,
+                    is_signed: first_signed,
+                },
+                Self::Int {
+                    bit_rep: second,
+                    size: second_size,
+                    ..
+                },
+            ) => {
+                assert_eq!(*first_size, *second_size);
+
+                let result = match operator {
+                    BinaryOp::Add => first + second,
+                    BinaryOp::Sub => first - second,
+                    BinaryOp::Mul => first * second,
+                    BinaryOp::Div => first / second,
+                    BinaryOp::Rem => first % second,
+                    BinaryOp::BitXor => first ^ second,
+                    BinaryOp::BitAnd => first & second,
+                    BinaryOp::BitOr => first | second,
+                    _ => unreachable!(),
+                };
+
+                Self::Int {
+                    bit_rep: result,
+                    size: *first_size,
+                    is_signed: *first_signed,
+                }
+            }
+
+            (Self::Float { .. }, Self::Float { .. }) => unimplemented!(),
+
+            (Self::Bool(first_value), Self::Bool(second_value)) => {
+                let result = match operator {
+                    BinaryOp::BitXor => first_value ^ second_value,
+                    BinaryOp::BitAnd => first_value & second_value,
+                    BinaryOp::BitOr => first_value | second_value,
+                    _ => unreachable!(),
+                };
+                Self::Bool(result)
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    fn binary_op_shift(first: &Self, second: &Self, operator: BinaryOp) -> Self {
+        match (first, second) {
+            (
+                Self::Int {
+                    bit_rep: first,
+                    size: first_size,
+                    is_signed: first_signed,
+                },
+                Self::Int {
+                    bit_rep: second,
+                    is_signed: second_signed,
+                    ..
+                },
+            ) => {
+                let result = match operator {
+                    BinaryOp::Shl => {
+                        assert!(
+                            !*second_signed,
+                            "Shifting a negative value is not expected."
+                        ); //TODO we can get rid of this assertion in the future
+                        first << second
+                    }
+                    BinaryOp::Shr => {
+                        assert!(
+                            !*second_signed,
+                            "Shifting by a negative value is not expected."
+                        ); //TODO we can get rid of this assertion in the future
+                        first >> second
+                    }
+
+                    _ => unreachable!(),
+                };
+
+                Self::Int {
+                    bit_rep: result,
+                    size: *first_size,
+                    is_signed: *first_signed,
+                }
+            }
+            _ => unreachable!("Shifting is only possible on integers."),
+        }
+    }
+
+    fn binary_op_cmp(first: &Self, second: &Self, operator: BinaryOp) -> bool {
+        match operator {
+            BinaryOp::Eq => first.eq(second),
+            BinaryOp::Ne => first.ne(second),
+            _ => match (first, second) {
+                (
+                    Self::Int {
+                        bit_rep: first,
+                        size: first_size,
+                        is_signed: first_signed,
+                    },
+                    Self::Int {
+                        bit_rep: second,
+                        size: second_size,
+                        is_signed: second_signed,
+                    },
+                ) => {
+                    assert_eq!(*first_size, *second_size);
+                    assert_eq!(*first_signed, *second_signed);
+
+                    if !first_signed {
+                        return match operator {
+                            BinaryOp::Lt => first < second,
+                            BinaryOp::Le => first <= second,
+                            BinaryOp::Ge => first >= second,
+                            BinaryOp::Gt => first > second,
+                            _ => unreachable!(),
+                        };
+                    }
+
+                    let signs = (
+                        Self::is_positive(first, first_size),
+                        Self::is_positive(second, second_size),
+                    );
+
+                    match signs {
+                        (true, true) => match operator {
+                            BinaryOp::Lt => first < second,
+                            BinaryOp::Le => first <= second,
+                            BinaryOp::Ge => first >= second,
+                            BinaryOp::Gt => first > second,
+                            _ => unreachable!(),
+                        },
+
+                        (false, false) => {
+                            let first = Self::as_signed(first, first_size);
+                            let second = Self::as_signed(second, second_size);
+                            match operator {
+                                BinaryOp::Lt => first < second,
+                                BinaryOp::Le => first <= second,
+                                BinaryOp::Ge => first >= second,
+                                BinaryOp::Gt => first > second,
+                                _ => unreachable!(),
+                            }
+                        }
+
+                        (false, true) => match operator {
+                            BinaryOp::Lt => true,
+                            BinaryOp::Le => true,
+                            BinaryOp::Ge => false,
+                            BinaryOp::Gt => false,
+                            _ => unreachable!(),
+                        },
+                        (true, false) => match operator {
+                            BinaryOp::Lt => false,
+                            BinaryOp::Le => false,
+                            BinaryOp::Ge => true,
+                            BinaryOp::Gt => true,
+                            _ => unreachable!(),
+                        },
+                    }
+                }
+
+                (Self::Float { .. }, Self::Float { .. }) => unimplemented!(),
+
+                _ => unimplemented!(),
+            },
+        }
+    }
+
+    fn is_positive(bit_rep: &u128, size: &u64) -> bool {
+        const MASK: u128 = 1;
+        (*bit_rep >> (*size - 1)) & MASK != 1
+    }
+
+    fn as_signed(bit_rep: &u128, size: &u64) -> i128 {
+        let mask: u128 = (1 << (*size - 1)) - 1; // Create a mask of 1s with the given size except the sign bit
+        let sign_mask: u128 = 1 << (*size - 1); // Create a mask for the sign bit, for example 1000...0
+        let sign_extend: u128 = (!mask) & sign_mask; // Create a sign extension mask, it would be something like 000...010...000
+
+        let sign_bit: bool = (*bit_rep & sign_mask) != 0;
+        let value = *bit_rep & mask;
+
+        let signed_value = if sign_bit {
+            (value | sign_extend) as i128
+        } else {
+            value as i128
+        };
+
+        signed_value
+    }
 }
 
 macro_rules! impl_from_uint {
@@ -438,8 +383,10 @@ impl From<char> for ConstValue {
     }
 }
 
+// FIXME: Remove this after adding support for more variants
+#[allow(unused)]
 #[derive(Clone, Debug)]
-pub(super) enum AdtKind {
+pub(crate) enum AdtKind {
     Struct,
     Enum {
         /* NOTE: Even when the variant index is set based on a decision on a
@@ -451,23 +398,13 @@ pub(super) enum AdtKind {
 }
 
 #[derive(Clone, Debug)]
-pub(super) struct AdtValue {
+pub(crate) struct AdtValue {
     pub kind: AdtKind,
     pub fields: Vec<Option<ValueRef>>,
 }
 
-impl AdtValue {
-    pub fn replace_field(&mut self, field: FieldIndex, replace: impl FnOnce(ValueRef) -> ValueRef) {
-        let field = field as usize;
-        let value = self.fields[field]
-            .take()
-            .expect("Field value is taken out before.");
-        self.fields[field] = Some(replace(value));
-    }
-}
-
 #[derive(Clone, Debug)]
-pub(super) struct ArrayValue {
+pub(crate) struct ArrayValue {
     pub elements: Vec<ValueRef>,
 }
 
@@ -479,7 +416,7 @@ impl ArrayValue {
 }
 
 #[derive(Clone, Debug)]
-pub(super) enum RefValue {
+pub(crate) enum RefValue {
     /* NOTE:
      * Is it possible to omit Ref?
      * Immutable references can be directly represented as ValueRefs (with not recursive indirection).
@@ -503,35 +440,14 @@ pub(super) enum RefValue {
     Mut(Place),
 }
 
-impl RefValue {
-    pub fn try_get_mut_place(&self) -> Option<&Place> {
-        match self {
-            Self::Mut(place) => Some(place),
-            _ => None,
-        }
-    }
-}
-
 #[derive(Clone, Debug)]
-pub(super) enum SymValue {
+pub(crate) enum SymValue {
     Variable(SymbolicVar),
     Expression(Expr),
 }
 
-impl SymValue {
-    #[inline]
-    pub fn into_value(self) -> Value {
-        Value::Symbolic(self)
-    }
-
-    #[inline]
-    pub fn into_value_ref(self) -> SymValueRef {
-        SymValueGuard::new(ValueRef::new(self.into_value()))
-    }
-}
-
 #[derive(Clone, Copy, Debug)]
-pub(super) struct SymbolicVar {
+pub(crate) struct SymbolicVar {
     pub id: SymVarId,
     pub ty: SymbolicVarType,
 }
@@ -542,8 +458,10 @@ impl SymbolicVar {
     }
 }
 
+// FIXME: Remove this after adding support for floats
+#[allow(unused)]
 #[derive(Clone, Copy, Debug)]
-pub(super) enum SymbolicVarType {
+pub(crate) enum SymbolicVarType {
     Bool,
     Char,
     Int { size: u64, is_signed: bool },
@@ -567,17 +485,32 @@ impl From<&operand::Symbolic> for SymbolicVarType {
     }
 }
 
+define_reversible_pair!(
+    #[derive(Clone, Debug)]
+    BinaryOperands<F, S> {
+        (Orig, Rev) {
+            first: F,
+            second: S,
+        }
+    },
+    #[allow(dead_code)]
+    impl
+);
+
+type SymBinaryOperands = BinaryOperands<SymValueRef, ValueRef>;
+
+// FIXME: Remove this after adding support for more variants
+#[allow(unused)]
 #[derive(Clone, Debug)]
-pub(super) enum Expr {
+pub(crate) enum Expr {
     Unary {
         operator: UnaryOp,
         operand: SymValueRef,
     },
+
     Binary {
         operator: BinaryOp,
-        first: SymValueRef,
-        second: ValueRef,
-        is_flipped: bool,
+        operands: SymBinaryOperands,
     },
 
     Cast {
@@ -586,50 +519,197 @@ pub(super) enum Expr {
     },
 
     AddrOf(/* TODO */),
-    Deref(SymValueRef),
 
-    Index {
-        on: ValueRef,
+    Len {
+        of: SymValueRef,
+    },
+
+    Projection(ProjExpr),
+}
+
+// FIXME: Remove this suspension after adding support for symbolic projection.
+#[allow(unused)]
+#[derive(Clone, Debug)]
+pub(crate) enum ProjExpr {
+    SymIndex {
+        host: ConcreteValueRef,
         index: SymValueRef,
         from_end: bool,
     },
-    Slice {
-        of: ValueRef,
-        from: ValueRef,
-        to: ValueRef,
-        from_end: bool,
+    SymHost {
+        host: SymValueRef,
+        kind: ProjKind,
     },
 }
 
-impl Expr {
-    #[inline]
-    pub fn into_sym_value(self) -> SymValue {
-        SymValue::Expression(self)
-    }
-
-    #[inline]
-    pub fn into_value_ref(self) -> SymValueRef {
-        self.into_sym_value().into_value_ref()
-    }
-}
-
+// FIXME: Remove this suspension after adding support for symbolic projection.
+#[allow(unused)]
 #[derive(Clone, Debug)]
-pub(super) struct SymValueGuard(pub ValueRef);
-
-impl SymValueGuard {
-    pub fn new(value: ValueRef) -> Self {
-        assert!(value.is_symbolic(), "Value should be symbolic.");
-        Self(value)
-    }
+pub(crate) enum ProjKind {
+    Deref,
+    Field(FieldIndex),
+    Index { index: ValueRef, from_end: bool },
+    Subslice { from: u64, to: u64, from_end: bool },
+    Downcast,
 }
 
-impl Deref for SymValueGuard {
-    type Target = SymValue;
+macro_rules! define_value_guard {
+    ($guarded_type:ty, $name: ident, $pattern:pat, $value_name:ident) => {
+        #[derive(Clone, Debug)]
+        pub(crate) struct $name<V>(pub V);
 
-    fn deref(&self) -> &Self::Target {
-        match &*self.0 {
-            Value::Symbolic(value) => value,
-            _ => unreachable!(),
+        impl<V> $name<V>
+        where
+            V: AsRef<Value>,
+        {
+            pub fn new(value: V) -> Self {
+                #![allow(unused_variables)]
+                assert_matches!(
+                    value.as_ref(),
+                    $pattern,
+                    concat!("Value should be", stringify!($guarded_type), ".")
+                );
+                Self(value)
+            }
+        }
+
+        impl<V> Deref for $name<V>
+        where
+            V: AsRef<Value>,
+        {
+            type Target = $guarded_type;
+
+            fn deref(&self) -> &Self::Target {
+                match self.0.as_ref() {
+                    $pattern => $value_name,
+                    _ => unreachable!(),
+                }
+            }
+        }
+
+        impl<V> AsRef<$guarded_type> for $name<V>
+        where
+            Self: Deref<Target = $guarded_type>,
+        {
+            fn as_ref(&self) -> &$guarded_type {
+                self
+            }
+        }
+
+        impl From<$name<ValueRef>> for ValueRef {
+            fn from(value: $name<ValueRef>) -> Self {
+                value.0
+            }
+        }
+
+        impl<'a> $name<&'a mut ValueRef> {
+            pub fn make_mut(self) -> &'a mut $guarded_type {
+                match ValueRef::make_mut(self.0) {
+                    $pattern => $value_name,
+                    _ => unreachable!(),
+                }
+            }
+        }
+    };
+}
+
+define_value_guard!(
+    ConcreteValue,
+    ConcreteValueGuard,
+    Value::Concrete(value),
+    value
+);
+define_value_guard!(SymValue, SymValueGuard, Value::Symbolic(value), value);
+
+define_reversible_pair!(
+    SymIndexPair {
+        (SymHost, SymIndex) {
+            host: SymValueRef,
+            index: ValueRef,
+        }
+    },
+    #[allow(dead_code)]
+    impl
+);
+
+mod convert {
+    use super::*;
+
+    impl Value {
+        #[inline]
+        pub(crate) fn to_value_ref(self) -> ValueRef {
+            ValueRef::new(self)
+        }
+    }
+
+    impl From<ConcreteValue> for Value {
+        fn from(val: ConcreteValue) -> Self {
+            Value::Concrete(val)
+        }
+    }
+
+    impl ConstValue {
+        #[inline]
+        pub(crate) fn to_value_ref(self) -> ValueRef {
+            Into::<Value>::into(self).to_value_ref()
+        }
+    }
+    impl From<ConstValue> for ConcreteValue {
+        fn from(val: ConstValue) -> Self {
+            ConcreteValue::Const(val)
+        }
+    }
+    impl From<ConstValue> for Value {
+        fn from(val: ConstValue) -> Self {
+            Into::<ConcreteValue>::into(val).into()
+        }
+    }
+
+    impl SymValue {
+        #[inline]
+        pub fn to_value_ref(self) -> SymValueRef {
+            SymValueGuard::new(ValueRef::new(self.into()))
+        }
+    }
+    impl From<SymValue> for Value {
+        fn from(value: SymValue) -> Self {
+            Value::Symbolic(value)
+        }
+    }
+
+    impl Expr {
+        #[inline]
+        pub fn to_value_ref(self) -> SymValueRef {
+            Into::<SymValue>::into(self).to_value_ref()
+        }
+    }
+    impl From<Expr> for SymValue {
+        fn from(val: Expr) -> Self {
+            SymValue::Expression(val)
+        }
+    }
+    impl From<Expr> for Value {
+        fn from(val: Expr) -> Self {
+            Into::<SymValue>::into(val).into()
+        }
+    }
+
+    impl ProjExpr {
+        #[inline]
+        pub fn to_value_ref(self) -> SymValueRef {
+            Into::<SymValue>::into(self).to_value_ref()
+        }
+    }
+    impl From<ProjExpr> for Expr {
+        #[inline]
+        fn from(val: ProjExpr) -> Self {
+            Expr::Projection(val)
+        }
+    }
+    impl From<ProjExpr> for SymValue {
+        #[inline]
+        fn from(val: ProjExpr) -> Self {
+            Into::<Expr>::into(val).into()
         }
     }
 }
