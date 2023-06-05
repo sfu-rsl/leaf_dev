@@ -189,7 +189,11 @@ mod adapters {
         }
     }
 
-    // This struct is an optimization step that simplifies constant expressions
+    /// This expression builder is an optimization step that skips generating expressions
+    /// when the answer is deterministic based on arithmetics and logics
+    ///
+    /// For example, when generating an expression for `x * 1`, `mul(x, 1)` will be called,
+    /// and ConstSimplifier will return only `x`, not `Expr::Binary { ... }`.
     #[derive(Default, Clone, Deref, DerefMut)]
     pub(crate) struct ConstSimplifier(simp::ConstSimplifier<SymValueRef, ValueRef>);
 
@@ -220,8 +224,9 @@ mod adapters {
 mod core {
     use super::*;
 
-    // This struct is the base expression builder. It implements the lowest level for
-    // all the binary and unary functions and actually generates expressions.
+    /// This is the base expression builder. It implements the lowest level for
+    /// all the binary and unary functions. At this point all optimizations are
+    /// considered to be done, so now actual symbolic expressions can be built
     #[derive(Default, Clone)]
     pub(crate) struct CoreBuilder;
 
@@ -394,11 +399,11 @@ mod simp {
     use std::marker::PhantomData;
 
     #[derive(Clone)]
-    pub(crate) struct ConstSimplifier<R, E> {
-        _phantom: PhantomData<(R, E)>,
+    pub(crate) struct ConstSimplifier<Other, Expr> {
+        _phantom: PhantomData<(Other, Expr)>,
     }
 
-    impl<R, E> Default for ConstSimplifier<R, E> {
+    impl<Other, Expr> Default for ConstSimplifier<Other, Expr> {
         fn default() -> Self {
             Self {
                 _phantom: PhantomData,
@@ -409,7 +414,7 @@ mod simp {
     type WithConstOperand<'a, T> = BinaryOperands<T, &'a ConstValue>;
 
     impl<'a, T> WithConstOperand<'a, T> {
-        // konst is used in place of the word const, since it's a keyword :)
+        /// `konst` is used in place of the word const, since it's a keyword :)
         #[inline]
         fn konst(&self) -> &ConstValue {
             self.as_flat().1
