@@ -17,8 +17,22 @@ macro_rules! impl_binary_expr_method {
             to self.binary {
                 fn $method<'a>(
                     &mut self,
-                    operands: <Self as BinaryExprBuilder>::ExprRefPair<'a>,
-                ) -> <Self as BinaryExprBuilder>::Expr<'a>;
+                    operands: Self::ExprRefPair<'a>,
+                ) -> Self::Expr<'a>;
+            }
+        }
+    };
+}
+
+macro_rules! impl_unary_expr_method {
+    ($method: ident $(, $arg: ident : $arg_type: ty)*) => {
+        delegate! {
+            to self.unary {
+                fn $method<'a>(
+                    &mut self,
+                    operand: Self::ExprRef<'a>,
+                    $($arg: $arg_type),*
+                ) -> Self::Expr<'a>;
             }
         }
     };
@@ -53,32 +67,14 @@ where
     type ExprRef<'a> = U::ExprRef<'a>;
     type Expr<'a> = U::Expr<'a>;
 
-    delegate! {
-        to self.unary {
-            fn unary_op<'a>(&mut self, operand: Self::ExprRef<'a>, op: UnaryOp) -> Self::Expr<'a>;
+    impl_unary_expr_method!(unary_op, op: UnaryOp);
 
-            fn not<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a>;
+    impl_unary_expr_method!(not);
+    impl_unary_expr_method!(neg);
+    impl_unary_expr_method!(address_of);
+    impl_unary_expr_method!(len);
+    impl_unary_expr_method!(cast_to_char);
 
-            fn neg<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a>;
-
-            fn address_of<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a>;
-
-            fn len<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a>;
-
-            fn cast_to_char<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a>;
-
-            fn cast_to_int<'a>(
-                &mut self,
-                operand: Self::ExprRef<'a>,
-                to_bits: u64,
-                to_signed: bool,
-            ) -> Self::Expr<'a>;
-
-            fn cast_to_float<'a>(
-                &mut self,
-                operand: Self::ExprRef<'a>,
-                to_bits: u64,
-            ) -> Self::Expr<'a>;
-        }
-    }
+    impl_unary_expr_method!(cast_to_int, to_bits: u64, to_signed: bool);
+    impl_unary_expr_method!(cast_to_float, to_bits: u64);
 }
