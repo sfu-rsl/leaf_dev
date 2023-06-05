@@ -189,6 +189,7 @@ mod adapters {
         }
     }
 
+    // This struct is an optimization step that simplifies constant expressions
     #[derive(Default, Clone, Deref, DerefMut)]
     pub(crate) struct ConstSimplifier(simp::ConstSimplifier<SymValueRef, ValueRef>);
 
@@ -219,6 +220,8 @@ mod adapters {
 mod core {
     use super::*;
 
+    // This struct is the base expression builder. It implements the lowest level for
+    // all the binary and unary functions and actually generates expressions.
     #[derive(Default, Clone)]
     pub(crate) struct CoreBuilder;
 
@@ -406,6 +409,7 @@ mod simp {
     type WithConstOperand<'a, T> = BinaryOperands<T, &'a ConstValue>;
 
     impl<'a, T> WithConstOperand<'a, T> {
+        // konst is used in place of the word const, since it's a keyword :)
         #[inline]
         fn konst(&self) -> &ConstValue {
             self.as_flat().1

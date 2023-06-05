@@ -4,9 +4,12 @@ use super::*;
 
 /// A builder that first tries to build an expression using the current builder,
 /// and if it fails (does not support building it), it tries to build it using
-/// the parent builder.
+/// the next builder.
+///
 /// The current builder should return a `Result` that either is the built
 /// expression (as `Ok`) or the expressions passed to it (as `Err`).
+///
+/// This struct is useful for overriding certain functions with optimizations, for example.
 pub(crate) struct ChainedExprBuilder<Current, Next, Expr, CurrentExpr: Into<Expr> = Expr> {
     pub(crate) current: Current,
     pub(crate) next: Next,

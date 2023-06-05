@@ -4,6 +4,7 @@ use crate::abs::{BinaryOp, UnaryOp};
 
 use super::*;
 
+// This is the main expression builder, which is simply an interface for the binary & unary expression builders.
 #[derive(Default)]
 pub(crate) struct CompositeExprBuilder<B: BinaryExprBuilder, U: UnaryExprBuilder> {
     pub(crate) binary: B,
