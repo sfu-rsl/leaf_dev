@@ -1,6 +1,6 @@
 /// This module provides some traits to make it easier to implement expression builders for wrappers
-/// that work as adapters. Most of the adapters provide covariance and contravariance over the input
-/// and output types of the wrapped expression builder.
+/// that work as adapters. Most of the adapters provide non-trivial covariance and contravariance
+/// over the input and output types of the wrapped expression builder.
 use super::{macros::*, BinaryExprBuilder, UnaryExprBuilder};
 use crate::abs::{BinaryOp, UnaryOp};
 use std::ops::DerefMut;
@@ -19,6 +19,10 @@ where
     type TargetExprRefPair<'a> = <Self::Target as BEB>::ExprRefPair<'a>;
     type TargetExpr<'a> = <Self::Target as BEB>::Expr<'a>;
 
+    /// Takes the input from the type of the adapted operands, passes it to the wrapped builder,
+    /// then converts and returns the output to the type of the adapted expression.
+    /// [`build`] is the method in the wrapped builder that corresponds to the one called currently
+    /// on this builder.
     fn adapt<'t, F>(operands: Self::TargetExprRefPair<'t>, build: F) -> Self::TargetExpr<'t>
     where
         F: for<'s> FnH<<Self::Target as BEB>::ExprRefPair<'s>, <Self::Target as BEB>::Expr<'s>>;
@@ -56,6 +60,10 @@ where
     type TargetExprRef<'a> = <Self::Target as UEB>::ExprRef<'a>;
     type TargetExpr<'a> = <Self::Target as UEB>::Expr<'a>;
 
+    /// Takes the input from the type of the adapted operand, passes it to the wrapped builder,
+    /// then converts and returns the output to the type of the adapted expression.
+    /// [`build`] is the method in the wrapped builder that corresponds to the one called currently
+    /// on this builder.
     fn adapt<'t, F>(operand: Self::TargetExprRef<'t>, build: F) -> Self::TargetExpr<'t>
     where
         F: for<'s> FnH<<Self::Target as UEB>::ExprRef<'s>, <Self::Target as UEB>::Expr<'s>>;
