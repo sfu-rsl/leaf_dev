@@ -506,6 +506,7 @@ mod simp {
          */
 
         fn add<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            // x + 0 = 0 + x = x
             if operands.konst().is_zero() {
                 Ok(operands.other_into())
             } else {
@@ -514,6 +515,7 @@ mod simp {
         }
 
         fn sub<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            // x - 0 = x
             if operands.is_second_zero() {
                 Ok(operands.other_into())
             } else {
@@ -522,6 +524,7 @@ mod simp {
         }
 
         fn mul<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            // x * 0 = 0 * x = 0
             if operands.konst().is_zero() {
                 Ok(operands.konst().into())
             } else if operands.konst().is_one() {
@@ -532,9 +535,12 @@ mod simp {
         }
 
         fn div<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            // 0 / x = 0
             if operands.is_first_zero() {
                 Ok(operands.konst_into())
-            } else if operands.is_second_one() {
+            } else
+            // x / 1 = x
+            if operands.is_second_one() {
                 Ok(operands.other_into())
             } else {
                 Err(operands)
@@ -542,9 +548,12 @@ mod simp {
         }
 
         fn rem<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            // 0 % x = 0
             if operands.is_first_zero() {
                 Ok(operands.konst_into())
-            } else if operands.is_second_one() {
+            } else
+            // x % 1 = 0
+            if operands.is_second_one() {
                 Ok((&match operands.konst() {
                     ConstValue::Int {
                         size, is_signed, ..
@@ -563,6 +572,7 @@ mod simp {
         }
 
         fn xor<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            // x ^ 0 = 0 ^ x = x
             if operands.konst().is_zero() {
                 Ok(operands.other_into())
             } else {
@@ -571,6 +581,7 @@ mod simp {
         }
 
         fn and<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            // x & 0 = 0 & x = 0
             if operands.konst().is_zero() {
                 Ok(operands.konst_into())
             // TODO: All ones case
@@ -580,6 +591,7 @@ mod simp {
         }
 
         fn or<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            // x | 0 = 0 | x = x
             if operands.konst().is_zero() {
                 Ok(operands.other_into())
             // TODO: All ones case
@@ -590,16 +602,20 @@ mod simp {
 
         fn shl<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
             match operands {
+                // x << 0 = x
                 BinaryOperands::Orig { first, second } if second.is_zero() => Ok(first.into()),
-                BinaryOperands::Rev { first, second } if first.is_zero() => Ok(second.into()),
+                // 0 << x = 0
+                BinaryOperands::Rev { first, .. } if first.is_zero() => Ok(first.into()),
                 _ => Err(operands),
             }
         }
 
         fn shr<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
             match operands {
+                // x >> 0 = x
                 BinaryOperands::Orig { first, second } if second.is_zero() => Ok(first.into()),
-                BinaryOperands::Rev { first, second } if first.is_zero() => Ok(second.into()),
+                // 0 >> x = 0
+                BinaryOperands::Rev { first, .. } if first.is_zero() => Ok(first.into()),
                 _ => Err(operands),
             }
         }
@@ -609,6 +625,7 @@ mod simp {
         }
 
         fn lt<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            // For unsigned integers, nothing is less than zero.
             if operands.is_second_unsigned_zero() {
                 Ok((&ConstValue::Bool(false)).into())
             } else {
@@ -617,6 +634,7 @@ mod simp {
         }
 
         fn le<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            // For unsigned integers, zero is less than or equal to everything.
             if operands.is_first_unsigned_zero() {
                 Ok((&ConstValue::Bool(true)).into())
             } else {
@@ -629,6 +647,7 @@ mod simp {
         }
 
         fn ge<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            // For unsigned integers, everything is greater than or equal to zero.
             if operands.is_second_unsigned_zero() {
                 Ok((&ConstValue::Bool(true)).into())
             } else {
@@ -637,6 +656,7 @@ mod simp {
         }
 
         fn gt<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            // For unsigned integers, zero is not greater than anything.
             if operands.is_first_unsigned_zero() {
                 Ok((&ConstValue::Bool(false)).into())
             } else {
