@@ -643,6 +643,7 @@ mod convert {
     }
 
     impl From<ConcreteValue> for Value {
+        #[inline]
         fn from(val: ConcreteValue) -> Self {
             Value::Concrete(val)
         }
@@ -655,11 +656,13 @@ mod convert {
         }
     }
     impl From<ConstValue> for ConcreteValue {
+        #[inline]
         fn from(val: ConstValue) -> Self {
             ConcreteValue::Const(val)
         }
     }
     impl From<ConstValue> for Value {
+        #[inline]
         fn from(val: ConstValue) -> Self {
             Into::<ConcreteValue>::into(val).into()
         }
@@ -672,6 +675,7 @@ mod convert {
         }
     }
     impl From<SymValue> for Value {
+        #[inline]
         fn from(value: SymValue) -> Self {
             Value::Symbolic(value)
         }
@@ -684,11 +688,13 @@ mod convert {
         }
     }
     impl From<Expr> for SymValue {
+        #[inline]
         fn from(val: Expr) -> Self {
             SymValue::Expression(val)
         }
     }
     impl From<Expr> for Value {
+        #[inline]
         fn from(val: Expr) -> Self {
             Into::<SymValue>::into(val).into()
         }
