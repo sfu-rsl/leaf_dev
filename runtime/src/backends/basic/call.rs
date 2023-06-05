@@ -1,16 +1,16 @@
 use crate::abs::Local;
 
 use super::{
-    get_operand_value, operand::Operand, place::Place, CallStackManager, ValueRef, VariableState,
+    get_operand_value, operand::Operand, place::Place, CallStackManager, ValueRef, VariablesState,
 };
 
-pub(super) struct BasicCallStackManager<VS: VariableState> {
+pub(super) struct BasicCallStackManager<VS: VariablesState> {
     stack: Vec<CallStackFrame<VS>>,
     vars_state_factory: Box<dyn Fn() -> VS>,
     call_info: CallInfo,
 }
 
-pub(super) struct CallStackFrame<VS: VariableState> {
+pub(super) struct CallStackFrame<VS: VariablesState> {
     vars_state: VS,
 }
 
@@ -20,7 +20,7 @@ pub(super) struct CallInfo {
     is_external: bool,
 }
 
-impl<VS: VariableState> BasicCallStackManager<VS> {
+impl<VS: VariablesState> BasicCallStackManager<VS> {
     pub(super) fn new(vars_state_factory: Box<dyn Fn() -> VS>) -> Self {
         Self {
             stack: vec![],
@@ -34,7 +34,7 @@ impl<VS: VariableState> BasicCallStackManager<VS> {
     }
 }
 
-impl<VS: VariableState> CallStackManager for BasicCallStackManager<VS> {
+impl<VS: VariablesState> CallStackManager for BasicCallStackManager<VS> {
     fn update_args(&mut self, args: Vec<Operand>) {
         self.call_info.passed_args = args;
     }
@@ -68,7 +68,7 @@ impl<VS: VariableState> CallStackManager for BasicCallStackManager<VS> {
         (returned_val, is_external)
     }
 
-    fn top(&mut self) -> &mut dyn VariableState {
+    fn top(&mut self) -> &mut dyn VariablesState {
         &mut self
             .stack
             .last_mut()

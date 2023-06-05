@@ -123,14 +123,14 @@ impl BasicBackend {}
 
 pub(crate) struct BasicAssignmentHandler<'s, EB: OperationalExprBuilder> {
     dest: Place,
-    vars_state: &'s mut dyn VariableState,
+    vars_state: &'s mut dyn VariablesState,
     expr_builder: Rc<RefCell<EB>>,
 }
 
 impl<'s, EB: OperationalExprBuilder> BasicAssignmentHandler<'s, EB> {
     fn new(
         dest: Place,
-        vars_state: &'s mut dyn VariableState,
+        vars_state: &'s mut dyn VariablesState,
         expr_builder: Rc<RefCell<EB>>,
     ) -> Self {
         Self {
@@ -285,7 +285,7 @@ impl<EB: OperationalExprBuilder> BasicAssignmentHandler<'_, EB> {
 }
 
 pub(crate) struct BasicBranchingHandler<'a, EB: BinaryExprBuilder> {
-    vars_state: &'a mut dyn VariableState,
+    vars_state: &'a mut dyn VariablesState,
     trace_manager: &'a mut TraceManager,
     current_constraints: &'a mut Vec<Constraint>,
     expr_builder: Rc<RefCell<EB>>,
@@ -537,7 +537,7 @@ type ValueRef = expr::ValueRef;
 
 type Constraint = crate::abs::Constraint<ValueRef>;
 
-fn get_operand_value(vars_state: &mut dyn VariableState, operand: &Operand) -> ValueRef {
+fn get_operand_value(vars_state: &mut dyn VariablesState, operand: &Operand) -> ValueRef {
     match operand {
         // copy and move are the same, but only for now. see: https://github.com/rust-lang/unsafe-code-guidelines/issues/188
         Operand::Place(place, operand::PlaceUsage::Copy)
@@ -578,13 +578,20 @@ fn get_constant_value(constant: &operand::Constant) -> ConstValue {
     }
 }
 
-trait VariableState {
+trait VariablesState {
+    /// Returns a copy of the value stored at the given place. May not physically copy the value
+    /// but the returned value should be independently usable from the original value.
     fn copy_place(&self, place: &Place) -> ValueRef;
 
+    /// Returns the value stored at the given place. The place should not contain a value after
+    /// this operation.
     fn take_place(&mut self, place: &Place) -> ValueRef;
 
+    /// Tries to take the value of a place if available.
     fn try_take_place(&mut self, place: &Place) -> Option<ValueRef>;
 
+    /// Sets the value of a place. Overwrites the previous value if any, also defines a new local
+    /// variable if it does not exist.
     fn set_place(&mut self, place: &Place, value: ValueRef);
 }
 
@@ -597,5 +604,5 @@ trait CallStackManager {
 
     fn get_return_info(&mut self) -> (Option<ValueRef>, bool);
 
-    fn top(&mut self) -> &mut dyn VariableState;
+    fn top(&mut self) -> &mut dyn VariablesState;
 }

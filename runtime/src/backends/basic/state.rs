@@ -9,11 +9,13 @@ use super::{
         ConstValue, ProjExpr, RefValue, SymIndexPair, SymValueRef, Value,
     },
     place::{Place, Projection},
-    ValueRef, VariableState,
+    ValueRef, VariablesState,
 };
 
 pub(super) struct MutableVariablesState<P: SymbolicProjector> {
     locals: HashMap<Local, ValueRef>,
+    /// The projector that is used to handle projections of symbolic values or
+    /// symbolic projections (symbolic indices).
     sym_projector: Rc<RefCell<P>>,
 }
 
@@ -26,7 +28,7 @@ impl<P: SymbolicProjector> MutableVariablesState<P> {
     }
 }
 
-impl<P: SymbolicProjector> VariableState for MutableVariablesState<P> {
+impl<P: SymbolicProjector> VariablesState for MutableVariablesState<P> {
     fn copy_place(&self, place: &Place) -> ValueRef {
         self.get_place(place)
     }
