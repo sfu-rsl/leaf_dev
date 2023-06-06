@@ -51,11 +51,17 @@ macro_rules! try_on_current_then_next {
 
 macro_rules! impl_binary_expr_method {
     ($method:ident) => {
+        fn $method<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            try_on_current_then_next!(self, $method, operands)
+        }
+    };
+    ($method:ident $(, $arg: ident : $arg_type: ty)*) => {
         fn $method<'a>(
             &mut self,
-            operands: <Self as BinaryExprBuilder>::ExprRefPair<'a>,
-        ) -> <Self as BinaryExprBuilder>::Expr<'a> {
-            try_on_current_then_next!(self, $method, operands)
+            operands: Self::ExprRefPair<'a>,
+            $($arg: $arg_type),*
+        ) -> Self::Expr<'a> {
+            try_on_current_then_next!(self, $method, (operands, $($arg),*), |operands|)
         }
     };
 }
@@ -73,11 +79,33 @@ where
     type ExprRefPair<'a> = N::ExprRefPair<'a>;
     type Expr<'a> = E;
 
-    fn binary_op<'a>(&mut self, operands: Self::ExprRefPair<'a>, op: BinaryOp) -> Self::Expr<'a> {
-        try_on_current_then_next!(self, binary_op, (operands, op), |operands|)
+    fn binary_op<'a>(
+        &mut self,
+        operands: Self::ExprRefPair<'a>,
+        op: BinaryOp,
+        checked: bool,
+    ) -> Self::Expr<'a> {
+        try_on_current_then_next!(self, binary_op, (operands, op, checked), |operands|)
     }
 
-    for_all_binary_op!(impl_binary_expr_method);
+    impl_binary_expr_method!(add, checked: bool);
+    impl_binary_expr_method!(sub, checked: bool);
+    impl_binary_expr_method!(mul, checked: bool);
+
+    impl_binary_expr_method!(div);
+    impl_binary_expr_method!(rem);
+    impl_binary_expr_method!(and);
+    impl_binary_expr_method!(or);
+    impl_binary_expr_method!(xor);
+    impl_binary_expr_method!(shl);
+    impl_binary_expr_method!(shr);
+    impl_binary_expr_method!(eq);
+    impl_binary_expr_method!(ne);
+    impl_binary_expr_method!(lt);
+    impl_binary_expr_method!(le);
+    impl_binary_expr_method!(gt);
+    impl_binary_expr_method!(ge);
+    impl_binary_expr_method!(offset);
 }
 
 impl<C, N, E, EC> UnaryExprBuilder for ChainedExprBuilder<C, N, E, EC>

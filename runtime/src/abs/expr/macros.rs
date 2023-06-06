@@ -1,16 +1,10 @@
+// TODO: maybe reduce the number of macros
+
 macro_rules! repeat_macro_for {
     ($macro: ident; $($item: tt)*) => {
         $(
             $macro!($item);
         )*
-    };
-}
-
-macro_rules! for_all_binary_op {
-    ($macro: ident) => {
-        repeat_macro_for!(
-            $macro; add sub mul div rem and or xor shl shr eq ne lt le gt ge offset
-        );
     };
 }
 
@@ -20,63 +14,79 @@ macro_rules! impl_general_binary_op_through_singulars {
             &mut self,
             operands: Self::ExprRefPair<'a>,
             op: BinaryOp,
+            checked: bool,
         ) -> Self::Expr<'a> {
             use BinaryOp::*;
-            (match op {
-                Add => Self::add,
-                Sub => Self::sub,
-                Mul => Self::mul,
-                Div => Self::div,
-                Rem => Self::rem,
-                BitXor => Self::xor,
-                BitAnd => Self::and,
-                BitOr => Self::or,
-                Shl => Self::shl,
-                Shr => Self::shr,
-                Eq => Self::eq,
-                Lt => Self::lt,
-                Le => Self::le,
-                Ne => Self::ne,
-                Ge => Self::ge,
-                Gt => Self::gt,
-                Offset => Self::offset,
-            })(self, operands)
+            if checked {
+                let checked_binop = match op {
+                    Add => Self::add,
+                    Sub => Self::sub,
+                    Mul => Self::mul,
+                    _ => unreachable!(),
+                };
+                checked_binop(self, operands, checked)
+            } else {
+                let binop = match op {
+                    Div => Self::div,
+                    Rem => Self::rem,
+                    BitXor => Self::xor,
+                    BitAnd => Self::and,
+                    BitOr => Self::or,
+                    Shl => Self::shl,
+                    Shr => Self::shr,
+                    Eq => Self::eq,
+                    Lt => Self::lt,
+                    Le => Self::le,
+                    Ne => Self::ne,
+                    Ge => Self::ge,
+                    Gt => Self::gt,
+                    Offset => Self::offset,
+                    _ => unreachable!(),
+                };
+                binop(self, operands)
+            }
         }
     };
 }
 
 macro_rules! impl_general_binary_op_for_singular {
-    (($method:ident = $op:expr)) => {
+    ($method:ident = $op:expr) => {
         fn $method<'a>(
             &mut self,
             operands: <Self as BinaryExprBuilder>::ExprRefPair<'a>,
         ) -> <Self as BinaryExprBuilder>::Expr<'a> {
-            self.binary_op(operands, $op)
+            self.binary_op(operands, $op, false)
+        }
+    };
+    ($method:ident = $op:expr $(, $arg: ident : $arg_type: ty)*) => {
+        fn $method<'a>(
+            &mut self,
+            operands: <Self as BinaryExprBuilder>::ExprRefPair<'a>,
+            $($arg: $arg_type),*
+        ) -> <Self as BinaryExprBuilder>::Expr<'a> {
+            self.binary_op(operands, $op, $($arg),*)
         }
     };
 }
 macro_rules! impl_singular_binary_ops_through_general {
     () => {
-        repeat_macro_for!(
-            impl_general_binary_op_for_singular;
-            (add = BinaryOp::Add)
-            (sub = BinaryOp::Sub)
-            (mul = BinaryOp::Mul)
-            (div = BinaryOp::Div)
-            (rem = BinaryOp::Rem)
-            (xor = BinaryOp::BitXor)
-            (and = BinaryOp::BitAnd)
-            (or = BinaryOp::BitOr)
-            (shl = BinaryOp::Shl)
-            (shr = BinaryOp::Shr)
-            (eq = BinaryOp::Eq)
-            (lt = BinaryOp::Lt)
-            (le = BinaryOp::Le)
-            (ne = BinaryOp::Ne)
-            (ge = BinaryOp::Ge)
-            (gt = BinaryOp::Gt)
-            (offset = BinaryOp::Offset)
-        );
+        impl_general_binary_op_for_singular!(add = BinaryOp::Add, checked: bool);
+        impl_general_binary_op_for_singular!(sub = BinaryOp::Sub, checked: bool);
+        impl_general_binary_op_for_singular!(mul = BinaryOp::Mul, checked: bool);
+        impl_general_binary_op_for_singular!(div = BinaryOp::Div);
+        impl_general_binary_op_for_singular!(rem = BinaryOp::Rem);
+        impl_general_binary_op_for_singular!(xor = BinaryOp::BitXor);
+        impl_general_binary_op_for_singular!(and = BinaryOp::BitAnd);
+        impl_general_binary_op_for_singular!(or = BinaryOp::BitOr);
+        impl_general_binary_op_for_singular!(shl = BinaryOp::Shl);
+        impl_general_binary_op_for_singular!(shr = BinaryOp::Shr);
+        impl_general_binary_op_for_singular!(eq = BinaryOp::Eq);
+        impl_general_binary_op_for_singular!(lt = BinaryOp::Lt);
+        impl_general_binary_op_for_singular!(le = BinaryOp::Le);
+        impl_general_binary_op_for_singular!(ne = BinaryOp::Ne);
+        impl_general_binary_op_for_singular!(ge = BinaryOp::Ge);
+        impl_general_binary_op_for_singular!(gt = BinaryOp::Gt);
+        impl_general_binary_op_for_singular!(offset = BinaryOp::Offset);
     };
 }
 
@@ -112,8 +122,8 @@ macro_rules! impl_singular_unary_ops_through_general {
 
 #[allow(unused_imports)]
 pub(crate) use {
-    for_all_binary_op, impl_general_binary_op_for_singular,
-    impl_general_binary_op_through_singulars, impl_general_unary_op_through_singulars,
-    impl_singular_binary_ops_through_general, impl_singular_unary_op_through_general,
-    impl_singular_unary_ops_through_general, repeat_macro_for,
+    impl_general_binary_op_for_singular, impl_general_binary_op_through_singulars,
+    impl_general_unary_op_through_singulars, impl_singular_binary_ops_through_general,
+    impl_singular_unary_op_through_general, impl_singular_unary_ops_through_general,
+    repeat_macro_for,
 };

@@ -215,15 +215,15 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
         operator: crate::abs::BinaryOp,
         first: Self::Operand,
         second: Self::Operand,
-        _checked: bool,
+        checked: bool,
     ) {
         // TODO: Add support for checked operations.
 
         let first_value = self.get_operand_value(&first);
         let second_value = self.get_operand_value(&second);
-        let result_value = self
-            .expr_builder()
-            .binary_op((first_value, second_value).into(), operator);
+        let result_value =
+            self.expr_builder()
+                .binary_op((first_value, second_value).into(), operator, checked);
         self.set(result_value.into())
     }
 

@@ -5,13 +5,12 @@ pub(crate) mod proj;
 pub(crate) mod variance;
 
 use super::{BinaryOp, UnaryOp};
-use macros::{for_all_binary_op, repeat_macro_for};
+use macros::repeat_macro_for;
 
+// TODO: determine which functions are checked & which are not
 macro_rules! bin_fn_signature {
-    ($($name:ident),*) => {
-        $(
-            fn $name<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a>;
-        )*
+    ($method:ident $(, $arg: ident : $arg_type: ty)*) => {
+        fn $method<'a>(&mut self, operands: Self::ExprRefPair<'a>, $($arg: $arg_type),*) -> Self::Expr<'a>;
     };
 }
 
@@ -19,9 +18,31 @@ pub(crate) trait BinaryExprBuilder {
     type ExprRefPair<'a>;
     type Expr<'a>;
 
-    fn binary_op<'a>(&mut self, operands: Self::ExprRefPair<'a>, op: BinaryOp) -> Self::Expr<'a>;
+    fn binary_op<'a>(
+        &mut self,
+        operands: Self::ExprRefPair<'a>,
+        op: BinaryOp,
+        checked: bool,
+    ) -> Self::Expr<'a>;
 
-    for_all_binary_op!(bin_fn_signature);
+    bin_fn_signature!(add, checked: bool);
+    bin_fn_signature!(sub, checked: bool);
+    bin_fn_signature!(mul, checked: bool);
+
+    bin_fn_signature!(div);
+    bin_fn_signature!(rem);
+    bin_fn_signature!(and);
+    bin_fn_signature!(or);
+    bin_fn_signature!(xor);
+    bin_fn_signature!(shl);
+    bin_fn_signature!(shr);
+    bin_fn_signature!(eq);
+    bin_fn_signature!(ne);
+    bin_fn_signature!(lt);
+    bin_fn_signature!(le);
+    bin_fn_signature!(gt);
+    bin_fn_signature!(ge);
+    bin_fn_signature!(offset);
 }
 
 pub(crate) trait UnaryExprBuilder {

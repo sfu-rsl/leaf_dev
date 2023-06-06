@@ -28,6 +28,7 @@ where
         F: for<'s> FnH<<Self::Target as BEB>::ExprRefPair<'s>, <Self::Target as BEB>::Expr<'s>>;
 }
 
+// TODO: remove delegate from the name since wer don't delegate?
 macro_rules! delegate_singular_binary_op {
     ($method: ident $(, $arg: ident : $arg_type: ty)*) => {
         fn $method<'a>(
@@ -48,8 +49,27 @@ where
     type ExprRefPair<'a> = T::TargetExprRefPair<'a>;
     type Expr<'a> = T::TargetExpr<'a>;
 
-    delegate_singular_binary_op!(binary_op, op: BinaryOp);
-    for_all_binary_op!(delegate_singular_binary_op);
+    delegate_singular_binary_op!(binary_op, op: BinaryOp, checked: bool);
+
+    // note: this interface is more clear
+    delegate_singular_binary_op!(add, checked: bool);
+    delegate_singular_binary_op!(sub, checked: bool);
+    delegate_singular_binary_op!(mul, checked: bool);
+
+    delegate_singular_binary_op!(div);
+    delegate_singular_binary_op!(rem);
+    delegate_singular_binary_op!(and);
+    delegate_singular_binary_op!(or);
+    delegate_singular_binary_op!(xor);
+    delegate_singular_binary_op!(shl);
+    delegate_singular_binary_op!(shr);
+    delegate_singular_binary_op!(eq);
+    delegate_singular_binary_op!(ne);
+    delegate_singular_binary_op!(lt);
+    delegate_singular_binary_op!(le);
+    delegate_singular_binary_op!(gt);
+    delegate_singular_binary_op!(ge);
+    delegate_singular_binary_op!(offset);
 }
 
 pub(crate) trait UnaryExprBuilderAdapter: DerefMut

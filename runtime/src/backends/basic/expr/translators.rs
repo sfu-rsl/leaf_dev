@@ -149,7 +149,15 @@ pub(crate) mod z3 {
                     let operand = self.translate_symbolic(operand);
                     self.translate_unary_expr(operator, operand)
                 }
-                Expr::Binary { operator, operands } => {
+                Expr::Binary {
+                    operator,
+                    operands,
+                    checked,
+                } => {
+                    if *checked {
+                        todo!("implement this")
+                    }
+
                     let (left, right) = match operands {
                         SymBinaryOperands::Orig { first, second } => {
                             (self.translate_symbolic(first), self.translate_value(second))

@@ -43,7 +43,7 @@ impl ConcreteValue {
     }
 }
 
-// FIXME: Remove this after adding support for floats.
+// FIXME: Remove this error suppression after adding support for floats.
 #[allow(unused)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ConstValue {
@@ -111,7 +111,12 @@ impl ConstValue {
         }
     }
 
-    pub fn binary_op(first: &Self, second: &Self, operator: BinaryOp) -> ConstValue {
+    pub fn binary_op(
+        first: &Self,
+        second: &Self,
+        operator: BinaryOp,
+        checked: bool,
+    ) -> ConcreteValue {
         match operator {
             BinaryOp::Add
             | BinaryOp::Sub
@@ -120,15 +125,34 @@ impl ConstValue {
             | BinaryOp::Rem
             | BinaryOp::BitXor
             | BinaryOp::BitAnd
-            | BinaryOp::BitOr => Self::binary_op_ar(first, second, operator),
-            BinaryOp::Shl | BinaryOp::Shr => Self::binary_op_shift(first, second, operator),
+            | BinaryOp::BitOr => {
+                if checked {
+                    ConcreteValue::Const(Self::binary_op_arithmetic(first, second, operator))
+                } else {
+                    ConcreteValue::Adt(Self::binary_op_checked_arithmetic(first, second, operator))
+                }
+            }
+            BinaryOp::Shl | BinaryOp::Shr => {
+                if checked {
+                    unreachable!("unsupported by rust");
+                } else {
+                    ConcreteValue::Const(Self::binary_op_shift(first, second, operator))
+                }
+            }
             BinaryOp::Eq
             | BinaryOp::Lt
             | BinaryOp::Le
             | BinaryOp::Ne
             | BinaryOp::Ge
-            | BinaryOp::Gt => ConstValue::Bool(Self::binary_op_cmp(first, second, operator)),
-
+            | BinaryOp::Gt => {
+                if checked {
+                    unreachable!("unsupported by rust");
+                } else {
+                    ConcreteValue::Const(ConstValue::Bool(Self::binary_op_cmp(
+                        first, second, operator,
+                    )))
+                }
+            }
             _ => unimplemented!("{:?} {:?} {:?}", first, second, operator),
         }
     }
@@ -162,7 +186,7 @@ impl ConstValue {
         }
     }
 
-    fn binary_op_ar(first: &Self, second: &Self, operator: BinaryOp) -> Self {
+    fn binary_op_arithmetic(first: &Self, second: &Self, operator: BinaryOp) -> Self {
         match (first, second) {
             (
                 Self::Int {
@@ -210,6 +234,55 @@ impl ConstValue {
             }
 
             _ => unreachable!(),
+        }
+    }
+
+    fn binary_op_checked_arithmetic(first: &Self, second: &Self, operator: BinaryOp) -> AdtValue {
+        // the rust docs claims that the following are unreachable:
+        // https://doc.rust-lang.org/beta/nightly-rustc/rustc_middle/mir/syntax/enum.Rvalue.html#variant.CheckedBinaryOp
+        match (first, second) {
+            (
+                Self::Int {
+                    bit_rep: first,
+                    size: first_size,
+                    is_signed: first_signed,
+                },
+                Self::Int {
+                    bit_rep: second,
+                    size: second_size,
+                    ..
+                },
+            ) => {
+                assert_eq!(*first_size, *second_size);
+
+                let result = match operator {
+                    BinaryOp::Add => first.checked_add(*second),
+                    BinaryOp::Sub => first.checked_sub(*second),
+                    BinaryOp::Mul => first.checked_mul(*second),
+                    _ => unreachable!("unsupported by rust"),
+                };
+
+                let fields = match result {
+                    Some(result) => vec![
+                        Some(ValueRef::new(
+                            Self::Int {
+                                bit_rep: result,
+                                size: *first_size,
+                                is_signed: *first_signed,
+                            }
+                            .into(),
+                        )),
+                        Some(ValueRef::new(Self::Bool(true).into())),
+                    ],
+                    None => vec![None, Some(ValueRef::new(Self::Bool(false).into()))],
+                };
+
+                AdtValue {
+                    kind: AdtKind::Struct,
+                    fields,
+                }
+            }
+            _ => unreachable!("only integers are supported by rust"),
         }
     }
 
@@ -383,7 +456,7 @@ impl From<char> for ConstValue {
     }
 }
 
-// FIXME: Remove this after adding support for more variants
+// FIXME: Remove this error suppression after adding support for more variants
 #[allow(unused)]
 #[derive(Clone, Debug)]
 pub(crate) enum AdtKind {
@@ -458,7 +531,7 @@ impl SymbolicVar {
     }
 }
 
-// FIXME: Remove this after adding support for floats
+// FIXME: Remove this error suppression after adding support for floats
 #[allow(unused)]
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum SymbolicVarType {
@@ -499,7 +572,7 @@ define_reversible_pair!(
 
 type SymBinaryOperands = BinaryOperands<SymValueRef, ValueRef>;
 
-// FIXME: Remove this after adding support for more variants
+// FIXME: Remove this error suppression after adding support for more variants
 #[allow(unused)]
 #[derive(Clone, Debug)]
 pub(crate) enum Expr {
@@ -511,6 +584,7 @@ pub(crate) enum Expr {
     Binary {
         operator: BinaryOp,
         operands: SymBinaryOperands,
+        checked: bool,
     },
 
     Cast {
@@ -527,7 +601,7 @@ pub(crate) enum Expr {
     Projection(ProjExpr),
 }
 
-// FIXME: Remove this suspension after adding support for symbolic projection.
+// FIXME: Remove this error suppression after adding support for symbolic projection.
 #[allow(unused)]
 #[derive(Clone, Debug)]
 pub(crate) enum ProjExpr {
@@ -542,7 +616,7 @@ pub(crate) enum ProjExpr {
     },
 }
 
-// FIXME: Remove this suspension after adding support for symbolic projection.
+// FIXME: Remove this error suppression after adding support for symbolic projection.
 #[allow(unused)]
 #[derive(Clone, Debug)]
 pub(crate) enum ProjKind {
