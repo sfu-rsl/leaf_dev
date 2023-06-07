@@ -49,8 +49,6 @@ mod toplevel {
             op: BinaryOp,
             checked: bool,
         ) -> Self::Expr<'a> {
-            // TODO: Add support for checked operations. (soon^tm)
-
             if first.is_symbolic() {
                 self.sym_builder.binary_op(
                     BinaryOperands::Orig {

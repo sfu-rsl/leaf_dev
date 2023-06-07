@@ -13,8 +13,8 @@ pub(crate) mod z3 {
     use crate::{
         abs::{BinaryOp, UnaryOp},
         backends::basic::expr::{
-            ConcreteValue, ConstValue, Expr, SymBinaryOperands, SymValue, SymVarId, SymbolicVar,
-            SymbolicVarType, Value, ValueRef,
+            ConcreteValue, ConstValue, Expr, ProjExpr, ProjKind, SymBinaryOperands, SymValue,
+            SymVarId, SymbolicVar, SymbolicVarType, Value, ValueRef,
         },
     };
 
@@ -152,12 +152,8 @@ pub(crate) mod z3 {
                 Expr::Binary {
                     operator,
                     operands,
-                    checked,
+                    checked: _, // only projections care about if a binary operation is checked or not
                 } => {
-                    if *checked {
-                        todo!("implement this")
-                    }
-
                     let (left, right) = match operands {
                         SymBinaryOperands::Orig { first, second } => {
                             (self.translate_symbolic(first), self.translate_value(second))
@@ -174,7 +170,52 @@ pub(crate) mod z3 {
                 }
                 Expr::AddrOf() => todo!(),
                 Expr::Len { .. } => todo!(),
-                Expr::Projection(_) => todo!(),
+                // TODO: make this it's own function
+                Expr::Projection(proj_expr) => match proj_expr {
+                    ProjExpr::SymIndex {
+                        host: _,
+                        index: _,
+                        from_end: _,
+                    } => {
+                        todo!("implement symbolic projections for indexing")
+                    }
+                    ProjExpr::SymHost { host, kind } => {
+                        match kind {
+                            ProjKind::Deref => todo!(),
+                            ProjKind::Field(field_index) => {
+                                // todo: field things...
+                                let checked =
+                                    if let SymValue::Expression(Expr::Binary { checked, .. }) =
+                                        host.as_ref()
+                                    {
+                                        *checked
+                                    } else {
+                                        false
+                                    };
+
+                                if checked {
+                                    if *field_index == 0 {
+                                        // If we see a `.0` field projection on a symbolic expression that is a checked
+                                        // binary operation, we can safely ignore the projection and treat the expression
+                                        // as normal, since checked binary operations return the tuple `(binop(x, y), did_overflow)`
+                                        self.translate_symbolic(host.as_ref())
+                                    } else if *field_index == 1 {
+                                        todo!("this is probably unreachable, please prove it")
+                                    } else {
+                                        unreachable!(
+                                            "invalid field index. A checked binop returns a len 2 tuple"
+                                        )
+                                    }
+                                } else {
+                                    todo!("implement non-checked operation field access")
+                                }
+                            }
+                            ProjKind::Index { index: _, from_end: _ } => todo!(),
+                            ProjKind::Subslice { from: _, to: _, from_end: _ } => todo!(),
+                            ProjKind::Downcast => todo!(),
+                        }
+                    }
+                },
             }
         }
 

@@ -217,8 +217,6 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
         second: Self::Operand,
         checked: bool,
     ) {
-        // TODO: Add support for checked operations.
-
         let first_value = self.get_operand_value(&first);
         let second_value = self.get_operand_value(&second);
         let result_value =
