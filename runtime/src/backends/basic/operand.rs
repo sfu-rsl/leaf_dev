@@ -1,12 +1,16 @@
-use crate::abs::backend::{ConstantHandler, OperandHandler, SymbolicHandler};
+use crate::abs::{
+    backend::{ConstantHandler, OperandHandler},
+    ValueType,
+};
 
-use super::place::Place;
+use super::{expr::SymValueRef, place::Place};
 
 #[derive(Debug)]
 pub(crate) enum Operand {
     Place(Place, PlaceUsage),
     Const(Constant),
-    Symbolic(Symbolic),
+    /* NOTE: The symbolic value type can be replaced with a generic type. */
+    Symbolic(SymValueRef),
 }
 
 #[derive(Debug)]

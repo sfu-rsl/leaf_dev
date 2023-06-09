@@ -10,7 +10,7 @@ pub(super) struct BasicCallStackManager<VS: VariablesState> {
     call_info: CallInfo,
 }
 
-pub(super) struct CallStackFrame<VS: VariablesState> {
+pub(super) struct CallStackFrame<VS> {
     vars_state: VS,
 }
 
@@ -43,9 +43,8 @@ impl<VS: VariablesState> CallStackManager for BasicCallStackManager<VS> {
         let mut vars_state = (self.vars_state_factory)();
 
         // set places for the arguments in the new frame using values from the current frame
-        let passed_args: Vec<Operand> = self.call_info.passed_args.drain(..).collect();
-        for (i, operand) in passed_args.iter().enumerate() {
-            let value = get_operand_value(self.top(), operand);
+        for (i, operand) in self.call_info.passed_args.drain(..).enumerate() {
+            let value = get_operand_value(top_vars_state::<VS>(&mut self.stack), operand);
             let local_index = (i + 1) as u32;
             let place = &Place::new(Local::Argument(local_index));
             vars_state.set_place(place, value);
@@ -69,10 +68,10 @@ impl<VS: VariablesState> CallStackManager for BasicCallStackManager<VS> {
     }
 
     fn top(&mut self) -> &mut dyn VariablesState {
-        &mut self
-            .stack
-            .last_mut()
-            .expect("Call stack is empty.")
-            .vars_state
+        top_vars_state::<VS>(&mut self.stack)
     }
+}
+
+fn top_vars_state<VS>(stack: &mut Vec<CallStackFrame<VS>>) -> &mut VS {
+    &mut stack.last_mut().expect("Call stack is empty.").vars_state
 }
