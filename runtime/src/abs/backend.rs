@@ -77,7 +77,7 @@ pub(crate) trait OperandHandler {
 
     fn const_from(self) -> Self::ConstantHandler;
 
-    fn symbolic(self) -> Self::SymbolicHandler;
+    fn new_symbolic(self) -> Self::SymbolicHandler;
 }
 
 pub(crate) trait ConstantHandler {

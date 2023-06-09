@@ -63,7 +63,7 @@ impl OperandHandler for DefaultOperandHandler {
         DefaultConstantHandler
     }
 
-    fn symbolic(self) -> Self::SymbolicHandler {
+    fn new_symbolic(self) -> Self::SymbolicHandler {
         DefaultSymbolicHandler
     }
 }

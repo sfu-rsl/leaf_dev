@@ -19,7 +19,7 @@ macro_rules! impl_symbolizable_direct {
             impl Symbolizable for $ty {
                 fn symbolize() {
                     paste! {
-                        let operand_ref = pri::[<ref_operand_sym_ $ty>]();
+                        let operand_ref = pri::[<new_sym_value_ $ty>]();
                     }
                     return_sym_operand(operand_ref);
                 }
@@ -34,7 +34,7 @@ macro_rules! impl_symbolizable_int {
         $(
             impl Symbolizable for $ty {
                 fn symbolize() {
-                    let operand_ref = pri::ref_operand_sym_int(size_of::<$ty>() as u64 * 8, $signed);
+                    let operand_ref = pri::new_sym_value_int(size_of::<$ty>() as u64 * 8, $signed);
                     return_sym_operand(operand_ref);
                 }
             }
@@ -52,7 +52,7 @@ macro_rules! impl_symbolizable_float {
                 fn symbolize() {
                     let sbits = <$ty>::MANTISSA_DIGITS as u64;
                     let ebits = (<$ty>::MAX_EXP - <$ty>::MIN_EXP + 1) as u64;
-                    let operand_ref = pri::ref_operand_sym_float(ebits, sbits);
+                    let operand_ref = pri::new_sym_value_float(ebits, sbits);
                     return_sym_operand(operand_ref);
                 }
             }

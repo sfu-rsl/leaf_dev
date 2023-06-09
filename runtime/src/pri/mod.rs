@@ -85,6 +85,7 @@ pub fn ref_operand_copy(place: PlaceRef) -> OperandRef {
 pub fn ref_operand_move(place: PlaceRef) -> OperandRef {
     push_operand_ref(|o| o.move_of(take_back_place_ref(place)))
 }
+
 pub fn ref_operand_const_bool(value: bool) -> OperandRef {
     push_operand_ref(|o| o.const_from().bool(value))
 }
@@ -103,17 +104,18 @@ pub fn ref_operand_const_func(id: u64) -> OperandRef {
 pub fn ref_operand_const_str(value: &'static str) -> OperandRef {
     push_operand_ref(|o| o.const_from().str(value))
 }
-pub fn ref_operand_sym_bool() -> OperandRef {
-    push_operand_ref(|o| o.symbolic().bool())
+
+pub fn new_sym_value_bool() -> OperandRef {
+    push_operand_ref(|o| o.new_symbolic().bool())
 }
-pub fn ref_operand_sym_int(size: u64, is_signed: bool) -> OperandRef {
-    push_operand_ref(|o| o.symbolic().int(size, is_signed))
+pub fn new_sym_value_char() -> OperandRef {
+    push_operand_ref(|o| o.new_symbolic().char())
 }
-pub fn ref_operand_sym_float(ebits: u64, sbits: u64) -> OperandRef {
-    push_operand_ref(|o| o.symbolic().float(ebits, sbits))
+pub fn new_sym_value_int(size: u64, is_signed: bool) -> OperandRef {
+    push_operand_ref(|o| o.new_symbolic().int(size, is_signed))
 }
-pub fn ref_operand_sym_char() -> OperandRef {
-    push_operand_ref(|o| o.symbolic().char())
+pub fn new_sym_value_float(ebits: u64, sbits: u64) -> OperandRef {
+    push_operand_ref(|o| o.new_symbolic().float(ebits, sbits))
 }
 
 pub fn assign_use(dest: PlaceRef, operand: OperandRef) {
