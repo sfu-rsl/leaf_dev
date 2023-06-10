@@ -316,7 +316,7 @@ impl<'a, EB: BinaryExprBuilder> BranchingHandler for BasicBranchingHandler<'a, E
 
     fn assert(self, cond: Self::Operand, expected: bool, assert_kind: AssertKind<Self::Operand>) {
         todo!(
-            "Implement logic for assertions. {} {} {:?}",
+            "Implement logic for assertions. {:?} {} {:?}",
             cond,
             expected,
             assert_kind

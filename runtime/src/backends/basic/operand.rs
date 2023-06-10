@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use crate::abs::{
     backend::{ConstantHandler, OperandHandler},
     ValueType,
@@ -6,11 +8,10 @@ use crate::abs::{
 use super::{expr::SymValueRef, place::Place};
 
 #[derive(Debug)]
-pub(crate) enum Operand {
+pub(crate) enum Operand<SymValue = SymValueRef> {
     Place(Place, PlaceUsage),
     Const(Constant),
-    /* NOTE: The symbolic value type can be replaced with a generic type. */
-    Symbolic(SymValueRef),
+    Symbolic(SymValue),
 }
 
 #[derive(Debug)]
@@ -37,30 +38,28 @@ pub(crate) enum Constant {
     Func(u64),
 }
 
-#[derive(Debug)]
-pub(crate) enum Symbolic {
-    Bool,
-    Char,
-    Int { size: u64, is_signed: bool },
-    Float { ebits: u64, sbits: u64 },
+impl<S> From<Constant> for Operand<S> {
+    fn from(constant: Constant) -> Self {
+        Self::Const(constant)
+    }
 }
 
-pub(crate) struct DefaultOperandHandler<'a> {
-    symbolic_creator: Box<dyn FnOnce(ValueType) -> SymValueRef + 'a>,
+pub(crate) struct DefaultOperandHandler<'a, SymValue = SymValueRef> {
+    symbolic_creator: Box<dyn FnOnce(ValueType) -> SymValue + 'a>,
 }
 
-pub(crate) struct DefaultConstantHandler;
+pub(crate) struct DefaultConstantHandler<O>(PhantomData<O>);
 
-impl<'a> DefaultOperandHandler<'a> {
-    pub(crate) fn new(symbolic_creator: Box<dyn FnOnce(ValueType) -> SymValueRef + 'a>) -> Self {
+impl<'a, SymValue> DefaultOperandHandler<'a, SymValue> {
+    pub(crate) fn new(symbolic_creator: Box<dyn FnOnce(ValueType) -> SymValue + 'a>) -> Self {
         Self { symbolic_creator }
     }
 }
 
-impl OperandHandler for DefaultOperandHandler<'_> {
-    type Operand = Operand;
+impl<SymValue> OperandHandler for DefaultOperandHandler<'_, SymValue> {
+    type Operand = Operand<SymValue>;
     type Place = Place;
-    type ConstantHandler = DefaultConstantHandler;
+    type ConstantHandler = DefaultConstantHandler<Operand<SymValue>>;
 
     fn copy_of(self, place: Self::Place) -> Self::Operand {
         Operand::Place(place, PlaceUsage::Copy)
@@ -71,7 +70,7 @@ impl OperandHandler for DefaultOperandHandler<'_> {
     }
 
     fn const_from(self) -> Self::ConstantHandler {
-        DefaultConstantHandler
+        DefaultConstantHandler(PhantomData)
     }
 
     fn new_symbolic(self, ty: ValueType) -> Self::Operand {
@@ -79,44 +78,40 @@ impl OperandHandler for DefaultOperandHandler<'_> {
     }
 }
 
-impl ConstantHandler for DefaultConstantHandler {
-    type Operand = Operand;
+impl<O: From<Constant>> ConstantHandler for DefaultConstantHandler<O> {
+    type Operand = O;
 
     fn bool(self, value: bool) -> Self::Operand {
-        Self::create(Constant::Bool(value))
+        (Constant::Bool(value)).into()
     }
 
     fn char(self, value: char) -> Self::Operand {
-        Self::create(Constant::Char(value))
+        (Constant::Char(value)).into()
     }
 
     fn int(self, bit_rep: u128, size: u64, is_signed: bool) -> Self::Operand {
-        Self::create(Constant::Int {
+        (Constant::Int {
             bit_rep,
             size,
             is_signed,
         })
+        .into()
     }
 
     fn float(self, bit_rep: u128, ebits: u64, sbits: u64) -> Self::Operand {
-        Self::create(Constant::Float {
+        (Constant::Float {
             bit_rep,
             ebits,
             sbits,
         })
+        .into()
     }
 
     fn str(self, value: &'static str) -> Self::Operand {
-        Self::create(Constant::Str(value))
+        (Constant::Str(value)).into()
     }
 
     fn func(self, id: u64) -> Self::Operand {
-        Self::create(Constant::Func(id))
-    }
-}
-
-impl DefaultConstantHandler {
-    fn create(constant: Constant) -> Operand {
-        Operand::Const(constant)
+        (Constant::Func(id)).into()
     }
 }
