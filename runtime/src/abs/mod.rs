@@ -83,7 +83,7 @@ pub(crate) enum Constraint<V> {
 }
 
 impl<V> Constraint<V> {
-    pub fn destruct(&self) -> (&V, bool) {
+    pub fn destruct_ref(&self) -> (&V, bool) {
         match self {
             Constraint::Bool(value) => (value, false),
             Constraint::Not(value) => (value, true),
@@ -96,4 +96,37 @@ impl<V> Constraint<V> {
             Constraint::Not(value) => Constraint::Bool(value),
         }
     }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum ValueType {
+    Bool,
+    Char,
+    Int(IntType),
+    Float(FloatType),
+}
+
+impl ValueType {
+    pub(crate) fn new_int(bit_size: u64, is_signed: bool) -> Self {
+        Self::Int(IntType {
+            bit_size,
+            is_signed,
+        })
+    }
+
+    pub(crate) fn new_float(e_bits: u64, s_bits: u64) -> Self {
+        Self::Float(FloatType { e_bits, s_bits })
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct IntType {
+    pub bit_size: u64,
+    pub is_signed: bool,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct FloatType {
+    pub e_bits: u64,
+    pub s_bits: u64,
 }

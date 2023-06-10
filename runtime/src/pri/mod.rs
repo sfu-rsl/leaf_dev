@@ -3,7 +3,7 @@ mod utils;
 
 use crate::abs::{
     backend::*, AssertKind, BasicBlockIndex, BinaryOp, BranchingMetadata, DiscriminantAsIntType,
-    FieldIndex, Local, LocalIndex, UnaryOp, VariantIndex,
+    FieldIndex, FloatType, IntType, Local, LocalIndex, UnaryOp, ValueType, VariantIndex,
 };
 
 use self::instance::*;
@@ -106,16 +106,16 @@ pub fn ref_operand_const_str(value: &'static str) -> OperandRef {
 }
 
 pub fn new_sym_value_bool() -> OperandRef {
-    push_operand_ref(|o| o.new_symbolic().bool())
+    push_operand_ref(|o| o.new_symbolic(ValueType::Bool))
 }
 pub fn new_sym_value_char() -> OperandRef {
-    push_operand_ref(|o| o.new_symbolic().char())
+    push_operand_ref(|o| o.new_symbolic(ValueType::Char))
 }
-pub fn new_sym_value_int(size: u64, is_signed: bool) -> OperandRef {
-    push_operand_ref(|o| o.new_symbolic().int(size, is_signed))
+pub fn new_sym_value_int(bit_size: u64, is_signed: bool) -> OperandRef {
+    push_operand_ref(|o| o.new_symbolic(ValueType::new_int(bit_size, is_signed)))
 }
-pub fn new_sym_value_float(ebits: u64, sbits: u64) -> OperandRef {
-    push_operand_ref(|o| o.new_symbolic().float(ebits, sbits))
+pub fn new_sym_value_float(e_bits: u64, s_bits: u64) -> OperandRef {
+    push_operand_ref(|o| o.new_symbolic(ValueType::new_float(e_bits, s_bits)))
 }
 
 pub fn assign_use(dest: PlaceRef, operand: OperandRef) {

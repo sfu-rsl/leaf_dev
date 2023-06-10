@@ -1,8 +1,6 @@
 use std::fmt::Display;
 
-use crate::abs::{
-    backend::*, AssertKind, BinaryOp, BranchingMetadata, Local, UnaryOp, VariantIndex,
-};
+use crate::abs::{backend::*, AssertKind, BinaryOp, BranchingMetadata, UnaryOp, VariantIndex};
 
 use super::{
     operand::{DefaultOperandHandler, Operand, PlaceUsage},
@@ -25,7 +23,7 @@ impl LoggerBackend {
 
 impl RuntimeBackend for LoggerBackend {
     type PlaceHandler<'a> = DefaultPlaceHandler where Self: 'a;
-    type OperandHandler<'a> = DefaultOperandHandler where Self: 'a;
+    type OperandHandler<'a> = DefaultOperandHandler<'a> where Self: 'a;
     type AssignmentHandler<'a> = LoggerAssignmentHandler where Self: 'a;
     type BranchingHandler<'a> = LoggerBranchingHandler where Self: 'a;
     type FunctionHandler<'a> = LoggerFunctionHandler<'a> where Self: 'a;
@@ -38,7 +36,7 @@ impl RuntimeBackend for LoggerBackend {
     }
 
     fn operand(&mut self) -> Self::OperandHandler<'_> {
-        DefaultOperandHandler
+        DefaultOperandHandler::new(Box::new(|ty| todo!()))
     }
 
     fn assign_to(&mut self, dest: Place) -> Self::AssignmentHandler<'_> {

@@ -272,7 +272,7 @@ mod core {
         fn cast_to_char<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
             Expr::Cast {
                 from: operand,
-                to: SymbolicVarType::Char,
+                to: ValueType::Char,
             }
         }
 
@@ -284,10 +284,7 @@ mod core {
         ) -> Self::Expr<'a> {
             Expr::Cast {
                 from: operand,
-                to: SymbolicVarType::Int {
-                    size: to_bits,
-                    is_signed: to_signed,
-                },
+                to: ValueType::new_int(to_bits, to_signed),
             }
         }
 
@@ -296,7 +293,14 @@ mod core {
             operand: Self::ExprRef<'a>,
             to_bits: u64,
         ) -> Self::Expr<'a> {
-            todo!("Add support for float casts. {:?} {}", operand, to_bits)
+            Expr::Cast {
+                from: operand,
+                #[allow(unreachable_code)]
+                to: ValueType::new_float(
+                    todo!("Add support for float cast {}", to_bits),
+                    todo!("Add support for float cast {}", to_bits),
+                ),
+            }
         }
     }
 }

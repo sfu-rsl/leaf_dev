@@ -45,15 +45,22 @@ pub(crate) enum Symbolic {
     Float { ebits: u64, sbits: u64 },
 }
 
-pub(crate) struct DefaultOperandHandler;
+pub(crate) struct DefaultOperandHandler<'a> {
+    symbolic_creator: Box<dyn FnOnce(ValueType) -> SymValueRef + 'a>,
+}
 
 pub(crate) struct DefaultConstantHandler;
 
-impl OperandHandler for DefaultOperandHandler {
+impl<'a> DefaultOperandHandler<'a> {
+    pub(crate) fn new(symbolic_creator: Box<dyn FnOnce(ValueType) -> SymValueRef + 'a>) -> Self {
+        Self { symbolic_creator }
+    }
+}
+
+impl OperandHandler for DefaultOperandHandler<'_> {
     type Operand = Operand;
     type Place = Place;
     type ConstantHandler = DefaultConstantHandler;
-    type SymbolicHandler = DefaultSymbolicHandler;
 
     fn copy_of(self, place: Self::Place) -> Self::Operand {
         Operand::Place(place, PlaceUsage::Copy)
@@ -67,8 +74,8 @@ impl OperandHandler for DefaultOperandHandler {
         DefaultConstantHandler
     }
 
-    fn new_symbolic(self) -> Self::SymbolicHandler {
-        DefaultSymbolicHandler
+    fn new_symbolic(self, ty: ValueType) -> Self::Operand {
+        Operand::Symbolic((self.symbolic_creator)(ty))
     }
 }
 
@@ -111,33 +118,5 @@ impl ConstantHandler for DefaultConstantHandler {
 impl DefaultConstantHandler {
     fn create(constant: Constant) -> Operand {
         Operand::Const(constant)
-    }
-}
-
-pub(crate) struct DefaultSymbolicHandler;
-
-impl SymbolicHandler for DefaultSymbolicHandler {
-    type Operand = Operand;
-
-    fn bool(self) -> Self::Operand {
-        Self::create(Symbolic::Bool)
-    }
-
-    fn char(self) -> Self::Operand {
-        Self::create(Symbolic::Char)
-    }
-
-    fn int(self, size: u64, is_signed: bool) -> Self::Operand {
-        Self::create(Symbolic::Int { size, is_signed })
-    }
-
-    fn float(self, ebits: u64, sbits: u64) -> Self::Operand {
-        Self::create(Symbolic::Float { ebits, sbits })
-    }
-}
-
-impl DefaultSymbolicHandler {
-    fn create(symbolic: Symbolic) -> Operand {
-        Operand::Symbolic(symbolic)
     }
 }

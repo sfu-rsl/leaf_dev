@@ -5,11 +5,11 @@ pub(crate) mod utils;
 
 use std::{assert_matches::assert_matches, ops::Deref, rc::Rc};
 
-use crate::abs::{BinaryOp, FieldIndex, UnaryOp, VariantIndex};
+use crate::abs::{BinaryOp, FieldIndex, UnaryOp, ValueType, VariantIndex};
 
 use self::utils::define_reversible_pair;
 
-use super::{operand, place::Place};
+use super::place::Place;
 
 pub(crate) type ValueRef = Rc<Value>;
 pub(crate) type ConcreteValueRef = ConcreteValueGuard<ValueRef>;
@@ -446,42 +446,15 @@ pub(crate) enum SymValue {
     Expression(Expr),
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct SymbolicVar {
     pub id: SymVarId,
-    pub ty: SymbolicVarType,
+    pub ty: ValueType,
 }
 
 impl SymbolicVar {
-    pub fn new(id: SymVarId, ty: SymbolicVarType) -> Self {
+    pub fn new(id: SymVarId, ty: ValueType) -> Self {
         Self { id, ty }
-    }
-}
-
-// FIXME: Remove this after adding support for floats
-#[allow(unused)]
-#[derive(Clone, Copy, Debug)]
-pub(crate) enum SymbolicVarType {
-    Bool,
-    Char,
-    Int { size: u64, is_signed: bool },
-    Float { ebits: u64, sbits: u64 },
-}
-
-impl From<&operand::Symbolic> for SymbolicVarType {
-    fn from(value: &operand::Symbolic) -> Self {
-        match value {
-            operand::Symbolic::Bool => Self::Bool,
-            operand::Symbolic::Char => Self::Char,
-            operand::Symbolic::Int { size, is_signed } => Self::Int {
-                size: *size,
-                is_signed: *is_signed,
-            },
-            operand::Symbolic::Float { ebits, sbits } => Self::Float {
-                ebits: *ebits,
-                sbits: *sbits,
-            },
-        }
     }
 }
 
@@ -515,7 +488,7 @@ pub(crate) enum Expr {
 
     Cast {
         from: SymValueRef,
-        to: SymbolicVarType,
+        to: ValueType,
     },
 
     AddrOf(/* TODO */),

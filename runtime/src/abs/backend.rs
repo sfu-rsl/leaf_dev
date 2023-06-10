@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 
 use super::{
-    AssertKind, BinaryOp, BranchingMetadata, Constraint, FieldIndex, Local, UnaryOp, VariantIndex,
+    AssertKind, BinaryOp, BranchingMetadata, Constraint, FieldIndex, Local, UnaryOp, ValueType,
+    VariantIndex,
 };
 
 pub(crate) trait RuntimeBackend: Sized {
@@ -69,7 +70,6 @@ pub(crate) trait OperandHandler {
     type Operand;
     type Place;
     type ConstantHandler: ConstantHandler<Operand = Self::Operand>;
-    type SymbolicHandler: SymbolicHandler<Operand = Self::Operand>;
 
     fn copy_of(self, place: Self::Place) -> Self::Operand;
 
@@ -77,7 +77,7 @@ pub(crate) trait OperandHandler {
 
     fn const_from(self) -> Self::ConstantHandler;
 
-    fn new_symbolic(self) -> Self::SymbolicHandler;
+    fn new_symbolic(self, ty: ValueType) -> Self::Operand;
 }
 
 pub(crate) trait ConstantHandler {
@@ -94,18 +94,6 @@ pub(crate) trait ConstantHandler {
     fn str(self, value: &'static str) -> Self::Operand;
 
     fn func(self, id: u64) -> Self::Operand;
-}
-
-pub(crate) trait SymbolicHandler {
-    type Operand;
-
-    fn bool(self) -> Self::Operand;
-
-    fn char(self) -> Self::Operand;
-
-    fn int(self, size: u64, is_signed: bool) -> Self::Operand;
-
-    fn float(self, ebits: u64, sbits: u64) -> Self::Operand;
 }
 
 pub(crate) trait AssignmentHandler {

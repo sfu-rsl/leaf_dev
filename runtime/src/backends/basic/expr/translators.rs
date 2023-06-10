@@ -11,10 +11,10 @@ pub(crate) mod z3 {
     };
 
     use crate::{
-        abs::{BinaryOp, UnaryOp},
+        abs::{BinaryOp, IntType, UnaryOp, ValueType},
         backends::basic::expr::{
             ConcreteValue, ConstValue, Expr, SymBinaryOperands, SymValue, SymVarId, SymbolicVar,
-            SymbolicVarType, Value, ValueRef,
+            Value, ValueRef,
         },
     };
 
@@ -129,15 +129,18 @@ pub(crate) mod z3 {
 
         fn translate_symbolic_var_and_record(&mut self, var: &SymbolicVar) -> AstNode<'ctx> {
             let node = match var.ty {
-                SymbolicVarType::Bool => ast::Bool::new_const(self.context, var.id).into(),
-                SymbolicVarType::Char => {
+                ValueType::Bool => ast::Bool::new_const(self.context, var.id).into(),
+                ValueType::Char => {
                     AstNode::from_ubv(ast::BV::new_const(self.context, var.id, CHAR_BIT_SIZE))
                 }
-                SymbolicVarType::Int { size, is_signed } => AstNode::from_bv(
-                    ast::BV::new_const(self.context, var.id, size as u32),
+                ValueType::Int(IntType {
+                    bit_size,
+                    is_signed,
+                }) => AstNode::from_bv(
+                    ast::BV::new_const(self.context, var.id, bit_size as u32),
                     is_signed,
                 ),
-                SymbolicVarType::Float { .. } => todo!(),
+                ValueType::Float { .. } => todo!(),
             };
             self.variables.insert(var.id, node.clone());
             node
@@ -263,13 +266,9 @@ pub(crate) mod z3 {
             }
         }
 
-        fn translate_cast_expr(
-            &mut self,
-            from: AstNode<'ctx>,
-            to: &SymbolicVarType,
-        ) -> AstNode<'ctx> {
+        fn translate_cast_expr(&mut self, from: AstNode<'ctx>, to: &ValueType) -> AstNode<'ctx> {
             match to {
-                SymbolicVarType::Char => {
+                ValueType::Char => {
                     let from = from.as_bit_vector();
                     let size = from.get_size();
                     debug_assert!(
@@ -279,8 +278,11 @@ pub(crate) mod z3 {
                     let ast = from.zero_ext(CHAR_BIT_SIZE - TO_CHAR_BIT_SIZE);
                     AstNode::from_bv(ast, false)
                 }
-                SymbolicVarType::Int { size, is_signed } => {
-                    let size = *size as u32;
+                ValueType::Int(IntType {
+                    bit_size,
+                    is_signed,
+                }) => {
+                    let size = *bit_size as u32;
                     match from {
                         AstNode::Bool(_) => {
                             let from = from.as_bool();
@@ -315,7 +317,7 @@ pub(crate) mod z3 {
                         }
                     }
                 }
-                SymbolicVarType::Float { .. } => todo!(),
+                ValueType::Float { .. } => todo!(),
                 _ => unreachable!("Casting from int to {to:#?} is not supported."),
             }
         }

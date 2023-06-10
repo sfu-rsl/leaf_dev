@@ -66,7 +66,7 @@ impl RuntimeBackend for BasicBackend {
     where
         Self: 'a;
 
-    type OperandHandler<'a> = DefaultOperandHandler
+    type OperandHandler<'a> = DefaultOperandHandler<'a>
     where
         Self: 'a;
 
@@ -91,7 +91,7 @@ impl RuntimeBackend for BasicBackend {
     }
 
     fn operand(&mut self) -> Self::OperandHandler<'_> {
-        DefaultOperandHandler
+        DefaultOperandHandler::new(Box::new(move |ty| self.new_symbolic_value(ty)))
     }
 
     fn assign_to<'a>(
@@ -119,7 +119,11 @@ impl RuntimeBackend for BasicBackend {
     }
 }
 
-impl BasicBackend {}
+impl BasicBackend {
+    fn new_symbolic_value(&mut self, ty: abs::ValueType) -> SymValueRef {
+        SymValue::Variable(SymbolicVar::new(0, ty)).to_value_ref()
+    }
+}
 
 pub(crate) struct BasicAssignmentHandler<'s, EB: OperationalExprBuilder> {
     dest: Place,
