@@ -61,8 +61,8 @@ mod toplevel {
             } else if second.is_symbolic() {
                 self.sym_builder.binary_op(
                     BinaryOperands::Rev {
-                        first: second,
-                        second: SymValueRef::new(first),
+                        first,
+                        second: SymValueRef::new(second),
                     },
                     op,
                 )
@@ -158,7 +158,7 @@ mod adapters {
 
     impl From<Expr> for ValueRef {
         fn from(expr: Expr) -> Self {
-            expr.into()
+            Into::<Value>::into(expr).into()
         }
     }
 

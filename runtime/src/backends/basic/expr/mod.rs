@@ -66,6 +66,7 @@ pub(crate) enum ConstValue {
 impl ConstValue {
     pub fn is_zero(&self) -> bool {
         match self {
+            Self::Bool(value) => !value,
             Self::Int { bit_rep, .. } => *bit_rep == 0,
             Self::Float { .. } => todo!(),
             _ => unreachable!("Only numerical values can be checked for zero."),
@@ -74,6 +75,7 @@ impl ConstValue {
 
     pub fn is_one(&self) -> bool {
         match self {
+            Self::Bool(value) => *value,
             Self::Int { bit_rep, .. } => *bit_rep == 1,
             Self::Float { .. } => todo!(),
             _ => unreachable!("Only numerical values can be checked for one."),
@@ -540,7 +542,7 @@ macro_rules! define_value_guard {
                 assert_matches!(
                     value.as_ref(),
                     $pattern,
-                    concat!("Value should be", stringify!($guarded_type), ".")
+                    concat!("Value should be ", stringify!($guarded_type), ".")
                 );
                 Self(value)
             }
