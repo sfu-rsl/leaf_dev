@@ -189,10 +189,17 @@ pub(crate) trait PathInterestChecker<S> {
     fn is_interesting(&self, path: &[S]) -> bool;
 }
 
-pub(crate) trait Solver<V, I> {
+/// A trait for the SMT solver.
+/// It takes a set of constraints to check satisfiability of them together.
+pub(crate) trait Solver<I, V> {
     fn check(&mut self, constraints: &[Constraint<V>]) -> SolveResult<I, V>;
 }
 
+/// The result of the checking performed by [`Solver`].
+/// [`Sat`]: The constraints are satisfiable and a set of values from type `V`
+/// for the variables identified by ids from type `I` is found.
+/// [`Unsat`]: The constraints are unsatisfiable.
+/// [`Unknown`]: The solver could not determine the satisfiability.
 pub(crate) enum SolveResult<I, V> {
     Sat(HashMap<I, V>),
     Unsat,

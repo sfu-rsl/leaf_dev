@@ -51,7 +51,7 @@ impl BasicBackend {
                 Box::new(move || MutableVariablesState::new(sym_projector.clone())),
             ),
             trace_manager: Box::new(
-                ImmediateTraceManager::<BasicBlockIndex, ValueRef, u32>::new_basic(Box::new(
+                ImmediateTraceManager::<BasicBlockIndex, u32, ValueRef>::new_basic(Box::new(
                     Z3Solver::new_in_global_context(),
                 )),
             ),
