@@ -40,6 +40,7 @@ pub struct BasicBackend {
     trace_manager: TraceManager,
     current_constraints: Vec<Constraint>,
     expr_builder: Rc<RefCell<ExprBuilder>>,
+    sym_id_counter: u32,
 }
 
 impl BasicBackend {
@@ -57,6 +58,7 @@ impl BasicBackend {
             ),
             current_constraints: Vec::new(),
             expr_builder,
+            sym_id_counter: 0,
         }
     }
 }
@@ -121,7 +123,8 @@ impl RuntimeBackend for BasicBackend {
 
 impl BasicBackend {
     fn new_symbolic_value(&mut self, ty: abs::ValueType) -> SymValueRef {
-        SymValue::Variable(SymbolicVar::new(0, ty)).to_value_ref()
+        self.sym_id_counter += 1;
+        SymValue::Variable(SymbolicVar::new(self.sym_id_counter, ty)).to_value_ref()
     }
 }
 
