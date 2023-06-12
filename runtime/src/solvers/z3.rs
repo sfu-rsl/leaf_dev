@@ -1,6 +1,9 @@
 use std::{borrow::Borrow, collections::HashMap, hash::Hash};
 
-use crate::{abs::backend, utils::UnsafeSync};
+use crate::{
+    abs::backend,
+    utils::{logging::log_debug, UnsafeSync},
+};
 use lazy_static::lazy_static;
 use z3::{
     self,
@@ -130,11 +133,15 @@ where
         constraints: &[ast::Bool<'ctx>],
         vars: HashMap<I, AstNode<'ctx>>,
     ) -> backend::SolveResult<I, V> {
+        log_debug!("Sending constraints to Z3 : {:#?}", constraints);
+
+        solver.push();
+
         for constraint in constraints {
             solver.assert(constraint);
         }
 
-        match solver.check() {
+        let result = match solver.check() {
             SatResult::Sat => {
                 let model = solver.get_model().unwrap();
                 let mut values = HashMap::new();
@@ -152,6 +159,9 @@ where
             }
             SatResult::Unsat => backend::SolveResult::Unsat,
             SatResult::Unknown => backend::SolveResult::Unknown,
-        }
+        };
+
+        solver.pop(1);
+        result
     }
 }

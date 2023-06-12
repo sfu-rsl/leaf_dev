@@ -10,7 +10,7 @@ use crate::{
     },
     outgen::LoggerOutputGenerator,
     pathics::AllPathInterestChecker,
-    utils::logging::log_info,
+    utils::logging::{log_debug, log_info},
 };
 
 pub(crate) struct ImmediateTraceManager<Step, Id, Val> {
@@ -103,7 +103,10 @@ impl<S, I, V> ImmediateTraceManager<S, I, V> {
                 self.generate_output(values);
                 true
             }
-            _ => false,
+            _ => {
+                log_debug!("Unsatisfiable or unknown result.");
+                false
+            }
         }
     }
 
