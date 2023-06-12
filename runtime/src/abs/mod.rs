@@ -68,12 +68,7 @@ pub(crate) struct BranchingMetadata {
      * type information on the expressions, this field doesn't give any additional
      * information.
      */
-    pub discr_as_int: DiscriminantAsIntType,
-}
-
-pub struct DiscriminantAsIntType {
-    pub bit_size: u64,
-    pub is_signed: bool,
+    pub discr_as_int: IntType,
 }
 
 #[derive(Debug, Clone)]

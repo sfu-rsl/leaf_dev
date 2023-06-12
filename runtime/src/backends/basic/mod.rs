@@ -10,8 +10,8 @@ use std::{cell::RefCell, ops::DerefMut, rc::Rc};
 
 use crate::{
     abs::{
-        self, backend::*, AssertKind, BasicBlockIndex, BranchingMetadata, DiscriminantAsIntType,
-        IntType, UnaryOp, VariantIndex,
+        self, backend::*, AssertKind, BasicBlockIndex, BranchingMetadata, IntType, UnaryOp,
+        VariantIndex,
     },
     solvers::z3::Z3Solver,
     trace::ImmediateTraceManager,
@@ -391,7 +391,7 @@ impl<EB: BinaryExprBuilder> BasicBranchTakingHandler<'_, EB> {
     fn create_equality_expr(&mut self, value: impl BranchCaseValue, eq: bool) -> ValueRef {
         let discr_as_int = &self.parent.metadata.discr_as_int;
         let first = self.parent.discriminant.clone();
-        let second = ValueRef::new(value.into_const(discr_as_int).into());
+        let second = value.into_const(discr_as_int).to_value_ref();
         if eq {
             self.expr_builder().eq((first, second).into())
         } else {
@@ -469,11 +469,11 @@ macro_rules! impl_general_branch_taking_handler {
 impl_general_branch_taking_handler!(u128, char, VariantIndex);
 
 trait BranchCaseValue {
-    fn into_const(self, discr_as_int: &DiscriminantAsIntType) -> ConstValue;
+    fn into_const(self, discr_as_int: &IntType) -> ConstValue;
 }
 
 impl BranchCaseValue for char {
-    fn into_const(self, _discr_as_int: &DiscriminantAsIntType) -> ConstValue {
+    fn into_const(self, _discr_as_int: &IntType) -> ConstValue {
         ConstValue::Char(self)
     }
 }
@@ -482,13 +482,10 @@ macro_rules! impl_int_branch_case_value {
     ($($type:ty),*) => {
         $(
             impl BranchCaseValue for $type {
-                fn into_const(self, discr_as_int: &DiscriminantAsIntType) -> ConstValue {
+                fn into_const(self, discr_as_int: &IntType) -> ConstValue {
                     ConstValue::Int {
                         bit_rep: self as u128,
-                        ty: IntType {
-                            bit_size: discr_as_int.bit_size,
-                            is_signed: discr_as_int.is_signed,
-                        },
+                        ty: *discr_as_int,
                     }
                 }
             }

@@ -2,8 +2,8 @@ mod instance;
 mod utils;
 
 use crate::abs::{
-    backend::*, AssertKind, BasicBlockIndex, BinaryOp, BranchingMetadata, DiscriminantAsIntType,
-    FieldIndex, FloatType, IntType, Local, LocalIndex, UnaryOp, ValueType, VariantIndex,
+    backend::*, AssertKind, BasicBlockIndex, BinaryOp, BranchingMetadata, FieldIndex, FloatType,
+    IntType, Local, LocalIndex, UnaryOp, ValueType, VariantIndex,
 };
 
 use self::instance::*;
@@ -302,7 +302,7 @@ impl BranchingInfo {
             discriminant,
             metadata: BranchingMetadata {
                 node_location,
-                discr_as_int: DiscriminantAsIntType {
+                discr_as_int: IntType {
                     bit_size: discr_bit_size,
                     is_signed: discr_is_signed,
                 },
