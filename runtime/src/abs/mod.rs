@@ -116,9 +116,9 @@ impl ValueType {
     }
 }
 
-/* FIXME: These types will have limited set of possible types. Thus can be
- * optimized using techniques such as interning.
- * Enums are not much a favorable option, since it is against the abstract
+/* FIXME: These types will have a limited set of possible values. Thus they can be
+ * optimized using techniques such as interning or even changing them to enums.
+ * Enums are not much a favorable option, since they are against the abstract
  * representation of integers and floats in the engine.
  */
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]

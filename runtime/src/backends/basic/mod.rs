@@ -387,9 +387,10 @@ pub(crate) struct BasicBranchTakingHandler<'a, EB: BinaryExprBuilder> {
 
 impl<EB: BinaryExprBuilder> BasicBranchTakingHandler<'_, EB> {
     fn create_equality_expr(&mut self, value: impl BranchCaseValue, eq: bool) -> ValueRef {
-        let discr_as_int = &self.parent.metadata.discr_as_int;
         let first = self.parent.discriminant.clone();
-        let second = value.into_const(discr_as_int).to_value_ref();
+        let second = value
+            .into_const(self.parent.metadata.discr_as_int)
+            .to_value_ref();
         if eq {
             self.expr_builder().eq((first, second).into())
         } else {
@@ -467,11 +468,11 @@ macro_rules! impl_general_branch_taking_handler {
 impl_general_branch_taking_handler!(u128, char, VariantIndex);
 
 trait BranchCaseValue {
-    fn into_const(self, discr_as_int: &IntType) -> ConstValue;
+    fn into_const(self, discr_as_int: IntType) -> ConstValue;
 }
 
 impl BranchCaseValue for char {
-    fn into_const(self, _discr_as_int: &IntType) -> ConstValue {
+    fn into_const(self, _discr_as_int: IntType) -> ConstValue {
         ConstValue::Char(self)
     }
 }
@@ -480,10 +481,10 @@ macro_rules! impl_int_branch_case_value {
     ($($type:ty),*) => {
         $(
             impl BranchCaseValue for $type {
-                fn into_const(self, discr_as_int: &IntType) -> ConstValue {
+                fn into_const(self, discr_as_int: IntType) -> ConstValue {
                     ConstValue::Int {
                         bit_rep: self as u128,
-                        ty: *discr_as_int,
+                        ty: discr_as_int,
                     }
                 }
             }
