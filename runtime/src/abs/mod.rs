@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 pub(crate) mod backend;
 pub(crate) mod expr;
 
@@ -125,8 +127,25 @@ pub(crate) struct IntType {
     pub is_signed: bool,
 }
 
+impl Display for IntType {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "{}{}",
+            if self.is_signed { 'i' } else { 'u' },
+            self.bit_size
+        )
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub(crate) struct FloatType {
     pub e_bits: u64,
     pub s_bits: u64,
+}
+
+impl Display for FloatType {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "f{}", self.e_bits + self.s_bits)
+    }
 }

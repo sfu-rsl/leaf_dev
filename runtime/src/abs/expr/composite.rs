@@ -75,7 +75,6 @@ where
     impl_unary_expr_method!(address_of);
     impl_unary_expr_method!(len);
     impl_unary_expr_method!(cast_to_char);
-
-    impl_unary_expr_method!(cast_to_int, to_bits: u64, to_signed: bool);
-    impl_unary_expr_method!(cast_to_float, to_bits: u64);
+    impl_unary_expr_method!(cast_to_int, to: IntType);
+    impl_unary_expr_method!(cast_to_float, to: FloatType);
 }

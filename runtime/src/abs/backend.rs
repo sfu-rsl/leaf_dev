@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use super::{
-    AssertKind, BinaryOp, BranchingMetadata, Constraint, FieldIndex, Local, UnaryOp, ValueType,
-    VariantIndex,
+    AssertKind, BinaryOp, BranchingMetadata, Constraint, FieldIndex, FloatType, IntType, Local,
+    UnaryOp, ValueType, VariantIndex,
 };
 
 pub(crate) trait RuntimeBackend: Sized {
@@ -87,9 +87,9 @@ pub(crate) trait ConstantHandler {
 
     fn char(self, value: char) -> Self::Operand;
 
-    fn int(self, bit_rep: u128, size: u64, is_signed: bool) -> Self::Operand;
+    fn int(self, bit_rep: u128, ty: IntType) -> Self::Operand;
 
-    fn float(self, bit_rep: u128, ebits: u64, sbits: u64) -> Self::Operand;
+    fn float(self, bit_rep: u128, ty: FloatType) -> Self::Operand;
 
     fn str(self, value: &'static str) -> Self::Operand;
 
@@ -114,9 +114,9 @@ pub(crate) trait AssignmentHandler {
 
     fn char_cast_of(self, operand: Self::Operand);
 
-    fn integer_cast_of(self, operand: Self::Operand, is_signed: bool, bits: u64);
+    fn integer_cast_of(self, operand: Self::Operand, to: IntType);
 
-    fn float_cast_of(self, operand: Self::Operand, bits: u64);
+    fn float_cast_of(self, operand: Self::Operand, to: FloatType);
 
     fn cast_of(self);
 

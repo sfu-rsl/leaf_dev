@@ -118,21 +118,16 @@ mod toplevel {
             call_unary_method!(self, cast_to_char, operand)
         }
 
-        fn cast_to_int<'a>(
-            &mut self,
-            operand: Self::ExprRef<'a>,
-            to_bits: u64,
-            to_signed: bool,
-        ) -> Self::Expr<'a> {
-            call_unary_method!(self, cast_to_int, operand, to_bits, to_signed)
+        fn cast_to_int<'a>(&mut self, operand: Self::ExprRef<'a>, to: IntType) -> Self::Expr<'a> {
+            call_unary_method!(self, cast_to_int, operand, to)
         }
 
         fn cast_to_float<'a>(
             &mut self,
             operand: Self::ExprRef<'a>,
-            to_bits: u64,
+            to: FloatType,
         ) -> Self::Expr<'a> {
-            call_unary_method!(self, cast_to_float, operand, to_bits)
+            call_unary_method!(self, cast_to_float, operand, to)
         }
     }
 }
@@ -276,30 +271,21 @@ mod core {
             }
         }
 
-        fn cast_to_int<'a>(
-            &mut self,
-            operand: Self::ExprRef<'a>,
-            to_bits: u64,
-            to_signed: bool,
-        ) -> Self::Expr<'a> {
+        fn cast_to_int<'a>(&mut self, operand: Self::ExprRef<'a>, to: IntType) -> Self::Expr<'a> {
             Expr::Cast {
                 from: operand,
-                to: ValueType::new_int(to_bits, to_signed),
+                to: ValueType::Int(to),
             }
         }
 
         fn cast_to_float<'a>(
             &mut self,
             operand: Self::ExprRef<'a>,
-            to_bits: u64,
+            to: FloatType,
         ) -> Self::Expr<'a> {
             Expr::Cast {
                 from: operand,
-                #[allow(unreachable_code)]
-                to: ValueType::new_float(
-                    todo!("Add support for float cast {}", to_bits),
-                    todo!("Add support for float cast {}", to_bits),
-                ),
+                to: ValueType::Float(to),
             }
         }
     }
@@ -380,29 +366,17 @@ mod concrete {
             }
         }
 
-        fn cast_to_int<'a>(
-            &mut self,
-            expr: Self::ExprRef<'a>,
-            to_bits: u64,
-            to_signed: bool,
-        ) -> Self::Expr<'a> {
+        fn cast_to_int<'a>(&mut self, expr: Self::ExprRef<'a>, to: IntType) -> Self::Expr<'a> {
             match expr {
-                ConcreteValue::Const(c) => ConstValue::integer_cast(
-                    c,
-                    IntType {
-                        bit_size: to_bits,
-                        is_signed: to_signed,
-                    },
-                )
-                .into(),
+                ConcreteValue::Const(c) => ConstValue::integer_cast(c, to).into(),
                 _ => {
                     unreachable!("Integer cast is supposed to be called on a constant.")
                 }
             }
         }
 
-        fn cast_to_float<'a>(&mut self, expr: Self::ExprRef<'a>, to_bits: u64) -> Self::Expr<'a> {
-            todo!("Add support for float casts. {:?} {}", expr, to_bits)
+        fn cast_to_float<'a>(&mut self, expr: Self::ExprRef<'a>, to: FloatType) -> Self::Expr<'a> {
+            todo!("Add support for float casts. {:?} {}", expr, to)
         }
     }
 }

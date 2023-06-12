@@ -1,7 +1,8 @@
 use std::fmt::Display;
 
 use crate::abs::{
-    backend::*, AssertKind, BinaryOp, BranchingMetadata, UnaryOp, ValueType, VariantIndex,
+    backend::*, AssertKind, BinaryOp, BranchingMetadata, FloatType, IntType, UnaryOp, ValueType,
+    VariantIndex,
 };
 
 use super::{
@@ -105,17 +106,12 @@ impl AssignmentHandler for LoggerAssignmentHandler {
         self.log(format!("{operand} as char"));
     }
 
-    fn integer_cast_of(self, operand: Self::Operand, is_signed: bool, bits: u64) {
-        self.log(format!(
-            "{} as {}{}",
-            operand,
-            if is_signed { "i" } else { "u" },
-            bits,
-        ));
+    fn integer_cast_of(self, operand: Self::Operand, to: IntType) {
+        self.log(format!("{operand} as {to:#?}"));
     }
 
-    fn float_cast_of(self, operand: Self::Operand, bits: u64) {
-        self.log(format!("{operand} as f{bits}"));
+    fn float_cast_of(self, operand: Self::Operand, to: FloatType) {
+        self.log(format!("{operand} as {to:#?}"));
     }
 
     fn cast_of(self) {

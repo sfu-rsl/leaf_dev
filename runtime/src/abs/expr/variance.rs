@@ -2,7 +2,7 @@
 /// that work as adapters. Most of the adapters provide non-trivial covariance and contravariance
 /// over the input and output types of the wrapped expression builder.
 use super::{macros::*, BinaryExprBuilder, UnaryExprBuilder};
-use crate::abs::{BinaryOp, UnaryOp};
+use crate::abs::{BinaryOp, FloatType, IntType, UnaryOp};
 use std::ops::DerefMut;
 
 use BinaryExprBuilder as BEB;
@@ -95,6 +95,6 @@ where
     delegate_singular_unary_op!(address_of);
     delegate_singular_unary_op!(len);
     delegate_singular_unary_op!(cast_to_char);
-    delegate_singular_unary_op!(cast_to_int, to_bits: u64, to_signed: bool);
-    delegate_singular_unary_op!(cast_to_float, to_bits: u64);
+    delegate_singular_unary_op!(cast_to_int, to: IntType);
+    delegate_singular_unary_op!(cast_to_float, to: FloatType);
 }

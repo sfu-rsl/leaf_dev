@@ -115,16 +115,11 @@ where
         try_on_current_then_next!(self, cast_to_char, operand)
     }
 
-    fn cast_to_int<'a>(
-        &mut self,
-        operand: Self::ExprRef<'a>,
-        to_bits: u64,
-        to_signed: bool,
-    ) -> Self::Expr<'a> {
-        try_on_current_then_next!(self, cast_to_int, (operand, to_bits, to_signed), |operand|)
+    fn cast_to_int<'a>(&mut self, operand: Self::ExprRef<'a>, to: IntType) -> Self::Expr<'a> {
+        try_on_current_then_next!(self, cast_to_int, (operand, to), |operand|)
     }
 
-    fn cast_to_float<'a>(&mut self, operand: Self::ExprRef<'a>, to_bits: u64) -> Self::Expr<'a> {
-        try_on_current_then_next!(self, cast_to_float, (operand, to_bits), |operand|)
+    fn cast_to_float<'a>(&mut self, operand: Self::ExprRef<'a>, to: FloatType) -> Self::Expr<'a> {
+        try_on_current_then_next!(self, cast_to_float, (operand, to), |operand|)
     }
 }

@@ -89,11 +89,19 @@ pub fn ref_operand_move(place: PlaceRef) -> OperandRef {
 pub fn ref_operand_const_bool(value: bool) -> OperandRef {
     push_operand_ref(|o| o.const_from().bool(value))
 }
-pub fn ref_operand_const_int(bit_rep: u128, size: u64, is_signed: bool) -> OperandRef {
-    push_operand_ref(|o| o.const_from().int(bit_rep, size, is_signed))
+pub fn ref_operand_const_int(bit_rep: u128, bit_size: u64, is_signed: bool) -> OperandRef {
+    push_operand_ref(|o| {
+        o.const_from().int(
+            bit_rep,
+            IntType {
+                bit_size,
+                is_signed,
+            },
+        )
+    })
 }
-pub fn ref_operand_const_float(bit_rep: u128, ebits: u64, sbits: u64) -> OperandRef {
-    push_operand_ref(|o| o.const_from().float(bit_rep, ebits, sbits))
+pub fn ref_operand_const_float(bit_rep: u128, e_bits: u64, s_bits: u64) -> OperandRef {
+    push_operand_ref(|o| o.const_from().float(bit_rep, FloatType { e_bits, s_bits }))
 }
 pub fn ref_operand_const_char(value: char) -> OperandRef {
     push_operand_ref(|o| o.const_from().char(value))
@@ -146,15 +154,21 @@ pub fn assign_cast_char(dest: PlaceRef, operand: OperandRef) {
     assign_to(dest, |h| h.char_cast_of(take_back_operand_ref(operand)))
 }
 
-pub fn assign_cast_integer(dest: PlaceRef, operand: OperandRef, is_signed: bool, bits: u64) {
+pub fn assign_cast_integer(dest: PlaceRef, operand: OperandRef, is_signed: bool, bit_size: u64) {
     assign_to(dest, |h| {
-        h.integer_cast_of(take_back_operand_ref(operand), is_signed, bits)
+        h.integer_cast_of(
+            take_back_operand_ref(operand),
+            IntType {
+                bit_size,
+                is_signed: is_signed,
+            },
+        )
     })
 }
 
-pub fn assign_cast_float(dest: PlaceRef, operand: OperandRef, bits: u64) {
+pub fn assign_cast_float(dest: PlaceRef, operand: OperandRef, e_bits: u64, s_bits: u64) {
     assign_to(dest, |h| {
-        h.float_cast_of(take_back_operand_ref(operand), bits)
+        h.float_cast_of(take_back_operand_ref(operand), FloatType { e_bits, s_bits })
     })
 }
 

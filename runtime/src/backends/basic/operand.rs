@@ -74,40 +74,26 @@ impl<O: From<Constant>> ConstantHandler for DefaultConstantHandler<O> {
     type Operand = O;
 
     fn bool(self, value: bool) -> Self::Operand {
-        (Constant::Bool(value)).into()
+        Constant::Bool(value).into()
     }
 
     fn char(self, value: char) -> Self::Operand {
-        (Constant::Char(value)).into()
+        Constant::Char(value).into()
     }
 
-    fn int(self, bit_rep: u128, size: u64, is_signed: bool) -> Self::Operand {
-        (Constant::Int {
-            bit_rep,
-            ty: IntType {
-                bit_size: size,
-                is_signed,
-            },
-        })
-        .into()
+    fn int(self, bit_rep: u128, ty: IntType) -> Self::Operand {
+        Constant::Int { bit_rep, ty }.into()
     }
 
-    fn float(self, bit_rep: u128, ebits: u64, sbits: u64) -> Self::Operand {
-        (Constant::Float {
-            bit_rep,
-            ty: FloatType {
-                e_bits: ebits,
-                s_bits: sbits,
-            },
-        })
-        .into()
+    fn float(self, bit_rep: u128, ty: FloatType) -> Self::Operand {
+        Constant::Float { bit_rep, ty }.into()
     }
 
     fn str(self, value: &'static str) -> Self::Operand {
-        (Constant::Str(value)).into()
+        Constant::Str(value).into()
     }
 
     fn func(self, id: u64) -> Self::Operand {
-        (Constant::Func(id)).into()
+        Constant::Func(id).into()
     }
 }

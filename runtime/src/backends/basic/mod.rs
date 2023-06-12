@@ -10,8 +10,8 @@ use std::{cell::RefCell, ops::DerefMut, rc::Rc};
 
 use crate::{
     abs::{
-        self, backend::*, AssertKind, BasicBlockIndex, BranchingMetadata, IntType, UnaryOp,
-        VariantIndex,
+        self, backend::*, AssertKind, BasicBlockIndex, BranchingMetadata, FloatType, IntType,
+        UnaryOp, VariantIndex,
     },
     solvers::z3::Z3Solver,
     trace::ImmediateTraceManager,
@@ -199,17 +199,15 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
         self.set(cast_value.into())
     }
 
-    fn integer_cast_of(mut self, operand: Self::Operand, is_signed: bool, bits: u64) {
+    fn integer_cast_of(mut self, operand: Self::Operand, to: IntType) {
         let value = self.get_operand_value(operand);
-        let cast_value = self
-            .expr_builder()
-            .cast_to_int(value.into(), bits, is_signed);
+        let cast_value = self.expr_builder().cast_to_int(value.into(), to);
         self.set(cast_value.into())
     }
 
-    fn float_cast_of(mut self, operand: Self::Operand, bits: u64) {
+    fn float_cast_of(mut self, operand: Self::Operand, to: FloatType) {
         let value = self.get_operand_value(operand);
-        let cast_value = self.expr_builder().cast_to_float(value.into(), bits);
+        let cast_value = self.expr_builder().cast_to_float(value.into(), to);
         self.set(cast_value.into())
     }
 

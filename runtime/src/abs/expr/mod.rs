@@ -4,7 +4,7 @@ pub(crate) mod macros;
 pub(crate) mod proj;
 pub(crate) mod variance;
 
-use super::{BinaryOp, UnaryOp};
+use super::{BinaryOp, FloatType, IntType, UnaryOp};
 use macros::{for_all_binary_op, repeat_macro_for};
 
 macro_rules! bin_fn_signature {
@@ -40,14 +40,9 @@ pub(crate) trait UnaryExprBuilder {
 
     fn cast_to_char<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a>;
 
-    fn cast_to_int<'a>(
-        &mut self,
-        operand: Self::ExprRef<'a>,
-        to_bits: u64,
-        to_signed: bool,
-    ) -> Self::Expr<'a>;
+    fn cast_to_int<'a>(&mut self, operand: Self::ExprRef<'a>, to: IntType) -> Self::Expr<'a>;
 
-    fn cast_to_float<'a>(&mut self, operand: Self::ExprRef<'a>, to_bits: u64) -> Self::Expr<'a>;
+    fn cast_to_float<'a>(&mut self, operand: Self::ExprRef<'a>, to: FloatType) -> Self::Expr<'a>;
 }
 
 // NOTE: Because of an internal compiler bug, the blanket impl can't be added.
