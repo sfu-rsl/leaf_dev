@@ -756,8 +756,8 @@ where
                 stringify!(pri::assign_cast_integer),
                 vec![
                     operand::copy_for_local(operand.into()),
-                    operand::const_from_bool(tcx, is_signed),
                     operand::const_from_uint(tcx, bits),
+                    operand::const_from_bool(tcx, is_signed),
                 ],
             )
         } else if ty.is_floating_point() {

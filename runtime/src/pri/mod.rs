@@ -154,13 +154,13 @@ pub fn assign_cast_char(dest: PlaceRef, operand: OperandRef) {
     assign_to(dest, |h| h.char_cast_of(take_back_operand_ref(operand)))
 }
 
-pub fn assign_cast_integer(dest: PlaceRef, operand: OperandRef, is_signed: bool, bit_size: u64) {
+pub fn assign_cast_integer(dest: PlaceRef, operand: OperandRef, bit_size: u64, is_signed: bool) {
     assign_to(dest, |h| {
         h.integer_cast_of(
             take_back_operand_ref(operand),
             IntType {
                 bit_size,
-                is_signed: is_signed,
+                is_signed,
             },
         )
     })
