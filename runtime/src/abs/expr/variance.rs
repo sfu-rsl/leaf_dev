@@ -1,7 +1,7 @@
 /// This module provides some traits to make it easier to implement expression builders for wrappers
 /// that work as adapters. Most of the adapters provide non-trivial covariance and contravariance
 /// over the input and output types of the wrapped expression builder.
-use super::{macros::*, BinaryExprBuilder, UnaryExprBuilder};
+use super::{BinaryExprBuilder, UnaryExprBuilder};
 use crate::abs::{BinaryOp, UnaryOp};
 use std::ops::DerefMut;
 

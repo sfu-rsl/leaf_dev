@@ -11,7 +11,7 @@ pub(crate) mod z3 {
     };
 
     use crate::{
-        abs::{BinaryOp, UnaryOp},
+        abs::{BinaryOp, FieldIndex, UnaryOp},
         backends::basic::expr::{
             ConcreteValue, ConstValue, Expr, ProjExpr, ProjKind, SymBinaryOperands, SymValue,
             SymVarId, SymbolicVar, SymbolicVarType, Value, ValueRef,
@@ -152,7 +152,9 @@ pub(crate) mod z3 {
                 Expr::Binary {
                     operator,
                     operands,
-                    checked: _, // only projections care about if a binary operation is checked or not
+                    // Only projections care about if a binary operation is checked or not.
+                    // Assumption: A checked binary expression without a field projection is not well formed.
+                    checked: _,
                 } => {
                     let (left, right) = match operands {
                         SymBinaryOperands::Orig { first, second } => {
@@ -170,52 +172,7 @@ pub(crate) mod z3 {
                 }
                 Expr::AddrOf() => todo!(),
                 Expr::Len { .. } => todo!(),
-                // TODO: make this it's own function
-                Expr::Projection(proj_expr) => match proj_expr {
-                    ProjExpr::SymIndex {
-                        host: _,
-                        index: _,
-                        from_end: _,
-                    } => {
-                        todo!("implement symbolic projections for indexing")
-                    }
-                    ProjExpr::SymHost { host, kind } => {
-                        match kind {
-                            ProjKind::Deref => todo!(),
-                            ProjKind::Field(field_index) => {
-                                // todo: field things...
-                                let checked =
-                                    if let SymValue::Expression(Expr::Binary { checked, .. }) =
-                                        host.as_ref()
-                                    {
-                                        *checked
-                                    } else {
-                                        false
-                                    };
-
-                                if checked {
-                                    if *field_index == 0 {
-                                        // If we see a `.0` field projection on a symbolic expression that is a checked
-                                        // binary operation, we can safely ignore the projection and treat the expression
-                                        // as normal, since checked binary operations return the tuple `(binop(x, y), did_overflow)`
-                                        self.translate_symbolic(host.as_ref())
-                                    } else if *field_index == 1 {
-                                        todo!("this is probably unreachable, please prove it")
-                                    } else {
-                                        unreachable!(
-                                            "invalid field index. A checked binop returns a len 2 tuple"
-                                        )
-                                    }
-                                } else {
-                                    todo!("implement non-checked operation field access")
-                                }
-                            }
-                            ProjKind::Index { index: _, from_end: _ } => todo!(),
-                            ProjKind::Subslice { from: _, to: _, from_end: _ } => todo!(),
-                            ProjKind::Downcast => todo!(),
-                        }
-                    }
-                },
+                Expr::Projection(proj_expr) => self.translate_projection_expr(proj_expr),
             }
         }
 
@@ -230,7 +187,6 @@ pub(crate) mod z3 {
                     AstNode::BitVector { ast, is_signed } => {
                         AstNode::from_bv(ast.bvnot(), is_signed)
                     }
-                    _ => unreachable!("Not is only supposed to be applied to bools and ints."),
                 },
                 UnaryOp::Neg => match operand {
                     AstNode::BitVector {
@@ -366,6 +322,64 @@ pub(crate) mod z3 {
                 }
                 SymbolicVarType::Float { .. } => todo!(),
                 _ => unreachable!("Casting from int to {to:#?} is not supported."),
+            }
+        }
+
+        fn translate_projection_expr(&mut self, proj_expr: &ProjExpr) -> AstNode<'ctx> {
+            match proj_expr {
+                ProjExpr::SymIndex {
+                    host: _,
+                    index: _,
+                    from_end: _,
+                } => {
+                    todo!("add support for symbolic indexes")
+                }
+                ProjExpr::SymHost { host, kind } => match kind {
+                    ProjKind::Deref => todo!(),
+                    ProjKind::Field(field_index) => {
+                        self.translate_field_projection(host.as_ref(), *field_index)
+                    }
+                    ProjKind::Index {
+                        index: _,
+                        from_end: _,
+                    } => todo!(),
+                    ProjKind::Subslice {
+                        from: _,
+                        to: _,
+                        from_end: _,
+                    } => todo!(),
+                    ProjKind::Downcast => todo!(),
+                },
+            }
+        }
+
+        fn translate_field_projection(
+            &mut self,
+            host: &SymValue,
+            field_index: FieldIndex,
+        ) -> AstNode<'ctx> {
+            let checked = if let SymValue::Expression(Expr::Binary { checked, .. }) = host {
+                *checked
+            } else {
+                false
+            };
+
+            if checked {
+                match field_index {
+                    0 => {
+                        // If we see a `.0` field projection on a symbolic expression that is a checked
+                        // binary operation, we can safely ignore the projection and treat the expression
+                        // as normal, since checked binary operations return the tuple `(binop(x, y), did_overflow)`,
+                        // and failed checked binops immediately assert no overflow, then panic.
+                        self.translate_symbolic(host)
+                    }
+                    1 => {
+                        todo!("add support for assertions from checked binops")
+                    }
+                    _ => unreachable!("invalid field index. A checked binop returns a len 2 tuple"),
+                }
+            } else {
+                todo!("implement non-checked operation field access")
             }
         }
     }

@@ -5,9 +5,7 @@ pub(crate) mod proj;
 pub(crate) mod variance;
 
 use super::{BinaryOp, UnaryOp};
-use macros::repeat_macro_for;
 
-// TODO: determine which functions are checked & which are not
 macro_rules! bin_fn_signature {
     ($method:ident $(, $arg: ident : $arg_type: ty)*) => {
         fn $method<'a>(&mut self, operands: Self::ExprRefPair<'a>, $($arg: $arg_type),*) -> Self::Expr<'a>;
