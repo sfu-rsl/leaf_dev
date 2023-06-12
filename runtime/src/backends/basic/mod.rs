@@ -11,7 +11,7 @@ use std::{cell::RefCell, ops::DerefMut, rc::Rc};
 use crate::{
     abs::{
         self, backend::*, AssertKind, BasicBlockIndex, BranchingMetadata, DiscriminantAsIntType,
-        UnaryOp, VariantIndex,
+        IntType, UnaryOp, VariantIndex,
     },
     solvers::z3::Z3Solver,
     trace::ImmediateTraceManager,
@@ -485,8 +485,10 @@ macro_rules! impl_int_branch_case_value {
                 fn into_const(self, discr_as_int: &DiscriminantAsIntType) -> ConstValue {
                     ConstValue::Int {
                         bit_rep: self as u128,
-                        size: discr_as_int.bit_size,
-                        is_signed: discr_as_int.is_signed,
+                        ty: IntType {
+                            bit_size: discr_as_int.bit_size,
+                            is_signed: discr_as_int.is_signed,
+                        },
                     }
                 }
             }
@@ -560,23 +562,13 @@ fn get_constant_value(constant: &operand::Constant) -> ConstValue {
     match constant {
         operand::Constant::Bool(value) => ConstValue::Bool(*value),
         operand::Constant::Char(value) => ConstValue::Char(*value),
-        operand::Constant::Int {
-            bit_rep,
-            size,
-            is_signed,
-        } => ConstValue::Int {
+        operand::Constant::Int { bit_rep, ty } => ConstValue::Int {
             bit_rep: *bit_rep,
-            size: *size,
-            is_signed: *is_signed,
+            ty: *ty,
         },
-        operand::Constant::Float {
-            bit_rep,
-            ebits,
-            sbits,
-        } => ConstValue::Float {
+        operand::Constant::Float { bit_rep, ty } => ConstValue::Float {
             bit_rep: *bit_rep,
-            ebits: *ebits,
-            sbits: *sbits,
+            ty: *ty,
         },
         operand::Constant::Str(value) => ConstValue::Str(value),
         operand::Constant::Func(value) => ConstValue::Func(*value),

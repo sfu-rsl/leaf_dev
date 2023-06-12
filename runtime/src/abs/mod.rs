@@ -119,13 +119,18 @@ impl ValueType {
     }
 }
 
-#[derive(Clone, Debug)]
+/* FIXME: These types will have limited set of possible types. Thus can be
+ * optimized using techniques such as interning.
+ * Enums are not much a favorable option, since it is against the abstract
+ * representation of integers and floats in the engine.
+ */
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub(crate) struct IntType {
     pub bit_size: u64,
     pub is_signed: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub(crate) struct FloatType {
     pub e_bits: u64,
     pub s_bits: u64,

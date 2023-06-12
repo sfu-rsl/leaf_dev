@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use crate::abs::{
     backend::{ConstantHandler, OperandHandler},
-    ValueType,
+    FloatType, IntType, ValueType,
 };
 
 use super::{expr::SymValueRef, place::Place};
@@ -24,16 +24,8 @@ pub(crate) enum PlaceUsage {
 pub(crate) enum Constant {
     Bool(bool),
     Char(char),
-    Int {
-        bit_rep: u128,
-        size: u64,
-        is_signed: bool,
-    },
-    Float {
-        bit_rep: u128,
-        ebits: u64,
-        sbits: u64,
-    },
+    Int { bit_rep: u128, ty: IntType },
+    Float { bit_rep: u128, ty: FloatType },
     Str(&'static str),
     Func(u64),
 }
@@ -92,8 +84,10 @@ impl<O: From<Constant>> ConstantHandler for DefaultConstantHandler<O> {
     fn int(self, bit_rep: u128, size: u64, is_signed: bool) -> Self::Operand {
         (Constant::Int {
             bit_rep,
-            size,
-            is_signed,
+            ty: IntType {
+                bit_size: size,
+                is_signed,
+            },
         })
         .into()
     }
@@ -101,8 +95,10 @@ impl<O: From<Constant>> ConstantHandler for DefaultConstantHandler<O> {
     fn float(self, bit_rep: u128, ebits: u64, sbits: u64) -> Self::Operand {
         (Constant::Float {
             bit_rep,
-            ebits,
-            sbits,
+            ty: FloatType {
+                e_bits: ebits,
+                s_bits: sbits,
+            },
         })
         .into()
     }

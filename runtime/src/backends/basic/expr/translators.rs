@@ -82,30 +82,36 @@ pub(crate) mod z3 {
                 }
                 ConstValue::Int {
                     bit_rep,
-                    size,
-                    is_signed: false,
+                    ty:
+                        IntType {
+                            bit_size,
+                            is_signed: false,
+                        },
                 } => {
                     // TODO: Add support for 128 bit integers.
                     AstNode::from_bv(
                         ast::BV::from_u64(
                             self.context,
                             *bit_rep as u64,
-                            (*size).try_into().expect("Size is too large."),
+                            (*bit_size).try_into().expect("Size is too large."),
                         ),
                         false,
                     )
                 }
                 ConstValue::Int {
                     bit_rep,
-                    size,
-                    is_signed: true,
+                    ty:
+                        IntType {
+                            bit_size,
+                            is_signed: true,
+                        },
                 } => {
                     // TODO: Add support for 128 bit integers.
                     AstNode::from_bv(
                         ast::BV::from_i64(
                             self.context,
                             *bit_rep as i64,
-                            (*size).try_into().expect("Size is too large."),
+                            (*bit_size).try_into().expect("Size is too large."),
                         ),
                         true,
                     )
@@ -344,9 +350,11 @@ pub(crate) mod z3 {
                     };
                     ValueRef::new(super::super::Value::Concrete(
                         super::super::ConcreteValue::Const(super::super::ConstValue::Int {
-                            is_signed,
                             bit_rep: value,
-                            size: ast.get_size() as u64,
+                            ty: IntType {
+                                bit_size: ast.get_size() as u64,
+                                is_signed,
+                            },
                         }),
                     ))
                 }

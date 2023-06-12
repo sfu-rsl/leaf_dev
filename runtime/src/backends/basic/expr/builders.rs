@@ -358,8 +358,10 @@ mod concrete {
                     let len = arr.len();
                     ConstValue::Int {
                         bit_rep: len as u128,
-                        size: std::mem::size_of_val(&len) as u64 * 8,
-                        is_signed: false,
+                        ty: IntType {
+                            bit_size: std::mem::size_of_val(&len) as u64 * 8,
+                            is_signed: false,
+                        },
                     }
                     .into()
                 }
@@ -385,7 +387,14 @@ mod concrete {
             to_signed: bool,
         ) -> Self::Expr<'a> {
             match expr {
-                ConcreteValue::Const(c) => ConstValue::integer_cast(c, to_bits, to_signed).into(),
+                ConcreteValue::Const(c) => ConstValue::integer_cast(
+                    c,
+                    IntType {
+                        bit_size: to_bits,
+                        is_signed: to_signed,
+                    },
+                )
+                .into(),
                 _ => {
                     unreachable!("Integer cast is supposed to be called on a constant.")
                 }
@@ -455,8 +464,10 @@ mod simp {
                 BinaryOperands::Rev {
                     first: ConstValue::Int {
                         bit_rep: 0,
-                        is_signed: false,
-                        ..
+                        ty: IntType {
+                            is_signed: false,
+                            ..
+                        }
                     },
                     ..
                 }
@@ -470,8 +481,10 @@ mod simp {
                 BinaryOperands::Orig {
                     second: ConstValue::Int {
                         bit_rep: 0,
-                        is_signed: false,
-                        ..
+                        ty: IntType {
+                            is_signed: false,
+                            ..
+                        }
                     },
                     ..
                 }
@@ -559,12 +572,9 @@ mod simp {
             // x % 1 = 0
             if operands.is_second_one() {
                 Ok((&match operands.konst() {
-                    ConstValue::Int {
-                        size, is_signed, ..
-                    } => ConstValue::Int {
+                    ConstValue::Int { ty, .. } => ConstValue::Int {
                         bit_rep: 0,
-                        size: *size,
-                        is_signed: *is_signed,
+                        ty: *ty,
                     },
                     ConstValue::Float { .. } => todo!(),
                     _ => unreachable!("The second operand should be numeric."),

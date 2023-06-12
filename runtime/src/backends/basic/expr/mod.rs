@@ -5,7 +5,7 @@ pub(crate) mod utils;
 
 use std::{assert_matches::assert_matches, ops::Deref, rc::Rc};
 
-use crate::abs::{BinaryOp, FieldIndex, UnaryOp, ValueType, VariantIndex};
+use crate::abs::{BinaryOp, FieldIndex, FloatType, IntType, UnaryOp, ValueType, VariantIndex};
 
 use self::utils::define_reversible_pair;
 
@@ -45,20 +45,12 @@ impl ConcreteValue {
 
 // FIXME: Remove this after adding support for floats.
 #[allow(unused)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum ConstValue {
     Bool(bool),
     Char(char),
-    Int {
-        bit_rep: u128,
-        size: u64,
-        is_signed: bool,
-    },
-    Float {
-        bit_rep: u128,
-        ebits: u64,
-        sbits: u64,
-    },
+    Int { bit_rep: u128, ty: IntType },
+    Float { bit_rep: u128, ty: FloatType },
     Str(&'static str),
     Func(u64),
 }
@@ -87,26 +79,22 @@ impl ConstValue {
             UnaryOp::Neg => match this {
                 Self::Int {
                     bit_rep,
-                    size,
-                    is_signed: true,
+                    ty:
+                        ty @ IntType {
+                            is_signed: true, ..
+                        },
                 } => Self::Int {
                     bit_rep: todo!("Proposed value: {}", !bit_rep + 1),
-                    size: *size,
-                    is_signed: true,
+                    ty: *ty,
                 },
                 Self::Float { .. } => unimplemented!(),
-                _ => unreachable!("Negation of non-numeric constant is not possible."),
+                _ => unreachable!("Negation is meant only for signed integers and floats."),
             },
             UnaryOp::Not => match this {
                 Self::Bool(value) => Self::Bool(!value),
-                Self::Int {
-                    bit_rep,
-                    size,
-                    is_signed,
-                } => Self::Int {
+                Self::Int { bit_rep, ty } => Self::Int {
                     bit_rep: !bit_rep,
-                    size: *size,
-                    is_signed: *is_signed,
+                    ty: *ty,
                 },
                 _ => unreachable!("Not operand only works on boolean and integers."),
             },
@@ -135,7 +123,7 @@ impl ConstValue {
         }
     }
 
-    pub fn integer_cast(this: &Self, to_size: u64, is_to_signed: bool) -> Self {
+    pub fn integer_cast(this: &Self, to: IntType) -> Self {
         match this {
             /* This seems overly simple but when the number is originally cast to the u128 to get its bit representation,
              * this covers any of the casting that would need to be done here. If the original number was unsigned then
@@ -146,18 +134,15 @@ impl ConstValue {
              */
             Self::Int { bit_rep, .. } => Self::Int {
                 bit_rep: *bit_rep,
-                size: to_size,
-                is_signed: is_to_signed,
+                ty: to,
             },
             Self::Bool(value) => Self::Int {
                 bit_rep: *value as u128,
-                size: to_size,
-                is_signed: is_to_signed,
+                ty: to,
             },
             Self::Char(value) => Self::Int {
                 bit_rep: *value as u128,
-                size: to_size,
-                is_signed: is_to_signed,
+                ty: to,
             },
             Self::Float { .. } => todo!("Casting float to integer is not implemented yet."),
             _ => unreachable!("Casting {this:?} to integer is not possible."),
@@ -169,16 +154,14 @@ impl ConstValue {
             (
                 Self::Int {
                     bit_rep: first,
-                    size: first_size,
-                    is_signed: first_signed,
+                    ty: first_ty,
                 },
                 Self::Int {
                     bit_rep: second,
-                    size: second_size,
-                    ..
+                    ty: second_ty,
                 },
             ) => {
-                assert_eq!(*first_size, *second_size);
+                assert_eq!(first_ty.bit_size, second_ty.bit_size);
 
                 let result = match operator {
                     BinaryOp::Add => first + second,
@@ -194,8 +177,7 @@ impl ConstValue {
 
                 Self::Int {
                     bit_rep: result,
-                    size: *first_size,
-                    is_signed: *first_signed,
+                    ty: *first_ty,
                 }
             }
 
@@ -220,26 +202,24 @@ impl ConstValue {
             (
                 Self::Int {
                     bit_rep: first,
-                    size: first_size,
-                    is_signed: first_signed,
+                    ty: first_ty,
                 },
                 Self::Int {
                     bit_rep: second,
-                    is_signed: second_signed,
-                    ..
+                    ty: second_ty,
                 },
             ) => {
                 let result = match operator {
                     BinaryOp::Shl => {
                         assert!(
-                            !*second_signed,
+                            !second_ty.is_signed,
                             "Shifting a negative value is not expected."
                         ); //TODO we can get rid of this assertion in the future
                         first << second
                     }
                     BinaryOp::Shr => {
                         assert!(
-                            !*second_signed,
+                            !second_ty.is_signed,
                             "Shifting by a negative value is not expected."
                         ); //TODO we can get rid of this assertion in the future
                         first >> second
@@ -250,8 +230,7 @@ impl ConstValue {
 
                 Self::Int {
                     bit_rep: result,
-                    size: *first_size,
-                    is_signed: *first_signed,
+                    ty: *first_ty,
                 }
             }
             _ => unreachable!("Shifting is only possible on integers."),
@@ -266,19 +245,16 @@ impl ConstValue {
                 (
                     Self::Int {
                         bit_rep: first,
-                        size: first_size,
-                        is_signed: first_signed,
+                        ty: first_ty,
                     },
                     Self::Int {
                         bit_rep: second,
-                        size: second_size,
-                        is_signed: second_signed,
+                        ty: second_ty,
                     },
                 ) => {
-                    assert_eq!(*first_size, *second_size);
-                    assert_eq!(*first_signed, *second_signed);
+                    assert_eq!(*first_ty, *second_ty);
 
-                    if !first_signed {
+                    if !first_ty.is_signed {
                         return match operator {
                             BinaryOp::Lt => first < second,
                             BinaryOp::Le => first <= second,
@@ -289,8 +265,8 @@ impl ConstValue {
                     }
 
                     let signs = (
-                        Self::is_positive(first, first_size),
-                        Self::is_positive(second, second_size),
+                        Self::is_positive(first, first_ty.bit_size),
+                        Self::is_positive(second, second_ty.bit_size),
                     );
 
                     match signs {
@@ -303,8 +279,8 @@ impl ConstValue {
                         },
 
                         (false, false) => {
-                            let first = Self::as_signed(first, first_size);
-                            let second = Self::as_signed(second, second_size);
+                            let first = Self::as_signed(first, first_ty.bit_size);
+                            let second = Self::as_signed(second, second_ty.bit_size);
                             match operator {
                                 BinaryOp::Lt => first < second,
                                 BinaryOp::Le => first <= second,
@@ -338,14 +314,14 @@ impl ConstValue {
         }
     }
 
-    fn is_positive(bit_rep: &u128, size: &u64) -> bool {
+    fn is_positive(bit_rep: &u128, size: u64) -> bool {
         const MASK: u128 = 1;
-        (*bit_rep >> (*size - 1)) & MASK != 1
+        (*bit_rep >> (size - 1)) & MASK != 1
     }
 
-    fn as_signed(bit_rep: &u128, size: &u64) -> i128 {
-        let mask: u128 = (1 << (*size - 1)) - 1; // Create a mask of 1s with the given size except the sign bit
-        let sign_mask: u128 = 1 << (*size - 1); // Create a mask for the sign bit, for example 1000...0
+    fn as_signed(bit_rep: &u128, size: u64) -> i128 {
+        let mask: u128 = (1 << (size - 1)) - 1; // Create a mask of 1s with the given size except the sign bit
+        let sign_mask: u128 = 1 << (size - 1); // Create a mask for the sign bit, for example 1000...0
         let sign_extend: u128 = (!mask) & sign_mask; // Create a sign extension mask, it would be something like 000...010...000
 
         let sign_bit: bool = (*bit_rep & sign_mask) != 0;
@@ -368,8 +344,10 @@ macro_rules! impl_from_uint {
                 fn from(value: $ty) -> Self {
                     Self::Int {
                         bit_rep: value as u128,
-                        size: std::mem::size_of::<$ty>() as u64 * 8,
-                        is_signed: false,
+                        ty: IntType {
+                            bit_size: std::mem::size_of::<$ty>() as u64 * 8,
+                            is_signed: false,
+                        },
                     }
                 }
             }
