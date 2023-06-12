@@ -45,14 +45,14 @@ impl<S> From<Constant> for Operand<S> {
 }
 
 pub(crate) struct DefaultOperandHandler<'a, SymValue = SymValueRef> {
-    symbolic_creator: Box<dyn FnOnce(ValueType) -> SymValue + 'a>,
+    create_symbolic: Box<dyn FnOnce(ValueType) -> SymValue + 'a>,
 }
 
 pub(crate) struct DefaultConstantHandler<O>(PhantomData<O>);
 
 impl<'a, SymValue> DefaultOperandHandler<'a, SymValue> {
-    pub(crate) fn new(symbolic_creator: Box<dyn FnOnce(ValueType) -> SymValue + 'a>) -> Self {
-        Self { symbolic_creator }
+    pub(crate) fn new(create_symbolic: Box<dyn FnOnce(ValueType) -> SymValue + 'a>) -> Self {
+        Self { create_symbolic }
     }
 }
 
@@ -74,7 +74,7 @@ impl<SymValue> OperandHandler for DefaultOperandHandler<'_, SymValue> {
     }
 
     fn new_symbolic(self, ty: ValueType) -> Self::Operand {
-        Operand::Symbolic((self.symbolic_creator)(ty))
+        Operand::Symbolic((self.create_symbolic)(ty))
     }
 }
 
