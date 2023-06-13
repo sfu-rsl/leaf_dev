@@ -380,6 +380,7 @@ impl From<char> for ConstValue {
 #[allow(unused)]
 #[derive(Clone, Debug)]
 pub(crate) enum AdtKind {
+    Tuple,
     Struct,
     Enum {
         /* NOTE: Even when the variant index is set based on a decision on a

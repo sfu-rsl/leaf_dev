@@ -236,22 +236,32 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
     }
 
     fn array_from(mut self, items: impl Iterator<Item = Self::Operand>) {
-        let value = Value::Concrete(ConcreteValue::Array(ArrayValue {
+        let value = ConcreteValue::Array(ArrayValue {
             elements: items.map(|e| self.get_operand_value(e)).collect(),
-        }));
-        self.set_value(value)
+        });
+        self.set_value(value.into())
     }
 
-    fn tuple_from(self, fields: impl Iterator<Item = Self::Operand>) {
-        todo!()
+    fn tuple_from(mut self, fields: impl Iterator<Item = Self::Operand>) {
+        self.set_adt_value(AdtKind::Tuple, fields)
     }
 
-    fn adt_from(self, fields: impl Iterator<Item = Self::Operand>, variant: Option<VariantIndex>) {
-        todo!()
+    fn adt_from(
+        mut self,
+        fields: impl Iterator<Item = Self::Operand>,
+        variant: Option<VariantIndex>,
+    ) {
+        let kind = match variant {
+            Some(discr) => AdtKind::Enum {
+                discriminant: discr,
+            },
+            None => AdtKind::Struct,
+        };
+        self.set_adt_value(kind, fields)
     }
 
     fn union_from(self, active_field: abs::FieldIndex, value: Self::Operand) {
-        todo!()
+        todo!("Unions are not yet supported. {active_field} = {value:?}")
     }
 
     // TODO: Need to add support for the Deinit MIR instruction to have this working properly.
@@ -282,6 +292,21 @@ impl<EB: OperationalExprBuilder> BasicAssignmentHandler<'_, EB> {
 
     fn expr_builder(&self) -> impl DerefMut<Target = EB> + '_ {
         self.expr_builder.as_ref().borrow_mut()
+    }
+
+    fn set_adt_value(
+        &mut self,
+        kind: AdtKind,
+        fields: impl Iterator<Item = <Self as AssignmentHandler>::Operand>,
+    ) {
+        let value = Value::Concrete(ConcreteValue::Adt(AdtValue {
+            kind,
+            fields: fields
+                .map(|f| self.get_operand_value(f))
+                .map(|v| Some(v))
+                .collect(),
+        }));
+        self.set_value(value)
     }
 }
 
