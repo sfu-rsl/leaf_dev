@@ -453,12 +453,22 @@ where
 
         let mut add_call: Box<dyn FnMut(&[OperandRef])> = match kind.as_ref() {
             mir::AggregateKind::Array(_) => {
-                Box::new(|elements| self.call_adder.by_aggregate_array(elements))
+                Box::new(|items| self.call_adder.by_aggregate_array(items))
             }
-            mir::AggregateKind::Tuple => Box::new(|_elements| todo!("Add support for tuples.")),
-            mir::AggregateKind::Adt(_, _, _, _, _) => {
-                Box::new(|_fields| todo!("Add support for ADTs."))
+            mir::AggregateKind::Tuple => Box::new(|fields| {
+                self.call_adder.by_aggregate_tuple(fields);
+            }),
+            mir::AggregateKind::Adt(_, variant, _, _, None) => {
+                Box::new(|fields| self.call_adder.by_aggregate_adt(fields, *variant))
             }
+            mir::AggregateKind::Adt(_, _, _, _, Some(active_field)) /* Union */ => Box::new(|fields| {
+                assert_eq!(
+                    fields.len(),
+                    1,
+                    "For a union, there should only be one field."
+                );
+                self.call_adder.by_aggregate_union(*active_field, fields[0])
+            }),
             mir::AggregateKind::Closure(_, _) => todo!("Closures are not supported yet."),
             mir::AggregateKind::Generator(_, _, _) => todo!("Generators are not supported yet."),
         };

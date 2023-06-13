@@ -1,5 +1,6 @@
 use std::{fmt::Debug, vec};
 
+use rustc_abi::FieldIdx;
 use rustc_const_eval::interpret::{ConstValue, Scalar};
 use rustc_middle::{
     mir::{
@@ -154,6 +155,12 @@ pub(crate) trait Assigner<'tcx> {
     fn by_discriminant(&mut self, place: PlaceRef);
 
     fn by_aggregate_array(&mut self, items: &[OperandRef]);
+
+    fn by_aggregate_tuple(&mut self, fields: &[OperandRef]);
+
+    fn by_aggregate_adt(&mut self, fields: &[OperandRef], variant: VariantIdx);
+
+    fn by_aggregate_union(&mut self, active_field: FieldIdx, value: OperandRef);
 
     // Special case for SetDiscriminant StatementType since it is similar to a regular assignment
     fn its_discriminant_to(&mut self, variant_index: &VariantIdx);
@@ -793,21 +800,45 @@ where
     }
 
     fn by_aggregate_array(&mut self, items: &[OperandRef]) {
-        let operand_ref_ty = self.context.pri_special_types().operand_ref;
-        let (items_local, additional_statements) = prepare_operand_for_slice(
-            self.context.tcx(),
-            &mut self.context,
-            operand_ref_ty,
-            items
-                .iter()
-                .map(|i| operand::move_for_local((*i).into()))
-                .collect(),
-        );
+        let (items_local, additional_statements) = self.make_slice_for_adt_elements(items);
 
         self.add_bb_for_assign_call_with_statements(
             stringify!(pri::assign_aggregate_array),
             vec![operand::move_for_local(items_local)],
             additional_statements.to_vec(),
+        )
+    }
+
+    fn by_aggregate_tuple(&mut self, fields: &[OperandRef]) {
+        let (fields_local, additional_statements) = self.make_slice_for_adt_elements(fields);
+
+        self.add_bb_for_assign_call_with_statements(
+            stringify!(pri::assign_aggregate_tuple),
+            vec![operand::move_for_local(fields_local)],
+            additional_statements.to_vec(),
+        )
+    }
+
+    fn by_aggregate_adt(&mut self, fields: &[OperandRef], variant: VariantIdx) {
+        let (fields_local, additional_statements) = self.make_slice_for_adt_elements(fields);
+
+        self.add_bb_for_assign_call_with_statements(
+            stringify!(pri::assign_aggregate_adt),
+            vec![
+                operand::move_for_local(fields_local),
+                operand::const_from_uint(self.context.tcx(), variant.as_u32()),
+            ],
+            additional_statements.to_vec(),
+        )
+    }
+
+    fn by_aggregate_union(&mut self, active_field: FieldIdx, value: OperandRef) {
+        self.add_bb_for_assign_call(
+            stringify!(pri::assign_aggregate_union),
+            vec![
+                operand::const_from_uint(self.context.tcx(), active_field.as_u32()),
+                operand::copy_for_local(value.into()),
+            ],
         )
     }
 
@@ -825,7 +856,10 @@ where
 impl<'tcx, C> RuntimeCallAdder<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
-    C: DestinationReferenceProvider + BodyLocalManager<'tcx>,
+    C: DestinationReferenceProvider
+        + BodyLocalManager<'tcx>
+        + TyContextProvider<'tcx>
+        + SpecialTypesProvider<'tcx>,
 {
     fn add_bb_for_assign_call(&mut self, func_name: &str, args: Vec<Operand<'tcx>>) {
         self.add_bb_for_assign_call_with_statements(func_name, args, vec![])
@@ -868,6 +902,85 @@ where
         let local = self.context.add_local(enum_ty);
         let statements = enums::set_variant_to_local(enum_ty, format!("{value:?}").as_str(), local);
         (local, statements)
+    }
+
+    fn make_slice_for_adt_elements(
+        &mut self,
+        items: &[OperandRef],
+    ) -> (Local, [Statement<'tcx>; 3]) {
+        let operand_ref_ty = self.context.pri_special_types().operand_ref;
+        let (items_local, additional_statements) = prepare_operand_for_slice(
+            self.context.tcx(),
+            &mut self.context,
+            operand_ref_ty,
+            items
+                .iter()
+                .map(|i| operand::move_for_local((*i).into()))
+                .collect(),
+        );
+        (items_local, additional_statements)
+    }
+}
+
+impl<'tcx, C> CastAssigner<'tcx> for RuntimeCallAdder<C>
+where
+    Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
+    C: CastOperandProvider + DestinationReferenceProvider + LocationProvider + BaseContext<'tcx>,
+{
+    fn to_int(&mut self, ty: Ty<'tcx>) {
+        if ty.is_char() {
+            self.add_bb_for_cast_assign_call(stringify!(pri::assign_cast_char))
+        } else {
+            assert!(ty.is_integral());
+
+            let tcx = self.context.tcx();
+            let is_signed = ty.is_signed();
+            let bits = ty::size_of(tcx, ty).bits();
+
+            self.add_bb_for_cast_assign_call_with_args(
+                stringify!(pri::assign_cast_integer),
+                vec![
+                    operand::const_from_uint(tcx, bits),
+                    operand::const_from_bool(tcx, is_signed),
+                ],
+            )
+        }
+    }
+
+    fn to_float(&mut self, ty: Ty<'tcx>) {
+        let (e_bits, s_bits) = ty::ebit_sbit_size(self.context.tcx(), ty);
+        self.add_bb_for_cast_assign_call_with_args(
+            stringify!(pri::assign_cast_float),
+            vec![
+                operand::const_from_uint(self.context.tcx(), e_bits),
+                operand::const_from_uint(self.context.tcx(), s_bits),
+            ],
+        )
+    }
+
+    fn through_unsizing(&mut self) {
+        self.add_bb_for_cast_assign_call(stringify!(pri::assign_cast_unsize))
+    }
+}
+
+impl<'tcx, C> RuntimeCallAdder<C>
+where
+    Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
+    C: CastOperandProvider + DestinationReferenceProvider + LocationProvider + BaseContext<'tcx>,
+{
+    fn add_bb_for_cast_assign_call(&mut self, func_name: &str) {
+        self.add_bb_for_assign_call(func_name, vec![])
+    }
+
+    fn add_bb_for_cast_assign_call_with_args(&mut self, func_name: &str, args: Vec<Operand<'tcx>>) {
+        self.add_bb_for_assign_call(
+            func_name,
+            [
+                vec![operand::copy_for_local(self.context.operand_ref().into())],
+                args,
+            ]
+            .concat(),
+        )
     }
 }
 
