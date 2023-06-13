@@ -547,27 +547,8 @@ fn get_operand_value(vars_state: &mut dyn VariablesState, operand: Operand) -> V
         // copy and move are the same, but only for now. see: https://github.com/rust-lang/unsafe-code-guidelines/issues/188
         Operand::Place(place, operand::PlaceUsage::Copy)
         | Operand::Place(place, operand::PlaceUsage::Move) => vars_state.copy_place(&place),
-        Operand::Const(constant) => ValueRef::new(Value::Concrete(ConcreteValue::from_const(
-            get_constant_value(&constant),
-        ))),
+        Operand::Const(constant) => Into::<ConstValue>::into(constant).to_value_ref(),
         Operand::Symbolic(sym) => sym.into(),
-    }
-}
-
-fn get_constant_value(constant: &operand::Constant) -> ConstValue {
-    match constant {
-        operand::Constant::Bool(value) => ConstValue::Bool(*value),
-        operand::Constant::Char(value) => ConstValue::Char(*value),
-        operand::Constant::Int { bit_rep, ty } => ConstValue::Int {
-            bit_rep: *bit_rep,
-            ty: *ty,
-        },
-        operand::Constant::Float { bit_rep, ty } => ConstValue::Float {
-            bit_rep: *bit_rep,
-            ty: *ty,
-        },
-        operand::Constant::Str(value) => ConstValue::Str(value),
-        operand::Constant::Func(value) => ConstValue::Func(*value),
     }
 }
 

@@ -587,6 +587,7 @@ define_reversible_pair!(
 
 mod convert {
     use super::*;
+    use crate::backends::basic::operand;
 
     impl Value {
         #[inline]
@@ -618,6 +619,19 @@ mod convert {
         #[inline]
         fn from(val: ConstValue) -> Self {
             Into::<ConcreteValue>::into(val).into()
+        }
+    }
+    impl From<operand::Constant> for ConstValue {
+        #[inline]
+        fn from(val: operand::Constant) -> Self {
+            match val {
+                operand::Constant::Bool(value) => ConstValue::Bool(value),
+                operand::Constant::Char(value) => ConstValue::Char(value),
+                operand::Constant::Int { bit_rep, ty } => ConstValue::Int { bit_rep, ty },
+                operand::Constant::Float { bit_rep, ty } => ConstValue::Float { bit_rep, ty },
+                operand::Constant::Str(value) => ConstValue::Str(value),
+                operand::Constant::Func(value) => ConstValue::Func(value),
+            }
         }
     }
 
