@@ -7,7 +7,10 @@ use rustc_middle::mir::{
 
 use crate::{
     mir_transform::{
-        call_addition::{context::BodyProvider, context_requirements as ctxtreqs, *},
+        call_addition::{
+            context::{BodyProvider, TyContextProvider},
+            context_requirements as ctxtreqs, *,
+        },
         modification::{BodyModificationUnit, JumpTargetModifier},
     },
     visit::*,
@@ -458,8 +461,15 @@ where
             mir::AggregateKind::Tuple => Box::new(|fields| {
                 self.call_adder.by_aggregate_tuple(fields);
             }),
-            mir::AggregateKind::Adt(_, variant, _, _, None) => {
-                Box::new(|fields| self.call_adder.by_aggregate_adt(fields, *variant))
+            mir::AggregateKind::Adt(x, variant, _, _, None) => {
+                use rustc_hir::def::DefKind;
+                match self.call_adder.tcx().def_kind(x) {
+                    DefKind::Enum => Box::new(|fields| {self.call_adder.by_aggregate_enum(fields, *variant)}),
+                    DefKind::Struct => Box::new(|fields| {
+                        self.call_adder.by_aggregate_struct(fields)
+                    }),
+                    _ => unreachable!("Only enums and structs are supposed to be ADT.")
+                }
             }
             mir::AggregateKind::Adt(_, _, _, _, Some(active_field)) /* Union */ => Box::new(|fields| {
                 assert_eq!(

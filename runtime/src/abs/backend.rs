@@ -130,7 +130,7 @@ pub(crate) trait AssignmentHandler {
 
     fn tuple_from(self, fields: impl Iterator<Item = Self::Operand>);
 
-    fn adt_from(self, fields: impl Iterator<Item = Self::Operand>, variant: VariantIndex);
+    fn adt_from(self, fields: impl Iterator<Item = Self::Operand>, variant: Option<VariantIndex>);
 
     fn union_from(self, active_field: FieldIndex, value: Self::Operand);
 

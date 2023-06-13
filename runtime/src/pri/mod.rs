@@ -221,9 +221,17 @@ pub fn assign_aggregate_tuple(dest: PlaceRef, fields: &[OperandRef]) {
         h.tuple_from(fields.iter().map(|o| take_back_operand_ref(*o)))
     })
 }
-pub fn assign_aggregate_adt(dest: PlaceRef, fields: &[OperandRef], variant: VariantIndex) {
+pub fn assign_aggregate_struct(dest: PlaceRef, fields: &[OperandRef]) {
     assign_to(dest, |h| {
-        h.adt_from(fields.iter().map(|o| take_back_operand_ref(*o)), variant)
+        h.adt_from(fields.iter().map(|o| take_back_operand_ref(*o)), None)
+    })
+}
+pub fn assign_aggregate_enum(dest: PlaceRef, fields: &[OperandRef], variant: VariantIndex) {
+    assign_to(dest, |h| {
+        h.adt_from(
+            fields.iter().map(|o| take_back_operand_ref(*o)),
+            Some(variant),
+        )
     })
 }
 pub fn assign_aggregate_union(dest: PlaceRef, active_field: FieldIndex, value: OperandRef) {

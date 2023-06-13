@@ -246,7 +246,7 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
         todo!()
     }
 
-    fn adt_from(self, fields: impl Iterator<Item = Self::Operand>, variant: VariantIndex) {
+    fn adt_from(self, fields: impl Iterator<Item = Self::Operand>, variant: Option<VariantIndex>) {
         todo!()
     }
 

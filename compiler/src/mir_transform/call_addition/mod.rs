@@ -158,7 +158,9 @@ pub(crate) trait Assigner<'tcx> {
 
     fn by_aggregate_tuple(&mut self, fields: &[OperandRef]);
 
-    fn by_aggregate_adt(&mut self, fields: &[OperandRef], variant: VariantIdx);
+    fn by_aggregate_struct(&mut self, fields: &[OperandRef]);
+
+    fn by_aggregate_enum(&mut self, fields: &[OperandRef], variant: VariantIdx);
 
     fn by_aggregate_union(&mut self, active_field: FieldIdx, value: OperandRef);
 
@@ -296,6 +298,15 @@ impl<C> RuntimeCallAdder<C> {
                 base: &mut other.context,
             },
         }
+    }
+}
+
+impl<'tcx, C> TyContextProvider<'tcx> for RuntimeCallAdder<C>
+where
+    C: TyContextProvider<'tcx>,
+{
+    fn tcx(&self) -> TyCtxt<'tcx> {
+        self.context.tcx()
     }
 }
 
@@ -800,35 +811,37 @@ where
     }
 
     fn by_aggregate_array(&mut self, items: &[OperandRef]) {
-        let (items_local, additional_stmts) = self.make_slice_for_adt_elements(items);
-
-        self.add_bb_for_assign_call_with_statements(
+        self.add_bb_for_aggregate_assign_call(
             stringify!(pri::assign_aggregate_array),
-            vec![operand::move_for_local(items_local)],
-            additional_stmts.to_vec(),
+            items,
+            vec![],
         )
     }
 
     fn by_aggregate_tuple(&mut self, fields: &[OperandRef]) {
-        let (fields_local, additional_stmts) = self.make_slice_for_adt_elements(fields);
-
-        self.add_bb_for_assign_call_with_statements(
+        self.add_bb_for_aggregate_assign_call(
             stringify!(pri::assign_aggregate_tuple),
-            vec![operand::move_for_local(fields_local)],
-            additional_stmts.to_vec(),
+            fields,
+            vec![],
         )
     }
 
-    fn by_aggregate_adt(&mut self, fields: &[OperandRef], variant: VariantIdx) {
-        let (fields_local, additional_stmts) = self.make_slice_for_adt_elements(fields);
+    fn by_aggregate_struct(&mut self, fields: &[OperandRef]) {
+        self.add_bb_for_aggregate_assign_call(
+            stringify!(pri::assign_aggregate_struct),
+            fields,
+            vec![],
+        )
+    }
 
-        self.add_bb_for_assign_call_with_statements(
-            stringify!(pri::assign_aggregate_adt),
-            vec![
-                operand::move_for_local(fields_local),
-                operand::const_from_uint(self.context.tcx(), variant.as_u32()),
-            ],
-            additional_stmts.to_vec(),
+    fn by_aggregate_enum(&mut self, fields: &[OperandRef], variant: VariantIdx) {
+        self.add_bb_for_aggregate_assign_call(
+            stringify!(pri::assign_aggregate_enum),
+            fields,
+            vec![operand::const_from_uint(
+                self.context.tcx(),
+                variant.as_u32(),
+            )],
         )
     }
 
@@ -861,6 +874,42 @@ where
         + TyContextProvider<'tcx>
         + SpecialTypesProvider<'tcx>,
 {
+    fn add_bb_for_aggregate_assign_call(
+        &mut self,
+        func_name: &str,
+        elements: &[OperandRef],
+        additional_args: Vec<Operand<'tcx>>,
+    ) {
+        let (elements_local, additional_stmts) = self.make_slice_for_adt_elements(elements);
+
+        self.add_bb_for_assign_call_with_statements(
+            func_name,
+            [
+                vec![operand::move_for_local(elements_local)],
+                additional_args,
+            ]
+            .concat(),
+            additional_stmts.to_vec(),
+        )
+    }
+
+    fn make_slice_for_adt_elements(
+        &mut self,
+        elements: &[OperandRef],
+    ) -> (Local, [Statement<'tcx>; 3]) {
+        let operand_ref_ty = self.context.pri_special_types().operand_ref;
+        let (items_local, additional_stmts) = prepare_operand_for_slice(
+            self.context.tcx(),
+            &mut self.context,
+            operand_ref_ty,
+            elements
+                .iter()
+                .map(|i| operand::move_for_local((*i).into()))
+                .collect(),
+        );
+        (items_local, additional_stmts)
+    }
+
     fn add_bb_for_assign_call(&mut self, func_name: &str, args: Vec<Operand<'tcx>>) {
         self.add_bb_for_assign_call_with_statements(func_name, args, vec![])
     }
@@ -902,23 +951,6 @@ where
         let local = self.context.add_local(enum_ty);
         let statements = enums::set_variant_to_local(enum_ty, format!("{value:?}").as_str(), local);
         (local, statements)
-    }
-
-    fn make_slice_for_adt_elements(
-        &mut self,
-        items: &[OperandRef],
-    ) -> (Local, [Statement<'tcx>; 3]) {
-        let operand_ref_ty = self.context.pri_special_types().operand_ref;
-        let (items_local, additional_stmts) = prepare_operand_for_slice(
-            self.context.tcx(),
-            &mut self.context,
-            operand_ref_ty,
-            items
-                .iter()
-                .map(|i| operand::move_for_local((*i).into()))
-                .collect(),
-        );
-        (items_local, additional_stmts)
     }
 }
 
