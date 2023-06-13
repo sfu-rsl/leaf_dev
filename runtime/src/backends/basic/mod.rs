@@ -308,13 +308,25 @@ impl<'a, EB: BinaryExprBuilder> BranchingHandler for BasicBranchingHandler<'a, E
         )
     }
 
-    fn assert(self, cond: Self::Operand, expected: bool, assert_kind: AssertKind<Self::Operand>) {
-        todo!(
-            "Implement logic for assertions. {} {} {:?}",
-            cond,
-            expected,
-            assert_kind
-        )
+    fn assert(self, cond: Operand, expected: bool, _assert_kind: AssertKind<Self::Operand>) {
+        // Note: this function is called before the assertion or checked operation is evaluated. This is okay because
+        // the checked operation also occurs (in the runtime) before this assert is called, since all operations are
+        // run a second time in the runtime.
+        let cond_val = get_operand_value(self.vars_state, &cond);
+        if cond_val.is_symbolic() {
+            let mut constraint = Constraint::Bool(cond_val.clone());
+
+            if !expected {
+                // TODO: is this the correct order?
+                constraint = constraint.not();
+            }
+
+            self.current_constraints.push(constraint);
+            self.trace_manager.notify_step(
+                0, /* TODO: The unique index of the block we have entered. */
+                self.current_constraints.drain(..).collect(),
+            );
+        }
     }
 }
 
