@@ -762,7 +762,7 @@ where
         checked: bool,
     ) {
         let operator = convert_mir_binop_to_pri(operator);
-        let (operator_local, additional_statements) =
+        let (operator_local, additional_stmts) =
             self.add_and_set_local_for_enum(self.context.pri_special_types().binary_op, operator);
 
         self.add_bb_for_assign_call_with_statements(
@@ -773,13 +773,13 @@ where
                 operand::copy_for_local(second.into()),
                 operand::const_from_bool(self.context.tcx(), checked),
             ],
-            additional_statements,
+            additional_stmts,
         )
     }
 
     fn by_unary_op(&mut self, operator: &UnOp, operand: OperandRef) {
         let operator = convert_mir_unop_to_pri(operator);
-        let (operator_local, additional_statements) =
+        let (operator_local, additional_stmts) =
             self.add_and_set_local_for_enum(self.context.pri_special_types().unary_op, operator);
 
         self.add_bb_for_assign_call_with_statements(
@@ -788,7 +788,7 @@ where
                 operand::move_for_local(operator_local),
                 operand::copy_for_local(operand.into()),
             ],
-            additional_statements,
+            additional_stmts,
         )
     }
 
@@ -800,27 +800,27 @@ where
     }
 
     fn by_aggregate_array(&mut self, items: &[OperandRef]) {
-        let (items_local, additional_statements) = self.make_slice_for_adt_elements(items);
+        let (items_local, additional_stmts) = self.make_slice_for_adt_elements(items);
 
         self.add_bb_for_assign_call_with_statements(
             stringify!(pri::assign_aggregate_array),
             vec![operand::move_for_local(items_local)],
-            additional_statements.to_vec(),
+            additional_stmts.to_vec(),
         )
     }
 
     fn by_aggregate_tuple(&mut self, fields: &[OperandRef]) {
-        let (fields_local, additional_statements) = self.make_slice_for_adt_elements(fields);
+        let (fields_local, additional_stmts) = self.make_slice_for_adt_elements(fields);
 
         self.add_bb_for_assign_call_with_statements(
             stringify!(pri::assign_aggregate_tuple),
             vec![operand::move_for_local(fields_local)],
-            additional_statements.to_vec(),
+            additional_stmts.to_vec(),
         )
     }
 
     fn by_aggregate_adt(&mut self, fields: &[OperandRef], variant: VariantIdx) {
-        let (fields_local, additional_statements) = self.make_slice_for_adt_elements(fields);
+        let (fields_local, additional_stmts) = self.make_slice_for_adt_elements(fields);
 
         self.add_bb_for_assign_call_with_statements(
             stringify!(pri::assign_aggregate_adt),
@@ -828,7 +828,7 @@ where
                 operand::move_for_local(fields_local),
                 operand::const_from_uint(self.context.tcx(), variant.as_u32()),
             ],
-            additional_statements.to_vec(),
+            additional_stmts.to_vec(),
         )
     }
 
@@ -909,7 +909,7 @@ where
         items: &[OperandRef],
     ) -> (Local, [Statement<'tcx>; 3]) {
         let operand_ref_ty = self.context.pri_special_types().operand_ref;
-        let (items_local, additional_statements) = prepare_operand_for_slice(
+        let (items_local, additional_stmts) = prepare_operand_for_slice(
             self.context.tcx(),
             &mut self.context,
             operand_ref_ty,
@@ -918,7 +918,7 @@ where
                 .map(|i| operand::move_for_local((*i).into()))
                 .collect(),
         );
-        (items_local, additional_statements)
+        (items_local, additional_stmts)
     }
 }
 
@@ -1141,7 +1141,7 @@ where
     {
         let switch_info = self.context.switch_info();
         let discr_ty = switch_info.discr_ty;
-        let (additional_statements, func_name, additional_args) = if discr_ty.is_bool() {
+        let (additional_stmts, func_name, additional_args) = if discr_ty.is_bool() {
             let mut non_values = non_values.into_iter();
             debug_assert!(non_values.len() == 1);
             debug_assert!(non_values.next().unwrap() == 0);
@@ -1178,13 +1178,13 @@ where
                 )
             };
 
-            let (non_values_local, assign_statement) = self.add_and_assign_local_for_ow_non_values(
+            let (non_values_local, assign_stmts) = self.add_and_assign_local_for_ow_non_values(
                 non_values.into_iter(),
                 value_type,
                 value_to_operand,
             );
             (
-                assign_statement.to_vec(),
+                assign_stmts.to_vec(),
                 func_name,
                 vec![operand::move_for_local(non_values_local)],
             )
@@ -1199,7 +1199,7 @@ where
             .concat(),
             Some(self.context.location()),
         );
-        block.statements.extend(additional_statements);
+        block.statements.extend(additional_stmts);
         let new_block_index = self.insert_blocks_with_stickiness([block], false)[0];
         self.context.modify_jump_target_where(
             switch_info.node_location,
@@ -1245,7 +1245,7 @@ where
 {
     fn before_call_func(&mut self, func: OperandRef, arguments: impl Iterator<Item = OperandRef>) {
         let operand_ref_ty = self.context.pri_special_types().operand_ref;
-        let (arguments_local, additional_statements) = prepare_operand_for_slice(
+        let (arguments_local, additional_stmts) = prepare_operand_for_slice(
             self.context.tcx(),
             &mut self.context,
             operand_ref_ty,
@@ -1260,7 +1260,7 @@ where
                 operand::move_for_local(arguments_local),
             ],
         );
-        block.statements.extend(additional_statements);
+        block.statements.extend(additional_stmts);
         self.insert_blocks([block]);
     }
 
@@ -1301,7 +1301,7 @@ where
         expected: bool,
         msg: &rustc_middle::mir::AssertMessage<'tcx>,
     ) {
-        let (func_name, mut additional_operands, additional_statements) =
+        let (func_name, mut additional_operands, additional_stmts) =
             self.reference_assert_kind(msg);
 
         let mut operands = vec![
@@ -1314,7 +1314,7 @@ where
         operands.append(&mut additional_operands);
 
         let mut block = self.make_bb_for_call(func_name, operands);
-        block.statements.extend(additional_statements);
+        block.statements.extend(additional_stmts);
         self.insert_blocks([block]);
     }
 
@@ -1340,7 +1340,7 @@ where
                 let binary_op_ty = self.context.pri_special_types().binary_op;
                 let operator = convert_mir_binop_to_pri(bin_op);
                 let operator_local = self.context.add_local(binary_op_ty);
-                let additional_statements = enums::set_variant_to_local(
+                let additional_stmts = enums::set_variant_to_local(
                     binary_op_ty,
                     format!("{operator:?}").as_str(),
                     operator_local,
@@ -1356,7 +1356,7 @@ where
                         operand::copy_for_local(op1_ref.into()),
                         operand::copy_for_local(op2_ref.into()),
                     ],
-                    additional_statements,
+                    additional_stmts,
                 )
             }
             AssertKind::OverflowNeg(op) => {
