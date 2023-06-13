@@ -1,5 +1,5 @@
 fn main() {
-    let a = [1, 2, 3, get_num()];
+    let a = (5, get_num());
 }
 
 fn get_num() -> i32 {
