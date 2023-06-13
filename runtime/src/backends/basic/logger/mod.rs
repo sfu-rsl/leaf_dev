@@ -139,14 +139,19 @@ impl AssignmentHandler for LoggerAssignmentHandler {
     }
 
     fn tuple_from(self, fields: impl Iterator<Item = Self::Operand>) {
-        todo!()
+        self.log(format!("({})", comma_separated(fields)));
     }
 
     fn adt_from(self, fields: impl Iterator<Item = Self::Operand>, variant: Option<VariantIndex>) {
+        let fields = comma_separated(fields.enumerate().map(|(i, f)| format!("{i}: {f}")));
+        match variant {
+            Some(discr) => self.log(format!("{{ discr: {discr}, {fields}}}")),
+            None => self.log(format!("{{{fields}}}")),
+        }
     }
 
     fn union_from(self, active_field: crate::abs::FieldIndex, value: Self::Operand) {
-        todo!()
+        self.log(format!("{{{active_field}: {value}}}"));
     }
 
     fn variant_index(self, variant_index: VariantIndex) {
