@@ -511,7 +511,7 @@ where
         Projection::Subslice { from, to, from_end } => {
             projector.subslice(host.into(), *from, *to, *from_end)
         }
-        Projection::Downcast(_) => todo!(),
+        Projection::Downcast(_) => todo!("#156"),
         Projection::OpaqueCast => todo!(),
     }
     .into()
