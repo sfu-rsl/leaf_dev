@@ -115,7 +115,8 @@ impl AssignmentHandler for LoggerAssignmentHandler {
     }
 
     fn unsize_cast_of(self, operand: Self::Operand) {
-        todo!()
+        // Here DST stands for dynamically sized type.
+        self.log(format!("{operand} as DST pointer"));
     }
 
     fn cast_of(self) {
