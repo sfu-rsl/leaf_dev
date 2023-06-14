@@ -143,6 +143,8 @@ pub(crate) trait Assigner<'tcx> {
 
     fn by_cast_numeric(&mut self, operand: OperandRef, ty: Ty<'tcx>);
 
+    fn by_cast_unsize(&mut self, operand: OperandRef);
+
     fn by_cast(&mut self, operand: OperandRef, is_to_float: bool, size: u64);
 
     fn by_binary_op(
@@ -765,6 +767,13 @@ where
         } else {
             unreachable!("cast_numeric called for non-numeric type");
         };
+    }
+
+    fn by_cast_unsize(&mut self, operand: OperandRef) {
+        self.add_bb_for_assign_call(
+            stringify!(pri::assign_cast_unsize),
+            vec![operand::copy_for_local(operand.into())],
+        )
     }
 
     fn by_cast(&mut self, _operand: OperandRef, _is_to_float: bool, _size: u64) {

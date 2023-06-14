@@ -399,7 +399,16 @@ where
             CastKind::FloatToFloat => todo!("Support FloatToFloat casts"),
             CastKind::PointerExposeAddress => todo!("Support PointerExposeAddress casts"),
             CastKind::PointerFromExposedAddress => todo!("Support PointerFromExposedAddress casts"),
-            CastKind::Pointer { .. } => todo!("Support Pointer casts"), // One of these subtypes includes casting an array to a slice
+            CastKind::Pointer(kind) => {
+                use rustc_middle::ty::adjustment::PointerCast::*;
+                match kind {
+                    Unsize => self.call_adder.by_cast_unsize(operand_ref),
+                    ReifyFnPointer | UnsafeFnPointer | ClosureFnPointer(_) => {
+                        todo!("Support FnPointer casts")
+                    }
+                    MutToConstPointer | ArrayToPointer => todo!("Support raw pointer casts"),
+                }
+            }
             CastKind::PtrToPtr => todo!("Support PtrToPtr casts"),
             CastKind::FnPtrToPtr => todo!("Support FnPtrToPtr casts"),
             CastKind::DynStar => todo!("Support DynStar casts"),
