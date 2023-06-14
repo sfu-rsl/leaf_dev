@@ -211,6 +211,10 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
         self.set(cast_value.into())
     }
 
+    fn unsize_cast_of(mut self, operand: Self::Operand) {
+        todo!()
+    }
+
     fn cast_of(self) {
         todo!()
     }

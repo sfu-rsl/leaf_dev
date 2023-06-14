@@ -118,6 +118,9 @@ pub(crate) trait AssignmentHandler {
 
     fn float_cast_of(self, operand: Self::Operand, to: FloatType);
 
+    /* Currently, no special information about the target type is required. */
+    fn unsize_cast_of(self, operand: Self::Operand);
+
     fn cast_of(self);
 
     fn binary_op_between(

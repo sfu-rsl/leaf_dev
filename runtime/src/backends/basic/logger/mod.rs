@@ -114,6 +114,10 @@ impl AssignmentHandler for LoggerAssignmentHandler {
         self.log(format!("{operand} as {to:#?}"));
     }
 
+    fn unsize_cast_of(self, operand: Self::Operand) {
+        todo!()
+    }
+
     fn cast_of(self) {
         todo!()
     }
