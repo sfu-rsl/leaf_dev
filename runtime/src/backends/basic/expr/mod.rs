@@ -238,6 +238,11 @@ impl ConstValue {
     }
 
     fn binary_op_checked_arithmetic(first: &Self, second: &Self, operator: BinaryOp) -> AdtValue {
+        // TODO: move this function into the trait
+        fn checked_op<T: CheckedOp>(first: T, second: T, operator: BinaryOp) -> Option<u128> {
+            first.checked_op(second, operator)
+        }
+
         // the rust docs claims that the following are unreachable:
         // https://doc.rust-lang.org/beta/nightly-rustc/rustc_middle/mir/syntax/enum.Rvalue.html#variant.CheckedBinaryOp
         match (first, second) {
@@ -255,13 +260,67 @@ impl ConstValue {
             ) => {
                 assert_eq!(*first_size, *second_size);
 
-                let result = match operator {
-                    BinaryOp::Add => first.checked_add(*second),
-                    BinaryOp::Sub => first.checked_sub(*second),
-                    BinaryOp::Mul => first.checked_mul(*second),
-                    _ => unreachable!("unsupported by rust"),
+                // TODO: clean this up somehow
+                let result = match first_size {
+                    8 => {
+                        if *first_signed {
+                            checked_op::<i8>(
+                                Self::as_signed(first, first_size) as i8,
+                                Self::as_signed(second, first_size) as i8,
+                                operator,
+                            )
+                        } else {
+                            checked_op::<u8>(*first as u8, *second as u8, operator)
+                        }
+                    }
+                    16 => {
+                        if *first_signed {
+                            checked_op::<i16>(
+                                Self::as_signed(first, first_size) as i16,
+                                Self::as_signed(second, first_size) as i16,
+                                operator,
+                            )
+                        } else {
+                            checked_op::<u16>(*first as u16, *second as u16, operator)
+                        }
+                    }
+                    32 => {
+                        if *first_signed {
+                            checked_op::<i32>(
+                                Self::as_signed(first, first_size) as i32,
+                                Self::as_signed(second, first_size) as i32,
+                                operator,
+                            )
+                        } else {
+                            checked_op::<u32>(*first as u32, *second as u32, operator)
+                        }
+                    }
+                    64 => {
+                        if *first_signed {
+                            checked_op::<i64>(
+                                Self::as_signed(first, first_size) as i64,
+                                Self::as_signed(second, first_size) as i64,
+                                operator,
+                            )
+                        } else {
+                            checked_op::<u64>(*first as u64, *second as u64, operator)
+                        }
+                    }
+                    128 => {
+                        if *first_signed {
+                            checked_op::<i128>(
+                                Self::as_signed(first, first_size) as i128,
+                                Self::as_signed(second, first_size) as i128,
+                                operator,
+                            )
+                        } else {
+                            checked_op::<u128>(*first as u128, *second as u128, operator)
+                        }
+                    }
+                    _ => unreachable!("invalid integer size"),
                 };
 
+                // TODO: clean this expression
                 let fields = match result {
                     Some(result) => vec![
                         Some(ValueRef::new(
@@ -431,6 +490,134 @@ impl ConstValue {
         signed_value
     }
 }
+
+// TODO: where to put these declarations?
+trait CheckedOp: Sized {
+    fn checked_op(self, other: Self, operator: BinaryOp) -> Option<u128>;
+}
+
+// TODO: write a macro to clean all of these implementations
+impl CheckedOp for i8 {
+    fn checked_op(self, other: Self, operator: BinaryOp) -> Option<u128> {
+        match operator {
+            BinaryOp::Add => self.checked_add(other),
+            BinaryOp::Sub => self.checked_sub(other),
+            BinaryOp::Mul => self.checked_mul(other),
+            _ => unreachable!("unsupported by rust"),
+        }
+        .and_then(|v| Some(v as u128))
+    }
+}
+
+impl CheckedOp for u8 {
+    fn checked_op(self, other: Self, operator: BinaryOp) -> Option<u128> {
+        match operator {
+            BinaryOp::Add => self.checked_add(other),
+            BinaryOp::Sub => self.checked_sub(other),
+            BinaryOp::Mul => self.checked_mul(other),
+            _ => unreachable!("unsupported by rust"),
+        }
+        .and_then(|v| Some(v as u128))
+    }
+}
+
+impl CheckedOp for i16 {
+    fn checked_op(self, other: Self, operator: BinaryOp) -> Option<u128> {
+        match operator {
+            BinaryOp::Add => self.checked_add(other),
+            BinaryOp::Sub => self.checked_sub(other),
+            BinaryOp::Mul => self.checked_mul(other),
+            _ => unreachable!("unsupported by rust"),
+        }
+        .and_then(|v| Some(v as u128))
+    }
+}
+
+impl CheckedOp for u16 {
+    fn checked_op(self, other: Self, operator: BinaryOp) -> Option<u128> {
+        match operator {
+            BinaryOp::Add => self.checked_add(other),
+            BinaryOp::Sub => self.checked_sub(other),
+            BinaryOp::Mul => self.checked_mul(other),
+            _ => unreachable!("unsupported by rust"),
+        }
+        .and_then(|v| Some(v as u128))
+    }
+}
+
+impl CheckedOp for i32 {
+    fn checked_op(self, other: Self, operator: BinaryOp) -> Option<u128> {
+        match operator {
+            BinaryOp::Add => self.checked_add(other),
+            BinaryOp::Sub => self.checked_sub(other),
+            BinaryOp::Mul => self.checked_mul(other),
+            _ => unreachable!("unsupported by rust"),
+        }
+        .and_then(|v| Some(v as u128))
+    }
+}
+
+impl CheckedOp for u32 {
+    fn checked_op(self, other: Self, operator: BinaryOp) -> Option<u128> {
+        match operator {
+            BinaryOp::Add => self.checked_add(other),
+            BinaryOp::Sub => self.checked_sub(other),
+            BinaryOp::Mul => self.checked_mul(other),
+            _ => unreachable!("unsupported by rust"),
+        }
+        .and_then(|v| Some(v as u128))
+    }
+}
+
+impl CheckedOp for i64 {
+    fn checked_op(self, other: Self, operator: BinaryOp) -> Option<u128> {
+        match operator {
+            BinaryOp::Add => self.checked_add(other),
+            BinaryOp::Sub => self.checked_sub(other),
+            BinaryOp::Mul => self.checked_mul(other),
+            _ => unreachable!("unsupported by rust"),
+        }
+        .and_then(|v| Some(v as u128))
+    }
+}
+
+impl CheckedOp for u64 {
+    fn checked_op(self, other: Self, operator: BinaryOp) -> Option<u128> {
+        match operator {
+            BinaryOp::Add => self.checked_add(other),
+            BinaryOp::Sub => self.checked_sub(other),
+            BinaryOp::Mul => self.checked_mul(other),
+            _ => unreachable!("unsupported by rust"),
+        }
+        .and_then(|v| Some(v as u128))
+    }
+}
+
+impl CheckedOp for i128 {
+    fn checked_op(self, other: Self, operator: BinaryOp) -> Option<u128> {
+        match operator {
+            BinaryOp::Add => self.checked_add(other),
+            BinaryOp::Sub => self.checked_sub(other),
+            BinaryOp::Mul => self.checked_mul(other),
+            _ => unreachable!("unsupported by rust"),
+        }
+        .and_then(|v| Some(v as u128))
+    }
+}
+
+impl CheckedOp for u128 {
+    fn checked_op(self, other: Self, operator: BinaryOp) -> Option<u128> {
+        match operator {
+            BinaryOp::Add => self.checked_add(other),
+            BinaryOp::Sub => self.checked_sub(other),
+            BinaryOp::Mul => self.checked_mul(other),
+            _ => unreachable!("unsupported by rust"),
+        }
+        .and_then(|v| Some(v as u128))
+    }
+}
+
+// ----------------------------------------------- //
 
 macro_rules! impl_from_uint {
     ($($ty:ty),*) => {

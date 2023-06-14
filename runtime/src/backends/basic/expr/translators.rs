@@ -156,6 +156,7 @@ pub(crate) mod z3 {
                     // Assumption: A checked binary expression without a field projection is not well formed.
                     checked: _,
                 } => {
+                    // TODO: should this be its own function?
                     let (left, right) = match operands {
                         SymBinaryOperands::Orig { first, second } => {
                             (self.translate_symbolic(first), self.translate_value(second))
@@ -358,28 +359,84 @@ pub(crate) mod z3 {
             host: &SymValue,
             field_index: FieldIndex,
         ) -> AstNode<'ctx> {
-            let checked = if let SymValue::Expression(Expr::Binary { checked, .. }) = host {
-                *checked
-            } else {
-                false
-            };
-
-            if checked {
-                match field_index {
+            match host {
+                SymValue::Expression(Expr::Binary { checked: true, .. }) => match field_index {
                     0 => {
                         // If we see a `.0` field projection on a symbolic expression that is a checked
                         // binary operation, we can safely ignore the projection and treat the expression
                         // as normal, since checked binary operations return the tuple `(binop(x, y), did_overflow)`,
-                        // and failed checked binops immediately assert no overflow, then panic.
+                        // and failed checked binops immediately assert!(no_overflow == true), then panic.
                         self.translate_symbolic(host)
                     }
                     1 => {
+                        // generate an expression that evaluates true if overflow, false otherwise
+                        match host {
+                            SymValue::Expression(Expr::Binary {
+                                operator: BinaryOp::Add,
+                                operands,
+                                ..
+                            }) => {
+                                // TODO: confirm that Z3's overflow instructions work as expected.
+
+                                // TODO: refactor this into a function
+                                let (left, right) = match operands {
+                                    SymBinaryOperands::Orig { first, second } => (
+                                        self.translate_symbolic(first),
+                                        self.translate_value(second),
+                                    ),
+                                    SymBinaryOperands::Rev { first, second } => (
+                                        self.translate_value(first),
+                                        self.translate_symbolic(second),
+                                    ),
+                                };
+
+                                let is_signed = match left {
+                                    AstNode::Bool(_) => unreachable!("booleans cannot be added"),
+                                    AstNode::BitVector { is_signed, .. } => is_signed,
+                                };
+
+                                if is_signed {
+                                    let overflow = ast::BV::bvadd_no_overflow(
+                                        left.as_bit_vector(),
+                                        right.as_bit_vector(),
+                                        true,
+                                    );
+                                    let underflow = ast::BV::bvadd_no_underflow(
+                                        left.as_bit_vector(),
+                                        right.as_bit_vector(),
+                                    );
+                                    ast::Bool::and(overflow.get_ctx(), &[&overflow, &underflow])
+                                } else {
+                                    // note: in unsigned addition, underflow is impossible because there
+                                    //       are no negative numbers.
+                                    ast::BV::bvadd_no_overflow(
+                                        left.as_bit_vector(),
+                                        right.as_bit_vector(),
+                                        false,
+                                    )
+                                }
+                            }
+                            SymValue::Expression(Expr::Binary {
+                                operator: BinaryOp::Sub,
+                                ..
+                            }) => {
+                                todo!()
+                            }
+                            SymValue::Expression(Expr::Binary {
+                                operator: BinaryOp::Mul,
+                                ..
+                            }) => {
+                                todo!()
+                            }
+                            _ => unreachable!(),
+                        };
+
                         todo!("add support for assertions from checked binops")
                     }
                     _ => unreachable!("invalid field index. A checked binop returns a len 2 tuple"),
-                }
-            } else {
-                todo!("implement non-checked operation field access")
+                },
+                SymValue::Expression(Expr::Binary { checked: false, .. }) => unreachable!(),
+                _ => todo!("implement regular field access"),
             }
         }
     }
