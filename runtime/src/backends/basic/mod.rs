@@ -482,10 +482,7 @@ macro_rules! impl_int_branch_case_value {
         $(
             impl BranchCaseValue for $type {
                 fn into_const(self, discr_as_int: IntType) -> ConstValue {
-                    ConstValue::Int {
-                        bit_rep: self as u128,
-                        ty: discr_as_int,
-                    }
+                    ConstValue::new_int(self, discr_as_int)
                 }
             }
         )*

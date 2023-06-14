@@ -342,13 +342,13 @@ mod concrete {
             match of {
                 ConcreteValue::Array(arr) => {
                     let len = arr.len();
-                    ConstValue::Int {
-                        bit_rep: len as u128,
-                        ty: IntType {
+                    ConstValue::new_int(
+                        len as u128,
+                        IntType {
                             bit_size: std::mem::size_of_val(&len) as u64 * 8,
                             is_signed: false,
                         },
-                    }
+                    )
                     .into()
                 }
                 _ => unreachable!(
@@ -360,7 +360,7 @@ mod concrete {
         fn cast_to_char<'a>(&mut self, expr: Self::ExprRef<'a>) -> Self::Expr<'a> {
             match expr {
                 ConcreteValue::Const(ConstValue::Int { bit_rep, .. }) => {
-                    ConstValue::Char(*bit_rep as u8 as char).into()
+                    ConstValue::Char(bit_rep.0 as u8 as char).into()
                 }
                 _ => unreachable!("Char cast is supposed to be called on an integer."),
             }
@@ -437,7 +437,7 @@ mod simp {
                 self,
                 BinaryOperands::Rev {
                     first: ConstValue::Int {
-                        bit_rep: 0,
+                        bit_rep: Wrapping(0),
                         ty: IntType {
                             is_signed: false,
                             ..
@@ -454,7 +454,7 @@ mod simp {
                 self,
                 BinaryOperands::Orig {
                     second: ConstValue::Int {
-                        bit_rep: 0,
+                        bit_rep: Wrapping(0),
                         ty: IntType {
                             is_signed: false,
                             ..
@@ -546,10 +546,7 @@ mod simp {
             // x % 1 = 0
             if operands.is_second_one() {
                 Ok((&match operands.konst() {
-                    ConstValue::Int { ty, .. } => ConstValue::Int {
-                        bit_rep: 0,
-                        ty: *ty,
-                    },
+                    ConstValue::Int { ty, .. } => ConstValue::new_int(0_u128, *ty),
                     ConstValue::Float { .. } => todo!(),
                     _ => unreachable!("The second operand should be numeric."),
                 })

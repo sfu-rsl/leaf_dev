@@ -92,7 +92,7 @@ pub(crate) mod z3 {
                     AstNode::from_bv(
                         ast::BV::from_u64(
                             self.context,
-                            *bit_rep as u64,
+                            bit_rep.0 as u64,
                             (*bit_size).try_into().expect("Size is too large."),
                         ),
                         false,
@@ -110,7 +110,7 @@ pub(crate) mod z3 {
                     AstNode::from_bv(
                         ast::BV::from_i64(
                             self.context,
-                            *bit_rep as i64,
+                            bit_rep.0 as i64,
                             (*bit_size).try_into().expect("Size is too large."),
                         ),
                         true,
@@ -332,12 +332,7 @@ pub(crate) mod z3 {
     impl<'ctx> From<AstNode<'ctx>> for ValueRef {
         fn from(ast: AstNode<'ctx>) -> Self {
             match ast {
-                AstNode::Bool(ast) => {
-                    super::super::Value::Concrete(super::super::ConcreteValue::Const(
-                        super::super::ConstValue::Bool(ast.as_bool().unwrap()),
-                    ))
-                    .into()
-                }
+                AstNode::Bool(ast) => super::super::ConstValue::Bool(ast.as_bool().unwrap()),
                 AstNode::BitVector { ast, is_signed } => {
                     // TODO: Add support for up to 128-bit integers.
                     let value = if is_signed {
@@ -348,17 +343,16 @@ pub(crate) mod z3 {
                     } else {
                         ast.as_u64().unwrap() as u128
                     };
-                    ValueRef::new(super::super::Value::Concrete(
-                        super::super::ConcreteValue::Const(super::super::ConstValue::Int {
-                            bit_rep: value,
-                            ty: IntType {
-                                bit_size: ast.get_size() as u64,
-                                is_signed,
-                            },
-                        }),
-                    ))
+                    super::super::ConstValue::new_int(
+                        value,
+                        IntType {
+                            bit_size: ast.get_size() as u64,
+                            is_signed,
+                        },
+                    )
                 }
             }
+            .to_value_ref()
         }
     }
 }

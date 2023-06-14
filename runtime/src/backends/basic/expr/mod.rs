@@ -3,7 +3,7 @@ pub(super) mod proj;
 pub(super) mod translators;
 pub(crate) mod utils;
 
-use std::{assert_matches::assert_matches, ops::Deref, rc::Rc};
+use std::{assert_matches::assert_matches, num::Wrapping, ops::Deref, rc::Rc};
 
 use crate::abs::{BinaryOp, FieldIndex, FloatType, IntType, UnaryOp, ValueType, VariantIndex};
 
@@ -49,17 +49,30 @@ impl ConcreteValue {
 pub(crate) enum ConstValue {
     Bool(bool),
     Char(char),
-    Int { bit_rep: u128, ty: IntType },
-    Float { bit_rep: u128, ty: FloatType },
+    Int {
+        bit_rep: Wrapping<u128>,
+        ty: IntType,
+    },
+    Float {
+        bit_rep: u128,
+        ty: FloatType,
+    },
     Str(&'static str),
     Func(u64),
 }
 
 impl ConstValue {
+    pub fn new_int<T: Into<u128>>(value: T, ty: IntType) -> Self {
+        Self::Int {
+            bit_rep: Wrapping(value.into()),
+            ty,
+        }
+    }
+
     pub fn is_zero(&self) -> bool {
         match self {
             Self::Bool(value) => !value,
-            Self::Int { bit_rep, .. } => *bit_rep == 0,
+            Self::Int { bit_rep, .. } => *bit_rep == Wrapping(0),
             Self::Float { .. } => todo!(),
             _ => unreachable!("Only numerical values can be checked for zero."),
         }
@@ -68,7 +81,7 @@ impl ConstValue {
     pub fn is_one(&self) -> bool {
         match self {
             Self::Bool(value) => *value,
-            Self::Int { bit_rep, .. } => *bit_rep == 1,
+            Self::Int { bit_rep, .. } => *bit_rep == Wrapping(1),
             Self::Float { .. } => todo!(),
             _ => unreachable!("Only numerical values can be checked for one."),
         }
@@ -84,7 +97,7 @@ impl ConstValue {
                             is_signed: true, ..
                         },
                 } => Self::Int {
-                    bit_rep: todo!("Proposed value: {}", !bit_rep + 1),
+                    bit_rep: todo!("Proposed value: {}", !bit_rep + Wrapping(1)),
                     ty: *ty,
                 },
                 Self::Float { .. } => unimplemented!(),
@@ -137,11 +150,11 @@ impl ConstValue {
                 ty: to,
             },
             Self::Bool(value) => Self::Int {
-                bit_rep: *value as u128,
+                bit_rep: Wrapping(*value as u128),
                 ty: to,
             },
             Self::Char(value) => Self::Int {
-                bit_rep: *value as u128,
+                bit_rep: Wrapping(*value as u128),
                 ty: to,
             },
             Self::Float { .. } => todo!("Casting float to integer is not implemented yet."),
@@ -215,14 +228,14 @@ impl ConstValue {
                             !second_ty.is_signed,
                             "Shifting a negative value is not expected."
                         ); //TODO we can get rid of this assertion in the future
-                        first << second
+                        first << second.0 as usize
                     }
                     BinaryOp::Shr => {
                         assert!(
                             !second_ty.is_signed,
                             "Shifting by a negative value is not expected."
                         ); //TODO we can get rid of this assertion in the future
-                        first >> second
+                        first >> second.0 as usize
                     }
 
                     _ => unreachable!(),
@@ -265,8 +278,8 @@ impl ConstValue {
                     }
 
                     let signs = (
-                        Self::is_positive(first, first_ty.bit_size),
-                        Self::is_positive(second, second_ty.bit_size),
+                        Self::is_positive(first.0, first_ty.bit_size),
+                        Self::is_positive(second.0, second_ty.bit_size),
                     );
 
                     match signs {
@@ -279,8 +292,8 @@ impl ConstValue {
                         },
 
                         (false, false) => {
-                            let first = Self::as_signed(first, first_ty.bit_size);
-                            let second = Self::as_signed(second, second_ty.bit_size);
+                            let first = Self::as_signed(first.0, first_ty.bit_size);
+                            let second = Self::as_signed(second.0, second_ty.bit_size);
                             match operator {
                                 BinaryOp::Lt => first < second,
                                 BinaryOp::Le => first <= second,
@@ -314,18 +327,18 @@ impl ConstValue {
         }
     }
 
-    fn is_positive(bit_rep: &u128, size: u64) -> bool {
-        const MASK: u128 = 1;
-        (*bit_rep >> (size - 1)) & MASK != 1
+    fn is_positive(bit_rep: u128, size: u64) -> bool {
+        let mask: u128 = 1 << (size - 1);
+        bit_rep & mask == 0
     }
 
-    fn as_signed(bit_rep: &u128, size: u64) -> i128 {
+    fn as_signed(bit_rep: u128, size: u64) -> i128 {
         let mask: u128 = (1 << (size - 1)) - 1; // Create a mask of 1s with the given size except the sign bit
         let sign_mask: u128 = 1 << (size - 1); // Create a mask for the sign bit, for example 1000...0
         let sign_extend: u128 = (!mask) & sign_mask; // Create a sign extension mask, it would be something like 000...010...000
 
-        let sign_bit: bool = (*bit_rep & sign_mask) != 0;
-        let value = *bit_rep & mask;
+        let sign_bit: bool = (bit_rep & sign_mask) != 0;
+        let value = bit_rep & mask;
 
         let signed_value = if sign_bit {
             (value | sign_extend) as i128
@@ -343,7 +356,7 @@ macro_rules! impl_from_uint {
             impl From<$ty> for ConstValue {
                 fn from(value: $ty) -> Self {
                     Self::Int {
-                        bit_rep: value as u128,
+                        bit_rep: Wrapping(value as u128),
                         ty: IntType {
                             bit_size: std::mem::size_of::<$ty>() as u64 * 8,
                             is_signed: false,
@@ -627,7 +640,10 @@ mod convert {
             match val {
                 operand::Constant::Bool(value) => ConstValue::Bool(value),
                 operand::Constant::Char(value) => ConstValue::Char(value),
-                operand::Constant::Int { bit_rep, ty } => ConstValue::Int { bit_rep, ty },
+                operand::Constant::Int { bit_rep, ty } => ConstValue::Int {
+                    bit_rep: Wrapping(bit_rep),
+                    ty,
+                },
                 operand::Constant::Float { bit_rep, ty } => ConstValue::Float { bit_rep, ty },
                 operand::Constant::Str(value) => ConstValue::Str(value),
                 operand::Constant::Func(value) => ConstValue::Func(value),
