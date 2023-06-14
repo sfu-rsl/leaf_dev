@@ -225,14 +225,14 @@ impl ConstValue {
                 let result = match operator {
                     BinaryOp::Shl => {
                         assert!(
-                            !second_ty.is_signed,
-                            "Shifting a negative value is not expected."
+                            !second_ty.is_signed || Self::is_positive(second.0, second_ty.bit_size),
+                            "Shifting by a negative value is not expected."
                         ); //TODO we can get rid of this assertion in the future
                         first << second.0 as usize
                     }
                     BinaryOp::Shr => {
                         assert!(
-                            !second_ty.is_signed,
+                            !second_ty.is_signed || Self::is_positive(second.0, second_ty.bit_size),
                             "Shifting by a negative value is not expected."
                         ); //TODO we can get rid of this assertion in the future
                         first >> second.0 as usize
