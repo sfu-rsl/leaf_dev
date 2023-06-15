@@ -3,5 +3,6 @@ fn main() {
     foo(&a);
 }
 
-fn foo(_a: &[u8]) { // Pointer(Unsize) cast happens here to turn the array into a slice
+fn foo(a: &[u8]) -> u8 {
+    a[0]
 }
