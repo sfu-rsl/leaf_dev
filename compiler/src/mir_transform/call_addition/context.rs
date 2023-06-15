@@ -11,7 +11,7 @@ use crate::mir_transform::modification::{
     self, BodyBlockManager, BodyLocalManager, BodyModificationUnit, JumpTargetModifier,
 };
 
-use super::PlaceRef;
+use super::{OperandRef, PlaceRef};
 
 pub trait TyContextProvider<'tcx> {
     fn tcx(&self) -> TyCtxt<'tcx>;
@@ -49,6 +49,10 @@ pub trait LocationProvider {
 
 pub trait DestinationReferenceProvider {
     fn dest_ref(&self) -> PlaceRef;
+}
+
+pub trait CastOperandProvider {
+    fn operand_ref(&self) -> OperandRef;
 }
 
 #[derive(Clone, Copy)]
@@ -327,6 +331,17 @@ impl<B> DestinationReferenceProvider for AssignmentContext<'_, B> {
     }
 }
 
+pub struct CastAssignmentContext<'b, B> {
+    pub(super) base: &'b mut B,
+    pub(super) operand_ref: OperandRef,
+}
+
+impl<B> CastOperandProvider for CastAssignmentContext<'_, B> {
+    fn operand_ref(&self) -> OperandRef {
+        self.operand_ref
+    }
+}
+
 pub struct BranchingContext<'b, 'tcx, B> {
     pub(super) base: &'b mut B,
     pub(super) switch_info: SwitchInfo<'tcx>,
@@ -481,6 +496,18 @@ macro_rules! impl_dest_ref_provider {
     };
 }
 
+macro_rules! impl_cast_operand_provider {
+    ($generic_context_type:ident, $($extra_lifetime_param:lifetime)*, $($extra_generic_param:ident)*) => {
+        impl<'b$(, $extra_lifetime_param)*, B: CastOperandProvider$(, $extra_generic_param)*> CastOperandProvider
+            for $generic_context_type<'b$(, $extra_lifetime_param)*, B$(, $extra_generic_param)*>
+        {
+            fn operand_ref(&self) -> OperandRef {
+                self.base.operand_ref()
+            }
+        }
+    };
+}
+
 macro_rules! impl_discr_info_provider {
     ($generic_context_type:ident, $($extra_lifetime_param:lifetime)*, $($extra_generic_param:ident)*) => {
         impl<'b, 'tcx$(, $extra_lifetime_param)*, B: SwitchInfoProvider<'tcx>$(, $extra_generic_param)*> SwitchInfoProvider<'tcx>
@@ -504,6 +531,7 @@ impl_in_entry_function!(TransparentContext,,);
 impl_has_local_decls!(TransparentContext,,);
 impl_location_provider!(TransparentContext,,);
 impl_dest_ref_provider!(TransparentContext,,);
+impl_cast_operand_provider!(TransparentContext,,);
 impl_discr_info_provider!(TransparentContext,,);
 
 impl_func_info_provider!(InBodyContext, 'tcxb 'bd,);
@@ -515,6 +543,7 @@ impl_ty_ctxt_provider!(InBodyContext, 'tcxb 'bd,);
 impl_in_entry_function!(InBodyContext, 'tcxb 'bd,);
 impl_location_provider!(InBodyContext, 'tcxb 'bd,);
 impl_dest_ref_provider!(InBodyContext, 'tcxb 'bd,);
+impl_cast_operand_provider!(InBodyContext, 'tcxb 'bd,);
 impl_discr_info_provider!(InBodyContext, 'tcxb 'bd,);
 
 impl_func_info_provider!(EntryFunctionMarkerContext,,);
@@ -527,6 +556,7 @@ impl_body_provider!(EntryFunctionMarkerContext,,);
 impl_has_local_decls!(EntryFunctionMarkerContext,,);
 impl_location_provider!(EntryFunctionMarkerContext,,);
 impl_dest_ref_provider!(EntryFunctionMarkerContext,,);
+impl_cast_operand_provider!(EntryFunctionMarkerContext,,);
 impl_discr_info_provider!(EntryFunctionMarkerContext,,);
 
 impl_func_info_provider!(AtLocationContext,,);
@@ -539,6 +569,7 @@ impl_body_provider!(AtLocationContext,,);
 impl_in_entry_function!(AtLocationContext,,);
 impl_has_local_decls!(AtLocationContext,,);
 impl_dest_ref_provider!(AtLocationContext,,);
+impl_cast_operand_provider!(AtLocationContext,,);
 impl_discr_info_provider!(AtLocationContext,,);
 
 impl_func_info_provider!(AssignmentContext,,);
@@ -553,6 +584,19 @@ impl_has_local_decls!(AssignmentContext,,);
 impl_location_provider!(AssignmentContext,,);
 impl_discr_info_provider!(AssignmentContext,,);
 
+impl_func_info_provider!(CastAssignmentContext,,);
+impl_special_types_provider!(CastAssignmentContext,,);
+impl_local_manager!(CastAssignmentContext,,);
+impl_block_manager!(CastAssignmentContext,,);
+impl_jump_target_modifier!(CastAssignmentContext,,);
+impl_ty_ctxt_provider!(CastAssignmentContext,,);
+impl_body_provider!(CastAssignmentContext,,);
+impl_in_entry_function!(CastAssignmentContext,,);
+impl_has_local_decls!(CastAssignmentContext,,);
+impl_location_provider!(CastAssignmentContext,,);
+impl_dest_ref_provider!(CastAssignmentContext,,);
+impl_discr_info_provider!(CastAssignmentContext,,);
+
 impl_func_info_provider!(BranchingContext, 'tcxd,);
 impl_special_types_provider!(BranchingContext, 'tcxd,);
 impl_local_manager!(BranchingContext, 'tcxd,);
@@ -564,3 +608,4 @@ impl_in_entry_function!(BranchingContext, 'tcxd,);
 impl_has_local_decls!(BranchingContext, 'tcxd,);
 impl_location_provider!(BranchingContext, 'tcxd,);
 impl_dest_ref_provider!(BranchingContext, 'tcxd,);
+impl_cast_operand_provider!(BranchingContext, 'tcxd,);

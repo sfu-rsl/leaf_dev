@@ -386,33 +386,27 @@ where
         ty: &rustc_middle::ty::Ty<'tcx>,
     ) {
         let operand_ref = self.call_adder.reference_operand(operand);
+        let call_adder = &mut self.call_adder.by_cast(operand_ref);
+        use CastKind::*;
         match kind {
-            CastKind::IntToInt => {
-                if ty.is_char() {
-                    self.call_adder.by_cast_char(operand_ref);
-                } else {
-                    self.call_adder.by_cast_numeric(operand_ref, *ty);
-                }
-            }
-            CastKind::IntToFloat => todo!("Support IntToFloat casts"),
-            CastKind::FloatToInt => todo!("Support FloatToInt casts"),
-            CastKind::FloatToFloat => todo!("Support FloatToFloat casts"),
-            CastKind::PointerExposeAddress => todo!("Support PointerExposeAddress casts"),
-            CastKind::PointerFromExposedAddress => todo!("Support PointerFromExposedAddress casts"),
-            CastKind::Pointer(kind) => {
+            IntToInt | FloatToInt => call_adder.to_int(*ty),
+            IntToFloat | FloatToFloat => call_adder.to_float(*ty),
+            Pointer(kind) => {
                 use rustc_middle::ty::adjustment::PointerCast::*;
                 match kind {
-                    Unsize => self.call_adder.by_cast_unsize(operand_ref),
+                    Unsize => call_adder.through_unsizing(),
                     ReifyFnPointer | UnsafeFnPointer | ClosureFnPointer(_) => {
                         todo!("Support FnPointer casts")
                     }
                     MutToConstPointer | ArrayToPointer => todo!("Support raw pointer casts"),
                 }
             }
-            CastKind::PtrToPtr => todo!("Support PtrToPtr casts"),
-            CastKind::FnPtrToPtr => todo!("Support FnPtrToPtr casts"),
-            CastKind::DynStar => todo!("Support DynStar casts"),
-            CastKind::Transmute => todo!("Support transmute casts"),
+            PointerExposeAddress => todo!("Support PointerExposeAddress casts"),
+            PointerFromExposedAddress => todo!("Support PointerFromExposedAddress casts"),
+            PtrToPtr => todo!("Support PtrToPtr casts"),
+            FnPtrToPtr => todo!("Support FnPtrToPtr casts"),
+            DynStar => todo!("Support DynStar casts"),
+            Transmute => todo!("Support transmute casts"),
         }
     }
 
