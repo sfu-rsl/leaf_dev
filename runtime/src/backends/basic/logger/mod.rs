@@ -1,8 +1,7 @@
 use std::fmt::Display;
 
 use crate::abs::{
-    backend::*, AssertKind, BinaryOp, BranchingMetadata, FloatType, IntType, UnaryOp, ValueType,
-    VariantIndex,
+    backend::*, AssertKind, BinaryOp, BranchingMetadata, CastKind, UnaryOp, ValueType, VariantIndex,
 };
 
 use super::{
@@ -102,25 +101,13 @@ impl AssignmentHandler for LoggerAssignmentHandler {
         self.log(format!("len({place})"));
     }
 
-    fn char_cast_of(self, operand: Self::Operand) {
-        self.log(format!("{operand} as char"));
-    }
-
-    fn integer_cast_of(self, operand: Self::Operand, to: IntType) {
-        self.log(format!("{operand} as {to:#?}"));
-    }
-
-    fn float_cast_of(self, operand: Self::Operand, to: FloatType) {
-        self.log(format!("{operand} as {to:#?}"));
-    }
-
-    fn unsize_cast_of(self, operand: Self::Operand) {
-        // Here DST stands for dynamically sized type.
-        self.log(format!("{operand} as DST pointer"));
-    }
-
-    fn cast_of(self) {
-        todo!()
+    fn cast_of(self, operand: Self::Operand, target: CastKind) {
+        self.log(match target {
+            CastKind::ToChar => format!("{operand} as char"),
+            CastKind::ToInt(to) => format!("{operand} as {to:#?}"),
+            CastKind::ToFloat(to) => format!("{operand} as {to:#?}"),
+            CastKind::PointerUnsize => format!("{operand} as DST pointer"),
+        });
     }
 
     fn binary_op_between(

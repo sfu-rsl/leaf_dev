@@ -10,8 +10,8 @@ use std::{cell::RefCell, ops::DerefMut, rc::Rc};
 
 use crate::{
     abs::{
-        self, backend::*, AssertKind, BasicBlockIndex, BranchingMetadata, FloatType, IntType,
-        UnaryOp, VariantIndex,
+        self, backend::*, AssertKind, BasicBlockIndex, BranchingMetadata, CastKind, FloatType,
+        IntType, UnaryOp, VariantIndex,
     },
     solvers::z3::Z3Solver,
     trace::ImmediateTraceManager,
@@ -193,32 +193,15 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
         self.set(len_value.into())
     }
 
-    fn char_cast_of(mut self, operand: Self::Operand) {
+    fn cast_of(mut self, operand: Self::Operand, target: CastKind) {
         let value = self.get_operand_value(operand);
-        let cast_value = self.expr_builder().cast_to_char(value.into());
+        let cast_value = match target {
+            CastKind::ToChar => self.expr_builder().cast_to_char(value.into()),
+            CastKind::ToInt(to) => self.expr_builder().cast_to_int(value.into(), to),
+            CastKind::ToFloat(to) => self.expr_builder().cast_to_float(value.into(), to),
+            CastKind::PointerUnsize => self.expr_builder().cast_to_unsize(value.into()),
+        };
         self.set(cast_value.into())
-    }
-
-    fn integer_cast_of(mut self, operand: Self::Operand, to: IntType) {
-        let value = self.get_operand_value(operand);
-        let cast_value = self.expr_builder().cast_to_int(value.into(), to);
-        self.set(cast_value.into())
-    }
-
-    fn float_cast_of(mut self, operand: Self::Operand, to: FloatType) {
-        let value = self.get_operand_value(operand);
-        let cast_value = self.expr_builder().cast_to_float(value.into(), to);
-        self.set(cast_value.into())
-    }
-
-    fn unsize_cast_of(mut self, operand: Self::Operand) {
-        let value = self.get_operand_value(operand);
-        let cast_value = self.expr_builder().cast_to_unsize(value.into());
-        self.set(cast_value.into())
-    }
-
-    fn cast_of(self) {
-        todo!()
     }
 
     fn binary_op_between(

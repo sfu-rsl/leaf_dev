@@ -149,3 +149,10 @@ impl Display for FloatType {
         write!(f, "f{}", self.e_bits + self.s_bits)
     }
 }
+
+pub(crate) enum CastKind {
+    ToChar,
+    ToInt(IntType),
+    ToFloat(FloatType),
+    PointerUnsize,
+}

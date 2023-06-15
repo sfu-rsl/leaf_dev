@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use super::{
-    AssertKind, BinaryOp, BranchingMetadata, Constraint, FieldIndex, FloatType, IntType, Local,
-    UnaryOp, ValueType, VariantIndex,
+    AssertKind, BinaryOp, BranchingMetadata, CastKind, Constraint, FieldIndex, FloatType, IntType,
+    Local, UnaryOp, ValueType, VariantIndex,
 };
 
 pub(crate) trait RuntimeBackend: Sized {
@@ -112,16 +112,7 @@ pub(crate) trait AssignmentHandler {
 
     fn len_of(self, place: Self::Place);
 
-    fn char_cast_of(self, operand: Self::Operand);
-
-    fn integer_cast_of(self, operand: Self::Operand, to: IntType);
-
-    fn float_cast_of(self, operand: Self::Operand, to: FloatType);
-
-    /* Currently, no special information about the target type is required. */
-    fn unsize_cast_of(self, operand: Self::Operand);
-
-    fn cast_of(self);
+    fn cast_of(self, operand: Self::Operand, target: CastKind);
 
     fn binary_op_between(
         self,
