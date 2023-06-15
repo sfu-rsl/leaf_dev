@@ -520,124 +520,45 @@ macro_rules! impl_discr_info_provider {
     };
 }
 
-impl_func_info_provider!(TransparentContext,,);
-impl_special_types_provider!(TransparentContext,,);
-impl_local_manager!(TransparentContext,,);
-impl_block_manager!(TransparentContext,,);
-impl_jump_target_modifier!(TransparentContext,,);
-impl_ty_ctxt_provider!(TransparentContext,,);
-impl_body_provider!(TransparentContext,,);
-impl_in_entry_function!(TransparentContext,,);
-impl_has_local_decls!(TransparentContext,,);
-impl_location_provider!(TransparentContext,,);
-impl_dest_ref_provider!(TransparentContext,,);
-impl_cast_operand_provider!(TransparentContext,,);
-impl_discr_info_provider!(TransparentContext,,);
-
-impl_func_info_provider!(InBodyContext, 'tcxb 'bd,);
-impl_special_types_provider!(InBodyContext, 'tcxb 'bd,);
-impl_local_manager!(InBodyContext, 'tcxb 'bd,);
-impl_block_manager!(InBodyContext, 'tcxb 'bd,);
-impl_jump_target_modifier!(InBodyContext, 'tcxb 'bd,);
-impl_ty_ctxt_provider!(InBodyContext, 'tcxb 'bd,);
-impl_in_entry_function!(InBodyContext, 'tcxb 'bd,);
-impl_location_provider!(InBodyContext, 'tcxb 'bd,);
-impl_dest_ref_provider!(InBodyContext, 'tcxb 'bd,);
-impl_cast_operand_provider!(InBodyContext, 'tcxb 'bd,);
-impl_discr_info_provider!(InBodyContext, 'tcxb 'bd,);
-
-impl_func_info_provider!(EntryFunctionMarkerContext,,);
-impl_special_types_provider!(EntryFunctionMarkerContext,,);
-impl_local_manager!(EntryFunctionMarkerContext,,);
-impl_block_manager!(EntryFunctionMarkerContext,,);
-impl_jump_target_modifier!(EntryFunctionMarkerContext,,);
-impl_ty_ctxt_provider!(EntryFunctionMarkerContext,,);
-impl_body_provider!(EntryFunctionMarkerContext,,);
-impl_has_local_decls!(EntryFunctionMarkerContext,,);
-impl_location_provider!(EntryFunctionMarkerContext,,);
-impl_dest_ref_provider!(EntryFunctionMarkerContext,,);
-impl_cast_operand_provider!(EntryFunctionMarkerContext,,);
-impl_discr_info_provider!(EntryFunctionMarkerContext,,);
-
-impl_func_info_provider!(AtLocationContext,,);
-impl_special_types_provider!(AtLocationContext,,);
-impl_local_manager!(AtLocationContext,,);
-impl_block_manager!(AtLocationContext,,);
-impl_jump_target_modifier!(AtLocationContext,,);
-impl_ty_ctxt_provider!(AtLocationContext,,);
-impl_body_provider!(AtLocationContext,,);
-impl_in_entry_function!(AtLocationContext,,);
-impl_has_local_decls!(AtLocationContext,,);
-impl_dest_ref_provider!(AtLocationContext,,);
-impl_cast_operand_provider!(AtLocationContext,,);
-impl_discr_info_provider!(AtLocationContext,,);
-
-impl_func_info_provider!(AssignmentContext,,);
-impl_special_types_provider!(AssignmentContext,,);
-impl_local_manager!(AssignmentContext,,);
-impl_block_manager!(AssignmentContext,,);
-impl_jump_target_modifier!(AssignmentContext,,);
-impl_ty_ctxt_provider!(AssignmentContext,,);
-impl_body_provider!(AssignmentContext,,);
-impl_in_entry_function!(AssignmentContext,,);
-impl_has_local_decls!(AssignmentContext,,);
-impl_location_provider!(AssignmentContext,,);
-impl_discr_info_provider!(AssignmentContext,,);
-
-impl_func_info_provider!(CastAssignmentContext,,);
-impl_special_types_provider!(CastAssignmentContext,,);
-impl_local_manager!(CastAssignmentContext,,);
-impl_block_manager!(CastAssignmentContext,,);
-impl_jump_target_modifier!(CastAssignmentContext,,);
-impl_ty_ctxt_provider!(CastAssignmentContext,,);
-impl_body_provider!(CastAssignmentContext,,);
-impl_in_entry_function!(CastAssignmentContext,,);
-impl_has_local_decls!(CastAssignmentContext,,);
-impl_location_provider!(CastAssignmentContext,,);
-impl_dest_ref_provider!(CastAssignmentContext,,);
-impl_discr_info_provider!(CastAssignmentContext,,);
-
-impl_func_info_provider!(BranchingContext, 'tcxd,);
-impl_special_types_provider!(BranchingContext, 'tcxd,);
-impl_local_manager!(BranchingContext, 'tcxd,);
-impl_block_manager!(BranchingContext, 'tcxd,);
-impl_jump_target_modifier!(BranchingContext, 'tcxd,);
-impl_ty_ctxt_provider!(BranchingContext, 'tcxd,);
-impl_body_provider!(BranchingContext, 'tcxd,);
-impl_in_entry_function!(BranchingContext, 'tcxd,);
-impl_has_local_decls!(BranchingContext, 'tcxd,);
-impl_location_provider!(BranchingContext, 'tcxd,);
-impl_dest_ref_provider!(BranchingContext, 'tcxd,);
-impl_cast_operand_provider!(BranchingContext, 'tcxd,);
-
-macro_rules! make_impl_all_macro {
+/// A meta macro that creates a macro able to call a list of macros with exclusions for some input.
+/// Note that the excluded macros must appear in the same order as in the original "all" list.
+macro_rules! make_caller_macro {
     ($name:ident, [$($impl_macro:ident),+$(,)?]) => {
         macro_rules! $name {
-            (all - $$to_skip:ident for $$($$xxxxxx:tt)+) => {
+            (all for $$($$xxxxxx:tt)+) => {
+                $name!([$($impl_macro)*] for $$($$xxxxxx)+);
+            };
+            (all - [$$to_skip_head:ident $$($$to_skip_tail:ident)*] for $$($$xxxxxx:tt)+) => {
                 $name!(
-                    [$($impl_macro) *] - $$to_skip
+                    [$($impl_macro)*] - [$$to_skip_head $$($$to_skip_tail)*]
                     for $$($$xxxxxx)+
                 );
             };
             $(
-                ([$impl_macro $$($$to_impl:ident)*] - $impl_macro for $$($$xxxxxx:tt)+) => {
+                ([$impl_macro $$($$to_impl:ident)*] - [$impl_macro $$($$to_skip_tail:ident)*] for $$($$xxxxxx:tt)+) => {
                     $name!(
-                        [$$($$to_impl) *]
+                        [$$($$to_impl)*] - [$$($$to_skip_tail)*]
                         for $$($$xxxxxx)+
                     );
                 };
             )+
-            ([$$to_impl_head:ident $$($$to_impl_tail:ident)*] - $$to_skip:ident for $$($$xxxxxx:tt)+) => {
+            ([$$($$to_impl:ident)*] - [] for $$($$xxxxxx:tt)+) => {
+                $name!(
+                    [$$($$to_impl)*]
+                    for $$($$xxxxxx)+
+                );
+            };
+            ([$$to_impl_head:ident $$($$to_impl_tail:ident)*] - [$$to_skip_head:ident $$($$to_skip_tail:ident)* ] for $$($$xxxxxx:tt)+) => {
                 $$to_impl_head!($$($$xxxxxx)+);
                 $name!(
-                    [$$($$to_impl_tail) *] - $$to_skip
+                    [$$($$to_impl_tail)*] - [$$to_skip_head $$($$to_skip_tail)*]
                     for $$($$xxxxxx)+
                 );
             };
             ([$$to_impl_head:ident $$($$to_impl_tail:ident)*] for $$($$xxxxxx:tt)+) => {
                 $$to_impl_head!($$($$xxxxxx)+);
                 $name!(
-                    [$$($$to_impl_tail) *]
+                    [$$($$to_impl_tail)*]
                     for $$($$xxxxxx)+
                 );
             };
@@ -647,7 +568,9 @@ macro_rules! make_impl_all_macro {
     };
 }
 
-make_impl_all_macro!(
+// A macro that calls all "impl" macros defined above for the target type
+// except the ones to be excluded.
+make_caller_macro!(
     delegate_to_base,
     [
         impl_func_info_provider,
@@ -665,3 +588,11 @@ make_impl_all_macro!(
         impl_discr_info_provider,
     ]
 );
+
+delegate_to_base!(all for TransparentContext,,);
+delegate_to_base!(all - [ impl_body_provider impl_has_local_decls ] for InBodyContext, 'tcxb 'bd,);
+delegate_to_base!(all - [ impl_in_entry_function ] for EntryFunctionMarkerContext,,);
+delegate_to_base!(all - [ impl_location_provider ] for AtLocationContext,,);
+delegate_to_base!(all - [ impl_dest_ref_provider ] for AssignmentContext,,);
+delegate_to_base!(all - [ impl_cast_operand_provider ] for CastAssignmentContext,,);
+delegate_to_base!(all - [ impl_discr_info_provider ] for BranchingContext, 'tcxd,);
