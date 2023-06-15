@@ -77,4 +77,5 @@ where
     impl_unary_expr_method!(cast_to_char);
     impl_unary_expr_method!(cast_to_int, to: IntType);
     impl_unary_expr_method!(cast_to_float, to: FloatType);
+    impl_unary_expr_method!(cast_to_unsize);
 }

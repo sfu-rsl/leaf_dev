@@ -122,4 +122,8 @@ where
     fn cast_to_float<'a>(&mut self, operand: Self::ExprRef<'a>, to: FloatType) -> Self::Expr<'a> {
         try_on_current_then_next!(self, cast_to_float, (operand, to), |operand|)
     }
+
+    fn cast_to_unsize<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
+        try_on_current_then_next!(self, cast_to_unsize, operand)
+    }
 }

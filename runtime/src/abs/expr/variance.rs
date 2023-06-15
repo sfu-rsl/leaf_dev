@@ -97,4 +97,5 @@ where
     delegate_singular_unary_op!(cast_to_char);
     delegate_singular_unary_op!(cast_to_int, to: IntType);
     delegate_singular_unary_op!(cast_to_float, to: FloatType);
+    delegate_singular_unary_op!(cast_to_unsize);
 }

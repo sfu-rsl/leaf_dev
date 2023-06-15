@@ -43,6 +43,8 @@ pub(crate) trait UnaryExprBuilder {
     fn cast_to_int<'a>(&mut self, operand: Self::ExprRef<'a>, to: IntType) -> Self::Expr<'a>;
 
     fn cast_to_float<'a>(&mut self, operand: Self::ExprRef<'a>, to: FloatType) -> Self::Expr<'a>;
+
+    fn cast_to_unsize<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a>;
 }
 
 // NOTE: Because of an internal compiler bug, the blanket impl can't be added.
