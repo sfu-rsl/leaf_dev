@@ -609,3 +609,59 @@ impl_has_local_decls!(BranchingContext, 'tcxd,);
 impl_location_provider!(BranchingContext, 'tcxd,);
 impl_dest_ref_provider!(BranchingContext, 'tcxd,);
 impl_cast_operand_provider!(BranchingContext, 'tcxd,);
+
+macro_rules! make_impl_all_macro {
+    ($name:ident, [$($impl_macro:ident),+$(,)?]) => {
+        macro_rules! $name {
+            (all - $$to_skip:ident for $$($$xxxxxx:tt)+) => {
+                $name!(
+                    [$($impl_macro) *] - $$to_skip
+                    for $$($$xxxxxx)+
+                );
+            };
+            $(
+                ([$impl_macro $$($$to_impl:ident)*] - $impl_macro for $$($$xxxxxx:tt)+) => {
+                    $name!(
+                        [$$($$to_impl) *]
+                        for $$($$xxxxxx)+
+                    );
+                };
+            )+
+            ([$$to_impl_head:ident $$($$to_impl_tail:ident)*] - $$to_skip:ident for $$($$xxxxxx:tt)+) => {
+                $$to_impl_head!($$($$xxxxxx)+);
+                $name!(
+                    [$$($$to_impl_tail) *] - $$to_skip
+                    for $$($$xxxxxx)+
+                );
+            };
+            ([$$to_impl_head:ident $$($$to_impl_tail:ident)*] for $$($$xxxxxx:tt)+) => {
+                $$to_impl_head!($$($$xxxxxx)+);
+                $name!(
+                    [$$($$to_impl_tail) *]
+                    for $$($$xxxxxx)+
+                );
+            };
+            ([] for $$($$xxxxxx:tt)+) => {
+            };
+        }
+    };
+}
+
+make_impl_all_macro!(
+    delegate_to_base,
+    [
+        impl_func_info_provider,
+        impl_special_types_provider,
+        impl_local_manager,
+        impl_block_manager,
+        impl_jump_target_modifier,
+        impl_ty_ctxt_provider,
+        impl_body_provider,
+        impl_in_entry_function,
+        impl_has_local_decls,
+        impl_location_provider,
+        impl_dest_ref_provider,
+        impl_cast_operand_provider,
+        impl_discr_info_provider,
+    ]
+);

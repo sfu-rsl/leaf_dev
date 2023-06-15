@@ -6,6 +6,7 @@
 #![feature(drain_filter)]
 #![deny(rustc::internal)]
 #![feature(iter_order_by)]
+#![feature(macro_metavar_expr)]
 
 mod mir_transform;
 mod pass;
