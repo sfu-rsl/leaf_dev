@@ -195,12 +195,7 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
 
     fn cast_of(mut self, operand: Self::Operand, target: CastKind) {
         let value = self.get_operand_value(operand);
-        let cast_value = match target {
-            CastKind::ToChar => self.expr_builder().cast_to_char(value.into()),
-            CastKind::ToInt(to) => self.expr_builder().cast_to_int(value.into(), to),
-            CastKind::ToFloat(to) => self.expr_builder().cast_to_float(value.into(), to),
-            CastKind::PointerUnsize => self.expr_builder().cast_to_unsize(value.into()),
-        };
+        let cast_value = self.expr_builder().cast(value.into(), target);
         self.set(cast_value.into())
     }
 

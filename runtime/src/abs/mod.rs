@@ -150,9 +150,23 @@ impl Display for FloatType {
     }
 }
 
+#[derive(Clone, Debug)]
 pub(crate) enum CastKind {
     ToChar,
     ToInt(IntType),
     ToFloat(FloatType),
     PointerUnsize,
+}
+
+impl TryFrom<CastKind> for ValueType {
+    type Error = CastKind;
+
+    fn try_from(value: CastKind) -> Result<Self, Self::Error> {
+        match value {
+            CastKind::ToChar => Ok(ValueType::Char),
+            CastKind::ToInt(to) => Ok(ValueType::Int(to)),
+            CastKind::ToFloat(to) => Ok(ValueType::Float(to)),
+            _ => Err(value),
+        }
+    }
 }

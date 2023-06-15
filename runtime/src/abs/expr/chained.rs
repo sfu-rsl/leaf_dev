@@ -111,19 +111,7 @@ where
         try_on_current_then_next!(self, len, operand)
     }
 
-    fn cast_to_char<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
-        try_on_current_then_next!(self, cast_to_char, operand)
-    }
-
-    fn cast_to_int<'a>(&mut self, operand: Self::ExprRef<'a>, to: IntType) -> Self::Expr<'a> {
-        try_on_current_then_next!(self, cast_to_int, (operand, to), |operand|)
-    }
-
-    fn cast_to_float<'a>(&mut self, operand: Self::ExprRef<'a>, to: FloatType) -> Self::Expr<'a> {
-        try_on_current_then_next!(self, cast_to_float, (operand, to), |operand|)
-    }
-
-    fn cast_to_unsize<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
-        try_on_current_then_next!(self, cast_to_unsize, operand)
+    fn cast<'a>(&mut self, operand: Self::ExprRef<'a>, target: CastKind) -> Self::Expr<'a> {
+        try_on_current_then_next!(self, cast, (operand, target.clone()), |operand|)
     }
 }

@@ -5,7 +5,7 @@ use crate::abs::{
         macros::*, BinaryExprBuilder, ChainedExprBuilder, CompositeExprBuilder, ExprBuilder,
         UnaryExprBuilder,
     },
-    BinaryOp, UnaryOp,
+    BinaryOp, CastKind, UnaryOp,
 };
 
 type Composite<Binary, Unary> = CompositeExprBuilder<Binary, Unary>;
@@ -114,24 +114,8 @@ mod toplevel {
             call_unary_method!(self, len, operand)
         }
 
-        fn cast_to_char<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
-            call_unary_method!(self, cast_to_char, operand)
-        }
-
-        fn cast_to_int<'a>(&mut self, operand: Self::ExprRef<'a>, to: IntType) -> Self::Expr<'a> {
-            call_unary_method!(self, cast_to_int, operand, to)
-        }
-
-        fn cast_to_float<'a>(
-            &mut self,
-            operand: Self::ExprRef<'a>,
-            to: FloatType,
-        ) -> Self::Expr<'a> {
-            call_unary_method!(self, cast_to_float, operand, to)
-        }
-
-        fn cast_to_unsize<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
-            call_unary_method!(self, cast_to_unsize, operand)
+        fn cast<'a>(&mut self, operand: Self::ExprRef<'a>, target: CastKind) -> Self::Expr<'a> {
+            call_unary_method!(self, cast, operand, target)
         }
     }
 }
@@ -268,40 +252,29 @@ mod core {
             Expr::Len { of: operand }
         }
 
-        fn cast_to_char<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
-            Expr::Cast {
-                from: operand,
-                to: ValueType::Char,
-            }
-        }
-
-        fn cast_to_int<'a>(&mut self, operand: Self::ExprRef<'a>, to: IntType) -> Self::Expr<'a> {
-            Expr::Cast {
-                from: operand,
-                to: ValueType::Int(to),
-            }
-        }
-
-        fn cast_to_float<'a>(
-            &mut self,
-            operand: Self::ExprRef<'a>,
-            to: FloatType,
-        ) -> Self::Expr<'a> {
-            Expr::Cast {
-                from: operand,
-                to: ValueType::Float(to),
-            }
-        }
-
-        fn cast_to_unsize<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
-            match operand.as_ref() {
-                SymValue::Expression(expr) => {
-                    // Nothing special to do currently. Refer to the comment for concrete values.
-                    expr.clone()
+        fn cast<'a>(&mut self, operand: Self::ExprRef<'a>, target: CastKind) -> Self::Expr<'a> {
+            match ValueType::try_from(target) {
+                Ok(value_type) => Expr::Cast {
+                    from: operand,
+                    to: value_type,
+                },
+                Err(target) => {
+                    use CastKind::*;
+                    match target {
+                        PointerUnsize => {
+                            match operand.as_ref() {
+                                SymValue::Expression(expr) => {
+                                    // Nothing special to do currently. Refer to the comment for concrete values.
+                                    expr.clone()
+                                }
+                                SymValue::Variable(_) => unreachable!(
+                                    "Symbolic variables are not currently supposed to appear at a pointer/reference position."
+                                ),
+                            }
+                        }
+                        _ => unreachable!(),
+                    }
                 }
-                SymValue::Variable(_) => unreachable!(
-                    "Symbolic variables are not currently supposed to appear at a pointer/reference position."
-                ),
             }
         }
     }
@@ -373,37 +346,38 @@ mod concrete {
             }
         }
 
-        fn cast_to_char<'a>(&mut self, expr: Self::ExprRef<'a>) -> Self::Expr<'a> {
-            match expr {
-                ConcreteValue::Const(ConstValue::Int { bit_rep, .. }) => {
-                    ConstValue::Char(bit_rep.0 as u8 as char).into()
-                }
-                _ => unreachable!("Char cast is supposed to be called on an integer."),
-            }
-        }
-
-        fn cast_to_int<'a>(&mut self, expr: Self::ExprRef<'a>, to: IntType) -> Self::Expr<'a> {
-            match expr {
-                ConcreteValue::Const(c) => ConstValue::integer_cast(c, to).into(),
-                _ => {
-                    unreachable!("Integer cast is supposed to be called on a constant.")
-                }
-            }
-        }
-
-        fn cast_to_float<'a>(&mut self, expr: Self::ExprRef<'a>, to: FloatType) -> Self::Expr<'a> {
-            todo!("Add support for float casts. {:?} {}", expr, to)
-        }
-
-        fn cast_to_unsize<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
-            match operand {
-                ConcreteValue::Ref(_) => {
-                    /* Currently, the effect of this operation is at a lower level than our
-                     * symbolic state. So we don't need to do anything special.
-                     */
-                    operand.clone()
-                }
-                _ => unreachable!("Unsize cast is supposed to be called on a reference."),
+        fn cast<'a>(
+            &mut self,
+            operand: Self::ExprRef<'a>,
+            target: crate::abs::CastKind,
+        ) -> Self::Expr<'a> {
+            use CastKind::*;
+            match target {
+                ToChar | ToInt(_) | ToFloat(_) => match operand {
+                    ConcreteValue::Const(c) => match target {
+                        ToChar => match c {
+                            ConstValue::Int { bit_rep, .. } => {
+                                ConstValue::Char(bit_rep.0 as u8 as char).into()
+                            }
+                            _ => unreachable!(
+                                "Casting to char is supposed to happen only on an unsigned byte."
+                            ),
+                        },
+                        ToInt(to) => ConstValue::integer_cast(c, to).into(),
+                        ToFloat(to) => todo!("Support casting to float {to:?}"),
+                        _ => unreachable!(),
+                    },
+                    _ => unreachable!("Numeric casts are supposed to happen on a constant."),
+                },
+                CastKind::PointerUnsize => match operand {
+                    ConcreteValue::Ref(_) => {
+                        /* Currently, the effect of this operation is at a lower level than our
+                         * symbolic state. So we don't need to do anything special.
+                         */
+                        operand.clone()
+                    }
+                    _ => unreachable!("Unsize cast is supposed to happen on a reference."),
+                },
             }
         }
     }
