@@ -1,8 +1,10 @@
+use delegate::delegate;
+
 use std::collections::HashMap;
 
 use rustc_hir::def::DefKind;
 use rustc_middle::{
-    mir::{self, BasicBlock, BasicBlockData, HasLocalDecls, Local},
+    mir::{self, BasicBlock, BasicBlockData, HasLocalDecls, Local, LocalDecls},
     ty::{Ty, TyCtxt},
 };
 use rustc_span::def_id::DefId;
@@ -353,171 +355,151 @@ impl<'tcx, B> SwitchInfoProvider<'tcx> for BranchingContext<'_, 'tcx, B> {
     }
 }
 
-/*
- * We make inheritance of traits from the base context possible through generics.
+/* We make inheritance of traits from the base context possible through generics.
+ * NOTE: From this point we utilize macros as much as possible to prevent boilerplate codes.
+ * Probably the best way to understand or fix the following code is to check for
+ * the expanded version of it. For example, rust-analyzer provides such an option
+ * through the "Expand macro recursively" command in vscode.
  */
 
-macro_rules! impl_func_info_provider {
-    ($generic_context_type:ident, $($extra_lifetime_param:lifetime)*, $($extra_generic_param:ident)*) => {
-        impl<'b, 'tcx$(, $extra_lifetime_param)*, B: FunctionInfoProvider<'tcx>$(, $extra_generic_param)*> FunctionInfoProvider<'tcx>
-            for $generic_context_type<'b$(, $extra_lifetime_param)*, B$(, $extra_generic_param)*>
-        {
-            fn get_pri_func_info(&self, func_name: &str) -> &FunctionInfo<'tcx> {
-                self.base.get_pri_func_info(func_name)
+/* NOTE: "self" has to be passed as a parameter to not get errors from the hygiene checker. */
+macro_rules! delegate_to_base {
+    ($self:ident $($fn_def:item)*) => {
+        delegate! {
+            to $self.base {
+                $($fn_def)*
             }
         }
     };
 }
 
-macro_rules! impl_special_types_provider {
-    ($generic_context_type:ident, $($extra_lifetime_param:lifetime)*, $($extra_generic_param:ident)*) => {
-        impl<'b, 'tcx$(, $extra_lifetime_param)*, B: SpecialTypesProvider<'tcx>$(, $extra_generic_param)*> SpecialTypesProvider<'tcx>
-            for $generic_context_type<'b$(, $extra_lifetime_param)*, B$(, $extra_generic_param)*>
-        {
-            fn pri_special_types(&self) -> &SpecialTypes<'tcx> {
-                self.base.pri_special_types()
-            }
+/// A meta macro that creates macros for implementing traits through delegation
+/// to the base context.
+macro_rules! make_impl_macro {
+    ($name:ident, $trait:ident$(<$($trait_lifetime:lifetime)*>)?, $self:ident, $($fn_def:item)*) => {
+        macro_rules! $name {
+            ($$context_name:ident$$(<$$($$context_lifetime:lifetime),* $$($$context_generic:ident),*>)?) => {
+                impl<
+                    'b
+                    $(, $($trait_lifetime)*)?
+                    $$(
+                        $$(, $context_lifetime)*
+                        $$(, $$context_generic)*
+                    )?
+                    , B: $trait$(<$($trait_lifetime),*>)?
+                > $trait$(<$($trait_lifetime),*>)?
+                    for $$context_name<'b$$($$(, $$context_lifetime)*$$(, $$context_generic)*)?, B>
+                {
+                    delegate_to_base!{ $self $($fn_def)* }
+                }
+            };
         }
     };
 }
 
-macro_rules! impl_local_manager {
-    ($generic_context_type:ident, $($extra_lifetime_param:lifetime)*, $($extra_generic_param:ident)*) => {
-        impl<'b, 'tcx$(, $extra_lifetime_param)*, B: BodyLocalManager<'tcx>$(, $extra_generic_param)*> BodyLocalManager<'tcx>
-            for $generic_context_type<'b$(, $extra_lifetime_param)*, B$(, $extra_generic_param)*>
-        {
-            fn add_local<T>(&mut self, decl_info: T) -> Local
-            where
-                T: Into<modification::NewLocalDecl<'tcx>>,
-            {
-                self.base.add_local(decl_info)
-            }
-        }
-    };
+make_impl_macro! {
+    impl_func_info_provider,
+    FunctionInfoProvider<'tcx>,
+    self,
+    fn get_pri_func_info(&self, func_name: &str) -> &FunctionInfo<'tcx>;
 }
 
-macro_rules! impl_block_manager {
-    ($generic_context_type:ident, $($extra_lifetime_param:lifetime)*, $($extra_generic_param:ident)*) => {
-        impl<'b, 'tcx$(, $extra_lifetime_param)*, B: BodyBlockManager<'tcx>$(, $extra_generic_param)*> BodyBlockManager<'tcx>
-            for $generic_context_type<'b$(, $extra_lifetime_param)*, B>$(, $extra_generic_param)*
-        {
-            fn insert_blocks_before<I>(&mut self, index: BasicBlock, blocks: I, sticky: bool) -> Vec<BasicBlock>
-            where
-                I: IntoIterator<Item = BasicBlockData<'tcx>>,
-            {
-                self.base.insert_blocks_before(index, blocks, sticky)
-            }
-
-            fn insert_blocks_after<I>(&mut self, index: BasicBlock, blocks: I) -> Vec<BasicBlock>
-            where
-                I: IntoIterator<Item = BasicBlockData<'tcx>>,
-            {
-                self.base.insert_blocks_after(index, blocks)
-            }
-        }
-    };
+make_impl_macro! {
+    impl_special_types_provider,
+    SpecialTypesProvider<'tcx>,
+    self,
+    fn pri_special_types(&self) -> &SpecialTypes<'tcx>;
 }
 
-macro_rules! impl_jump_target_modifier {
-    ($generic_context_type:ident, $($extra_lifetime_param:lifetime)*, $($extra_generic_param:ident)*) => {
-        impl<'b$(, $extra_lifetime_param)*, B: JumpTargetModifier$(, $extra_generic_param)*> JumpTargetModifier for $generic_context_type<'b$(, $extra_lifetime_param)*, B$(, $extra_generic_param)*> {
-            fn modify_jump_target_where(
-                &mut self,
-                terminator_location: BasicBlock,
-                from: BasicBlock,
-                to: BasicBlock,
-                constraint: modification::JumpModificationConstraint,
-            ) {
-                self.base
-                    .modify_jump_target_where(terminator_location, from, to, constraint)
-            }
-        }
-    };
+make_impl_macro! {
+    impl_local_manager,
+    BodyLocalManager<'tcx>,
+    self,
+    fn add_local<T>(&mut self, decl_info: T) -> Local
+    where
+        T: Into<modification::NewLocalDecl<'tcx>>;
 }
 
-macro_rules! impl_ty_ctxt_provider {
-    ($generic_context_type:ident, $($extra_lifetime_param:lifetime)*, $($extra_generic_param:ident)*) => {
-        impl<'b, 'tcx$(, $extra_lifetime_param)*, B: TyContextProvider<'tcx>$(, $extra_generic_param)*> TyContextProvider<'tcx>
-            for $generic_context_type<'b$(, $extra_lifetime_param)*, B$(, $extra_generic_param)*>
-        {
-            fn tcx(&self) -> TyCtxt<'tcx> {
-                self.base.tcx()
-            }
-        }
-    };
+make_impl_macro! {
+    impl_block_manager,
+    BodyBlockManager<'tcx>,
+    self,
+    fn insert_blocks_before<I>(&mut self, index: BasicBlock, blocks: I, sticky: bool) -> Vec<BasicBlock>
+    where
+        I: IntoIterator<Item = BasicBlockData<'tcx>>;
+
+    fn insert_blocks_after<I>(&mut self, index: BasicBlock, blocks: I) -> Vec<BasicBlock>
+    where
+        I: IntoIterator<Item = BasicBlockData<'tcx>>;
 }
 
-macro_rules! impl_body_provider {
-    ($generic_context_type:ident, $($extra_lifetime_param:lifetime)*, $($extra_generic_param:ident)*) => {
-        impl<'b, 'tcx$(, $extra_lifetime_param)*, B: BodyProvider<'tcx>$(, $extra_generic_param)*> BodyProvider<'tcx> for $generic_context_type<'b$(, $extra_lifetime_param)*, B$(, $extra_generic_param)*> {
-            fn body(&self) -> &mir::Body<'tcx> {
-                self.base.body()
-            }
-        }
-    };
+make_impl_macro! {
+    impl_jump_target_modifier,
+    JumpTargetModifier,
+    self,
+    fn modify_jump_target_where(
+        &mut self,
+        terminator_location: BasicBlock,
+        from: BasicBlock,
+        to: BasicBlock,
+        constraint: modification::JumpModificationConstraint,
+    );
 }
 
-macro_rules! impl_in_entry_function {
-    ($generic_context_type:ident, $($extra_lifetime_param:lifetime)*, $($extra_generic_param:ident)*) => {
-        impl<'b$(, $extra_lifetime_param)*, B: InEntryFunction$(, $extra_generic_param)*> InEntryFunction for $generic_context_type<'b$(, $extra_lifetime_param)*, B$(, $extra_generic_param)*> {
-        }
-    };
+make_impl_macro! {
+    impl_ty_ctxt_provider,
+    TyContextProvider<'tcx>,
+    self,
+    fn tcx(&self) -> TyCtxt<'tcx>;
 }
 
-macro_rules! impl_has_local_decls {
-    ($generic_context_type:ident, $($extra_lifetime_param:lifetime)*, $($extra_generic_param:ident)*) => {
-        impl<'b, 'tcx$(, $extra_lifetime_param)*, B: mir::HasLocalDecls<'tcx>$(, $extra_generic_param)*> mir::HasLocalDecls<'tcx> for $generic_context_type<'b$(, $extra_lifetime_param)*, B$(, $extra_generic_param)*> {
-            fn local_decls(&self) -> &mir::LocalDecls<'tcx>  {
-                self.base.local_decls()
-            }
-        }
-    };
+make_impl_macro! {
+    impl_body_provider,
+    BodyProvider<'tcx>,
+    self,
+    fn body(&self) -> &mir::Body<'tcx>;
 }
 
-macro_rules! impl_location_provider {
-    ($generic_context_type:ident, $($extra_lifetime_param:lifetime)*, $($extra_generic_param:ident)*) => {
-        impl<'b$(, $extra_lifetime_param)*, B: LocationProvider$(, $extra_generic_param)*> LocationProvider for $generic_context_type<'b$(, $extra_lifetime_param)*, B$(, $extra_generic_param)*> {
-            fn location(&self) -> BasicBlock {
-                self.base.location()
-            }
-        }
-    };
+make_impl_macro! {
+    impl_in_entry_function,
+    InEntryFunction,
+    self,
+    // No functions to implement
 }
 
-macro_rules! impl_dest_ref_provider {
-    ($generic_context_type:ident, $($extra_lifetime_param:lifetime)*, $($extra_generic_param:ident)*) => {
-        impl<'b$(, $extra_lifetime_param)*, B: DestinationReferenceProvider$(, $extra_generic_param)*> DestinationReferenceProvider
-            for $generic_context_type<'b$(, $extra_lifetime_param)*, B$(, $extra_generic_param)*>
-        {
-            fn dest_ref(&self) -> PlaceRef {
-                self.base.dest_ref()
-            }
-        }
-    };
+make_impl_macro! {
+    impl_has_local_decls,
+    HasLocalDecls<'tcx>,
+    self,
+    fn local_decls(&self) -> &LocalDecls<'tcx>;
 }
 
-macro_rules! impl_cast_operand_provider {
-    ($generic_context_type:ident, $($extra_lifetime_param:lifetime)*, $($extra_generic_param:ident)*) => {
-        impl<'b$(, $extra_lifetime_param)*, B: CastOperandProvider$(, $extra_generic_param)*> CastOperandProvider
-            for $generic_context_type<'b$(, $extra_lifetime_param)*, B$(, $extra_generic_param)*>
-        {
-            fn operand_ref(&self) -> OperandRef {
-                self.base.operand_ref()
-            }
-        }
-    };
+make_impl_macro! {
+    impl_location_provider,
+    LocationProvider,
+    self,
+    fn location(&self) -> BasicBlock;
 }
 
-macro_rules! impl_discr_info_provider {
-    ($generic_context_type:ident, $($extra_lifetime_param:lifetime)*, $($extra_generic_param:ident)*) => {
-        impl<'b, 'tcx$(, $extra_lifetime_param)*, B: SwitchInfoProvider<'tcx>$(, $extra_generic_param)*> SwitchInfoProvider<'tcx>
-            for $generic_context_type<'b$(, $extra_lifetime_param)*, B$(, $extra_generic_param)*>
-        {
-            fn switch_info(&self) -> SwitchInfo<'tcx> {
-                self.base.switch_info()
-            }
-        }
-    };
+make_impl_macro! {
+    impl_dest_ref_provider,
+    DestinationReferenceProvider,
+    self,
+    fn dest_ref(&self) -> PlaceRef;
+}
+
+make_impl_macro! {
+    impl_cast_operand_provider,
+    CastOperandProvider,
+    self,
+    fn operand_ref(&self) -> OperandRef;
+}
+
+make_impl_macro! {
+    impl_discr_info_provider,
+    SwitchInfoProvider<'tcx>,
+    self,
+    fn switch_info(&self) -> SwitchInfo<'tcx>;
 }
 
 /// A meta macro that creates a macro able to call a list of macros with exclusions for some input.
@@ -571,7 +553,7 @@ macro_rules! make_caller_macro {
 // A macro that calls all "impl" macros defined above for the target type
 // except the ones to be excluded.
 make_caller_macro!(
-    delegate_to_base,
+    impl_traits,
     [
         impl_func_info_provider,
         impl_special_types_provider,
@@ -589,10 +571,10 @@ make_caller_macro!(
     ]
 );
 
-delegate_to_base!(all for TransparentContext,,);
-delegate_to_base!(all - [ impl_body_provider impl_has_local_decls ] for InBodyContext, 'tcxb 'bd,);
-delegate_to_base!(all - [ impl_in_entry_function ] for EntryFunctionMarkerContext,,);
-delegate_to_base!(all - [ impl_location_provider ] for AtLocationContext,,);
-delegate_to_base!(all - [ impl_dest_ref_provider ] for AssignmentContext,,);
-delegate_to_base!(all - [ impl_cast_operand_provider ] for CastAssignmentContext,,);
-delegate_to_base!(all - [ impl_discr_info_provider ] for BranchingContext, 'tcxd,);
+impl_traits!(all for TransparentContext);
+impl_traits!(all - [ impl_body_provider impl_has_local_decls ] for InBodyContext<'tcxb, 'bd>);
+impl_traits!(all - [ impl_in_entry_function ] for EntryFunctionMarkerContext);
+impl_traits!(all - [ impl_location_provider ] for AtLocationContext);
+impl_traits!(all - [ impl_dest_ref_provider ] for AssignmentContext);
+impl_traits!(all - [ impl_cast_operand_provider ] for CastAssignmentContext);
+impl_traits!(all - [ impl_discr_info_provider ] for BranchingContext<'tcxd>);
