@@ -216,6 +216,21 @@ pub fn assign_aggregate_array(dest: PlaceRef, items: &[OperandRef]) {
         h.array_from(items.iter().map(|o| take_back_operand_ref(*o)))
     })
 }
+pub fn assign_aggregate_tuple(dest: PlaceRef, fields: &[OperandRef]) {
+    assign_to(dest, |h| {
+        h.tuple_from(fields.iter().map(|o| take_back_operand_ref(*o)))
+    })
+}
+pub fn assign_aggregate_adt(dest: PlaceRef, fields: &[OperandRef], variant: VariantIndex) {
+    assign_to(dest, |h| {
+        h.adt_from(fields.iter().map(|o| take_back_operand_ref(*o)), variant)
+    })
+}
+pub fn assign_aggregate_union(dest: PlaceRef, active_field: FieldIndex, value: OperandRef) {
+    assign_to(dest, |h| {
+        h.union_from(active_field, take_back_operand_ref(value))
+    })
+}
 
 pub fn take_branch_true(info: BranchingInfo) {
     conditional(info, |h| h.on_bool().take(true))

@@ -242,6 +242,18 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
         self.set_value(value)
     }
 
+    fn tuple_from(self, fields: impl Iterator<Item = Self::Operand>) {
+        todo!()
+    }
+
+    fn adt_from(self, fields: impl Iterator<Item = Self::Operand>, variant: VariantIndex) {
+        todo!()
+    }
+
+    fn union_from(self, active_field: abs::FieldIndex, value: Self::Operand) {
+        todo!()
+    }
+
     // TODO: Need to add support for the Deinit MIR instruction to have this working properly.
     // This solution works for now to avoid crashes when samples are run.
     fn variant_index(mut self, variant_index: VariantIndex) {

@@ -138,6 +138,18 @@ impl AssignmentHandler for LoggerAssignmentHandler {
         self.log(format!("[{}]", comma_separated(items)));
     }
 
+    fn tuple_from(self, fields: impl Iterator<Item = Self::Operand>) {
+        todo!()
+    }
+
+    fn adt_from(self, fields: impl Iterator<Item = Self::Operand>, variant: VariantIndex) {
+        todo!()
+    }
+
+    fn union_from(self, active_field: crate::abs::FieldIndex, value: Self::Operand) {
+        todo!()
+    }
+
     fn variant_index(self, variant_index: VariantIndex) {
         log_info!("{}.discr = index {}", self.destination, variant_index);
     }
