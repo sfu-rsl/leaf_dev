@@ -1016,68 +1016,6 @@ where
     }
 }
 
-impl<'tcx, C> CastAssigner<'tcx> for RuntimeCallAdder<C>
-where
-    Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
-    C: CastOperandProvider + DestinationReferenceProvider + LocationProvider + BaseContext<'tcx>,
-{
-    fn to_int(&mut self, ty: Ty<'tcx>) {
-        if ty.is_char() {
-            self.add_bb_for_cast_assign_call(stringify!(pri::assign_cast_char))
-        } else {
-            assert!(ty.is_integral());
-
-            let tcx = self.context.tcx();
-            let is_signed = ty.is_signed();
-            let bits = ty::size_of(tcx, ty).bits();
-
-            self.add_bb_for_cast_assign_call_with_args(
-                stringify!(pri::assign_cast_integer),
-                vec![
-                    operand::const_from_uint(tcx, bits),
-                    operand::const_from_bool(tcx, is_signed),
-                ],
-            )
-        }
-    }
-
-    fn to_float(&mut self, ty: Ty<'tcx>) {
-        let (e_bits, s_bits) = ty::ebit_sbit_size(self.context.tcx(), ty);
-        self.add_bb_for_cast_assign_call_with_args(
-            stringify!(pri::assign_cast_float),
-            vec![
-                operand::const_from_uint(self.context.tcx(), e_bits),
-                operand::const_from_uint(self.context.tcx(), s_bits),
-            ],
-        )
-    }
-
-    fn through_unsizing(&mut self) {
-        self.add_bb_for_cast_assign_call(stringify!(pri::assign_cast_unsize))
-    }
-}
-
-impl<'tcx, C> RuntimeCallAdder<C>
-where
-    Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
-    C: CastOperandProvider + DestinationReferenceProvider + LocationProvider + BaseContext<'tcx>,
-{
-    fn add_bb_for_cast_assign_call(&mut self, func_name: &str) {
-        self.add_bb_for_assign_call(func_name, vec![])
-    }
-
-    fn add_bb_for_cast_assign_call_with_args(&mut self, func_name: &str, args: Vec<Operand<'tcx>>) {
-        self.add_bb_for_assign_call(
-            func_name,
-            [
-                vec![operand::copy_for_local(self.context.operand_ref().into())],
-                args,
-            ]
-            .concat(),
-        )
-    }
-}
-
 impl<'tcx, C> BranchingReferencer<'tcx> for RuntimeCallAdder<C>
 where
     C: TyContextProvider<'tcx> + HasLocalDecls<'tcx> + LocationProvider,
