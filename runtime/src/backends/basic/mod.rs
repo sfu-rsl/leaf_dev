@@ -10,8 +10,8 @@ use std::{cell::RefCell, ops::DerefMut, rc::Rc};
 
 use crate::{
     abs::{
-        self, backend::*, AssertKind, BasicBlockIndex, BranchingMetadata, CastKind, FloatType,
-        IntType, UnaryOp, VariantIndex,
+        self, backend::*, AssertKind, BasicBlockIndex, BranchingMetadata, CastKind, IntType,
+        UnaryOp, VariantIndex,
     },
     solvers::z3::Z3Solver,
     trace::ImmediateTraceManager,
@@ -29,7 +29,7 @@ use self::{
         SymbolicVar, Value,
     },
     operand::{DefaultOperandHandler, Operand},
-    place::{DefaultPlaceHandler, Place},
+    place::{DefaultPlaceHandler, FullPlace, Place},
     state::MutableVariablesState,
 };
 
@@ -49,7 +49,9 @@ impl BasicBackend {
         let sym_projector = Rc::new(RefCell::new(expr::proj::new_sym_projector()));
         Self {
             call_stack_manager: BasicCallStackManager::<MutableVariablesState<SymProjector>>::new(
-                Box::new(move || MutableVariablesState::new(sym_projector.clone())),
+                Box::new(move |current_vars| {
+                    MutableVariablesState::new(sym_projector.clone(), current_vars.map(Box::new))
+                }),
             ),
             trace_manager: Box::new(
                 ImmediateTraceManager::<BasicBlockIndex, u32, ValueRef>::new_basic(Box::new(
@@ -171,7 +173,7 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
 
     fn ref_to(mut self, place: Self::Place, is_mutable: bool) {
         let value = ConcreteValue::Ref(if is_mutable {
-            RefValue::Mut(place)
+            RefValue::Mut(FullPlace::new(place, self.vars_state.id()))
         } else {
             RefValue::Immut(self.vars_state.copy_place(&place))
         })
@@ -571,6 +573,8 @@ fn get_operand_value(vars_state: &mut dyn VariablesState, operand: Operand) -> V
 }
 
 trait VariablesState {
+    fn id(&self) -> usize;
+
     /// Returns a copy of the value stored at the given place. May not physically copy the value
     /// but the returned value should be independently usable from the original value.
     fn copy_place(&self, place: &Place) -> ValueRef;

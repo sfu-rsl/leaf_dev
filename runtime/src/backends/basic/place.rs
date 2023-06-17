@@ -55,6 +55,28 @@ impl Place {
     }
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct FullPlace<I = usize> {
+    place: Place,
+    state_id: I,
+}
+
+impl<I> FullPlace<I> {
+    pub(crate) fn new(place: Place, state_id: I) -> Self {
+        Self { place, state_id }
+    }
+
+    pub(crate) fn state_id(&self) -> &I {
+        &self.state_id
+    }
+}
+
+impl<I> AsRef<Place> for FullPlace<I> {
+    fn as_ref(&self) -> &Place {
+        &self.place
+    }
+}
+
 pub(crate) struct DefaultPlaceHandler {}
 
 impl PlaceHandler for DefaultPlaceHandler {

@@ -19,3 +19,8 @@ impl<T> Deref for UnsafeSync<T> {
         &self.0
     }
 }
+
+/// Trait for types that have borrowed a data through move and should give it back.
+pub(crate) trait TryGiveBack<T> {
+    fn try_give_back(&mut self) -> Option<T>;
+}

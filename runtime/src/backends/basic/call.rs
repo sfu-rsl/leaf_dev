@@ -1,17 +1,19 @@
-use crate::abs::Local;
+use crate::{abs::Local, utils::TryGiveBack};
 
 use super::{
     get_operand_value, operand::Operand, place::Place, CallStackManager, ValueRef, VariablesState,
 };
 
+type VariablesStateFactory<VS> = Box<dyn Fn(Option<VS>) -> VS>;
+
 pub(super) struct BasicCallStackManager<VS: VariablesState> {
     stack: Vec<CallStackFrame<VS>>,
-    vars_state_factory: Box<dyn Fn() -> VS>,
+    vars_state_factory: VariablesStateFactory<VS>,
     call_info: CallInfo,
 }
 
 pub(super) struct CallStackFrame<VS> {
-    vars_state: VS,
+    vars_state: Option<VS>,
 }
 
 pub(super) struct CallInfo {
@@ -21,7 +23,7 @@ pub(super) struct CallInfo {
 }
 
 impl<VS: VariablesState> BasicCallStackManager<VS> {
-    pub(super) fn new(vars_state_factory: Box<dyn Fn() -> VS>) -> Self {
+    pub(super) fn new(vars_state_factory: VariablesStateFactory<VS>) -> Self {
         Self {
             stack: vec![],
             vars_state_factory,
@@ -34,29 +36,46 @@ impl<VS: VariablesState> BasicCallStackManager<VS> {
     }
 }
 
-impl<VS: VariablesState> CallStackManager for BasicCallStackManager<VS> {
+impl<VS: VariablesState + TryGiveBack<VS>> CallStackManager for BasicCallStackManager<VS> {
     fn update_args(&mut self, args: Vec<Operand>) {
         self.call_info.passed_args = args;
     }
 
     fn push_stack_frame(&mut self) {
-        let mut vars_state = (self.vars_state_factory)();
+        let mut current_vars = top_vars_state::<VS>(&mut self.stack).take();
+
+        let passed_args = &mut self.call_info.passed_args;
+        let args = if !passed_args.is_empty() {
+            let current_vars = current_vars.as_mut().unwrap();
+            passed_args
+                .drain(..)
+                .map(move |operand| get_operand_value(current_vars, operand))
+                .collect()
+        } else {
+            vec![]
+        };
+
+        let mut vars_state = (self.vars_state_factory)(current_vars);
 
         // set places for the arguments in the new frame using values from the current frame
-        for (i, operand) in self.call_info.passed_args.drain(..).enumerate() {
-            let value = get_operand_value(top_vars_state::<VS>(&mut self.stack), operand);
+        for (i, value) in args.into_iter().enumerate() {
             let local_index = (i + 1) as u32;
             let place = &Place::new(Local::Argument(local_index));
             vars_state.set_place(place, value);
         }
 
-        self.stack.push(CallStackFrame { vars_state });
+        self.stack.push(CallStackFrame {
+            vars_state: Some(vars_state),
+        });
     }
 
     fn pop_stack_frame(&mut self) {
         self.call_info.returned_val = self.top().try_take_place(&Place::new(Local::ReturnValue));
         self.call_info.is_external = false;
-        self.stack.pop();
+        let popped = self.stack.pop().unwrap();
+        if let Some(current) = self.stack.last_mut() {
+            current.vars_state = Some(popped.vars_state.unwrap().try_give_back().unwrap());
+        }
     }
 
     fn get_return_info(&mut self) -> (Option<ValueRef>, bool) {
@@ -68,10 +87,10 @@ impl<VS: VariablesState> CallStackManager for BasicCallStackManager<VS> {
     }
 
     fn top(&mut self) -> &mut dyn VariablesState {
-        top_vars_state::<VS>(&mut self.stack)
+        top_vars_state::<VS>(&mut self.stack).as_mut().unwrap()
     }
 }
 
-fn top_vars_state<VS>(stack: &mut Vec<CallStackFrame<VS>>) -> &mut VS {
+fn top_vars_state<VS>(stack: &mut Vec<CallStackFrame<VS>>) -> &mut Option<VS> {
     &mut stack.last_mut().expect("Call stack is empty.").vars_state
 }

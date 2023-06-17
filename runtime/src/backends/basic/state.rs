@@ -1,6 +1,9 @@
-use std::{cell::RefCell, collections::HashMap, ops::DerefMut, rc::Rc};
+use std::{borrow::Borrow, cell::RefCell, collections::HashMap, ops::DerefMut, rc::Rc};
 
-use crate::abs::{expr::proj::Projector, FieldIndex, Local};
+use crate::{
+    abs::{expr::proj::Projector, FieldIndex, Local},
+    utils::TryGiveBack,
+};
 
 use super::{
     alias::SymValueRefProjector as SymbolicProjector,
@@ -8,34 +11,50 @@ use super::{
         AdtKind, AdtValue, ArrayValue, ConcreteValue, ConcreteValueMutRef, ConcreteValueRef,
         ConstValue, ProjExpr, RefValue, SymIndexPair, SymValueRef, Value,
     },
-    place::{Place, Projection},
+    place::{FullPlace, Place, Projection},
     ValueRef, VariablesState,
 };
 
+pub(super) type StateId = usize;
+
 pub(super) struct MutableVariablesState<P: SymbolicProjector> {
+    id: StateId,
     locals: HashMap<Local, ValueRef>,
     /// The projector that is used to handle projections of symbolic values or
     /// symbolic projections (symbolic indices).
     sym_projector: Rc<RefCell<P>>,
+    parent: Option<Box<Self>>,
 }
 
 impl<P: SymbolicProjector> MutableVariablesState<P> {
-    pub(super) fn new(sym_projector: Rc<RefCell<P>>) -> Self {
+    pub(super) fn new(sym_projector: Rc<RefCell<P>>, parent: Option<Box<Self>>) -> Self {
         Self {
+            id: parent.as_ref().map(|p| p.id + 1).unwrap_or(0),
             locals: HashMap::new(),
             sym_projector,
+            parent,
         }
     }
 }
 
+impl<P: SymbolicProjector> TryGiveBack<Self> for MutableVariablesState<P> {
+    fn try_give_back(&mut self) -> Option<Self> {
+        self.parent.take().map(|b| *b)
+    }
+}
+
 impl<P: SymbolicProjector> VariablesState for MutableVariablesState<P> {
+    fn id(&self) -> usize {
+        self.id
+    }
+
     fn copy_place(&self, place: &Place) -> ValueRef {
         self.get_place(place)
     }
 
     fn take_place(&mut self, place: &Place) -> ValueRef {
         self.try_take_place(place)
-            .unwrap_or_else(|| panic!("{}", Self::get_err_message(&place.local())))
+            .unwrap_or_else(|| panic!("{}", self.get_err_message(&place.local())))
     }
 
     fn try_take_place(&mut self, place: &Place) -> Option<ValueRef> {
@@ -130,7 +149,7 @@ impl<P: SymbolicProjector> MutableVariablesState<P> {
         let host: &ValueRef = self
             .locals
             .get(&local)
-            .unwrap_or_else(|| panic!("{}", Self::get_err_message(&local)));
+            .unwrap_or_else(|| panic!("{}", self.get_err_message(&local)));
         self.apply_projs(host, projs)
     }
 
@@ -156,7 +175,11 @@ impl<P: SymbolicProjector> MutableVariablesState<P> {
 
     fn apply_proj_con(&self, host: ConcreteValueRef, proj: &Projection) -> ValueRef {
         let mut projector = ConcreteProjector {
-            get_place: |p: &'_ Place| -> ValueRef { self.get_place(p) },
+            get_place: |p: &'_ FullPlace| -> ValueRef {
+                self.find_state(*p.state_id())
+                    .unwrap_or_else(|| panic!("Could not find the parent state. {}", p.state_id()))
+                    .get_place(p.as_ref())
+            },
             sym_index_handler: |host: ConcreteValueRef, index: SymValueRef, c: bool| -> ValueRef {
                 self.sym_projector()
                     .deref_mut()
@@ -215,7 +238,7 @@ impl<P: SymbolicProjector> MutableVariablesState<P> {
                      * calling the function was leading to an infinite recursion
                      * in the compiler's borrow checker.
                      */
-                    projs.splice(..=deref_index, place.projections.iter().cloned());
+                    projs.splice(..=deref_index, place.as_ref().projections.iter().cloned());
                 }
                 _ => panic!("The last deref is expected to be on a mutable reference."),
             }
@@ -231,7 +254,7 @@ impl<P: SymbolicProjector> MutableVariablesState<P> {
         let mut host = self
             .locals
             .remove(&local)
-            .unwrap_or_else(|| panic!("{}", Self::get_err_message(&local)));
+            .unwrap_or_else(|| panic!("{}", self.get_err_message(&local)));
         let value = self.apply_projs_mut(&mut host, projs.iter());
         mutate(self, value);
         self.locals.insert(local, host);
@@ -301,14 +324,35 @@ impl<P: SymbolicProjector> MutableVariablesState<P> {
     }
 
     #[inline]
-    fn get_err_message(local: &Local) -> String {
-        format!("Uninitialized, moved, or invalid local. {local}")
+    fn get_err_message(&self, local: &Local) -> String {
+        format!(
+            "Uninitialized, moved, or invalid local. {local} was not found among {} variables in {:#?}",
+            self.locals.len(),
+            self.locals
+        )
     }
 }
 
 impl<P: SymbolicProjector> MutableVariablesState<P> {
     fn sym_projector(&self) -> impl DerefMut<Target = P> + '_ {
         self.sym_projector.as_ref().borrow_mut()
+    }
+
+    fn find_state(&self, id: StateId) -> Option<&Self> {
+        if id == self.id {
+            Some(self)
+        } else {
+            self.parent
+                .as_ref()
+                .map(|p| {
+                    if p.id == id {
+                        Some(self.borrow())
+                    } else {
+                        p.find_state(id)
+                    }
+                })
+                .flatten()
+        }
     }
 }
 
@@ -319,7 +363,7 @@ struct ConcreteProjector<F, I> {
 
 impl<F, I> Projector for ConcreteProjector<F, I>
 where
-    F: Fn(&Place) -> ValueRef,
+    F: Fn(&FullPlace) -> ValueRef,
     I: Fn(ConcreteValueRef, SymValueRef, bool) -> ValueRef,
 {
     type HostRef<'a> = ConcreteValueRef;
