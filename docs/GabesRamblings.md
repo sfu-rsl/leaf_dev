@@ -38,3 +38,9 @@
   - TODO: verify this formally, not just experimentally
   - TODO: also verify this for the assert macro
   
+### debugging on windows:
+- in order to debug stack overflows, you must use a debugger. On windows, lldb is more availible than gdb.
+- in order to link to a rust executable's debug symbols, you must add the following environment variable:
+- `$Env:LLDB_USE_NATIVE_PDB_READER="yes"`
+- this help lldb find your pdb.
+- also omit `.exe` in the command: `lldb exe_name`
