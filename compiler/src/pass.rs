@@ -461,9 +461,9 @@ where
             mir::AggregateKind::Tuple => Box::new(|fields| {
                 self.call_adder.by_aggregate_tuple(fields);
             }),
-            mir::AggregateKind::Adt(x, variant, _, _, None) => {
+            mir::AggregateKind::Adt(def_id, variant, _, _, None) => {
                 use rustc_hir::def::DefKind;
-                match self.call_adder.tcx().def_kind(x) {
+                match self.call_adder.tcx().def_kind(def_id) {
                     DefKind::Enum => Box::new(|fields| {self.call_adder.by_aggregate_enum(fields, *variant)}),
                     DefKind::Struct => Box::new(|fields| {
                         self.call_adder.by_aggregate_struct(fields)
