@@ -97,7 +97,7 @@ impl ConstValue {
                             is_signed: true, ..
                         },
                 } => Self::Int {
-                    bit_rep: todo!("Proposed value: {}", !bit_rep + Wrapping(1)),
+                    bit_rep: !bit_rep + Wrapping(1),
                     ty: *ty,
                 },
                 Self::Float { .. } => unimplemented!(),
