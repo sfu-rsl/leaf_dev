@@ -130,9 +130,9 @@ impl ConstValue {
             | BinaryOp::BitAnd
             | BinaryOp::BitOr => {
                 if checked {
-                    ConcreteValue::Const(Self::binary_op_arithmetic(first, second, operator))
-                } else {
                     ConcreteValue::Adt(Self::binary_op_checked_arithmetic(first, second, operator))
+                } else {
+                    ConcreteValue::Const(Self::binary_op_arithmetic(first, second, operator))
                 }
             }
             BinaryOp::Shl | BinaryOp::Shr => {
