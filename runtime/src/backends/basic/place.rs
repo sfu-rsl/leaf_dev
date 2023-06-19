@@ -71,6 +71,7 @@ impl<I> FullPlace<I> {
     }
 }
 
+/* NOTE: We use [`AsRef`] instead of [`Deref`] to prevent accidentally uses of local place. */
 impl<I> AsRef<Place> for FullPlace<I> {
     fn as_ref(&self) -> &Place {
         &self.place
