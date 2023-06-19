@@ -359,16 +359,27 @@ pub(crate) mod z3 {
             host: &SymValue,
             field_index: FieldIndex,
         ) -> AstNode<'ctx> {
+            const RESULT: u32 = 0;
+            const DID_OVERFLOW: u32 = 1;
             match host {
-                SymValue::Expression(Expr::Binary { checked: true, .. }) => match field_index {
-                    0 => {
+                SymValue::Expression(Expr::Binary {
+                    operator,
+                    operands,
+                    checked: true,
+                }) => match field_index {
+                    RESULT => {
                         // If we see a `.0` field projection on a symbolic expression that is a checked
                         // binary operation, we can safely ignore the projection and treat the expression
                         // as normal, since checked binary operations return the tuple `(binop(x, y), did_overflow)`,
                         // and failed checked binops immediately assert!(no_overflow == true), then panic.
-                        self.translate_symbolic(host)
+                        let unchecked_host = SymValue::Expression(Expr::Binary {
+                            operator: *operator,
+                            operands: operands.clone(), // TODO: try to remove this clone?
+                            checked: false,
+                        });
+                        self.translate_symbolic(&unchecked_host)
                     }
-                    1 => {
+                    DID_OVERFLOW => {
                         // generate an expression that evaluates true if overflow, false otherwise
                         match host {
                             SymValue::Expression(Expr::Binary {

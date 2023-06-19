@@ -133,26 +133,16 @@ impl ConstValue {
                 }
             }
             BinaryOp::Shl | BinaryOp::Shr => {
-                if checked {
-                    unreachable!("unsupported by rust");
-                } else {
-                    ConcreteValue::Const(Self::binary_op_shift(first, second, operator))
-                }
+                ConcreteValue::Const(Self::binary_op_shift(first, second, operator))
             }
             BinaryOp::Eq
             | BinaryOp::Lt
             | BinaryOp::Le
             | BinaryOp::Ne
             | BinaryOp::Ge
-            | BinaryOp::Gt => {
-                if checked {
-                    unreachable!("unsupported by rust");
-                } else {
-                    ConcreteValue::Const(ConstValue::Bool(Self::binary_op_cmp(
-                        first, second, operator,
-                    )))
-                }
-            }
+            | BinaryOp::Gt => ConcreteValue::Const(ConstValue::Bool(Self::binary_op_cmp(
+                first, second, operator,
+            ))),
             _ => unimplemented!("{:?} {:?} {:?}", first, second, operator),
         }
     }
