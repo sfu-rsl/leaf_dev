@@ -42,27 +42,35 @@ impl<VS: VariablesState + TryGiveBack<VS>> CallStackManager for BasicCallStackMa
     }
 
     fn push_stack_frame(&mut self) {
-        let mut current_vars = top_vars_state::<VS>(&mut self.stack).take();
+        let current_vars = top_vars_state::<VS>(&mut self.stack);
 
-        let passed_args = &mut self.call_info.passed_args;
-        let args = if !passed_args.is_empty() {
-            let current_vars = current_vars.as_mut().unwrap();
-            passed_args
-                .drain(..)
-                .map(move |operand| get_operand_value(current_vars, operand))
-                .collect()
-        } else {
-            vec![]
-        };
+        let vars_state = if let Some(current_vars) = current_vars {
+            let mut current_vars = current_vars.take().unwrap();
 
-        let mut vars_state = (self.vars_state_factory)(current_vars);
+            let passed_args = &mut self.call_info.passed_args;
+            let args = if !passed_args.is_empty() {
+                passed_args
+                    .drain(..)
+                    .map(|operand| get_operand_value(&mut current_vars, operand))
+                    .collect()
+            } else {
+                vec![]
+            };
 
-        // set places for the arguments in the new frame using values from the current frame
-        for (i, value) in args.into_iter().enumerate() {
-            let local_index = (i + 1) as u32;
-            let place = &Place::new(Local::Argument(local_index));
-            vars_state.set_place(place, value);
+            let mut vars_state = (self.vars_state_factory)(Some(current_vars));
+            // set places for the arguments in the new frame using values from the current frame
+            for (i, value) in args.into_iter().enumerate() {
+                let local_index = (i + 1) as u32;
+                let place = &Place::new(Local::Argument(local_index));
+                vars_state.set_place(place, value);
+            }
+
+            vars_state
         }
+        // The first push when the stack is empty
+        else {
+            (self.vars_state_factory)(None)
+        };
 
         self.stack.push(CallStackFrame {
             vars_state: Some(vars_state),
@@ -87,10 +95,17 @@ impl<VS: VariablesState + TryGiveBack<VS>> CallStackManager for BasicCallStackMa
     }
 
     fn top(&mut self) -> &mut dyn VariablesState {
-        top_vars_state::<VS>(&mut self.stack).as_mut().unwrap()
+        top_vars_state::<VS>(&mut self.stack)
+            .expect("Call stack is empty.")
+            .as_mut()
+            .unwrap()
     }
 }
 
-fn top_vars_state<VS>(stack: &mut Vec<CallStackFrame<VS>>) -> &mut Option<VS> {
-    &mut stack.last_mut().expect("Call stack is empty.").vars_state
+fn top_vars_state<VS>(stack: &mut Vec<CallStackFrame<VS>>) -> Option<&mut Option<VS>> {
+    if let Some(frame) = stack.last_mut() {
+        Some(&mut frame.vars_state)
+    } else {
+        None
+    }
 }
