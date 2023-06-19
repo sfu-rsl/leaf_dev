@@ -50,19 +50,23 @@ macro_rules! try_on_current_then_next {
 }
 
 macro_rules! impl_binary_expr_method {
-    ($method:ident) => {
-        fn $method<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
-            try_on_current_then_next!(self, $method, operands)
-        }
+    ($($method:ident)*) => {
+        $(
+            fn $method<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+                try_on_current_then_next!(self, $method, operands)
+            }
+        )*
     };
-    ($method:ident $(, $arg: ident : $arg_type: ty)*) => {
-        fn $method<'a>(
-            &mut self,
-            operands: Self::ExprRefPair<'a>,
-            $($arg: $arg_type),*
-        ) -> Self::Expr<'a> {
-            try_on_current_then_next!(self, $method, (operands, $($arg),*), |operands|)
-        }
+    ($($method:ident)* , $arg: ident : $arg_type: ty) => {
+        $(
+            fn $method<'a>(
+                &mut self,
+                operands: Self::ExprRefPair<'a>,
+                $arg: $arg_type
+            ) -> Self::Expr<'a> {
+                try_on_current_then_next!(self, $method, (operands, $arg), |operands|)
+            }
+        )*
     };
 }
 
@@ -88,23 +92,12 @@ where
         try_on_current_then_next!(self, binary_op, (operands, op, checked), |operands|)
     }
 
-    impl_binary_expr_method!(add, checked: bool);
-    impl_binary_expr_method!(sub, checked: bool);
-    impl_binary_expr_method!(mul, checked: bool);
+    impl_binary_expr_method!(add sub mul, checked: bool);
 
-    impl_binary_expr_method!(div);
-    impl_binary_expr_method!(rem);
-    impl_binary_expr_method!(and);
-    impl_binary_expr_method!(or);
-    impl_binary_expr_method!(xor);
-    impl_binary_expr_method!(shl);
-    impl_binary_expr_method!(shr);
-    impl_binary_expr_method!(eq);
-    impl_binary_expr_method!(ne);
-    impl_binary_expr_method!(lt);
-    impl_binary_expr_method!(le);
-    impl_binary_expr_method!(gt);
-    impl_binary_expr_method!(ge);
+    impl_binary_expr_method!(div rem);
+    impl_binary_expr_method!(and or xor);
+    impl_binary_expr_method!(shl shr);
+    impl_binary_expr_method!(eq ne lt le gt ge);
     impl_binary_expr_method!(offset);
 }
 

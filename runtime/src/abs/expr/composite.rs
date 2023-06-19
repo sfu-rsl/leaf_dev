@@ -13,14 +13,28 @@ pub(crate) struct CompositeExprBuilder<B: BinaryExprBuilder, U: UnaryExprBuilder
 }
 
 macro_rules! impl_binary_expr_method {
-    ($method:ident $(, $arg: ident : $arg_type: ty)*) => {
+    ($($method:ident)*) => {
         delegate! {
             to self.binary {
-                fn $method<'a>(
-                    &mut self,
-                    operands: Self::ExprRefPair<'a>,
-                    $($arg: $arg_type),*
-                ) -> Self::Expr<'a>;
+                $(
+                    fn $method<'a>(
+                        &mut self,
+                        operands: Self::ExprRefPair<'a>,
+                    ) -> Self::Expr<'a>;
+                )*
+            }
+        }
+    };
+    ($($method:ident)* , $arg: ident : $arg_type: ty) => {
+        delegate! {
+            to self.binary {
+                $(
+                    fn $method<'a>(
+                        &mut self,
+                        operands: Self::ExprRefPair<'a>,
+                        $arg: $arg_type
+                    ) -> Self::Expr<'a>;
+                )*
             }
         }
     };
@@ -60,23 +74,12 @@ where
     }
 
     // note: this interface is more clear
-    impl_binary_expr_method!(add, checked: bool);
-    impl_binary_expr_method!(sub, checked: bool);
-    impl_binary_expr_method!(mul, checked: bool);
+    impl_binary_expr_method!(add sub mul, checked: bool);
 
-    impl_binary_expr_method!(div);
-    impl_binary_expr_method!(rem);
-    impl_binary_expr_method!(and);
-    impl_binary_expr_method!(or);
-    impl_binary_expr_method!(xor);
-    impl_binary_expr_method!(shl);
-    impl_binary_expr_method!(shr);
-    impl_binary_expr_method!(eq);
-    impl_binary_expr_method!(ne);
-    impl_binary_expr_method!(lt);
-    impl_binary_expr_method!(le);
-    impl_binary_expr_method!(gt);
-    impl_binary_expr_method!(ge);
+    impl_binary_expr_method!(div rem);
+    impl_binary_expr_method!(and or xor);
+    impl_binary_expr_method!(shl shr);
+    impl_binary_expr_method!(eq ne lt le gt ge);
     impl_binary_expr_method!(offset);
 }
 

@@ -49,44 +49,52 @@ macro_rules! impl_general_binary_op_through_singulars {
     };
 }
 
-macro_rules! impl_general_binary_op_for_singular {
-    ($method:ident = $op:expr) => {
-        fn $method<'a>(
-            &mut self,
-            operands: <Self as BinaryExprBuilder>::ExprRefPair<'a>,
-        ) -> <Self as BinaryExprBuilder>::Expr<'a> {
-            self.binary_op(operands, $op, false)
-        }
+macro_rules! impl_general_binary_op_for {
+    ($($method:ident = $op:expr)*) => {
+        $(
+            fn $method<'a>(
+                &mut self,
+                operands: <Self as BinaryExprBuilder>::ExprRefPair<'a>,
+            ) -> <Self as BinaryExprBuilder>::Expr<'a> {
+                self.binary_op(operands, $op, false)
+            }
+        )*
     };
-    ($method:ident = $op:expr $(, $arg: ident : $arg_type: ty)*) => {
-        fn $method<'a>(
-            &mut self,
-            operands: <Self as BinaryExprBuilder>::ExprRefPair<'a>,
-            $($arg: $arg_type),*
-        ) -> <Self as BinaryExprBuilder>::Expr<'a> {
-            self.binary_op(operands, $op, $($arg),*)
-        }
+    ($($method:ident = $op:expr)* , $arg: ident : $arg_type: ty) => {
+        $(
+            fn $method<'a>(
+                &mut self,
+                operands: <Self as BinaryExprBuilder>::ExprRefPair<'a>,
+                $arg: $arg_type,
+            ) -> <Self as BinaryExprBuilder>::Expr<'a> {
+                self.binary_op(operands, $op, $arg)
+            }
+        )*
     };
 }
 macro_rules! impl_singular_binary_ops_through_general {
     () => {
-        impl_general_binary_op_for_singular!(add = BinaryOp::Add, checked: bool);
-        impl_general_binary_op_for_singular!(sub = BinaryOp::Sub, checked: bool);
-        impl_general_binary_op_for_singular!(mul = BinaryOp::Mul, checked: bool);
-        impl_general_binary_op_for_singular!(div = BinaryOp::Div);
-        impl_general_binary_op_for_singular!(rem = BinaryOp::Rem);
-        impl_general_binary_op_for_singular!(xor = BinaryOp::BitXor);
-        impl_general_binary_op_for_singular!(and = BinaryOp::BitAnd);
-        impl_general_binary_op_for_singular!(or = BinaryOp::BitOr);
-        impl_general_binary_op_for_singular!(shl = BinaryOp::Shl);
-        impl_general_binary_op_for_singular!(shr = BinaryOp::Shr);
-        impl_general_binary_op_for_singular!(eq = BinaryOp::Eq);
-        impl_general_binary_op_for_singular!(lt = BinaryOp::Lt);
-        impl_general_binary_op_for_singular!(le = BinaryOp::Le);
-        impl_general_binary_op_for_singular!(ne = BinaryOp::Ne);
-        impl_general_binary_op_for_singular!(ge = BinaryOp::Ge);
-        impl_general_binary_op_for_singular!(gt = BinaryOp::Gt);
-        impl_general_binary_op_for_singular!(offset = BinaryOp::Offset);
+        impl_general_binary_op_for!(
+            add = BinaryOp::Add
+            sub = BinaryOp::Sub
+            mul = BinaryOp::Mul, checked: bool
+        );
+        impl_general_binary_op_for!(
+            div = BinaryOp::Div
+            rem = BinaryOp::Rem
+            xor = BinaryOp::BitXor
+            and = BinaryOp::BitAnd
+            or = BinaryOp::BitOr
+            shl = BinaryOp::Shl
+            shr = BinaryOp::Shr
+            eq = BinaryOp::Eq
+            lt = BinaryOp::Lt
+            le = BinaryOp::Le
+            ne = BinaryOp::Ne
+            ge = BinaryOp::Ge
+            gt = BinaryOp::Gt
+            offset = BinaryOp::Offset
+        );
     };
 }
 
@@ -122,7 +130,7 @@ macro_rules! impl_singular_unary_ops_through_general {
 
 #[allow(unused_imports)]
 pub(crate) use {
-    impl_general_binary_op_for_singular, impl_general_binary_op_through_singulars,
+    impl_general_binary_op_for, impl_general_binary_op_through_singulars,
     impl_general_unary_op_through_singulars, impl_singular_binary_ops_through_general,
     impl_singular_unary_op_through_general, impl_singular_unary_ops_through_general,
     repeat_macro_for,

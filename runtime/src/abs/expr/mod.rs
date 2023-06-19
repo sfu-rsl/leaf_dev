@@ -7,8 +7,15 @@ pub(crate) mod variance;
 use super::{BinaryOp, CastKind, UnaryOp};
 
 macro_rules! bin_fn_signature {
-    ($method:ident $(, $arg: ident : $arg_type: ty)*) => {
-        fn $method<'a>(&mut self, operands: Self::ExprRefPair<'a>, $($arg: $arg_type),*) -> Self::Expr<'a>;
+    ($($method:ident)*) => {
+        $(
+            fn $method<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a>;
+        )*
+    };
+    ($($method:ident)* , $arg: ident : $arg_type: ty) => {
+        $(
+            fn $method<'a>(&mut self, operands: Self::ExprRefPair<'a>, $arg: $arg_type) -> Self::Expr<'a>;
+        )*
     };
 }
 
@@ -23,23 +30,12 @@ pub(crate) trait BinaryExprBuilder {
         checked: bool,
     ) -> Self::Expr<'a>;
 
-    bin_fn_signature!(add, checked: bool);
-    bin_fn_signature!(sub, checked: bool);
-    bin_fn_signature!(mul, checked: bool);
+    bin_fn_signature!(add sub mul, checked: bool);
 
-    bin_fn_signature!(div);
-    bin_fn_signature!(rem);
-    bin_fn_signature!(and);
-    bin_fn_signature!(or);
-    bin_fn_signature!(xor);
-    bin_fn_signature!(shl);
-    bin_fn_signature!(shr);
-    bin_fn_signature!(eq);
-    bin_fn_signature!(ne);
-    bin_fn_signature!(lt);
-    bin_fn_signature!(le);
-    bin_fn_signature!(gt);
-    bin_fn_signature!(ge);
+    bin_fn_signature!(div rem);
+    bin_fn_signature!(and or xor);
+    bin_fn_signature!(shl shr);
+    bin_fn_signature!(eq ne lt le gt ge);
     bin_fn_signature!(offset);
 }
 

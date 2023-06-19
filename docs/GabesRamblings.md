@@ -44,3 +44,8 @@
 - `$Env:LLDB_USE_NATIVE_PDB_READER="yes"`
 - this help lldb find your pdb.
 - also omit `.exe` in the command: `lldb exe_name`
+
+### debugging macros:
+- we use a LOT of macros in leaf in order to minimize repeated boilerplate in obvious places.
+- unfortunately, if there's a bug in a macro it's extra hard to follow what's going on inside it. 
+- `-Zunpretty=expanded` is a compiler option that will unroll macros only. Use it wisely!

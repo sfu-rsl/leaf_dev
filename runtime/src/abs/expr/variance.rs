@@ -28,8 +28,28 @@ where
         F: for<'s> FnH<<Self::Target as BEB>::ExprRefPair<'s>, <Self::Target as BEB>::Expr<'s>>;
 }
 
-// TODO: remove delegate from the name since wer don't delegate?
-macro_rules! delegate_singular_binary_op {
+macro_rules! delegate_binary_op {
+    ($($method: ident)*) => {
+        $(
+            fn $method<'a>(
+                &mut self,
+                operands: Self::ExprRefPair<'a>,
+            ) -> Self::Expr<'a> {
+                Self::adapt(operands, |operands| self.deref_mut().$method(operands))
+            }
+        )*
+    };
+    ($($method: ident)* , $arg: ident : $arg_type: ty) => {
+        $(
+            fn $method<'a>(
+                &mut self,
+                operands: Self::ExprRefPair<'a>,
+                $arg: $arg_type
+            ) -> Self::Expr<'a> {
+                Self::adapt(operands, |operands| self.deref_mut().$method(operands, $arg))
+            }
+        )*
+    };
     ($method: ident $(, $arg: ident : $arg_type: ty)*) => {
         fn $method<'a>(
             &mut self,
@@ -49,26 +69,14 @@ where
     type ExprRefPair<'a> = T::TargetExprRefPair<'a>;
     type Expr<'a> = T::TargetExpr<'a>;
 
-    delegate_singular_binary_op!(binary_op, op: BinaryOp, checked: bool);
+    delegate_binary_op!(binary_op, op: BinaryOp, checked: bool);
+    delegate_binary_op!(add sub mul, checked: bool);
 
-    delegate_singular_binary_op!(add, checked: bool);
-    delegate_singular_binary_op!(sub, checked: bool);
-    delegate_singular_binary_op!(mul, checked: bool);
-
-    delegate_singular_binary_op!(div);
-    delegate_singular_binary_op!(rem);
-    delegate_singular_binary_op!(and);
-    delegate_singular_binary_op!(or);
-    delegate_singular_binary_op!(xor);
-    delegate_singular_binary_op!(shl);
-    delegate_singular_binary_op!(shr);
-    delegate_singular_binary_op!(eq);
-    delegate_singular_binary_op!(ne);
-    delegate_singular_binary_op!(lt);
-    delegate_singular_binary_op!(le);
-    delegate_singular_binary_op!(gt);
-    delegate_singular_binary_op!(ge);
-    delegate_singular_binary_op!(offset);
+    delegate_binary_op!(div rem);
+    delegate_binary_op!(and or xor);
+    delegate_binary_op!(shl shr);
+    delegate_binary_op!(eq ne lt le gt ge);
+    delegate_binary_op!(offset);
 }
 
 pub(crate) trait UnaryExprBuilderAdapter: DerefMut
