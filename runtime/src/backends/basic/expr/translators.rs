@@ -416,72 +416,44 @@ pub(crate) mod z3 {
             // TODO: confirm that Z3's overflow instructions work as expected -> I think! ->
             // TODO: remove this after testing all integer sizes
 
-            let no_overflow = match operator {
-                BinaryOp::Add => {
-                    if is_signed {
-                        let overflow = ast::BV::bvadd_no_overflow(
-                            left.as_bit_vector(),
-                            right.as_bit_vector(),
-                            true,
-                        );
-                        let underflow = ast::BV::bvadd_no_underflow(
-                            left.as_bit_vector(),
-                            right.as_bit_vector(),
-                        );
-                        ast::Bool::and(overflow.get_ctx(), &[&overflow, &underflow])
-                    } else {
+            let left = left.as_bit_vector();
+            let right = right.as_bit_vector();
+            let no_overflow = if is_signed {
+                let (overflow, underflow) = match operator {
+                    BinaryOp::Add => (
+                        ast::BV::bvadd_no_overflow(left, right, true),
+                        ast::BV::bvadd_no_underflow(left, right),
+                    ),
+                    BinaryOp::Sub => (
+                        ast::BV::bvsub_no_overflow(left, right),
+                        ast::BV::bvsub_no_underflow(left, right, true),
+                    ),
+                    BinaryOp::Mul => (
+                        ast::BV::bvmul_no_overflow(left, right, true),
+                        ast::BV::bvmul_no_underflow(left, right),
+                    ),
+                    _ => unreachable!(),
+                };
+                ast::Bool::and(overflow.get_ctx(), &[&overflow, &underflow])
+            } else {
+                match operator {
+                    BinaryOp::Add => {
                         // note: in unsigned addition, underflow is impossible because there
-                        //       are no negative numbers.
-                        ast::BV::bvadd_no_overflow(
-                            left.as_bit_vector(),
-                            right.as_bit_vector(),
-                            false,
-                        )
+                        //       are no negative numbers. 0 + 0 is the smallest expression
+                        ast::BV::bvadd_no_overflow(left, right, false)
                     }
-                }
-                BinaryOp::Sub => {
-                    if is_signed {
-                        let overflow =
-                            ast::BV::bvsub_no_overflow(left.as_bit_vector(), right.as_bit_vector());
-                        let underflow = ast::BV::bvsub_no_underflow(
-                            left.as_bit_vector(),
-                            right.as_bit_vector(),
-                            true,
-                        );
-                        ast::Bool::and(overflow.get_ctx(), &[&overflow, &underflow])
-                    } else {
+                    BinaryOp::Sub => {
                         // note: in unsigned subtraction, overflow is impossible because there
-                        //       are no negative numbers.
-                        ast::BV::bvsub_no_underflow(
-                            left.as_bit_vector(),
-                            right.as_bit_vector(),
-                            false,
-                        )
+                        //       are no negative numbers. max - 0 is the largest expression
+                        ast::BV::bvsub_no_underflow(left, right, false)
                     }
-                }
-                BinaryOp::Mul => {
-                    if is_signed {
-                        let overflow = ast::BV::bvmul_no_overflow(
-                            left.as_bit_vector(),
-                            right.as_bit_vector(),
-                            true,
-                        );
-                        let underflow = ast::BV::bvmul_no_underflow(
-                            left.as_bit_vector(),
-                            right.as_bit_vector(),
-                        );
-                        ast::Bool::and(overflow.get_ctx(), &[&overflow, &underflow])
-                    } else {
+                    BinaryOp::Mul => {
                         // note: in unsigned multiplication, underflow is impossible because there
-                        //       are no negative numbers.
-                        ast::BV::bvmul_no_overflow(
-                            left.as_bit_vector(),
-                            right.as_bit_vector(),
-                            false,
-                        )
+                        //       are no negative numbers. x * 0 is the smallest expression
+                        ast::BV::bvmul_no_overflow(left, right, false)
                     }
+                    _ => unreachable!(),
                 }
-                _ => unreachable!(),
             };
             ast::Bool::not(&no_overflow).into()
         }
