@@ -10,8 +10,8 @@ use std::{cell::RefCell, ops::DerefMut, rc::Rc};
 
 use crate::{
     abs::{
-        self, backend::*, AssertKind, BasicBlockIndex, BranchingMetadata, DiscriminantAsIntType,
-        UnaryOp, VariantIndex,
+        self, backend::*, AssertKind, BasicBlockIndex, BranchingMetadata, CastKind, FloatType,
+        IntType, UnaryOp, VariantIndex,
     },
     solvers::z3::Z3Solver,
     trace::ImmediateTraceManager,
@@ -25,8 +25,8 @@ use self::{
     call::BasicCallStackManager,
     expr::{
         builders::DefaultExprBuilder as ExprBuilder, proj::DefaultSymProjector as SymProjector,
-        AdtKind, AdtValue, ArrayValue, ConcreteValue, ConstValue, RefValue, SymValue, SymbolicVar,
-        Value,
+        AdtKind, AdtValue, ArrayValue, ConcreteValue, ConstValue, RefValue, SymValue, SymValueRef,
+        SymbolicVar, Value,
     },
     operand::{DefaultOperandHandler, Operand},
     place::{DefaultPlaceHandler, Place},
@@ -40,6 +40,7 @@ pub struct BasicBackend {
     trace_manager: TraceManager,
     current_constraints: Vec<Constraint>,
     expr_builder: Rc<RefCell<ExprBuilder>>,
+    sym_id_counter: u32,
 }
 
 impl BasicBackend {
@@ -51,12 +52,13 @@ impl BasicBackend {
                 Box::new(move || MutableVariablesState::new(sym_projector.clone())),
             ),
             trace_manager: Box::new(
-                ImmediateTraceManager::<BasicBlockIndex, ValueRef, u32>::new_basic(Box::new(
+                ImmediateTraceManager::<BasicBlockIndex, u32, ValueRef>::new_basic(Box::new(
                     Z3Solver::new_in_global_context(),
                 )),
             ),
             current_constraints: Vec::new(),
             expr_builder,
+            sym_id_counter: 0,
         }
     }
 }
@@ -66,7 +68,7 @@ impl RuntimeBackend for BasicBackend {
     where
         Self: 'a;
 
-    type OperandHandler<'a> = DefaultOperandHandler
+    type OperandHandler<'a> = DefaultOperandHandler<'a>
     where
         Self: 'a;
 
@@ -91,7 +93,7 @@ impl RuntimeBackend for BasicBackend {
     }
 
     fn operand(&mut self) -> Self::OperandHandler<'_> {
-        DefaultOperandHandler
+        DefaultOperandHandler::new(Box::new(move |ty| self.new_symbolic_value(ty)))
     }
 
     fn assign_to<'a>(
@@ -119,7 +121,12 @@ impl RuntimeBackend for BasicBackend {
     }
 }
 
-impl BasicBackend {}
+impl BasicBackend {
+    fn new_symbolic_value(&mut self, ty: abs::ValueType) -> SymValueRef {
+        self.sym_id_counter += 1;
+        SymValue::Variable(SymbolicVar::new(self.sym_id_counter, ty)).to_value_ref()
+    }
+}
 
 pub(crate) struct BasicAssignmentHandler<'s, EB: OperationalExprBuilder> {
     dest: Place,
@@ -146,12 +153,12 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
     type Operand = Operand;
 
     fn use_of(mut self, operand: Self::Operand) {
-        let value = self.get_operand_value(&operand);
+        let value = self.get_operand_value(operand);
         self.set(value)
     }
 
     fn repeat_of(mut self, operand: Self::Operand, count: usize) {
-        let element_value = self.get_operand_value(&operand);
+        let element_value = self.get_operand_value(operand);
         /* NOTE: As we don't expect the count to be a large number, we currently,
          * don't optimize this by using a single element and a length.
          */
@@ -186,28 +193,10 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
         self.set(len_value.into())
     }
 
-    fn char_cast_of(mut self, operand: Self::Operand) {
-        let value = self.get_operand_value(&operand);
-        let cast_value = self.expr_builder().cast_to_char(value.into());
+    fn cast_of(mut self, operand: Self::Operand, target: CastKind) {
+        let value = self.get_operand_value(operand);
+        let cast_value = self.expr_builder().cast(value.into(), target);
         self.set(cast_value.into())
-    }
-
-    fn integer_cast_of(mut self, operand: Self::Operand, is_signed: bool, bits: u64) {
-        let value = self.get_operand_value(&operand);
-        let cast_value = self
-            .expr_builder()
-            .cast_to_int(value.into(), bits, is_signed);
-        self.set(cast_value.into())
-    }
-
-    fn float_cast_of(mut self, operand: Self::Operand, bits: u64) {
-        let value = self.get_operand_value(&operand);
-        let cast_value = self.expr_builder().cast_to_float(value.into(), bits);
-        self.set(cast_value.into())
-    }
-
-    fn cast_of(self) {
-        todo!()
     }
 
     fn binary_op_between(
@@ -217,8 +206,8 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
         second: Self::Operand,
         checked: bool,
     ) {
-        let first_value = self.get_operand_value(&first);
-        let second_value = self.get_operand_value(&second);
+        let first_value = self.get_operand_value(first);
+        let second_value = self.get_operand_value(second);
         let result_value =
             self.expr_builder()
                 .binary_op((first_value, second_value).into(), operator, checked);
@@ -226,7 +215,7 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
     }
 
     fn unary_op_on(mut self, operator: UnaryOp, operand: Self::Operand) {
-        let value = self.get_operand_value(&operand);
+        let value = self.get_operand_value(operand);
         let result_value = self.expr_builder().unary_op(value.into(), operator);
         self.set(result_value.into())
     }
@@ -246,7 +235,7 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
 
     fn array_from(mut self, items: impl Iterator<Item = Self::Operand>) {
         let value = Value::Concrete(ConcreteValue::Array(ArrayValue {
-            elements: items.map(|e| self.get_operand_value(&e)).collect(),
+            elements: items.map(|e| self.get_operand_value(e)).collect(),
         }));
         self.set_value(value)
     }
@@ -273,7 +262,7 @@ impl<EB: OperationalExprBuilder> BasicAssignmentHandler<'_, EB> {
         self.set(ValueRef::new(value));
     }
 
-    fn get_operand_value(&mut self, operand: &<Self as AssignmentHandler>::Operand) -> ValueRef {
+    fn get_operand_value(&mut self, operand: <Self as AssignmentHandler>::Operand) -> ValueRef {
         get_operand_value(self.vars_state, operand)
     }
 
@@ -298,7 +287,7 @@ impl<'a, EB: BinaryExprBuilder> BranchingHandler for BasicBranchingHandler<'a, E
         discriminant: Operand,
         metadata: abs::BranchingMetadata,
     ) -> Self::ConditionalBranchingHandler {
-        let disc = get_operand_value(self.vars_state, &discriminant);
+        let disc = get_operand_value(self.vars_state, discriminant);
         BasicConditionalBranchingHandler::new(
             disc,
             metadata,
@@ -308,11 +297,11 @@ impl<'a, EB: BinaryExprBuilder> BranchingHandler for BasicBranchingHandler<'a, E
         )
     }
 
-    fn assert(self, cond: Operand, expected: bool, _assert_kind: AssertKind<Self::Operand>) {
+    fn assert(self, cond: Self::Operand, expected: bool, _assert_kind: AssertKind<Self::Operand>) {
         // Note: this function is called before the assertion or checked operation is evaluated. This is okay because
         // the checked operation also occurs (in the runtime) before this assert is called, since all operations are
         // run a second time in the runtime.
-        let cond_val = get_operand_value(self.vars_state, &cond);
+        let cond_val = get_operand_value(self.vars_state, cond);
         if cond_val.is_symbolic() {
             let mut constraint = Constraint::Bool(cond_val.clone());
 
@@ -392,9 +381,10 @@ pub(crate) struct BasicBranchTakingHandler<'a, EB: BinaryExprBuilder> {
 
 impl<EB: BinaryExprBuilder> BasicBranchTakingHandler<'_, EB> {
     fn create_equality_expr(&mut self, value: impl BranchCaseValue, eq: bool) -> ValueRef {
-        let discr_as_int = &self.parent.metadata.discr_as_int;
         let first = self.parent.discriminant.clone();
-        let second = ValueRef::new(value.into_const(discr_as_int).into());
+        let second = value
+            .into_const(self.parent.metadata.discr_as_int)
+            .to_value_ref();
         if eq {
             self.expr_builder().eq((first, second).into())
         } else {
@@ -472,11 +462,11 @@ macro_rules! impl_general_branch_taking_handler {
 impl_general_branch_taking_handler!(u128, char, VariantIndex);
 
 trait BranchCaseValue {
-    fn into_const(self, discr_as_int: &DiscriminantAsIntType) -> ConstValue;
+    fn into_const(self, discr_as_int: IntType) -> ConstValue;
 }
 
 impl BranchCaseValue for char {
-    fn into_const(self, _discr_as_int: &DiscriminantAsIntType) -> ConstValue {
+    fn into_const(self, _discr_as_int: IntType) -> ConstValue {
         ConstValue::Char(self)
     }
 }
@@ -485,12 +475,8 @@ macro_rules! impl_int_branch_case_value {
     ($($type:ty),*) => {
         $(
             impl BranchCaseValue for $type {
-                fn into_const(self, discr_as_int: &DiscriminantAsIntType) -> ConstValue {
-                    ConstValue::Int {
-                        bit_rep: self as u128,
-                        size: discr_as_int.bit_size,
-                        is_signed: discr_as_int.is_signed,
-                    }
+                fn into_const(self, discr_as_int: IntType) -> ConstValue {
+                    ConstValue::new_int(self, discr_as_int)
                 }
             }
         )*
@@ -547,44 +533,13 @@ type ValueRef = expr::ValueRef;
 
 type Constraint = crate::abs::Constraint<ValueRef>;
 
-fn get_operand_value(vars_state: &mut dyn VariablesState, operand: &Operand) -> ValueRef {
+fn get_operand_value(vars_state: &mut dyn VariablesState, operand: Operand) -> ValueRef {
     match operand {
         // copy and move are the same, but only for now. see: https://github.com/rust-lang/unsafe-code-guidelines/issues/188
         Operand::Place(place, operand::PlaceUsage::Copy)
-        | Operand::Place(place, operand::PlaceUsage::Move) => vars_state.copy_place(place),
-        Operand::Const(constant) => ValueRef::new(Value::Concrete(ConcreteValue::from_const(
-            get_constant_value(constant),
-        ))),
-        Operand::Symbolic(sym) => ValueRef::new(Value::Symbolic(SymValue::Variable(
-            SymbolicVar::new(0, sym.into()),
-        ))),
-    }
-}
-
-fn get_constant_value(constant: &operand::Constant) -> ConstValue {
-    match constant {
-        operand::Constant::Bool(value) => ConstValue::Bool(*value),
-        operand::Constant::Char(value) => ConstValue::Char(*value),
-        operand::Constant::Int {
-            bit_rep,
-            size,
-            is_signed,
-        } => ConstValue::Int {
-            bit_rep: *bit_rep,
-            size: *size,
-            is_signed: *is_signed,
-        },
-        operand::Constant::Float {
-            bit_rep,
-            ebits,
-            sbits,
-        } => ConstValue::Float {
-            bit_rep: *bit_rep,
-            ebits: *ebits,
-            sbits: *sbits,
-        },
-        operand::Constant::Str(value) => ConstValue::Str(value),
-        operand::Constant::Func(value) => ConstValue::Func(*value),
+        | Operand::Place(place, operand::PlaceUsage::Move) => vars_state.copy_place(&place),
+        Operand::Const(constant) => Into::<ConstValue>::into(constant).to_value_ref(),
+        Operand::Symbolic(sym) => sym.into(),
     }
 }
 

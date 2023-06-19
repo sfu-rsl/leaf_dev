@@ -2,8 +2,8 @@ mod instance;
 mod utils;
 
 use crate::abs::{
-    backend::*, AssertKind, BasicBlockIndex, BinaryOp, BranchingMetadata, DiscriminantAsIntType,
-    FieldIndex, Local, LocalIndex, UnaryOp, VariantIndex,
+    backend::*, AssertKind, BasicBlockIndex, BinaryOp, BranchingMetadata, CastKind, FieldIndex,
+    FloatType, IntType, Local, LocalIndex, UnaryOp, ValueType, VariantIndex,
 };
 
 use self::instance::*;
@@ -85,14 +85,23 @@ pub fn ref_operand_copy(place: PlaceRef) -> OperandRef {
 pub fn ref_operand_move(place: PlaceRef) -> OperandRef {
     push_operand_ref(|o| o.move_of(take_back_place_ref(place)))
 }
+
 pub fn ref_operand_const_bool(value: bool) -> OperandRef {
     push_operand_ref(|o| o.const_from().bool(value))
 }
-pub fn ref_operand_const_int(bit_rep: u128, size: u64, is_signed: bool) -> OperandRef {
-    push_operand_ref(|o| o.const_from().int(bit_rep, size, is_signed))
+pub fn ref_operand_const_int(bit_rep: u128, bit_size: u64, is_signed: bool) -> OperandRef {
+    push_operand_ref(|o| {
+        o.const_from().int(
+            bit_rep,
+            IntType {
+                bit_size,
+                is_signed,
+            },
+        )
+    })
 }
-pub fn ref_operand_const_float(bit_rep: u128, ebits: u64, sbits: u64) -> OperandRef {
-    push_operand_ref(|o| o.const_from().float(bit_rep, ebits, sbits))
+pub fn ref_operand_const_float(bit_rep: u128, e_bits: u64, s_bits: u64) -> OperandRef {
+    push_operand_ref(|o| o.const_from().float(bit_rep, FloatType { e_bits, s_bits }))
 }
 pub fn ref_operand_const_char(value: char) -> OperandRef {
     push_operand_ref(|o| o.const_from().char(value))
@@ -103,17 +112,18 @@ pub fn ref_operand_const_func(id: u64) -> OperandRef {
 pub fn ref_operand_const_str(value: &'static str) -> OperandRef {
     push_operand_ref(|o| o.const_from().str(value))
 }
-pub fn ref_operand_sym_bool() -> OperandRef {
-    push_operand_ref(|o| o.symbolic().bool())
+
+pub fn new_sym_value_bool() -> OperandRef {
+    push_operand_ref(|o| o.new_symbolic(ValueType::Bool))
 }
-pub fn ref_operand_sym_int(size: u64, is_signed: bool) -> OperandRef {
-    push_operand_ref(|o| o.symbolic().int(size, is_signed))
+pub fn new_sym_value_char() -> OperandRef {
+    push_operand_ref(|o| o.new_symbolic(ValueType::Char))
 }
-pub fn ref_operand_sym_float(ebits: u64, sbits: u64) -> OperandRef {
-    push_operand_ref(|o| o.symbolic().float(ebits, sbits))
+pub fn new_sym_value_int(bit_size: u64, is_signed: bool) -> OperandRef {
+    push_operand_ref(|o| o.new_symbolic(ValueType::new_int(bit_size, is_signed)))
 }
-pub fn ref_operand_sym_char() -> OperandRef {
-    push_operand_ref(|o| o.symbolic().char())
+pub fn new_sym_value_float(e_bits: u64, s_bits: u64) -> OperandRef {
+    push_operand_ref(|o| o.new_symbolic(ValueType::new_float(e_bits, s_bits)))
 }
 
 pub fn assign_use(dest: PlaceRef, operand: OperandRef) {
@@ -141,23 +151,34 @@ pub fn assign_len(dest: PlaceRef, place: PlaceRef) {
 }
 
 pub fn assign_cast_char(dest: PlaceRef, operand: OperandRef) {
-    assign_to(dest, |h| h.char_cast_of(take_back_operand_ref(operand)))
-}
-
-pub fn assign_cast_integer(dest: PlaceRef, operand: OperandRef, is_signed: bool, bits: u64) {
     assign_to(dest, |h| {
-        h.integer_cast_of(take_back_operand_ref(operand), is_signed, bits)
+        h.cast_of(take_back_operand_ref(operand), CastKind::ToChar)
+    })
+}
+pub fn assign_cast_integer(dest: PlaceRef, operand: OperandRef, bit_size: u64, is_signed: bool) {
+    assign_to(dest, |h| {
+        h.cast_of(
+            take_back_operand_ref(operand),
+            CastKind::ToInt(IntType {
+                bit_size,
+                is_signed,
+            }),
+        )
+    })
+}
+pub fn assign_cast_float(dest: PlaceRef, operand: OperandRef, e_bits: u64, s_bits: u64) {
+    assign_to(dest, |h| {
+        h.cast_of(
+            take_back_operand_ref(operand),
+            CastKind::ToFloat(FloatType { e_bits, s_bits }),
+        )
     })
 }
 
-pub fn assign_cast_float(dest: PlaceRef, operand: OperandRef, bits: u64) {
+pub fn assign_cast_unsize(dest: PlaceRef, operand: OperandRef) {
     assign_to(dest, |h| {
-        h.float_cast_of(take_back_operand_ref(operand), bits)
+        h.cast_of(take_back_operand_ref(operand), CastKind::PointerUnsize)
     })
-}
-
-pub fn assign_cast(dest: PlaceRef /* TODO: Other types of cast. */) {
-    assign_to(dest, |h| h.cast_of())
 }
 
 pub fn assign_binary_op(
@@ -300,7 +321,7 @@ impl BranchingInfo {
             discriminant,
             metadata: BranchingMetadata {
                 node_location,
-                discr_as_int: DiscriminantAsIntType {
+                discr_as_int: IntType {
                     bit_size: discr_bit_size,
                     is_signed: discr_is_signed,
                 },

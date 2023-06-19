@@ -3,13 +3,13 @@ pub(super) mod proj;
 pub(super) mod translators;
 pub(crate) mod utils;
 
-use std::{assert_matches::assert_matches, ops::Deref, rc::Rc};
+use std::{assert_matches::assert_matches, num::Wrapping, ops::Deref, rc::Rc};
 
-use crate::abs::{BinaryOp, FieldIndex, UnaryOp, VariantIndex};
+use crate::abs::{BinaryOp, FieldIndex, FloatType, IntType, UnaryOp, ValueType, VariantIndex};
 
 use self::utils::define_reversible_pair;
 
-use super::{operand, place::Place};
+use super::place::Place;
 
 pub(crate) type ValueRef = Rc<Value>;
 pub(crate) type ConcreteValueRef = ConcreteValueGuard<ValueRef>;
@@ -45,28 +45,34 @@ impl ConcreteValue {
 
 // FIXME: Remove this error suppression after adding support for floats.
 #[allow(unused)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum ConstValue {
     Bool(bool),
     Char(char),
     Int {
-        bit_rep: u128,
-        size: u64,
-        is_signed: bool,
+        bit_rep: Wrapping<u128>,
+        ty: IntType,
     },
     Float {
         bit_rep: u128,
-        ebits: u64,
-        sbits: u64,
+        ty: FloatType,
     },
     Str(&'static str),
     Func(u64),
 }
 
 impl ConstValue {
+    pub fn new_int<T: Into<u128>>(value: T, ty: IntType) -> Self {
+        Self::Int {
+            bit_rep: Wrapping(value.into()),
+            ty,
+        }
+    }
+
     pub fn is_zero(&self) -> bool {
         match self {
-            Self::Int { bit_rep, .. } => *bit_rep == 0,
+            Self::Bool(value) => !value,
+            Self::Int { bit_rep, .. } => *bit_rep == Wrapping(0),
             Self::Float { .. } => todo!(),
             _ => unreachable!("Only numerical values can be checked for zero."),
         }
@@ -74,7 +80,8 @@ impl ConstValue {
 
     pub fn is_one(&self) -> bool {
         match self {
-            Self::Int { bit_rep, .. } => *bit_rep == 1,
+            Self::Bool(value) => *value,
+            Self::Int { bit_rep, .. } => *bit_rep == Wrapping(1),
             Self::Float { .. } => todo!(),
             _ => unreachable!("Only numerical values can be checked for one."),
         }
@@ -85,26 +92,22 @@ impl ConstValue {
             UnaryOp::Neg => match this {
                 Self::Int {
                     bit_rep,
-                    size,
-                    is_signed: true,
+                    ty:
+                        ty @ IntType {
+                            is_signed: true, ..
+                        },
                 } => Self::Int {
-                    bit_rep: todo!("Proposed value: {}", !bit_rep + 1),
-                    size: *size,
-                    is_signed: true,
+                    bit_rep: todo!("Proposed value: {}", !bit_rep + Wrapping(1)),
+                    ty: *ty,
                 },
                 Self::Float { .. } => unimplemented!(),
-                _ => unreachable!("Negation of non-numeric constant is not possible."),
+                _ => unreachable!("Negation is meant only for signed integers and floats."),
             },
             UnaryOp::Not => match this {
                 Self::Bool(value) => Self::Bool(!value),
-                Self::Int {
-                    bit_rep,
-                    size,
-                    is_signed,
-                } => Self::Int {
+                Self::Int { bit_rep, ty } => Self::Int {
                     bit_rep: !bit_rep,
-                    size: *size,
-                    is_signed: *is_signed,
+                    ty: *ty,
                 },
                 _ => unreachable!("Not operand only works on boolean and integers."),
             },
@@ -147,7 +150,7 @@ impl ConstValue {
         }
     }
 
-    pub fn integer_cast(this: &Self, to_size: u64, is_to_signed: bool) -> Self {
+    pub fn integer_cast(this: &Self, to: IntType) -> Self {
         match this {
             /* This seems overly simple but when the number is originally cast to the u128 to get its bit representation,
              * this covers any of the casting that would need to be done here. If the original number was unsigned then
@@ -158,18 +161,15 @@ impl ConstValue {
              */
             Self::Int { bit_rep, .. } => Self::Int {
                 bit_rep: *bit_rep,
-                size: to_size,
-                is_signed: is_to_signed,
+                ty: to,
             },
             Self::Bool(value) => Self::Int {
-                bit_rep: *value as u128,
-                size: to_size,
-                is_signed: is_to_signed,
+                bit_rep: Wrapping(*value as u128),
+                ty: to,
             },
             Self::Char(value) => Self::Int {
-                bit_rep: *value as u128,
-                size: to_size,
-                is_signed: is_to_signed,
+                bit_rep: Wrapping(*value as u128),
+                ty: to,
             },
             Self::Float { .. } => todo!("Casting float to integer is not implemented yet."),
             _ => unreachable!("Casting {this:?} to integer is not possible."),
@@ -181,16 +181,14 @@ impl ConstValue {
             (
                 Self::Int {
                     bit_rep: first,
-                    size: first_size,
-                    is_signed: first_signed,
+                    ty: first_ty,
                 },
                 Self::Int {
                     bit_rep: second,
-                    size: second_size,
-                    ..
+                    ty: second_ty,
                 },
             ) => {
-                assert_eq!(*first_size, *second_size);
+                assert_eq!(first_ty.bit_size, second_ty.bit_size);
 
                 let result = match operator {
                     BinaryOp::Add => first + second,
@@ -206,8 +204,7 @@ impl ConstValue {
 
                 Self::Int {
                     bit_rep: result,
-                    size: *first_size,
-                    is_signed: *first_signed,
+                    ty: *first_ty,
                 }
             }
 
@@ -239,72 +236,78 @@ impl ConstValue {
             (
                 Self::Int {
                     bit_rep: first,
-                    size: first_size,
-                    is_signed: first_signed,
+                    ty:
+                        IntType {
+                            bit_size: first_size,
+                            is_signed: first_signed,
+                        },
                 },
                 Self::Int {
                     bit_rep: second,
-                    size: second_size,
-                    ..
+                    ty:
+                        IntType {
+                            bit_size: second_size,
+                            ..
+                        },
                 },
             ) => {
                 assert_eq!(*first_size, *second_size);
 
-                // TODO: clean this up somehow
+                // TODO: clean this up somehow & integrate wrapped arithmetic
                 let result = match first_size {
                     8 => {
                         if *first_signed {
                             checked_op::<i8>(
-                                Self::as_signed(first, first_size) as i8,
-                                Self::as_signed(second, first_size) as i8,
+                                Self::as_signed(first.0, *first_size) as i8,
+                                Self::as_signed(second.0, *first_size) as i8,
                                 operator,
                             )
                         } else {
-                            checked_op::<u8>(*first as u8, *second as u8, operator)
+                            checked_op::<u8>(first.0 as u8, second.0 as u8, operator)
                         }
                     }
                     16 => {
                         if *first_signed {
                             checked_op::<i16>(
-                                Self::as_signed(first, first_size) as i16,
-                                Self::as_signed(second, first_size) as i16,
+                                Self::as_signed(first.0, *first_size) as i16,
+                                Self::as_signed(second.0, *first_size) as i16,
                                 operator,
                             )
                         } else {
-                            checked_op::<u16>(*first as u16, *second as u16, operator)
+                            checked_op::<u16>(first.0 as u16, second.0 as u16, operator)
                         }
                     }
                     32 => {
                         if *first_signed {
                             checked_op::<i32>(
-                                Self::as_signed(first, first_size) as i32,
-                                Self::as_signed(second, first_size) as i32,
+                                Self::as_signed(first.0, *first_size) as i32,
+                                Self::as_signed(second.0, *first_size) as i32,
                                 operator,
                             )
                         } else {
-                            checked_op::<u32>(*first as u32, *second as u32, operator)
+                            checked_op::<u32>(first.0 as u32, second.0 as u32, operator)
                         }
                     }
                     64 => {
                         if *first_signed {
                             checked_op::<i64>(
-                                Self::as_signed(first, first_size) as i64,
-                                Self::as_signed(second, first_size) as i64,
+                                Self::as_signed(first.0, *first_size) as i64,
+                                Self::as_signed(second.0, *first_size) as i64,
                                 operator,
                             )
                         } else {
-                            checked_op::<u64>(*first as u64, *second as u64, operator)
+                            checked_op::<u64>(first.0 as u64, second.0 as u64, operator)
                         }
                     }
                     128 => {
                         if *first_signed {
                             checked_op::<i128>(
-                                Self::as_signed(first, first_size) as i128,
-                                Self::as_signed(second, first_size) as i128,
+                                Self::as_signed(first.0, *first_size) as i128,
+                                Self::as_signed(second.0, *first_size) as i128,
                                 operator,
                             )
                         } else {
-                            checked_op::<u128>(*first as u128, *second as u128, operator)
+                            checked_op::<u128>(first.0 as u128, second.0 as u128, operator)
                         }
                     }
                     _ => unreachable!("invalid integer size"),
@@ -315,9 +318,11 @@ impl ConstValue {
                     Some(result) => vec![
                         Some(ValueRef::new(
                             Self::Int {
-                                bit_rep: result,
-                                size: *first_size,
-                                is_signed: *first_signed,
+                                bit_rep: Wrapping(result), // TODO: figure out wrapping arithmetic
+                                ty: IntType {
+                                    bit_size: *first_size,
+                                    is_signed: *first_signed,
+                                },
                             }
                             .into(),
                         )),
@@ -340,29 +345,27 @@ impl ConstValue {
             (
                 Self::Int {
                     bit_rep: first,
-                    size: first_size,
-                    is_signed: first_signed,
+                    ty: first_ty,
                 },
                 Self::Int {
                     bit_rep: second,
-                    is_signed: second_signed,
-                    ..
+                    ty: second_ty,
                 },
             ) => {
                 let result = match operator {
                     BinaryOp::Shl => {
                         assert!(
-                            !*second_signed,
-                            "Shifting a negative value is not expected."
+                            !second_ty.is_signed || Self::is_positive(second.0, second_ty.bit_size),
+                            "Shifting by a negative value is not expected."
                         ); //TODO we can get rid of this assertion in the future
-                        first << second
+                        first << second.0 as usize
                     }
                     BinaryOp::Shr => {
                         assert!(
-                            !*second_signed,
+                            !second_ty.is_signed || Self::is_positive(second.0, second_ty.bit_size),
                             "Shifting by a negative value is not expected."
                         ); //TODO we can get rid of this assertion in the future
-                        first >> second
+                        first >> second.0 as usize
                     }
 
                     _ => unreachable!(),
@@ -370,8 +373,7 @@ impl ConstValue {
 
                 Self::Int {
                     bit_rep: result,
-                    size: *first_size,
-                    is_signed: *first_signed,
+                    ty: *first_ty,
                 }
             }
             _ => unreachable!("Shifting is only possible on integers."),
@@ -386,19 +388,16 @@ impl ConstValue {
                 (
                     Self::Int {
                         bit_rep: first,
-                        size: first_size,
-                        is_signed: first_signed,
+                        ty: first_ty,
                     },
                     Self::Int {
                         bit_rep: second,
-                        size: second_size,
-                        is_signed: second_signed,
+                        ty: second_ty,
                     },
                 ) => {
-                    assert_eq!(*first_size, *second_size);
-                    assert_eq!(*first_signed, *second_signed);
+                    assert_eq!(*first_ty, *second_ty);
 
-                    if !first_signed {
+                    if !first_ty.is_signed {
                         return match operator {
                             BinaryOp::Lt => first < second,
                             BinaryOp::Le => first <= second,
@@ -409,8 +408,8 @@ impl ConstValue {
                     }
 
                     let signs = (
-                        Self::is_positive(first, first_size),
-                        Self::is_positive(second, second_size),
+                        Self::is_positive(first.0, first_ty.bit_size),
+                        Self::is_positive(second.0, second_ty.bit_size),
                     );
 
                     match signs {
@@ -423,8 +422,8 @@ impl ConstValue {
                         },
 
                         (false, false) => {
-                            let first = Self::as_signed(first, first_size);
-                            let second = Self::as_signed(second, second_size);
+                            let first = Self::as_signed(first.0, first_ty.bit_size);
+                            let second = Self::as_signed(second.0, second_ty.bit_size);
                             match operator {
                                 BinaryOp::Lt => first < second,
                                 BinaryOp::Le => first <= second,
@@ -458,18 +457,18 @@ impl ConstValue {
         }
     }
 
-    fn is_positive(bit_rep: &u128, size: &u64) -> bool {
-        const MASK: u128 = 1;
-        (*bit_rep >> (*size - 1)) & MASK != 1
+    fn is_positive(bit_rep: u128, size: u64) -> bool {
+        let mask: u128 = 1 << (size - 1);
+        bit_rep & mask == 0
     }
 
-    fn as_signed(bit_rep: &u128, size: &u64) -> i128 {
-        let mask: u128 = (1 << (*size - 1)) - 1; // Create a mask of 1s with the given size except the sign bit
-        let sign_mask: u128 = 1 << (*size - 1); // Create a mask for the sign bit, for example 1000...0
+    fn as_signed(bit_rep: u128, size: u64) -> i128 {
+        let mask: u128 = (1 << (size - 1)) - 1; // Create a mask of 1s with the given size except the sign bit
+        let sign_mask: u128 = 1 << (size - 1); // Create a mask for the sign bit, for example 1000...0
         let sign_extend: u128 = (!mask) & sign_mask; // Create a sign extension mask, it would be something like 000...010...000
 
-        let sign_bit: bool = (*bit_rep & sign_mask) != 0;
-        let value = *bit_rep & mask;
+        let sign_bit: bool = (bit_rep & sign_mask) != 0;
+        let value = bit_rep & mask;
 
         let signed_value = if sign_bit {
             (value | sign_extend) as i128
@@ -615,9 +614,11 @@ macro_rules! impl_from_uint {
             impl From<$ty> for ConstValue {
                 fn from(value: $ty) -> Self {
                     Self::Int {
-                        bit_rep: value as u128,
-                        size: std::mem::size_of::<$ty>() as u64 * 8,
-                        is_signed: false,
+                        bit_rep: Wrapping(value as u128),
+                        ty: IntType {
+                            bit_size: std::mem::size_of::<$ty>() as u64 * 8,
+                            is_signed: false,
+                        },
                     }
                 }
             }
@@ -696,42 +697,15 @@ pub(crate) enum SymValue {
     Expression(Expr),
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct SymbolicVar {
     pub id: SymVarId,
-    pub ty: SymbolicVarType,
+    pub ty: ValueType,
 }
 
 impl SymbolicVar {
-    pub fn new(id: SymVarId, ty: SymbolicVarType) -> Self {
+    pub fn new(id: SymVarId, ty: ValueType) -> Self {
         Self { id, ty }
-    }
-}
-
-// FIXME: Remove this error suppression after adding support for floats
-#[allow(unused)]
-#[derive(Clone, Copy, Debug)]
-pub(crate) enum SymbolicVarType {
-    Bool,
-    Char,
-    Int { size: u64, is_signed: bool },
-    Float { ebits: u64, sbits: u64 },
-}
-
-impl From<&operand::Symbolic> for SymbolicVarType {
-    fn from(value: &operand::Symbolic) -> Self {
-        match value {
-            operand::Symbolic::Bool => Self::Bool,
-            operand::Symbolic::Char => Self::Char,
-            operand::Symbolic::Int { size, is_signed } => Self::Int {
-                size: *size,
-                is_signed: *is_signed,
-            },
-            operand::Symbolic::Float { ebits, sbits } => Self::Float {
-                ebits: *ebits,
-                sbits: *sbits,
-            },
-        }
     }
 }
 
@@ -766,7 +740,7 @@ pub(crate) enum Expr {
 
     Cast {
         from: SymValueRef,
-        to: SymbolicVarType,
+        to: ValueType,
     },
 
     AddrOf(/* TODO */),
@@ -818,7 +792,7 @@ macro_rules! define_value_guard {
                 assert_matches!(
                     value.as_ref(),
                     $pattern,
-                    concat!("Value should be", stringify!($guarded_type), ".")
+                    concat!("Value should be ", stringify!($guarded_type), ".")
                 );
                 Self(value)
             }
@@ -885,6 +859,7 @@ define_reversible_pair!(
 
 mod convert {
     use super::*;
+    use crate::backends::basic::operand;
 
     impl Value {
         #[inline]
@@ -916,6 +891,22 @@ mod convert {
         #[inline]
         fn from(val: ConstValue) -> Self {
             Into::<ConcreteValue>::into(val).into()
+        }
+    }
+    impl From<operand::Constant> for ConstValue {
+        #[inline]
+        fn from(val: operand::Constant) -> Self {
+            match val {
+                operand::Constant::Bool(value) => ConstValue::Bool(value),
+                operand::Constant::Char(value) => ConstValue::Char(value),
+                operand::Constant::Int { bit_rep, ty } => ConstValue::Int {
+                    bit_rep: Wrapping(bit_rep),
+                    ty,
+                },
+                operand::Constant::Float { bit_rep, ty } => ConstValue::Float { bit_rep, ty },
+                operand::Constant::Str(value) => ConstValue::Str(value),
+                operand::Constant::Func(value) => ConstValue::Func(value),
+            }
         }
     }
 

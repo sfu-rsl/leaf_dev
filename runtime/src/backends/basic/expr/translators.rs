@@ -11,10 +11,10 @@ pub(crate) mod z3 {
     };
 
     use crate::{
-        abs::{BinaryOp, FieldIndex, UnaryOp},
+        abs::{BinaryOp, FieldIndex, IntType, UnaryOp, ValueType},
         backends::basic::expr::{
             ConcreteValue, ConstValue, Expr, ProjExpr, ProjKind, SymBinaryOperands, SymValue,
-            SymVarId, SymbolicVar, SymbolicVarType, Value, ValueRef,
+            SymVarId, SymbolicVar, Value, ValueRef,
         },
     };
 
@@ -82,30 +82,36 @@ pub(crate) mod z3 {
                 }
                 ConstValue::Int {
                     bit_rep,
-                    size,
-                    is_signed: false,
+                    ty:
+                        IntType {
+                            bit_size,
+                            is_signed: false,
+                        },
                 } => {
                     // TODO: Add support for 128 bit integers.
                     AstNode::from_bv(
                         ast::BV::from_u64(
                             self.context,
-                            *bit_rep as u64,
-                            (*size).try_into().expect("Size is too large."),
+                            bit_rep.0 as u64,
+                            (*bit_size).try_into().expect("Size is too large."),
                         ),
                         false,
                     )
                 }
                 ConstValue::Int {
                     bit_rep,
-                    size,
-                    is_signed: true,
+                    ty:
+                        IntType {
+                            bit_size,
+                            is_signed: true,
+                        },
                 } => {
                     // TODO: Add support for 128 bit integers.
                     AstNode::from_bv(
                         ast::BV::from_i64(
                             self.context,
-                            *bit_rep as i64,
-                            (*size).try_into().expect("Size is too large."),
+                            bit_rep.0 as i64,
+                            (*bit_size).try_into().expect("Size is too large."),
                         ),
                         true,
                     )
@@ -129,15 +135,18 @@ pub(crate) mod z3 {
 
         fn translate_symbolic_var_and_record(&mut self, var: &SymbolicVar) -> AstNode<'ctx> {
             let node = match var.ty {
-                SymbolicVarType::Bool => ast::Bool::new_const(self.context, var.id).into(),
-                SymbolicVarType::Char => {
+                ValueType::Bool => ast::Bool::new_const(self.context, var.id).into(),
+                ValueType::Char => {
                     AstNode::from_ubv(ast::BV::new_const(self.context, var.id, CHAR_BIT_SIZE))
                 }
-                SymbolicVarType::Int { size, is_signed } => AstNode::from_bv(
-                    ast::BV::new_const(self.context, var.id, size as u32),
+                ValueType::Int(IntType {
+                    bit_size,
+                    is_signed,
+                }) => AstNode::from_bv(
+                    ast::BV::new_const(self.context, var.id, bit_size as u32),
                     is_signed,
                 ),
-                SymbolicVarType::Float { .. } => todo!(),
+                ValueType::Float { .. } => todo!(),
             };
             self.variables.insert(var.id, node.clone());
             node
@@ -269,13 +278,9 @@ pub(crate) mod z3 {
             }
         }
 
-        fn translate_cast_expr(
-            &mut self,
-            from: AstNode<'ctx>,
-            to: &SymbolicVarType,
-        ) -> AstNode<'ctx> {
+        fn translate_cast_expr(&mut self, from: AstNode<'ctx>, to: &ValueType) -> AstNode<'ctx> {
             match to {
-                SymbolicVarType::Char => {
+                ValueType::Char => {
                     let from = from.as_bit_vector();
                     let size = from.get_size();
                     debug_assert!(
@@ -285,8 +290,11 @@ pub(crate) mod z3 {
                     let ast = from.zero_ext(CHAR_BIT_SIZE - TO_CHAR_BIT_SIZE);
                     AstNode::from_bv(ast, false)
                 }
-                SymbolicVarType::Int { size, is_signed } => {
-                    let size = *size as u32;
+                ValueType::Int(IntType {
+                    bit_size,
+                    is_signed,
+                }) => {
+                    let size = *bit_size as u32;
                     match from {
                         AstNode::Bool(_) => {
                             let from = from.as_bool();
@@ -321,7 +329,7 @@ pub(crate) mod z3 {
                         }
                     }
                 }
-                SymbolicVarType::Float { .. } => todo!(),
+                ValueType::Float { .. } => todo!(),
                 _ => unreachable!("Casting from int to {to:#?} is not supported."),
             }
         }
@@ -455,12 +463,7 @@ pub(crate) mod z3 {
     impl<'ctx> From<AstNode<'ctx>> for ValueRef {
         fn from(ast: AstNode<'ctx>) -> Self {
             match ast {
-                AstNode::Bool(ast) => {
-                    super::super::Value::Concrete(super::super::ConcreteValue::Const(
-                        super::super::ConstValue::Bool(ast.as_bool().unwrap()),
-                    ))
-                    .into()
-                }
+                AstNode::Bool(ast) => super::super::ConstValue::Bool(ast.as_bool().unwrap()),
                 AstNode::BitVector { ast, is_signed } => {
                     // TODO: Add support for up to 128-bit integers.
                     let value = if is_signed {
@@ -471,15 +474,16 @@ pub(crate) mod z3 {
                     } else {
                         ast.as_u64().unwrap() as u128
                     };
-                    ValueRef::new(super::super::Value::Concrete(
-                        super::super::ConcreteValue::Const(super::super::ConstValue::Int {
+                    super::super::ConstValue::new_int(
+                        value,
+                        IntType {
+                            bit_size: ast.get_size() as u64,
                             is_signed,
-                            bit_rep: value,
-                            size: ast.get_size() as u64,
-                        }),
-                    ))
+                        },
+                    )
                 }
             }
+            .to_value_ref()
         }
     }
 }

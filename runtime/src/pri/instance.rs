@@ -91,8 +91,8 @@ pub(super) fn take_back_place_ref(reference: PlaceRef) -> PlaceImpl {
     perform_on_place_ref_manager(|rm| rm.take_back(reference))
 }
 
-pub(super) fn push_operand_ref<'a>(
-    get_operand: impl FnOnce(<BackendImpl as RuntimeBackend>::OperandHandler<'a>) -> OperandImpl,
+pub(super) fn push_operand_ref(
+    get_operand: impl FnOnce(<BackendImpl as RuntimeBackend>::OperandHandler<'_>) -> OperandImpl,
 ) -> OperandRef {
     let operand = perform_on_backend(|r| get_operand(r.operand()));
     perform_on_operand_ref_manager(|rm| rm.push(operand))

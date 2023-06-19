@@ -5,7 +5,7 @@ use crate::abs::{
         macros::*, BinaryExprBuilder, ChainedExprBuilder, CompositeExprBuilder, ExprBuilder,
         UnaryExprBuilder,
     },
-    BinaryOp, UnaryOp,
+    BinaryOp, CastKind, UnaryOp,
 };
 
 type Composite<Binary, Unary> = CompositeExprBuilder<Binary, Unary>;
@@ -61,8 +61,8 @@ mod toplevel {
             } else if second.is_symbolic() {
                 self.sym_builder.binary_op(
                     BinaryOperands::Rev {
-                        first: second,
-                        second: SymValueRef::new(first),
+                        first,
+                        second: SymValueRef::new(second),
                     },
                     op,
                     checked,
@@ -116,25 +116,8 @@ mod toplevel {
             call_unary_method!(self, len, operand)
         }
 
-        fn cast_to_char<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
-            call_unary_method!(self, cast_to_char, operand)
-        }
-
-        fn cast_to_int<'a>(
-            &mut self,
-            operand: Self::ExprRef<'a>,
-            to_bits: u64,
-            to_signed: bool,
-        ) -> Self::Expr<'a> {
-            call_unary_method!(self, cast_to_int, operand, to_bits, to_signed)
-        }
-
-        fn cast_to_float<'a>(
-            &mut self,
-            operand: Self::ExprRef<'a>,
-            to_bits: u64,
-        ) -> Self::Expr<'a> {
-            call_unary_method!(self, cast_to_float, operand, to_bits)
+        fn cast<'a>(&mut self, operand: Self::ExprRef<'a>, target: CastKind) -> Self::Expr<'a> {
+            call_unary_method!(self, cast, operand, target)
         }
     }
 }
@@ -160,7 +143,7 @@ mod adapters {
 
     impl From<Expr> for ValueRef {
         fn from(expr: Expr) -> Self {
-            expr.into()
+            Into::<Value>::into(expr).into()
         }
     }
 
@@ -273,34 +256,30 @@ mod core {
             Expr::Len { of: operand }
         }
 
-        fn cast_to_char<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
-            Expr::Cast {
-                from: operand,
-                to: SymbolicVarType::Char,
-            }
-        }
-
-        fn cast_to_int<'a>(
-            &mut self,
-            operand: Self::ExprRef<'a>,
-            to_bits: u64,
-            to_signed: bool,
-        ) -> Self::Expr<'a> {
-            Expr::Cast {
-                from: operand,
-                to: SymbolicVarType::Int {
-                    size: to_bits,
-                    is_signed: to_signed,
+        fn cast<'a>(&mut self, operand: Self::ExprRef<'a>, target: CastKind) -> Self::Expr<'a> {
+            match ValueType::try_from(target) {
+                Ok(value_type) => Expr::Cast {
+                    from: operand,
+                    to: value_type,
                 },
+                Err(target) => {
+                    use CastKind::*;
+                    match target {
+                        PointerUnsize => {
+                            match operand.as_ref() {
+                                SymValue::Expression(expr) => {
+                                    // Nothing special to do currently. Refer to the comment for concrete values.
+                                    expr.clone()
+                                }
+                                SymValue::Variable(_) => unreachable!(
+                                    "Symbolic variables are not currently supposed to appear at a pointer/reference position."
+                                ),
+                            }
+                        }
+                        _ => unreachable!(),
+                    }
+                }
             }
-        }
-
-        fn cast_to_float<'a>(
-            &mut self,
-            operand: Self::ExprRef<'a>,
-            to_bits: u64,
-        ) -> Self::Expr<'a> {
-            todo!("Add support for float casts. {:?} {}", operand, to_bits)
         }
     }
 }
@@ -357,11 +336,13 @@ mod concrete {
             match of {
                 ConcreteValue::Array(arr) => {
                     let len = arr.len();
-                    ConstValue::Int {
-                        bit_rep: len as u128,
-                        size: std::mem::size_of_val(&len) as u64 * 8,
-                        is_signed: false,
-                    }
+                    ConstValue::new_int(
+                        len as u128,
+                        IntType {
+                            bit_size: std::mem::size_of_val(&len) as u64 * 8,
+                            is_signed: false,
+                        },
+                    )
                     .into()
                 }
                 _ => unreachable!(
@@ -370,31 +351,39 @@ mod concrete {
             }
         }
 
-        fn cast_to_char<'a>(&mut self, expr: Self::ExprRef<'a>) -> Self::Expr<'a> {
-            match expr {
-                ConcreteValue::Const(ConstValue::Int { bit_rep, .. }) => {
-                    ConstValue::Char(*bit_rep as u8 as char).into()
-                }
-                _ => unreachable!("Char cast is supposed to be called on an integer."),
-            }
-        }
-
-        fn cast_to_int<'a>(
+        fn cast<'a>(
             &mut self,
-            expr: Self::ExprRef<'a>,
-            to_bits: u64,
-            to_signed: bool,
+            operand: Self::ExprRef<'a>,
+            target: crate::abs::CastKind,
         ) -> Self::Expr<'a> {
-            match expr {
-                ConcreteValue::Const(c) => ConstValue::integer_cast(c, to_bits, to_signed).into(),
-                _ => {
-                    unreachable!("Integer cast is supposed to be called on a constant.")
-                }
+            use CastKind::*;
+            match target {
+                ToChar | ToInt(_) | ToFloat(_) => match operand {
+                    ConcreteValue::Const(c) => match target {
+                        ToChar => match c {
+                            ConstValue::Int { bit_rep, .. } => {
+                                ConstValue::Char(bit_rep.0 as u8 as char).into()
+                            }
+                            _ => unreachable!(
+                                "Casting to char is supposed to happen only on an unsigned byte."
+                            ),
+                        },
+                        ToInt(to) => ConstValue::integer_cast(c, to).into(),
+                        ToFloat(to) => todo!("Support casting to float {to:?}"),
+                        _ => unreachable!(),
+                    },
+                    _ => unreachable!("Numeric casts are supposed to happen on a constant."),
+                },
+                CastKind::PointerUnsize => match operand {
+                    ConcreteValue::Ref(_) => {
+                        /* Currently, the effect of this operation is at a lower level than our
+                         * symbolic state. So we don't need to do anything special.
+                         */
+                        operand.clone()
+                    }
+                    _ => unreachable!("Unsize cast is supposed to happen on a reference."),
+                },
             }
-        }
-
-        fn cast_to_float<'a>(&mut self, expr: Self::ExprRef<'a>, to_bits: u64) -> Self::Expr<'a> {
-            todo!("Add support for float casts. {:?} {}", expr, to_bits)
         }
     }
 }
@@ -455,9 +444,11 @@ mod simp {
                 self,
                 BinaryOperands::Rev {
                     first: ConstValue::Int {
-                        bit_rep: 0,
-                        is_signed: false,
-                        ..
+                        bit_rep: Wrapping(0),
+                        ty: IntType {
+                            is_signed: false,
+                            ..
+                        }
                     },
                     ..
                 }
@@ -470,9 +461,11 @@ mod simp {
                 self,
                 BinaryOperands::Orig {
                     second: ConstValue::Int {
-                        bit_rep: 0,
-                        is_signed: false,
-                        ..
+                        bit_rep: Wrapping(0),
+                        ty: IntType {
+                            is_signed: false,
+                            ..
+                        }
                     },
                     ..
                 }
@@ -562,13 +555,7 @@ mod simp {
             // x % 1 = 0
             if operands.is_second_one() {
                 Ok((&match operands.konst() {
-                    ConstValue::Int {
-                        size, is_signed, ..
-                    } => ConstValue::Int {
-                        bit_rep: 0,
-                        size: *size,
-                        is_signed: *is_signed,
-                    },
+                    ConstValue::Int { ty, .. } => ConstValue::new_int(0_u128, *ty),
                     ConstValue::Float { .. } => todo!(),
                     _ => unreachable!("The second operand should be numeric."),
                 })

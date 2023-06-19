@@ -1,15 +1,18 @@
 use std::fmt::Display;
 
 use crate::abs::{
-    backend::*, AssertKind, BinaryOp, BranchingMetadata, Local, UnaryOp, VariantIndex,
+    backend::*, AssertKind, BinaryOp, BranchingMetadata, CastKind, UnaryOp, ValueType, VariantIndex,
 };
 
 use super::{
-    operand::{DefaultOperandHandler, Operand, PlaceUsage},
+    operand::{DefaultOperandHandler, PlaceUsage},
     place::{DefaultPlaceHandler, Place, Projection},
 };
 
 use crate::utils::logging::log_info;
+
+// Here we only store the type information for the symbolic value.
+type Operand = super::operand::Operand<ValueType>;
 
 pub(crate) struct LoggerBackend {
     call_manager: CallManager,
@@ -25,7 +28,7 @@ impl LoggerBackend {
 
 impl RuntimeBackend for LoggerBackend {
     type PlaceHandler<'a> = DefaultPlaceHandler where Self: 'a;
-    type OperandHandler<'a> = DefaultOperandHandler where Self: 'a;
+    type OperandHandler<'a> = DefaultOperandHandler<'a, ValueType> where Self: 'a;
     type AssignmentHandler<'a> = LoggerAssignmentHandler where Self: 'a;
     type BranchingHandler<'a> = LoggerBranchingHandler where Self: 'a;
     type FunctionHandler<'a> = LoggerFunctionHandler<'a> where Self: 'a;
@@ -38,7 +41,7 @@ impl RuntimeBackend for LoggerBackend {
     }
 
     fn operand(&mut self) -> Self::OperandHandler<'_> {
-        DefaultOperandHandler
+        DefaultOperandHandler::new(Box::new(|ty| ty))
     }
 
     fn assign_to(&mut self, dest: Place) -> Self::AssignmentHandler<'_> {
@@ -98,25 +101,13 @@ impl AssignmentHandler for LoggerAssignmentHandler {
         self.log(format!("len({place})"));
     }
 
-    fn char_cast_of(self, operand: Self::Operand) {
-        self.log(format!("{operand} as char"));
-    }
-
-    fn integer_cast_of(self, operand: Self::Operand, is_signed: bool, bits: u64) {
-        self.log(format!(
-            "{} as {}{}",
-            operand,
-            if is_signed { "i" } else { "u" },
-            bits,
-        ));
-    }
-
-    fn float_cast_of(self, operand: Self::Operand, bits: u64) {
-        self.log(format!("{operand} as f{bits}"));
-    }
-
-    fn cast_of(self) {
-        todo!()
+    fn cast_of(self, operand: Self::Operand, target: CastKind) {
+        self.log(match target {
+            CastKind::ToChar => format!("{operand} as char"),
+            CastKind::ToInt(to) => format!("{operand} as {to:#?}"),
+            CastKind::ToFloat(to) => format!("{operand} as {to:#?}"),
+            CastKind::PointerUnsize => format!("{operand} as DST pointer"),
+        });
     }
 
     fn binary_op_between(

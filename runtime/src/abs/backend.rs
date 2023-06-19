@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 
 use super::{
-    AssertKind, BinaryOp, BranchingMetadata, Constraint, FieldIndex, Local, UnaryOp, VariantIndex,
+    AssertKind, BinaryOp, BranchingMetadata, CastKind, Constraint, FieldIndex, FloatType, IntType,
+    Local, UnaryOp, ValueType, VariantIndex,
 };
 
 pub(crate) trait RuntimeBackend: Sized {
@@ -69,7 +70,6 @@ pub(crate) trait OperandHandler {
     type Operand;
     type Place;
     type ConstantHandler: ConstantHandler<Operand = Self::Operand>;
-    type SymbolicHandler: SymbolicHandler<Operand = Self::Operand>;
 
     fn copy_of(self, place: Self::Place) -> Self::Operand;
 
@@ -77,7 +77,7 @@ pub(crate) trait OperandHandler {
 
     fn const_from(self) -> Self::ConstantHandler;
 
-    fn symbolic(self) -> Self::SymbolicHandler;
+    fn new_symbolic(self, ty: ValueType) -> Self::Operand;
 }
 
 pub(crate) trait ConstantHandler {
@@ -87,25 +87,13 @@ pub(crate) trait ConstantHandler {
 
     fn char(self, value: char) -> Self::Operand;
 
-    fn int(self, bit_rep: u128, size: u64, is_signed: bool) -> Self::Operand;
+    fn int(self, bit_rep: u128, ty: IntType) -> Self::Operand;
 
-    fn float(self, bit_rep: u128, ebits: u64, sbits: u64) -> Self::Operand;
+    fn float(self, bit_rep: u128, ty: FloatType) -> Self::Operand;
 
     fn str(self, value: &'static str) -> Self::Operand;
 
     fn func(self, id: u64) -> Self::Operand;
-}
-
-pub(crate) trait SymbolicHandler {
-    type Operand;
-
-    fn bool(self) -> Self::Operand;
-
-    fn char(self) -> Self::Operand;
-
-    fn int(self, size: u64, is_signed: bool) -> Self::Operand;
-
-    fn float(self, ebits: u64, sbits: u64) -> Self::Operand;
 }
 
 pub(crate) trait AssignmentHandler {
@@ -124,13 +112,7 @@ pub(crate) trait AssignmentHandler {
 
     fn len_of(self, place: Self::Place);
 
-    fn char_cast_of(self, operand: Self::Operand);
-
-    fn integer_cast_of(self, operand: Self::Operand, is_signed: bool, bits: u64);
-
-    fn float_cast_of(self, operand: Self::Operand, bits: u64);
-
-    fn cast_of(self);
+    fn cast_of(self, operand: Self::Operand, target: CastKind);
 
     fn binary_op_between(
         self,
@@ -202,10 +184,17 @@ pub(crate) trait PathInterestChecker<S> {
     fn is_interesting(&self, path: &[S]) -> bool;
 }
 
-pub(crate) trait Solver<V, I> {
+/// A trait for the SMT solver.
+/// It takes a set of constraints to check satisfiability of them together.
+pub(crate) trait Solver<I, V> {
     fn check(&mut self, constraints: &[Constraint<V>]) -> SolveResult<I, V>;
 }
 
+/// The result of the checking performed by [`Solver`].
+/// [`Sat`]: The constraints are satisfiable and a set of values from type `V`
+/// for the variables identified by ids from type `I` is found.
+/// [`Unsat`]: The constraints are unsatisfiable.
+/// [`Unknown`]: The solver could not determine the satisfiability.
 pub(crate) enum SolveResult<I, V> {
     Sat(HashMap<I, V>),
     Unsat,

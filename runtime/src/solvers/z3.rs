@@ -1,6 +1,9 @@
 use std::{borrow::Borrow, collections::HashMap, hash::Hash};
 
-use crate::{abs::backend, utils::UnsafeSync};
+use crate::{
+    abs::backend,
+    utils::{logging::log_debug, UnsafeSync},
+};
 use lazy_static::lazy_static;
 use z3::{
     self,
@@ -71,13 +74,13 @@ lazy_static! {
     static ref CONTEXT: UnsafeSync<Context> = UnsafeSync::new(Context::new(&Config::default()));
 }
 
-pub(crate) struct Z3Solver<'ctx, V, I> {
+pub(crate) struct Z3Solver<'ctx, Id, Val> {
     context: &'ctx Context,
     solver: Option<Solver<'ctx>>,
-    _phantom: std::marker::PhantomData<(V, I)>,
+    _phantom: std::marker::PhantomData<(Id, Val)>,
 }
 
-impl<'ctx, V, I> Z3Solver<'ctx, V, I> {
+impl<'ctx, I, V> Z3Solver<'ctx, I, V> {
     pub fn new(context: &'ctx Context) -> Self {
         Self {
             context,
@@ -92,11 +95,11 @@ impl<'ctx, V, I> Z3Solver<'ctx, V, I> {
     }
 }
 
-impl<'ctx, V, I> backend::Solver<V, I> for Z3Solver<'ctx, V, I>
+impl<'ctx, I, V> backend::Solver<I, V> for Z3Solver<'ctx, I, V>
 where
     AstPair<'ctx, I>: for<'v> From<(&'v V, &'ctx Context)>,
-    V: From<AstNode<'ctx>>,
     I: Eq + Hash,
+    V: From<AstNode<'ctx>>,
     Self: 'ctx,
 {
     fn check(&mut self, constraints: &[crate::abs::Constraint<V>]) -> backend::SolveResult<I, V> {
@@ -106,7 +109,8 @@ where
         let asts = constraints
             .iter()
             .map(|constraint| {
-                let (value, is_negated) = constraint.destruct();
+                // Translation is done using the standard From trait.
+                let (value, is_negated) = constraint.destruct_ref();
                 let AstPair(ast, variables) = AstPair::from((value, self.context));
                 all_vars.extend(variables);
                 if is_negated { ast.not() } else { ast }
@@ -118,10 +122,10 @@ where
     }
 }
 
-impl<'ctx, V, I> Z3Solver<'_, V, I>
+impl<'ctx, I, V> Z3Solver<'_, I, V>
 where
-    V: From<AstNode<'ctx>>,
     I: Eq + Hash,
+    V: From<AstNode<'ctx>>,
 {
     fn check_using(
         &self,
@@ -129,11 +133,15 @@ where
         constraints: &[ast::Bool<'ctx>],
         vars: HashMap<I, AstNode<'ctx>>,
     ) -> backend::SolveResult<I, V> {
+        log_debug!("Sending constraints to Z3 : {:#?}", constraints);
+
+        solver.push();
+
         for constraint in constraints {
             solver.assert(constraint);
         }
 
-        match solver.check() {
+        let result = match solver.check() {
             SatResult::Sat => {
                 let model = solver.get_model().unwrap();
                 let mut values = HashMap::new();
@@ -151,6 +159,9 @@ where
             }
             SatResult::Unsat => backend::SolveResult::Unsat,
             SatResult::Unknown => backend::SolveResult::Unknown,
-        }
+        };
+
+        solver.pop(1);
+        result
     }
 }

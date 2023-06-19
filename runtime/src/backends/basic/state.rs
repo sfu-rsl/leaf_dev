@@ -353,7 +353,7 @@ where
             Value::Concrete(ConcreteValue::Const(ConstValue::Int { bit_rep, .. })) => {
                 match host.as_ref() {
                     ConcreteValue::Array(ArrayValue { elements }) => {
-                        let index = *bit_rep as usize;
+                        let index = bit_rep.0 as usize;
                         Ok(if !from_end {
                             elements[index].clone()
                         } else {
@@ -421,7 +421,7 @@ where
             Value::Concrete(ConcreteValue::Const(ConstValue::Int { bit_rep, .. })) => {
                 match Self::make_mut(host) {
                     ConcreteValue::Array(ArrayValue { elements }) => {
-                        let index = *bit_rep as usize;
+                        let index = bit_rep.0 as usize;
                         Ok(MutPlaceValue::Normal(if !from_end {
                             &mut elements[index]
                         } else {

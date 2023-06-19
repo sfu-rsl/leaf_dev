@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 pub(crate) mod backend;
 pub(crate) mod expr;
 
@@ -68,12 +70,7 @@ pub(crate) struct BranchingMetadata {
      * type information on the expressions, this field doesn't give any additional
      * information.
      */
-    pub discr_as_int: DiscriminantAsIntType,
-}
-
-pub struct DiscriminantAsIntType {
-    pub bit_size: u64,
-    pub is_signed: bool,
+    pub discr_as_int: IntType,
 }
 
 #[derive(Debug, Clone)]
@@ -83,7 +80,7 @@ pub(crate) enum Constraint<V> {
 }
 
 impl<V> Constraint<V> {
-    pub fn destruct(&self) -> (&V, bool) {
+    pub fn destruct_ref(&self) -> (&V, bool) {
         match self {
             Constraint::Bool(value) => (value, false),
             Constraint::Not(value) => (value, true),
@@ -94,6 +91,82 @@ impl<V> Constraint<V> {
         match self {
             Constraint::Bool(value) => Constraint::Not(value),
             Constraint::Not(value) => Constraint::Bool(value),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum ValueType {
+    Bool,
+    Char,
+    Int(IntType),
+    Float(FloatType),
+}
+
+impl ValueType {
+    pub(crate) fn new_int(bit_size: u64, is_signed: bool) -> Self {
+        Self::Int(IntType {
+            bit_size,
+            is_signed,
+        })
+    }
+
+    pub(crate) fn new_float(e_bits: u64, s_bits: u64) -> Self {
+        Self::Float(FloatType { e_bits, s_bits })
+    }
+}
+
+/* FIXME: These types will have a limited set of possible values. Thus they can be
+ * optimized using techniques such as interning or even changing them to enums.
+ * Enums are not much a favorable option, since they are against the abstract
+ * representation of integers and floats in the engine.
+ */
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub(crate) struct IntType {
+    pub bit_size: u64,
+    pub is_signed: bool,
+}
+
+impl Display for IntType {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "{}{}",
+            if self.is_signed { 'i' } else { 'u' },
+            self.bit_size
+        )
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub(crate) struct FloatType {
+    pub e_bits: u64,
+    pub s_bits: u64,
+}
+
+impl Display for FloatType {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "f{}", self.e_bits + self.s_bits)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum CastKind {
+    ToChar,
+    ToInt(IntType),
+    ToFloat(FloatType),
+    PointerUnsize,
+}
+
+impl TryFrom<CastKind> for ValueType {
+    type Error = CastKind;
+
+    fn try_from(value: CastKind) -> Result<Self, Self::Error> {
+        match value {
+            CastKind::ToChar => Ok(ValueType::Char),
+            CastKind::ToInt(to) => Ok(ValueType::Int(to)),
+            CastKind::ToFloat(to) => Ok(ValueType::Float(to)),
+            _ => Err(value),
         }
     }
 }

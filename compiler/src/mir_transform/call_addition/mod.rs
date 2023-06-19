@@ -1,6 +1,5 @@
 use std::{fmt::Debug, vec};
 
-use rustc_apfloat::{ieee, Float};
 use rustc_const_eval::interpret::{ConstValue, Scalar};
 use rustc_middle::{
     mir::{
@@ -13,10 +12,7 @@ use rustc_middle::{
 use rustc_span::DUMMY_SP;
 use rustc_target::abi::VariantIdx;
 
-use self::{
-    context::*,
-    utils::{ty::size_of, *},
-};
+use self::{context::*, utils::*};
 use super::modification::{
     self, BodyBlockManager, BodyLocalManager, BodyModificationUnit, JumpTargetModifier,
 };
@@ -127,6 +123,10 @@ pub(crate) trait OperandReferencer<'tcx> {
 }
 
 pub(crate) trait Assigner<'tcx> {
+    type Cast<'a>: CastAssigner<'tcx>
+    where
+        Self: 'a;
+
     fn by_use(&mut self, operand: OperandRef);
 
     fn by_repeat(&mut self, operand: OperandRef, count: ScalarInt);
@@ -139,11 +139,7 @@ pub(crate) trait Assigner<'tcx> {
 
     fn by_len(&mut self, place: PlaceRef);
 
-    fn by_cast_char(&mut self, operand: OperandRef);
-
-    fn by_cast_numeric(&mut self, operand: OperandRef, ty: Ty<'tcx>);
-
-    fn by_cast(&mut self, operand: OperandRef, is_to_float: bool, size: u64);
+    fn by_cast<'a>(&'a mut self, operand: OperandRef) -> Self::Cast<'a>;
 
     fn by_binary_op(
         &mut self,
@@ -161,6 +157,14 @@ pub(crate) trait Assigner<'tcx> {
 
     // Special case for SetDiscriminant StatementType since it is similar to a regular assignment
     fn its_discriminant_to(&mut self, variant_index: &VariantIdx);
+}
+
+pub(crate) trait CastAssigner<'tcx> {
+    fn to_int(&mut self, ty: Ty<'tcx>);
+
+    fn to_float(&mut self, ty: Ty<'tcx>);
+
+    fn through_unsizing(&mut self);
 }
 
 pub(crate) trait BranchingReferencer<'tcx> {
@@ -590,13 +594,7 @@ where
                 ],
             )
         } else if ty.is_floating_point() {
-            let bit_size = scalar.size().bits();
-            let ebit_size = if bit_size == ieee::Single::BITS as u64 {
-                ieee::Single::PRECISION
-            } else {
-                ieee::Double::PRECISION
-            } as u64;
-            let sbits = bit_size - ebit_size;
+            let (e_bits, s_bits) = ty::ebit_sbit_size(self.context.tcx(), ty);
             self.make_bb_for_operand_ref_call(
                 stringify!(pri::ref_operand_const_float),
                 vec![
@@ -605,8 +603,8 @@ where
                         /* Currently no direct way to read the data field. */
                         scalar.assert_bits(scalar.size()),
                     ),
-                    operand::const_from_uint(self.context.tcx(), ebit_size),
-                    operand::const_from_uint(self.context.tcx(), sbits),
+                    operand::const_from_uint(self.context.tcx(), e_bits),
+                    operand::const_from_uint(self.context.tcx(), s_bits),
                 ],
             )
         } else if ty.is_char() {
@@ -690,6 +688,8 @@ where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
     C: DestinationReferenceProvider + LocationProvider + BaseContext<'tcx>,
 {
+    type Cast<'b> = RuntimeCallAdder<CastAssignmentContext<'b, C>> where C: 'b;
+
     fn by_use(&mut self, operand: OperandRef) {
         self.add_bb_for_assign_call(
             stringify!(pri::assign_use),
@@ -738,37 +738,13 @@ where
         )
     }
 
-    fn by_cast_char(&mut self, operand: OperandRef) {
-        self.add_bb_for_assign_call(
-            stringify!(pri::assign_cast_char),
-            vec![operand::copy_for_local(operand.into())],
-        )
-    }
-
-    fn by_cast_numeric(&mut self, operand: OperandRef, ty: Ty<'tcx>) {
-        let tcx = self.context.tcx();
-
-        if ty.is_integral() {
-            let is_signed = ty.is_signed();
-            let bits = size_of(tcx, ty).bits();
-
-            self.add_bb_for_assign_call(
-                stringify!(pri::assign_cast_integer),
-                vec![
-                    operand::copy_for_local(operand.into()),
-                    operand::const_from_bool(tcx, is_signed),
-                    operand::const_from_uint(tcx, bits),
-                ],
-            )
-        } else if ty.is_floating_point() {
-            todo!("Floating point casts are not supported yet.")
-        } else {
-            unreachable!("cast_numeric called for non-numeric type");
-        };
-    }
-
-    fn by_cast(&mut self, _operand: OperandRef, _is_to_float: bool, _size: u64) {
-        todo!()
+    fn by_cast<'b>(&'b mut self, operand: OperandRef) -> Self::Cast<'b> {
+        RuntimeCallAdder {
+            context: CastAssignmentContext {
+                base: &mut self.context,
+                operand_ref: operand,
+            },
+        }
     }
 
     fn by_binary_op(
@@ -895,6 +871,68 @@ where
     }
 }
 
+impl<'tcx, C> CastAssigner<'tcx> for RuntimeCallAdder<C>
+where
+    Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
+    C: CastOperandProvider + DestinationReferenceProvider + LocationProvider + BaseContext<'tcx>,
+{
+    fn to_int(&mut self, ty: Ty<'tcx>) {
+        if ty.is_char() {
+            self.add_bb_for_cast_assign_call(stringify!(pri::assign_cast_char))
+        } else {
+            assert!(ty.is_integral());
+
+            let tcx = self.context.tcx();
+            let is_signed = ty.is_signed();
+            let bits = ty::size_of(tcx, ty).bits();
+
+            self.add_bb_for_cast_assign_call_with_args(
+                stringify!(pri::assign_cast_integer),
+                vec![
+                    operand::const_from_uint(tcx, bits),
+                    operand::const_from_bool(tcx, is_signed),
+                ],
+            )
+        }
+    }
+
+    fn to_float(&mut self, ty: Ty<'tcx>) {
+        let (e_bits, s_bits) = ty::ebit_sbit_size(self.context.tcx(), ty);
+        self.add_bb_for_cast_assign_call_with_args(
+            stringify!(pri::assign_cast_float),
+            vec![
+                operand::const_from_uint(self.context.tcx(), e_bits),
+                operand::const_from_uint(self.context.tcx(), s_bits),
+            ],
+        )
+    }
+
+    fn through_unsizing(&mut self) {
+        self.add_bb_for_cast_assign_call(stringify!(pri::assign_cast_unsize))
+    }
+}
+
+impl<'tcx, C> RuntimeCallAdder<C>
+where
+    Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
+    C: CastOperandProvider + DestinationReferenceProvider + LocationProvider + BaseContext<'tcx>,
+{
+    fn add_bb_for_cast_assign_call(&mut self, func_name: &str) {
+        self.add_bb_for_assign_call(func_name, vec![])
+    }
+
+    fn add_bb_for_cast_assign_call_with_args(&mut self, func_name: &str, args: Vec<Operand<'tcx>>) {
+        self.add_bb_for_assign_call(
+            func_name,
+            [
+                vec![operand::copy_for_local(self.context.operand_ref().into())],
+                args,
+            ]
+            .concat(),
+        )
+    }
+}
+
 impl<'tcx, C> BranchingReferencer<'tcx> for RuntimeCallAdder<C>
 where
     C: TyContextProvider<'tcx> + HasLocalDecls<'tcx> + LocationProvider,
@@ -904,7 +942,7 @@ where
         let tcx = self.context.tcx();
         let operand_ref = self.reference_operand(discr);
         let ty = discr.ty(self.context.local_decls(), tcx);
-        let discr_size = size_of(tcx, ty).bits();
+        let discr_size = ty::size_of(tcx, ty).bits();
         let node_location = self.context.location();
         let (block, info_store_var) = self.make_bb_for_call_with_ret(
             stringify!(pri::BranchingInfo::new),
@@ -1525,6 +1563,21 @@ mod utils {
             })
             .unwrap()
             .size
+        }
+
+        pub fn ebit_sbit_size<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>) -> (u64, u64) {
+            use rustc_apfloat::{
+                ieee::{Double, Single},
+                Float,
+            };
+            assert!(ty.is_floating_point());
+            let bit_size = size_of(tcx, ty).bits();
+            let ebit_size = if bit_size == Single::BITS as u64 {
+                Single::PRECISION
+            } else {
+                Double::PRECISION
+            } as u64;
+            (ebit_size, bit_size - ebit_size)
         }
     }
 
