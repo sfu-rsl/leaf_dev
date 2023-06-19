@@ -109,7 +109,6 @@ where
         let asts = constraints
             .iter()
             .map(|constraint| {
-                // Translation is done using the standard From trait.
                 let (value, is_negated) = constraint.destruct_ref();
                 let AstPair(ast, variables) = AstPair::from((value, self.context));
                 all_vars.extend(variables);

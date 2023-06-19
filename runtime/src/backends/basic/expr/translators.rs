@@ -165,15 +165,7 @@ pub(crate) mod z3 {
                     // Assumption: A checked binary expression without a field projection is not well formed.
                     checked: _,
                 } => {
-                    // TODO: should this be its own function?
-                    let (left, right) = match operands {
-                        SymBinaryOperands::Orig { first, second } => {
-                            (self.translate_symbolic(first), self.translate_value(second))
-                        }
-                        SymBinaryOperands::Rev { first, second } => {
-                            (self.translate_value(first), self.translate_symbolic(second))
-                        }
-                    };
+                    let (left, right) = self.translate_binary_operands(operands);
                     self.translate_binary_expr(operator, left, right)
                 }
                 Expr::Cast { from, to } => {
@@ -205,6 +197,20 @@ pub(crate) mod z3 {
                     } => AstNode::from_bv(ast.bvneg(), true),
                     _ => unreachable!("Neg is only supposed to be applied to signed numbers."),
                 },
+            }
+        }
+
+        fn translate_binary_operands(
+            &mut self,
+            operands: &SymBinaryOperands,
+        ) -> (AstNode<'ctx>, AstNode<'ctx>) {
+            match operands {
+                SymBinaryOperands::Orig { first, second } => {
+                    (self.translate_symbolic(first), self.translate_value(second))
+                }
+                SymBinaryOperands::Rev { first, second } => {
+                    (self.translate_value(first), self.translate_symbolic(second))
+                }
             }
         }
 
@@ -377,85 +383,107 @@ pub(crate) mod z3 {
                 }) => match field_index {
                     RESULT => {
                         // If we see a `.0` field projection on a symbolic expression that is a checked
-                        // binary operation, we can safely ignore the projection and treat the expression
-                        // as normal, since checked binary operations return the tuple `(binop(x, y), did_overflow)`,
+                        // binop, we can safely ignore the projection and treat the expression as normal,
+                        // since checked binary operations return the tuple `(binop(x, y), did_overflow)`,
                         // and failed checked binops immediately assert!(no_overflow == true), then panic.
                         let unchecked_host = SymValue::Expression(Expr::Binary {
                             operator: *operator,
-                            operands: operands.clone(), // TODO: try to remove this clone?
+                            operands: operands.clone(),
                             checked: false,
                         });
                         self.translate_symbolic(&unchecked_host)
                     }
-                    DID_OVERFLOW => {
-                        // generate an expression that evaluates true if overflow, false otherwise
-                        match host {
-                            SymValue::Expression(Expr::Binary {
-                                operator: BinaryOp::Add,
-                                operands,
-                                ..
-                            }) => {
-                                // TODO: confirm that Z3's overflow instructions work as expected.
-
-                                // TODO: refactor this into a function
-                                let (left, right) = match operands {
-                                    SymBinaryOperands::Orig { first, second } => (
-                                        self.translate_symbolic(first),
-                                        self.translate_value(second),
-                                    ),
-                                    SymBinaryOperands::Rev { first, second } => (
-                                        self.translate_value(first),
-                                        self.translate_symbolic(second),
-                                    ),
-                                };
-
-                                let is_signed = match left {
-                                    AstNode::Bool(_) => unreachable!("booleans cannot be added"),
-                                    AstNode::BitVector { is_signed, .. } => is_signed,
-                                };
-
-                                let no_overflow = if is_signed {
-                                    let overflow = ast::BV::bvadd_no_overflow(
-                                        left.as_bit_vector(),
-                                        right.as_bit_vector(),
-                                        true,
-                                    );
-                                    let underflow = ast::BV::bvadd_no_underflow(
-                                        left.as_bit_vector(),
-                                        right.as_bit_vector(),
-                                    );
-                                    ast::Bool::and(overflow.get_ctx(), &[&overflow, &underflow])
-                                } else {
-                                    // note: in unsigned addition, underflow is impossible because there
-                                    //       are no negative numbers.
-                                    ast::BV::bvadd_no_overflow(
-                                        left.as_bit_vector(),
-                                        right.as_bit_vector(),
-                                        false,
-                                    )
-                                };
-                                ast::Bool::not(&no_overflow).into()
-                            }
-                            SymValue::Expression(Expr::Binary {
-                                operator: BinaryOp::Sub,
-                                ..
-                            }) => {
-                                todo!()
-                            }
-                            SymValue::Expression(Expr::Binary {
-                                operator: BinaryOp::Mul,
-                                ..
-                            }) => {
-                                todo!()
-                            }
-                            _ => unreachable!(),
-                        }
-                    }
+                    DID_OVERFLOW => self.translate_overflow(operator, operands),
                     _ => unreachable!("invalid field index. A checked binop returns a len 2 tuple"),
                 },
                 SymValue::Expression(Expr::Binary { checked: false, .. }) => unreachable!(),
                 _ => todo!("implement regular field access"),
             }
+        }
+
+        /// generate an expression that evaluates true if overflow, false otherwise
+        fn translate_overflow(
+            &mut self,
+            operator: &BinaryOp,
+            operands: &SymBinaryOperands,
+        ) -> AstNode<'ctx> {
+            let (left, right) = self.translate_binary_operands(operands);
+            let is_signed = match left {
+                AstNode::Bool(_) => unreachable!("booleans cannot be added"),
+                AstNode::BitVector { is_signed, .. } => is_signed,
+            };
+
+            // TODO: confirm that Z3's overflow instructions work as expected -> I think! ->
+            // TODO: remove this after testing all integer sizes
+
+            let no_overflow = match operator {
+                BinaryOp::Add => {
+                    if is_signed {
+                        let overflow = ast::BV::bvadd_no_overflow(
+                            left.as_bit_vector(),
+                            right.as_bit_vector(),
+                            true,
+                        );
+                        let underflow = ast::BV::bvadd_no_underflow(
+                            left.as_bit_vector(),
+                            right.as_bit_vector(),
+                        );
+                        ast::Bool::and(overflow.get_ctx(), &[&overflow, &underflow])
+                    } else {
+                        // note: in unsigned addition, underflow is impossible because there
+                        //       are no negative numbers.
+                        ast::BV::bvadd_no_overflow(
+                            left.as_bit_vector(),
+                            right.as_bit_vector(),
+                            false,
+                        )
+                    }
+                }
+                BinaryOp::Sub => {
+                    if is_signed {
+                        let overflow =
+                            ast::BV::bvsub_no_overflow(left.as_bit_vector(), right.as_bit_vector());
+                        let underflow = ast::BV::bvsub_no_underflow(
+                            left.as_bit_vector(),
+                            right.as_bit_vector(),
+                            true,
+                        );
+                        ast::Bool::and(overflow.get_ctx(), &[&overflow, &underflow])
+                    } else {
+                        // note: in unsigned subtraction, overflow is impossible because there
+                        //       are no negative numbers.
+                        ast::BV::bvsub_no_underflow(
+                            left.as_bit_vector(),
+                            right.as_bit_vector(),
+                            false,
+                        )
+                    }
+                }
+                BinaryOp::Mul => {
+                    if is_signed {
+                        let overflow = ast::BV::bvmul_no_overflow(
+                            left.as_bit_vector(),
+                            right.as_bit_vector(),
+                            true,
+                        );
+                        let underflow = ast::BV::bvmul_no_underflow(
+                            left.as_bit_vector(),
+                            right.as_bit_vector(),
+                        );
+                        ast::Bool::and(overflow.get_ctx(), &[&overflow, &underflow])
+                    } else {
+                        // note: in unsigned multiplication, underflow is impossible because there
+                        //       are no negative numbers.
+                        ast::BV::bvmul_no_overflow(
+                            left.as_bit_vector(),
+                            right.as_bit_vector(),
+                            false,
+                        )
+                    }
+                }
+                _ => unreachable!(),
+            };
+            ast::Bool::not(&no_overflow).into()
         }
     }
 
