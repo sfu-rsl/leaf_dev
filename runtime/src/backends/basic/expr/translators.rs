@@ -414,7 +414,7 @@ pub(crate) mod z3 {
                                     AstNode::BitVector { is_signed, .. } => is_signed,
                                 };
 
-                                if is_signed {
+                                let no_overflow = if is_signed {
                                     let overflow = ast::BV::bvadd_no_overflow(
                                         left.as_bit_vector(),
                                         right.as_bit_vector(),
@@ -433,7 +433,8 @@ pub(crate) mod z3 {
                                         right.as_bit_vector(),
                                         false,
                                     )
-                                }
+                                };
+                                ast::Bool::not(&no_overflow).into()
                             }
                             SymValue::Expression(Expr::Binary {
                                 operator: BinaryOp::Sub,
@@ -448,9 +449,7 @@ pub(crate) mod z3 {
                                 todo!()
                             }
                             _ => unreachable!(),
-                        };
-
-                        todo!("add support for assertions from checked binops")
+                        }
                     }
                     _ => unreachable!("invalid field index. A checked binop returns a len 2 tuple"),
                 },

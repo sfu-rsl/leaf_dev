@@ -298,15 +298,12 @@ impl<'a, EB: BinaryExprBuilder> BranchingHandler for BasicBranchingHandler<'a, E
     }
 
     fn assert(self, cond: Self::Operand, expected: bool, _assert_kind: AssertKind<Self::Operand>) {
-        // Note: this function is called before the assertion or checked operation is evaluated. This is okay because
-        // the checked operation also occurs (in the runtime) before this assert is called, since all operations are
-        // run a second time in the runtime.
+        // For now, we will call this function before the assert occurs and assume that assertions always succeed.
+        // TODO: add a result: bool parameter to this function, and add support for it.
         let cond_val = get_operand_value(self.vars_state, cond);
         if cond_val.is_symbolic() {
             let mut constraint = Constraint::Bool(cond_val.clone());
-
             if !expected {
-                // TODO: is this the correct order?
                 constraint = constraint.not();
             }
 
@@ -399,7 +396,7 @@ impl<EB: BinaryExprBuilder> BasicBranchTakingHandler<'_, EB> {
 }
 
 impl<EB: BinaryExprBuilder> BranchTakingHandler<bool> for BasicBranchTakingHandler<'_, EB> {
-    fn take(mut self, value: bool) {
+    fn take(mut self, result: bool) {
         /* FIXME: Bad smell! The branching traits structure prevents
          * us from having a simpler and cleaner handler.
          */
@@ -408,7 +405,7 @@ impl<EB: BinaryExprBuilder> BranchTakingHandler<bool> for BasicBranchTakingHandl
         }
 
         let mut constraint = Constraint::Bool(self.parent.discriminant.clone());
-        if !value {
+        if !result {
             constraint = constraint.not();
         }
 
