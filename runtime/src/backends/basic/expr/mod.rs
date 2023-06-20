@@ -313,27 +313,15 @@ impl ConstValue {
                     _ => unreachable!("invalid integer size"),
                 };
 
-                // TODO: clean this expression
-                let fields = match result {
-                    Some(result) => vec![
-                        Some(ValueRef::new(
-                            Self::Int {
-                                bit_rep: Wrapping(result), // TODO: figure out wrapping arithmetic
-                                ty: IntType {
-                                    bit_size: *first_size,
-                                    is_signed: *first_signed,
-                                },
-                            }
-                            .into(),
-                        )),
-                        Some(ValueRef::new(Self::Bool(true).into())),
-                    ],
-                    None => vec![None, Some(ValueRef::new(Self::Bool(false).into()))],
-                };
-
-                AdtValue {
-                    kind: AdtKind::Struct,
-                    fields,
+                match result {
+                    Some(result) => {
+                        let ty = IntType {
+                            bit_size: *first_size,
+                            is_signed: *first_signed,
+                        };
+                        AdtValue::checked_success(result, ty)
+                    }
+                    None => AdtValue::checked_overflow(),
                 }
             }
             _ => unreachable!("only integers are supported by rust"),
@@ -652,6 +640,32 @@ pub(crate) enum AdtKind {
 pub(crate) struct AdtValue {
     pub kind: AdtKind,
     pub fields: Vec<Option<ValueRef>>,
+}
+impl AdtValue {
+    /// creates an ADT that is the result of a checked operation that overflowed
+    fn checked_overflow() -> Self {
+        Self {
+            kind: AdtKind::Struct,
+            fields: vec![None, Some(ConstValue::Bool(true).to_value_ref())],
+        }
+    }
+
+    /// creates an ADT that represents the result of a successful checked operation (no overflow)
+    fn checked_success(result: u128, ty: IntType) -> Self {
+        Self {
+            kind: AdtKind::Struct,
+            fields: vec![
+                Some(
+                    ConstValue::Int {
+                        bit_rep: Wrapping(result), // TODO: figure out wrapping arithmetic
+                        ty,
+                    }
+                    .to_value_ref(),
+                ),
+                Some(ConstValue::Bool(false).to_value_ref()),
+            ],
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
