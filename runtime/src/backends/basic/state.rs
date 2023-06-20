@@ -1,4 +1,4 @@
-use std::{borrow::Borrow, cell::RefCell, collections::HashMap, ops::DerefMut, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, ops::DerefMut, rc::Rc};
 
 use crate::{
     abs::{expr::proj::Projector, FieldIndex, Local},
@@ -244,7 +244,7 @@ impl<P: SymbolicProjector> MutableVariablesState<P> {
                 *host_place.state_id(),
                 host_place.as_ref().local(),
                 host_place.as_ref().projections.iter(),
-                projs[deref_index..].iter(),
+                projs[deref_index + 1..].iter(),
                 mutate,
             )
         } else {
@@ -548,15 +548,21 @@ where
 
 impl<I> MutProjector<I> {
     fn make_mut(value_ref: ConcreteValueMutRef) -> &mut ConcreteValue {
-        let original_addr = value_ref.as_ref() as *const ConcreteValue;
+        let _original_addr = value_ref.as_ref() as *const ConcreteValue;
         let host_value = value_ref.make_mut();
-        /* NOTE: Alive copies on projectable types does not seem to be possible.
+        /* NOTE:
+         * The following statement does not hold anymore. Counterexamples:
+         * - Symbolic projections: If we have previously copied an element of an array,
+         * using a symbolic index, then the array is expected to have some alive copies.
+         *- In `clone`, it is observed that the array is copied using a copy operand.
+         * -----------
+         * Alive copies on projectable types does not seem to be possible.
          * For compound types, it is not observed in the MIR. Only immutable ref
-         * can be copied, which is not possible to be given to this function.
+         * can be copied, which is not possible to be passed to this function (it's meant for mutations).
          * Therefore, we expect that make_mut is not going to clone when there
          * are some projections.
+         * debug_assert_eq!(original_addr, host_value as *const ConcreteValue);
          */
-        debug_assert_eq!(original_addr, host_value);
         host_value
     }
 }
