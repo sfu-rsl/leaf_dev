@@ -49,9 +49,7 @@ impl BasicBackend {
         let sym_projector = Rc::new(RefCell::new(expr::proj::new_sym_projector()));
         Self {
             call_stack_manager: BasicCallStackManager::<MutableVariablesState<SymProjector>>::new(
-                Box::new(move |current_vars| {
-                    MutableVariablesState::new(sym_projector.clone(), current_vars.map(Box::new))
-                }),
+                Box::new(move |id| MutableVariablesState::new(sym_projector.clone(), id)),
             ),
             trace_manager: Box::new(
                 ImmediateTraceManager::<BasicBlockIndex, u32, ValueRef>::new_basic(Box::new(

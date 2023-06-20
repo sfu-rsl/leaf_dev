@@ -2,7 +2,7 @@ use std::{cell::RefCell, collections::HashMap, ops::DerefMut, rc::Rc};
 
 use crate::{
     abs::{expr::proj::Projector, FieldIndex, Local},
-    utils::TryGiveBack,
+    utils::Hierarchical,
 };
 
 use super::{
@@ -27,18 +27,22 @@ pub(super) struct MutableVariablesState<P: SymbolicProjector> {
 }
 
 impl<P: SymbolicProjector> MutableVariablesState<P> {
-    pub(super) fn new(sym_projector: Rc<RefCell<P>>, parent: Option<Box<Self>>) -> Self {
+    pub(super) fn new(sym_projector: Rc<RefCell<P>>, id: StateId) -> Self {
         Self {
-            id: parent.as_ref().map(|p| p.id + 1).unwrap_or(0),
+            id,
             locals: HashMap::new(),
             sym_projector,
-            parent,
+            parent: None,
         }
     }
 }
 
-impl<P: SymbolicProjector> TryGiveBack<Self> for MutableVariablesState<P> {
-    fn try_give_back(&mut self) -> Option<Self> {
+impl<P: SymbolicProjector> Hierarchical<Self> for MutableVariablesState<P> {
+    fn set_parent(&mut self, parent: Self) {
+        self.parent = Some(Box::new(parent));
+    }
+
+    fn give_back_parent(&mut self) -> Option<Self> {
         self.parent.take().map(|b| *b)
     }
 }
@@ -275,6 +279,11 @@ impl<P: SymbolicProjector> MutableVariablesState<P> {
         rest_projs: impl Iterator<Item = &'b Projection>,
         mutate: impl FnOnce(MutPlaceValue<'_>),
     ) {
+        /* NOTE: Can we make this cleaner?
+         * Yes. Mostly, it requires separating the parent field from the rest of the structure
+         * to avoid false negatives in the borrow checker. Then we may not need to manipulate
+         * the locals of the owner.
+         */
         let owner = self.get_mut_ref_state_mut(host_owner_id);
         /* NOTE: As we are temporarily removing the local (to mitigate borrowing issues),
          * are we sure that the local is not used in the projections?
@@ -283,16 +292,16 @@ impl<P: SymbolicProjector> MutableVariablesState<P> {
          * borrowing rules. Index also is based on another local (no projection for that place),
          * so the value will be in another local and not causing any issues.
          */
-        let mut x = owner
+        let mut host_local_value = owner
             .locals
             .remove(&host_local)
             .unwrap_or_else(|| panic!("{}", owner.get_err_message(&host_local)));
-        let host = owner.apply_projs_mut(MutPlaceValue::Normal(&mut x), host_projs);
+        let host = owner.apply_projs_mut(MutPlaceValue::Normal(&mut host_local_value), host_projs);
         let value = self.apply_projs_mut(host, rest_projs);
         mutate(value);
         self.get_mut_ref_state_mut(host_owner_id)
             .locals
-            .insert(host_local, x);
+            .insert(host_local, host_local_value);
     }
 
     fn apply_projs_mut<'a, 'b, 'h>(

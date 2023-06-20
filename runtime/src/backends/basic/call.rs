@@ -1,19 +1,23 @@
-use crate::{abs::Local, utils::TryGiveBack};
+use crate::{abs::Local, utils::Hierarchical};
 
 use super::{
     get_operand_value, operand::Operand, place::Place, CallStackManager, ValueRef, VariablesState,
 };
 
-type VariablesStateFactory<VS> = Box<dyn Fn(Option<VS>) -> VS>;
+type VariablesStateFactory<VS> = Box<dyn Fn(usize) -> VS>;
 
 pub(super) struct BasicCallStackManager<VS: VariablesState> {
-    stack: Vec<CallStackFrame<VS>>,
+    stack: Vec<CallStackFrame>,
     vars_state_factory: VariablesStateFactory<VS>,
     call_info: CallInfo,
+    vars_state: Option<VS>,
 }
 
-pub(super) struct CallStackFrame<VS> {
-    vars_state: Option<VS>,
+pub(super) struct CallStackFrame {
+    /* This struct previously contained the variables state.
+     * Currently, there's no specific information to put here,
+     * but as the call stack is a principle entity, we keep it for now.
+     */
 }
 
 pub(super) struct CallInfo {
@@ -32,21 +36,18 @@ impl<VS: VariablesState> BasicCallStackManager<VS> {
                 returned_val: None,
                 is_external: true,
             },
+            vars_state: None,
         }
     }
 }
 
-impl<VS: VariablesState + TryGiveBack<VS>> CallStackManager for BasicCallStackManager<VS> {
+impl<VS: VariablesState + Hierarchical<VS>> CallStackManager for BasicCallStackManager<VS> {
     fn update_args(&mut self, args: Vec<Operand>) {
         self.call_info.passed_args = args;
     }
 
     fn push_stack_frame(&mut self) {
-        let current_vars = top_vars_state::<VS>(&mut self.stack);
-
-        let vars_state = if let Some(current_vars) = current_vars {
-            let mut current_vars = current_vars.take().unwrap();
-
+        self.vars_state = Some(if let Some(mut current_vars) = self.vars_state.take() {
             let passed_args = &mut self.call_info.passed_args;
             let args = if !passed_args.is_empty() {
                 passed_args
@@ -57,7 +58,8 @@ impl<VS: VariablesState + TryGiveBack<VS>> CallStackManager for BasicCallStackMa
                 vec![]
             };
 
-            let mut vars_state = (self.vars_state_factory)(Some(current_vars));
+            let mut vars_state = (self.vars_state_factory)(current_vars.id() + 1);
+            vars_state.set_parent(current_vars);
             // set places for the arguments in the new frame using values from the current frame
             for (i, value) in args.into_iter().enumerate() {
                 let local_index = (i + 1) as u32;
@@ -69,21 +71,17 @@ impl<VS: VariablesState + TryGiveBack<VS>> CallStackManager for BasicCallStackMa
         }
         // The first push when the stack is empty
         else {
-            (self.vars_state_factory)(None)
-        };
-
-        self.stack.push(CallStackFrame {
-            vars_state: Some(vars_state),
+            (self.vars_state_factory)(0)
         });
+
+        self.stack.push(CallStackFrame {});
     }
 
     fn pop_stack_frame(&mut self) {
         self.call_info.returned_val = self.top().try_take_place(&Place::new(Local::ReturnValue));
         self.call_info.is_external = false;
-        let popped = self.stack.pop().unwrap();
-        if let Some(current) = self.stack.last_mut() {
-            current.vars_state = Some(popped.vars_state.unwrap().try_give_back().unwrap());
-        }
+        self.stack.pop().unwrap();
+        self.vars_state = self.vars_state.take().unwrap().give_back_parent();
     }
 
     fn get_return_info(&mut self) -> (Option<ValueRef>, bool) {
@@ -95,17 +93,6 @@ impl<VS: VariablesState + TryGiveBack<VS>> CallStackManager for BasicCallStackMa
     }
 
     fn top(&mut self) -> &mut dyn VariablesState {
-        top_vars_state::<VS>(&mut self.stack)
-            .expect("Call stack is empty.")
-            .as_mut()
-            .unwrap()
-    }
-}
-
-fn top_vars_state<VS>(stack: &mut Vec<CallStackFrame<VS>>) -> Option<&mut Option<VS>> {
-    if let Some(frame) = stack.last_mut() {
-        Some(&mut frame.vars_state)
-    } else {
-        None
+        self.vars_state.as_mut().expect("Call stack is empty.")
     }
 }

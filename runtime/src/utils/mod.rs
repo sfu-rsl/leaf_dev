@@ -20,7 +20,9 @@ impl<T> Deref for UnsafeSync<T> {
     }
 }
 
-/// Trait for types that have borrowed a data through move and should give it back.
-pub(crate) trait TryGiveBack<T> {
-    fn try_give_back(&mut self) -> Option<T>;
+/// A trait for any hierarchical structure that mat take a parent.
+pub(crate) trait Hierarchical<T> {
+    fn set_parent(&mut self, parent: T);
+
+    fn give_back_parent(&mut self) -> Option<T>;
 }
