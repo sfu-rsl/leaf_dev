@@ -183,7 +183,7 @@ impl<P: SymbolicProjector> MutableVariablesState<P> {
             get_place: |p: &'_ FullPlace| -> ValueRef {
                 self.get_mut_ref_state(*p.state_id()).get_place(p.as_ref())
             },
-            sym_index_handler: |host: ConcreteValueRef, index: SymValueRef, c: bool| -> ValueRef {
+            handle_sym_index: |host: ConcreteValueRef, index: SymValueRef, c: bool| -> ValueRef {
                 self.sym_projector()
                     .deref_mut()
                     .index(
@@ -337,7 +337,7 @@ impl<P: SymbolicProjector> MutableVariablesState<P> {
         proj: &Projection,
     ) -> MutPlaceValue<'h> {
         let mut projector = MutProjector {
-            sym_index_handler: |host: ConcreteValueMutRef<'_>,
+            handle_sym_index: |host: ConcreteValueMutRef<'_>,
                                 index: SymValueRef,
                                 from_end: bool| {
                 self.sym_projector()
@@ -411,7 +411,7 @@ impl<P: SymbolicProjector> MutableVariablesState<P> {
 
 struct ConcreteProjector<F, I> {
     get_place: F,
-    sym_index_handler: I,
+    handle_sym_index: I,
 }
 
 impl<F, I> Projector for ConcreteProjector<F, I>
@@ -460,7 +460,7 @@ where
                     _ => Err(host),
                 }
             }
-            Value::Symbolic(_) => Ok((self.sym_index_handler)(
+            Value::Symbolic(_) => Ok((self.handle_sym_index)(
                 host,
                 SymValueRef::new(index),
                 from_end,
@@ -487,7 +487,7 @@ where
 }
 
 struct MutProjector<I> {
-    sym_index_handler: I,
+    handle_sym_index: I,
 }
 
 impl<I> Projector for MutProjector<I>
@@ -529,7 +529,7 @@ where
                     conc => Err(conc),
                 }
             }
-            Value::Symbolic(_) => Ok(MutPlaceValue::SymProj((self.sym_index_handler)(
+            Value::Symbolic(_) => Ok(MutPlaceValue::SymProj((self.handle_sym_index)(
                 host,
                 SymValueRef::new(index),
                 from_end,
