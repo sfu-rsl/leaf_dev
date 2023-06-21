@@ -6,6 +6,7 @@
 #![feature(result_flattening)]
 #![feature(unboxed_closures)]
 #![feature(fn_traits)]
+#![feature(result_option_inspect)]
 
 pub mod abs;
 pub mod annotations;
