@@ -94,12 +94,12 @@ impl<SP: SymbolicProjector> VariablesState for HierarchicalVariablesState<SP> {
             self.mut_place_iter(
                 place.local,
                 &place.projections,
-                |place_value| match place_value {
+                MutateOnce::Closure(Box::new(|place_value| match place_value {
                     MutPlaceValue::Normal(v) => *v = value,
                     MutPlaceValue::SymProj(_) => {
                         todo!("Setting values to symbolic destinations are not supported yet.")
                     }
-                },
+                })),
             )
             .unwrap()
         }
@@ -120,35 +120,18 @@ impl<SP: SymbolicProjector> HierarchicalVariablesState<SP> {
         }
     }
 
-    fn mut_full_place<'b>(
+    fn mut_full_place(
         &mut self,
         place: &FullPlace,
-        top_state: &LocalStorage<SP>,
-        rest_projs: impl Iterator<Item = &'b Projection>,
-        mutate: impl FnOnce(MutPlaceValue),
+        mutate: MutateOnce<SP>,
     ) -> Result<(), PlaceError> {
         let state_id = *place.state_id();
         if state_id == self.current.id {
-            self.current
-                .mut_place_iter(place.as_ref().local, &place.as_ref().projections, |host| {
-                    top_state.mut_host(host, rest_projs, mutate);
-                })
+            self.mut_place_iter(place.as_ref().local, &place.as_ref().projections, mutate)
         } else {
             self.parent
                 .as_mut()
-                .map(|p| p.mut_full_place(place, top_state, rest_projs, mutate))
-                .ok_or(PlaceError::StateNotFound(state_id))
-                .flatten()
-        }
-    }
-
-    fn take_full_local(&mut self, state_id: StateId, local: Local) -> Result<ValueRef, PlaceError> {
-        if state_id == self.current.id {
-            self.take_local(local)
-        } else {
-            self.parent
-                .as_mut()
-                .map(|p| p.take_full_local(state_id, local))
+                .map(|p| p.mut_full_place(place, mutate))
                 .ok_or(PlaceError::StateNotFound(state_id))
                 .flatten()
         }
@@ -169,7 +152,7 @@ impl<SP: SymbolicProjector> HierarchicalVariablesState<SP> {
         &mut self,
         local: Local,
         projs: &[Projection],
-        mutate: impl FnOnce(MutPlaceValue),
+        mutate: MutateOnce<SP>,
     ) -> Result<(), PlaceError> {
         /* Up to the last (mutable) deref, we only need the place. Thus, no mutable borrow is
          * necessary.
@@ -193,15 +176,18 @@ impl<SP: SymbolicProjector> HierarchicalVariablesState<SP> {
             let rest_projs = &projs[deref_index + 1..];
 
             if state_id == self.current.id {
+                // Flattening the inner place.
                 let mut projs = host_place.as_ref().projections.clone();
                 projs.extend_from_slice(rest_projs);
-                self.current
-                    .mut_place_iter(host_place.as_ref().local, &projs, mutate)
+                self.mut_place_iter(host_place.as_ref().local, &projs, mutate)
             } else {
                 self.parent
                     .as_mut()
                     .map(|p| {
-                        p.mut_full_place(&host_place, &self.current, rest_projs.iter(), mutate)
+                        p.mut_full_place(
+                            &host_place,
+                            MutateOnce::Local(&self.current, rest_projs.to_vec(), Box::new(mutate)),
+                        )
                     })
                     .ok_or(PlaceError::StateNotFound(state_id))
                     .flatten()
@@ -251,7 +237,7 @@ impl<SP: SymbolicProjector> LocalStorage<SP> {
         &mut self,
         local: Local,
         projs: &[Projection],
-        mutate: impl FnOnce(MutPlaceValue),
+        mutate: MutateOnce<SP>,
     ) -> Result<(), PlaceError> {
         // FIXME: Is there a way to avoid vector allocation?
         let mut projs = projs.to_vec();
@@ -297,7 +283,7 @@ impl<SP: SymbolicProjector> LocalStorage<SP> {
         &self,
         host: MutPlaceValue<'h>,
         projs: impl Iterator<Item = &'b Projection>,
-        mutate: impl FnOnce(MutPlaceValue<'h>),
+        mutate: MutateOnce<'_, SP>,
     ) {
         let value = apply_projs_mut(self, self.sym_projector.clone(), host, projs);
         mutate(value);
@@ -327,33 +313,23 @@ impl<SP: SymbolicProjector> PlaceResolver for LocalStorage<SP> {
     }
 }
 
-trait PlaceManager {
-    fn get_place(&self, place: &Place) -> Result<ValueRef, PlaceError> {
-        self.get_place_iter(place.local, place.projections.iter())
+/* We need to have this structure to avoid infinite recursion of closure instantiation. */
+enum MutateOnce<'a, SP: SymbolicProjector> {
+    Closure(Box<dyn for<'h> FnOnce(MutPlaceValue<'h>)>),
+    Local(&'a LocalStorage<SP>, Vec<Projection>, Box<Self>),
+}
+
+impl<'a, 'h, SP: SymbolicProjector> FnOnce<(MutPlaceValue<'h>,)> for MutateOnce<'a, SP> {
+    type Output = ();
+
+    extern "rust-call" fn call_once(self, args: (MutPlaceValue<'h>,)) -> Self::Output {
+        match self {
+            Self::Closure(f) => f(args.0),
+            Self::Local(storage, projs, mutator) => {
+                storage.mut_host(args.0, projs.iter(), *mutator);
+            }
+        }
     }
-
-    fn get_place_iter<'a, 'b, I: Iterator<Item = &'b Projection>>(
-        &'a self,
-        local: Local,
-        projs: I,
-    ) -> Result<ValueRef, PlaceError>;
-
-    fn mut_place(
-        &mut self,
-        place: &Place,
-        mutate: impl FnOnce(MutPlaceValue),
-    ) -> Result<(), PlaceError> {
-        self.mut_place_iter(place.local, &place.projections, mutate)
-    }
-
-    fn mut_place_iter(
-        &mut self,
-        local: Local,
-        projs: &[Projection],
-        mutate: impl FnOnce(MutPlaceValue),
-    ) -> Result<(), PlaceError>;
-
-    fn take_local(&mut self, local: Local) -> Result<ValueRef, PlaceError>;
 }
 
 trait FullPlaceResolver {
@@ -649,7 +625,7 @@ mod proj {
             } else {
                 apply_proj_sym(
                     place_resolver,
-                    sym_projector.as_ref().borrow_mut(),
+                    sym_projector.as_ref().borrow_mut().deref_mut(),
                     SymValueRef::new(current),
                     proj,
                 )
@@ -699,13 +675,14 @@ mod proj {
         })
     }
 
-    fn apply_proj_sym<SP: SymbolicProjector>(
+    #[inline]
+    fn apply_proj_sym(
         place_resolver: &impl PlaceResolver,
-        mut projector: impl DerefMut<Target = SP>,
+        projector: &mut impl SymbolicProjector,
         host: SymValueRef,
         proj: &Projection,
     ) -> ProjExpr {
-        apply_proj(place_resolver, host, proj, projector.deref_mut())
+        apply_proj(place_resolver, host, proj, projector)
     }
 
     pub(super) fn apply_projs_mut<'a, 'b, 'h, SP: SymbolicProjector>(
@@ -731,7 +708,7 @@ mod proj {
                     } else {
                         MutPlaceValue::SymProj(apply_proj_sym(
                             place_resolver,
-                            sym_projector.as_ref().borrow_mut(),
+                            sym_projector.as_ref().borrow_mut().deref_mut(),
                             SymValueRef::new(current.clone()),
                             proj,
                         ))
@@ -739,7 +716,7 @@ mod proj {
                 }
                 MutPlaceValue::SymProj(current) => MutPlaceValue::SymProj(apply_proj_sym(
                     place_resolver,
-                    sym_projector.as_ref().borrow_mut(),
+                    sym_projector.as_ref().borrow_mut().deref_mut(),
                     current.to_value_ref(),
                     proj,
                 )),
@@ -747,7 +724,7 @@ mod proj {
         })
     }
 
-    fn apply_proj_con_mut<'a, 'h, SP: SymbolicProjector>(
+    fn apply_proj_con_mut<'h, SP: SymbolicProjector>(
         place_resolver: &impl PlaceResolver,
         sym_projector: RRef<SP>,
         host: ConcreteValueMutRef<'h>,

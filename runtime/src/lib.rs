@@ -4,6 +4,8 @@
 #![feature(assert_matches)]
 #![feature(iterator_try_collect)]
 #![feature(result_flattening)]
+#![feature(unboxed_closures)]
+#![feature(fn_traits)]
 
 pub mod abs;
 pub mod annotations;
