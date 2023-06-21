@@ -91,16 +91,7 @@ impl<SP: SymbolicProjector> VariablesState for HierarchicalVariablesState<SP> {
         if !place.has_projection() {
             self.current.set(place.local, value);
         } else {
-            self.mut_place_iter(
-                place.local,
-                &place.projections,
-                MutateOnce::Closure(Box::new(|place_value| match place_value {
-                    MutPlaceValue::Normal(v) => *v = value,
-                    MutPlaceValue::SymProj(_) => {
-                        todo!("Setting values to symbolic destinations are not supported yet.")
-                    }
-                })),
-            )
+            self.mut_place_iter(place.local, &place.projections, MutateOnce::SetValue(value))
             .unwrap()
         }
     }
@@ -315,7 +306,7 @@ impl<SP: SymbolicProjector> PlaceResolver for LocalStorage<SP> {
 
 /* We need to have this structure to avoid infinite recursion of closure instantiation. */
 enum MutateOnce<'a, SP: SymbolicProjector> {
-    Closure(Box<dyn for<'h> FnOnce(MutPlaceValue<'h>)>),
+    SetValue(ValueRef),
     Local(&'a LocalStorage<SP>, Vec<Projection>, Box<Self>),
 }
 
@@ -324,10 +315,19 @@ impl<'a, 'h, SP: SymbolicProjector> FnOnce<(MutPlaceValue<'h>,)> for MutateOnce<
 
     extern "rust-call" fn call_once(self, args: (MutPlaceValue<'h>,)) -> Self::Output {
         match self {
-            Self::Closure(f) => f(args.0),
+            Self::SetValue(value) => set_resolved_place(args.0, value),
             Self::Local(storage, projs, mutator) => {
                 storage.mut_host(args.0, projs.iter(), *mutator);
             }
+        }
+    }
+}
+
+fn set_resolved_place(place_value: MutPlaceValue, value: ValueRef) {
+    match place_value {
+        MutPlaceValue::Normal(v) => *v = value,
+        MutPlaceValue::SymProj(_) => {
+            todo!("Setting values to symbolic destinations are not supported yet.")
         }
     }
 }
