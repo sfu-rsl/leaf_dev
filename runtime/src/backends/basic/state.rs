@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap, ops::DerefMut, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, fmt::Debug, ops::DerefMut, rc::Rc};
 
 use crate::{
     abs::{expr::proj::Projector, FieldIndex, Local},
@@ -17,27 +17,25 @@ use super::{
 
 pub(super) type StateId = usize;
 
-pub(super) struct MutableVariablesState<P: SymbolicProjector> {
-    id: StateId,
-    locals: HashMap<Local, ValueRef>,
-    /// The projector that is used to handle projections of symbolic values or
-    /// symbolic projections (symbolic indices).
-    sym_projector: Rc<RefCell<P>>,
+type RRef<T> = Rc<RefCell<T>>;
+
+pub(super) struct HierarchicalVariablesState<SP: SymbolicProjector> {
+    current: LocalStorage<SP>,
     parent: Option<Box<Self>>,
+    sym_projector: RRef<SP>,
 }
 
-impl<P: SymbolicProjector> MutableVariablesState<P> {
-    pub(super) fn new(sym_projector: Rc<RefCell<P>>, id: StateId) -> Self {
+impl<SP: SymbolicProjector> HierarchicalVariablesState<SP> {
+    pub(super) fn new(id: StateId, sym_projector: RRef<SP>) -> Self {
         Self {
-            id,
-            locals: HashMap::new(),
-            sym_projector,
+            current: LocalStorage::new(id, sym_projector.clone()),
             parent: None,
+            sym_projector,
         }
     }
 }
 
-impl<P: SymbolicProjector> Hierarchical<Self> for MutableVariablesState<P> {
+impl<SP: SymbolicProjector> Hierarchical<Self> for HierarchicalVariablesState<SP> {
     fn set_parent(&mut self, parent: Self) {
         self.parent = Some(Box::new(parent));
     }
@@ -47,26 +45,22 @@ impl<P: SymbolicProjector> Hierarchical<Self> for MutableVariablesState<P> {
     }
 }
 
-impl<P: SymbolicProjector> VariablesState for MutableVariablesState<P> {
-    #[inline]
+impl<SP: SymbolicProjector> VariablesState for HierarchicalVariablesState<SP> {
     fn id(&self) -> usize {
-        self.id
+        self.current.id
     }
 
     fn copy_place(&self, place: &Place) -> ValueRef {
-        self.get_place(place)
+        self.get_place(place).unwrap()
     }
 
     fn take_place(&mut self, place: &Place) -> ValueRef {
-        self.try_take_place(place)
-            .unwrap_or_else(|| panic!("{}", self.get_err_message(&place.local())))
+        self.try_take_place(place).unwrap()
     }
 
     fn try_take_place(&mut self, place: &Place) -> Option<ValueRef> {
-        let local = place.local();
-        let value = self.locals.remove(&local)?;
-
-        let mut value = value;
+        let local = place.local;
+        let mut value = self.take_local(local).ok()?;
 
         if !place.has_projection() {
             return Some(value);
@@ -75,152 +69,101 @@ impl<P: SymbolicProjector> VariablesState for MutableVariablesState<P> {
         let (last, projs) = place.projections.split_last().unwrap();
         let last = match last {
             Projection::Field(field) => *field,
-            _ => panic!("Move can only happen on locals or partially move on struct fields."),
+            _ => unreachable!(
+                "Move is expected to happen only on locals or partially move on struct fields."
+            ),
         };
 
-        let field_val = self.take_field(
-            self.apply_projs_mut(MutPlaceValue::Normal(&mut value), projs.iter()),
+        let field_val = take_field(
+            self.sym_projector.clone(),
+            apply_projs_mut(
+                self,
+                self.sym_projector.clone(),
+                MutPlaceValue::Normal(&mut value),
+                projs.iter(),
+            ),
             last,
         );
-        self.locals.insert(local, value);
+        self.set_place(&Place::new(local), value);
         Some(field_val)
     }
 
     fn set_place(&mut self, place: &Place, value: ValueRef) {
-        let local = place.local();
         if !place.has_projection() {
-            self.locals.insert(local, value);
+            self.current.set(place.local, value);
         } else {
-            self.mut_place(place, |place_value| match place_value {
-                MutPlaceValue::Normal(v) => *v = value,
-                MutPlaceValue::SymProj(_) => {
-                    todo!("Setting values to symbolic destinations are not supported yet.")
-                }
-            });
+            self.mut_place_iter(
+                place.local,
+                &place.projections,
+                |place_value| match place_value {
+                    MutPlaceValue::Normal(v) => *v = value,
+                    MutPlaceValue::SymProj(_) => {
+                        todo!("Setting values to symbolic destinations are not supported yet.")
+                    }
+                },
+            )
+            .unwrap()
         }
     }
 }
 
-impl<P: SymbolicProjector> MutableVariablesState<P> {
-    /// Takes an inner field from a struct value.
-    /// If there are some projections left, it will recursively take the inner
-    /// field while keeping the parent fields in place.
-    ///
-    /// # Returns
-    /// The taken out inner field.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the value is not a struct.
-    fn take_field(&self, value: MutPlaceValue, field: FieldIndex) -> ValueRef {
-        match value {
-            MutPlaceValue::Normal(value) => {
-                if !value.is_symbolic() {
-                    match ValueRef::make_mut(value) {
-                        Value::Concrete(ConcreteValue::Adt(AdtValue {
-                            kind: AdtKind::Struct,
-                            ref mut fields,
-                        })) => fields[field as usize]
-                            .take()
-                            .unwrap_or_else(|| panic!("Field should not be moved before. {field}")),
-                        _ => panic!("Only (concrete) structs can be partially moved."),
-                    }
-                } else {
-                    self.sym_projector()
-                        .field(SymValueRef::new(value.clone()).into(), field)
-                        .into()
-                        .to_value_ref()
-                        .into()
-                }
-            }
-            MutPlaceValue::SymProj(sym_value) => self
-                .sym_projector()
-                .field(sym_value.to_value_ref().into(), field)
-                .into()
-                .to_value_ref()
-                .into(),
+impl<SP: SymbolicProjector> HierarchicalVariablesState<SP> {
+    fn get_full_place(&self, place: &FullPlace) -> Result<ValueRef, PlaceError> {
+        let state_id = *place.state_id();
+        if state_id == self.current.id {
+            self.get_place_iter(place.as_ref().local, place.as_ref().projections.iter())
+        } else {
+            self.parent
+                .as_ref()
+                .map(|p| p.get_full_place(place))
+                .ok_or(PlaceError::StateNotFound(state_id))
+                .flatten()
         }
     }
 
-    fn get_place(&self, place: &Place) -> ValueRef {
-        self.get_place_iter(place.local(), place.projections.iter())
+    fn mut_full_place<'b>(
+        &mut self,
+        place: &FullPlace,
+        top_state: &LocalStorage<SP>,
+        rest_projs: impl Iterator<Item = &'b Projection>,
+        mutate: impl FnOnce(MutPlaceValue),
+    ) -> Result<(), PlaceError> {
+        let state_id = *place.state_id();
+        if state_id == self.current.id {
+            self.current
+                .mut_place_iter(place.as_ref().local, &place.as_ref().projections, |host| {
+                    top_state.mut_host(host, rest_projs, mutate);
+                })
+        } else {
+            self.parent
+                .as_mut()
+                .map(|p| p.mut_full_place(place, top_state, rest_projs, mutate))
+                .ok_or(PlaceError::StateNotFound(state_id))
+                .flatten()
+        }
     }
 
-    fn get_place_iter<'a, 'b>(
+    fn take_full_local(&mut self, state_id: StateId, local: Local) -> Result<ValueRef, PlaceError> {
+        if state_id == self.current.id {
+            self.take_local(local)
+        } else {
+            self.parent
+                .as_mut()
+                .map(|p| p.take_full_local(state_id, local))
+                .ok_or(PlaceError::StateNotFound(state_id))
+                .flatten()
+        }
+    }
+}
+
+impl<SP: SymbolicProjector> HierarchicalVariablesState<SP> {
+    fn get_place_iter<'a, 'b, I: Iterator<Item = &'b Projection>>(
         &'a self,
         local: Local,
-        projs: impl Iterator<Item = &'b Projection>,
-    ) -> ValueRef {
-        let host: &ValueRef = self
-            .locals
-            .get(&local)
-            .unwrap_or_else(|| panic!("{}", self.get_err_message(&local)));
-        self.apply_projs(host, projs)
-    }
-
-    fn apply_projs<'a, 'b>(
-        &'a self,
-        host: &'a ValueRef,
-        projs: impl Iterator<Item = &'b Projection>,
-    ) -> ValueRef {
-        projs.fold(host.clone(), |current, proj| {
-            /* FIXME: Based on the current implementation, it is not possible to
-             * get a concrete value after a symbolic projection or a projection
-             * on a symbolic value. So you may want to optimize it.
-             */
-            if !current.is_symbolic() {
-                self.apply_proj_con(ConcreteValueRef::new(current), proj)
-            } else {
-                self.apply_proj_sym(SymValueRef::new(current), proj)
-                    .to_value_ref()
-                    .into()
-            }
-        })
-    }
-
-    fn apply_proj_con(&self, host: ConcreteValueRef, proj: &Projection) -> ValueRef {
-        let mut projector = ConcreteProjector {
-            get_place: |p: &'_ FullPlace| -> ValueRef {
-                self.get_mut_ref_state(*p.state_id()).get_place(p.as_ref())
-            },
-            handle_sym_index: |host: ConcreteValueRef, index: SymValueRef, c: bool| -> ValueRef {
-                self.sym_projector()
-                    .deref_mut()
-                    .index(
-                        SymIndexPair::SymIndex {
-                            index,
-                            host: host.into(),
-                        }
-                        .into(),
-                        c,
-                    )
-                    .into()
-                    .to_value_ref()
-                    .into()
-            },
-        };
-
-        apply_proj::<_, _, _, Result<ValueRef, ConcreteValueRef>>(
-            |p: &Place| -> ValueRef { self.get_place(p) },
-            host,
-            proj,
-            &mut projector,
-        )
-        .unwrap_or_else(|host| {
-            panic!(
-                "Projection {:?} is not possible on this value {:?}.",
-                &proj, &host
-            )
-        })
-    }
-
-    fn apply_proj_sym(&self, host: SymValueRef, proj: &Projection) -> ProjExpr {
-        let mut projector = self.sym_projector();
-        apply_proj(|p| self.get_place(p), host, proj, projector.deref_mut())
-    }
-
-    fn mut_place(&mut self, place: &Place, mutate: impl FnOnce(MutPlaceValue)) {
-        self.mut_place_iter(place.local(), &place.projections, mutate);
+        projs: I,
+    ) -> Result<ValueRef, PlaceError> {
+        let host = self.current.get_place_iter(local, std::iter::empty())?;
+        Ok(apply_projs(self, self.sym_projector.clone(), &host, projs))
     }
 
     fn mut_place_iter(
@@ -228,7 +171,7 @@ impl<P: SymbolicProjector> MutableVariablesState<P> {
         local: Local,
         projs: &[Projection],
         mutate: impl FnOnce(MutPlaceValue),
-    ) {
+    ) -> Result<(), PlaceError> {
         /* Up to the last (mutable) deref, we only need the place. Thus, no mutable borrow is
          * necessary.
          *
@@ -239,173 +182,216 @@ impl<P: SymbolicProjector> MutableVariablesState<P> {
          * search.
          */
         if let Some(deref_index) = projs.iter().rposition(|p| matches!(p, Projection::Deref)) {
-            let value = self.get_place_iter(local, projs.iter().take(deref_index));
+            let value = self
+                .get_place_iter(local, projs.iter().take(deref_index))
+                .unwrap();
             let host_place = match value.as_ref() {
                 Value::Concrete(ConcreteValue::Ref(RefValue::Mut(place))) => place.clone(),
                 _ => panic!("The last deref is expected to be on a mutable reference."),
             };
-            self.mut_host(
-                *host_place.state_id(),
-                host_place.as_ref().local(),
-                host_place.as_ref().projections.iter(),
-                projs[deref_index + 1..].iter(),
-                mutate,
-            )
+
+            let state_id = *host_place.state_id();
+            let rest_projs = &projs[deref_index + 1..];
+
+            if state_id == self.current.id {
+                let mut projs = host_place.as_ref().projections.clone();
+                projs.extend_from_slice(rest_projs);
+                self.current
+                    .mut_place_iter(host_place.as_ref().local, &projs, mutate)
+            } else {
+                self.parent
+                    .as_mut()
+                    .map(|p| {
+                        p.mut_full_place(&host_place, &self.current, rest_projs.iter(), mutate)
+                    })
+                    .ok_or(PlaceError::StateNotFound(state_id))
+                    .flatten()
+            }
         } else {
-            self.mut_host(self.id(), local, projs.iter(), std::iter::empty(), mutate)
+            self.current.mut_place_iter(local, projs, mutate)
         }
     }
 
-    /// Mutates a projection of a host value in some state.
-    /// It resolves the place ([`host_local`], [`host_projs`]) in the host owner state, and then
-    /// applies the [`rest_projs`] in the current state, and finally mutates the result by
-    /// [`mutate`].
-    /// This separation of parameters particularly has meaning when there is a dereferencing on
-    /// a mutable reference, where we should resolve the [`Place`] inside the reference and then
-    /// continue. In cases where there is no dereferencing, the owner will be self and either
-    /// [`host_projs`] or [`rest_projs`] will be empty.
-    ///
-    /// # Parameters
-    /// - `host_owner_id`: The id of the state in which the host value is located.
-    /// - `host_local`: The local of the host value.
-    /// - `host_projs`: The projections of the host value.
-    /// - `rest_projs`: The projections of the value to mutate.
-    /// - `mutate`: The function to mutate the value.
-    fn mut_host<'b>(
-        &mut self,
-        host_owner_id: usize,
-        host_local: Local,
-        host_projs: impl Iterator<Item = &'b Projection>,
-        rest_projs: impl Iterator<Item = &'b Projection>,
-        mutate: impl FnOnce(MutPlaceValue<'_>),
-    ) {
-        /* NOTE: Can we make this cleaner?
-         * Yes. Mostly, it requires separating the parent field from the rest of the structure
-         * to avoid false negatives in the borrow checker. Then we may not need to manipulate
-         * the locals of the owner.
-         */
-        let owner = self.get_mut_ref_state_mut(host_owner_id);
-        /* NOTE: As we are temporarily removing the local (to mitigate borrowing issues),
-         * are we sure that the local is not used in the projections?
-         * Yes. The recursive projection types are Deref and Index. Deref
-         * cannot have reference to the same local, because it's against the
-         * borrowing rules. Index also is based on another local (no projection for that place),
-         * so the value will be in another local and not causing any issues.
-         */
-        let mut host_local_value = owner
-            .locals
-            .remove(&host_local)
-            .unwrap_or_else(|| panic!("{}", owner.get_err_message(&host_local)));
-        let host = owner.apply_projs_mut(MutPlaceValue::Normal(&mut host_local_value), host_projs);
-        let value = self.apply_projs_mut(host, rest_projs);
-        mutate(value);
-        self.get_mut_ref_state_mut(host_owner_id)
-            .locals
-            .insert(host_local, host_local_value);
-    }
-
-    fn apply_projs_mut<'a, 'b, 'h>(
-        &'a self,
-        host: MutPlaceValue<'h>,
-        projs: impl Iterator<Item = &'b Projection>,
-    ) -> MutPlaceValue<'h> {
-        projs.fold(host, |current, proj| {
-            /* FIXME: Based on the current implementation, it is not possible to
-             * get a concrete value after a symbolic projection or a projection
-             * on a symbolic value. So you may want to optimize it.
-             */
-            match current {
-                MutPlaceValue::Normal(current) => {
-                    if !current.is_symbolic() {
-                        self.apply_proj_con_mut(ConcreteValueMutRef::new(current), proj)
-                    } else {
-                        MutPlaceValue::SymProj(
-                            self.apply_proj_sym(SymValueRef::new(current.clone()), proj),
-                        )
-                    }
-                }
-                MutPlaceValue::SymProj(current) => {
-                    MutPlaceValue::SymProj(self.apply_proj_sym(current.to_value_ref(), proj))
-                }
-            }
-        })
-    }
-
-    fn apply_proj_con_mut<'a, 'h>(
-        &'a self,
-        host: ConcreteValueMutRef<'h>,
-        proj: &Projection,
-    ) -> MutPlaceValue<'h> {
-        let mut projector = MutProjector {
-            handle_sym_index: |host: ConcreteValueMutRef<'_>,
-                                index: SymValueRef,
-                                from_end: bool| {
-                self.sym_projector()
-                    .deref_mut()
-                    .index(
-                        SymIndexPair::SymIndex {
-                            index,
-                            host: host.0.clone(),
-                        }
-                        .into(),
-                        from_end,
-                    )
-                    .into()
-            },
-        };
-        apply_proj::<_, _, _, Result<MutPlaceValue, &mut ConcreteValue>>(
-            |p: &Place| self.get_place(p),
-            host,
-            proj,
-            &mut projector,
-        )
-        .unwrap_or_else(|host_conc| {
-            panic!(
-                "Projection {:?} is not possible on this value {:?}.",
-                &proj, &host_conc
-            )
-        })
-    }
-
-    #[inline]
-    fn get_err_message(&self, local: &Local) -> String {
-        format!(
-            "Uninitialized, moved, or invalid local. {local} was not found among {} variables in {:#?}",
-            self.locals.len(),
-            self.locals
-        )
+    fn take_local(&mut self, local: Local) -> Result<ValueRef, PlaceError> {
+        self.current.take_local(local)
     }
 }
 
-impl<P: SymbolicProjector> MutableVariablesState<P> {
-    fn sym_projector(&self) -> impl DerefMut<Target = P> + '_ {
-        self.sym_projector.as_ref().borrow_mut()
-    }
+struct LocalStorage<SP: SymbolicProjector> {
+    id: StateId,
+    locals: HashMap<Local, ValueRef>,
+    /// The projector that is used to handle projections of symbolic values or
+    /// symbolic projections (symbolic indices).
+    sym_projector: Rc<RefCell<SP>>,
+}
 
-    fn find_state(&self, id: StateId) -> Option<&Self> {
-        if id == self.id {
-            Some(self)
-        } else {
-            self.parent.as_ref().map(|p| p.find_state(id)).flatten()
+impl<SP: SymbolicProjector> LocalStorage<SP> {
+    pub(super) fn new(id: StateId, sym_projector: RRef<SP>) -> Self {
+        Self {
+            id,
+            locals: HashMap::new(),
+            sym_projector,
         }
     }
+}
 
-    fn find_state_mut(&mut self, id: StateId) -> Option<&mut Self> {
-        if id == self.id {
-            Some(self)
-        } else {
-            self.parent.as_mut().map(|p| p.find_state_mut(id)).flatten()
+impl<SP: SymbolicProjector> LocalStorage<SP> {
+    fn get_place_iter<'a, 'b>(
+        &'a self,
+        local: Local,
+        projs: impl Iterator<Item = &'b Projection>,
+    ) -> Result<ValueRef, PlaceError> {
+        let host: &ValueRef = self
+            .locals
+            .get(&local)
+            .ok_or(PlaceError::LocalNotFound(local))?;
+        Ok(apply_projs(self, self.sym_projector.clone(), host, projs))
+    }
+
+    fn mut_place_iter(
+        &mut self,
+        local: Local,
+        projs: &[Projection],
+        mutate: impl FnOnce(MutPlaceValue),
+    ) -> Result<(), PlaceError> {
+        // FIXME: Is there a way to avoid vector allocation?
+        let mut projs = projs.to_vec();
+
+        /* Up to the last (mutable) deref, we only need the place. Thus, no mutable borrow is
+         * necessary.
+         *
+         * NOTE: Shouldn't we use a while instead?
+         * While makes sense where we have multiple mutable dereferences in the chain,
+         * like &mut &mut ... &mut x.
+         * Even in these cases, multiple deref projections will show up which we handle in the first
+         * search.
+         */
+        if let Some(deref_index) = projs.iter().rposition(|p| matches!(p, Projection::Deref)) {
+            let value = self.get_place_iter(local, projs.iter().take(deref_index))?;
+            match value.as_ref() {
+                Value::Concrete(ConcreteValue::Ref(RefValue::Mut(place))) => {
+                    /* NOTE: We are taking this approach because recursively
+                     * calling the function was leading to an infinite recursion
+                     * in the compiler's borrow checker.
+                     */
+                    debug_assert_eq!(*place.state_id(), self.id);
+                    projs.splice(..=deref_index, place.as_ref().projections.iter().cloned());
+                }
+                _ => panic!("The last deref is expected to be on a mutable reference."),
+            }
         }
+
+        /* NOTE: As we are temporarily removing the local (to mitigate borrowing issues),
+         * are we sure that the local is not used in the projections?
+         * Yes. The recursive projection types are Deref and Index. The deref
+         * cannot have reference to the same local, because it's against the
+         * borrowing rules. The index also is on another local (not a place),
+         * so the value will be in another local and not causing any issues.
+         */
+        let mut host = self.take_local(local)?;
+        self.mut_host(MutPlaceValue::Normal(&mut host), projs.iter(), mutate);
+        self.set(local, host);
+        Ok(())
     }
 
-    fn get_mut_ref_state(&self, id: StateId) -> &Self {
-        self.find_state(id)
-            .unwrap_or_else(|| panic!("Could not find mutable reference target state. {}", id))
+    fn mut_host<'b, 'h>(
+        &self,
+        host: MutPlaceValue<'h>,
+        projs: impl Iterator<Item = &'b Projection>,
+        mutate: impl FnOnce(MutPlaceValue<'h>),
+    ) {
+        let value = apply_projs_mut(self, self.sym_projector.clone(), host, projs);
+        mutate(value);
     }
 
-    fn get_mut_ref_state_mut(&mut self, id: StateId) -> &mut Self {
-        self.find_state_mut(id)
-            .unwrap_or_else(|| panic!("Could not find mutable reference target state. {}", id))
+    fn take_local(&mut self, local: Local) -> Result<ValueRef, PlaceError> {
+        self.locals
+            .remove(&local)
+            .ok_or(PlaceError::LocalNotFound(local))
+    }
+
+    fn set(&mut self, local: Local, value: ValueRef) {
+        self.locals.insert(local, value);
+    }
+}
+
+impl<SP: SymbolicProjector> FullPlaceResolver for LocalStorage<SP> {
+    fn get_full_place(&self, place: &FullPlace) -> Result<ValueRef, PlaceError> {
+        debug_assert_eq!(*place.state_id(), self.id);
+        self.get_place_iter(place.as_ref().local(), place.as_ref().projections.iter())
+    }
+}
+
+impl<SP: SymbolicProjector> PlaceResolver for LocalStorage<SP> {
+    fn get_place(&self, place: &Place) -> Result<ValueRef, PlaceError> {
+        self.get_place_iter(place.local, place.projections.iter())
+    }
+}
+
+trait PlaceManager {
+    fn get_place(&self, place: &Place) -> Result<ValueRef, PlaceError> {
+        self.get_place_iter(place.local, place.projections.iter())
+    }
+
+    fn get_place_iter<'a, 'b, I: Iterator<Item = &'b Projection>>(
+        &'a self,
+        local: Local,
+        projs: I,
+    ) -> Result<ValueRef, PlaceError>;
+
+    fn mut_place(
+        &mut self,
+        place: &Place,
+        mutate: impl FnOnce(MutPlaceValue),
+    ) -> Result<(), PlaceError> {
+        self.mut_place_iter(place.local, &place.projections, mutate)
+    }
+
+    fn mut_place_iter(
+        &mut self,
+        local: Local,
+        projs: &[Projection],
+        mutate: impl FnOnce(MutPlaceValue),
+    ) -> Result<(), PlaceError>;
+
+    fn take_local(&mut self, local: Local) -> Result<ValueRef, PlaceError>;
+}
+
+trait FullPlaceResolver {
+    fn get_full_place(&self, place: &FullPlace) -> Result<ValueRef, PlaceError>;
+}
+
+trait PlaceResolver {
+    fn get_place(&self, place: &Place) -> Result<ValueRef, PlaceError>;
+}
+
+impl<P: SymbolicProjector> FullPlaceResolver for HierarchicalVariablesState<P> {
+    fn get_full_place(&self, place: &FullPlace) -> Result<ValueRef, PlaceError> {
+        self.get_full_place(place)
+    }
+}
+
+impl<P: SymbolicProjector> PlaceResolver for HierarchicalVariablesState<P> {
+    fn get_place(&self, place: &Place) -> Result<ValueRef, PlaceError> {
+        self.get_place_iter(place.local, place.projections.iter())
+    }
+}
+
+enum PlaceError {
+    LocalNotFound(Local),
+    StateNotFound(StateId),
+}
+
+impl Debug for PlaceError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PlaceError::LocalNotFound(local) => write!(
+                f,
+                "Local {} not found. It may be uninitialized, moved, or invalid.",
+                local
+            ),
+            PlaceError::StateNotFound(state_id) => write!(f, "State {} not found.", state_id),
+        }
     }
 }
 
@@ -581,8 +567,163 @@ enum MutPlaceValue<'a> {
     SymProj(ProjExpr),
 }
 
+fn apply_projs<'a, 'b, SP: SymbolicProjector>(
+    place_resolver: &(impl PlaceResolver + FullPlaceResolver),
+    sym_projector: RRef<SP>,
+    host: &'a ValueRef,
+    projs: impl Iterator<Item = &'b Projection>,
+) -> ValueRef {
+    projs.fold(host.clone(), |current, proj| {
+        /* FIXME: Based on the current implementation, it is not possible to
+         * get a concrete value after a symbolic projection or a projection
+         * on a symbolic value. So you may want to optimize it.
+         */
+        if !current.is_symbolic() {
+            apply_proj_con(
+                place_resolver,
+                sym_projector.clone(),
+                ConcreteValueRef::new(current),
+                proj,
+            )
+        } else {
+            apply_proj_sym(
+                place_resolver,
+                sym_projector.as_ref().borrow_mut(),
+                SymValueRef::new(current),
+                proj,
+            )
+            .to_value_ref()
+            .into()
+        }
+    })
+}
+
+fn apply_proj_con<SP: SymbolicProjector>(
+    place_resolver: &(impl PlaceResolver + FullPlaceResolver),
+    projector: RRef<SP>,
+    host: ConcreteValueRef,
+    proj: &Projection,
+) -> ValueRef {
+    let mut projector = ConcreteProjector {
+        get_place: |p: &'_ FullPlace| -> ValueRef { place_resolver.get_full_place(p).unwrap() },
+        handle_sym_index: |host: ConcreteValueRef, index: SymValueRef, c: bool| -> ValueRef {
+            projector
+                .as_ref()
+                .borrow_mut()
+                .index(
+                    SymIndexPair::SymIndex {
+                        index,
+                        host: host.into(),
+                    }
+                    .into(),
+                    c,
+                )
+                .into()
+                .to_value_ref()
+                .into()
+        },
+    };
+
+    apply_proj::<_, _, _, Result<ValueRef, ConcreteValueRef>>(
+        place_resolver,
+        host,
+        proj,
+        &mut projector,
+    )
+    .unwrap_or_else(|host| {
+        panic!(
+            "Projection {:?} is not possible on this value {:?}.",
+            &proj, &host
+        )
+    })
+}
+
+fn apply_proj_sym<SP: SymbolicProjector>(
+    place_resolver: &impl PlaceResolver,
+    mut projector: impl DerefMut<Target = SP>,
+    host: SymValueRef,
+    proj: &Projection,
+) -> ProjExpr {
+    apply_proj(place_resolver, host, proj, projector.deref_mut())
+}
+
+fn apply_projs_mut<'a, 'b, 'h, SP: SymbolicProjector>(
+    place_resolver: &impl PlaceResolver,
+    sym_projector: RRef<SP>,
+    host: MutPlaceValue<'h>,
+    projs: impl Iterator<Item = &'b Projection>,
+) -> MutPlaceValue<'h> {
+    projs.fold(host, |current, proj| {
+        /* FIXME: Based on the current implementation, it is not possible to
+         * get a concrete value after a symbolic projection or a projection
+         * on a symbolic value. So you may want to optimize it.
+         */
+        match current {
+            MutPlaceValue::Normal(current) => {
+                if !current.is_symbolic() {
+                    apply_proj_con_mut(
+                        place_resolver,
+                        sym_projector.clone(),
+                        ConcreteValueMutRef::new(current),
+                        proj,
+                    )
+                } else {
+                    MutPlaceValue::SymProj(apply_proj_sym(
+                        place_resolver,
+                        sym_projector.as_ref().borrow_mut(),
+                        SymValueRef::new(current.clone()),
+                        proj,
+                    ))
+                }
+            }
+            MutPlaceValue::SymProj(current) => MutPlaceValue::SymProj(apply_proj_sym(
+                place_resolver,
+                sym_projector.as_ref().borrow_mut(),
+                current.to_value_ref(),
+                proj,
+            )),
+        }
+    })
+}
+
+fn apply_proj_con_mut<'a, 'h, SP: SymbolicProjector>(
+    place_resolver: &impl PlaceResolver,
+    sym_projector: RRef<SP>,
+    host: ConcreteValueMutRef<'h>,
+    proj: &Projection,
+) -> MutPlaceValue<'h> {
+    let mut projector = MutProjector {
+        handle_sym_index: |host: ConcreteValueMutRef<'_>, index: SymValueRef, from_end: bool| {
+            sym_projector
+                .as_ref()
+                .borrow_mut()
+                .index(
+                    SymIndexPair::SymIndex {
+                        index,
+                        host: host.0.clone(),
+                    }
+                    .into(),
+                    from_end,
+                )
+                .into()
+        },
+    };
+    apply_proj::<_, _, _, Result<MutPlaceValue, &mut ConcreteValue>>(
+        place_resolver,
+        host,
+        proj,
+        &mut projector,
+    )
+    .unwrap_or_else(|host_conc| {
+        panic!(
+            "Projection {:?} is not possible on this value {:?}.",
+            &proj, &host_conc
+        )
+    })
+}
+
 fn apply_proj<'b, 'h, 'p, Host, IndexPair, P, Result>(
-    get_place: impl Fn(&'b Place) -> ValueRef,
+    index_resolver: &impl PlaceResolver,
     host: Host,
     proj: &'b Projection,
     projector: &'p mut P,
@@ -602,7 +743,7 @@ where
                 !index.has_projection(),
                 "Index should be a simple local with no projection."
             );
-            let index = get_place(index);
+            let index = index_resolver.get_place(index).unwrap();
             projector.index(Into::<IndexPair>::into((host, index)).into(), false)
         }
         Projection::ConstantIndex {
@@ -618,4 +759,50 @@ where
         Projection::OpaqueCast => todo!(),
     }
     .into()
+}
+
+/// Takes an inner field from a struct value.
+/// If there are some projections left, it will recursively take the inner
+/// field while keeping the parent fields in place.
+///
+/// # Returns
+/// The taken out inner field.
+///
+/// # Panics
+/// Panics if the value is not a struct.
+fn take_field<SP: SymbolicProjector>(
+    sym_projector: RRef<SP>,
+    value: MutPlaceValue,
+    field: FieldIndex,
+) -> ValueRef {
+    match value {
+        MutPlaceValue::Normal(value) => {
+            if !value.is_symbolic() {
+                match ValueRef::make_mut(value) {
+                    Value::Concrete(ConcreteValue::Adt(AdtValue {
+                        kind: AdtKind::Struct,
+                        ref mut fields,
+                    })) => fields[field as usize]
+                        .take()
+                        .unwrap_or_else(|| panic!("Field should not be moved before. {field}")),
+                    _ => panic!("Only (concrete) structs can be partially moved."),
+                }
+            } else {
+                sym_projector
+                    .as_ref()
+                    .borrow_mut()
+                    .field(SymValueRef::new(value.clone()).into(), field)
+                    .into()
+                    .to_value_ref()
+                    .into()
+            }
+        }
+        MutPlaceValue::SymProj(sym_value) => sym_projector
+            .as_ref()
+            .borrow_mut()
+            .field(sym_value.to_value_ref().into(), field)
+            .into()
+            .to_value_ref()
+            .into(),
+    }
 }

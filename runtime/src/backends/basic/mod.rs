@@ -22,7 +22,6 @@ use self::{
         ValueRefBinaryExprBuilder as BinaryExprBuilder,
         ValueRefExprBuilder as OperationalExprBuilder,
     },
-    call::BasicCallStackManager,
     expr::{
         builders::DefaultExprBuilder as ExprBuilder, proj::DefaultSymProjector as SymProjector,
         AdtKind, AdtValue, ArrayValue, ConcreteValue, ConstValue, RefValue, SymValue, SymValueRef,
@@ -30,13 +29,15 @@ use self::{
     },
     operand::{DefaultOperandHandler, Operand},
     place::{DefaultPlaceHandler, FullPlace, Place},
-    state::MutableVariablesState,
+    state::HierarchicalVariablesState,
 };
 
 type TraceManager = Box<dyn abs::backend::TraceManager<BasicBlockIndex, ValueRef>>;
 
+type BasicCallStackManager = call::BasicCallStackManager<HierarchicalVariablesState<SymProjector>>;
+
 pub struct BasicBackend {
-    call_stack_manager: BasicCallStackManager<MutableVariablesState<SymProjector>>,
+    call_stack_manager: BasicCallStackManager,
     trace_manager: TraceManager,
     current_constraints: Vec<Constraint>,
     expr_builder: Rc<RefCell<ExprBuilder>>,
@@ -48,9 +49,9 @@ impl BasicBackend {
         let expr_builder = Rc::new(RefCell::new(expr::builders::new_expr_builder()));
         let sym_projector = Rc::new(RefCell::new(expr::proj::new_sym_projector()));
         Self {
-            call_stack_manager: BasicCallStackManager::<MutableVariablesState<SymProjector>>::new(
-                Box::new(move |id| MutableVariablesState::new(sym_projector.clone(), id)),
-            ),
+            call_stack_manager: BasicCallStackManager::new(Box::new(move |id| {
+                HierarchicalVariablesState::new(id, sym_projector.clone())
+            })),
             trace_manager: Box::new(
                 ImmediateTraceManager::<BasicBlockIndex, u32, ValueRef>::new_basic(Box::new(
                     Z3Solver::new_in_global_context(),
