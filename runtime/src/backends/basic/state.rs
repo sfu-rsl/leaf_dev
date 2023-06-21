@@ -7,7 +7,7 @@ use crate::{
 
 use super::{
     alias::SymValueRefProjector as SymbolicProjector,
-    expr::{AdtKind, AdtValue, ConcreteValue, ProjExpr, RefValue, SymValueRef, Value},
+    expr::prelude::*,
     place::{FullPlace, Place, Projection},
     ValueRef, VariablesState,
 };
@@ -452,10 +452,7 @@ mod proj {
     use crate::{
         abs::{expr::proj::Projector, FieldIndex},
         backends::basic::{
-            expr::{
-                AdtValue, ArrayValue, ConcreteValue, ConcreteValueMutRef, ConcreteValueRef,
-                ConstValue, ProjExpr, RefValue, SymIndexPair, SymValueRef, Value, ValueRef,
-            },
+            expr::{prelude::*, SymIndexPair},
             place::{FullPlace, Projection},
         },
     };
