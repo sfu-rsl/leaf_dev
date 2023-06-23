@@ -1,10 +1,10 @@
 fn main() {
-    let mut x: u32 = num();
-    let y = x + 1;
-    let z = y * 10;
-    let w = z - 100;
+    let mut x: i16 = num();
+    let y = x + 10;
+    let z = y * 20;
+    let w = z - 1000;
 }
 
-fn num() -> u32 {
+fn num() -> i16 {
     20
 }

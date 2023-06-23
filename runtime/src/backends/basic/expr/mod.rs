@@ -130,7 +130,11 @@ impl ConstValue {
             | BinaryOp::BitAnd
             | BinaryOp::BitOr => {
                 if checked {
-                    ConcreteValue::Adt(Self::binary_op_checked_arithmetic(first, second, operator))
+                    let res = ConcreteValue::Adt(Self::binary_op_checked_arithmetic(
+                        first, second, operator,
+                    ));
+                    println!("checked_arithmetic result: {:?}", res);
+                    res
                 } else {
                     ConcreteValue::Const(Self::binary_op_arithmetic(first, second, operator))
                 }
@@ -225,19 +229,77 @@ impl ConstValue {
     }
 
     fn binary_op_checked_arithmetic(first: &Self, second: &Self, operator: BinaryOp) -> AdtValue {
-        // TODO: move this function into the trait
-        fn checked_op<T: CheckedOp>(first: T, second: T, operator: BinaryOp) -> Option<u128> {
-            first.checked_op(second, operator)
+        /// use logic to determine whether the operation will overflow or underflow or be in bounds
+        fn checked_op(
+            operator: BinaryOp,
+            first: u128,
+            second: u128,
+            IntType {
+                bit_size,
+                is_signed,
+            }: IntType, // pattern matching in function args, cool!
+        ) -> Option<u128> {
+            // TODO: please double check that my bit twiddling never accidentally overflows
+            if is_signed {
+                let first = ConstValue::as_signed(first, bit_size);
+                let second = ConstValue::as_signed(second, bit_size);
+
+                let result = match operator {
+                    BinaryOp::Add => first.checked_add(second),
+                    BinaryOp::Sub => first.checked_sub(second),
+                    BinaryOp::Mul => first.checked_mul(second),
+                    _ => unreachable!("unsupported by rust"),
+                };
+
+                if let Some(result) = result {
+                    // case: i128 has not overflowed, so result is valid. Check if we're
+                    // higher than our type's max value or lower than it's min value.
+                    let max = ((1 << (bit_size as u128 - 1)) - 1) as i128;
+                    let min = match bit_size {
+                        0..=127 => -(1 << (bit_size as i128 - 1)),
+                        128 => i128::MIN,
+                        129..=u64::MAX => panic!("unsupported integer size; too large"),
+                    };
+                    if result > max || result < min {
+                        None
+                    } else {
+                        Some(ConstValue::as_unsigned(result, bit_size))
+                    }
+                } else {
+                    // case: i128 overflowed, so any smaller type also overflowed
+                    None
+                }
+            } else {
+                let result = match operator {
+                    BinaryOp::Add => first.checked_add(second),
+                    BinaryOp::Sub => first.checked_sub(second),
+                    BinaryOp::Mul => first.checked_mul(second),
+                    _ => unreachable!("unsupported by rust"),
+                };
+
+                if let Some(result) = result {
+                    // case: u128 has not overflowed, check if we're higher than our max
+                    let max = match bit_size {
+                        0..=127 => (1 << (bit_size as u128)) - 1,
+                        128 => u128::MAX,
+                        129..=u64::MAX => panic!("unsupported integer size; too large"),
+                    };
+                    if result > max { None } else { Some(result) }
+                } else {
+                    // case: u128 overflowed, so any smaller type also overflowed
+                    None
+                }
+            }
         }
 
-        // the rust docs claims that the following are unreachable:
+        // the rust docs claims that only integers are supported:
         // https://doc.rust-lang.org/beta/nightly-rustc/rustc_middle/mir/syntax/enum.Rvalue.html#variant.CheckedBinaryOp
         match (first, second) {
             (
                 Self::Int {
                     bit_rep: first,
                     ty:
-                        IntType {
+                        ty @ IntType {
                             bit_size: first_size,
                             is_signed: first_signed,
                         },
@@ -251,68 +313,11 @@ impl ConstValue {
                         },
                 },
             ) => {
+                // TODO: what if first is signed & second is not?
                 assert_eq!(*first_size, *second_size);
 
-                // TODO: clean this up somehow & integrate wrapped arithmetic
-                let result = match first_size {
-                    8 => {
-                        if *first_signed {
-                            checked_op::<i8>(
-                                Self::as_signed(first.0, *first_size) as i8,
-                                Self::as_signed(second.0, *first_size) as i8,
-                                operator,
-                            )
-                        } else {
-                            checked_op::<u8>(first.0 as u8, second.0 as u8, operator)
-                        }
-                    }
-                    16 => {
-                        if *first_signed {
-                            checked_op::<i16>(
-                                Self::as_signed(first.0, *first_size) as i16,
-                                Self::as_signed(second.0, *first_size) as i16,
-                                operator,
-                            )
-                        } else {
-                            checked_op::<u16>(first.0 as u16, second.0 as u16, operator)
-                        }
-                    }
-                    32 => {
-                        if *first_signed {
-                            checked_op::<i32>(
-                                Self::as_signed(first.0, *first_size) as i32,
-                                Self::as_signed(second.0, *first_size) as i32,
-                                operator,
-                            )
-                        } else {
-                            checked_op::<u32>(first.0 as u32, second.0 as u32, operator)
-                        }
-                    }
-                    64 => {
-                        if *first_signed {
-                            checked_op::<i64>(
-                                Self::as_signed(first.0, *first_size) as i64,
-                                Self::as_signed(second.0, *first_size) as i64,
-                                operator,
-                            )
-                        } else {
-                            checked_op::<u64>(first.0 as u64, second.0 as u64, operator)
-                        }
-                    }
-                    128 => {
-                        if *first_signed {
-                            checked_op::<i128>(
-                                Self::as_signed(first.0, *first_size) as i128,
-                                Self::as_signed(second.0, *first_size) as i128,
-                                operator,
-                            )
-                        } else {
-                            checked_op::<u128>(first.0 as u128, second.0 as u128, operator)
-                        }
-                    }
-                    _ => unreachable!("invalid integer size"),
-                };
-
+                // TODO: integrate wrapped arithmetic
+                let result = checked_op(operator, first.0, second.0, *ty);
                 match result {
                     Some(result) => {
                         let ty = IntType {
@@ -454,6 +459,7 @@ impl ConstValue {
         let mask: u128 = (1 << (size - 1)) - 1; // Create a mask of 1s with the given size except the sign bit
         let sign_mask: u128 = 1 << (size - 1); // Create a mask for the sign bit, for example 1000...0
         let sign_extend: u128 = (!mask) & sign_mask; // Create a sign extension mask, it would be something like 000...010...000
+        // assert!(sign_extended == sign_mask); // i believe this is the case?
 
         let sign_bit: bool = (bit_rep & sign_mask) != 0;
         let value = bit_rep & mask;
@@ -466,131 +472,12 @@ impl ConstValue {
 
         signed_value
     }
-}
 
-// TODO: where to put these declarations?
-trait CheckedOp: Sized {
-    fn checked_op(self, other: Self, operator: BinaryOp) -> Option<u128>;
-}
-
-// TODO: write a macro to clean all of these implementations
-impl CheckedOp for i8 {
-    fn checked_op(self, other: Self, operator: BinaryOp) -> Option<u128> {
-        match operator {
-            BinaryOp::Add => self.checked_add(other),
-            BinaryOp::Sub => self.checked_sub(other),
-            BinaryOp::Mul => self.checked_mul(other),
-            _ => unreachable!("unsupported by rust"),
-        }
-        .and_then(|v| Some(v as u128))
-    }
-}
-
-impl CheckedOp for u8 {
-    fn checked_op(self, other: Self, operator: BinaryOp) -> Option<u128> {
-        match operator {
-            BinaryOp::Add => self.checked_add(other),
-            BinaryOp::Sub => self.checked_sub(other),
-            BinaryOp::Mul => self.checked_mul(other),
-            _ => unreachable!("unsupported by rust"),
-        }
-        .and_then(|v| Some(v as u128))
-    }
-}
-
-impl CheckedOp for i16 {
-    fn checked_op(self, other: Self, operator: BinaryOp) -> Option<u128> {
-        match operator {
-            BinaryOp::Add => self.checked_add(other),
-            BinaryOp::Sub => self.checked_sub(other),
-            BinaryOp::Mul => self.checked_mul(other),
-            _ => unreachable!("unsupported by rust"),
-        }
-        .and_then(|v| Some(v as u128))
-    }
-}
-
-impl CheckedOp for u16 {
-    fn checked_op(self, other: Self, operator: BinaryOp) -> Option<u128> {
-        match operator {
-            BinaryOp::Add => self.checked_add(other),
-            BinaryOp::Sub => self.checked_sub(other),
-            BinaryOp::Mul => self.checked_mul(other),
-            _ => unreachable!("unsupported by rust"),
-        }
-        .and_then(|v| Some(v as u128))
-    }
-}
-
-impl CheckedOp for i32 {
-    fn checked_op(self, other: Self, operator: BinaryOp) -> Option<u128> {
-        match operator {
-            BinaryOp::Add => self.checked_add(other),
-            BinaryOp::Sub => self.checked_sub(other),
-            BinaryOp::Mul => self.checked_mul(other),
-            _ => unreachable!("unsupported by rust"),
-        }
-        .and_then(|v| Some(v as u128))
-    }
-}
-
-impl CheckedOp for u32 {
-    fn checked_op(self, other: Self, operator: BinaryOp) -> Option<u128> {
-        match operator {
-            BinaryOp::Add => self.checked_add(other),
-            BinaryOp::Sub => self.checked_sub(other),
-            BinaryOp::Mul => self.checked_mul(other),
-            _ => unreachable!("unsupported by rust"),
-        }
-        .and_then(|v| Some(v as u128))
-    }
-}
-
-impl CheckedOp for i64 {
-    fn checked_op(self, other: Self, operator: BinaryOp) -> Option<u128> {
-        match operator {
-            BinaryOp::Add => self.checked_add(other),
-            BinaryOp::Sub => self.checked_sub(other),
-            BinaryOp::Mul => self.checked_mul(other),
-            _ => unreachable!("unsupported by rust"),
-        }
-        .and_then(|v| Some(v as u128))
-    }
-}
-
-impl CheckedOp for u64 {
-    fn checked_op(self, other: Self, operator: BinaryOp) -> Option<u128> {
-        match operator {
-            BinaryOp::Add => self.checked_add(other),
-            BinaryOp::Sub => self.checked_sub(other),
-            BinaryOp::Mul => self.checked_mul(other),
-            _ => unreachable!("unsupported by rust"),
-        }
-        .and_then(|v| Some(v as u128))
-    }
-}
-
-impl CheckedOp for i128 {
-    fn checked_op(self, other: Self, operator: BinaryOp) -> Option<u128> {
-        match operator {
-            BinaryOp::Add => self.checked_add(other),
-            BinaryOp::Sub => self.checked_sub(other),
-            BinaryOp::Mul => self.checked_mul(other),
-            _ => unreachable!("unsupported by rust"),
-        }
-        .and_then(|v| Some(v as u128))
-    }
-}
-
-impl CheckedOp for u128 {
-    fn checked_op(self, other: Self, operator: BinaryOp) -> Option<u128> {
-        match operator {
-            BinaryOp::Add => self.checked_add(other),
-            BinaryOp::Sub => self.checked_sub(other),
-            BinaryOp::Mul => self.checked_mul(other),
-            _ => unreachable!("unsupported by rust"),
-        }
-        .and_then(|v| Some(v as u128))
+    /// convert a signed value into its bit representation
+    fn as_unsigned(value: i128, _size: u64) -> u128 {
+        // TODO: find the rust docs on casting to prove this? I couldn't find it.
+        // also remove this function once I prove it.
+        value as u128
     }
 }
 
