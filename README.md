@@ -17,6 +17,29 @@ also modifies the code and injects various function calls to the `runtime` via t
     - A. (1) install Visual Studio Build Tools https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2022 (2) open Visual Studio Installer (3) under Visual Studio Build Tools press modify (4) under workloads, and Desktop development with C++, select "C++ Clang tools for Windows", then install it
     - B. if A doesn't work, try installing llvm via choco: https://community.chocolatey.org/packages/llvm (make sure to `cargo clean` after switching installations)
 
+- Install z3
+- For Linux:
+  - `apt install build-essential python3 python3-dev git`
+  - `git clone https://github.com/Z3Prover/z3.git`
+  - `cd z3`
+  - `python3 scripts/mk_make.py --ml`
+  - `cd build`
+  - `make`
+  - `make install`
+- For Windows:
+  - Visit the Z3 GitHub repository's releases page: https://github.com/Z3Prover/z3/releases
+  - Scroll down to the "Assets" section and find the latest release version. Look for the file with the extension .zip for the Windows platform.
+  - Click on the .zip file to download it.
+  - Extract the contents of the downloaded .zip file to a directory of your choice, such as C:\z3.
+  - Open a Command Prompt by pressing Win + R, typing cmd, and pressing Enter.
+  - Navigate to the directory where you extracted the Z3 files using the cd command. For example, if you extracted the files to C:\z3, you would run the      following command: `cd C:\z3`
+  - Add the Z3 directory to the system's PATH environment variable by running the following command: `setx PATH "%PATH%;C:\z3\bin`
+  - This will allow you to access the Z3 solver and its libraries from any command prompt window.
+  - Verify the installation by running the following command: `z3 --version`
+
+
+
+
 ### Run Simple Example:
 - `git clone git@github.com:sfu-rsl/leaf.git`
 - `cd <your-path>/leaf/` 
