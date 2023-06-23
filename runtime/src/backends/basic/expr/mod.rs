@@ -130,11 +130,7 @@ impl ConstValue {
             | BinaryOp::BitAnd
             | BinaryOp::BitOr => {
                 if checked {
-                    let res = ConcreteValue::Adt(Self::binary_op_checked_arithmetic(
-                        first, second, operator,
-                    ));
-                    println!("checked_arithmetic result: {:?}", res);
-                    res
+                    ConcreteValue::Adt(Self::binary_op_checked_arithmetic(first, second, operator))
                 } else {
                     ConcreteValue::Const(Self::binary_op_arithmetic(first, second, operator))
                 }
