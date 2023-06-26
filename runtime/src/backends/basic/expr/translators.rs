@@ -161,10 +161,11 @@ pub(crate) mod z3 {
                 Expr::Binary {
                     operator,
                     operands,
-                    // Only projections care about if a binary operation is checked or not.
-                    // Assumption: A checked binary expression without a field projection is not well formed.
-                    checked: _,
+                    checked,
                 } => {
+                    // Only projections care about if a binary operation is checked or not.
+                    // TODO: ensure the following: "Assumption: A checked binary expression without a field projection is not well formed."
+                    assert!(!checked, "translating unexpected checked operation");
                     let (left, right) = self.translate_binary_operands(operands);
                     self.translate_binary_expr(operator, left, right)
                 }
@@ -412,9 +413,6 @@ pub(crate) mod z3 {
                 AstNode::Bool(_) => unreachable!("booleans cannot be added"),
                 AstNode::BitVector { is_signed, .. } => is_signed,
             };
-
-            // TODO: confirm that Z3's overflow instructions work as expected -> I think! ->
-            // TODO: remove this after testing all integer sizes
 
             let left = left.as_bit_vector();
             let right = right.as_bit_vector();

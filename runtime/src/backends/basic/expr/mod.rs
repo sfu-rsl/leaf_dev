@@ -228,14 +228,16 @@ impl ConstValue {
         /// use logic to determine whether the operation will overflow or underflow or be in bounds
         fn checked_op(
             operator: BinaryOp,
-            first: u128,
-            second: u128,
+            first: &Wrapping<u128>,
+            second: &Wrapping<u128>,
             IntType {
                 bit_size,
                 is_signed,
             }: IntType, // pattern matching in function args, cool!
         ) -> Option<u128> {
             // TODO: please double check that my bit twiddling never accidentally overflows
+            // we don't want any wrapping in this function, so we take the 0th parameter
+            let (first, second) = (first.0, second.0);
             if is_signed {
                 let first = ConstValue::as_signed(first, bit_size);
                 let second = ConstValue::as_signed(second, bit_size);
@@ -250,16 +252,16 @@ impl ConstValue {
                 if let Some(result) = result {
                     // case: i128 has not overflowed, so result is valid. Check if we're
                     // higher than our type's max value or lower than it's min value.
-                    let max = ((1 << (bit_size as u128 - 1)) - 1) as i128;
+                    let max = ((1_u128 << (bit_size as u128 - 1)) as u128 - 1) as i128;
                     let min = match bit_size {
-                        0..=127 => -(1 << (bit_size as i128 - 1)),
+                        0..=127 => -(1_i128 << (bit_size as i128 - 1)),
                         128 => i128::MIN,
                         129..=u64::MAX => panic!("unsupported integer size; too large"),
                     };
                     if result > max || result < min {
                         None
                     } else {
-                        Some(ConstValue::as_unsigned(result, bit_size))
+                        Some(ConstValue::as_unsigned(result))
                     }
                 } else {
                     // case: i128 overflowed, so any smaller type also overflowed
@@ -276,7 +278,7 @@ impl ConstValue {
                 if let Some(result) = result {
                     // case: u128 has not overflowed, check if we're higher than our max
                     let max = match bit_size {
-                        0..=127 => (1 << (bit_size as u128)) - 1,
+                        0..=127 => (1_u128 << (bit_size as u128)) - 1,
                         128 => u128::MAX,
                         129..=u64::MAX => panic!("unsupported integer size; too large"),
                     };
@@ -302,25 +304,19 @@ impl ConstValue {
                 },
                 Self::Int {
                     bit_rep: second,
-                    ty:
-                        IntType {
-                            bit_size: second_size,
-                            ..
-                        },
+                    ty: ty_second @ IntType { .. },
                 },
             ) => {
-                // TODO: what if first is signed & second is not?
-                assert_eq!(*first_size, *second_size);
+                assert_eq!(*ty, *ty_second);
 
-                // TODO: integrate wrapped arithmetic
-                let result = checked_op(operator, first.0, second.0, *ty);
+                let result = checked_op(operator, first, second, *ty);
                 match result {
                     Some(result) => {
                         let ty = IntType {
                             bit_size: *first_size,
                             is_signed: *first_signed,
                         };
-                        AdtValue::checked_success(result, ty)
+                        AdtValue::checked_success(Wrapping(result), ty)
                     }
                     None => AdtValue::checked_overflow(),
                 }
@@ -451,6 +447,7 @@ impl ConstValue {
         bit_rep & mask == 0
     }
 
+    /// convert the bit representation of a signed integer contained in a u128, into an i128
     fn as_signed(bit_rep: u128, size: u64) -> i128 {
         let mask: u128 = (1 << (size - 1)) - 1; // Create a mask of 1s with the given size except the sign bit
         let sign_mask: u128 = 1 << (size - 1); // Create a mask for the sign bit, for example 1000...0
@@ -470,9 +467,8 @@ impl ConstValue {
     }
 
     /// convert a signed value into its bit representation
-    fn as_unsigned(value: i128, _size: u64) -> u128 {
-        // TODO: find the rust docs on casting to prove this? I couldn't find it.
-        // also remove this function once I prove it.
+    fn as_unsigned(value: i128) -> u128 {
+        // a signed to unsigned integer is a bitwise transmutation (per C specs)
         value as u128
     }
 }
@@ -534,13 +530,13 @@ impl AdtValue {
     }
 
     /// creates an ADT that represents the result of a successful checked operation (no overflow)
-    fn checked_success(result: u128, ty: IntType) -> Self {
+    fn checked_success(result: Wrapping<u128>, ty: IntType) -> Self {
         Self {
             kind: AdtKind::Struct,
             fields: vec![
                 Some(
                     ConstValue::Int {
-                        bit_rep: Wrapping(result), // TODO: figure out wrapping arithmetic
+                        bit_rep: result,
                         ty,
                     }
                     .to_value_ref(),

@@ -1,5 +1,3 @@
-// TODO: maybe reduce the number of macros
-
 macro_rules! repeat_macro_for {
     ($macro: ident; $($item: tt)*) => {
         $(
