@@ -59,7 +59,6 @@ where
         }
     }
 
-    // note: this interface is more clear
     impl_binary_expr_method!(add sub mul + checked: bool);
 
     impl_binary_expr_method!(div rem);
