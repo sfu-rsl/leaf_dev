@@ -17,7 +17,7 @@ also modifies the code and injects various function calls to the `runtime` via t
     - A. (1) install Visual Studio Build Tools https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2022 (2) open Visual Studio Installer (3) under Visual Studio Build Tools press modify (4) under workloads, and Desktop development with C++, select "C++ Clang tools for Windows", then install it
     - B. if A doesn't work, try installing llvm via choco: https://community.chocolatey.org/packages/llvm (make sure to `cargo clean` after switching installations)
 
-- Install z3
+- Configuring z3
 - For Linux:
   - `apt install build-essential python3 python3-dev git`
   - `git clone https://github.com/Z3Prover/z3.git`
@@ -27,15 +27,17 @@ also modifies the code and injects various function calls to the `runtime` via t
   - `make`
   - `make install`
 - For Windows:
-  - Visit the Z3 GitHub repository's releases page: https://github.com/Z3Prover/z3/releases
-  - Scroll down to the "Assets" section and find the latest release version. Look for the file with the extension .zip for the Windows platform.
-  - Click on the .zip file to download it.
-  - Extract the contents of the downloaded .zip file to a directory of your choice, such as C:\z3.
-  - Add the Z3 directory to the system's PATH environment variable by running the following command similar to this (you might need to change the address of the folder): `setx PATH "%PATH%;C:\z3\bin`
-  - This will allow you to access the Z3 solver and its libraries from any command prompt window.
-  - Verify the installation by running the following command: `z3 --version`
-
-
+  - 1. Install z3:
+    - Visit the Z3 GitHub repository's releases page: https://github.com/Z3Prover/z3/releases
+    - Scroll down to the "Assets" section and find the latest release version. Look for the file with the extension .zip for the Windows platform.
+    - Click on the .zip file to download it.
+    - Extract the contents of the downloaded .zip file to a directory of your choice, such as C:\z3.
+    - Add the Z3 directory to both the system AND the User's PATH environment variable by running a  command similar to the following: `setx PATH "%PATH%;C:\z3\bin` (you may need to change the address of the folder)
+    - This will allow you to access the Z3 solver and its libraries from any command prompt window.
+    - Verify the installation by running the following command: `z3 --version`
+  - 2. Configure newer z3-rust bindings
+    - Set the `Z3_SYS_Z3_HEADER` environment variable to `<path-to-your-z3>\include\z3.h`
+    - For the time being, you must also replace `z3 = { version = "0.11.2" }` in `leaf/runtime/Cargo.toml` with `z3 = { git = "https://github.com/prove-rs/z3.rs.git" }` in order to use the newest version that supports the use of the `Z3_SYS_Z3_HEADER` environment variable.
 
 
 ### Run Simple Example:
