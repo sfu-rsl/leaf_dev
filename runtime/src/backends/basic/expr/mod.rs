@@ -1,4 +1,5 @@
 pub(super) mod builders;
+pub(crate) mod prelude;
 pub(super) mod proj;
 pub(super) mod translators;
 pub(crate) mod utils;
@@ -9,7 +10,7 @@ use crate::abs::{BinaryOp, FieldIndex, FloatType, IntType, UnaryOp, ValueType, V
 
 use self::utils::define_reversible_pair;
 
-use super::place::Place;
+use super::place::FullPlace;
 
 pub(crate) type ValueRef = Rc<Value>;
 pub(crate) type ConcreteValueRef = ConcreteValueGuard<ValueRef>;
@@ -97,7 +98,7 @@ impl ConstValue {
                             is_signed: true, ..
                         },
                 } => Self::Int {
-                    bit_rep: todo!("Proposed value: {}", !bit_rep + Wrapping(1)),
+                    bit_rep: !bit_rep + Wrapping(1),
                     ty: *ty,
                 },
                 Self::Float { .. } => unimplemented!(),
@@ -504,6 +505,7 @@ impl From<char> for ConstValue {
 #[allow(unused)]
 #[derive(Clone, Debug)]
 pub(crate) enum AdtKind {
+    Tuple,
     Struct,
     Enum {
         /* NOTE: Even when the variant index is set based on a decision on a
@@ -562,13 +564,13 @@ impl ArrayValue {
 pub(crate) enum RefValue {
     /* NOTE:
      * Is it possible to omit Ref?
-     * Immutable references can be directly represented as ValueRefs (with not recursive indirection).
-     * Because while they are still alive, mutations are not possible and the same value
-     * can be circulated. Also, when they are dead but used before in other
-     * expressions, they will not be affected. So, basically they will exactly
-     * like copy operands and the copy-on-write mechanism will guarantee that
-     * they hold the correct value.
-     * Also, from another point of view, ValueRef is a reference itself.
+     * Immutable references can be directly represented as ValueRefs (with no recursive indirection).
+     * Because as long as they are alive, mutations are not possible and the same value
+     * can be circulated.
+     * So, basically they will act like copied values and the copy-on-write mechanism (in Rc)
+     * guarantees that value is not changed.
+     * Also, from another point of view, ValueRef is a reference itself so should fit well
+     * in a reference representation.
      *
      * Is it also possible to omit this MutRef?
      * It is, but it looks like it requires taking care of the lifetime of the
@@ -580,7 +582,7 @@ pub(crate) enum RefValue {
      * usage of the original place, the mutable reference should be dead.
      */
     Immut(ValueRef),
-    Mut(Place),
+    Mut(FullPlace),
 }
 
 #[derive(Clone, Debug)]

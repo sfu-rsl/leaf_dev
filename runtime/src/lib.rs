@@ -4,6 +4,10 @@
 #![feature(assert_matches)]
 #![feature(iterator_try_collect)]
 #![feature(macro_metavar_expr)]
+#![feature(result_flattening)]
+#![feature(unboxed_closures)]
+#![feature(fn_traits)]
+#![feature(result_option_inspect)]
 
 pub mod abs;
 pub mod annotations;

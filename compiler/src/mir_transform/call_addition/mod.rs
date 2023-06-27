@@ -1,5 +1,6 @@
 use std::{fmt::Debug, vec};
 
+use rustc_abi::FieldIdx;
 use rustc_const_eval::interpret::{ConstValue, Scalar};
 use rustc_middle::{
     mir::{
@@ -155,6 +156,14 @@ pub(crate) trait Assigner<'tcx> {
 
     fn by_aggregate_array(&mut self, items: &[OperandRef]);
 
+    fn by_aggregate_tuple(&mut self, fields: &[OperandRef]);
+
+    fn by_aggregate_struct(&mut self, fields: &[OperandRef]);
+
+    fn by_aggregate_enum(&mut self, fields: &[OperandRef], variant: VariantIdx);
+
+    fn by_aggregate_union(&mut self, active_field: FieldIdx, value: OperandRef);
+
     // Special case for SetDiscriminant StatementType since it is similar to a regular assignment
     fn its_discriminant_to(&mut self, variant_index: &VariantIdx);
 }
@@ -289,6 +298,15 @@ impl<C> RuntimeCallAdder<C> {
                 base: &mut other.context,
             },
         }
+    }
+}
+
+impl<'tcx, C> TyContextProvider<'tcx> for RuntimeCallAdder<C>
+where
+    C: TyContextProvider<'tcx>,
+{
+    fn tcx(&self) -> TyCtxt<'tcx> {
+        self.context.tcx()
     }
 }
 
@@ -755,7 +773,7 @@ where
         checked: bool,
     ) {
         let operator = convert_mir_binop_to_pri(operator);
-        let (operator_local, additional_statements) =
+        let (operator_local, additional_stmts) =
             self.add_and_set_local_for_enum(self.context.pri_special_types().binary_op, operator);
 
         self.add_bb_for_assign_call_with_statements(
@@ -766,13 +784,13 @@ where
                 operand::copy_for_local(second.into()),
                 operand::const_from_bool(self.context.tcx(), checked),
             ],
-            additional_statements,
+            additional_stmts,
         )
     }
 
     fn by_unary_op(&mut self, operator: &UnOp, operand: OperandRef) {
         let operator = convert_mir_unop_to_pri(operator);
-        let (operator_local, additional_statements) =
+        let (operator_local, additional_stmts) =
             self.add_and_set_local_for_enum(self.context.pri_special_types().unary_op, operator);
 
         self.add_bb_for_assign_call_with_statements(
@@ -781,7 +799,7 @@ where
                 operand::move_for_local(operator_local),
                 operand::copy_for_local(operand.into()),
             ],
-            additional_statements,
+            additional_stmts,
         )
     }
 
@@ -793,21 +811,47 @@ where
     }
 
     fn by_aggregate_array(&mut self, items: &[OperandRef]) {
-        let operand_ref_ty = self.context.pri_special_types().operand_ref;
-        let (items_local, additional_statements) = prepare_operand_for_slice(
-            self.context.tcx(),
-            &mut self.context,
-            operand_ref_ty,
-            items
-                .iter()
-                .map(|i| operand::move_for_local((*i).into()))
-                .collect(),
-        );
-
-        self.add_bb_for_assign_call_with_statements(
+        self.add_bb_for_aggregate_assign_call(
             stringify!(pri::assign_aggregate_array),
-            vec![operand::move_for_local(items_local)],
-            additional_statements.to_vec(),
+            items,
+            vec![],
+        )
+    }
+
+    fn by_aggregate_tuple(&mut self, fields: &[OperandRef]) {
+        self.add_bb_for_aggregate_assign_call(
+            stringify!(pri::assign_aggregate_tuple),
+            fields,
+            vec![],
+        )
+    }
+
+    fn by_aggregate_struct(&mut self, fields: &[OperandRef]) {
+        self.add_bb_for_aggregate_assign_call(
+            stringify!(pri::assign_aggregate_struct),
+            fields,
+            vec![],
+        )
+    }
+
+    fn by_aggregate_enum(&mut self, fields: &[OperandRef], variant: VariantIdx) {
+        self.add_bb_for_aggregate_assign_call(
+            stringify!(pri::assign_aggregate_enum),
+            fields,
+            vec![operand::const_from_uint(
+                self.context.tcx(),
+                variant.as_u32(),
+            )],
+        )
+    }
+
+    fn by_aggregate_union(&mut self, active_field: FieldIdx, value: OperandRef) {
+        self.add_bb_for_assign_call(
+            stringify!(pri::assign_aggregate_union),
+            vec![
+                operand::const_from_uint(self.context.tcx(), active_field.as_u32()),
+                operand::copy_for_local(value.into()),
+            ],
         )
     }
 
@@ -825,8 +869,47 @@ where
 impl<'tcx, C> RuntimeCallAdder<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
-    C: DestinationReferenceProvider + BodyLocalManager<'tcx>,
+    C: DestinationReferenceProvider
+        + BodyLocalManager<'tcx>
+        + TyContextProvider<'tcx>
+        + SpecialTypesProvider<'tcx>,
 {
+    fn add_bb_for_aggregate_assign_call(
+        &mut self,
+        func_name: &str,
+        elements: &[OperandRef],
+        additional_args: Vec<Operand<'tcx>>,
+    ) {
+        let (elements_local, additional_stmts) = self.make_slice_for_adt_elements(elements);
+
+        self.add_bb_for_assign_call_with_statements(
+            func_name,
+            [
+                vec![operand::move_for_local(elements_local)],
+                additional_args,
+            ]
+            .concat(),
+            additional_stmts.to_vec(),
+        )
+    }
+
+    fn make_slice_for_adt_elements(
+        &mut self,
+        elements: &[OperandRef],
+    ) -> (Local, [Statement<'tcx>; 3]) {
+        let operand_ref_ty = self.context.pri_special_types().operand_ref;
+        let (items_local, additional_stmts) = prepare_operand_for_slice(
+            self.context.tcx(),
+            &mut self.context,
+            operand_ref_ty,
+            elements
+                .iter()
+                .map(|i| operand::move_for_local((*i).into()))
+                .collect(),
+        );
+        (items_local, additional_stmts)
+    }
+
     fn add_bb_for_assign_call(&mut self, func_name: &str, args: Vec<Operand<'tcx>>) {
         self.add_bb_for_assign_call_with_statements(func_name, args, vec![])
     }
@@ -1028,7 +1111,7 @@ where
     {
         let switch_info = self.context.switch_info();
         let discr_ty = switch_info.discr_ty;
-        let (additional_statements, func_name, additional_args) = if discr_ty.is_bool() {
+        let (additional_stmts, func_name, additional_args) = if discr_ty.is_bool() {
             let mut non_values = non_values.into_iter();
             debug_assert!(non_values.len() == 1);
             debug_assert!(non_values.next().unwrap() == 0);
@@ -1065,13 +1148,13 @@ where
                 )
             };
 
-            let (non_values_local, assign_statement) = self.add_and_assign_local_for_ow_non_values(
+            let (non_values_local, assign_stmts) = self.add_and_assign_local_for_ow_non_values(
                 non_values.into_iter(),
                 value_type,
                 value_to_operand,
             );
             (
-                assign_statement.to_vec(),
+                assign_stmts.to_vec(),
                 func_name,
                 vec![operand::move_for_local(non_values_local)],
             )
@@ -1086,7 +1169,7 @@ where
             .concat(),
             Some(self.context.location()),
         );
-        block.statements.extend(additional_statements);
+        block.statements.extend(additional_stmts);
         let new_block_index = self.insert_blocks_with_stickiness([block], false)[0];
         self.context.modify_jump_target_where(
             switch_info.node_location,
@@ -1132,7 +1215,7 @@ where
 {
     fn before_call_func(&mut self, func: OperandRef, arguments: impl Iterator<Item = OperandRef>) {
         let operand_ref_ty = self.context.pri_special_types().operand_ref;
-        let (arguments_local, additional_statements) = prepare_operand_for_slice(
+        let (arguments_local, additional_stmts) = prepare_operand_for_slice(
             self.context.tcx(),
             &mut self.context,
             operand_ref_ty,
@@ -1147,7 +1230,7 @@ where
                 operand::move_for_local(arguments_local),
             ],
         );
-        block.statements.extend(additional_statements);
+        block.statements.extend(additional_stmts);
         self.insert_blocks([block]);
     }
 
@@ -1188,7 +1271,7 @@ where
         expected: bool,
         msg: &rustc_middle::mir::AssertMessage<'tcx>,
     ) {
-        let (func_name, mut additional_operands, additional_statements) =
+        let (func_name, mut additional_operands, additional_stmts) =
             self.reference_assert_kind(msg);
 
         let mut operands = vec![
@@ -1201,7 +1284,7 @@ where
         operands.append(&mut additional_operands);
 
         let mut block = self.make_bb_for_call(func_name, operands);
-        block.statements.extend(additional_statements);
+        block.statements.extend(additional_stmts);
         self.insert_blocks([block]);
     }
 
@@ -1227,7 +1310,7 @@ where
                 let binary_op_ty = self.context.pri_special_types().binary_op;
                 let operator = convert_mir_binop_to_pri(bin_op);
                 let operator_local = self.context.add_local(binary_op_ty);
-                let additional_statements = enums::set_variant_to_local(
+                let additional_stmts = enums::set_variant_to_local(
                     binary_op_ty,
                     format!("{operator:?}").as_str(),
                     operator_local,
@@ -1243,7 +1326,7 @@ where
                         operand::copy_for_local(op1_ref.into()),
                         operand::copy_for_local(op2_ref.into()),
                     ],
-                    additional_statements,
+                    additional_stmts,
                 )
             }
             AssertKind::OverflowNeg(op) => {

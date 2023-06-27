@@ -13,8 +13,8 @@ pub(crate) mod z3 {
     use crate::{
         abs::{BinaryOp, FieldIndex, IntType, UnaryOp, ValueType},
         backends::basic::expr::{
-            ConcreteValue, ConstValue, Expr, ProjExpr, ProjKind, SymBinaryOperands, SymValue,
-            SymVarId, SymbolicVar, Value, ValueRef,
+            prelude::*, ConcreteValue, ConstValue, Expr, ProjExpr, ProjKind, SymBinaryOperands,
+            SymValue, SymVarId, SymbolicVar, Value, ValueRef,
         },
     };
 

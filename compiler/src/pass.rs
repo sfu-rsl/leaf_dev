@@ -7,7 +7,10 @@ use rustc_middle::mir::{
 
 use crate::{
     mir_transform::{
-        call_addition::{context::BodyProvider, context_requirements as ctxtreqs, *},
+        call_addition::{
+            context::{BodyProvider, TyContextProvider},
+            context_requirements as ctxtreqs, *,
+        },
         modification::{BodyModificationUnit, JumpTargetModifier},
     },
     visit::*,
@@ -453,12 +456,29 @@ where
 
         let mut add_call: Box<dyn FnMut(&[OperandRef])> = match kind.as_ref() {
             mir::AggregateKind::Array(_) => {
-                Box::new(|elements| self.call_adder.by_aggregate_array(elements))
+                Box::new(|items| self.call_adder.by_aggregate_array(items))
             }
-            mir::AggregateKind::Tuple => Box::new(|_elements| todo!("Add support for tuples.")),
-            mir::AggregateKind::Adt(_, _, _, _, _) => {
-                Box::new(|_fields| todo!("Add support for ADTs."))
+            mir::AggregateKind::Tuple => Box::new(|fields| {
+                self.call_adder.by_aggregate_tuple(fields);
+            }),
+            mir::AggregateKind::Adt(def_id, variant, _, _, None) => {
+                use rustc_hir::def::DefKind;
+                match self.call_adder.tcx().def_kind(def_id) {
+                    DefKind::Enum => Box::new(|fields| {self.call_adder.by_aggregate_enum(fields, *variant)}),
+                    DefKind::Struct => Box::new(|fields| {
+                        self.call_adder.by_aggregate_struct(fields)
+                    }),
+                    _ => unreachable!("Only enums and structs are supposed to be ADT.")
+                }
             }
+            mir::AggregateKind::Adt(_, _, _, _, Some(active_field)) /* Union */ => Box::new(|fields| {
+                assert_eq!(
+                    fields.len(),
+                    1,
+                    "For a union, there should only be one field."
+                );
+                self.call_adder.by_aggregate_union(*active_field, fields[0])
+            }),
             mir::AggregateKind::Closure(_, _) => todo!("Closures are not supported yet."),
             mir::AggregateKind::Generator(_, _, _) => todo!("Generators are not supported yet."),
         };

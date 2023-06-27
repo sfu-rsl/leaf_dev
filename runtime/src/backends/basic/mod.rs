@@ -10,8 +10,8 @@ use std::{cell::RefCell, ops::DerefMut, rc::Rc};
 
 use crate::{
     abs::{
-        self, backend::*, AssertKind, BasicBlockIndex, BranchingMetadata, CastKind, FloatType,
-        IntType, UnaryOp, VariantIndex,
+        self, backend::*, AssertKind, BasicBlockIndex, BranchingMetadata, CastKind, IntType,
+        UnaryOp, VariantIndex,
     },
     solvers::z3::Z3Solver,
     trace::ImmediateTraceManager,
@@ -22,21 +22,21 @@ use self::{
         ValueRefBinaryExprBuilder as BinaryExprBuilder,
         ValueRefExprBuilder as OperationalExprBuilder,
     },
-    call::BasicCallStackManager,
     expr::{
-        builders::DefaultExprBuilder as ExprBuilder, proj::DefaultSymProjector as SymProjector,
-        AdtKind, AdtValue, ArrayValue, ConcreteValue, ConstValue, RefValue, SymValue, SymValueRef,
-        SymbolicVar, Value,
+        builders::DefaultExprBuilder as ExprBuilder, prelude::*,
+        proj::DefaultSymProjector as SymProjector,
     },
     operand::{DefaultOperandHandler, Operand},
-    place::{DefaultPlaceHandler, Place},
-    state::MutableVariablesState,
+    place::{DefaultPlaceHandler, FullPlace, Place},
+    state::HierarchicalVariablesState,
 };
 
 type TraceManager = Box<dyn abs::backend::TraceManager<BasicBlockIndex, ValueRef>>;
 
+type BasicCallStackManager = call::BasicCallStackManager<HierarchicalVariablesState<SymProjector>>;
+
 pub struct BasicBackend {
-    call_stack_manager: BasicCallStackManager<MutableVariablesState<SymProjector>>,
+    call_stack_manager: BasicCallStackManager,
     trace_manager: TraceManager,
     current_constraints: Vec<Constraint>,
     expr_builder: Rc<RefCell<ExprBuilder>>,
@@ -48,9 +48,9 @@ impl BasicBackend {
         let expr_builder = Rc::new(RefCell::new(expr::builders::new_expr_builder()));
         let sym_projector = Rc::new(RefCell::new(expr::proj::new_sym_projector()));
         Self {
-            call_stack_manager: BasicCallStackManager::<MutableVariablesState<SymProjector>>::new(
-                Box::new(move || MutableVariablesState::new(sym_projector.clone())),
-            ),
+            call_stack_manager: BasicCallStackManager::new(Box::new(move |id| {
+                HierarchicalVariablesState::new(id, sym_projector.clone())
+            })),
             trace_manager: Box::new(
                 ImmediateTraceManager::<BasicBlockIndex, u32, ValueRef>::new_basic(Box::new(
                     Z3Solver::new_in_global_context(),
@@ -171,7 +171,7 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
 
     fn ref_to(mut self, place: Self::Place, is_mutable: bool) {
         let value = ConcreteValue::Ref(if is_mutable {
-            RefValue::Mut(place)
+            RefValue::Mut(FullPlace::new(place, self.vars_state.id()))
         } else {
             RefValue::Immut(self.vars_state.copy_place(&place))
         })
@@ -234,10 +234,32 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
     }
 
     fn array_from(mut self, items: impl Iterator<Item = Self::Operand>) {
-        let value = Value::Concrete(ConcreteValue::Array(ArrayValue {
+        let value = ConcreteValue::Array(ArrayValue {
             elements: items.map(|e| self.get_operand_value(e)).collect(),
-        }));
-        self.set_value(value)
+        });
+        self.set_value(value.into())
+    }
+
+    fn tuple_from(mut self, fields: impl Iterator<Item = Self::Operand>) {
+        self.set_adt_value(AdtKind::Tuple, fields)
+    }
+
+    fn adt_from(
+        mut self,
+        fields: impl Iterator<Item = Self::Operand>,
+        variant: Option<VariantIndex>,
+    ) {
+        let kind = match variant {
+            Some(discr) => AdtKind::Enum {
+                discriminant: discr,
+            },
+            None => AdtKind::Struct,
+        };
+        self.set_adt_value(kind, fields)
+    }
+
+    fn union_from(self, active_field: abs::FieldIndex, value: Self::Operand) {
+        todo!("Unions are not yet supported. {active_field} = {value:?}")
     }
 
     // TODO: Need to add support for the Deinit MIR instruction to have this working properly.
@@ -268,6 +290,21 @@ impl<EB: OperationalExprBuilder> BasicAssignmentHandler<'_, EB> {
 
     fn expr_builder(&self) -> impl DerefMut<Target = EB> + '_ {
         self.expr_builder.as_ref().borrow_mut()
+    }
+
+    fn set_adt_value(
+        &mut self,
+        kind: AdtKind,
+        fields: impl Iterator<Item = <Self as AssignmentHandler>::Operand>,
+    ) {
+        let value = Value::Concrete(ConcreteValue::Adt(AdtValue {
+            kind,
+            fields: fields
+                .map(|f| self.get_operand_value(f))
+                .map(|v| Some(v))
+                .collect(),
+        }));
+        self.set_value(value)
     }
 }
 
@@ -541,6 +578,8 @@ fn get_operand_value(vars_state: &mut dyn VariablesState, operand: Operand) -> V
 }
 
 trait VariablesState {
+    fn id(&self) -> usize;
+
     /// Returns a copy of the value stored at the given place. May not physically copy the value
     /// but the returned value should be independently usable from the original value.
     fn copy_place(&self, place: &Place) -> ValueRef;

@@ -19,3 +19,10 @@ impl<T> Deref for UnsafeSync<T> {
         &self.0
     }
 }
+
+/// A trait for any hierarchical structure that mat take a parent.
+pub(crate) trait Hierarchical<T> {
+    fn set_parent(&mut self, parent: T);
+
+    fn give_back_parent(&mut self) -> Option<T>;
+}
