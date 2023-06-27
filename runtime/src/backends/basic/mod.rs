@@ -334,9 +334,11 @@ impl<'a, EB: BinaryExprBuilder> BranchingHandler for BasicBranchingHandler<'a, E
         )
     }
 
+    /// This function provides runtime support for all 5 assertion kinds in the leaf compiler.
+    /// See: https://doc.rust-lang.org/beta/nightly-rustc/rustc_middle/mir/enum.AssertKind.html
     fn assert(self, cond: Self::Operand, expected: bool, _assert_kind: AssertKind<Self::Operand>) {
         // For now, we will call this function before the assert occurs and assume that assertions always succeed.
-        // TODO: add a result: bool parameter to this function, and add support for it.
+        // TODO: add a result: bool parameter to this function, and add support for it using a panic hook.
         let cond_val = get_operand_value(self.vars_state, cond);
         if cond_val.is_symbolic() {
             let mut constraint = Constraint::Bool(cond_val.clone());

@@ -15,33 +15,30 @@ macro_rules! impl_general_binary_op_through_singulars {
             checked: bool,
         ) -> Self::Expr<'a> {
             use BinaryOp::*;
-            if checked {
-                let checked_binop = match op {
-                    Add => Self::add,
-                    Sub => Self::sub,
-                    Mul => Self::mul,
-                    _ => unreachable!(),
-                };
-                checked_binop(self, operands, checked)
-            } else {
-                let binop = match op {
-                    Div => Self::div,
-                    Rem => Self::rem,
-                    BitXor => Self::xor,
-                    BitAnd => Self::and,
-                    BitOr => Self::or,
-                    Shl => Self::shl,
-                    Shr => Self::shr,
-                    Eq => Self::eq,
-                    Lt => Self::lt,
-                    Le => Self::le,
-                    Ne => Self::ne,
-                    Ge => Self::ge,
-                    Gt => Self::gt,
-                    Offset => Self::offset,
-                    _ => unreachable!(),
-                };
-                binop(self, operands)
+            match op {
+                Add => Self::add(self, operands, checked),
+                Sub => Self::sub(self, operands, checked),
+                Mul => Self::mul(self, operands, checked),
+                _ => {
+                    let binop = match op {
+                        Div => Self::div,
+                        Rem => Self::rem,
+                        BitXor => Self::xor,
+                        BitAnd => Self::and,
+                        BitOr => Self::or,
+                        Shl => Self::shl,
+                        Shr => Self::shr,
+                        Eq => Self::eq,
+                        Lt => Self::lt,
+                        Le => Self::le,
+                        Ne => Self::ne,
+                        Ge => Self::ge,
+                        Gt => Self::gt,
+                        Offset => Self::offset,
+                        _ => unreachable!(),
+                    };
+                    binop(self, operands)
+                }
             }
         }
     };
