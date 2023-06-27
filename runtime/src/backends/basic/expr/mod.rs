@@ -451,14 +451,12 @@ impl ConstValue {
     fn as_signed(bit_rep: u128, size: u64) -> i128 {
         let mask: u128 = (1 << (size - 1)) - 1; // Create a mask of 1s with the given size except the sign bit
         let sign_mask: u128 = 1 << (size - 1); // Create a mask for the sign bit, for example 1000...0
-        let sign_extend: u128 = (!mask) & sign_mask; // Create a sign extension mask, it would be something like 000...010...000
-        // assert!(sign_extended == sign_mask); // i believe this is the case?
 
         let sign_bit: bool = (bit_rep & sign_mask) != 0;
         let value = bit_rep & mask;
 
         let signed_value = if sign_bit {
-            (value | sign_extend) as i128
+            (value | sign_mask) as i128
         } else {
             value as i128
         };
