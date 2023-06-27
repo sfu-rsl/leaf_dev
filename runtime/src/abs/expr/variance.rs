@@ -29,28 +29,13 @@ where
 }
 
 macro_rules! delegate_binary_op {
-    ($($method: ident)*) => {
-        $(
-            fn $method<'a>(
-                &mut self,
-                operands: Self::ExprRefPair<'a>,
-            ) -> Self::Expr<'a> {
-                Self::adapt(operands, |operands| self.deref_mut().$method(operands))
-            }
-        )*
+    ($($method:ident)*) => { 
+        $(delegate_binary_op!($method +);)* 
     };
-    ($($method: ident)* , $arg: ident : $arg_type: ty) => {
-        $(
-            fn $method<'a>(
-                &mut self,
-                operands: Self::ExprRefPair<'a>,
-                $arg: $arg_type
-            ) -> Self::Expr<'a> {
-                Self::adapt(operands, |operands| self.deref_mut().$method(operands, $arg))
-            }
-        )*
+    ($($method:ident)* + $arg: ident : $arg_type: ty) => { 
+        $(delegate_binary_op!($method + $arg: $arg_type,);)* 
     };
-    ($method: ident $(, $arg: ident : $arg_type: ty)*) => {
+    ($method: ident + $($arg: ident : $arg_type: ty),* $(,)?) => {
         fn $method<'a>(
             &mut self,
             operands: Self::ExprRefPair<'a>,
@@ -69,8 +54,8 @@ where
     type ExprRefPair<'a> = T::TargetExprRefPair<'a>;
     type Expr<'a> = T::TargetExpr<'a>;
 
-    delegate_binary_op!(binary_op, op: BinaryOp, checked: bool);
-    delegate_binary_op!(add sub mul, checked: bool);
+    delegate_binary_op!(binary_op + op: BinaryOp, checked: bool);
+    delegate_binary_op!(add sub mul + checked: bool);
 
     delegate_binary_op!(div rem);
     delegate_binary_op!(and or xor);
@@ -97,7 +82,13 @@ where
 }
 
 macro_rules! delegate_singular_unary_op {
-    ($method: ident $(, $arg: ident : $arg_type: ty)*) => {
+    ($($method:ident)*) => { 
+        $(delegate_singular_unary_op!($method +);)* 
+    };
+    ($($method:ident)* + $arg: ident : $arg_type: ty) => { 
+        $(delegate_singular_unary_op!($method + $arg: $arg_type,);)* 
+    };
+    ($method: ident + $($arg: ident : $arg_type: ty),* $(,)?) => {
         fn $method<'a>(
             &mut self,
             operand: Self::ExprRef<'a>,
@@ -116,10 +107,7 @@ where
     type ExprRef<'a> = T::TargetExprRef<'a>;
     type Expr<'a> = T::TargetExpr<'a>;
 
-    delegate_singular_unary_op!(unary_op, op: UnaryOp);
-    delegate_singular_unary_op!(not);
-    delegate_singular_unary_op!(neg);
-    delegate_singular_unary_op!(address_of);
-    delegate_singular_unary_op!(len);
-    delegate_singular_unary_op!(cast, target: CastKind);
+    delegate_singular_unary_op!(unary_op + op: UnaryOp);
+    delegate_singular_unary_op!(not neg address_of len);
+    delegate_singular_unary_op!(cast + target: CastKind);
 }

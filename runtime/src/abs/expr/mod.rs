@@ -7,15 +7,18 @@ pub(crate) mod variance;
 use super::{BinaryOp, CastKind, UnaryOp};
 
 macro_rules! bin_fn_signature {
-    ($($method:ident)*) => {
-        $(
-            fn $method<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a>;
-        )*
+    ($($method:ident)*) => { 
+        $(bin_fn_signature!($method +);)* 
     };
-    ($($method:ident)* , $arg: ident : $arg_type: ty) => {
-        $(
-            fn $method<'a>(&mut self, operands: Self::ExprRefPair<'a>, $arg: $arg_type) -> Self::Expr<'a>;
-        )*
+    ($($method:ident)* + $arg: ident : $arg_type: ty) => { 
+        $(bin_fn_signature!($method + $arg: $arg_type,);)* 
+    };
+    ($method: ident + $($arg: ident : $arg_type: ty),* $(,)?) => {
+        fn $method<'a>(
+            &mut self, 
+            operands: Self::ExprRefPair<'a>, 
+            $($arg: $arg_type),*
+        ) -> Self::Expr<'a>;
     };
 }
 
@@ -30,7 +33,7 @@ pub(crate) trait BinaryExprBuilder {
         checked: bool,
     ) -> Self::Expr<'a>;
 
-    bin_fn_signature!(add sub mul, checked: bool);
+    bin_fn_signature!(add sub mul + checked: bool);
 
     bin_fn_signature!(div rem);
     bin_fn_signature!(and or xor);

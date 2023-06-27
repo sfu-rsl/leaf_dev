@@ -13,35 +13,33 @@ pub(crate) struct CompositeExprBuilder<B: BinaryExprBuilder, U: UnaryExprBuilder
 }
 
 macro_rules! impl_binary_expr_method {
-    ($($method:ident)*) => {
-        delegate! {
-            to self.binary {
-                $(
-                    fn $method<'a>(
-                        &mut self,
-                        operands: Self::ExprRefPair<'a>,
-                    ) -> Self::Expr<'a>;
-                )*
-            }
-        }
+    ($($method:ident)*) => { 
+        $(impl_binary_expr_method!($method +);)* 
     };
-    ($($method:ident)* , $arg: ident : $arg_type: ty) => {
+    ($($method:ident)* + $arg: ident : $arg_type: ty) => { 
+        $(impl_binary_expr_method!($method + $arg: $arg_type,);)* 
+    };
+    ($method: ident + $($arg: ident : $arg_type: ty),* $(,)?) => {
         delegate! {
             to self.binary {
-                $(
-                    fn $method<'a>(
-                        &mut self,
-                        operands: Self::ExprRefPair<'a>,
-                        $arg: $arg_type
-                    ) -> Self::Expr<'a>;
-                )*
+                fn $method<'a>(
+                    &mut self,
+                    operands: Self::ExprRefPair<'a>,
+                    $($arg: $arg_type),*
+                ) -> Self::Expr<'a>;
             }
         }
     };
 }
 
 macro_rules! impl_unary_expr_method {
-    ($method: ident $(, $arg: ident : $arg_type: ty)*) => {
+    ($($method:ident)*) => { 
+        $(impl_unary_expr_method!($method +);)* 
+    };
+    ($($method:ident)* + $arg: ident : $arg_type: ty) => { 
+        $(impl_unary_expr_method!($method + $arg: $arg_type,);)* 
+    };
+    ($method: ident + $($arg: ident : $arg_type: ty),* $(,)?) => {
         delegate! {
             to self.unary {
                 fn $method<'a>(
@@ -74,7 +72,7 @@ where
     }
 
     // note: this interface is more clear
-    impl_binary_expr_method!(add sub mul, checked: bool);
+    impl_binary_expr_method!(add sub mul + checked: bool);
 
     impl_binary_expr_method!(div rem);
     impl_binary_expr_method!(and or xor);
@@ -91,11 +89,9 @@ where
     type ExprRef<'a> = U::ExprRef<'a>;
     type Expr<'a> = U::Expr<'a>;
 
-    impl_unary_expr_method!(unary_op, op: UnaryOp);
+    impl_unary_expr_method!(unary_op + op: UnaryOp);
 
-    impl_unary_expr_method!(not);
-    impl_unary_expr_method!(neg);
-    impl_unary_expr_method!(address_of);
-    impl_unary_expr_method!(len);
-    impl_unary_expr_method!(cast, target: CastKind);
+    impl_unary_expr_method!(not neg address_of len);
+    
+    impl_unary_expr_method!(cast + target: CastKind);
 }

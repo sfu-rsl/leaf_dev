@@ -34,10 +34,7 @@ where
 macro_rules! try_on_current_then_next {
     /* If there's a single argument, it's straightforward. */
     ($self:ident, $method:ident, $arg:ident $(,)?) => {
-        $self.current
-            .$method($arg)
-            .map(Into::<E>::into)
-            .unwrap_or_else(|$arg| $self.next.$method($arg).into())
+        try_on_current_then_next!($self, $method, ($arg), |$arg|)
     };
     /* If there are multiple arguments, we need to take both the ones that
      * are passed back and the regular arguments. */
@@ -50,23 +47,20 @@ macro_rules! try_on_current_then_next {
 }
 
 macro_rules! impl_binary_expr_method {
-    ($($method:ident)*) => {
-        $(
-            fn $method<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
-                try_on_current_then_next!(self, $method, operands)
-            }
-        )*
+    ($($method:ident)*) => { 
+        $(impl_binary_expr_method!($method +);)* 
     };
-    ($($method:ident)* , $arg: ident : $arg_type: ty) => {
-        $(
-            fn $method<'a>(
-                &mut self,
-                operands: Self::ExprRefPair<'a>,
-                $arg: $arg_type
-            ) -> Self::Expr<'a> {
-                try_on_current_then_next!(self, $method, (operands, $arg), |operands|)
-            }
-        )*
+    ($($method:ident)* + $arg: ident : $arg_type: ty) => { 
+        $(impl_binary_expr_method!($method + $arg: $arg_type,);)* 
+    };
+    ($method: ident + $($arg: ident : $arg_type: ty),* $(,)?) => {
+        fn $method<'a>(
+            &mut self,
+            operands: Self::ExprRefPair<'a>,
+            $($arg: $arg_type),*
+        ) -> Self::Expr<'a> {
+            try_on_current_then_next!(self, $method, (operands$(, $arg)*), |operands|)
+        }
     };
 }
 
@@ -92,7 +86,7 @@ where
         try_on_current_then_next!(self, binary_op, (operands, op, checked), |operands|)
     }
 
-    impl_binary_expr_method!(add sub mul, checked: bool);
+    impl_binary_expr_method!(add sub mul + checked: bool);
 
     impl_binary_expr_method!(div rem);
     impl_binary_expr_method!(and or xor);
