@@ -164,7 +164,7 @@ pub(crate) mod z3 {
                     checked,
                 } => {
                     // Only projections care about if a binary operation is checked or not.
-                    // TODO: ensure the following: "Assumption: A checked binary expression without a field projection is not well formed."
+                    // A checked binary expression without a field projection is not well formed (before MIR optimizations are run).
                     assert!(!checked, "translating unexpected checked operation");
                     let (left, right) = self.translate_binary_operands(operands);
                     self.translate_binary_expr(operator, left, right)
@@ -380,24 +380,28 @@ pub(crate) mod z3 {
                 SymValue::Expression(Expr::Binary {
                     operator,
                     operands,
-                    checked: true,
-                }) => match field_index {
-                    RESULT => {
-                        // If we see a `.0` field projection on a symbolic expression that is a checked
-                        // binop, we can safely ignore the projection and treat the expression as normal,
-                        // since checked binary operations return the tuple `(binop(x, y), did_overflow)`,
-                        // and failed checked binops immediately assert!(no_overflow == true), then panic.
-                        let unchecked_host = SymValue::Expression(Expr::Binary {
-                            operator: *operator,
-                            operands: operands.clone(),
-                            checked: false,
-                        });
-                        self.translate_symbolic(&unchecked_host)
+                    checked,
+                }) => {
+                    assert!(checked, "unexpected field projection on unchecked binop");
+                    match field_index {
+                        RESULT => {
+                            // If we see a `.0` field projection on a symbolic expression that is a checked
+                            // binop, we can safely ignore the projection and treat the expression as normal,
+                            // since checked binary operations return the tuple `(binop(x, y), did_overflow)`,
+                            // and failed checked binops immediately assert!(no_overflow == true), then panic.
+                            let unchecked_host = SymValue::Expression(Expr::Binary {
+                                operator: *operator,
+                                operands: operands.clone(),
+                                checked: false,
+                            });
+                            self.translate_symbolic(&unchecked_host)
+                        }
+                        DID_OVERFLOW => self.translate_overflow(operator, operands),
+                        _ => unreachable!(
+                            "invalid field index. A checked binop returns a size 2 tuple"
+                        ),
                     }
-                    DID_OVERFLOW => self.translate_overflow(operator, operands),
-                    _ => unreachable!("invalid field index. A checked binop returns a len 2 tuple"),
-                },
-                SymValue::Expression(Expr::Binary { checked: false, .. }) => unreachable!(),
+                }
                 _ => todo!("implement regular field access"),
             }
         }

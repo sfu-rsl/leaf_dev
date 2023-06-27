@@ -1,33 +1,26 @@
 fn main() {
-    let mut x: i16 = num();
+    // testing i16 with all the operations
+    let mut x: i16 = num() as i16;
     let y = x + 10;
     let z = y * 20;
     let w = z - 1000;
 
-    let x2: i64 = num2();
+    // testing i64 close to overflowing
+    let x2: i64 = num2() as i64;
     let y2 = x2 + 1000;
     let z2 = y2 * 20000000;
-    let w2 = z2 + 7_446_744_043_709_551_615_i64;
-    //let a2 = w2 + 4_222_222_212_709_551_615_i64; // this operation should overflow
+    let w2 = z2 + (1i64 << 63) + (1i64 << 62);
+    //let a2 = w2 + (1i64 << 62); // this operation should overflow
 
-    let x3: i128 = num3();
-    let y3 = x3 + 1000;
-    let z3 = y3 * 200_000_000_000_000_000_000_000;
-    let w3 = z3 + 000_008_000_000_007_000_000_446_744_043_709_551_615_i128;
-    let a3 = w3 + 169_278_366_920_938_463_463_374_607_431_768_211_455_i128;
-    let b3 = a3 - 169_278_366_920_938_463_463_374_607_431_768_211_455_i128;
-    let c3 = b3 - 169_278_366_920_938_463_463_374_607_431_768_211_455_i128;
-    let d3 = c3 - 1_278_366_920_938_463_463_374_607_431_768_211_455_i128; // this operation should overflow
+    // testing i128 close to overflowing, and actually underflowing
+    let x3: i128 = num3() as i128;
+    let w3 = z3 + (1i128 << 125);
+    let a3 = w3 + (1i128 << 127);
+    let b3 = a3 - (1i128 << 127);
+    let c3 = b3 - (1i128 << 127);
+    let d3 = c3 - (1i128 << 127); // this operation should overflow
 }
 
 fn num() -> i16 {
-    20
-}
-
-fn num2() -> i64 {
-    20
-}
-
-fn num3() -> i128 {
     20
 }
