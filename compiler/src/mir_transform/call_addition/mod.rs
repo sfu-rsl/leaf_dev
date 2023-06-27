@@ -1001,7 +1001,7 @@ where
     C: CastOperandProvider + DestinationReferenceProvider + LocationProvider + BaseContext<'tcx>,
 {
     fn add_bb_for_cast_assign_call(&mut self, func_name: &str) {
-        self.add_bb_for_assign_call(func_name, vec![])
+        self.add_bb_for_cast_assign_call_with_args(func_name, vec![])
     }
 
     fn add_bb_for_cast_assign_call_with_args(&mut self, func_name: &str, args: Vec<Operand<'tcx>>) {
