@@ -1,7 +1,7 @@
 /// This module provides some traits to make it easier to implement expression builders for wrappers
 /// that work as adapters. Most of the adapters provide non-trivial covariance and contravariance
 /// over the input and output types of the wrapped expression builder.
-use super::{BinaryExprBuilder, UnaryExprBuilder};
+use super::{macros::macro_rules_method_with_optional_args, BinaryExprBuilder, UnaryExprBuilder};
 use crate::abs::{BinaryOp, CastKind, UnaryOp};
 use std::ops::DerefMut;
 
@@ -28,13 +28,7 @@ where
         F: for<'s> FnH<<Self::Target as BEB>::ExprRefPair<'s>, <Self::Target as BEB>::Expr<'s>>;
 }
 
-macro_rules! delegate_binary_op {
-    ($($method:ident)*) => { 
-        $(delegate_binary_op!($method +);)* 
-    };
-    ($($method:ident)* + $arg: ident : $arg_type: ty) => { 
-        $(delegate_binary_op!($method + $arg: $arg_type,);)* 
-    };
+macro_rules_method_with_optional_args!(delegate_binary_op {
     ($method: ident + $($arg: ident : $arg_type: ty),* $(,)?) => {
         fn $method<'a>(
             &mut self,
@@ -44,7 +38,7 @@ macro_rules! delegate_binary_op {
             Self::adapt(operands, |operands| self.deref_mut().$method(operands, $($arg),*))
         }
     };
-}
+});
 
 impl<T: BinaryExprBuilderAdapter> BinaryExprBuilder for T
 where
@@ -81,13 +75,7 @@ where
         F: for<'s> FnH<<Self::Target as UEB>::ExprRef<'s>, <Self::Target as UEB>::Expr<'s>>;
 }
 
-macro_rules! delegate_singular_unary_op {
-    ($($method:ident)*) => { 
-        $(delegate_singular_unary_op!($method +);)* 
-    };
-    ($($method:ident)* + $arg: ident : $arg_type: ty) => { 
-        $(delegate_singular_unary_op!($method + $arg: $arg_type,);)* 
-    };
+macro_rules_method_with_optional_args!(delegate_singular_unary_op {
     ($method: ident + $($arg: ident : $arg_type: ty),* $(,)?) => {
         fn $method<'a>(
             &mut self,
@@ -97,7 +85,7 @@ macro_rules! delegate_singular_unary_op {
             Self::adapt(operand, |operand| self.deref_mut().$method(operand, $($arg),*))
         }
     };
-}
+});
 
 impl<T: UnaryExprBuilderAdapter> UnaryExprBuilder for T
 where

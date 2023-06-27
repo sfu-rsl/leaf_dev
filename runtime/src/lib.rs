@@ -3,6 +3,7 @@
 #![feature(box_patterns)]
 #![feature(assert_matches)]
 #![feature(iterator_try_collect)]
+#![feature(macro_metavar_expr)]
 
 pub mod abs;
 pub mod annotations;

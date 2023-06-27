@@ -12,13 +12,7 @@ pub(crate) struct CompositeExprBuilder<B: BinaryExprBuilder, U: UnaryExprBuilder
     pub(crate) unary: U,
 }
 
-macro_rules! impl_binary_expr_method {
-    ($($method:ident)*) => { 
-        $(impl_binary_expr_method!($method +);)* 
-    };
-    ($($method:ident)* + $arg: ident : $arg_type: ty) => { 
-        $(impl_binary_expr_method!($method + $arg: $arg_type,);)* 
-    };
+macro_rules_method_with_optional_args!(impl_binary_expr_method {
     ($method: ident + $($arg: ident : $arg_type: ty),* $(,)?) => {
         delegate! {
             to self.binary {
@@ -30,15 +24,9 @@ macro_rules! impl_binary_expr_method {
             }
         }
     };
-}
+});
 
-macro_rules! impl_unary_expr_method {
-    ($($method:ident)*) => { 
-        $(impl_unary_expr_method!($method +);)* 
-    };
-    ($($method:ident)* + $arg: ident : $arg_type: ty) => { 
-        $(impl_unary_expr_method!($method + $arg: $arg_type,);)* 
-    };
+macro_rules_method_with_optional_args!(impl_unary_expr_method {
     ($method: ident + $($arg: ident : $arg_type: ty),* $(,)?) => {
         delegate! {
             to self.unary {
@@ -50,7 +38,7 @@ macro_rules! impl_unary_expr_method {
             }
         }
     };
-}
+});
 
 impl<B, U> BinaryExprBuilder for CompositeExprBuilder<B, U>
 where
@@ -92,6 +80,6 @@ where
     impl_unary_expr_method!(unary_op + op: UnaryOp);
 
     impl_unary_expr_method!(not neg address_of len);
-    
+
     impl_unary_expr_method!(cast + target: CastKind);
 }

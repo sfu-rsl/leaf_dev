@@ -46,13 +46,7 @@ macro_rules! try_on_current_then_next {
     };
 }
 
-macro_rules! impl_binary_expr_method {
-    ($($method:ident)*) => { 
-        $(impl_binary_expr_method!($method +);)* 
-    };
-    ($($method:ident)* + $arg: ident : $arg_type: ty) => { 
-        $(impl_binary_expr_method!($method + $arg: $arg_type,);)* 
-    };
+macro_rules_method_with_optional_args!(impl_binary_expr_method {
     ($method: ident + $($arg: ident : $arg_type: ty),* $(,)?) => {
         fn $method<'a>(
             &mut self,
@@ -62,7 +56,7 @@ macro_rules! impl_binary_expr_method {
             try_on_current_then_next!(self, $method, (operands$(, $arg)*), |operands|)
         }
     };
-}
+});
 
 impl<C, N, E, EC> BinaryExprBuilder for ChainedExprBuilder<C, N, E, EC>
 where

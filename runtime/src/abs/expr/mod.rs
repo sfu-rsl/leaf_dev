@@ -4,23 +4,19 @@ pub(crate) mod macros;
 pub(crate) mod proj;
 pub(crate) mod variance;
 
+use self::macros::macro_rules_method_with_optional_args;
+
 use super::{BinaryOp, CastKind, UnaryOp};
 
-macro_rules! bin_fn_signature {
-    ($($method:ident)*) => { 
-        $(bin_fn_signature!($method +);)* 
-    };
-    ($($method:ident)* + $arg: ident : $arg_type: ty) => { 
-        $(bin_fn_signature!($method + $arg: $arg_type,);)* 
-    };
+macro_rules_method_with_optional_args! (bin_fn_signature {
     ($method: ident + $($arg: ident : $arg_type: ty),* $(,)?) => {
         fn $method<'a>(
-            &mut self, 
-            operands: Self::ExprRefPair<'a>, 
+            &mut self,
+            operands: Self::ExprRefPair<'a>,
             $($arg: $arg_type),*
         ) -> Self::Expr<'a>;
     };
-}
+});
 
 pub(crate) trait BinaryExprBuilder {
     type ExprRefPair<'a>;

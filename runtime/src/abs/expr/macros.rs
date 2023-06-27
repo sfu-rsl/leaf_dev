@@ -126,10 +126,27 @@ macro_rules! impl_singular_unary_ops_through_general {
     };
 }
 
+/// Takes a macro rule with the input of a single method name and many arguments
+/// and extends it with two additional patterns for multiple method names and
+/// respectively zero and one extra arguments.
+macro_rules! macro_rules_method_with_optional_args {
+    ($name:ident { $($rule:tt)* }) => {
+        macro_rules! $name {
+            ($$($$method:ident)*) => {
+                $$($name!($$method +);)*
+            };
+            ($$($$method:ident)* + $$arg: ident : $$arg_type: ty) => {
+                $$($name!($$method + $$arg: $$arg_type,);)*
+            };
+            $($rule)*
+        }
+    };
+}
+
 #[allow(unused_imports)]
 pub(crate) use {
     impl_general_binary_op_for, impl_general_binary_op_through_singulars,
     impl_general_unary_op_through_singulars, impl_singular_binary_ops_through_general,
     impl_singular_unary_op_through_general, impl_singular_unary_ops_through_general,
-    repeat_macro_for,
+    macro_rules_method_with_optional_args, repeat_macro_for,
 };
