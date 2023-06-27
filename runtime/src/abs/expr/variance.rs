@@ -1,7 +1,7 @@
 /// This module provides some traits to make it easier to implement expression builders for wrappers
 /// that work as adapters. Most of the adapters provide non-trivial covariance and contravariance
 /// over the input and output types of the wrapped expression builder.
-use super::{macros::*, BinaryExprBuilder, UnaryExprBuilder};
+use super::{macros::macro_rules_method_with_optional_args, BinaryExprBuilder, UnaryExprBuilder};
 use crate::abs::{BinaryOp, CastKind, UnaryOp};
 use std::ops::DerefMut;
 
@@ -28,8 +28,8 @@ where
         F: for<'s> FnH<<Self::Target as BEB>::ExprRefPair<'s>, <Self::Target as BEB>::Expr<'s>>;
 }
 
-macro_rules! delegate_singular_binary_op {
-    ($method: ident $(, $arg: ident : $arg_type: ty)*) => {
+macro_rules_method_with_optional_args!(delegate_binary_op {
+    ($method: ident + $($arg: ident : $arg_type: ty),* $(,)?) => {
         fn $method<'a>(
             &mut self,
             operands: Self::ExprRefPair<'a>,
@@ -38,7 +38,7 @@ macro_rules! delegate_singular_binary_op {
             Self::adapt(operands, |operands| self.deref_mut().$method(operands, $($arg),*))
         }
     };
-}
+});
 
 impl<T: BinaryExprBuilderAdapter> BinaryExprBuilder for T
 where
@@ -48,8 +48,14 @@ where
     type ExprRefPair<'a> = T::TargetExprRefPair<'a>;
     type Expr<'a> = T::TargetExpr<'a>;
 
-    delegate_singular_binary_op!(binary_op, op: BinaryOp);
-    for_all_binary_op!(delegate_singular_binary_op);
+    delegate_binary_op!(binary_op + op: BinaryOp, checked: bool);
+    delegate_binary_op!(add sub mul + checked: bool);
+
+    delegate_binary_op!(div rem);
+    delegate_binary_op!(and or xor);
+    delegate_binary_op!(shl shr);
+    delegate_binary_op!(eq ne lt le gt ge);
+    delegate_binary_op!(offset);
 }
 
 pub(crate) trait UnaryExprBuilderAdapter: DerefMut
@@ -69,8 +75,8 @@ where
         F: for<'s> FnH<<Self::Target as UEB>::ExprRef<'s>, <Self::Target as UEB>::Expr<'s>>;
 }
 
-macro_rules! delegate_singular_unary_op {
-    ($method: ident $(, $arg: ident : $arg_type: ty)*) => {
+macro_rules_method_with_optional_args!(delegate_singular_unary_op {
+    ($method: ident + $($arg: ident : $arg_type: ty),* $(,)?) => {
         fn $method<'a>(
             &mut self,
             operand: Self::ExprRef<'a>,
@@ -79,7 +85,7 @@ macro_rules! delegate_singular_unary_op {
             Self::adapt(operand, |operand| self.deref_mut().$method(operand, $($arg),*))
         }
     };
-}
+});
 
 impl<T: UnaryExprBuilderAdapter> UnaryExprBuilder for T
 where
@@ -89,10 +95,7 @@ where
     type ExprRef<'a> = T::TargetExprRef<'a>;
     type Expr<'a> = T::TargetExpr<'a>;
 
-    delegate_singular_unary_op!(unary_op, op: UnaryOp);
-    delegate_singular_unary_op!(not);
-    delegate_singular_unary_op!(neg);
-    delegate_singular_unary_op!(address_of);
-    delegate_singular_unary_op!(len);
-    delegate_singular_unary_op!(cast, target: CastKind);
+    delegate_singular_unary_op!(unary_op + op: UnaryOp);
+    delegate_singular_unary_op!(not neg address_of len);
+    delegate_singular_unary_op!(cast + target: CastKind);
 }

@@ -3,6 +3,7 @@
 #![feature(box_patterns)]
 #![feature(assert_matches)]
 #![feature(iterator_try_collect)]
+#![feature(macro_metavar_expr)]
 #![feature(result_flattening)]
 #![feature(unboxed_closures)]
 #![feature(fn_traits)]

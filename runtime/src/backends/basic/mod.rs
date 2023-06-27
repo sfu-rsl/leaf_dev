@@ -204,15 +204,13 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
         operator: crate::abs::BinaryOp,
         first: Self::Operand,
         second: Self::Operand,
-        _checked: bool,
+        checked: bool,
     ) {
-        // TODO: Add support for checked operations.
-
         let first_value = self.get_operand_value(first);
         let second_value = self.get_operand_value(second);
-        let result_value = self
-            .expr_builder()
-            .binary_op((first_value, second_value).into(), operator);
+        let result_value =
+            self.expr_builder()
+                .binary_op((first_value, second_value).into(), operator, checked);
         self.set(result_value.into())
     }
 
@@ -336,13 +334,24 @@ impl<'a, EB: BinaryExprBuilder> BranchingHandler for BasicBranchingHandler<'a, E
         )
     }
 
-    fn assert(self, cond: Self::Operand, expected: bool, assert_kind: AssertKind<Self::Operand>) {
-        todo!(
-            "Implement logic for assertions. {:?} {} {:?}",
-            cond,
-            expected,
-            assert_kind
-        )
+    /// This function provides runtime support for all 5 assertion kinds in the leaf compiler.
+    /// See: https://doc.rust-lang.org/beta/nightly-rustc/rustc_middle/mir/enum.AssertKind.html
+    fn assert(self, cond: Self::Operand, expected: bool, _assert_kind: AssertKind<Self::Operand>) {
+        // For now, we will call this function before the assert occurs and assume that assertions always succeed.
+        // TODO: add a result: bool parameter to this function, and add support for it using a panic hook.
+        let cond_val = get_operand_value(self.vars_state, cond);
+        if cond_val.is_symbolic() {
+            let mut constraint = Constraint::Bool(cond_val.clone());
+            if !expected {
+                constraint = constraint.not();
+            }
+
+            self.current_constraints.push(constraint);
+            self.trace_manager.notify_step(
+                0, /* TODO: The unique index of the block we have entered. */
+                self.current_constraints.drain(..).collect(),
+            );
+        }
     }
 }
 
@@ -426,7 +435,7 @@ impl<EB: BinaryExprBuilder> BasicBranchTakingHandler<'_, EB> {
 }
 
 impl<EB: BinaryExprBuilder> BranchTakingHandler<bool> for BasicBranchTakingHandler<'_, EB> {
-    fn take(mut self, value: bool) {
+    fn take(mut self, result: bool) {
         /* FIXME: Bad smell! The branching traits structure prevents
          * us from having a simpler and cleaner handler.
          */
@@ -435,7 +444,7 @@ impl<EB: BinaryExprBuilder> BranchTakingHandler<bool> for BasicBranchTakingHandl
         }
 
         let mut constraint = Constraint::Bool(self.parent.discriminant.clone());
-        if !value {
+        if !result {
             constraint = constraint.not();
         }
 

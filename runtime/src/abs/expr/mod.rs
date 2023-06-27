@@ -4,24 +4,38 @@ pub(crate) mod macros;
 pub(crate) mod proj;
 pub(crate) mod variance;
 
-use super::{BinaryOp, CastKind, UnaryOp};
-use macros::{for_all_binary_op, repeat_macro_for};
+use self::macros::macro_rules_method_with_optional_args;
 
-macro_rules! bin_fn_signature {
-    ($($name:ident),*) => {
-        $(
-            fn $name<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a>;
-        )*
+use super::{BinaryOp, CastKind, UnaryOp};
+
+macro_rules_method_with_optional_args! (bin_fn_signature {
+    ($method: ident + $($arg: ident : $arg_type: ty),* $(,)?) => {
+        fn $method<'a>(
+            &mut self,
+            operands: Self::ExprRefPair<'a>,
+            $($arg: $arg_type),*
+        ) -> Self::Expr<'a>;
     };
-}
+});
 
 pub(crate) trait BinaryExprBuilder {
     type ExprRefPair<'a>;
     type Expr<'a>;
 
-    fn binary_op<'a>(&mut self, operands: Self::ExprRefPair<'a>, op: BinaryOp) -> Self::Expr<'a>;
+    fn binary_op<'a>(
+        &mut self,
+        operands: Self::ExprRefPair<'a>,
+        op: BinaryOp,
+        checked: bool,
+    ) -> Self::Expr<'a>;
 
-    for_all_binary_op!(bin_fn_signature);
+    bin_fn_signature!(add sub mul + checked: bool);
+
+    bin_fn_signature!(div rem);
+    bin_fn_signature!(and or xor);
+    bin_fn_signature!(shl shr);
+    bin_fn_signature!(eq ne lt le gt ge);
+    bin_fn_signature!(offset);
 }
 
 pub(crate) trait UnaryExprBuilder {

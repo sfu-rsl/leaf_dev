@@ -181,6 +181,7 @@ pub(crate) trait FunctionHandler {
     fn after_call(self, result_dest: Self::Place);
 }
 
+/// Keeps track of all the compounding constraints in a single trace
 pub(crate) trait TraceManager<S, V> {
     fn notify_step(&mut self, step: S, new_constraints: Vec<Constraint<V>>);
 }

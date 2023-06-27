@@ -12,21 +12,22 @@ pub(crate) struct CompositeExprBuilder<B: BinaryExprBuilder, U: UnaryExprBuilder
     pub(crate) unary: U,
 }
 
-macro_rules! impl_binary_expr_method {
-    ($method:ident) => {
+macro_rules_method_with_optional_args!(impl_binary_expr_method {
+    ($method: ident + $($arg: ident : $arg_type: ty),* $(,)?) => {
         delegate! {
             to self.binary {
                 fn $method<'a>(
                     &mut self,
                     operands: Self::ExprRefPair<'a>,
+                    $($arg: $arg_type),*
                 ) -> Self::Expr<'a>;
             }
         }
     };
-}
+});
 
-macro_rules! impl_unary_expr_method {
-    ($method: ident $(, $arg: ident : $arg_type: ty)*) => {
+macro_rules_method_with_optional_args!(impl_unary_expr_method {
+    ($method: ident + $($arg: ident : $arg_type: ty),* $(,)?) => {
         delegate! {
             to self.unary {
                 fn $method<'a>(
@@ -37,7 +38,7 @@ macro_rules! impl_unary_expr_method {
             }
         }
     };
-}
+});
 
 impl<B, U> BinaryExprBuilder for CompositeExprBuilder<B, U>
 where
@@ -53,11 +54,18 @@ where
                 &mut self,
                 operands: Self::ExprRefPair<'a>,
                 op: BinaryOp,
+                checked: bool,
             ) -> Self::Expr<'a>;
         }
     }
 
-    for_all_binary_op!(impl_binary_expr_method);
+    impl_binary_expr_method!(add sub mul + checked: bool);
+
+    impl_binary_expr_method!(div rem);
+    impl_binary_expr_method!(and or xor);
+    impl_binary_expr_method!(shl shr);
+    impl_binary_expr_method!(eq ne lt le gt ge);
+    impl_binary_expr_method!(offset);
 }
 
 impl<B, U> UnaryExprBuilder for CompositeExprBuilder<B, U>
@@ -68,11 +76,9 @@ where
     type ExprRef<'a> = U::ExprRef<'a>;
     type Expr<'a> = U::Expr<'a>;
 
-    impl_unary_expr_method!(unary_op, op: UnaryOp);
+    impl_unary_expr_method!(unary_op + op: UnaryOp);
 
-    impl_unary_expr_method!(not);
-    impl_unary_expr_method!(neg);
-    impl_unary_expr_method!(address_of);
-    impl_unary_expr_method!(len);
-    impl_unary_expr_method!(cast, target: CastKind);
+    impl_unary_expr_method!(not neg address_of len);
+
+    impl_unary_expr_method!(cast + target: CastKind);
 }

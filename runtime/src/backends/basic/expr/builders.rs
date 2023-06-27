@@ -47,9 +47,8 @@ mod toplevel {
             &mut self,
             (first, second): Self::ExprRefPair<'a>,
             op: BinaryOp,
+            checked: bool,
         ) -> Self::Expr<'a> {
-            // TODO: Add support for checked operations.
-
             if first.is_symbolic() {
                 self.sym_builder.binary_op(
                     BinaryOperands::Orig {
@@ -57,6 +56,7 @@ mod toplevel {
                         second,
                     },
                     op,
+                    checked,
                 )
             } else if second.is_symbolic() {
                 self.sym_builder.binary_op(
@@ -65,11 +65,13 @@ mod toplevel {
                         second: SymValueRef::new(second),
                     },
                     op,
+                    checked,
                 )
             } else {
                 self.conc_builder.binary_op(
                     (ConcreteValueRef::new(first), ConcreteValueRef::new(second)),
                     op,
+                    checked,
                 )
             }
         }
@@ -221,10 +223,12 @@ mod core {
             &mut self,
             operands: Self::ExprRefPair<'a>,
             op: BinaryOp,
+            checked: bool,
         ) -> Self::Expr<'a> {
             Expr::Binary {
                 operator: op,
                 operands,
+                checked,
             }
         }
 
@@ -294,10 +298,11 @@ mod concrete {
             &mut self,
             (first, second): Self::ExprRefPair<'a>,
             op: BinaryOp,
+            checked: bool,
         ) -> Self::Expr<'a> {
             match (first, second) {
                 (ConcreteValue::Const(first_c), ConcreteValue::Const(second_c)) => {
-                    ConstValue::binary_op(first_c, second_c, op).into()
+                    ConstValue::binary_op(first_c, second_c, op, checked).into()
                 }
                 _ => unreachable!(
                     "Binary operations for concrete values are only supposed to be called on constants."
@@ -498,7 +503,7 @@ mod simp {
          * Optimize if it becomes a bottleneck.
          */
 
-        fn add<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+        fn add<'a>(&mut self, operands: Self::ExprRefPair<'a>, _checked: bool) -> Self::Expr<'a> {
             // x + 0 = 0 + x = x
             if operands.konst().is_zero() {
                 Ok(operands.other_into())
@@ -507,7 +512,7 @@ mod simp {
             }
         }
 
-        fn sub<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+        fn sub<'a>(&mut self, operands: Self::ExprRefPair<'a>, _checked: bool) -> Self::Expr<'a> {
             // x - 0 = x
             if operands.is_second_zero() {
                 Ok(operands.other_into())
@@ -516,11 +521,13 @@ mod simp {
             }
         }
 
-        fn mul<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+        fn mul<'a>(&mut self, operands: Self::ExprRefPair<'a>, _checked: bool) -> Self::Expr<'a> {
             // x * 0 = 0 * x = 0
             if operands.konst().is_zero() {
                 Ok(operands.konst().into())
-            } else if operands.konst().is_one() {
+            } else
+            // x * 1 = x
+            if operands.konst().is_one() {
                 Ok(operands.other_into())
             } else {
                 Err(operands)

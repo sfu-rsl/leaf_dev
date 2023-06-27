@@ -44,7 +44,7 @@ impl ConcreteValue {
     }
 }
 
-// FIXME: Remove this after adding support for floats.
+// FIXME: Remove this error suppression after adding support for floats.
 #[allow(unused)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum ConstValue {
@@ -115,7 +115,12 @@ impl ConstValue {
         }
     }
 
-    pub fn binary_op(first: &Self, second: &Self, operator: BinaryOp) -> ConstValue {
+    pub fn binary_op(
+        first: &Self,
+        second: &Self,
+        operator: BinaryOp,
+        checked: bool,
+    ) -> ConcreteValue {
         match operator {
             BinaryOp::Add
             | BinaryOp::Sub
@@ -124,15 +129,24 @@ impl ConstValue {
             | BinaryOp::Rem
             | BinaryOp::BitXor
             | BinaryOp::BitAnd
-            | BinaryOp::BitOr => Self::binary_op_ar(first, second, operator),
-            BinaryOp::Shl | BinaryOp::Shr => Self::binary_op_shift(first, second, operator),
+            | BinaryOp::BitOr => {
+                if checked {
+                    ConcreteValue::Adt(Self::binary_op_checked_arithmetic(first, second, operator))
+                } else {
+                    ConcreteValue::Const(Self::binary_op_arithmetic(first, second, operator))
+                }
+            }
+            BinaryOp::Shl | BinaryOp::Shr => {
+                ConcreteValue::Const(Self::binary_op_shift(first, second, operator))
+            }
             BinaryOp::Eq
             | BinaryOp::Lt
             | BinaryOp::Le
             | BinaryOp::Ne
             | BinaryOp::Ge
-            | BinaryOp::Gt => ConstValue::Bool(Self::binary_op_cmp(first, second, operator)),
-
+            | BinaryOp::Gt => ConcreteValue::Const(ConstValue::Bool(Self::binary_op_cmp(
+                first, second, operator,
+            ))),
             _ => unimplemented!("{:?} {:?} {:?}", first, second, operator),
         }
     }
@@ -163,7 +177,7 @@ impl ConstValue {
         }
     }
 
-    fn binary_op_ar(first: &Self, second: &Self, operator: BinaryOp) -> Self {
+    fn binary_op_arithmetic(first: &Self, second: &Self, operator: BinaryOp) -> Self {
         match (first, second) {
             (
                 Self::Int {
@@ -208,6 +222,106 @@ impl ConstValue {
             }
 
             _ => unreachable!(),
+        }
+    }
+
+    fn binary_op_checked_arithmetic(first: &Self, second: &Self, operator: BinaryOp) -> AdtValue {
+        /// use logic to determine whether the operation will overflow or underflow or be in bounds
+        fn checked_op(
+            operator: BinaryOp,
+            first: &Wrapping<u128>,
+            second: &Wrapping<u128>,
+            IntType {
+                bit_size,
+                is_signed,
+            }: IntType, // pattern matching in function args, cool!
+        ) -> Option<u128> {
+            // we don't want any wrapping in this function, so we take the 0th parameter
+            let (first, second) = (first.0, second.0);
+            if is_signed {
+                let first = ConstValue::as_signed(first, bit_size);
+                let second = ConstValue::as_signed(second, bit_size);
+
+                let result = match operator {
+                    BinaryOp::Add => first.checked_add(second),
+                    BinaryOp::Sub => first.checked_sub(second),
+                    BinaryOp::Mul => first.checked_mul(second),
+                    _ => unreachable!("unsupported by rust"),
+                };
+
+                if let Some(result) = result {
+                    // case: i128 has not overflowed, so result is valid. Check if we're
+                    // higher than our type's max value or lower than it's min value.
+                    let max = ((1_u128 << (bit_size - 1)) - 1) as i128;
+                    let min = match bit_size {
+                        0..=127 => -(1_i128 << (bit_size - 1)),
+                        128 => i128::MIN,
+                        129..=u64::MAX => panic!("unsupported integer size; too large"),
+                    };
+                    if result > max || result < min {
+                        None
+                    } else {
+                        Some(ConstValue::as_unsigned(result))
+                    }
+                } else {
+                    // case: i128 overflowed, so any smaller type also overflowed
+                    None
+                }
+            } else {
+                let result = match operator {
+                    BinaryOp::Add => first.checked_add(second),
+                    BinaryOp::Sub => first.checked_sub(second),
+                    BinaryOp::Mul => first.checked_mul(second),
+                    _ => unreachable!("unsupported by rust"),
+                };
+
+                if let Some(result) = result {
+                    // case: u128 has not overflowed, check if we're higher than our max
+                    let max = match bit_size {
+                        0..=127 => (1_u128 << bit_size) - 1,
+                        128 => u128::MAX,
+                        129..=u64::MAX => panic!("unsupported integer size; too large"),
+                    };
+                    if result > max { None } else { Some(result) }
+                } else {
+                    // case: u128 overflowed, so any smaller type also overflowed
+                    None
+                }
+            }
+        }
+
+        // the rust docs claims that only integers are supported:
+        // https://doc.rust-lang.org/beta/nightly-rustc/rustc_middle/mir/syntax/enum.Rvalue.html#variant.CheckedBinaryOp
+        match (first, second) {
+            (
+                Self::Int {
+                    bit_rep: first,
+                    ty:
+                        ty @ IntType {
+                            bit_size: first_size,
+                            is_signed: first_signed,
+                        },
+                },
+                Self::Int {
+                    bit_rep: second,
+                    ty: ty_second @ IntType { .. },
+                },
+            ) => {
+                assert_eq!(*ty, *ty_second);
+
+                let result = checked_op(operator, first, second, *ty);
+                match result {
+                    Some(result) => {
+                        let ty = IntType {
+                            bit_size: *first_size,
+                            is_signed: *first_signed,
+                        };
+                        AdtValue::checked_success(Wrapping(result), ty)
+                    }
+                    None => AdtValue::checked_overflow(),
+                }
+            }
+            _ => unreachable!("only integers are supported by rust"),
         }
     }
 
@@ -333,23 +447,31 @@ impl ConstValue {
         bit_rep & mask == 0
     }
 
+    /// convert the bit representation of a signed integer contained in a u128, into an i128
     fn as_signed(bit_rep: u128, size: u64) -> i128 {
         let mask: u128 = (1 << (size - 1)) - 1; // Create a mask of 1s with the given size except the sign bit
         let sign_mask: u128 = 1 << (size - 1); // Create a mask for the sign bit, for example 1000...0
-        let sign_extend: u128 = (!mask) & sign_mask; // Create a sign extension mask, it would be something like 000...010...000
 
         let sign_bit: bool = (bit_rep & sign_mask) != 0;
         let value = bit_rep & mask;
 
         let signed_value = if sign_bit {
-            (value | sign_extend) as i128
+            (value | sign_mask) as i128
         } else {
             value as i128
         };
 
         signed_value
     }
+
+    /// convert a signed value into its bit representation
+    fn as_unsigned(value: i128) -> u128 {
+        // a signed to unsigned integer is a bitwise transmutation (per C specs)
+        value as u128
+    }
 }
+
+// ----------------------------------------------- //
 
 macro_rules! impl_from_uint {
     ($($ty:ty),*) => {
@@ -377,7 +499,7 @@ impl From<char> for ConstValue {
     }
 }
 
-// FIXME: Remove this after adding support for more variants
+// FIXME: Remove this error suppression after adding support for more variants
 #[allow(unused)]
 #[derive(Clone, Debug)]
 pub(crate) enum AdtKind {
@@ -396,6 +518,32 @@ pub(crate) enum AdtKind {
 pub(crate) struct AdtValue {
     pub kind: AdtKind,
     pub fields: Vec<Option<ValueRef>>,
+}
+impl AdtValue {
+    /// creates an ADT that is the result of a checked operation that overflowed
+    fn checked_overflow() -> Self {
+        Self {
+            kind: AdtKind::Struct,
+            fields: vec![None, Some(ConstValue::Bool(true).to_value_ref())],
+        }
+    }
+
+    /// creates an ADT that represents the result of a successful checked operation (no overflow)
+    fn checked_success(result: Wrapping<u128>, ty: IntType) -> Self {
+        Self {
+            kind: AdtKind::Struct,
+            fields: vec![
+                Some(
+                    ConstValue::Int {
+                        bit_rep: result,
+                        ty,
+                    }
+                    .to_value_ref(),
+                ),
+                Some(ConstValue::Bool(false).to_value_ref()),
+            ],
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -467,7 +615,7 @@ define_reversible_pair!(
 
 type SymBinaryOperands = BinaryOperands<SymValueRef, ValueRef>;
 
-// FIXME: Remove this after adding support for more variants
+// FIXME: Remove this error suppression after adding support for more variants
 #[allow(unused)]
 #[derive(Clone, Debug)]
 pub(crate) enum Expr {
@@ -479,6 +627,7 @@ pub(crate) enum Expr {
     Binary {
         operator: BinaryOp,
         operands: SymBinaryOperands,
+        checked: bool,
     },
 
     Cast {
@@ -495,7 +644,7 @@ pub(crate) enum Expr {
     Projection(ProjExpr),
 }
 
-// FIXME: Remove this suspension after adding support for symbolic projection.
+// FIXME: Remove this error suppression after adding support for symbolic projection.
 #[allow(unused)]
 #[derive(Clone, Debug)]
 pub(crate) enum ProjExpr {
@@ -510,7 +659,7 @@ pub(crate) enum ProjExpr {
     },
 }
 
-// FIXME: Remove this suspension after adding support for symbolic projection.
+// FIXME: Remove this error suppression after adding support for symbolic projection.
 #[allow(unused)]
 #[derive(Clone, Debug)]
 pub(crate) enum ProjKind {
