@@ -31,9 +31,7 @@ also modifies the code and injects various function calls to the `runtime` via t
   - Scroll down to the "Assets" section and find the latest release version. Look for the file with the extension .zip for the Windows platform.
   - Click on the .zip file to download it.
   - Extract the contents of the downloaded .zip file to a directory of your choice, such as C:\z3.
-  - Open a Command Prompt by pressing Win + R, typing cmd, and pressing Enter.
-  - Navigate to the directory where you extracted the Z3 files using the cd command. For example, if you extracted the files to C:\z3, you would run the      following command: `cd C:\z3`
-  - Add the Z3 directory to the system's PATH environment variable by running the following command: `setx PATH "%PATH%;C:\z3\bin`
+  - Add the Z3 directory to the system's PATH environment variable by running the following command similar to this (you might need to change the address of the folder): `setx PATH "%PATH%;C:\z3\bin`
   - This will allow you to access the Z3 solver and its libraries from any command prompt window.
   - Verify the installation by running the following command: `z3 --version`
 
