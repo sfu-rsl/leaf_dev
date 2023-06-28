@@ -1,6 +1,6 @@
 use crate::abs::{
     backend::{PlaceHandler, PlaceProjectionHandler},
-    FieldIndex, Local,
+    FieldIndex, Local, VariantIndex,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -24,7 +24,7 @@ pub(crate) enum Projection {
         to: u64,
         from_end: bool,
     },
-    Downcast(u32),
+    Downcast(VariantIndex),
     OpaqueCast,
 }
 
@@ -124,8 +124,8 @@ impl PlaceProjectionHandler for DefaultPlaceProjectionHandler {
         self.create(Projection::Subslice { from, to, from_end })
     }
 
-    fn downcast(self, variant_index: u32) -> Self::Place {
-        self.create(Projection::Downcast(variant_index))
+    fn downcast(self, variant: VariantIndex) -> Self::Place {
+        self.create(Projection::Downcast(variant))
     }
 
     fn opaque_cast(self) -> Self::Place {
