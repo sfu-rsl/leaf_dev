@@ -507,10 +507,9 @@ pub(crate) enum AdtKind {
     Struct,
     Enum {
         /* NOTE: Even when the variant index is set based on a decision on a
-         * symbolic value, the discriminant is still a concrete value and the
-         * symbolic value will appear in the constraints.
-         */
-        discriminant: VariantIndex,
+         * symbolic value, its value is still a concrete and the symbolic value
+         * will affect the constraints. */
+        variant: VariantIndex,
     },
 }
 

@@ -541,11 +541,7 @@ mod proj {
         ) -> Self::Proj<'a> {
             match host.as_ref() {
                 ConcreteValue::Adt(AdtValue {
-                    kind:
-                        AdtKind::Enum {
-                            discriminant: variant,
-                            ..
-                        },
+                    kind: AdtKind::Enum { variant, .. },
                     ..
                 }) => {
                     assert_eq!(
@@ -638,10 +634,7 @@ mod proj {
         ) -> Self::Proj<'a> {
             match host.as_ref() {
                 ConcreteValue::Adt(AdtValue {
-                    kind:
-                        AdtKind::Enum {
-                            discriminant: variant,
-                        },
+                    kind: AdtKind::Enum { variant },
                     ..
                 }) => {
                     assert_eq!(

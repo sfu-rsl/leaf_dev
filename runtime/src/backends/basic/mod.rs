@@ -223,12 +223,11 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
     fn discriminant_of(mut self, place: Self::Place) {
         let host_value = self.vars_state.copy_place(&place);
         match host_value.as_ref() {
+            /* FIXME: #87 */
             Value::Concrete(ConcreteValue::Adt(AdtValue {
-                kind: AdtKind::Enum {
-                    discriminant: discr,
-                },
+                kind: AdtKind::Enum { variant },
                 ..
-            })) => self.set_value(ConstValue::from(*discr).into()),
+            })) => self.set_value(ConstValue::from(*variant).into()),
             _ => unreachable!("Discriminant is only supposed to be called on (concrete) enums."),
         }
     }
@@ -250,9 +249,7 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
         variant: Option<VariantIndex>,
     ) {
         let kind = match variant {
-            Some(discr) => AdtKind::Enum {
-                discriminant: discr,
-            },
+            Some(variant) => AdtKind::Enum { variant },
             None => AdtKind::Struct,
         };
         self.set_adt_value(kind, fields)
@@ -267,7 +264,7 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
     fn variant_index(mut self, variant_index: VariantIndex) {
         let value = Value::Concrete(ConcreteValue::Adt(AdtValue {
             kind: AdtKind::Enum {
-                discriminant: variant_index,
+                variant: variant_index,
             },
             fields: vec![],
         }));
