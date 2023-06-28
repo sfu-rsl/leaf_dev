@@ -450,7 +450,7 @@ mod mutation {
 mod proj {
     use super::*;
     use crate::{
-        abs::{expr::proj::Projector, FieldIndex},
+        abs::{expr::proj::Projector, FieldIndex, VariantIndex},
         backends::basic::{
             expr::SymIndexPair,
             place::{FullPlace, Projection},
@@ -533,6 +533,30 @@ mod proj {
                 from_end
             )
         }
+
+        fn downcast<'a>(
+            &mut self,
+            host: Self::HostRef<'a>,
+            to_variant: VariantIndex,
+        ) -> Self::Proj<'a> {
+            match host.as_ref() {
+                ConcreteValue::Adt(AdtValue {
+                    kind:
+                        AdtKind::Enum {
+                            discriminant: variant,
+                            ..
+                        },
+                    ..
+                }) => {
+                    assert_eq!(
+                        *variant, to_variant,
+                        "Variant must be the same for concrete values."
+                    );
+                    Ok(host.0)
+                }
+                _ => Err(host),
+            }
+        }
     }
 
     struct MutProjector<I> {
@@ -605,6 +629,29 @@ mod proj {
                 to,
                 from_end
             )
+        }
+
+        fn downcast<'a>(
+            &mut self,
+            host: Self::HostRef<'a>,
+            to_variant: VariantIndex,
+        ) -> Self::Proj<'a> {
+            match host.as_ref() {
+                ConcreteValue::Adt(AdtValue {
+                    kind:
+                        AdtKind::Enum {
+                            discriminant: variant,
+                        },
+                    ..
+                }) => {
+                    assert_eq!(
+                        *variant, to_variant,
+                        "Variant must be the same for concrete values."
+                    );
+                    Ok(MutPlaceValue::Normal(host.0))
+                }
+                _ => Err(Self::make_mut(host)),
+            }
         }
     }
 
@@ -820,7 +867,7 @@ mod proj {
             Projection::Subslice { from, to, from_end } => {
                 projector.subslice(host.into(), *from, *to, *from_end)
             }
-            Projection::Downcast(_) => todo!("#156"),
+            Projection::Downcast(variant) => projector.downcast(host.into(), *variant),
             Projection::OpaqueCast => todo!(),
         }
         .into()

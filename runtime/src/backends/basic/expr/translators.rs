@@ -12,10 +12,7 @@ pub(crate) mod z3 {
 
     use crate::{
         abs::{BinaryOp, FieldIndex, IntType, UnaryOp, ValueType},
-        backends::basic::expr::{
-            prelude::*, ConcreteValue, ConstValue, Expr, ProjExpr, ProjKind, SymBinaryOperands,
-            SymValue, SymVarId, SymbolicVar, Value, ValueRef,
-        },
+        backends::basic::expr::{prelude::*, ProjKind, SymBinaryOperands, SymVarId},
     };
 
     use crate::solvers::z3::{AstNode, AstPair};
@@ -364,7 +361,7 @@ pub(crate) mod z3 {
                         to: _,
                         from_end: _,
                     } => todo!(),
-                    ProjKind::Downcast => todo!(),
+                    ProjKind::Downcast(_) => todo!(),
                 },
             }
         }

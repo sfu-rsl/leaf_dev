@@ -1,4 +1,4 @@
-use crate::abs::{expr::proj::Projector, FieldIndex};
+use crate::abs::{expr::proj::Projector, FieldIndex, VariantIndex};
 
 use super::super::alias::SymValueRefProjector;
 use super::{ConcreteValueRef, ProjExpr, ProjKind, SymIndexPair, SymValueRef};
@@ -70,6 +70,17 @@ mod core {
             ProjExpr::SymHost {
                 host,
                 kind: ProjKind::Subslice { from, to, from_end },
+            }
+        }
+
+        fn downcast<'a>(
+            &mut self,
+            host: Self::HostRef<'a>,
+            to_variant: VariantIndex,
+        ) -> Self::Proj<'a> {
+            ProjExpr::SymHost {
+                host,
+                kind: ProjKind::Downcast(to_variant),
             }
         }
     }

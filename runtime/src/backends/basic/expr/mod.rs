@@ -667,7 +667,7 @@ pub(crate) enum ProjKind {
     Field(FieldIndex),
     Index { index: ValueRef, from_end: bool },
     Subslice { from: u64, to: u64, from_end: bool },
-    Downcast,
+    Downcast(VariantIndex),
 }
 
 macro_rules! define_value_guard {

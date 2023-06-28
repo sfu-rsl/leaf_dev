@@ -1,4 +1,4 @@
-use crate::abs::FieldIndex;
+use crate::abs::{FieldIndex, VariantIndex};
 
 /// A trait for projections of host object at a place.
 pub(crate) trait Projector {
@@ -23,4 +23,7 @@ pub(crate) trait Projector {
         to: u64,
         from_end: bool,
     ) -> Self::Proj<'a>;
+
+    fn downcast<'a>(&mut self, host: Self::HostRef<'a>, to_variant: VariantIndex)
+    -> Self::Proj<'a>;
 }
