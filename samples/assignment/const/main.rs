@@ -1,26 +1,32 @@
 #![allow(unused_variables)]
 
+const A: i32 = 20;
+
 fn main() {
-    let b = true;
+    let b = foo(true);
 
-    let si = -10 as i8;
-    let si = -10 as i16;
-    let si = -10 as i32;
-    let si = -10 as i64;
-    let si = -10 as i128;
+    let si = foo(A);
 
-    let ui = 10 as u8;
-    let ui = 10 as u16;
-    let ui = 10 as u32;
-    let ui = 10 as u64;
-    let ui = 10 as u128;
+    let si = foo(-10_i8);
+    let si = foo(-10_i16);
+    let si = foo(-10_i32);
+    let si = foo(-10_i64);
+    let si = foo(-10_i128);
 
-    let f = 10.33 as f32;
-    let f = 10.33 as f64;
+    let ui = foo(10_u8);
+    let ui = foo(10_u16);
+    let ui = foo(10_u32);
+    let ui = foo(10_u64);
+    let ui = foo(10_u128);
 
-    let c = 'a';
+    let f = foo(10.33_f32);
+    let f = foo(10.33_f64);
 
-    let s = "Hello, world!";
+    let c = foo('a');
 
-    let u = ();
+    let s = foo("Hello, world!");
+
+    let u = foo(());
 }
+
+fn foo<T>(_: T) {}
