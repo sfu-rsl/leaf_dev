@@ -162,8 +162,9 @@ where
     fn visit_statement(
         &mut self,
         statement: &rustc_middle::mir::Statement<'tcx>,
-        _location: Location,
+        location: Location,
     ) {
+        log::debug!("Visiting statement: {:?} at {:?}", statement.kind, location);
         VisitorFactory::make_statement_kind_visitor(&mut self.call_adder)
             .visit_statement_kind(&statement.kind);
     }

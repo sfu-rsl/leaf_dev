@@ -110,9 +110,12 @@ impl<'tcx, 'm> DefaultContext<'tcx, 'm> {
     pub fn new(tcx: TyCtxt<'tcx>, modification_unit: &'m mut BodyModificationUnit<'tcx>) -> Self {
         use pri_utils::*;
         let pri_symbols = find_pri_exported_symbols(tcx);
-        pri_symbols.iter().for_each(|def_id| {
-            log::debug!("Found PRI symbol: {:?}", tcx.def_path_str(*def_id));
-        });
+        if cfg!(debug_assertions) {
+            for def_id in &pri_symbols {
+                log::debug!("Found PRI symbol: {:?}", tcx.def_path_str(*def_id));
+            }
+        }
+
         Self {
             tcx,
             modification_unit,
