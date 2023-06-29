@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use rustc_hir::{def::DefKind, def_id::DefId, definitions::DisambiguatedDefPathData};
 use rustc_middle::ty::{Ty, TyCtxt};
 
-use super::context::{FunctionInfo, HelperFunctions, SpecialTypes};
+use super::context::{FunctionInfo, PriHelperFunctions, PriTypes};
 
 pub(super) fn find_pri_exported_symbols(tcx: TyCtxt) -> Vec<DefId> {
     use rustc_middle::middle::exported_symbols::ExportedSymbol;
@@ -69,10 +69,7 @@ macro_rules! helper_item_name {
     };
 }
 
-pub(super) fn find_special_types<'tcx>(
-    pri_symbols: &[DefId],
-    tcx: TyCtxt<'tcx>,
-) -> SpecialTypes<'tcx> {
+pub(super) fn find_pri_types<'tcx>(pri_symbols: &[DefId], tcx: TyCtxt<'tcx>) -> PriTypes<'tcx> {
     /*
      * FIXME: The desired enums and type aliases don't show up in the exported symbols.
      * It may be because of the MIR phases that clean up/optimize/unify things,
@@ -96,10 +93,10 @@ pub(super) fn find_special_types<'tcx>(
     let get_ty = |name: &str| -> Ty {
         tcx.type_of(def_ids.get(&name.replace(' ', "")).unwrap())
             .no_bound_vars()
-            .expect("PRI special types are not expected to have bound vars (generics).")
+            .expect("PRI types are not expected to have bound vars (generics).")
     };
 
-    SpecialTypes {
+    PriTypes {
         place_ref: get_ty(helper_item_name!(PLACE_REF_TYPE_HOLDER)),
         operand_ref: get_ty(helper_item_name!(OPERAND_REF_TYPE_HOLDER)),
         binary_op: get_ty(helper_item_name!(BINARY_OP_TYPE_HOLDER)),
@@ -107,7 +104,10 @@ pub(super) fn find_special_types<'tcx>(
     }
 }
 
-pub(super) fn find_helper_funcs<'tcx>(pri_symbols: &[DefId], tcx: TyCtxt<'tcx>) -> HelperFunctions {
+pub(super) fn find_helper_funcs<'tcx>(
+    pri_symbols: &[DefId],
+    tcx: TyCtxt<'tcx>,
+) -> PriHelperFunctions {
     let def_ids: HashMap<String, DefId> = pri_symbols
         .filter_by_marker(
             tcx,
@@ -119,7 +119,7 @@ pub(super) fn find_helper_funcs<'tcx>(pri_symbols: &[DefId], tcx: TyCtxt<'tcx>) 
         .map(|def_id| (tcx.def_path_str(def_id), def_id))
         .collect();
 
-    HelperFunctions {
+    PriHelperFunctions {
         f32_to_bits: *def_ids.get(helper_item_name!(f32_to_bits)).unwrap(),
         f64_to_bits: *def_ids.get(helper_item_name!(f64_to_bits)).unwrap(),
     }

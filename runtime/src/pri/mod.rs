@@ -349,10 +349,8 @@ pub mod compiler_helpers {
 
     pub static MODULE_MARKER: u8 = 0;
 
-    /*
-     * These fields serve as exported symbols to get the types of the desired
-     * arguments easier in the compiler.
-     */
+    /* These fields serve as exported symbols to get the types of the desired
+     * arguments easier in the compiler. */
     pub static PLACE_REF_TYPE_HOLDER: PlaceRef = 0;
     pub static OPERAND_REF_TYPE_HOLDER: OperandRef = 0;
     pub static BINARY_OP_TYPE_HOLDER: BinaryOp = BinaryOp::Add;

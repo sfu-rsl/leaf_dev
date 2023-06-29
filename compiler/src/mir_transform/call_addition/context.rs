@@ -29,25 +29,23 @@ pub struct FunctionInfo<'tcx> {
     pub ret_ty: Ty<'tcx>,
 }
 
-pub trait FunctionInfoProvider<'tcx> {
-    fn get_pri_func_info(&self, func_name: &str) -> &FunctionInfo<'tcx>;
-}
-
-pub struct SpecialTypes<'tcx> {
+/// Contains types that are used in PRI functions along with primitive types.
+pub struct PriTypes<'tcx> {
     pub place_ref: Ty<'tcx>,
     pub operand_ref: Ty<'tcx>,
     pub binary_op: Ty<'tcx>,
     pub unary_op: Ty<'tcx>,
 }
 
-pub struct HelperFunctions {
+pub struct PriHelperFunctions {
     pub f32_to_bits: DefId,
     pub f64_to_bits: DefId,
 }
 
-pub trait PriHelpersProvider<'tcx> {
-    fn pri_special_types(&self) -> &SpecialTypes<'tcx>;
-    fn pri_helper_functions(&self) -> &HelperFunctions;
+pub trait PriItemsProvider<'tcx> {
+    fn get_pri_func_info(&self, func_name: &str) -> &FunctionInfo<'tcx>;
+    fn pri_types(&self) -> &PriTypes<'tcx>;
+    fn pri_helper_funcs(&self) -> &PriHelperFunctions;
 }
 
 pub trait LocationProvider {
@@ -82,8 +80,7 @@ where
     Self: TyContextProvider<'tcx>
         + BodyLocalManager<'tcx>
         + BodyBlockManager<'tcx>
-        + FunctionInfoProvider<'tcx>
-        + PriHelpersProvider<'tcx>
+        + PriItemsProvider<'tcx>
         + HasLocalDecls<'tcx>,
 {
 }
@@ -92,8 +89,7 @@ impl<'tcx, C> BaseContext<'tcx> for C where
     Self: TyContextProvider<'tcx>
         + BodyLocalManager<'tcx>
         + BodyBlockManager<'tcx>
-        + FunctionInfoProvider<'tcx>
-        + PriHelpersProvider<'tcx>
+        + PriItemsProvider<'tcx>
         + HasLocalDecls<'tcx>
 {
 }
@@ -101,9 +97,13 @@ impl<'tcx, C> BaseContext<'tcx> for C where
 pub(crate) struct DefaultContext<'tcx, 'm> {
     tcx: TyCtxt<'tcx>,
     modification_unit: &'m mut BodyModificationUnit<'tcx>,
-    pri_functions: HashMap<String, FunctionInfo<'tcx>>,
-    pri_special_types: SpecialTypes<'tcx>,
-    pri_helper_functions: HelperFunctions,
+    pri: PriItems<'tcx>,
+}
+
+pub(crate) struct PriItems<'tcx> {
+    pub funcs: HashMap<String, FunctionInfo<'tcx>>,
+    pub types: PriTypes<'tcx>,
+    pub helper_funcs: PriHelperFunctions,
 }
 
 impl<'tcx, 'm> DefaultContext<'tcx, 'm> {
@@ -119,9 +119,11 @@ impl<'tcx, 'm> DefaultContext<'tcx, 'm> {
         Self {
             tcx,
             modification_unit,
-            pri_functions: find_pri_funcs(&pri_symbols, tcx), // FIXME: Perform caching
-            pri_special_types: find_special_types(&pri_symbols, tcx),
-            pri_helper_functions: find_helper_funcs(&pri_symbols, tcx),
+            pri: PriItems {
+                funcs: find_pri_funcs(&pri_symbols, tcx), // FIXME: Perform caching
+                types: find_pri_types(&pri_symbols, tcx),
+                helper_funcs: find_helper_funcs(&pri_symbols, tcx),
+            },
         }
     }
 }
@@ -176,21 +178,29 @@ impl JumpTargetModifier for DefaultContext<'_, '_> {
     }
 }
 
-impl<'tcx> FunctionInfoProvider<'tcx> for DefaultContext<'tcx, '_> {
+impl<'tcx> PriItemsProvider<'tcx> for PriItems<'tcx> {
     fn get_pri_func_info(&self, func_name: &str) -> &FunctionInfo<'tcx> {
-        self.pri_functions
+        self.funcs
             .get(&("runtime::".to_owned() + &func_name.replace(' ', ""))) // FIXME
             .unwrap_or_else(|| panic!("Invalid pri function name: `{func_name}`."))
     }
-}
 
-impl<'tcx> PriHelpersProvider<'tcx> for DefaultContext<'tcx, '_> {
-    fn pri_special_types(&self) -> &SpecialTypes<'tcx> {
-        &self.pri_special_types
+    fn pri_types(&self) -> &PriTypes<'tcx> {
+        &self.types
     }
 
-    fn pri_helper_functions(&self) -> &HelperFunctions {
-        &self.pri_helper_functions
+    fn pri_helper_funcs(&self) -> &PriHelperFunctions {
+        &self.helper_funcs
+    }
+}
+
+impl<'tcx> PriItemsProvider<'tcx> for DefaultContext<'tcx, '_> {
+    delegate! {
+        to self.pri {
+            fn get_pri_func_info(&self, func_name: &str) -> &FunctionInfo<'tcx>;
+            fn pri_types(&self) -> &PriTypes<'tcx>;
+            fn pri_helper_funcs(&self) -> &PriHelperFunctions;
+        }
     }
 }
 
@@ -311,18 +321,12 @@ macro_rules! make_impl_macro {
 }
 
 make_impl_macro! {
-    impl_func_info_provider,
-    FunctionInfoProvider<'tcx>,
+    impl_pri_items_provider,
+    PriItemsProvider<'tcx>,
     self,
     fn get_pri_func_info(&self, func_name: &str) -> &FunctionInfo<'tcx>;
-}
-
-make_impl_macro! {
-    impl_pri_helpers_provider,
-    PriHelpersProvider<'tcx>,
-    self,
-    fn pri_special_types(&self) -> &SpecialTypes<'tcx>;
-    fn pri_helper_functions(&self) -> &HelperFunctions;
+    fn pri_types(&self) -> &PriTypes<'tcx>;
+    fn pri_helper_funcs(&self) -> &PriHelperFunctions;
 }
 
 make_impl_macro! {
@@ -469,8 +473,7 @@ macro_rules! make_caller_macro {
 make_caller_macro!(
     impl_traits,
     [
-        impl_func_info_provider,
-        impl_pri_helpers_provider,
+        impl_pri_items_provider,
         impl_local_manager,
         impl_block_manager,
         impl_jump_target_modifier,

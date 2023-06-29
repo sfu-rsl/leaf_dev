@@ -314,7 +314,7 @@ where
 
 impl<'tcx, C> MirCallAdder<'tcx> for RuntimeCallAdder<C>
 where
-    C: BodyLocalManager<'tcx> + TyContextProvider<'tcx> + FunctionInfoProvider<'tcx>,
+    C: BodyLocalManager<'tcx> + TyContextProvider<'tcx> + PriItemsProvider<'tcx>,
 {
     fn make_bb_for_call_with_target_and_ret(
         &mut self,
@@ -333,7 +333,7 @@ where
 }
 impl<'tcx, C> RuntimeCallAdder<C>
 where
-    C: TyContextProvider<'tcx> + FunctionInfoProvider<'tcx>,
+    C: TyContextProvider<'tcx> + PriItemsProvider<'tcx>,
 {
     fn make_call_bb(
         &self,
@@ -504,7 +504,7 @@ where
     C: TyContextProvider<'tcx>
         + BodyProvider<'tcx>
         + BodyLocalManager<'tcx>
-        + PriHelpersProvider<'tcx>,
+        + PriItemsProvider<'tcx>,
 {
     fn reference_operand(&mut self, operand: &Operand<'tcx>) -> OperandRef {
         let BlocksAndResult(new_blocks, reference) = self.internal_reference_operand(operand);
@@ -518,7 +518,7 @@ where
     C: TyContextProvider<'tcx>
         + BodyProvider<'tcx>
         + BodyLocalManager<'tcx>
-        + PriHelpersProvider<'tcx>,
+        + PriItemsProvider<'tcx>,
 {
     fn internal_reference_operand(&mut self, operand: &Operand<'tcx>) -> BlocksAndResult<'tcx> {
         match operand {
@@ -730,7 +730,7 @@ where
     ) {
         let operator = convert_mir_binop_to_pri(operator);
         let (operator_local, additional_stmts) =
-            self.add_and_set_local_for_enum(self.context.pri_special_types().binary_op, operator);
+            self.add_and_set_local_for_enum(self.context.pri_types().binary_op, operator);
 
         self.add_bb_for_assign_call_with_statements(
             stringify!(pri::assign_binary_op),
@@ -747,7 +747,7 @@ where
     fn by_unary_op(&mut self, operator: &UnOp, operand: OperandRef) {
         let operator = convert_mir_unop_to_pri(operator);
         let (operator_local, additional_stmts) =
-            self.add_and_set_local_for_enum(self.context.pri_special_types().unary_op, operator);
+            self.add_and_set_local_for_enum(self.context.pri_types().unary_op, operator);
 
         self.add_bb_for_assign_call_with_statements(
             stringify!(pri::assign_unary_op),
@@ -828,7 +828,7 @@ where
     C: DestinationReferenceProvider
         + BodyLocalManager<'tcx>
         + TyContextProvider<'tcx>
-        + PriHelpersProvider<'tcx>,
+        + PriItemsProvider<'tcx>,
 {
     fn add_bb_for_aggregate_assign_call(
         &mut self,
@@ -853,7 +853,7 @@ where
         &mut self,
         elements: &[OperandRef],
     ) -> (Local, [Statement<'tcx>; 3]) {
-        let operand_ref_ty = self.context.pri_special_types().operand_ref;
+        let operand_ref_ty = self.context.pri_types().operand_ref;
         let (items_local, additional_stmts) = prepare_operand_for_slice(
             self.context.tcx(),
             &mut self.context,
@@ -1162,7 +1162,7 @@ impl<'tcx, C> FunctionHandler<'tcx> for RuntimeCallAdder<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
     C: TyContextProvider<'tcx>
-        + PriHelpersProvider<'tcx>
+        + PriItemsProvider<'tcx>
         + BodyLocalManager<'tcx>
         + BodyBlockManager<'tcx>
         + LocationProvider
@@ -1170,7 +1170,7 @@ where
         + BodyProvider<'tcx>,
 {
     fn before_call_func(&mut self, func: OperandRef, arguments: impl Iterator<Item = OperandRef>) {
-        let operand_ref_ty = self.context.pri_special_types().operand_ref;
+        let operand_ref_ty = self.context.pri_types().operand_ref;
         let (arguments_local, additional_stmts) = prepare_operand_for_slice(
             self.context.tcx(),
             &mut self.context,
@@ -1217,7 +1217,7 @@ impl<'tcx, C> AssertionHandler<'tcx> for RuntimeCallAdder<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
     C: TyContextProvider<'tcx>
-        + PriHelpersProvider<'tcx>
+        + PriItemsProvider<'tcx>
         + BodyLocalManager<'tcx>
         + BodyProvider<'tcx>,
 {
@@ -1263,7 +1263,7 @@ where
                 )
             }
             AssertKind::Overflow(bin_op, op1, op2) => {
-                let binary_op_ty = self.context.pri_special_types().binary_op;
+                let binary_op_ty = self.context.pri_types().binary_op;
                 let operator = convert_mir_binop_to_pri(bin_op);
                 let operator_local = self.context.add_local(binary_op_ty);
                 let additional_stmts = enums::set_variant_to_local(
@@ -1346,8 +1346,7 @@ pub(crate) mod context_requirements {
         TyContextProvider<'tcx>
         + BodyLocalManager<'tcx>
         + BodyBlockManager<'tcx>
-        + FunctionInfoProvider<'tcx>
-        + PriHelpersProvider<'tcx>
+        + PriItemsProvider<'tcx>
         + HasLocalDecls<'tcx>
     {
     }
@@ -1355,8 +1354,7 @@ pub(crate) mod context_requirements {
         C: TyContextProvider<'tcx>
             + BodyLocalManager<'tcx>
             + BodyBlockManager<'tcx>
-            + FunctionInfoProvider<'tcx>
-            + PriHelpersProvider<'tcx>
+            + PriItemsProvider<'tcx>
             + HasLocalDecls<'tcx>
     {
     }
@@ -1429,7 +1427,7 @@ mod utils {
 
     use self::assignment::rvalue;
 
-    use super::context::PriHelpersProvider;
+    use super::context::PriItemsProvider;
 
     pub(super) mod operand {
 
@@ -1717,16 +1715,16 @@ mod utils {
 
     pub(super) fn cast_float_to_bit_rep<'tcx>(
         tcx: TyCtxt<'tcx>,
-        context: &mut (impl BodyLocalManager<'tcx> + PriHelpersProvider<'tcx>),
+        context: &mut (impl BodyLocalManager<'tcx> + PriItemsProvider<'tcx>),
         constant: &Box<Constant<'tcx>>,
     ) -> (Local, BasicBlockData<'tcx>) {
         use rustc_middle::ty::{FloatTy, TyKind};
         debug_assert!(constant.ty().is_floating_point());
         let bit_rep_local = context.add_local(tcx.types.u128);
         let conversion_func = if matches!(constant.ty().kind(), TyKind::Float(FloatTy::F32)) {
-            context.pri_helper_functions().f32_to_bits
+            context.pri_helper_funcs().f32_to_bits
         } else {
-            context.pri_helper_functions().f64_to_bits
+            context.pri_helper_funcs().f64_to_bits
         };
         let block = BasicBlockData::new(Some(terminator::call(
             tcx,
