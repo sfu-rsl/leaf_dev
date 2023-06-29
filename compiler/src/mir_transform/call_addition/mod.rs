@@ -1,22 +1,21 @@
 use std::{fmt::Debug, vec};
 
-use rustc_abi::FieldIdx;
-use rustc_const_eval::interpret::{ConstValue, Scalar};
-use rustc_middle::{
-    mir::{
-        BasicBlock, BasicBlockData, BinOp, Body, Constant, ConstantKind, HasLocalDecls, Local,
-        Operand, Place, ProjectionElem, SourceInfo, Statement, Terminator, TerminatorKind, UnOp,
-        UnwindAction,
-    },
-    ty::{GenericArg, ScalarInt, Ty, TyCtxt, TyKind},
-};
-use rustc_span::DUMMY_SP;
-use rustc_target::abi::VariantIdx;
-
 use self::{context::*, utils::*};
 use super::modification::{
     self, BodyBlockManager, BodyLocalManager, BodyModificationUnit, JumpTargetModifier,
 };
+
+use delegate::delegate;
+
+use rustc_abi::FieldIdx;
+use rustc_middle::{
+    mir::{
+        BasicBlock, BasicBlockData, BinOp, Body, Constant, HasLocalDecls, Local, Operand, Place,
+        ProjectionElem, Statement, Terminator, UnOp,
+    },
+    ty::{GenericArg, ScalarInt, Ty, TyCtxt, TyKind},
+};
+use rustc_target::abi::VariantIdx;
 
 pub(crate) mod context;
 mod pri_utils;
@@ -306,8 +305,10 @@ impl<'tcx, C> TyContextProvider<'tcx> for RuntimeCallAdder<C>
 where
     C: TyContextProvider<'tcx>,
 {
-    fn tcx(&self) -> TyCtxt<'tcx> {
-        self.context.tcx()
+    delegate! {
+        to self.context {
+            fn tcx(&self) -> TyCtxt<'tcx>;
+        }
     }
 }
 
@@ -356,27 +357,13 @@ where
         destination: Place<'tcx>,
         target: Option<BasicBlock>,
     ) -> Terminator<'tcx> {
-        Terminator {
-            source_info: SourceInfo::outermost(DUMMY_SP),
-            kind: TerminatorKind::Call {
-                /*
-                 * NOTE: Check if it is supposed to be the same operand for each function definition,
-                 * i.e. caching/lazy singleton.
-                 */
-                func: Operand::function_handle(
-                    self.context.tcx(),
-                    self.context.get_pri_func_info(func_name).def_id,
-                    std::iter::empty(),
-                    DUMMY_SP,
-                ),
-                args,
-                destination,
-                target: Some(target.unwrap_or(modification::NEXT_BLOCK)),
-                unwind: UnwindAction::Continue,
-                from_hir_call: true,
-                fn_span: DUMMY_SP,
-            },
-        }
+        terminator::call(
+            self.context.tcx(),
+            self.context.get_pri_func_info(func_name).def_id,
+            args,
+            destination,
+            target,
+        )
     }
 }
 
@@ -514,7 +501,10 @@ where
 impl<'tcx, C> OperandReferencer<'tcx> for RuntimeCallAdder<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
-    C: TyContextProvider<'tcx> + BodyProvider<'tcx>,
+    C: TyContextProvider<'tcx>
+        + BodyProvider<'tcx>
+        + BodyLocalManager<'tcx>
+        + PriHelpersProvider<'tcx>,
 {
     fn reference_operand(&mut self, operand: &Operand<'tcx>) -> OperandRef {
         let BlocksAndResult(new_blocks, reference) = self.internal_reference_operand(operand);
@@ -525,7 +515,10 @@ where
 impl<'tcx, C> RuntimeCallAdder<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
-    C: TyContextProvider<'tcx> + BodyProvider<'tcx>,
+    C: TyContextProvider<'tcx>
+        + BodyProvider<'tcx>
+        + BodyLocalManager<'tcx>
+        + PriHelpersProvider<'tcx>,
 {
     fn internal_reference_operand(&mut self, operand: &Operand<'tcx>) -> BlocksAndResult<'tcx> {
         match operand {
@@ -551,127 +544,88 @@ where
 
     fn internal_reference_const_operand(
         &mut self,
-        constant: &Constant<'tcx>,
+        constant: &Box<Constant<'tcx>>,
     ) -> BlocksAndResult<'tcx> {
-        let kind = constant.literal;
-        match kind {
-            ConstantKind::Ty(_) => todo!(),
-            ConstantKind::Unevaluated(_, _) => todo!(),
-            ConstantKind::Val(value, ty) => self.internal_reference_val_const_operand(value, ty),
-        }
-    }
-
-    fn internal_reference_val_const_operand(
-        &mut self,
-        value: ConstValue<'tcx>,
-        ty: Ty<'tcx>,
-    ) -> BlocksAndResult<'tcx> {
-        match value {
-            ConstValue::Scalar(scalar) => self.internal_reference_scalar_const_operand(scalar, ty),
-            ConstValue::ZeroSized => self.internal_reference_zero_sized_const_operand(ty),
-            ConstValue::Slice { .. } => self.internal_reference_slice_const_operand(value, ty),
-            ConstValue::ByRef { .. } => todo!(),
-        }
-    }
-
-    fn internal_reference_scalar_const_operand(
-        &mut self,
-        scalar: Scalar,
-        ty: Ty<'tcx>,
-    ) -> BlocksAndResult<'tcx> {
-        match scalar {
-            Scalar::Int(int) => self.internal_reference_scalar_int_const_operand(int, ty),
-            Scalar::Ptr(_, _) => todo!(),
-        }
-    }
-
-    fn internal_reference_scalar_int_const_operand(
-        &mut self,
-        scalar: ScalarInt,
-        ty: Ty<'tcx>,
-    ) -> BlocksAndResult<'tcx> {
+        /* NOTE: Although there might be some ways to obtain/evaluate the values, we prefer to use
+         * the constant as it is, and rely on high-level conversions to support all types of
+         * constants in an abstract fashion. */
+        let ty = constant.ty();
         if ty.is_bool() {
-            self.make_bb_for_operand_ref_call(
+            self.internal_reference_const_operand_directly(
                 stringify!(pri::ref_operand_const_bool),
-                vec![operand::const_from_scalar_int(
-                    self.context.tcx(),
-                    scalar,
-                    ty,
-                )],
+                constant,
             )
         } else if ty.is_integral() {
-            self.make_bb_for_operand_ref_call(
-                stringify!(pri::ref_operand_const_int),
-                vec![
-                    operand::const_from_uint(
-                        self.context.tcx(),
-                        /* Currently no direct way to read the data field. */
-                        scalar.assert_bits(scalar.size()),
-                    ),
-                    operand::const_from_uint(self.context.tcx(), scalar.size().bits()),
-                    operand::const_from_bool(self.context.tcx(), ty.is_signed()),
-                ],
-            )
+            self.internal_reference_int_const_operand(constant)
         } else if ty.is_floating_point() {
-            let (e_bits, s_bits) = ty::ebit_sbit_size(self.context.tcx(), ty);
-            self.make_bb_for_operand_ref_call(
-                stringify!(pri::ref_operand_const_float),
-                vec![
-                    operand::const_from_uint(
-                        self.context.tcx(),
-                        /* Currently no direct way to read the data field. */
-                        scalar.assert_bits(scalar.size()),
-                    ),
-                    operand::const_from_uint(self.context.tcx(), e_bits),
-                    operand::const_from_uint(self.context.tcx(), s_bits),
-                ],
-            )
+            self.internal_reference_float_const_operand(constant)
         } else if ty.is_char() {
-            self.make_bb_for_operand_ref_call(
+            self.internal_reference_const_operand_directly(
                 stringify!(pri::ref_operand_const_char),
-                vec![operand::const_from_scalar_int(
-                    self.context.tcx(),
-                    scalar,
-                    ty,
-                )],
+                constant,
             )
-        } else {
-            unreachable!("ScalarInt is supposed to be either bool, int, float, or char.")
-        }
-        .into()
-    }
-
-    fn internal_reference_zero_sized_const_operand(
-        &mut self,
-        ty: Ty<'tcx>,
-    ) -> BlocksAndResult<'tcx> {
-        match ty.kind() {
-            TyKind::FnDef(def_id, substs) => {
-                self.internal_reference_func_def_const_operand(def_id, substs)
-            }
-            _ => todo!(),
-        }
-    }
-
-    fn internal_reference_slice_const_operand(
-        &mut self,
-        value: ConstValue<'tcx>,
-        ty: Ty<'tcx>,
-    ) -> BlocksAndResult<'tcx> {
-        if ty.peel_refs().is_str() {
-            let constant = Constant {
-                span: DUMMY_SP,
-                user_ty: None,
-                literal: ConstantKind::Val(value, ty),
-            };
-            self.make_bb_for_operand_ref_call(
+        } else if ty.peel_refs().is_str() {
+            self.internal_reference_const_operand_directly(
                 stringify!(pri::ref_operand_const_str),
-                vec![Operand::Constant(Box::new(constant))],
+                constant,
             )
+        } else if let TyKind::FnDef(def_id, substs) = ty.kind() {
+            self.internal_reference_func_def_const_operand(def_id, substs)
         } else {
-            unimplemented!("Only constant str slices are supported for now")
+            unimplemented!("Unsupported constant type: {:?}", ty)
         }
-        .into()
+    }
+
+    fn internal_reference_const_operand_directly(
+        &mut self,
+        func_name: &str,
+        constant: &Box<Constant<'tcx>>,
+    ) -> BlocksAndResult<'tcx> {
+        self.make_bb_for_operand_ref_call(func_name, vec![operand::const_from_existing(constant)])
+            .into()
+    }
+
+    fn internal_reference_int_const_operand(
+        &mut self,
+        constant: &Box<Constant<'tcx>>,
+    ) -> BlocksAndResult<'tcx> {
+        let ty = constant.ty();
+        debug_assert!(ty.is_integral());
+
+        let (bit_rep_local, additional_stmts) =
+            utils::cast_int_to_bit_rep(self.tcx(), &mut self.context, constant);
+        let (mut block, result) = self.make_bb_for_operand_ref_call(
+            stringify!(pri::ref_operand_const_int),
+            vec![
+                operand::move_for_local(bit_rep_local),
+                operand::const_from_uint(self.context.tcx(), ty::size_of(self.tcx(), ty).bits()),
+                operand::const_from_bool(self.context.tcx(), ty.is_signed()),
+            ],
+        );
+        block.statements.extend(additional_stmts);
+        (block, result).into()
+    }
+
+    fn internal_reference_float_const_operand(
+        &mut self,
+        constant: &Box<Constant<'tcx>>,
+    ) -> BlocksAndResult<'tcx> {
+        let ty = constant.ty();
+        debug_assert!(ty.is_floating_point());
+
+        let tcx = self.tcx();
+        let (bit_rep_local, conversion_block) =
+            utils::cast_float_to_bit_rep(tcx, &mut self.context, constant);
+        let (e_bits, s_bits) = ty::ebit_sbit_size(tcx, ty);
+        let block_pair = self.make_bb_for_operand_ref_call(
+            stringify!(pri::ref_operand_const_float),
+            vec![
+                operand::move_for_local(bit_rep_local),
+                operand::const_from_uint(tcx, e_bits),
+                operand::const_from_uint(tcx, s_bits),
+            ],
+        );
+        BlocksAndResult::from(block_pair).prepend([conversion_block])
     }
 
     fn internal_reference_func_def_const_operand(
@@ -873,7 +827,7 @@ where
     C: DestinationReferenceProvider
         + BodyLocalManager<'tcx>
         + TyContextProvider<'tcx>
-        + SpecialTypesProvider<'tcx>,
+        + PriHelpersProvider<'tcx>,
 {
     fn add_bb_for_aggregate_assign_call(
         &mut self,
@@ -1207,7 +1161,7 @@ impl<'tcx, C> FunctionHandler<'tcx> for RuntimeCallAdder<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
     C: TyContextProvider<'tcx>
-        + SpecialTypesProvider<'tcx>
+        + PriHelpersProvider<'tcx>
         + BodyLocalManager<'tcx>
         + BodyBlockManager<'tcx>
         + LocationProvider
@@ -1262,7 +1216,7 @@ impl<'tcx, C> AssertionHandler<'tcx> for RuntimeCallAdder<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
     C: TyContextProvider<'tcx>
-        + SpecialTypesProvider<'tcx>
+        + PriHelpersProvider<'tcx>
         + BodyLocalManager<'tcx>
         + BodyProvider<'tcx>,
 {
@@ -1392,7 +1346,7 @@ pub(crate) mod context_requirements {
         + BodyLocalManager<'tcx>
         + BodyBlockManager<'tcx>
         + FunctionInfoProvider<'tcx>
-        + SpecialTypesProvider<'tcx>
+        + PriHelpersProvider<'tcx>
         + HasLocalDecls<'tcx>
     {
     }
@@ -1401,21 +1355,21 @@ pub(crate) mod context_requirements {
             + BodyLocalManager<'tcx>
             + BodyBlockManager<'tcx>
             + FunctionInfoProvider<'tcx>
-            + SpecialTypesProvider<'tcx>
+            + PriHelpersProvider<'tcx>
             + HasLocalDecls<'tcx>
     {
     }
 
     pub(crate) trait ForPlaceRef<'tcx>:
-        LocationProvider + BaseContext<'tcx> + BodyProvider<'tcx>
+        LocationProvider + Basic<'tcx> + BodyProvider<'tcx>
     {
     }
-    impl<'tcx, C> ForPlaceRef<'tcx> for C where
-        C: LocationProvider + BaseContext<'tcx> + BodyProvider<'tcx>
-    {
-    }
+    impl<'tcx, C> ForPlaceRef<'tcx> for C where C: LocationProvider + Basic<'tcx> + BodyProvider<'tcx> {}
 
-    pub(crate) trait ForOperandRef<'tcx>: ForPlaceRef<'tcx> {}
+    pub(crate) trait ForOperandRef<'tcx>:
+        ForPlaceRef<'tcx> + BodyLocalManager<'tcx>
+    {
+    }
     impl<'tcx, C> ForOperandRef<'tcx> for C where C: ForPlaceRef<'tcx> {}
 
     pub(crate) trait ForAssignment<'tcx>:
@@ -1449,8 +1403,11 @@ pub(crate) mod context_requirements {
 struct BlocksAndResult<'tcx>(Vec<BasicBlockData<'tcx>>, Local);
 
 impl<'tcx> BlocksAndResult<'tcx> {
-    fn prepend(self, blocks: Vec<BasicBlockData<'tcx>>) -> Self {
-        Self([blocks, self.0].concat(), self.1)
+    fn prepend(self, blocks: impl IntoIterator<Item = BasicBlockData<'tcx>>) -> Self {
+        Self(
+            blocks.into_iter().chain(self.0.into_iter()).collect(),
+            self.1,
+        )
     }
 }
 
@@ -1463,7 +1420,7 @@ impl<'tcx> From<(BasicBlockData<'tcx>, Local)> for BlocksAndResult<'tcx> {
 mod utils {
 
     use rustc_middle::{
-        mir::{self, Local, Operand, Place, Statement},
+        mir::{self, BasicBlockData, Constant, Local, Operand, Place, Rvalue, Statement},
         ty::{Ty, TyCtxt},
     };
 
@@ -1471,13 +1428,15 @@ mod utils {
 
     use self::assignment::rvalue;
 
+    use super::context::PriHelpersProvider;
+
     pub(super) mod operand {
 
         use std::mem::size_of;
 
         use rustc_const_eval::interpret::Scalar;
         use rustc_middle::{
-            mir::{Local, Operand, Place},
+            mir::{Constant, Local, Operand, Place},
             ty::{ScalarInt, Ty, TyCtxt},
         };
         use rustc_span::DUMMY_SP;
@@ -1494,6 +1453,10 @@ mod utils {
             .into_iter()
             .find(|t| (t.bit_width().unwrap() / 8) as usize == size)
             .unwrap()
+        }
+
+        pub fn const_from_existing<'tcx>(constant: &Box<Constant<'tcx>>) -> Operand<'tcx> {
+            Operand::Constant(constant.clone())
         }
 
         pub fn const_from_uint<T>(tcx: TyCtxt, value: T) -> Operand
@@ -1665,6 +1628,39 @@ mod utils {
         }
     }
 
+    pub(super) mod terminator {
+        use rustc_hir::def_id::DefId;
+        use rustc_middle::mir::{BasicBlock, SourceInfo, Terminator, TerminatorKind, UnwindAction};
+        use rustc_span::DUMMY_SP;
+
+        use crate::mir_transform::modification;
+
+        use super::*;
+
+        pub fn call<'tcx>(
+            tcx: TyCtxt<'tcx>,
+            func_def_id: DefId,
+            args: Vec<Operand<'tcx>>,
+            destination: Place<'tcx>,
+            target: Option<BasicBlock>,
+        ) -> Terminator<'tcx> {
+            Terminator {
+                source_info: SourceInfo::outermost(DUMMY_SP),
+                kind: TerminatorKind::Call {
+                    /* NOTE: Check if it is supposed to be the same operand for each function definition,
+                     * i.e. caching/lazy singleton. */
+                    func: Operand::function_handle(tcx, func_def_id, std::iter::empty(), DUMMY_SP),
+                    args,
+                    destination,
+                    target: Some(target.unwrap_or(modification::NEXT_BLOCK)),
+                    unwind: UnwindAction::Continue,
+                    from_hir_call: true,
+                    fn_span: DUMMY_SP,
+                },
+            }
+        }
+    }
+
     pub(super) fn prepare_operand_for_slice<'tcx>(
         tcx: TyCtxt<'tcx>,
         local_manager: &mut impl BodyLocalManager<'tcx>,
@@ -1690,6 +1686,47 @@ mod utils {
         );
 
         (cast_local, [array_assign, ref_assign, cast_assign])
+    }
+
+    pub(super) fn cast_int_to_bit_rep<'tcx>(
+        tcx: TyCtxt<'tcx>,
+        context: &mut impl BodyLocalManager<'tcx>,
+        constant: &Box<Constant<'tcx>>,
+    ) -> (Local, [Statement<'tcx>; 1]) {
+        debug_assert!(constant.literal.ty().is_integral());
+        let bit_rep_local = context.add_local(tcx.types.u128);
+        let bit_rep_assign = assignment::create(
+            Place::from(bit_rep_local),
+            Rvalue::Cast(
+                mir::CastKind::IntToInt,
+                operand::const_from_existing(constant),
+                tcx.types.u128,
+            ),
+        );
+        (bit_rep_local, [bit_rep_assign])
+    }
+
+    pub(super) fn cast_float_to_bit_rep<'tcx>(
+        tcx: TyCtxt<'tcx>,
+        context: &mut (impl BodyLocalManager<'tcx> + PriHelpersProvider<'tcx>),
+        constant: &Box<Constant<'tcx>>,
+    ) -> (Local, BasicBlockData<'tcx>) {
+        use rustc_middle::ty::{FloatTy, TyKind};
+        debug_assert!(constant.ty().is_floating_point());
+        let bit_rep_local = context.add_local(tcx.types.u128);
+        let conversion_func = if matches!(constant.ty().kind(), TyKind::Float(FloatTy::F32)) {
+            context.pri_helper_functions().f32_to_bits
+        } else {
+            context.pri_helper_functions().f64_to_bits
+        };
+        let block = BasicBlockData::new(Some(terminator::call(
+            tcx,
+            conversion_func,
+            vec![operand::const_from_existing(constant)],
+            bit_rep_local.into(),
+            None,
+        )));
+        (bit_rep_local, block)
     }
 
     pub(super) fn convert_mir_binop_to_pri(op: &mir::BinOp) -> runtime::abs::BinaryOp {
