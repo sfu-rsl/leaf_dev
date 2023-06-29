@@ -425,44 +425,44 @@ make_impl_macro! {
 macro_rules! make_caller_macro {
     ($name:ident, [$($impl_macro:ident),+$(,)?]) => {
         macro_rules! $name {
-            (all for $$($$xxxxxx:tt)+) => {
-                $name!([$($impl_macro)*] for $$($$xxxxxx)+);
+            (all for $$($$target:tt)+) => {
+                $name!([$($impl_macro)*] for $$($$target)+);
             };
-            (all - [$$to_skip_head:ident $$($$to_skip_tail:ident)*] for $$($$xxxxxx:tt)+) => {
+            (all - [$$to_skip_head:ident $$($$to_skip_tail:ident)*] for $$($$target:tt)+) => {
                 $name!(
                     [$($impl_macro)*] - [$$to_skip_head $$($$to_skip_tail)*]
-                    for $$($$xxxxxx)+
+                    for $$($$target)+
                 );
             };
             $(
-                ([$impl_macro $$($$to_impl:ident)*] - [$impl_macro $$($$to_skip_tail:ident)*] for $$($$xxxxxx:tt)+) => {
+                ([$impl_macro $$($$to_impl:ident)*] - [$impl_macro $$($$to_skip_tail:ident)*] for $$($$target:tt)+) => {
                     $name!(
                         [$$($$to_impl)*] - [$$($$to_skip_tail)*]
-                        for $$($$xxxxxx)+
+                        for $$($$target)+
                     );
                 };
             )+
-            ([$$($$to_impl:ident)*] - [] for $$($$xxxxxx:tt)+) => {
+            ([$$($$to_impl:ident)*] - [] for $$($$target:tt)+) => {
                 $name!(
                     [$$($$to_impl)*]
-                    for $$($$xxxxxx)+
+                    for $$($$target)+
                 );
             };
-            ([$$to_impl_head:ident $$($$to_impl_tail:ident)*] - [$$to_skip_head:ident $$($$to_skip_tail:ident)* ] for $$($$xxxxxx:tt)+) => {
-                $$to_impl_head!($$($$xxxxxx)+);
+            ([$$to_impl_head:ident $$($$to_impl_tail:ident)*] - [$$to_skip_head:ident $$($$to_skip_tail:ident)* ] for $$($$target:tt)+) => {
+                $$to_impl_head!($$($$target)+);
                 $name!(
                     [$$($$to_impl_tail)*] - [$$to_skip_head $$($$to_skip_tail)*]
-                    for $$($$xxxxxx)+
+                    for $$($$target)+
                 );
             };
-            ([$$to_impl_head:ident $$($$to_impl_tail:ident)*] for $$($$xxxxxx:tt)+) => {
-                $$to_impl_head!($$($$xxxxxx)+);
+            ([$$to_impl_head:ident $$($$to_impl_tail:ident)*] for $$($$target:tt)+) => {
+                $$to_impl_head!($$($$target)+);
                 $name!(
                     [$$($$to_impl_tail)*]
-                    for $$($$xxxxxx)+
+                    for $$($$target)+
                 );
             };
-            ([] for $$($$xxxxxx:tt)+) => {
+            ([] for $$($$target:tt)+) => {
             };
         }
     };
