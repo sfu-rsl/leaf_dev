@@ -319,40 +319,9 @@ where
         self.call_adder.by_use(operand_ref)
     }
 
-    /// `Repeat(...)` Creates an array where each element is the value of the operand.
     fn visit_repeat(&mut self, operand: &Operand<'tcx>, count: &rustc_middle::ty::Const<'tcx>) {
-        // Array specification: https://doc.rust-lang.org/std/primitive.array.html
-        // - Spec requires count is a non-negative compile-time constant size, so it must be
-        //   of type usize https://doc.rust-lang.org/std/primitive.usize.html
-        let scalar_int = match count.kind() {
-            rustc_middle::ty::ConstKind::Param(_) => {
-                todo!("used in const generics, may come up again when supporting generic functions")
-            }
-            rustc_middle::ty::ConstKind::Infer(_) => {
-                todo!("used in const generics, may come up again when supporting generic functions")
-            }
-            rustc_middle::ty::ConstKind::Bound(_, _) => unreachable!(
-                "relates to trait queries & type checking, so likely done in HIR; also MIRAI ignores this"
-            ),
-            rustc_middle::ty::ConstKind::Placeholder(_) => unreachable!(
-                "used in the borrow checker before `optimized_mir`; also MIRAI ignores this"
-            ),
-            rustc_middle::ty::ConstKind::Unevaluated(_) => {
-                unreachable!("this is only used in the HIR")
-            }
-            rustc_middle::ty::ConstKind::Value(val_tree) => match val_tree {
-                rustc_middle::ty::ValTree::Leaf(scalar_int) => scalar_int,
-                rustc_middle::ty::ValTree::Branch(_) => {
-                    unreachable!("these are only for aggregate constants")
-                }
-            },
-            rustc_middle::ty::ConstKind::Error(_) => panic!("The const here could not be computed"),
-            rustc_middle::ty::ConstKind::Expr(_) => {
-                unreachable!("this is unreachable because constant propagation")
-            }
-        };
         let operand_ref = self.call_adder.reference_operand(operand);
-        self.call_adder.by_repeat(operand_ref, scalar_int)
+        self.call_adder.by_repeat(operand_ref, count)
     }
 
     fn visit_ref(

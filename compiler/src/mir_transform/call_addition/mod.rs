@@ -13,7 +13,7 @@ use rustc_middle::{
         BasicBlock, BasicBlockData, BinOp, Body, Constant, HasLocalDecls, Local, Operand, Place,
         ProjectionElem, Statement, Terminator, UnOp,
     },
-    ty::{GenericArg, ScalarInt, Ty, TyCtxt, TyKind},
+    ty::{Const, GenericArg, Ty, TyCtxt, TyKind},
 };
 use rustc_target::abi::VariantIdx;
 
@@ -130,7 +130,7 @@ pub(crate) trait Assigner<'tcx> {
 
     fn by_use(&mut self, operand: OperandRef);
 
-    fn by_repeat(&mut self, operand: OperandRef, count: ScalarInt);
+    fn by_repeat(&mut self, operand: OperandRef, count: &Const<'tcx>);
 
     fn by_ref(&mut self, place: PlaceRef, is_mutable: bool);
 
@@ -670,12 +670,13 @@ where
         )
     }
 
-    fn by_repeat(&mut self, operand: OperandRef, count: ScalarInt) {
+    fn by_repeat(&mut self, operand: OperandRef, count: &Const<'tcx>) {
+        debug_assert_eq!(count.ty(), self.tcx().types.usize);
         self.add_bb_for_assign_call(
             stringify!(pri::assign_repeat),
             vec![
                 operand::copy_for_local(operand.into()),
-                operand::const_from_scalar_int_unsigned(self.context.tcx(), count),
+                operand::const_from_existing_ty_const(count.clone()),
             ],
         )
     }
@@ -1436,8 +1437,8 @@ mod utils {
 
         use rustc_const_eval::interpret::Scalar;
         use rustc_middle::{
-            mir::{Constant, Local, Operand, Place},
-            ty::{ScalarInt, Ty, TyCtxt},
+            mir::{Constant, ConstantKind, Local, Operand, Place},
+            ty::{self, ScalarInt, Ty, TyCtxt},
         };
         use rustc_span::DUMMY_SP;
         use rustc_type_ir::UintTy;
@@ -1453,6 +1454,14 @@ mod utils {
             .into_iter()
             .find(|t| (t.bit_width().unwrap() / 8) as usize == size)
             .unwrap()
+        }
+
+        pub fn const_from_existing_ty_const(constant: ty::Const) -> Operand {
+            const_from_existing(&Box::new(Constant {
+                span: DUMMY_SP,
+                user_ty: None,
+                literal: ConstantKind::Ty(constant),
+            }))
         }
 
         pub fn const_from_existing<'tcx>(constant: &Box<Constant<'tcx>>) -> Operand<'tcx> {
