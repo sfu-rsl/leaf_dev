@@ -17,15 +17,6 @@ pub type OperandRef = Ref;
  */
 pub static MODULE_MARKER: u8 = 0;
 
-/*
- * These fields serve as exported symbols to get the types of the desired
- * arguments easier in the compiler.
- */
-pub static PLACE_REF_TYPE_HOLDER: PlaceRef = 0;
-pub static OPERAND_REF_TYPE_HOLDER: OperandRef = 0;
-pub static BINARY_OP_TYPE_HOLDER: BinaryOp = BinaryOp::Add;
-pub static UNARY_OP_TYPE_HOLDER: UnaryOp = UnaryOp::Neg;
-
 pub fn init_runtime_lib() {
     init_backend()
 }
@@ -350,5 +341,28 @@ impl BranchingInfo {
                 },
             },
         }
+    }
+}
+
+pub mod compiler_helpers {
+    use super::*;
+
+    pub static MODULE_MARKER: u8 = 0;
+
+    /*
+     * These fields serve as exported symbols to get the types of the desired
+     * arguments easier in the compiler.
+     */
+    pub static PLACE_REF_TYPE_HOLDER: PlaceRef = 0;
+    pub static OPERAND_REF_TYPE_HOLDER: OperandRef = 0;
+    pub static BINARY_OP_TYPE_HOLDER: BinaryOp = BinaryOp::Add;
+    pub static UNARY_OP_TYPE_HOLDER: UnaryOp = UnaryOp::Neg;
+
+    pub const fn f32_to_bits(value: f32) -> u128 {
+        value.to_bits() as u128
+    }
+
+    pub const fn f64_to_bits(value: f64) -> u128 {
+        value.to_bits() as u128
     }
 }

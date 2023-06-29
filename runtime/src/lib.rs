@@ -8,6 +8,7 @@
 #![feature(unboxed_closures)]
 #![feature(fn_traits)]
 #![feature(result_option_inspect)]
+#![feature(const_float_bits_conv)]
 
 pub mod abs;
 pub mod annotations;

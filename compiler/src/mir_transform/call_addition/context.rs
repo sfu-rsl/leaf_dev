@@ -2,7 +2,6 @@ use delegate::delegate;
 
 use std::collections::HashMap;
 
-use rustc_hir::def::DefKind;
 use rustc_middle::{
     mir::{self, BasicBlock, BasicBlockData, HasLocalDecls, Local, LocalDecls},
     ty::{Ty, TyCtxt},
@@ -13,7 +12,7 @@ use crate::mir_transform::modification::{
     self, BodyBlockManager, BodyLocalManager, BodyModificationUnit, JumpTargetModifier,
 };
 
-use super::{OperandRef, PlaceRef};
+use super::{pri_utils, OperandRef, PlaceRef};
 
 pub trait TyContextProvider<'tcx> {
     fn tcx(&self) -> TyCtxt<'tcx>;
@@ -41,8 +40,14 @@ pub struct SpecialTypes<'tcx> {
     pub unary_op: Ty<'tcx>,
 }
 
-pub trait SpecialTypesProvider<'tcx> {
+pub struct HelperFunctions {
+    pub f32_to_bits: DefId,
+    pub f64_to_bits: DefId,
+}
+
+pub trait PriHelpersProvider<'tcx> {
     fn pri_special_types(&self) -> &SpecialTypes<'tcx>;
+    fn pri_helper_functions(&self) -> &HelperFunctions;
 }
 
 pub trait LocationProvider {
@@ -78,7 +83,7 @@ where
         + BodyLocalManager<'tcx>
         + BodyBlockManager<'tcx>
         + FunctionInfoProvider<'tcx>
-        + SpecialTypesProvider<'tcx>
+        + PriHelpersProvider<'tcx>
         + HasLocalDecls<'tcx>,
 {
 }
@@ -88,7 +93,7 @@ impl<'tcx, C> BaseContext<'tcx> for C where
         + BodyLocalManager<'tcx>
         + BodyBlockManager<'tcx>
         + FunctionInfoProvider<'tcx>
-        + SpecialTypesProvider<'tcx>
+        + PriHelpersProvider<'tcx>
         + HasLocalDecls<'tcx>
 {
 }
@@ -98,122 +103,23 @@ pub(crate) struct DefaultContext<'tcx, 'm> {
     modification_unit: &'m mut BodyModificationUnit<'tcx>,
     pri_functions: HashMap<String, FunctionInfo<'tcx>>,
     pri_special_types: SpecialTypes<'tcx>,
+    pri_helper_functions: HelperFunctions,
 }
 
 impl<'tcx, 'm> DefaultContext<'tcx, 'm> {
     pub fn new(tcx: TyCtxt<'tcx>, modification_unit: &'m mut BodyModificationUnit<'tcx>) -> Self {
+        use pri_utils::*;
+        let pri_symbols = find_pri_exported_symbols(tcx);
+        pri_symbols.iter().for_each(|def_id| {
+            log::debug!("Found PRI symbol: {:?}", tcx.def_path_str(*def_id));
+        });
         Self {
             tcx,
             modification_unit,
-            pri_functions: DefaultContext::extract_functions(tcx), // FIXME: Perform caching
-            pri_special_types: DefaultContext::find_special_types(tcx),
+            pri_functions: find_pri_funcs(&pri_symbols, tcx), // FIXME: Perform caching
+            pri_special_types: find_special_types(&pri_symbols, tcx),
+            pri_helper_functions: find_helper_funcs(&pri_symbols, tcx),
         }
-    }
-
-    fn extract_functions(tcx: TyCtxt<'tcx>) -> HashMap<String, FunctionInfo<'tcx>> {
-        DefaultContext::get_pri_exported_symbols(tcx)
-            .into_iter()
-            .filter(|def_id| matches!(tcx.def_kind(def_id), DefKind::Fn | DefKind::AssocFn))
-            .map(|def_id| {
-                (
-                    tcx.def_path_str(def_id),
-                    FunctionInfo {
-                        def_id,
-                        ret_ty: tcx
-                            .fn_sig(def_id)
-                            .skip_binder()
-                            .output()
-                            .no_bound_vars()
-                            .expect(
-                                "PRI functions are not expected to have bound vars (generics).",
-                            ),
-                    },
-                )
-            })
-            .collect()
-    }
-
-    fn find_special_types(tcx: TyCtxt<'tcx>) -> SpecialTypes<'tcx> {
-        /*
-         * FIXME: The desired enums and type aliases don't show up in the exported symbols.
-         * It may be because of the MIR phases that clean up/optimize/unify things,
-         * the way that the library is added (using the compiled file), or
-         * that enums and type aliases are not included at all in the exported_symbols.
-         * As a workaround, we have defined some static variables having those desired
-         * types and are accessible.
-         * However, there should be some functions in TyCtxt that will list these items for us.
-         */
-        let def_ids: HashMap<String, DefId> = DefaultContext::get_pri_exported_symbols(tcx)
-            .into_iter()
-            .filter(|def_id| matches!(tcx.def_kind(def_id), DefKind::Static(_)))
-            .map(|def_id| (tcx.def_path_str(def_id), def_id))
-            .collect();
-
-        let get_ty = |name: &str| -> Ty<'tcx> {
-            tcx.type_of(def_ids.get(&name.replace(' ', "")).unwrap())
-                .no_bound_vars()
-                .expect("PRI special types are not expected to have bound vars (generics).")
-        };
-        SpecialTypes {
-            place_ref: get_ty(stringify!(runtime::pri::PLACE_REF_TYPE_HOLDER)),
-            operand_ref: get_ty(stringify!(runtime::pri::OPERAND_REF_TYPE_HOLDER)),
-            binary_op: get_ty(stringify!(runtime::pri::BINARY_OP_TYPE_HOLDER)),
-            unary_op: get_ty(stringify!(runtime::pri::UNARY_OP_TYPE_HOLDER)),
-        }
-    }
-
-    fn get_pri_exported_symbols(tcx: TyCtxt<'tcx>) -> Vec<DefId> {
-        use rustc_hir::definitions::{DefPathData, DisambiguatedDefPathData};
-        use rustc_middle::middle::exported_symbols::ExportedSymbol;
-
-        fn def_id<'a>(symbol: &'a ExportedSymbol) -> Option<&'a DefId> {
-            match symbol {
-                ExportedSymbol::NonGeneric(def_id) | ExportedSymbol::Generic(def_id, _) => {
-                    Some(def_id)
-                }
-                _ => None,
-            }
-        }
-
-        fn module(tcx: TyCtxt, def_id: &DefId) -> impl Iterator<Item = DisambiguatedDefPathData> {
-            tcx.def_path(*def_id)
-                .data
-                .into_iter()
-                .take_while(|p| matches!(p.data, DefPathData::TypeNs(_)))
-        }
-
-        // Finding the runtime crate.
-        let crate_num = *tcx
-            .crates(())
-            .iter()
-            .find(|cnum| tcx.crate_name(**cnum).as_str() == stringify!(runtime))
-            .unwrap_or_else(|| {
-                panic!(
-                    "{} crate is not added as a dependency.",
-                    stringify!(runtime)
-                )
-            });
-
-        let runtime_symbols = tcx
-            .exported_symbols(crate_num)
-            .iter()
-            .filter_map(|(s, _)| def_id(s))
-            .cloned()
-            .filter(|def_id| def_id.krate == crate_num);
-
-        // Finding the pri module.
-        let pri_module = {
-            let name = stringify!(runtime::pri::MODULE_MARKER).replace(' ', "");
-            let marker_id = runtime_symbols
-                .clone()
-                .find(|def_id| tcx.def_path_str(def_id) == name)
-                .expect("The pri module should contain the marker symbol.");
-            module(tcx, &marker_id).collect::<Vec<_>>()
-        };
-
-        runtime_symbols
-            .filter(|def_id| module(tcx, def_id).eq_by(&pri_module, |a, b| &a == b))
-            .collect()
     }
 }
 
@@ -275,9 +181,13 @@ impl<'tcx> FunctionInfoProvider<'tcx> for DefaultContext<'tcx, '_> {
     }
 }
 
-impl<'tcx> SpecialTypesProvider<'tcx> for DefaultContext<'tcx, '_> {
+impl<'tcx> PriHelpersProvider<'tcx> for DefaultContext<'tcx, '_> {
     fn pri_special_types(&self) -> &SpecialTypes<'tcx> {
         &self.pri_special_types
+    }
+
+    fn pri_helper_functions(&self) -> &HelperFunctions {
+        &self.pri_helper_functions
     }
 }
 
@@ -405,10 +315,11 @@ make_impl_macro! {
 }
 
 make_impl_macro! {
-    impl_special_types_provider,
-    SpecialTypesProvider<'tcx>,
+    impl_pri_helpers_provider,
+    PriHelpersProvider<'tcx>,
     self,
     fn pri_special_types(&self) -> &SpecialTypes<'tcx>;
+    fn pri_helper_functions(&self) -> &HelperFunctions;
 }
 
 make_impl_macro! {
@@ -556,7 +467,7 @@ make_caller_macro!(
     impl_traits,
     [
         impl_func_info_provider,
-        impl_special_types_provider,
+        impl_pri_helpers_provider,
         impl_local_manager,
         impl_block_manager,
         impl_jump_target_modifier,
