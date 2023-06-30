@@ -112,7 +112,7 @@ mod regular {
     }
 }
 
-// Not short-circuiting
+// Non-short-circuiting
 mod nsc {
     pub fn is_valid_sudoku(board: [[u8; 9]; 9]) -> bool {
         let mut result = true;
