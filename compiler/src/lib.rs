@@ -122,6 +122,7 @@ pub enum LeafConfig {
     UnitTest,
 }
 
+#[allow(dead_code)]
 struct Callbacks {
     config: LeafConfig,
 }

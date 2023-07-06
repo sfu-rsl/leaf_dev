@@ -430,6 +430,7 @@ where
             .map(|o| self.call_adder.reference_operand(o))
             .collect();
 
+        #[allow(clippy::type_complexity)]
         let mut add_call: Box<dyn FnMut(&[OperandRef])> = match kind.as_ref() {
             mir::AggregateKind::Array(_) => {
                 Box::new(|items| self.call_adder.by_aggregate_array(items))

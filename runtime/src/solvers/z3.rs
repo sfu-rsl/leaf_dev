@@ -5,11 +5,7 @@ use crate::{
     utils::{logging::log_debug, UnsafeSync},
 };
 use lazy_static::lazy_static;
-use z3::{
-    self,
-    ast::{self, Dynamic},
-    Config, Context, SatResult, Solver,
-};
+use z3::{self, ast, Config, Context, SatResult, Solver};
 
 /* NOTE: Why not using `Dynamic`?
  * In this way we have a little more freedom to include our information such
@@ -49,13 +45,6 @@ impl<'ctx> AstNode<'ctx> {
         match self {
             Self::BitVector { ast, .. } => ast,
             _ => panic!("Expected the value to be a bit vector."),
-        }
-    }
-
-    pub fn ast(&self) -> Dynamic<'ctx> {
-        match self {
-            Self::Bool(ast) => Dynamic::from_ast(ast),
-            Self::BitVector { ast, .. } => Dynamic::from_ast(ast),
         }
     }
 }

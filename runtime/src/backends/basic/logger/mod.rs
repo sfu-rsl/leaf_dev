@@ -19,6 +19,7 @@ pub(crate) struct LoggerBackend {
 }
 
 impl LoggerBackend {
+    #[allow(unused)]
     pub fn new() -> Self {
         Self {
             call_manager: CallManager::new(),

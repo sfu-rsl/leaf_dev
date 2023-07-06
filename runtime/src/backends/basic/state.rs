@@ -166,7 +166,7 @@ impl<SP: SymbolicProjector> HierarchicalVariablesState<SP> {
         projs: &[Projection],
         mutate: MutateOnce<SP>,
     ) -> Result<(), PlaceError> {
-        if let Some((value, rest_projs)) = resolve_to_last_deref(self, local, &projs)? {
+        if let Some((value, rest_projs)) = resolve_to_last_deref(self, local, projs)? {
             let host_place = ensure_mut_ref(&value);
             let state_id = *host_place.state_id();
 
@@ -180,7 +180,7 @@ impl<SP: SymbolicProjector> HierarchicalVariablesState<SP> {
                     .as_mut()
                     .map(|p| {
                         p.mut_full_place(
-                            &host_place,
+                            host_place,
                             MutateOnce::Local(&self.top, rest_projs.to_vec(), Box::new(mutate)),
                         )
                     })

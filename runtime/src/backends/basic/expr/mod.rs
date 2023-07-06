@@ -38,12 +38,6 @@ pub(crate) enum ConcreteValue {
     Ref(RefValue),
 }
 
-impl ConcreteValue {
-    pub fn from_const(value: ConstValue) -> Self {
-        Self::Const(value)
-    }
-}
-
 // FIXME: Remove this error suppression after adding support for floats.
 #[allow(unused)]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -455,13 +449,11 @@ impl ConstValue {
         let sign_bit: bool = (bit_rep & sign_mask) != 0;
         let value = bit_rep & mask;
 
-        let signed_value = if sign_bit {
+        if sign_bit {
             (value | sign_mask) as i128
         } else {
             value as i128
-        };
-
-        signed_value
+        }
     }
 
     /// convert a signed value into its bit representation
@@ -719,6 +711,7 @@ macro_rules! define_value_guard {
         }
 
         impl<'a> $name<&'a mut ValueRef> {
+            #[allow(unused)]
             pub fn make_mut(self) -> &'a mut $guarded_type {
                 match ValueRef::make_mut(self.0) {
                     $pattern => $value_name,
@@ -748,6 +741,7 @@ define_reversible_pair!(
     impl
 );
 
+#[allow(clippy::wrong_self_convention)]
 mod convert {
     use super::*;
     use crate::backends::basic::operand;

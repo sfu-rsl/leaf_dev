@@ -298,7 +298,7 @@ impl<EB: OperationalExprBuilder> BasicAssignmentHandler<'_, EB> {
             kind,
             fields: fields
                 .map(|f| self.get_operand_value(f))
-                .map(|v| Some(v))
+                .map(Some)
                 .collect(),
         }));
         self.set_value(value)
@@ -545,19 +545,15 @@ impl FunctionHandler for BasicFunctionHandler<'_> {
     }
 
     fn after_call(self, result_dest: Self::Place) {
-        /* FIXME: May require a cleaner approach. */
-
         let (returned_val, is_external_function) = self.call_stack_manager.get_return_info();
         if is_external_function {
             todo!("handle the case when an external function is called")
+        } else if let Some(returned_val) = returned_val {
+            self.call_stack_manager
+                .top()
+                .set_place(&result_dest, returned_val)
         } else {
-            if let Some(returned_val) = returned_val {
-                self.call_stack_manager
-                    .top()
-                    .set_place(&result_dest, returned_val)
-            } else {
-                // this is the case where a function has no return value
-            }
+            // Unit return type
         }
     }
 }

@@ -104,10 +104,7 @@ pub(super) fn find_pri_types<'tcx>(pri_symbols: &[DefId], tcx: TyCtxt<'tcx>) -> 
     }
 }
 
-pub(super) fn find_helper_funcs<'tcx>(
-    pri_symbols: &[DefId],
-    tcx: TyCtxt<'tcx>,
-) -> PriHelperFunctions {
+pub(super) fn find_helper_funcs(pri_symbols: &[DefId], tcx: TyCtxt) -> PriHelperFunctions {
     let def_ids: HashMap<String, DefId> = pri_symbols
         .filter_by_marker(
             tcx,

@@ -302,7 +302,7 @@ mod concrete {
         ) -> Self::Expr<'a> {
             match (first, second) {
                 (ConcreteValue::Const(first_c), ConcreteValue::Const(second_c)) => {
-                    ConstValue::binary_op(first_c, second_c, op, checked).into()
+                    ConstValue::binary_op(first_c, second_c, op, checked)
                 }
                 _ => unreachable!(
                     "Binary operations for concrete values are only supposed to be called on constants."
@@ -525,9 +525,9 @@ mod simp {
             // x * 0 = 0 * x = 0
             if operands.konst().is_zero() {
                 Ok(operands.konst().into())
-            } else
+            }
             // x * 1 = x
-            if operands.konst().is_one() {
+            else if operands.konst().is_one() {
                 Ok(operands.other_into())
             } else {
                 Err(operands)
@@ -538,9 +538,9 @@ mod simp {
             // 0 / x = 0
             if operands.is_first_zero() {
                 Ok(operands.konst_into())
-            } else
+            }
             // x / 1 = x
-            if operands.is_second_one() {
+            else if operands.is_second_one() {
                 Ok(operands.other_into())
             } else {
                 Err(operands)
@@ -551,9 +551,9 @@ mod simp {
             // 0 % x = 0
             if operands.is_first_zero() {
                 Ok(operands.konst_into())
-            } else
+            }
             // x % 1 = 0
-            if operands.is_second_one() {
+            else if operands.is_second_one() {
                 Ok((&match operands.konst() {
                     ConstValue::Int { ty, .. } => ConstValue::new_int(0_u128, *ty),
                     ConstValue::Float { .. } => todo!(),

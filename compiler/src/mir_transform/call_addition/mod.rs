@@ -140,7 +140,7 @@ pub(crate) trait Assigner<'tcx> {
 
     fn by_len(&mut self, place: PlaceRef);
 
-    fn by_cast<'a>(&'a mut self, operand: OperandRef) -> Self::Cast<'a>;
+    fn by_cast(&mut self, operand: OperandRef) -> Self::Cast<'_>;
 
     fn by_binary_op(
         &mut self,
@@ -512,6 +512,7 @@ where
         reference.into()
     }
 }
+#[allow(clippy::borrowed_box)]
 impl<'tcx, C> RuntimeCallAdder<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
@@ -676,6 +677,7 @@ where
             stringify!(pri::assign_repeat),
             vec![
                 operand::copy_for_local(operand.into()),
+                #[allow(clippy::clone_on_copy)]
                 operand::const_from_existing_ty_const(count.clone()),
             ],
         )
@@ -712,7 +714,7 @@ where
         )
     }
 
-    fn by_cast<'b>(&'b mut self, operand: OperandRef) -> Self::Cast<'b> {
+    fn by_cast(&mut self, operand: OperandRef) -> Self::Cast<'_> {
         RuntimeCallAdder {
             context: CastAssignmentContext {
                 base: &mut self.context,
@@ -1205,7 +1207,7 @@ where
         let BlocksAndResult(mut blocks, dest_ref) = self.internal_reference_place(destination);
         let after_call_block = self.make_bb_for_call(
             stringify!(pri::after_call_func),
-            vec![operand::copy_for_local(dest_ref.into())],
+            vec![operand::copy_for_local(dest_ref)],
         );
         blocks.push(after_call_block);
         self.context
@@ -1403,10 +1405,7 @@ struct BlocksAndResult<'tcx>(Vec<BasicBlockData<'tcx>>, Local);
 
 impl<'tcx> BlocksAndResult<'tcx> {
     fn prepend(self, blocks: impl IntoIterator<Item = BasicBlockData<'tcx>>) -> Self {
-        Self(
-            blocks.into_iter().chain(self.0.into_iter()).collect(),
-            self.1,
-        )
+        Self(blocks.into_iter().chain(self.0).collect(), self.1)
     }
 }
 
@@ -1462,6 +1461,7 @@ mod utils {
             }))
         }
 
+        #[allow(clippy::borrowed_box)]
         pub fn const_from_existing<'tcx>(constant: &Box<Constant<'tcx>>) -> Operand<'tcx> {
             Operand::Constant(constant.clone())
         }
@@ -1491,12 +1491,6 @@ mod utils {
             value: ScalarInt,
             ty: Ty<'tcx>,
         ) -> Operand<'tcx> {
-            Operand::const_from_scalar(tcx, ty, Scalar::Int(value), DUMMY_SP)
-        }
-
-        pub fn const_from_scalar_int_unsigned(tcx: TyCtxt, value: ScalarInt) -> Operand {
-            // value must be unsigned
-            let ty = tcx.mk_mach_uint(uint_ty_from_bytes(value.size().bytes_usize()));
             Operand::const_from_scalar(tcx, ty, Scalar::Int(value), DUMMY_SP)
         }
 
@@ -1695,6 +1689,7 @@ mod utils {
         (cast_local, [array_assign, ref_assign, cast_assign])
     }
 
+    #[allow(clippy::borrowed_box)]
     pub(super) fn cast_int_to_bit_rep<'tcx>(
         tcx: TyCtxt<'tcx>,
         context: &mut impl BodyLocalManager<'tcx>,
@@ -1713,6 +1708,7 @@ mod utils {
         (bit_rep_local, [bit_rep_assign])
     }
 
+    #[allow(clippy::borrowed_box)]
     pub(super) fn cast_float_to_bit_rep<'tcx>(
         tcx: TyCtxt<'tcx>,
         context: &mut (impl BodyLocalManager<'tcx> + PriItemsProvider<'tcx>),
