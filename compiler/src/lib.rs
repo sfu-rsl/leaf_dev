@@ -3,7 +3,7 @@
 #![feature(let_chains)]
 #![feature(extend_one)]
 #![feature(box_patterns)]
-#![feature(drain_filter)]
+#![feature(extract_if)]
 #![deny(rustc::internal)]
 #![feature(iter_order_by)]
 #![feature(macro_metavar_expr)]

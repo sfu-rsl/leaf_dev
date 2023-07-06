@@ -3,9 +3,9 @@ use rustc_ast::{InlineAsmOptions, InlineAsmTemplatePiece, Mutability};
 use rustc_index::IndexVec;
 use rustc_middle::{
     mir::{
-        AggregateKind, AssertMessage, BasicBlock, BinOp, BorrowKind, CastKind, Coverage,
-        FakeReadCause, InlineAsmOperand, Local, NonDivergingIntrinsic, NullOp, Operand, Place,
-        RetagKind, Rvalue, StatementKind, SwitchTargets, TerminatorKind, UnOp, UnwindAction,
+        AggregateKind, AssertMessage, BasicBlock, BinOp, BorrowKind, CallSource, CastKind,
+        Coverage, FakeReadCause, InlineAsmOperand, Local, NonDivergingIntrinsic, NullOp, Operand,
+        Place, RetagKind, Rvalue, StatementKind, SwitchTargets, TerminatorKind, UnOp, UnwindAction,
         UserTypeProjection,
     },
     ty::{Const, Region, Ty, Variance},
@@ -150,6 +150,7 @@ macro_rules! make_terminator_kind_visitor {
                 place: & $($mutability)? Place<'tcx>,
                 target: & $($mutability)? BasicBlock,
                 unwind: & $($mutability)? UnwindAction,
+                replace: & $($mutability)? bool,
             ) -> T {
                 Default::default()
             }
@@ -172,7 +173,7 @@ macro_rules! make_terminator_kind_visitor {
                 destination: & $($mutability)? Place<'tcx>,
                 target: & $($mutability)? Option<BasicBlock>,
                 unwind: & $($mutability)? UnwindAction,
-                from_hir_call: bool,
+                call_source: & $($mutability)? CallSource,
                 fn_span: Span,
             ) -> T {
                 Default::default()
@@ -246,14 +247,15 @@ macro_rules! make_terminator_kind_visitor {
                         ref $($mutability)? place,
                         ref $($mutability)? target,
                         ref $($mutability)? unwind,
-                    } => self.visit_drop(place, target, unwind),
+                        ref $($mutability)? replace,
+                    } => self.visit_drop(place, target, unwind, replace),
                     TerminatorKind::Call {
                         func,
                         args,
                         ref $($mutability)? destination,
                         ref $($mutability)? target,
                         ref $($mutability)? unwind,
-                        from_hir_call,
+                        ref $($mutability)? call_source,
                         fn_span,
                     } => self.visit_call(
                         func,
@@ -261,7 +263,7 @@ macro_rules! make_terminator_kind_visitor {
                         destination,
                         target,
                         unwind,
-                        *from_hir_call,
+                        call_source,
                         *fn_span,
                     ),
                     TerminatorKind::Assert {

@@ -2,10 +2,7 @@ use std::{
     cell::RefCell, collections::HashMap, iter::Peekable, marker::PhantomData, vec::IntoIter,
 };
 
-use crate::{
-    mir_transform::call_addition::context_requirements::Basic,
-    visit::{self, TerminatorKindMutVisitor},
-};
+use crate::visit::{self, TerminatorKindMutVisitor};
 
 use rustc_ast::Mutability;
 use rustc_index::IndexVec;
@@ -362,7 +359,7 @@ impl<'tcx> BodyModificationUnit<'tcx> {
     {
         let (_, mut chunk) = new_blocks.next().unwrap();
         blocks.extend_reserve(chunk.len());
-        for non_sticky in chunk.drain_filter(|b| !b.is_sticky) {
+        for non_sticky in chunk.extract_if(|b| !b.is_sticky) {
             Self::push_with_index_mapping(
                 index_mapping,
                 blocks,
@@ -372,7 +369,7 @@ impl<'tcx> BodyModificationUnit<'tcx> {
             );
         }
         *top_index = blocks.next_index();
-        for sticky in chunk.drain_filter(|b| b.is_sticky) {
+        for sticky in chunk.extract_if(|b| b.is_sticky) {
             Self::push_with_index_mapping(
                 index_mapping,
                 blocks,
@@ -576,6 +573,7 @@ where
         _place: &mut rustc_middle::mir::Place<'tcx>,
         target: &mut BasicBlock,
         unwind: &mut UnwindAction,
+        _replace: &mut bool,
     ) {
         self.update(target);
         self.update_maybe(unwind.basic_block());
@@ -599,7 +597,7 @@ where
         _destination: &mut Place<'tcx>,
         target: &mut Option<BasicBlock>,
         _unwind: &mut UnwindAction,
-        _from_hir_call: bool,
+        _call_source: &mut rustc_middle::mir::CallSource,
         _fn_span: Span,
     ) {
         self.update_maybe(target.as_mut());

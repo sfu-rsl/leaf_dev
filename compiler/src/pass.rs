@@ -230,7 +230,13 @@ where
         Default::default()
     }
 
-    fn visit_drop(&mut self, _place: &Place<'tcx>, _target: &BasicBlock, _unwind: &UnwindAction) {
+    fn visit_drop(
+        &mut self,
+        _place: &Place<'tcx>,
+        _target: &BasicBlock,
+        _unwind: &UnwindAction,
+        _replace: &bool,
+    ) {
         Default::default()
     }
 
@@ -241,7 +247,7 @@ where
         destination: &Place<'tcx>,
         target: &Option<BasicBlock>,
         _unwind: &UnwindAction,
-        _from_hir_call: bool,
+        _call_source: &mir::CallSource,
         _fn_span: rustc_span::Span,
     ) {
         let func_ref = self.call_adder.reference_operand(func);

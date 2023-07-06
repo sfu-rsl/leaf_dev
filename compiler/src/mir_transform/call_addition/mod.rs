@@ -1661,7 +1661,7 @@ mod utils {
                     destination,
                     target: Some(target.unwrap_or(modification::NEXT_BLOCK)),
                     unwind: UnwindAction::Continue,
-                    from_hir_call: true,
+                    call_source: mir::CallSource::Normal,
                     fn_span: DUMMY_SP,
                 },
             }
@@ -1737,17 +1737,23 @@ mod utils {
     }
 
     pub(super) fn convert_mir_binop_to_pri(op: &mir::BinOp) -> runtime::abs::BinaryOp {
+        // FIXME: #197: Add support for unchecked operations.
         match op {
             mir::BinOp::Add => runtime::abs::BinaryOp::Add,
+            mir::BinOp::AddUnchecked => runtime::abs::BinaryOp::Add,
             mir::BinOp::Sub => runtime::abs::BinaryOp::Sub,
+            mir::BinOp::SubUnchecked => runtime::abs::BinaryOp::Sub,
             mir::BinOp::Mul => runtime::abs::BinaryOp::Mul,
+            mir::BinOp::MulUnchecked => runtime::abs::BinaryOp::Mul,
             mir::BinOp::Div => runtime::abs::BinaryOp::Div,
             mir::BinOp::Rem => runtime::abs::BinaryOp::Rem,
             mir::BinOp::BitXor => runtime::abs::BinaryOp::BitXor,
             mir::BinOp::BitAnd => runtime::abs::BinaryOp::BitAnd,
             mir::BinOp::BitOr => runtime::abs::BinaryOp::BitOr,
             mir::BinOp::Shl => runtime::abs::BinaryOp::Shl,
+            mir::BinOp::ShlUnchecked => runtime::abs::BinaryOp::Shl,
             mir::BinOp::Shr => runtime::abs::BinaryOp::Shr,
+            mir::BinOp::ShrUnchecked => runtime::abs::BinaryOp::Shr,
             mir::BinOp::Eq => runtime::abs::BinaryOp::Eq,
             mir::BinOp::Lt => runtime::abs::BinaryOp::Lt,
             mir::BinOp::Le => runtime::abs::BinaryOp::Le,
