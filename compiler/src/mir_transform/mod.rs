@@ -1,2 +1,2 @@
-pub mod call_addition;
-pub mod modification;
+pub(crate) mod instrumentation;
+mod modification;

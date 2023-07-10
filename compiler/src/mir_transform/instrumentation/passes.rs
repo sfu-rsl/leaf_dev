@@ -7,13 +7,18 @@ use rustc_middle::mir::{
 
 use crate::{
     mir_transform::{
-        call_addition::{
+        instrumentation::call::{
             context::{BodyProvider, TyContextProvider},
-            context_requirements as ctxtreqs, *,
+            AssertionHandler, CastAssigner, OperandReferencer,
         },
         modification::{BodyModificationUnit, JumpTargetModifier},
     },
     visit::*,
+};
+
+use super::call::{
+    context_requirements as ctxtreqs, Assigner, BranchingHandler, BranchingReferencer,
+    EntryFunctionHandler, FunctionHandler, OperandRef, PlaceReferencer, RuntimeCallAdder,
 };
 
 pub struct LeafPass;

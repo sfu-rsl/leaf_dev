@@ -1,7 +1,7 @@
 use std::{fmt::Debug, vec};
 
 use self::{context::*, utils::*};
-use super::modification::{
+use crate::mir_transform::modification::{
     self, BodyBlockManager, BodyLocalManager, BodyModificationUnit, JumpTargetModifier,
 };
 
@@ -17,7 +17,7 @@ use rustc_middle::{
 };
 use rustc_target::abi::VariantIdx;
 
-pub(crate) mod context;
+pub(super) mod context;
 mod pri_utils;
 
 /*
