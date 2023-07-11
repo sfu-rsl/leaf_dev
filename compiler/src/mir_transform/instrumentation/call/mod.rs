@@ -751,8 +751,8 @@ mod implementation {
             checked: bool,
         ) {
             let operator = convert_mir_binop_to_pri(operator);
-            let (operator_local, additional_stmts) =
-                self.add_and_set_local_for_enum(self.context.pri_types().binary_op, operator);
+            let (operator_local, additional_stmts) = self
+                .add_and_set_local_for_enum(self.context.pri_types().binary_op, operator as u128);
 
             self.add_bb_for_assign_call_with_statements(
                 stringify!(pri::assign_binary_op),
@@ -768,8 +768,8 @@ mod implementation {
 
         fn by_unary_op(&mut self, operator: &UnOp, operand: OperandRef) {
             let operator = convert_mir_unop_to_pri(operator);
-            let (operator_local, additional_stmts) =
-                self.add_and_set_local_for_enum(self.context.pri_types().unary_op, operator);
+            let (operator_local, additional_stmts) = self
+                .add_and_set_local_for_enum(self.context.pri_types().unary_op, operator as u128);
 
             self.add_bb_for_assign_call_with_statements(
                 stringify!(pri::assign_unary_op),
@@ -918,17 +918,13 @@ mod implementation {
             )
         }
 
-        fn add_and_set_local_for_enum<T>(
+        fn add_and_set_local_for_enum(
             &mut self,
             enum_ty: Ty<'tcx>,
-            value: T,
-        ) -> (Local, Vec<Statement<'tcx>>)
-        where
-            T: ToString,
-        {
+            discr: impl Into<u128>,
+        ) -> (Local, Vec<Statement<'tcx>>) {
             let local = self.context.add_local(enum_ty);
-            let statements =
-                enums::set_variant_to_local(enum_ty, value.to_string().as_str(), local);
+            let statements = enums::set_variant_to_local(self.tcx(), enum_ty, discr.into(), local);
             (local, statements)
         }
     }
@@ -1304,8 +1300,9 @@ mod implementation {
                     let operator = convert_mir_binop_to_pri(bin_op);
                     let operator_local = self.context.add_local(binary_op_ty);
                     let additional_stmts = enums::set_variant_to_local(
+                        self.tcx(),
                         binary_op_ty,
-                        format!("{operator:?}").as_str(),
+                        operator as u128,
                         operator_local,
                     );
 
@@ -1485,14 +1482,15 @@ mod implementation {
         pub(super) mod enums {
             use rustc_middle::{
                 mir::{Local, Place, SourceInfo, Statement},
-                ty::{Ty, TyKind},
+                ty::{Ty, TyCtxt, TyKind},
             };
             use rustc_span::DUMMY_SP;
             use rustc_target::abi::VariantIdx;
 
             pub fn set_variant_to_local<'tcx>(
+                tcx: TyCtxt<'tcx>,
                 enum_ty: Ty<'tcx>,
-                variant_name: &str,
+                variant_discr: u128,
                 local: Local,
             ) -> Vec<Statement<'tcx>> {
                 let place = Place::from(local);
@@ -1506,26 +1504,27 @@ mod implementation {
                     source_info: SourceInfo::outermost(DUMMY_SP),
                     kind: rustc_middle::mir::StatementKind::SetDiscriminant {
                         place: Box::new(place),
-                        variant_index: get_variant_index_by_name(enum_ty, variant_name),
+                        variant_index: get_variant_index_by_discr(tcx, enum_ty, variant_discr),
                     },
                 };
 
                 vec![deinit, disc]
             }
 
-            pub fn get_variant_index_by_name(ty: Ty, variant_name: &str) -> VariantIdx {
+            pub fn get_variant_index_by_discr<'tcx>(
+                tcx: TyCtxt<'tcx>,
+                ty: Ty<'tcx>,
+                discr: u128,
+            ) -> VariantIdx {
                 let adt_def = match ty.kind() {
                     TyKind::Adt(def, _) => def,
                     _ => unreachable!(),
                 };
-                let def = adt_def
-                    .variants()
-                    .iter()
-                    .find(|d| d.name.as_str() == variant_name)
-                    .unwrap_or_else(|| {
-                        panic!("Variant could not be found with name `{variant_name}`.")
-                    });
-                adt_def.variant_index_with_id(def.def_id)
+                adt_def
+                    .discriminants(tcx)
+                    .find(|(_, d)| d.val == discr)
+                    .expect("Discriminant value is not valid.")
+                    .0
             }
         }
 
