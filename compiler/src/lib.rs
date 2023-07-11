@@ -7,6 +7,7 @@
 #![deny(rustc::internal)]
 #![feature(iter_order_by)]
 #![feature(macro_metavar_expr)]
+#![feature(local_key_cell_methods)]
 
 mod mir_transform;
 mod passes;
