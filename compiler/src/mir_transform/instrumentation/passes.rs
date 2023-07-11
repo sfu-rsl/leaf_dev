@@ -6,22 +6,18 @@ use rustc_middle::mir::{
 };
 
 use crate::{
-    mir_transform::{
-        instrumentation::call::{
-            context::{BodyProvider, TyContextProvider},
-            AssertionHandler, CastAssigner, OperandReferencer,
-        },
-        modification::{BodyModificationUnit, JumpTargetModifier},
-    },
+    mir_transform::modification::{BodyModificationUnit, JumpTargetModifier},
     visit::*,
 };
 
 use super::call::{
-    context_requirements as ctxtreqs, Assigner, BranchingHandler, BranchingReferencer,
-    EntryFunctionHandler, FunctionHandler, OperandRef, PlaceReferencer, RuntimeCallAdder,
+    context::{BodyProvider, TyContextProvider},
+    ctxtreqs, AssertionHandler, Assigner, BranchingHandler, BranchingReferencer, CastAssigner,
+    EntryFunctionHandler, FunctionHandler, OperandRef, OperandReferencer, PlaceReferencer,
+    RuntimeCallAdder,
 };
 
-pub struct LeafPass;
+pub(crate) struct LeafPass;
 
 impl<'tcx> MirPass<'tcx> for LeafPass {
     // NOTE: this function is called for every Body (function) in the program
@@ -77,45 +73,45 @@ impl LeafPass {
 struct VisitorFactory;
 
 impl VisitorFactory {
-    fn make_body_visitor<'tcx, 'c, BC>(
-        call_adder: &'c mut RuntimeCallAdder<BC>,
+    fn make_body_visitor<'tcx, 'c, C>(
+        call_adder: &'c mut RuntimeCallAdder<C>,
     ) -> impl Visitor<'tcx> + 'c
     where
-        BC: ctxtreqs::Basic<'tcx> + JumpTargetModifier + BodyProvider<'tcx>,
+        C: ctxtreqs::Basic<'tcx> + JumpTargetModifier + BodyProvider<'tcx>,
     {
         LeafBodyVisitor {
             call_adder: RuntimeCallAdder::borrow_from(call_adder),
         }
     }
 
-    fn make_basic_block_visitor<'tcx, 'c, BC>(
-        call_adder: &'c mut RuntimeCallAdder<BC>,
+    fn make_basic_block_visitor<'tcx, 'c, C>(
+        call_adder: &'c mut RuntimeCallAdder<C>,
         block: BasicBlock,
     ) -> impl Visitor<'tcx> + 'c
     where
-        BC: ctxtreqs::Basic<'tcx> + JumpTargetModifier + BodyProvider<'tcx>,
+        C: ctxtreqs::Basic<'tcx> + JumpTargetModifier + BodyProvider<'tcx>,
     {
         LeafBasicBlockVisitor {
             call_adder: call_adder.at(block),
         }
     }
 
-    fn make_statement_kind_visitor<'tcx, 'b, BC>(
-        call_adder: &'b mut RuntimeCallAdder<BC>,
+    fn make_statement_kind_visitor<'tcx, 'b, C>(
+        call_adder: &'b mut RuntimeCallAdder<C>,
     ) -> impl StatementKindVisitor<'tcx, ()> + 'b
     where
-        BC: ctxtreqs::ForPlaceRef<'tcx> + ctxtreqs::ForOperandRef<'tcx>,
+        C: ctxtreqs::ForPlaceRef<'tcx> + ctxtreqs::ForOperandRef<'tcx>,
     {
         LeafStatementKindVisitor {
             call_adder: RuntimeCallAdder::borrow_from(call_adder),
         }
     }
 
-    fn make_terminator_kind_visitor<'tcx, 'b, BC>(
-        call_adder: &'b mut RuntimeCallAdder<BC>,
+    fn make_terminator_kind_visitor<'tcx, 'b, C>(
+        call_adder: &'b mut RuntimeCallAdder<C>,
     ) -> impl TerminatorKindVisitor<'tcx, ()> + 'b
     where
-        BC: ctxtreqs::ForPlaceRef<'tcx>
+        C: ctxtreqs::ForPlaceRef<'tcx>
             + ctxtreqs::ForOperandRef<'tcx>
             + ctxtreqs::ForBranching<'tcx>,
     {
@@ -124,12 +120,12 @@ impl VisitorFactory {
         }
     }
 
-    fn make_assignment_visitor<'tcx, 'b, BC>(
-        call_adder: &'b mut RuntimeCallAdder<BC>,
+    fn make_assignment_visitor<'tcx, 'b, C>(
+        call_adder: &'b mut RuntimeCallAdder<C>,
         destination: &Place<'tcx>,
     ) -> impl RvalueVisitor<'tcx, ()> + 'b
     where
-        BC: ctxtreqs::ForPlaceRef<'tcx> + ctxtreqs::ForOperandRef<'tcx>,
+        C: ctxtreqs::ForPlaceRef<'tcx> + ctxtreqs::ForOperandRef<'tcx>,
     {
         let dest_ref = call_adder.reference_place(destination);
         LeafAssignmentVisitor {

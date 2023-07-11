@@ -12,62 +12,55 @@ use crate::mir_transform::modification::{
     self, BodyBlockManager, BodyLocalManager, BodyModificationUnit, JumpTargetModifier,
 };
 
-use super::{pri_utils, OperandRef, PlaceRef};
+use super::{pri_utils, OperandRef, PlaceRef, SwitchInfo};
 
-pub trait TyContextProvider<'tcx> {
+pub(crate) trait TyContextProvider<'tcx> {
     fn tcx(&self) -> TyCtxt<'tcx>;
 }
 
-pub trait BodyProvider<'tcx> {
+pub(crate) trait BodyProvider<'tcx> {
     fn body(&self) -> &mir::Body<'tcx>;
 }
 
-pub trait InEntryFunction {}
+pub(crate) trait InEntryFunction {}
 
-pub struct FunctionInfo<'tcx> {
+pub(crate) struct FunctionInfo<'tcx> {
     pub def_id: DefId,
     pub ret_ty: Ty<'tcx>,
 }
 
 /// Contains types that are used in PRI functions along with primitive types.
-pub struct PriTypes<'tcx> {
+pub(crate) struct PriTypes<'tcx> {
     pub place_ref: Ty<'tcx>,
     pub operand_ref: Ty<'tcx>,
     pub binary_op: Ty<'tcx>,
     pub unary_op: Ty<'tcx>,
 }
 
-pub struct PriHelperFunctions {
+pub(crate) struct PriHelperFunctions {
     pub f32_to_bits: DefId,
     pub f64_to_bits: DefId,
 }
 
-pub trait PriItemsProvider<'tcx> {
+pub(crate) trait PriItemsProvider<'tcx> {
     fn get_pri_func_info(&self, func_name: &str) -> &FunctionInfo<'tcx>;
     fn pri_types(&self) -> &PriTypes<'tcx>;
     fn pri_helper_funcs(&self) -> &PriHelperFunctions;
 }
 
-pub trait LocationProvider {
+pub(crate) trait LocationProvider {
     fn location(&self) -> BasicBlock;
 }
 
-pub trait DestinationReferenceProvider {
+pub(crate) trait DestinationReferenceProvider {
     fn dest_ref(&self) -> PlaceRef;
 }
 
-pub trait CastOperandProvider {
+pub(crate) trait CastOperandProvider {
     fn operand_ref(&self) -> OperandRef;
 }
 
-#[derive(Clone, Copy)]
-pub struct SwitchInfo<'tcx> {
-    pub(super) node_location: BasicBlock,
-    pub(super) discr_ty: Ty<'tcx>,
-    pub(super) runtime_info_store_var: Local,
-}
-
-pub trait SwitchInfoProvider<'tcx> {
+pub(crate) trait SwitchInfoProvider<'tcx> {
     fn switch_info(&self) -> SwitchInfo<'tcx>;
 }
 
@@ -107,7 +100,10 @@ pub(crate) struct PriItems<'tcx> {
 }
 
 impl<'tcx, 'm> DefaultContext<'tcx, 'm> {
-    pub fn new(tcx: TyCtxt<'tcx>, modification_unit: &'m mut BodyModificationUnit<'tcx>) -> Self {
+    pub(crate) fn new(
+        tcx: TyCtxt<'tcx>,
+        modification_unit: &'m mut BodyModificationUnit<'tcx>,
+    ) -> Self {
         use pri_utils::*;
         let pri_symbols = find_pri_exported_symbols(tcx);
         if cfg!(debug_assertions) {
@@ -207,11 +203,11 @@ impl<'tcx> PriItemsProvider<'tcx> for DefaultContext<'tcx, '_> {
 /*
  * Makes it possible to borrow another context while owning itself.
  */
-pub struct TransparentContext<'b, B> {
+pub(crate) struct TransparentContext<'b, B> {
     pub(super) base: &'b mut B,
 }
 
-pub struct InBodyContext<'b, 'tcx, 'bd, B> {
+pub(crate) struct InBodyContext<'b, 'tcx, 'bd, B> {
     pub(super) base: &'b mut B,
     pub(super) body: &'bd mir::Body<'tcx>,
 }
@@ -228,13 +224,13 @@ impl<'tcx, B> mir::HasLocalDecls<'tcx> for InBodyContext<'_, 'tcx, '_, B> {
     }
 }
 
-pub struct EntryFunctionMarkerContext<'b, B> {
+pub(crate) struct EntryFunctionMarkerContext<'b, B> {
     pub(super) base: &'b mut B,
 }
 
 impl<'b, B> InEntryFunction for EntryFunctionMarkerContext<'b, B> {}
 
-pub struct AtLocationContext<'b, B> {
+pub(crate) struct AtLocationContext<'b, B> {
     pub(super) base: &'b mut B,
     pub(super) location: BasicBlock,
 }
@@ -245,7 +241,7 @@ impl<B> LocationProvider for AtLocationContext<'_, B> {
     }
 }
 
-pub struct AssignmentContext<'b, B> {
+pub(crate) struct AssignmentContext<'b, B> {
     pub(super) base: &'b mut B,
     pub(super) dest_ref: PlaceRef,
 }
@@ -256,7 +252,7 @@ impl<B> DestinationReferenceProvider for AssignmentContext<'_, B> {
     }
 }
 
-pub struct CastAssignmentContext<'b, B> {
+pub(crate) struct CastAssignmentContext<'b, B> {
     pub(super) base: &'b mut B,
     pub(super) operand_ref: OperandRef,
 }
@@ -267,7 +263,7 @@ impl<B> CastOperandProvider for CastAssignmentContext<'_, B> {
     }
 }
 
-pub struct BranchingContext<'b, 'tcx, B> {
+pub(crate) struct BranchingContext<'b, 'tcx, B> {
     pub(super) base: &'b mut B,
     pub(super) switch_info: SwitchInfo<'tcx>,
 }

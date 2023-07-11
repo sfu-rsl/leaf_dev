@@ -1,3 +1,4 @@
+/// This module hosts general utilities for modifying MIR bodies.
 use std::{
     cell::RefCell, collections::HashMap, iter::Peekable, marker::PhantomData, vec::IntoIter,
 };
