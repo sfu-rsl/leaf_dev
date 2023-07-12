@@ -1,8 +1,7 @@
+use compiler::run_compiler;
+
 fn main() {
     env_logger::init();
 
-    std::process::exit(compiler::RunCompiler::run(
-        &mut std::env::args().collect(),
-        None,
-    ));
+    std::process::exit(run_compiler(&mut std::env::args().collect(), None));
 }

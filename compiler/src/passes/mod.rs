@@ -4,20 +4,21 @@ use rustc_interface::{interface, Queries};
 use rustc_middle::mir;
 use rustc_middle::ty as mir_ty;
 
+use delegate::delegate;
+
+use self::implementation::AnalysisPassAdapter;
+use self::implementation::TransformationPassAdapter;
+
 mod instr;
 
-pub(crate) trait CompilationPass {
-    fn get_callbacks<'a>(&'a mut self) -> &'a mut (dyn driver::Callbacks + Send);
-}
+pub(super) type Callbacks<'a> = Box<dyn driver::Callbacks + Send + 'a>;
 
-impl<T: driver::Callbacks + Send> CompilationPass for Box<T> {
-    fn get_callbacks<'a>(&'a mut self) -> &'a mut (dyn driver::Callbacks + Send) {
-        self.as_mut()
-    }
+pub(super) fn get_passes() -> ([Box<dyn AnalysisPass + Send>; 0], impl TransformationPass) {
+    ([], instr::InstrumentationPass)
 }
 
 #[allow(unused)]
-pub(crate) trait AnalysisPass {
+pub(crate) trait AnalysisPass<R = ()> {
     fn visit_ast(&mut self, krate: &ast::Crate) {
         Default::default()
     }
@@ -29,14 +30,35 @@ pub(crate) trait AnalysisPass {
     fn visit_mir_body<'tcx>(&mut self, tcx: mir_ty::TyCtxt<'tcx>, body: &mir::Body<'tcx>) {
         Default::default()
     }
+
+    fn into_result(self) -> R
+    where
+        Self: Sized;
 }
 
-trait AnalysisPassExt {
-    fn as_compilation<'a>(&'a mut self) -> Box<dyn CompilationPass + 'a>;
+impl<R, T: AnalysisPass<R> + Sized> AnalysisPass<R> for Box<T> {
+    delegate! {
+        to self.as_mut() {
+            fn visit_ast(&mut self, krate: &ast::Crate);
+            fn visit_ctxt<'tcx>(&mut self, tcx: mir_ty::TyCtxt<'tcx>);
+            fn visit_mir_body<'tcx>(&mut self, tcx: mir_ty::TyCtxt<'tcx>, body: &mir::Body<'tcx>);
+        }
+    }
+
+    fn into_result(self) -> R
+    where
+        Self: Sized,
+    {
+        Box::<T>::into_inner(self).into_result()
+    }
 }
-impl<T: AnalysisPass + Send> AnalysisPassExt for T {
-    fn as_compilation<'a>(&'a mut self) -> Box<dyn CompilationPass + 'a> {
-        Box::new(Box::new(implementation::AnalysisPassAdapter(self)))
+
+pub(crate) trait AnalysisPassExt {
+    fn to_callbacks<'a>(&'a mut self) -> Callbacks<'a>;
+}
+impl<T: AnalysisPass + Send + ?Sized> AnalysisPassExt for T {
+    fn to_callbacks(&mut self) -> Callbacks {
+        Box::new(AnalysisPassAdapter(self))
     }
 }
 
@@ -53,12 +75,12 @@ pub(crate) trait TransformationPass {
     }
 }
 
-trait TransformationPassExt {
-    fn as_compilation<'a>(&'a mut self) -> Box<dyn CompilationPass + 'a>;
+pub(crate) trait TransformationPassExt {
+    fn to_callbacks<'a>(&'a mut self) -> Callbacks<'a>;
 }
-impl<T: TransformationPass + Send> TransformationPassExt for T {
-    fn as_compilation<'a>(&'a mut self) -> Box<dyn CompilationPass + 'a> {
-        Box::new(Box::new(implementation::TransformationPassAdapter(self)))
+impl<T: TransformationPass + Send + ?Sized> TransformationPassExt for T {
+    fn to_callbacks(&mut self) -> Callbacks {
+        Box::new(TransformationPassAdapter(self))
     }
 }
 
@@ -117,11 +139,11 @@ mod implementation {
      * -> mir_built (the actual translation to MIR)
      */
 
-    pub(super) struct AnalysisPassAdapter<'a, T: AnalysisPass + Send>(pub &'a mut T);
+    pub(super) struct AnalysisPassAdapter<'a, T: AnalysisPass + Send + ?Sized>(pub &'a mut T);
 
     impl<T> driver::Callbacks for AnalysisPassAdapter<'_, T>
     where
-        T: AnalysisPass + Send,
+        T: AnalysisPass + Send + ?Sized,
     {
         fn config(&mut self, _config: &mut interface::Config) {}
 
@@ -152,7 +174,9 @@ mod implementation {
                 .global_ctxt()
                 .unwrap()
                 .enter(|tcx| self.0.visit_ctxt(tcx));
-            Compilation::Continue
+
+            // We can stop here as it is an analysis pass.
+            Compilation::Stop
         }
     }
 
@@ -171,11 +195,13 @@ mod implementation {
         > = Cell::new(|_, _| unreachable!());
     }
 
-    pub(super) struct TransformationPassAdapter<'a, T: TransformationPass + Send>(pub &'a mut T);
+    pub(super) struct TransformationPassAdapter<'a, T: TransformationPass + Send + ?Sized>(
+        pub &'a mut T,
+    );
 
     impl<T> driver::Callbacks for TransformationPassAdapter<'_, T>
     where
-        T: TransformationPass + Send,
+        T: TransformationPass + Send + ?Sized,
     {
         fn config(&mut self, config: &mut interface::Config) {
             ORIGINAL_OVERRIDE.set(config.override_queries.take());
@@ -217,7 +243,7 @@ mod implementation {
         }
     }
 
-    impl<T: TransformationPass + Send> TransformationPassAdapter<'_, T> {
+    impl<T: TransformationPass + Send + ?Sized> TransformationPassAdapter<'_, T> {
         fn optimized_mir<'tcx>(tcx: TyCtxt<'tcx>, id: LocalDefId) -> &mir::Body {
             /* NOTE: Currently, it seems that there is no way to deallocate
              * something from arena. So, we have to the body. */
