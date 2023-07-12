@@ -37,7 +37,7 @@ use std::path::PathBuf;
 use constants::*;
 use rustc_driver::RunCompiler;
 
-use crate::passes::{get_passes, AnalysisPassExt, Callbacks, TransformationPassExt};
+use crate::passes::{Callbacks, InstrumentationPass, TransformationPassExt};
 
 pub fn run_compiler(args: &[String], input_path: Option<PathBuf>) -> i32 {
     let args = driver_args::set_up_args(args, input_path);
@@ -49,14 +49,9 @@ pub fn run_compiler(args: &[String], input_path: Option<PathBuf>) -> i32 {
         rustc_driver::catch_with_exit_code(|| RunCompiler::new(&args, pass.as_mut()).run())
     };
 
-    let (analysis_passes, mut transformation_pass) = get_passes();
-    for mut pass in analysis_passes {
-        run_pass(pass.to_callbacks());
-    }
-
     {
-        let pass = transformation_pass.to_callbacks();
-        run_pass(pass)
+        let mut pass = InstrumentationPass;
+        run_pass(pass.to_callbacks())
     }
 }
 

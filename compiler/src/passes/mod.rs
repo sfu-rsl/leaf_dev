@@ -11,11 +11,9 @@ use self::implementation::TransformationPassAdapter;
 
 mod instr;
 
-pub(super) type Callbacks<'a> = Box<dyn driver::Callbacks + Send + 'a>;
+pub(crate) use instr::InstrumentationPass;
 
-pub(super) fn get_passes() -> ([Box<dyn AnalysisPass + Send>; 0], impl TransformationPass) {
-    ([], instr::InstrumentationPass)
-}
+pub(super) type Callbacks<'a> = Box<dyn driver::Callbacks + Send + 'a>;
 
 #[allow(unused)]
 pub(crate) trait AnalysisPass<R = ()> {
