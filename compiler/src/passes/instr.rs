@@ -2,7 +2,7 @@ use rustc_middle::mir;
 use rustc_span::DUMMY_SP;
 
 use super::TransformationPass;
-use crate::{constants::CRATE_RUNTIME, mir_transform::instrumentation::passes::LeafPass};
+use crate::{constants::CRATE_RUNTIME, mir_transform::instr::passes::LeafPass};
 
 pub(crate) struct InstrumentationPass;
 
