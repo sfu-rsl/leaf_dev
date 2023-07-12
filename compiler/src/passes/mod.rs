@@ -54,7 +54,7 @@ impl<R, T: AnalysisPass<R> + Sized> AnalysisPass<R> for Box<T> {
 }
 
 pub(crate) trait AnalysisPassExt {
-    fn to_callbacks<'a>(&'a mut self) -> Callbacks<'a>;
+    fn to_callbacks(&mut self) -> Callbacks;
 }
 impl<T: AnalysisPass + Send + ?Sized> AnalysisPassExt for T {
     fn to_callbacks(&mut self) -> Callbacks {
@@ -76,7 +76,7 @@ pub(crate) trait TransformationPass {
 }
 
 pub(crate) trait TransformationPassExt {
-    fn to_callbacks<'a>(&'a mut self) -> Callbacks<'a>;
+    fn to_callbacks(&mut self) -> Callbacks;
 }
 impl<T: TransformationPass + Send + ?Sized> TransformationPassExt for T {
     fn to_callbacks(&mut self) -> Callbacks {
@@ -187,6 +187,7 @@ mod implementation {
          * allocated cells to store the original functions.
          * As there will be a single transformation pass in the project, this is not a problem.
          */
+        #[allow(clippy::type_complexity)]
         static ORIGINAL_OVERRIDE: Cell<
             Option<fn(&rustc_session::Session, &mut query::Providers, &mut query::ExternProviders)>,
         > = Cell::new(None);
@@ -244,7 +245,7 @@ mod implementation {
     }
 
     impl<T: TransformationPass + Send + ?Sized> TransformationPassAdapter<'_, T> {
-        fn optimized_mir<'tcx>(tcx: TyCtxt<'tcx>, id: LocalDefId) -> &mir::Body {
+        fn optimized_mir(tcx: TyCtxt, id: LocalDefId) -> &mir::Body {
             /* NOTE: Currently, it seems that there is no way to deallocate
              * something from arena. So, we have to the body. */
             let mut body = ORIGINAL_OPTIMIZED_MIR.get()(tcx, id).clone();

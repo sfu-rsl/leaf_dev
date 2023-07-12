@@ -39,7 +39,7 @@ use rustc_driver::RunCompiler;
 
 use crate::passes::{get_passes, AnalysisPassExt, Callbacks, TransformationPassExt};
 
-pub fn run_compiler(args: &mut Vec<String>, input_path: Option<PathBuf>) -> i32 {
+pub fn run_compiler(args: &[String], input_path: Option<PathBuf>) -> i32 {
     let args = driver_args::set_up_args(args, input_path);
     log::info!("Running compiler with args: {:?}", args);
 
@@ -182,8 +182,7 @@ mod driver_args {
         let try_exe_path = || {
             std::env::current_exe()
                 .ok()
-                .map(|path| path.parent().map(|p| p.join(DIR_DEPS)))
-                .flatten()
+                .and_then(|path| path.parent().map(|p| p.join(DIR_DEPS)))
                 .filter(|path| path.exists())
                 .map(|path| path.to_string_lossy().to_string())
         };
