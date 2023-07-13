@@ -81,8 +81,14 @@ pub(crate) fn find_pri_funcs<'tcx>(
 
 macro_rules! helper_item_name {
     ($name:ident) => {
-        &stringify!(runtime::pri::compiler_helpers::$name).replace(' ', "")
+        &crate::pri_utils::normalize_str_path(&stringify!(runtime::pri::compiler_helpers::$name))
     };
+}
+pub(crate) use helper_item_name;
+
+#[inline]
+pub(crate) fn normalize_str_path(name: &str) -> String {
+    name.replace(' ', "")
 }
 
 pub(crate) fn find_pri_types<'tcx>(pri_symbols: &[DefId], tcx: TyCtxt<'tcx>) -> PriTypes<'tcx> {
@@ -107,7 +113,7 @@ pub(crate) fn find_pri_types<'tcx>(pri_symbols: &[DefId], tcx: TyCtxt<'tcx>) -> 
         .collect();
 
     let get_ty = |name: &str| -> Ty {
-        tcx.type_of(def_ids.get(&name.replace(' ', "")).unwrap())
+        tcx.type_of(def_ids.get(&normalize_str_path(&name)).unwrap())
             .no_bound_vars()
             .expect("PRI types are not expected to have bound vars (generics).")
     };
@@ -122,11 +128,7 @@ pub(crate) fn find_pri_types<'tcx>(pri_symbols: &[DefId], tcx: TyCtxt<'tcx>) -> 
 
 pub(crate) fn find_helper_funcs(pri_symbols: &[DefId], tcx: TyCtxt) -> PriHelperFunctions {
     let def_ids: HashMap<String, DefId> = pri_symbols
-        .filter_by_marker(
-            tcx,
-            stringify!(runtime::pri::compiler_helpers::MODULE_MARKER),
-            false,
-        )
+        .filter_by_marker(tcx, helper_item_name!(MODULE_MARKER), false)
         .into_iter()
         .filter(|def_id| matches!(tcx.def_kind(def_id), DefKind::Fn | DefKind::AssocFn))
         .map(|def_id| (tcx.def_path_str(def_id), def_id))
@@ -138,13 +140,17 @@ pub(crate) fn find_helper_funcs(pri_symbols: &[DefId], tcx: TyCtxt) -> PriHelper
     }
 }
 
+pub(crate) fn eq_def_path_str(tcx: TyCtxt, def_id: &DefId, def_path_str: &str) -> bool {
+    tcx.def_path_str(def_id) == normalize_str_path(def_path_str)
+}
+
 fn get_module_of_marker(
     mut symbols: impl Iterator<Item = DefId>,
     tcx: TyCtxt,
     marker_name: &str,
 ) -> impl Iterator<Item = DisambiguatedDefPathData> {
     symbols
-        .find(|def_id| tcx.def_path_str(def_id) == marker_name.replace(' ', ""))
+        .find(|def_id| eq_def_path_str(tcx, def_id, marker_name))
         .map(|marker_id| module_of(tcx, &marker_id))
         .unwrap_or_else(|| panic!("Could not find the marker symbol. {marker_name}"))
 }
