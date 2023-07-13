@@ -13,7 +13,6 @@ use rustc_middle::{
 use rustc_target::abi::VariantIdx;
 
 pub(super) mod context;
-mod pri_utils;
 
 /*
  * Contexts and RuntimeCallAdder.

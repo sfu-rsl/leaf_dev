@@ -4,15 +4,15 @@ use std::collections::HashMap;
 
 use rustc_middle::{
     mir::{self, BasicBlock, BasicBlockData, HasLocalDecls, Local, LocalDecls},
-    ty::{Ty, TyCtxt},
+    ty::TyCtxt,
 };
-use rustc_span::def_id::DefId;
 
 use crate::mir_transform::modification::{
     self, BodyBlockManager, BodyLocalManager, BodyModificationUnit, JumpTargetModifier,
 };
 
-use super::{pri_utils, OperandRef, PlaceRef, SwitchInfo};
+use super::{OperandRef, PlaceRef, SwitchInfo};
+use crate::pri_utils::{FunctionInfo, PriHelperFunctions, PriTypes};
 
 pub(crate) trait TyContextProvider<'tcx> {
     fn tcx(&self) -> TyCtxt<'tcx>;
@@ -23,24 +23,6 @@ pub(crate) trait BodyProvider<'tcx> {
 }
 
 pub(crate) trait InEntryFunction {}
-
-pub(crate) struct FunctionInfo<'tcx> {
-    pub def_id: DefId,
-    pub ret_ty: Ty<'tcx>,
-}
-
-/// Contains types that are used in PRI functions along with primitive types.
-pub(crate) struct PriTypes<'tcx> {
-    pub place_ref: Ty<'tcx>,
-    pub operand_ref: Ty<'tcx>,
-    pub binary_op: Ty<'tcx>,
-    pub unary_op: Ty<'tcx>,
-}
-
-pub(crate) struct PriHelperFunctions {
-    pub f32_to_bits: DefId,
-    pub f64_to_bits: DefId,
-}
 
 pub(crate) trait PriItemsProvider<'tcx> {
     fn get_pri_func_info(&self, func_name: &str) -> &FunctionInfo<'tcx>;
@@ -104,7 +86,7 @@ impl<'tcx, 'm> DefaultContext<'tcx, 'm> {
         tcx: TyCtxt<'tcx>,
         modification_unit: &'m mut BodyModificationUnit<'tcx>,
     ) -> Self {
-        use pri_utils::*;
+        use crate::pri_utils::*;
         let pri_symbols = find_pri_exported_symbols(tcx);
         if cfg!(debug_assertions) {
             for def_id in &pri_symbols {

@@ -3,9 +3,25 @@ use std::collections::HashMap;
 use rustc_hir::{def::DefKind, def_id::DefId, definitions::DisambiguatedDefPathData};
 use rustc_middle::ty::{Ty, TyCtxt};
 
-use super::context::{FunctionInfo, PriHelperFunctions, PriTypes};
+pub(crate) struct FunctionInfo<'tcx> {
+    pub def_id: DefId,
+    pub ret_ty: Ty<'tcx>,
+}
 
-pub(super) fn find_pri_exported_symbols(tcx: TyCtxt) -> Vec<DefId> {
+/// Contains types that are used in PRI functions along with primitive types.
+pub(crate) struct PriTypes<'tcx> {
+    pub place_ref: Ty<'tcx>,
+    pub operand_ref: Ty<'tcx>,
+    pub binary_op: Ty<'tcx>,
+    pub unary_op: Ty<'tcx>,
+}
+
+pub(crate) struct PriHelperFunctions {
+    pub f32_to_bits: DefId,
+    pub f64_to_bits: DefId,
+}
+
+pub(crate) fn find_pri_exported_symbols(tcx: TyCtxt) -> Vec<DefId> {
     use rustc_middle::middle::exported_symbols::ExportedSymbol;
 
     fn def_id<'a>(symbol: &'a ExportedSymbol) -> Option<&'a DefId> {
@@ -38,7 +54,7 @@ pub(super) fn find_pri_exported_symbols(tcx: TyCtxt) -> Vec<DefId> {
     runtime_symbols.filter_by_marker(tcx, stringify!(runtime::pri::MODULE_MARKER), true)
 }
 
-pub(super) fn find_pri_funcs<'tcx>(
+pub(crate) fn find_pri_funcs<'tcx>(
     pri_symbols: &[DefId],
     tcx: TyCtxt<'tcx>,
 ) -> HashMap<String, FunctionInfo<'tcx>> {
@@ -69,7 +85,7 @@ macro_rules! helper_item_name {
     };
 }
 
-pub(super) fn find_pri_types<'tcx>(pri_symbols: &[DefId], tcx: TyCtxt<'tcx>) -> PriTypes<'tcx> {
+pub(crate) fn find_pri_types<'tcx>(pri_symbols: &[DefId], tcx: TyCtxt<'tcx>) -> PriTypes<'tcx> {
     /*
      * FIXME: The desired enums and type aliases don't show up in the exported symbols.
      * It may be because of the MIR phases that clean up/optimize/unify things,
@@ -104,7 +120,7 @@ pub(super) fn find_pri_types<'tcx>(pri_symbols: &[DefId], tcx: TyCtxt<'tcx>) -> 
     }
 }
 
-pub(super) fn find_helper_funcs(pri_symbols: &[DefId], tcx: TyCtxt) -> PriHelperFunctions {
+pub(crate) fn find_helper_funcs(pri_symbols: &[DefId], tcx: TyCtxt) -> PriHelperFunctions {
     let def_ids: HashMap<String, DefId> = pri_symbols
         .filter_by_marker(
             tcx,

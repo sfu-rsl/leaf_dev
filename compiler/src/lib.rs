@@ -13,6 +13,7 @@
 mod mir_transform;
 mod passes;
 mod visit;
+mod pri_utils;
 
 extern crate rustc_abi;
 extern crate rustc_apfloat;
