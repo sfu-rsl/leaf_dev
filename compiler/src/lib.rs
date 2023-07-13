@@ -12,8 +12,9 @@
 
 mod mir_transform;
 mod passes;
-mod visit;
 mod pri_utils;
+mod utils;
+mod visit;
 
 extern crate rustc_abi;
 extern crate rustc_apfloat;
@@ -38,7 +39,10 @@ use std::path::PathBuf;
 use constants::*;
 use rustc_driver::RunCompiler;
 
-use crate::passes::{Callbacks, InstrumentationPass, TransformationPassExt};
+use crate::{
+    passes::{Callbacks, CompilationPassExt, HasResult},
+    utils::Chain,
+};
 
 pub fn run_compiler(args: &[String], input_path: Option<PathBuf>) -> i32 {
     let args = driver_args::set_up_args(args, input_path);

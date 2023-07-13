@@ -1,67 +1,53 @@
+mod ctfe;
+mod instr;
+
 use rustc_ast as ast;
 use rustc_driver as driver;
+use rustc_driver::Compilation;
 use rustc_interface::{interface, Queries};
 use rustc_middle::mir;
 use rustc_middle::ty as mir_ty;
 
-use delegate::delegate;
+use paste::paste;
 
-use self::implementation::AnalysisPassAdapter;
-use self::implementation::TransformationPassAdapter;
+use self::implementation::CompilationPassAdapter;
+use crate::utils::Chain;
 
-mod instr;
-
-pub(crate) use instr::InstrumentationPass;
+pub(crate) use ctfe::CtfeFunctionAdder;
+pub(crate) use instr::Instrumentator;
 
 pub(super) type Callbacks<'a> = Box<dyn driver::Callbacks + Send + 'a>;
 
-#[allow(unused)]
-pub(crate) trait AnalysisPass<R = ()> {
-    fn visit_ast(&mut self, krate: &ast::Crate) {
-        Default::default()
-    }
-
-    fn visit_ctxt<'tcx>(&mut self, tcx: mir_ty::TyCtxt<'tcx>) {
-        Default::default()
-    }
-
-    fn visit_mir_body<'tcx>(&mut self, tcx: mir_ty::TyCtxt<'tcx>, body: &mir::Body<'tcx>) {
-        Default::default()
-    }
-
-    fn into_result(self) -> R
-    where
-        Self: Sized;
+pub(crate) trait HasResult<R> {
+    fn into_result(self) -> R;
 }
 
-impl<R, T: AnalysisPass<R> + Sized> AnalysisPass<R> for Box<T> {
-    delegate! {
-        to self.as_mut() {
-            fn visit_ast(&mut self, krate: &ast::Crate);
-            fn visit_ctxt<'tcx>(&mut self, tcx: mir_ty::TyCtxt<'tcx>);
-            fn visit_mir_body<'tcx>(&mut self, tcx: mir_ty::TyCtxt<'tcx>, body: &mir::Body<'tcx>);
+macro_rules! visit_before_after {
+    (fn $name:ident $($sig:tt)*) => {
+        paste!{
+            fn [<visit_ $name _before>] $($sig)*
+
+            fn [<visit_ $name _after>] $($sig)*
+        }
+    };
+}
+
+#[allow(unused)]
+pub(crate) trait CompilationPass {
+    visit_before_after! {
+        fn ast(&mut self, krate: &ast::Crate) -> Compilation {
+            Compilation::Continue
         }
     }
 
-    fn into_result(self) -> R
-    where
-        Self: Sized,
-    {
-        Box::<T>::into_inner(self).into_result()
+    fn visit_ctxt<'tcx>(&mut self, tcx: mir_ty::TyCtxt<'tcx>) -> Compilation {
+        Compilation::Continue
     }
-}
 
-pub(crate) trait AnalysisPassExt {
-    fn to_callbacks(&mut self) -> Callbacks;
-}
-impl<T: AnalysisPass + Send + ?Sized> AnalysisPassExt for T {
-    fn to_callbacks(&mut self) -> Callbacks {
-        Box::new(AnalysisPassAdapter(self))
+    visit_before_after! {
+        fn mir_body<'tcx>(tcx: mir_ty::TyCtxt<'tcx>, body: &mir::Body<'tcx>) {}
     }
-}
 
-#[allow(unused)]
-pub(crate) trait TransformationPass {
     fn transform_ast(&mut self, krate: &mut ast::Crate) {
         Default::default()
     }
@@ -73,17 +59,32 @@ pub(crate) trait TransformationPass {
     }
 }
 
-pub(crate) trait TransformationPassExt {
+pub(crate) struct NoOpCompilationPass;
+impl CompilationPass for NoOpCompilationPass {}
+
+pub(crate) trait CompilationPassExt {
+    fn chain<T>(self, next: T) -> Chain<Self, T>
+    where
+        Self: Sized,
+        T: CompilationPass,
+    {
+        Chain {
+            first: self,
+            second: next,
+        }
+    }
+
     fn to_callbacks(&mut self) -> Callbacks;
 }
-impl<T: TransformationPass + Send + ?Sized> TransformationPassExt for T {
+impl<T: CompilationPass + Send + ?Sized> CompilationPassExt for T {
     fn to_callbacks(&mut self) -> Callbacks {
-        Box::new(TransformationPassAdapter(self))
+        Box::new(CompilationPassAdapter(self))
     }
 }
 
 mod implementation {
     use super::*;
+
     use mir_ty::TyCtxt;
     use rustc_driver::Compilation;
     use rustc_middle::query;
@@ -137,20 +138,60 @@ mod implementation {
      * -> mir_built (the actual translation to MIR)
      */
 
-    pub(super) struct AnalysisPassAdapter<'a, T: AnalysisPass + Send + ?Sized>(pub &'a mut T);
+    thread_local! {
+        /*
+         * NOTE: Both `override_queries` and `optimized_mir` are function pointers, which means
+         * that they cannot be closures with captured variables. Therefore, we use these statically
+         * allocated cells to store the original functions.
+         * As there will be a single transformation pass in the project, this is not a problem.
+         */
+        #[allow(clippy::type_complexity)]
+        static ORIGINAL_OVERRIDE: Cell<
+            Option<fn(&rustc_session::Session, &mut query::Providers, &mut query::ExternProviders)>,
+        > = Cell::new(None);
+        static ORIGINAL_OPTIMIZED_MIR: Cell<
+            for<'tcx> fn(TyCtxt<'tcx>, LocalDefId) -> &mir::Body<'tcx>
+        > = Cell::new(|_, _| unreachable!());
+    }
 
-    impl<T> driver::Callbacks for AnalysisPassAdapter<'_, T>
+    pub(super) struct CompilationPassAdapter<'a, T: CompilationPass + Send + ?Sized>(pub &'a mut T);
+
+    macro_rules! stop_if_stop {
+        ($result:expr) => {
+            if $result == Compilation::Stop {
+                return Compilation::Stop;
+            }
+        };
+    }
+
+    impl<T> driver::Callbacks for CompilationPassAdapter<'_, T>
     where
-        T: AnalysisPass + Send + ?Sized,
+        T: CompilationPass + Send + ?Sized,
     {
-        fn config(&mut self, _config: &mut interface::Config) {}
+        fn config(&mut self, config: &mut interface::Config) {
+            ORIGINAL_OVERRIDE.set(config.override_queries.take());
+
+            config.override_queries = Some(move |session, providers, e_providers| {
+                if let Some(existing_override) = ORIGINAL_OVERRIDE.get() {
+                    existing_override(session, providers, e_providers);
+                }
+
+                ORIGINAL_OPTIMIZED_MIR.set(providers.optimized_mir);
+                providers.optimized_mir = Self::optimized_mir;
+            });
+        }
 
         fn after_parsing<'tcx>(
             &mut self,
             _compiler: &interface::Compiler,
             queries: &'tcx Queries<'tcx>,
         ) -> Compilation {
-            self.0.visit_ast(&queries.parse().unwrap().borrow());
+            let mut ast_steal = queries.parse().unwrap();
+
+            stop_if_stop!(self.0.visit_ast_before(&ast_steal.borrow()));
+            self.0.transform_ast(ast_steal.get_mut());
+            stop_if_stop!(self.0.visit_ast_after(&ast_steal.borrow()));
+
             Compilation::Continue
         }
 
@@ -171,84 +212,67 @@ mod implementation {
             queries
                 .global_ctxt()
                 .unwrap()
-                .enter(|tcx| self.0.visit_ctxt(tcx));
-
-            // We can stop here as it is an analysis pass.
-            Compilation::Stop
+                .enter(|tcx| self.0.visit_ctxt(tcx))
         }
     }
 
-    thread_local! {
-        /*
-         * NOTE: Both `override_queries` and `optimized_mir` are function pointers, which means
-         * that they cannot be closures with captured variables. Therefore, we use these statically
-         * allocated cells to store the original functions.
-         * As there will be a single transformation pass in the project, this is not a problem.
-         */
-        #[allow(clippy::type_complexity)]
-        static ORIGINAL_OVERRIDE: Cell<
-            Option<fn(&rustc_session::Session, &mut query::Providers, &mut query::ExternProviders)>,
-        > = Cell::new(None);
-        static ORIGINAL_OPTIMIZED_MIR: Cell<
-            for<'tcx> fn(TyCtxt<'tcx>, LocalDefId) -> &mir::Body<'tcx>
-        > = Cell::new(|_, _| unreachable!());
-    }
-
-    pub(super) struct TransformationPassAdapter<'a, T: TransformationPass + Send + ?Sized>(
-        pub &'a mut T,
-    );
-
-    impl<T> driver::Callbacks for TransformationPassAdapter<'_, T>
-    where
-        T: TransformationPass + Send + ?Sized,
-    {
-        fn config(&mut self, config: &mut interface::Config) {
-            ORIGINAL_OVERRIDE.set(config.override_queries.take());
-
-            config.override_queries = Some(move |session, providers, e_providers| {
-                if let Some(existing_override) = ORIGINAL_OVERRIDE.get() {
-                    existing_override(session, providers, e_providers);
-                }
-
-                ORIGINAL_OPTIMIZED_MIR.set(providers.optimized_mir);
-                providers.optimized_mir = Self::optimized_mir;
-            });
-        }
-
-        fn after_parsing<'tcx>(
-            &mut self,
-            _compiler: &interface::Compiler,
-            queries: &'tcx Queries<'tcx>,
-        ) -> Compilation {
-            self.0.transform_ast(queries.parse().unwrap().get_mut());
-            Compilation::Continue
-        }
-
-        fn after_expansion<'tcx>(
-            &mut self,
-            _compiler: &interface::Compiler,
-            _queries: &'tcx Queries<'tcx>,
-        ) -> Compilation {
-            Compilation::Continue
-        }
-
-        fn after_analysis<'tcx>(
-            &mut self,
-            _handler: &rustc_session::EarlyErrorHandler,
-            _compiler: &interface::Compiler,
-            _queries: &'tcx Queries<'tcx>,
-        ) -> Compilation {
-            Compilation::Continue
-        }
-    }
-
-    impl<T: TransformationPass + Send + ?Sized> TransformationPassAdapter<'_, T> {
+    impl<T: CompilationPass + Send + ?Sized> CompilationPassAdapter<'_, T> {
         fn optimized_mir(tcx: TyCtxt, id: LocalDefId) -> &mir::Body {
             /* NOTE: Currently, it seems that there is no way to deallocate
-             * something from arena. So, we have to the body. */
+             * something from arena. So, we have to clone the body. */
             let mut body = ORIGINAL_OPTIMIZED_MIR.get()(tcx, id).clone();
+            T::visit_mir_body_before(tcx, &body);
             T::transform_mir_body(tcx, &mut body);
+            T::visit_mir_body_after(tcx, &body);
             tcx.arena.alloc(body)
+        }
+    }
+
+    impl<A, B> CompilationPass for Chain<A, B>
+    where
+        A: CompilationPass,
+        B: CompilationPass,
+    {
+        fn visit_ast_before(&mut self, krate: &ast::Crate) -> Compilation {
+            stop_if_stop!(self.first.visit_ast_before(krate));
+            stop_if_stop!(self.second.visit_ast_before(krate));
+
+            Compilation::Continue
+        }
+
+        fn visit_ast_after(&mut self, krate: &ast::Crate) -> Compilation {
+            // NOTE: We perform in the telescope order.
+            stop_if_stop!(self.second.visit_ast_after(krate));
+            stop_if_stop!(self.first.visit_ast_after(krate));
+
+            Compilation::Continue
+        }
+
+        fn visit_ctxt<'tcx>(&mut self, tcx: mir_ty::TyCtxt<'tcx>) -> Compilation {
+            stop_if_stop!(self.first.visit_ctxt(tcx));
+            stop_if_stop!(self.second.visit_ctxt(tcx));
+
+            Compilation::Continue
+        }
+
+        fn visit_mir_body_before<'tcx>(tcx: mir_ty::TyCtxt<'tcx>, body: &mir::Body<'tcx>) {
+            A::visit_mir_body_before(tcx, body);
+            B::visit_mir_body_before(tcx, body);
+        }
+
+        fn visit_mir_body_after<'tcx>(tcx: mir_ty::TyCtxt<'tcx>, body: &mir::Body<'tcx>) {
+            A::visit_mir_body_after(tcx, body);
+            B::visit_mir_body_after(tcx, body);
+        }
+
+        fn transform_ast(&mut self, krate: &mut ast::Crate) {
+            self.first.transform_ast(krate);
+            self.second.transform_ast(krate);
+        }
+
+        fn transform_mir_body<'tcx>(tcx: mir_ty::TyCtxt<'tcx>, body: &mut mir::Body<'tcx>) {
+            A::transform_mir_body(tcx, body);
+            B::transform_mir_body(tcx, body);
         }
     }
 }

@@ -114,6 +114,7 @@ dependencies = [
  "delegate",
  "env_logger 0.10.0",
  "log",
+ "paste",
  "runtime",
 ]
 
