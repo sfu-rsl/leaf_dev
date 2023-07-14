@@ -1,7 +1,7 @@
 use rustc_middle::mir;
 use rustc_span::DUMMY_SP;
 
-use super::CompilationPass;
+use super::{CompilationPass, Storage};
 use crate::{constants::CRATE_RUNTIME, mir_transform::instr::passes::LeafPass};
 
 pub(crate) struct Instrumentator;
@@ -11,7 +11,11 @@ impl CompilationPass for Instrumentator {
         add_runtime_as_extern_crate(krate);
     }
 
-    fn transform_mir_body<'tcx>(tcx: rustc_middle::ty::TyCtxt<'tcx>, body: &mut mir::Body<'tcx>) {
+    fn transform_mir_body<'tcx>(
+        tcx: rustc_middle::ty::TyCtxt<'tcx>,
+        body: &mut mir::Body<'tcx>,
+        _storage: &mut Storage,
+    ) {
         use rustc_middle::mir::MirPass;
         (&LeafPass).run_pass(tcx, body);
     }

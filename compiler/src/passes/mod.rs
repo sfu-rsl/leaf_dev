@@ -17,6 +17,7 @@ pub(crate) use ctfe::CtfeFunctionAdder;
 pub(crate) use instr::Instrumentator;
 
 pub(super) type Callbacks<'a> = Box<dyn driver::Callbacks + Send + 'a>;
+pub(crate) type Storage = std::collections::HashMap<String, Box<dyn std::any::Any>>;
 
 pub(crate) trait HasResult<R> {
     fn into_result(self) -> R;
@@ -54,7 +55,11 @@ pub(crate) trait CompilationPass {
 
     /* As we need function pointers in the query structures, this function cannot
      * take self. */
-    fn transform_mir_body<'tcx>(tcx: mir_ty::TyCtxt<'tcx>, body: &mut mir::Body<'tcx>) {
+    fn transform_mir_body<'tcx>(
+        tcx: mir_ty::TyCtxt<'tcx>,
+        body: &mut mir::Body<'tcx>,
+        storage: &mut Storage,
+    ) {
         Default::default()
     }
 }
@@ -90,7 +95,7 @@ mod implementation {
     use rustc_middle::query;
     use rustc_span::def_id::LocalDefId;
 
-    use std::cell::Cell;
+    use std::{cell::Cell, collections::HashMap};
 
     /* NOTE: How does `queries` work?
      * Here, the queries object is a structure that performs compiler-related
@@ -222,7 +227,8 @@ mod implementation {
              * something from arena. So, we have to clone the body. */
             let mut body = ORIGINAL_OPTIMIZED_MIR.get()(tcx, id).clone();
             T::visit_mir_body_before(tcx, &body);
-            T::transform_mir_body(tcx, &mut body);
+            let mut storage = HashMap::new();
+            T::transform_mir_body(tcx, &mut body, &mut storage);
             T::visit_mir_body_after(tcx, &body);
             tcx.arena.alloc(body)
         }
@@ -270,9 +276,13 @@ mod implementation {
             self.second.transform_ast(krate);
         }
 
-        fn transform_mir_body<'tcx>(tcx: mir_ty::TyCtxt<'tcx>, body: &mut mir::Body<'tcx>) {
-            A::transform_mir_body(tcx, body);
-            B::transform_mir_body(tcx, body);
+        fn transform_mir_body<'tcx>(
+            tcx: mir_ty::TyCtxt<'tcx>,
+            body: &mut mir::Body<'tcx>,
+            storage: &mut Storage,
+        ) {
+            A::transform_mir_body(tcx, body, storage);
+            B::transform_mir_body(tcx, body, storage);
         }
     }
 }
