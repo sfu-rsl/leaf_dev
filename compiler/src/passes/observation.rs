@@ -58,7 +58,7 @@ where
     fn transform_mir_body<'tcx>(
         _tcx: rustc_middle::ty::TyCtxt<'tcx>,
         body: &mut rustc_middle::mir::Body<'tcx>,
-        storage: &mut super::Storage,
+        storage: &mut dyn super::Storage,
     ) {
         log::info!(target: target!(), "Transforming MIR body");
         log::debug!(target: obj_target!(), "MIR body to transform: {:#?}", body);

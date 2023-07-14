@@ -11,6 +11,7 @@ use crate::{
     mir_transform::modification::{
         self, BodyBlockManager, BodyLocalManager, BodyModificationUnit, JumpTargetModifier,
     },
+    passes::Storage,
     pri_utils,
 };
 
@@ -33,6 +34,10 @@ pub(crate) trait PriItemsProvider<'tcx> {
     fn pri_helper_funcs(&self) -> &PriHelperFunctions;
 }
 
+pub(crate) trait StorageProvider {
+    fn storage(&mut self) -> &mut dyn Storage;
+}
+
 pub(crate) trait LocationProvider {
     fn location(&self) -> BasicBlock;
 }
@@ -52,6 +57,8 @@ pub(crate) trait SwitchInfoProvider<'tcx> {
 /*
  * This is the minimal required context that we expect for call adding.
  *(Otherwise, we will not be able to add new call blocks to the MIR.)
+ * Or we can see this context as the minimal that is available since the start
+ * point to all operations.
  */
 pub(crate) trait BaseContext<'tcx>
 where
@@ -59,7 +66,8 @@ where
         + BodyLocalManager<'tcx>
         + BodyBlockManager<'tcx>
         + PriItemsProvider<'tcx>
-        + HasLocalDecls<'tcx>,
+        + HasLocalDecls<'tcx>
+        + StorageProvider,
 {
 }
 
@@ -69,13 +77,15 @@ impl<'tcx, C> BaseContext<'tcx> for C where
         + BodyBlockManager<'tcx>
         + PriItemsProvider<'tcx>
         + HasLocalDecls<'tcx>
+        + StorageProvider
 {
 }
 
-pub(crate) struct DefaultContext<'tcx, 'm> {
+pub(crate) struct DefaultContext<'tcx, 'm, 's> {
     tcx: TyCtxt<'tcx>,
     modification_unit: &'m mut BodyModificationUnit<'tcx>,
     pri: PriItems<'tcx>,
+    storage: &'s mut dyn Storage,
 }
 
 pub(crate) struct PriItems<'tcx> {
@@ -84,10 +94,11 @@ pub(crate) struct PriItems<'tcx> {
     pub helper_funcs: PriHelperFunctions,
 }
 
-impl<'tcx, 'm> DefaultContext<'tcx, 'm> {
+impl<'tcx, 'm, 's> DefaultContext<'tcx, 'm, 's> {
     pub(crate) fn new(
         tcx: TyCtxt<'tcx>,
         modification_unit: &'m mut BodyModificationUnit<'tcx>,
+        storage: &'s mut dyn Storage,
     ) -> Self {
         use crate::pri_utils::*;
         let pri_symbols = find_pri_exported_symbols(tcx);
@@ -105,17 +116,18 @@ impl<'tcx, 'm> DefaultContext<'tcx, 'm> {
                 types: find_pri_types(&pri_symbols, tcx),
                 helper_funcs: find_helper_funcs(&pri_symbols, tcx),
             },
+            storage,
         }
     }
 }
 
-impl<'tcx> TyContextProvider<'tcx> for DefaultContext<'tcx, '_> {
+impl<'tcx> TyContextProvider<'tcx> for DefaultContext<'tcx, '_, '_> {
     fn tcx(&self) -> TyCtxt<'tcx> {
         self.tcx
     }
 }
 
-impl<'tcx, 'm> BodyLocalManager<'tcx> for DefaultContext<'tcx, 'm> {
+impl<'tcx> BodyLocalManager<'tcx> for DefaultContext<'tcx, '_, '_> {
     fn add_local<T>(&mut self, decl_info: T) -> Local
     where
         T: Into<modification::NewLocalDecl<'tcx>>,
@@ -124,7 +136,7 @@ impl<'tcx, 'm> BodyLocalManager<'tcx> for DefaultContext<'tcx, 'm> {
     }
 }
 
-impl<'tcx, 'm> BodyBlockManager<'tcx> for DefaultContext<'tcx, 'm> {
+impl<'tcx> BodyBlockManager<'tcx> for DefaultContext<'tcx, '_, '_> {
     fn insert_blocks_before<I>(
         &mut self,
         index: BasicBlock,
@@ -146,7 +158,7 @@ impl<'tcx, 'm> BodyBlockManager<'tcx> for DefaultContext<'tcx, 'm> {
     }
 }
 
-impl JumpTargetModifier for DefaultContext<'_, '_> {
+impl JumpTargetModifier for DefaultContext<'_, '_, '_> {
     fn modify_jump_target_where(
         &mut self,
         terminator_location: BasicBlock,
@@ -177,13 +189,19 @@ impl<'tcx> PriItemsProvider<'tcx> for PriItems<'tcx> {
     }
 }
 
-impl<'tcx> PriItemsProvider<'tcx> for DefaultContext<'tcx, '_> {
+impl<'tcx> PriItemsProvider<'tcx> for DefaultContext<'tcx, '_, '_> {
     delegate! {
         to self.pri {
             fn get_pri_func_info(&self, func_name: &str) -> &FunctionInfo<'tcx>;
             fn pri_types(&self) -> &PriTypes<'tcx>;
             fn pri_helper_funcs(&self) -> &PriHelperFunctions;
         }
+    }
+}
+
+impl StorageProvider for DefaultContext<'_, '_, '_> {
+    fn storage(&mut self) -> &mut dyn Storage {
+        self.storage
     }
 }
 
@@ -376,6 +394,13 @@ make_impl_macro! {
 }
 
 make_impl_macro! {
+    impl_storage_provider,
+    StorageProvider,
+    self,
+    fn storage(&mut self) -> &mut dyn Storage;
+}
+
+make_impl_macro! {
     impl_location_provider,
     LocationProvider,
     self,
@@ -464,6 +489,7 @@ make_caller_macro!(
         impl_body_provider,
         impl_in_entry_function,
         impl_has_local_decls,
+        impl_storage_provider,
         impl_location_provider,
         impl_dest_ref_provider,
         impl_cast_operand_provider,

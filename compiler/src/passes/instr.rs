@@ -15,10 +15,9 @@ impl CompilationPass for Instrumentator {
     fn transform_mir_body<'tcx>(
         tcx: rustc_middle::ty::TyCtxt<'tcx>,
         body: &mut mir::Body<'tcx>,
-        _storage: &mut Storage,
+        storage: &mut dyn Storage,
     ) {
-        use rustc_middle::mir::MirPass;
-        (&LeafPass).run_pass(tcx, body);
+        LeafPass.transform(tcx, body, storage);
     }
 }
 

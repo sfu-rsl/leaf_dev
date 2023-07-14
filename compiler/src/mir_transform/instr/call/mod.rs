@@ -169,9 +169,11 @@ pub(crate) struct RuntimeCallAdder<C> {
 }
 
 mod implementation {
+    use self::ctxtreqs::*;
     use super::context::*;
     use super::*;
     use crate::mir_transform::modification::*;
+    use crate::passes::Storage;
     use delegate::delegate;
     use utils::*;
 
@@ -228,13 +230,14 @@ mod implementation {
         ) -> Vec<BasicBlock>;
     }
 
-    impl<'tcx, 'm> RuntimeCallAdder<DefaultContext<'tcx, 'm>> {
+    impl<'tcx, 'm, 's> RuntimeCallAdder<DefaultContext<'tcx, 'm, 's>> {
         pub fn new(
             tcx: TyCtxt<'tcx>,
             modification_unit: &'m mut BodyModificationUnit<'tcx>,
+            storage: &'s mut dyn Storage,
         ) -> Self {
             Self {
-                context: DefaultContext::new(tcx, modification_unit),
+                context: DefaultContext::new(tcx, modification_unit, storage),
             }
         }
     }
@@ -397,7 +400,7 @@ mod implementation {
     impl<'tcx, C> PlaceReferencer<'tcx> for RuntimeCallAdder<C>
     where
         Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
-        C: TyContextProvider<'tcx> + BodyProvider<'tcx>,
+        C: ForPlaceRef<'tcx>,
     {
         fn reference_place(&mut self, place: &Place<'tcx>) -> PlaceRef {
             let BlocksAndResult(new_blocks, reference) = self.internal_reference_place(place);
@@ -408,7 +411,7 @@ mod implementation {
     impl<'tcx, C> RuntimeCallAdder<C>
     where
         Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
-        C: TyContextProvider<'tcx> + BodyProvider<'tcx>,
+        C: ForPlaceRef<'tcx>,
     {
         fn internal_reference_place(&mut self, place: &Place<'tcx>) -> BlocksAndResult<'tcx> {
             let local = u32::from(place.local);
@@ -514,10 +517,7 @@ mod implementation {
     impl<'tcx, C> OperandReferencer<'tcx> for RuntimeCallAdder<C>
     where
         Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
-        C: TyContextProvider<'tcx>
-            + BodyProvider<'tcx>
-            + BodyLocalManager<'tcx>
-            + PriItemsProvider<'tcx>,
+        C: ForOperandRef<'tcx>,
     {
         fn reference_operand(&mut self, operand: &Operand<'tcx>) -> OperandRef {
             let BlocksAndResult(new_blocks, reference) = self.internal_reference_operand(operand);
@@ -529,10 +529,7 @@ mod implementation {
     impl<'tcx, C> RuntimeCallAdder<C>
     where
         Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
-        C: TyContextProvider<'tcx>
-            + BodyProvider<'tcx>
-            + BodyLocalManager<'tcx>
-            + PriItemsProvider<'tcx>,
+        C: ForOperandRef<'tcx>,
     {
         fn internal_reference_operand(&mut self, operand: &Operand<'tcx>) -> BlocksAndResult<'tcx> {
             match operand {
@@ -679,7 +676,7 @@ mod implementation {
     impl<'tcx, C> Assigner<'tcx> for RuntimeCallAdder<C>
     where
         Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
-        C: DestinationReferenceProvider + LocationProvider + BaseContext<'tcx>,
+        C: ForAssignment<'tcx>,
     {
         type Cast<'b> = RuntimeCallAdder<CastAssignmentContext<'b, C>> where C: 'b;
 
@@ -846,10 +843,7 @@ mod implementation {
     impl<'tcx, C> RuntimeCallAdder<C>
     where
         Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
-        C: DestinationReferenceProvider
-            + BodyLocalManager<'tcx>
-            + TyContextProvider<'tcx>
-            + PriItemsProvider<'tcx>,
+        C: ForAssignment<'tcx>,
     {
         fn add_bb_for_aggregate_assign_call(
             &mut self,
@@ -931,10 +925,7 @@ mod implementation {
     impl<'tcx, C> CastAssigner<'tcx> for RuntimeCallAdder<C>
     where
         Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
-        C: CastOperandProvider
-            + DestinationReferenceProvider
-            + LocationProvider
-            + BaseContext<'tcx>,
+        C: CastOperandProvider + ForAssignment<'tcx>,
     {
         fn to_int(&mut self, ty: Ty<'tcx>) {
             if ty.is_char() {
@@ -975,10 +966,7 @@ mod implementation {
     impl<'tcx, C> RuntimeCallAdder<C>
     where
         Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
-        C: CastOperandProvider
-            + DestinationReferenceProvider
-            + LocationProvider
-            + BaseContext<'tcx>,
+        C: CastOperandProvider + ForAssignment<'tcx>,
     {
         fn add_bb_for_cast_assign_call(&mut self, func_name: &str) {
             self.add_bb_for_cast_assign_call_with_args(func_name, vec![])
@@ -1002,8 +990,8 @@ mod implementation {
 
     impl<'tcx, C> BranchingReferencer<'tcx> for RuntimeCallAdder<C>
     where
-        C: TyContextProvider<'tcx> + HasLocalDecls<'tcx> + LocationProvider,
         Self: MirCallAdder<'tcx> + BlockInserter<'tcx> + OperandReferencer<'tcx>,
+        C: ForBranching<'tcx>,
     {
         fn store_branching_info(&mut self, discr: &Operand<'tcx>) -> SwitchInfo<'tcx> {
             let tcx = self.context.tcx();
@@ -1032,11 +1020,7 @@ mod implementation {
     impl<'tcx, C> BranchingHandler for RuntimeCallAdder<C>
     where
         Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
-        C: TyContextProvider<'tcx>
-            + BodyLocalManager<'tcx>
-            + LocationProvider
-            + SwitchInfoProvider<'tcx>
-            + JumpTargetModifier,
+        C: SwitchInfoProvider<'tcx> + ForBranching<'tcx>,
     {
         fn take_by_value(&mut self, value: u128) {
             let switch_info = self.context.switch_info();
@@ -1166,10 +1150,7 @@ mod implementation {
     impl<'tcx, C> RuntimeCallAdder<C>
     where
         Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
-        C: TyContextProvider<'tcx>
-            + BodyLocalManager<'tcx>
-            + LocationProvider
-            + SwitchInfoProvider<'tcx>,
+        C: SwitchInfoProvider<'tcx> + ForBranching<'tcx>,
     {
         fn add_and_assign_local_for_ow_non_values(
             &mut self,
@@ -1189,13 +1170,7 @@ mod implementation {
     impl<'tcx, C> FunctionHandler<'tcx> for RuntimeCallAdder<C>
     where
         Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
-        C: TyContextProvider<'tcx>
-            + PriItemsProvider<'tcx>
-            + BodyLocalManager<'tcx>
-            + BodyBlockManager<'tcx>
-            + LocationProvider
-            + JumpTargetModifier
-            + BodyProvider<'tcx>,
+        C: ForFunctionCalling<'tcx>,
     {
         fn before_call_func(
             &mut self,
@@ -1248,10 +1223,7 @@ mod implementation {
     impl<'tcx, C> AssertionHandler<'tcx> for RuntimeCallAdder<C>
     where
         Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
-        C: TyContextProvider<'tcx>
-            + PriItemsProvider<'tcx>
-            + BodyLocalManager<'tcx>
-            + BodyProvider<'tcx>,
+        C: ForAssertion<'tcx>,
     {
         fn check_assert(
             &mut self,
@@ -1754,28 +1726,17 @@ mod implementation {
     pub(crate) mod context_requirements {
         use super::{context::*, *};
 
-        pub(crate) trait Basic<'tcx>:
-            TyContextProvider<'tcx>
-            + BodyLocalManager<'tcx>
-            + BodyBlockManager<'tcx>
-            + PriItemsProvider<'tcx>
-            + HasLocalDecls<'tcx>
-        {
-        }
-        impl<'tcx, C> Basic<'tcx> for C where
-            C: TyContextProvider<'tcx>
-                + BodyLocalManager<'tcx>
-                + BodyBlockManager<'tcx>
-                + PriItemsProvider<'tcx>
-                + HasLocalDecls<'tcx>
-        {
-        }
+        pub(crate) trait Basic<'tcx>: BaseContext<'tcx> {}
+        impl<'tcx, C> Basic<'tcx> for C where C: BaseContext<'tcx> {}
 
         pub(crate) trait ForPlaceRef<'tcx>:
-            Basic<'tcx> + LocationProvider + BodyProvider<'tcx>
+            BaseContext<'tcx> + LocationProvider + BodyProvider<'tcx>
         {
         }
-        impl<'tcx, C> ForPlaceRef<'tcx> for C where C: Basic<'tcx> + LocationProvider + BodyProvider<'tcx> {}
+        impl<'tcx, C> ForPlaceRef<'tcx> for C where
+            C: BaseContext<'tcx> + LocationProvider + BodyProvider<'tcx>
+        {
+        }
 
         pub(crate) trait ForOperandRef<'tcx>:
             ForPlaceRef<'tcx> + BodyLocalManager<'tcx>
@@ -1784,11 +1745,11 @@ mod implementation {
         impl<'tcx, C> ForOperandRef<'tcx> for C where C: ForPlaceRef<'tcx> {}
 
         pub(crate) trait ForAssignment<'tcx>:
-            DestinationReferenceProvider + LocationProvider + BaseContext<'tcx>
+            BaseContext<'tcx> + DestinationReferenceProvider + LocationProvider
         {
         }
         impl<'tcx, C> ForAssignment<'tcx> for C where
-            C: DestinationReferenceProvider + LocationProvider + BaseContext<'tcx>
+            C: BaseContext<'tcx> + DestinationReferenceProvider + LocationProvider
         {
         }
 
@@ -1801,11 +1762,14 @@ mod implementation {
         {
         }
 
+        pub(crate) trait ForAssertion<'tcx>: ForOperandRef<'tcx> {}
+        impl<'tcx, C> ForAssertion<'tcx> for C where C: ForOperandRef<'tcx> {}
+
         pub(crate) trait ForFunctionCalling<'tcx>:
-            BaseContext<'tcx> + JumpTargetModifier
+            ForPlaceRef<'tcx> + JumpTargetModifier
         {
         }
-        impl<'tcx, C> ForFunctionCalling<'tcx> for C where C: BaseContext<'tcx> + JumpTargetModifier {}
+        impl<'tcx, C> ForFunctionCalling<'tcx> for C where C: ForPlaceRef<'tcx> + JumpTargetModifier {}
 
         pub(crate) trait ForReturning<'tcx>: BaseContext<'tcx> {}
         impl<'tcx, C> ForReturning<'tcx> for C where C: BaseContext<'tcx> {}

@@ -7,6 +7,7 @@ use rustc_middle::mir::{
 
 use crate::{
     mir_transform::modification::{BodyModificationUnit, JumpTargetModifier},
+    passes::Storage,
     visit::*,
 };
 
@@ -19,17 +20,17 @@ use super::call::{
 
 pub(crate) struct LeafPass;
 
-impl<'tcx> MirPass<'tcx> for LeafPass {
-    // NOTE: this function is called for every Body (function) in the program
-    fn run_pass(
+impl LeafPass {
+    pub(crate) fn transform<'tcx, 'b, 's>(
         &self,
         tcx: rustc_middle::ty::TyCtxt<'tcx>,
-        body: &mut rustc_middle::mir::Body<'tcx>,
+        body: &'b mut rustc_middle::mir::Body<'tcx>,
+        storage: &'s mut dyn Storage,
     ) {
         log::info!("Running leaf pass on body at {:#?}", body.span);
 
         let mut modification = BodyModificationUnit::new(body.local_decls().next_index());
-        let mut call_adder = RuntimeCallAdder::new(tcx, &mut modification);
+        let mut call_adder = RuntimeCallAdder::new(tcx, &mut modification, storage);
         let mut call_adder = call_adder.in_body(body);
         if tcx.entry_fn(()).expect("No entry function was found").0 == body.source.def_id() {
             Self::handle_entry_function(

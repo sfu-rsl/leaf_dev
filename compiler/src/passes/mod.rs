@@ -18,10 +18,9 @@ use crate::utils::Chain;
 
 pub(crate) use ctfe::CtfeFunctionAdder;
 pub(crate) use instr::Instrumentator;
-pub(crate) use observation::{CompilationPassLogExt, LoggerPass};
+pub(crate) use observation::CompilationPassLogExt;
 
 pub(super) type Callbacks<'a> = Box<dyn driver::Callbacks + Send + 'a>;
-pub(crate) type Storage = std::collections::HashMap<String, Box<dyn std::any::Any>>;
 
 pub(crate) trait HasResult<R> {
     fn into_result(self) -> R;
@@ -62,7 +61,7 @@ pub(crate) trait CompilationPass {
     fn transform_mir_body<'tcx>(
         tcx: mir_ty::TyCtxt<'tcx>,
         body: &mut mir::Body<'tcx>,
-        storage: &mut Storage,
+        storage: &mut dyn Storage,
     ) {
         Default::default()
     }
@@ -92,14 +91,30 @@ impl<T: CompilationPass + Send + ?Sized> CompilationPassExt for T {
     }
 }
 
+pub(crate) trait Storage: std::fmt::Debug {
+    fn get_or_insert_with(
+        &mut self,
+        key: String,
+        default: Box<dyn FnOnce() -> Box<dyn Any>>,
+    ) -> &mut dyn Any;
+}
+impl Storage for std::collections::HashMap<String, Box<dyn Any>> {
+    fn get_or_insert_with(
+        &mut self,
+        key: String,
+        default: Box<dyn FnOnce() -> Box<dyn Any>>,
+    ) -> &mut dyn Any {
+        self.entry(key).or_insert_with(default)
+    }
+}
+
 pub(crate) trait StorageExt {
     fn get_or_default<T: Default + Any + 'static>(&mut self, key: String) -> &mut T;
 }
-impl StorageExt for Storage {
-    fn get_or_default<T: Default + Any + 'static>(&mut self, key: String) -> &mut T {
-        self.entry(key)
-            .or_insert_with(|| Box::new(T::default()))
-            .downcast_mut::<T>()
+impl<T: Storage + ?Sized> StorageExt for T {
+    fn get_or_default<V: Default + Any + 'static>(&mut self, key: String) -> &mut V {
+        self.get_or_insert_with(key, Box::new(|| Box::new(V::default())))
+            .downcast_mut::<V>()
             .unwrap()
     }
 }
@@ -296,7 +311,7 @@ mod implementation {
         fn transform_mir_body<'tcx>(
             tcx: mir_ty::TyCtxt<'tcx>,
             body: &mut mir::Body<'tcx>,
-            storage: &mut Storage,
+            storage: &mut dyn Storage,
         ) {
             A::transform_mir_body(tcx, body, storage);
             B::transform_mir_body(tcx, body, storage);
