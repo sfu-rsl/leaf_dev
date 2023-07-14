@@ -4,6 +4,7 @@ use rustc_span::DUMMY_SP;
 use super::{CompilationPass, Storage};
 use crate::{constants::CRATE_RUNTIME, mir_transform::instr::passes::LeafPass};
 
+#[derive(Default)]
 pub(crate) struct Instrumentator;
 
 impl CompilationPass for Instrumentator {

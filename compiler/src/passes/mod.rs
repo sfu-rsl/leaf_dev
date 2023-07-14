@@ -1,5 +1,8 @@
 mod ctfe;
 mod instr;
+mod observation;
+
+use std::any::Any;
 
 use rustc_ast as ast;
 use rustc_driver as driver;
@@ -15,6 +18,7 @@ use crate::utils::Chain;
 
 pub(crate) use ctfe::CtfeFunctionAdder;
 pub(crate) use instr::Instrumentator;
+pub(crate) use observation::{CompilationPassLogExt, LoggerPass};
 
 pub(super) type Callbacks<'a> = Box<dyn driver::Callbacks + Send + 'a>;
 pub(crate) type Storage = std::collections::HashMap<String, Box<dyn std::any::Any>>;
@@ -64,8 +68,9 @@ pub(crate) trait CompilationPass {
     }
 }
 
-pub(crate) struct NoOpCompilationPass;
-impl CompilationPass for NoOpCompilationPass {}
+#[derive(Default)]
+pub(crate) struct NoOpPass;
+impl CompilationPass for NoOpPass {}
 
 pub(crate) trait CompilationPassExt {
     fn chain<T>(self, next: T) -> Chain<Self, T>
@@ -84,6 +89,18 @@ pub(crate) trait CompilationPassExt {
 impl<T: CompilationPass + Send + ?Sized> CompilationPassExt for T {
     fn to_callbacks(&mut self) -> Callbacks {
         Box::new(CompilationPassAdapter(self))
+    }
+}
+
+pub(crate) trait StorageExt {
+    fn get_or_default<T: Default + Any + 'static>(&mut self, key: String) -> &mut T;
+}
+impl StorageExt for Storage {
+    fn get_or_default<T: Default + Any + 'static>(&mut self, key: String) -> &mut T {
+        self.entry(key)
+            .or_insert_with(|| Box::new(T::default()))
+            .downcast_mut::<T>()
+            .unwrap()
     }
 }
 

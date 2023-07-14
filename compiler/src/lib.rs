@@ -39,10 +39,7 @@ use std::path::PathBuf;
 use constants::*;
 use rustc_driver::RunCompiler;
 
-use crate::{
-    passes::{Callbacks, CompilationPassExt, HasResult},
-    utils::Chain,
-};
+use crate::utils::Chain;
 
 pub fn run_compiler(args: &[String], input_path: Option<PathBuf>) -> i32 {
     let args = driver_args::set_up_args(args, input_path);
@@ -50,12 +47,13 @@ pub fn run_compiler(args: &[String], input_path: Option<PathBuf>) -> i32 {
 
     rustc_driver::install_ice_hook(URL_BUG_REPORT, |_| ());
 
+    use passes::*;
     let run_pass = |mut pass: Callbacks| -> i32 {
         rustc_driver::catch_with_exit_code(|| RunCompiler::new(&args, pass.as_mut()).run())
     };
 
     {
-        let mut pass = InstrumentationPass;
+        let mut pass = Chain::<Instrumentator, NoOpPass>::default().into_logged();
         run_pass(pass.to_callbacks())
     }
 }
