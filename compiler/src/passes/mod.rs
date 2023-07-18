@@ -3,6 +3,8 @@ mod instr;
 mod observation;
 
 use std::any::Any;
+use std::collections::HashMap;
+use std::ops::DerefMut;
 
 use rustc_ast as ast;
 use rustc_driver as driver;
@@ -44,12 +46,20 @@ pub(crate) trait CompilationPass {
         }
     }
 
-    fn visit_ctxt<'tcx>(&mut self, tcx: mir_ty::TyCtxt<'tcx>) -> Compilation {
+    fn visit_ctxt<'tcx>(
+        &mut self,
+        tcx: mir_ty::TyCtxt<'tcx>,
+        storage: &mut dyn Storage,
+    ) -> Compilation {
         Compilation::Continue
     }
 
     visit_before_after! {
-        fn mir_body<'tcx>(tcx: mir_ty::TyCtxt<'tcx>, body: &mir::Body<'tcx>) {}
+        fn mir_body<'tcx>(
+            tcx: mir_ty::TyCtxt<'tcx>,
+            body: &mir::Body<'tcx>,
+            storage: &mut dyn Storage,
+        ) {}
     }
 
     fn transform_ast(&mut self, krate: &mut ast::Crate) {
@@ -92,28 +102,41 @@ impl<T: CompilationPass + Send + ?Sized> CompilationPassExt for T {
 }
 
 pub(crate) trait Storage: std::fmt::Debug {
-    fn get_or_insert_with(
-        &mut self,
+    fn get_raw_or_insert_with<'a>(
+        &'a mut self,
         key: String,
-        default: Box<dyn FnOnce() -> Box<dyn Any>>,
-    ) -> &mut dyn Any;
+        default: Box<dyn FnOnce() -> Box<dyn Any> + 'a>,
+    ) -> &mut Box<dyn Any>;
 }
-impl Storage for std::collections::HashMap<String, Box<dyn Any>> {
-    fn get_or_insert_with(
-        &mut self,
+impl Storage for HashMap<String, Box<dyn Any>> {
+    fn get_raw_or_insert_with<'a>(
+        &'a mut self,
         key: String,
-        default: Box<dyn FnOnce() -> Box<dyn Any>>,
-    ) -> &mut dyn Any {
+        default: Box<dyn FnOnce() -> Box<dyn Any> + 'a>,
+    ) -> &mut Box<dyn Any> {
         self.entry(key).or_insert_with(default)
     }
 }
 
 pub(crate) trait StorageExt {
-    fn get_or_default<T: Default + Any + 'static>(&mut self, key: String) -> &mut T;
+    fn get_or_insert_with<'a, V: Any>(
+        &'a mut self,
+        key: String,
+        default: impl FnOnce() -> V + 'a,
+    ) -> &mut V;
+
+    fn get_or_default<V: Default + Any>(&mut self, key: String) -> &mut V {
+        self.get_or_insert_with(key, V::default)
+    }
 }
 impl<T: Storage + ?Sized> StorageExt for T {
-    fn get_or_default<V: Default + Any + 'static>(&mut self, key: String) -> &mut V {
-        self.get_or_insert_with(key, Box::new(|| Box::new(V::default())))
+    fn get_or_insert_with<'a, V: Any>(
+        &'a mut self,
+        key: String,
+        default: impl FnOnce() -> V + 'a,
+    ) -> &mut V {
+        self.get_raw_or_insert_with(key, Box::new(|| Box::new(default())))
+            .deref_mut()
             .downcast_mut::<V>()
             .unwrap()
     }
@@ -127,7 +150,7 @@ mod implementation {
     use rustc_middle::query;
     use rustc_span::def_id::LocalDefId;
 
-    use std::{cell::Cell, collections::HashMap};
+    use std::cell::Cell;
 
     /* NOTE: How does `queries` work?
      * Here, the queries object is a structure that performs compiler-related
@@ -173,6 +196,10 @@ mod implementation {
      * -> mir_promoted
      * -> mir_const (not just for constants)
      * -> mir_built (the actual translation to MIR)
+     *
+     * Note that most of these functions are query thus memoized, which means that their result
+     * will be stored and later calls will give the same instance. Also, it means
+     * you have only one chance to perform any manipulation.
      */
 
     thread_local! {
@@ -180,7 +207,8 @@ mod implementation {
          * NOTE: Both `override_queries` and `optimized_mir` are function pointers, which means
          * that they cannot be closures with captured variables. Therefore, we use these statically
          * allocated cells to store the original functions.
-         * As there will be a single transformation pass in the project, this is not a problem.
+         * As there will be a single transformation pass in the project and the original pointer
+         * is the same anyway, this should not cause any problems.
          */
         #[allow(clippy::type_complexity)]
         static ORIGINAL_OVERRIDE: Cell<
@@ -216,6 +244,8 @@ mod implementation {
                 ORIGINAL_OPTIMIZED_MIR.set(providers.optimized_mir);
                 providers.optimized_mir = Self::optimized_mir;
             });
+
+            global::clear_ctxt_id_and_storage();
         }
 
         fn after_parsing<'tcx>(
@@ -249,7 +279,11 @@ mod implementation {
             queries
                 .global_ctxt()
                 .unwrap()
-                .enter(|tcx| self.0.visit_ctxt(tcx))
+                .enter(|tcx| global::set_ctxt_id(tcx));
+            queries
+                .global_ctxt()
+                .unwrap()
+                .enter(|tcx| global::with_storage(tcx, |storage| self.0.visit_ctxt(tcx, storage)))
         }
     }
 
@@ -258,10 +292,11 @@ mod implementation {
             /* NOTE: Currently, it seems that there is no way to deallocate
              * something from arena. So, we have to clone the body. */
             let mut body = ORIGINAL_OPTIMIZED_MIR.get()(tcx, id).clone();
-            T::visit_mir_body_before(tcx, &body);
-            let mut storage = HashMap::new();
-            T::transform_mir_body(tcx, &mut body, &mut storage);
-            T::visit_mir_body_after(tcx, &body);
+            global::with_storage(tcx, |storage| {
+                T::visit_mir_body_before(tcx, &body, storage);
+                T::transform_mir_body(tcx, &mut body, storage);
+                T::visit_mir_body_after(tcx, &body, storage);
+            });
             tcx.arena.alloc(body)
         }
     }
@@ -286,21 +321,33 @@ mod implementation {
             Compilation::Continue
         }
 
-        fn visit_ctxt<'tcx>(&mut self, tcx: mir_ty::TyCtxt<'tcx>) -> Compilation {
-            stop_if_stop!(self.first.visit_ctxt(tcx));
-            stop_if_stop!(self.second.visit_ctxt(tcx));
+        fn visit_ctxt<'tcx>(
+            &mut self,
+            tcx: mir_ty::TyCtxt<'tcx>,
+            storage: &mut dyn Storage,
+        ) -> Compilation {
+            stop_if_stop!(self.first.visit_ctxt(tcx, storage));
+            stop_if_stop!(self.second.visit_ctxt(tcx, storage));
 
             Compilation::Continue
         }
 
-        fn visit_mir_body_before<'tcx>(tcx: mir_ty::TyCtxt<'tcx>, body: &mir::Body<'tcx>) {
-            A::visit_mir_body_before(tcx, body);
-            B::visit_mir_body_before(tcx, body);
+        fn visit_mir_body_before<'tcx>(
+            tcx: mir_ty::TyCtxt<'tcx>,
+            body: &mir::Body<'tcx>,
+            storage: &mut dyn Storage,
+        ) {
+            A::visit_mir_body_before(tcx, body, storage);
+            B::visit_mir_body_before(tcx, body, storage);
         }
 
-        fn visit_mir_body_after<'tcx>(tcx: mir_ty::TyCtxt<'tcx>, body: &mir::Body<'tcx>) {
-            A::visit_mir_body_after(tcx, body);
-            B::visit_mir_body_after(tcx, body);
+        fn visit_mir_body_after<'tcx>(
+            tcx: mir_ty::TyCtxt<'tcx>,
+            body: &mir::Body<'tcx>,
+            storage: &mut dyn Storage,
+        ) {
+            A::visit_mir_body_after(tcx, body, storage);
+            B::visit_mir_body_after(tcx, body, storage);
         }
 
         fn transform_ast(&mut self, krate: &mut ast::Crate) {
@@ -315,6 +362,58 @@ mod implementation {
         ) {
             A::transform_mir_body(tcx, body, storage);
             B::transform_mir_body(tcx, body, storage);
+        }
+    }
+
+    mod global {
+        use super::*;
+
+        use std::cell::{Cell, RefCell};
+
+        use rustc_middle::ty::TyCtxt;
+
+        thread_local! {
+            /*
+             * NOTE: We need to provide a global storage for our transformation passes.
+             * In the compiler itself, all the shared information is stored in the context.
+             * Unless we extend the compiler codes, we cannot put our data there.
+             * Thus, we rely on global memory, which is fine for the current state and
+             * how the compiler is used. We also have some guards to prevent invalid
+             * states that may happen by parallel compilations.
+             */
+            static CTXT_ID : Cell<Option<usize>> = Cell::new(None);
+            static STORAGE: RefCell<HashMap<String, Box<dyn Any>>> = Default::default();
+        }
+
+        pub(crate) fn clear_ctxt_id_and_storage() {
+            CTXT_ID.replace(None);
+            STORAGE.with_borrow_mut(|s| s.clear());
+        }
+
+        pub(crate) fn set_ctxt_id(tcx: TyCtxt) {
+            let id = get_ctxt_id(tcx);
+            let old_id = CTXT_ID.replace(Some(id));
+            assert_eq!(
+                old_id.unwrap_or(id),
+                id,
+                "The id has been set before and not cleared. Possibly the thread is being used by other passes."
+            );
+        }
+
+        pub(crate) fn with_storage<R>(tcx: TyCtxt, f: impl FnOnce(&mut dyn Storage) -> R) -> R {
+            assert_eq!(
+                CTXT_ID
+                    .get()
+                    .expect("The id has not been set. Possibly concurrent compilation."),
+                get_ctxt_id(tcx),
+                "The id is not matched. Possibly concurrent compilation."
+            );
+            STORAGE.with_borrow_mut(|s| f(s))
+        }
+
+        #[inline]
+        fn get_ctxt_id(tcx: TyCtxt) -> usize {
+            (*std::ops::Deref::deref(&tcx)) as *const _ as usize
         }
     }
 }

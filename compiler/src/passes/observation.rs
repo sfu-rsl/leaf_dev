@@ -32,21 +32,33 @@ where
         self.pass.visit_ast_after(krate)
     }
 
-    fn visit_ctxt<'tcx>(&mut self, _tcx: TyCtxt<'tcx>) -> Compilation {
+    fn visit_ctxt<'tcx>(
+        &mut self,
+        tcx: TyCtxt<'tcx>,
+        storage: &mut dyn super::Storage,
+    ) -> Compilation {
         log::info!(target: target!(), "Visiting TyCtxt");
-        self.pass.visit_ctxt(_tcx)
+        self.pass.visit_ctxt(tcx, storage)
     }
 
-    fn visit_mir_body_before<'tcx>(tcx: TyCtxt<'tcx>, body: &mir::Body<'tcx>) {
+    fn visit_mir_body_before<'tcx>(
+        tcx: TyCtxt<'tcx>,
+        body: &mir::Body<'tcx>,
+        storage: &mut dyn super::Storage,
+    ) {
         log::info!(target: target!(), "Visiting MIR body before transformation");
         log::debug!(target: obj_target!(), "MIR body: {:#?}", body);
-        T::visit_mir_body_before(tcx, body)
+        T::visit_mir_body_before(tcx, body, storage)
     }
 
-    fn visit_mir_body_after<'tcx>(_tcx: TyCtxt<'tcx>, body: &mir::Body<'tcx>) {
+    fn visit_mir_body_after<'tcx>(
+        _tcx: TyCtxt<'tcx>,
+        body: &mir::Body<'tcx>,
+        storage: &mut dyn super::Storage,
+    ) {
         log::info!(target: target!(), "Visiting MIR body after transformation");
         log::debug!(target: obj_target!(), "MIR body: {:#?}", body);
-        T::visit_mir_body_after(_tcx, body)
+        T::visit_mir_body_after(_tcx, body, storage)
     }
 
     fn transform_ast(&mut self, krate: &mut rustc_ast::Crate) {
