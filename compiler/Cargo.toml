@@ -11,6 +11,7 @@ env_logger = "0.10.0"
 runtime = { path = "../runtime", version = "0.1.0" }
 delegate = "0.10.0"
 paste = "1.0"
+bimap = "0.6.3"
 
 [package.metadata.rust-analyzer]
 rustc_private = true

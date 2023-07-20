@@ -52,16 +52,24 @@ pub fn run_compiler(args: impl Iterator<Item = String>, input_path: Option<PathB
         rustc_driver::catch_with_exit_code(|| RunCompiler::new(&args, pass.as_mut()).run())
     };
 
-    {
-        let mut pass = chain!(<PrerequisitePass>, <Instrumentator>,).into_logged();
-        run_pass(pass.to_callbacks())
-    }
+    let ctfe_block_ids = {
+        let mut pass = chain!(<PrerequisitePass>, <CtfeScanner>,);
+        run_pass(pass.to_callbacks());
+        pass.second.into_result()
+    };
+
+    let mut pass =
+        chain!(<PrerequisitePass>, CtfeFunctionAdder::new(ctfe_block_ids.len()), <Instrumentator>,)
+            .into_logged();
+    run_pass(pass.to_callbacks())
 }
 
 pub mod constants {
     pub(super) const CRATE_RUNTIME: &str = "runtime";
 
     pub(super) const URL_BUG_REPORT: &str = "https://github.com/sfu-rsl/leaf/issues/new";
+
+    pub(super) const LEAF_AUG_MOD_NAME: &str = "__leaf_augmentation";
 
     pub const LOG_PASS_OBJECTS_TAG: &str = super::passes::observation::OBJECTS_TAG;
 }

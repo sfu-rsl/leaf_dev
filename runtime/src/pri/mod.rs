@@ -363,4 +363,6 @@ pub mod compiler_helpers {
     pub const fn f64_to_bits(value: f64) -> u128 {
         value.to_bits() as u128
     }
+
+    pub const fn mark_as_nctfe() {}
 }
