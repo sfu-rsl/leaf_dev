@@ -1,7 +1,5 @@
 /// This module hosts general utilities for modifying MIR bodies.
-use std::{
-    cell::RefCell, collections::HashMap, iter::Peekable, marker::PhantomData, vec::IntoIter,
-};
+use std::{cell::RefCell, collections::HashMap, marker::PhantomData};
 
 use crate::visit::{self, TerminatorKindMutVisitor};
 
@@ -18,6 +16,7 @@ use rustc_span::Span;
 
 pub(crate) const NEXT_BLOCK: BasicBlock = BasicBlock::MAX;
 
+#[derive(Debug, Clone)]
 struct NewBasicBlock<'tcx> {
     pseudo_index: BasicBlock,
     data: BasicBlockData<'tcx>,
@@ -80,6 +79,12 @@ impl<'tcx> BodyModificationUnit<'tcx> {
         Vec::from_iter(
             chunk[(chunk.len() - block_count as usize)..]
                 .iter()
+                .inspect(|nbb| {
+                    assert_ne!(
+                        nbb.pseudo_index, index,
+                        "Cannot insert a block before/after itself!"
+                    )
+                })
                 .map(|nbb| nbb.pseudo_index),
         )
     }
@@ -217,7 +222,7 @@ impl<'tcx> BodyBlockManager<'tcx> for BodyModificationUnit<'tcx> {
     where
         I: IntoIterator<Item = BasicBlockData<'tcx>>,
     {
-        self.insert_blocks_internal(index, blocks, false, false)
+        self.insert_blocks_internal(index, blocks, true, false)
     }
 }
 
@@ -244,6 +249,7 @@ impl JumpTargetModifier for BodyModificationUnit<'_> {
     }
 }
 
+type InsertionPair<'tcx> = (BasicBlock, Vec<NewBasicBlock<'tcx>>);
 impl<'tcx> BodyModificationUnit<'tcx> {
     // No blocks actually get added to the MIR of the current body until this function gets called.
     pub fn commit(mut self, body: &mut Body<'tcx>) {
@@ -255,6 +261,7 @@ impl<'tcx> BodyModificationUnit<'tcx> {
                 body.basic_blocks_mut().iter_enumerated_mut(),
                 self.new_blocks_before
                     .values_mut()
+                    .chain(self.new_blocks_after.values_mut())
                     .flatten()
                     .map(|p| (p.pseudo_index, &mut p.data)),
             ),
@@ -288,18 +295,26 @@ impl<'tcx> BodyModificationUnit<'tcx> {
         new_blocks_before: impl IntoIterator<Item = (BasicBlock, Vec<NewBasicBlock<'tcx>>)>,
         new_blocks_after: impl IntoIterator<Item = (BasicBlock, Vec<NewBasicBlock<'tcx>>)>,
     ) -> HashMap<BasicBlock, BasicBlock> {
-        fn sorted_and_peekable<'tcx>(
-            into_iter: impl IntoIterator<Item = (BasicBlock, Vec<NewBasicBlock<'tcx>>)>,
-        ) -> Peekable<IntoIter<(BasicBlock, Vec<NewBasicBlock<'tcx>>)>> {
+        fn sort<'tcx>(
+            into_iter: impl IntoIterator<Item = InsertionPair<'tcx>>,
+        ) -> Vec<InsertionPair<'tcx>> {
             let mut vec = Vec::from_iter(into_iter);
-            vec.sort_by_key(|p: &(BasicBlock, Vec<NewBasicBlock<'_>>)| p.0);
-            vec.into_iter().peekable()
+            vec.sort_by_key(|p: &InsertionPair<'_>| p.0);
+            vec
         }
 
-        let mut index_mapping = HashMap::<BasicBlock, BasicBlock>::new();
+        let mut new_blocks_before = sort(new_blocks_before);
+        let mut new_blocks_after = sort(new_blocks_after);
 
-        let mut new_blocks_before = sorted_and_peekable(new_blocks_before);
-        let mut new_blocks_after = sorted_and_peekable(new_blocks_after);
+        Self::resolve_indirect_new_blocks(
+            &mut new_blocks_before,
+            &mut new_blocks_after,
+            blocks.next_index(),
+        );
+
+        let mut new_blocks_before = new_blocks_before.into_iter().peekable();
+        let mut new_blocks_after = new_blocks_after.into_iter().peekable();
+        let mut index_mapping = HashMap::<BasicBlock, BasicBlock>::new();
 
         let current_blocks = Vec::from_iter(blocks.drain(..));
         for (i, original_block) in current_blocks.into_iter().enumerate() {
@@ -313,7 +328,7 @@ impl<'tcx> BodyModificationUnit<'tcx> {
                 Self::insert_blocks_before(
                     &mut index_mapping,
                     blocks,
-                    &mut new_blocks_before,
+                    new_blocks_before.next().unwrap().1,
                     &mut top_index,
                 );
             }
@@ -335,7 +350,7 @@ impl<'tcx> BodyModificationUnit<'tcx> {
                 Self::insert_blocks_after(
                     &mut index_mapping,
                     blocks,
-                    &mut new_blocks_after,
+                    new_blocks_after.next().unwrap().1,
                     original_block_index,
                 );
             }
@@ -350,15 +365,88 @@ impl<'tcx> BodyModificationUnit<'tcx> {
         index_mapping
     }
 
-    fn insert_blocks_before<I>(
+    fn resolve_indirect_new_blocks(
+        before_chunks: &mut Vec<InsertionPair<'tcx>>,
+        after_chunks: &mut Vec<InsertionPair<'tcx>>,
+        min_new_block_index: BasicBlock,
+    ) {
+        /* The number of new indirect blocks is not expected to be large,
+         * so this inefficient search should be fine. */
+        let target_of_last = |x: &[InsertionPair]| x.last().map(|(target, _)| *target);
+        let pop_if_target = |x: &mut Vec<InsertionPair<'tcx>>, target: BasicBlock| {
+            if target_of_last(x) == Some(target) {
+                Some(x.pop().unwrap().1)
+            } else {
+                None
+            }
+        };
+
+        while let Some(target) = std::cmp::max(
+            target_of_last(&before_chunks),
+            target_of_last(&before_chunks),
+        )
+        // This is an indirect target
+        && target >= min_new_block_index
+        {
+            log::debug!("Moving indirect new blocks targeting {:?}", target);
+            let before_chunk = pop_if_target(before_chunks, target);
+            let after_chunk = pop_if_target(after_chunks, target);
+
+            let all_chunks = [before_chunks.as_mut_slice(), after_chunks.as_mut_slice()]
+                .into_iter()
+                .flatten()
+                .map(|(_, chunk)| chunk);
+
+            Self::insert_indirect_blocks(target, all_chunks, before_chunk, after_chunk);
+        }
+    }
+
+    /// Inserts blocks that have to be inserted before/after newly created blocks.
+    ///
+    /// # Arguments
+    /// * target - The newly created block index that the chunks should be inserted before/after.
+    /// * all_chunks - All chunks out there that hold a new block with pseudo index of `target`.
+    /// * before_chunk - The blocks that should be inserted before `at`.
+    /// * after_chunk - The blocks that should be inserted after `at`.
+    fn insert_indirect_blocks<'a>(
+        target: BasicBlock,
+        mut all_chunks: impl Iterator<Item = &'a mut Vec<NewBasicBlock<'tcx>>>,
+        before_chunk: Option<Vec<NewBasicBlock<'tcx>>>,
+        after_chunk: Option<Vec<NewBasicBlock<'tcx>>>,
+    ) where
+        'tcx: 'a,
+    {
+        /* For these blocks we just flatten them by putting them in the same list as their target.
+         * In other words, we make them direct new blocks.
+         */
+        let (target_container, target_index) = all_chunks
+            .find_map(|chunk| {
+                chunk
+                    .iter()
+                    .position(|new_block| new_block.pseudo_index == target)
+                    .map(|index| (chunk, index))
+            })
+            .unwrap();
+
+        // Copy the stickiness of the target block
+        let is_sticky = target_container[target_index].is_sticky;
+
+        let mut insert = |index, chunk: Option<Vec<NewBasicBlock<'tcx>>>| {
+            let Some(mut chunk) = chunk else { return };
+            chunk.iter_mut().for_each(|nbb| nbb.is_sticky = is_sticky);
+            target_container.splice(index..index, chunk);
+        };
+
+        insert(target_index + 1, after_chunk);
+        insert(target_index, before_chunk);
+    }
+
+    fn insert_blocks_before(
         index_mapping: &mut HashMap<BasicBlock, BasicBlock>,
         blocks: &mut IndexVec<BasicBlock, BasicBlockData<'tcx>>,
-        new_blocks: &mut std::iter::Peekable<I>,
+        mut chunk: Vec<NewBasicBlock<'tcx>>,
         top_index: &mut BasicBlock,
-    ) where
-        I: Iterator<Item = (BasicBlock, Vec<NewBasicBlock<'tcx>>)>,
-    {
-        let (_, mut chunk) = new_blocks.next().unwrap();
+    ) {
         blocks.extend_reserve(chunk.len());
         for non_sticky in chunk.extract_if(|b| !b.is_sticky) {
             Self::push_with_index_mapping(
@@ -382,14 +470,12 @@ impl<'tcx> BodyModificationUnit<'tcx> {
         debug_assert!(chunk.is_empty());
     }
 
-    fn insert_blocks_after<I>(
+    fn insert_blocks_after(
         index_mapping: &mut HashMap<BasicBlock, BasicBlock>,
         blocks: &mut IndexVec<BasicBlock, BasicBlockData<'tcx>>,
-        new_blocks: &mut std::iter::Peekable<I>,
+        mut chunk: Vec<NewBasicBlock<'tcx>>,
         original_block_index: BasicBlock,
-    ) where
-        I: Iterator<Item = (BasicBlock, Vec<NewBasicBlock<'tcx>>)>,
-    {
+    ) {
         let original_block_target: BasicBlock = {
             let mut original_block = blocks.get_mut(original_block_index);
             let mut successors = original_block
@@ -412,7 +498,6 @@ impl<'tcx> BodyModificationUnit<'tcx> {
             original_block_target
         };
 
-        let (_, mut chunk) = new_blocks.next().unwrap();
         let chunk_len = chunk.len();
         blocks.extend_reserve(chunk_len);
         for (i, mut bb) in chunk.drain(..).enumerate() {

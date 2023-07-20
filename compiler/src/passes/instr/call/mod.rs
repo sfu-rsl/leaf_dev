@@ -169,7 +169,7 @@ pub(crate) struct RuntimeCallAdder<C> {
 }
 
 mod implementation {
-    use rustc_middle::mir::{BasicBlock, BasicBlockData, Terminator};
+    use rustc_middle::mir::{BasicBlock, BasicBlockData, Terminator, UnevaluatedConst};
     use rustc_middle::ty::TyKind;
 
     use delegate::delegate;
@@ -181,9 +181,6 @@ mod implementation {
     use crate::passes::Storage;
 
     use utils::*;
-
-    use rustc_middle::mir::{BasicBlock, BasicBlockData, Terminator, UnevaluatedConst};
-    use rustc_middle::ty::TyKind;
 
     pub(crate) trait MirCallAdder<'tcx> {
         fn make_bb_for_call(
@@ -710,7 +707,7 @@ mod implementation {
                 let BlocksAndResult(blocks, func_ref) =
                     self.internal_reference_func_def_const_operand(&nctfe_id, &[]);
                 self.at(call_block_index).insert_blocks(blocks);
-                super::super::passes::LeafTerminatorKindVisitor::instrument_call(
+                super::super::LeafTerminatorKindVisitor::instrument_call(
                     &mut self.at(call_block_index),
                     func_ref.into(),
                     std::iter::empty(),
