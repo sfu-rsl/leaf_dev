@@ -1,6 +1,7 @@
 mod ctfe;
 mod instr;
 mod observation;
+mod runtime_adder;
 
 use std::any::Any;
 use std::collections::HashMap;
@@ -21,8 +22,10 @@ use crate::utils::Chain;
 pub(crate) use ctfe::CtfeFunctionAdder;
 pub(crate) use instr::Instrumentator;
 pub(crate) use observation::CompilationPassLogExt;
+pub(crate) use runtime_adder::RuntimeAdder;
 
 pub(super) type Callbacks<'a> = Box<dyn driver::Callbacks + Send + 'a>;
+pub(super) type PrerequisitePass = Chain<RuntimeAdder, NoOpPass>;
 
 pub(crate) trait HasResult<R> {
     fn into_result(self) -> R;

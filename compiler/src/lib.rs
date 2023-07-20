@@ -39,7 +39,7 @@ use std::path::PathBuf;
 use constants::*;
 use rustc_driver::RunCompiler;
 
-use crate::utils::Chain;
+use crate::utils::chain;
 
 pub fn run_compiler(args: &[String], input_path: Option<PathBuf>) -> i32 {
     let args = driver_args::set_up_args(args, input_path);
@@ -53,7 +53,7 @@ pub fn run_compiler(args: &[String], input_path: Option<PathBuf>) -> i32 {
     };
 
     {
-        let mut pass = Chain::<Instrumentator, NoOpPass>::default().into_logged();
+        let mut pass = chain!(<PrerequisitePass>, <Instrumentator>,).into_logged();
         run_pass(pass.to_callbacks())
     }
 }
