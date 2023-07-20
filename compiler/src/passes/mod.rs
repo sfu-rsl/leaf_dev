@@ -1,4 +1,3 @@
-mod ctfe;
 mod instr;
 mod observation;
 mod runtime_adder;
@@ -19,7 +18,6 @@ use paste::paste;
 use self::implementation::CompilationPassAdapter;
 use crate::utils::Chain;
 
-pub(crate) use ctfe::CtfeFunctionAdder;
 pub(crate) use instr::Instrumentator;
 pub(crate) use observation::CompilationPassLogExt;
 pub(crate) use runtime_adder::RuntimeAdder;

@@ -21,13 +21,13 @@ where
     T: CompilationPass,
 {
     fn visit_ast_before(&mut self, krate: &super::ast::Crate) -> Compilation {
-        log::info!(target: target!(), "Visiting AST before transformation");
+        log::info!(target: target!(), "Visiting AST before transformation {}", krate.id);
         log::trace!(target: obj_target!(), "AST: {:#?}", krate);
         self.pass.visit_ast_before(krate)
     }
 
     fn visit_ast_after(&mut self, krate: &super::ast::Crate) -> Compilation {
-        log::info!(target: target!(), "Visiting AST after transformation");
+        log::info!(target: target!(), "Visiting AST after transformation {}", krate.id);
         log::debug!(target: obj_target!(), "AST: {:#?}", krate);
         self.pass.visit_ast_after(krate)
     }
@@ -46,19 +46,27 @@ where
         body: &mir::Body<'tcx>,
         storage: &mut dyn super::Storage,
     ) {
-        log::info!(target: target!(), "Visiting MIR body before transformation");
-        log::debug!(target: obj_target!(), "MIR body: {:#?}", body);
+        log::info!(
+            target: target!(),
+            "Visiting MIR body before transformation {:#?}",
+            body.source.def_id(),
+        );
+        log::debug!(target: obj_target!(), "MIR body:\n{}", get_mir_pretty(tcx, body));
         T::visit_mir_body_before(tcx, body, storage)
     }
 
     fn visit_mir_body_after<'tcx>(
-        _tcx: TyCtxt<'tcx>,
+        tcx: TyCtxt<'tcx>,
         body: &mir::Body<'tcx>,
         storage: &mut dyn super::Storage,
     ) {
-        log::info!(target: target!(), "Visiting MIR body after transformation");
-        log::debug!(target: obj_target!(), "MIR body: {:#?}", body);
-        T::visit_mir_body_after(_tcx, body, storage)
+        log::info!(
+            target: target!(),
+            "Visiting MIR body after transformation {:#?}",
+            body.source.def_id(),
+        );
+        log::debug!(target: obj_target!(), "MIR body:\n{}", get_mir_pretty(tcx, body));
+        T::visit_mir_body_after(tcx, body, storage)
     }
 
     fn transform_ast(&mut self, krate: &mut rustc_ast::Crate) {
@@ -68,15 +76,21 @@ where
     }
 
     fn transform_mir_body<'tcx>(
-        _tcx: rustc_middle::ty::TyCtxt<'tcx>,
-        body: &mut rustc_middle::mir::Body<'tcx>,
+        tcx: TyCtxt<'tcx>,
+        body: &mut mir::Body<'tcx>,
         storage: &mut dyn super::Storage,
     ) {
         log::info!(target: target!(), "Transforming MIR body");
-        log::debug!(target: obj_target!(), "MIR body to transform: {:#?}", body);
+        log::debug!(target: obj_target!(), "MIR body to transform:\n{}", get_mir_pretty(tcx, body));
         log::debug!(target: obj_target!(), "Storage: {:#?}", storage);
-        T::transform_mir_body(_tcx, body, storage)
+        T::transform_mir_body(tcx, body, storage)
     }
+}
+
+fn get_mir_pretty<'tcx>(tcx: TyCtxt<'tcx>, body: &mir::Body<'tcx>) -> String {
+    let mut buffer = Vec::new();
+    mir::pretty::write_mir_fn(tcx, body, &mut |_, _| Ok(()), &mut buffer).unwrap();
+    String::from_utf8(buffer).unwrap()
 }
 
 pub(crate) trait CompilationPassLogExt {
