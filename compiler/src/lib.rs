@@ -58,10 +58,12 @@ pub fn run_compiler(args: &[String], input_path: Option<PathBuf>) -> i32 {
     }
 }
 
-mod constants {
+pub mod constants {
     pub(super) const CRATE_RUNTIME: &str = "runtime";
 
     pub(super) const URL_BUG_REPORT: &str = "https://github.com/sfu-rsl/leaf/issues/new";
+
+    pub const LOG_PASS_OBJECTS_TAG: &str = super::passes::observation::OBJECTS_TAG;
 }
 
 mod driver_args {

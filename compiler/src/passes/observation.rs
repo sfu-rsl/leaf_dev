@@ -7,12 +7,14 @@ pub(crate) struct LoggerPass<T> {
     pass: T,
 }
 
+pub(crate) const OBJECTS_TAG: &str = "pass_objects";
+
 macro_rules! target {
     () => {{ std::any::type_name::<T>() }};
 }
 macro_rules! obj_target {
     () => {
-        &format!("{}::{}", target!(), "objects")
+        &format!("{}::{}", OBJECTS_TAG, target!())
     };
 }
 

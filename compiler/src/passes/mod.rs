@@ -1,5 +1,5 @@
 mod instr;
-mod observation;
+pub(crate) mod observation;
 mod runtime_adder;
 
 use std::any::Any;
