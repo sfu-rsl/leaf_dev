@@ -19,7 +19,7 @@ use paste::paste;
 use self::implementation::CompilationPassAdapter;
 use crate::utils::Chain;
 
-pub(crate) use ctfe::{CtfeFunctionAdder, CtfeScanner};
+pub(crate) use ctfe::{CtfeScanner, NctfeFunctionAdder};
 pub(crate) use instr::Instrumentator;
 pub(crate) use observation::CompilationPassLogExt;
 pub(crate) use runtime_adder::RuntimeAdder;

@@ -59,7 +59,7 @@ pub fn run_compiler(args: impl Iterator<Item = String>, input_path: Option<PathB
     };
 
     let mut pass =
-        chain!(<PrerequisitePass>, CtfeFunctionAdder::new(ctfe_block_ids.len()), <Instrumentator>,)
+        chain!(<PrerequisitePass>, NctfeFunctionAdder::new(ctfe_block_ids.len()), <Instrumentator>,)
             .into_logged();
     run_pass(pass.to_callbacks())
 }

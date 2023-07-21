@@ -26,7 +26,7 @@ pub(crate) struct CtfeScanner {
 }
 
 impl CompilationPass for CtfeScanner {
-    fn visit_ctxt<'tcx>(&mut self, tcx: TyCtxt<'tcx>, _storage: &mut dyn Storage) -> Compilation {
+    fn visit_ctxt(&mut self, tcx: TyCtxt, _storage: &mut dyn Storage) -> Compilation {
         for id in find_ctfes(tcx) {
             log::debug!("Found CTFE: {:?}", &id);
             self.block_ids.insert(id);
@@ -42,11 +42,11 @@ impl HasResult<HashSet<CtfeId>> for CtfeScanner {
     }
 }
 
-pub(crate) struct CtfeFunctionAdder {
+pub(crate) struct NctfeFunctionAdder {
     ctfe_count: usize,
 }
 
-impl CtfeFunctionAdder {
+impl NctfeFunctionAdder {
     pub(crate) fn new(ctfe_count: usize) -> Self {
         Self { ctfe_count }
     }
@@ -56,7 +56,7 @@ pub(super) const KEY_NCTFE_MAP: &str = "ctfe_func_ids";
 pub(super) const KEY_FREE_CTFE_IDS: &str = "ctfe_free_ids";
 pub(super) const KEY_FREE_NCTFE_FUNC_IDS: &str = "nctfe_free_ids";
 
-impl CompilationPass for CtfeFunctionAdder {
+impl CompilationPass for NctfeFunctionAdder {
     fn transform_ast(&mut self, krate: &mut rustc_ast::Crate) {
         /* Adding an empty function (NCTFE) for each CTFE.
          * Later, we will fill them with the corresponding MIR of the CTFE.
@@ -80,7 +80,7 @@ impl CompilationPass for CtfeFunctionAdder {
         krate.items.push(P(make_module(LEAF_AUG_MOD_NAME, items)));
     }
 
-    fn visit_ctxt<'tcx>(&mut self, tcx: TyCtxt<'tcx>, storage: &mut dyn Storage) -> Compilation {
+    fn visit_ctxt(&mut self, tcx: TyCtxt, storage: &mut dyn Storage) -> Compilation {
         // We have to scan again because DefIds may have changed after the AST transformation.
         get_free_ctfe_ids(storage).extend(find_ctfes(tcx));
         get_free_nctfe_func_ids(storage).extend({
@@ -109,15 +109,13 @@ impl CompilationPass for CtfeFunctionAdder {
             *id
         }
         // Find an unassigned CTFE and this NCTFE function to.
-        else {
-            if let Some(id) = get_free_ctfe_ids(storage).iter().next() {
-                let id = *id;
-                associate(id, def_id, storage);
-                id
-            } else {
-                log::warn!("Excess of Non-CTFE functions found");
-                return;
-            }
+        else if let Some(id) = get_free_ctfe_ids(storage).iter().next() {
+            let id = *id;
+            associate(id, def_id, storage);
+            id
+        } else {
+            log::warn!("Excess of Non-CTFE functions observed, leaving the function as is");
+            return;
         };
 
         let ctfe_body = match ctfe_id {
@@ -134,7 +132,7 @@ impl CompilationPass for CtfeFunctionAdder {
     }
 }
 
-pub(crate) fn get_nctfe_func<'tcx>(id: CtfeId, storage: &mut dyn Storage) -> DefId {
+pub(crate) fn get_nctfe_func(id: CtfeId, storage: &mut dyn Storage) -> DefId {
     if let Some(def_id) = get_nctfe_map(storage).get_by_left(&id) {
         *def_id
     } else {
@@ -190,7 +188,7 @@ fn find_ctfes<'tcx>(tcx: TyCtxt<'tcx>) -> impl Iterator<Item = CtfeId> + 'tcx {
     constants.chain(promoteds)
 }
 
-fn find_nctfes<'tcx>(tcx: TyCtxt<'tcx>) -> Vec<DefId> {
+fn find_nctfes(tcx: TyCtxt) -> Vec<DefId> {
     find_aug_module(tcx).map_or(Vec::default(), |m| {
         tcx.hir()
             .module_items(m)
@@ -218,15 +216,12 @@ fn find_aug_module(tcx: TyCtxt) -> Option<LocalDefId> {
         .map(|id| id.owner_id.def_id)
 }
 
-fn is_nctfe<'tcx>(tcx: TyCtxt<'tcx>, def_id: LocalDefId) -> bool {
+fn is_nctfe(tcx: TyCtxt, def_id: LocalDefId) -> bool {
     use rustc_hir::*;
-    let ExprKind::Block(block, _) = tcx
-        .hir()
-        .body(tcx.hir().body_owned_by(def_id))
-        .value
-        .peel_blocks()
-        .kind
-    else {
+    let Some(body_id) = tcx.hir().maybe_body_owned_by(def_id) else {
+        return false;
+    };
+    let ExprKind::Block(block, _) = tcx.hir().body(body_id).value.peel_blocks().kind else {
         return false;
     };
     block.stmts.first().is_some_and(|stmt| match stmt.kind {
