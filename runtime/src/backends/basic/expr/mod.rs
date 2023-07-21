@@ -778,6 +778,22 @@ mod convert {
             Into::<ConcreteValue>::into(val).into()
         }
     }
+    impl From<operand::Constant> for ConcreteValue {
+        #[inline]
+        fn from(val: operand::Constant) -> Self {
+            match val {
+                operand::Constant::ByteStr(bytes) => Self::Array(ArrayValue {
+                    elements: bytes
+                        .iter()
+                        .copied()
+                        .map(ConstValue::from)
+                        .map(ConstValue::to_value_ref)
+                        .collect(),
+                }),
+                _ => Self::Const(val.into()),
+            }
+        }
+    }
     impl From<operand::Constant> for ConstValue {
         #[inline]
         fn from(val: operand::Constant) -> Self {
@@ -790,6 +806,9 @@ mod convert {
                 },
                 operand::Constant::Float { bit_rep, ty } => ConstValue::Float { bit_rep, ty },
                 operand::Constant::Str(value) => ConstValue::Str(value),
+                operand::Constant::ByteStr(_) => {
+                    panic!("Byte strings are not handled as constants in this module.")
+                }
                 operand::Constant::Func(value) => ConstValue::Func(value),
             }
         }

@@ -27,6 +27,7 @@ pub(crate) enum Constant {
     Int { bit_rep: u128, ty: IntType },
     Float { bit_rep: u128, ty: FloatType },
     Str(&'static str),
+    ByteStr(&'static [u8]),
     Func(u64),
 }
 
@@ -91,6 +92,10 @@ impl<O: From<Constant>> ConstantHandler for DefaultConstantHandler<O> {
 
     fn str(self, value: &'static str) -> Self::Operand {
         Constant::Str(value).into()
+    }
+
+    fn byte_str(self, value: &'static [u8]) -> Self::Operand {
+        Constant::ByteStr(value).into()
     }
 
     fn func(self, id: u64) -> Self::Operand {

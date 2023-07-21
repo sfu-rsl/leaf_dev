@@ -573,6 +573,7 @@ mod implementation {
              * the constant as it is, and rely on high-level conversions to support all types of
              * constants in an abstract fashion. */
             let ty = constant.ty();
+            let tcx = self.tcx();
             if ty.is_bool() {
                 self.internal_reference_const_operand_directly(
                     stringify!(pri::ref_operand_const_bool),
@@ -592,12 +593,31 @@ mod implementation {
                     stringify!(pri::ref_operand_const_str),
                     constant,
                 )
+            }
+            // &[u8]
+            else if let TyKind::Ref(_, ty, _) = ty.kind()
+                && let TyKind::Slice(ty) = ty.kind()
+                && ty == &tcx.types.u8 {
+                    self.internal_reference_const_operand_directly(
+                        stringify!(pri::ref_operand_const_byte_str),
+                        constant,
+                    )
+            }
+            // &[u8; N]
+            else if ty.peel_refs().is_array()
+                && ty.peel_refs().sequence_element_type(tcx) == tcx.types.u8
+            {
+                self.internal_reference_byte_str_const_operand(constant)
             } else if let TyKind::FnDef(def_id, substs) = ty.kind() {
                 self.internal_reference_func_def_const_operand(def_id, substs)
             } else if let Some(c) = operand::const_try_as_unevaluated(constant) {
                 self.internal_reference_unevaluated_const_operand(&c, ty)
             } else {
-                unimplemented!("Unsupported constant type: {:?}", ty)
+                unimplemented!(
+                    "Unsupported constant: {:?} with type: {:?}",
+                    constant.literal,
+                    ty
+                )
             }
         }
 
@@ -657,6 +677,31 @@ mod implementation {
                 ],
             );
             BlocksAndResult::from(block_pair).prepend([conversion_block])
+        }
+
+        fn internal_reference_byte_str_const_operand(
+            &mut self,
+            constant: &Box<Constant<'tcx>>,
+        ) -> BlocksAndResult<'tcx> {
+            let ty = constant.ty();
+            debug_assert!(
+                ty.is_ref()
+                    && ty.peel_refs().sequence_element_type(self.tcx()) == self.tcx().types.u8 // && matches!(ty.kind(), TyKind::Ref(region, _, _) if region.is_static()),
+            );
+
+            let tcx = self.tcx();
+            let (slice_local, slice_assignment) = cast_array_ref_to_slice(
+                tcx,
+                &mut self.context,
+                operand::const_from_existing(constant),
+                None,
+            );
+            let mut block_pair = self.make_bb_for_operand_ref_call(
+                stringify!(pri::ref_operand_const_byte_str),
+                vec![operand::move_for_local(slice_local)],
+            );
+            block_pair.0.statements.insert(0, slice_assignment);
+            BlocksAndResult::from(block_pair)
         }
 
         fn internal_reference_func_def_const_operand(
@@ -1409,10 +1454,12 @@ mod implementation {
     }
 
     mod utils {
-
         use rustc_middle::{
-            mir::{self, BasicBlockData, Constant, Local, Operand, Place, Rvalue, Statement},
-            ty::{Ty, TyCtxt},
+            mir::{
+                self, BasicBlockData, Constant, HasLocalDecls, Local, Operand, Place, Rvalue,
+                Statement,
+            },
+            ty::{Ty, TyCtxt, TyKind},
         };
 
         use crate::mir_transform::{BodyLocalManager, NEXT_BLOCK};
@@ -1693,7 +1740,7 @@ mod implementation {
 
         pub(super) fn prepare_operand_for_slice<'tcx>(
             tcx: TyCtxt<'tcx>,
-            local_manager: &mut impl BodyLocalManager<'tcx>,
+            local_manager: &mut (impl BodyLocalManager<'tcx> + HasLocalDecls<'tcx>),
             item_ty: Ty<'tcx>,
             items: Vec<Operand<'tcx>>,
         ) -> (Local, [Statement<'tcx>; 3]) {
@@ -1702,20 +1749,45 @@ mod implementation {
             let array_assign =
                 assignment::create(Place::from(array_local), rvalue::array(item_ty, items));
 
-            let ref_local = local_manager.add_local(ty::mk_imm_ref(tcx, array_ty));
+            let ref_ty = ty::mk_imm_ref(tcx, array_ty);
+            let ref_local = local_manager.add_local(ref_ty);
             let ref_assign = assignment::create(
                 Place::from(ref_local),
                 rvalue::ref_of(Place::from(array_local), tcx),
             );
 
-            let slice_ty = ty::mk_imm_ref(tcx, tcx.mk_slice(item_ty));
-            let cast_local = local_manager.add_local(slice_ty);
-            let cast_assign = assignment::create(
-                Place::from(cast_local),
-                rvalue::cast_to_unsize(operand::move_for_local(ref_local), slice_ty),
+            let (cast_local, cast_assign) = cast_array_ref_to_slice(
+                tcx,
+                local_manager,
+                operand::move_for_local(ref_local),
+                Some(ref_ty),
             );
 
             (cast_local, [array_assign, ref_assign, cast_assign])
+        }
+
+        pub(super) fn cast_array_ref_to_slice<'tcx>(
+            tcx: TyCtxt<'tcx>,
+            local_manager: &mut (impl BodyLocalManager<'tcx> + HasLocalDecls<'tcx>),
+            ref_operand: Operand<'tcx>,
+            operand_ty: Option<Ty<'tcx>>,
+        ) -> (Local, Statement<'tcx>) {
+            let TyKind::Ref(region, array_ty, mutability) = operand_ty
+                .unwrap_or_else(|| ref_operand.ty(local_manager, tcx))
+                .kind()
+            else {
+                panic!("Operand was not from reference type.")
+            };
+            debug_assert!(array_ty.is_array());
+            let item_ty = array_ty.sequence_element_type(tcx);
+            let slice_ty =
+                tcx.mk_ty_from_kind(TyKind::Ref(*region, tcx.mk_slice(item_ty), *mutability));
+            let local: Local = local_manager.add_local(slice_ty);
+            let assignment = assignment::create(
+                Place::from(local),
+                rvalue::cast_to_unsize(ref_operand, slice_ty),
+            );
+            (local, assignment)
         }
 
         #[allow(clippy::borrowed_box)]
@@ -1743,7 +1815,7 @@ mod implementation {
             context: &mut (impl BodyLocalManager<'tcx> + PriItemsProvider<'tcx>),
             constant: &Box<Constant<'tcx>>,
         ) -> (Local, BasicBlockData<'tcx>) {
-            use rustc_middle::ty::{FloatTy, TyKind};
+            use rustc_middle::ty::FloatTy;
             debug_assert!(constant.ty().is_floating_point());
             let bit_rep_local = context.add_local(tcx.types.u128);
             let conversion_func = if matches!(constant.ty().kind(), TyKind::Float(FloatTy::F32)) {

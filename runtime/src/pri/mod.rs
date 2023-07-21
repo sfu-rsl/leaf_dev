@@ -103,6 +103,9 @@ pub fn ref_operand_const_func(id: u64) -> OperandRef {
 pub fn ref_operand_const_str(value: &'static str) -> OperandRef {
     push_operand_ref(|o| o.const_from().str(value))
 }
+pub fn ref_operand_const_byte_str(value: &'static [u8]) -> OperandRef {
+    push_operand_ref(|o| o.const_from().byte_str(value))
+}
 
 pub fn new_sym_value_bool() -> OperandRef {
     push_operand_ref(|o| o.new_symbolic(ValueType::Bool))
