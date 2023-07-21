@@ -1,8 +1,8 @@
 use rustc_abi::{FieldIdx, VariantIdx};
 use rustc_index::IndexVec;
 use rustc_middle::mir::{
-    self, visit::Visitor, BasicBlock, BasicBlockData, CastKind, HasLocalDecls, Location, MirPass,
-    Operand, Place, Rvalue, UnwindAction,
+    self, visit::Visitor, BasicBlock, BasicBlockData, CastKind, HasLocalDecls, Location, Operand,
+    Place, Rvalue, UnwindAction,
 };
 
 use crate::{
@@ -21,11 +21,11 @@ use super::call::{
 pub(crate) struct LeafPass;
 
 impl LeafPass {
-    pub(crate) fn transform<'tcx, 'b, 's>(
+    pub(crate) fn transform<'tcx>(
         &self,
         tcx: rustc_middle::ty::TyCtxt<'tcx>,
-        body: &'b mut rustc_middle::mir::Body<'tcx>,
-        storage: &'s mut dyn Storage,
+        body: &mut rustc_middle::mir::Body<'tcx>,
+        storage: &mut dyn Storage,
     ) {
         log::info!("Running leaf pass on body at {:#?}", body.span);
 

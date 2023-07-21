@@ -175,7 +175,7 @@ impl<'tcx> PriItemsProvider<'tcx> for PriItems<'tcx> {
     fn get_pri_func_info(&self, func_name: &str) -> &FunctionInfo<'tcx> {
         self.funcs
             .get(&pri_utils::normalize_str_path(
-                &("runtime::".to_owned() + &func_name),
+                &("runtime::".to_owned() + func_name),
             )) // FIXME
             .unwrap_or_else(|| panic!("Invalid pri function name: `{func_name}`."))
     }

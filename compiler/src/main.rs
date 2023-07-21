@@ -9,5 +9,9 @@ fn main() {
         .parse_default_env()
         .init();
 
-    std::process::exit(run_compiler(&std::env::args().collect::<Vec<_>>(), None));
+    std::process::exit(run_compiler(
+        // The first argument is the executable file name.
+        std::env::args().collect::<Vec<_>>().into_iter().skip(1),
+        None,
+    ));
 }

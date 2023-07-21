@@ -41,7 +41,7 @@ use rustc_driver::RunCompiler;
 
 use crate::utils::chain;
 
-pub fn run_compiler(args: &[String], input_path: Option<PathBuf>) -> i32 {
+pub fn run_compiler(args: impl Iterator<Item = String>, input_path: Option<PathBuf>) -> i32 {
     let args = driver_args::set_up_args(args, input_path);
     log::info!("Running compiler with args: {:?}", args);
 
@@ -68,6 +68,8 @@ pub mod constants {
 
 mod driver_args {
     use super::*;
+
+    use std::env;
     use std::path::PathBuf;
 
     const CMD_RUSTC: &str = "rustc";
@@ -87,7 +89,7 @@ mod driver_args {
     const OPT_UNSTABLE: &str = "-Zunstable-options";
 
     macro_rules! read_var {
-        ($name:expr) => {{ std::env::var($name).ok() }};
+        ($name:expr) => {{ env::var($name).ok() }};
     }
 
     trait ArgsExt {
@@ -98,7 +100,7 @@ mod driver_args {
 
     impl<T: AsMut<Vec<String>>> ArgsExt for T {
         fn set_if_absent(&mut self, key: &str, get_value: impl FnOnce() -> String) {
-            if !self.as_mut().iter().any(|arg| arg.starts_with(arg)) {
+            if !self.as_mut().iter().any(|arg| arg.starts_with(key)) {
                 self.add_pair(key, get_value());
             }
         }
@@ -109,8 +111,19 @@ mod driver_args {
         }
     }
 
-    pub(super) fn set_up_args(given_args: &[String], input_path: Option<PathBuf>) -> Vec<String> {
-        let mut args = Vec::from_iter(given_args.iter().cloned());
+    pub(super) fn set_up_args(
+        given_args: impl Iterator<Item = String>,
+        input_path: Option<PathBuf>,
+    ) -> Vec<String> {
+        // Although the driver throws out the first argument, we set the correct value for it.
+        let given_args = std::iter::once(
+            env::current_exe()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned(),
+        )
+        .chain(given_args);
+        let mut args = given_args.collect::<Vec<_>>();
 
         args.set_if_absent(OPT_SYSROOT, find_sysroot);
 
@@ -122,16 +135,11 @@ mod driver_args {
             format!("force:{}={}", CRATE_RUNTIME, find_runtime_lib_path()),
         );
 
-        args.add_pair(
-            OPT_EXTERN,
-            format!("force:{}={}", CRATE_RUNTIME, find_runtime_lib_path()),
-        );
-
-        // Add all project's dependencies into the search path.
+        // Add runtime project's dependencies into the search path.
         args.add_pair(OPT_SEARCH_PATH, find_deps_path());
 
-        if let Some(ip) = input_path {
-            args.push(ip.to_string_lossy().into_owned());
+        if let Some(input_path) = input_path {
+            args.push(input_path.to_string_lossy().into_owned());
         }
 
         args
@@ -141,7 +149,6 @@ mod driver_args {
         let try_rustc = || {
             std::process::Command::new(CMD_RUSTC)
                 .arg(OPT_PRINT_SYSROOT)
-                .current_dir(".")
                 .output()
                 .ok()
                 .map(|out| std::str::from_utf8(&out.stdout).unwrap().trim().to_owned())
@@ -153,9 +160,9 @@ mod driver_args {
                 .map(|(home, toolchain)| format!("{home}/toolchains/{toolchain}"))
         };
 
-        let try_sysroot_env = || read_var!(ENV_SYSROOT).map(|s| s.to_owned());
+        let try_sysroot_env = || read_var!(ENV_SYSROOT);
 
-        // NOTE: Check the correct priority of these variables.
+        // NOTE: Check the priority of these variables in the original compiler.
         try_rustc()
             .or_else(try_toolchain_env)
             .or_else(try_sysroot_env)
@@ -166,7 +173,7 @@ mod driver_args {
         // FIXME: Do not depend on the project's structure and adjacency of runtime.
 
         let try_exe_path = || {
-            std::env::current_exe()
+            env::current_exe()
                 .ok()
                 .and_then(|path| path.parent().map(|p| p.join(FILE_RUNTIME_LIB)))
                 .filter(|path| path.exists())
@@ -180,7 +187,7 @@ mod driver_args {
         // FIXME: Don't depend on the project structure and adjacency of runtime.
 
         let try_exe_path = || {
-            std::env::current_exe()
+            env::current_exe()
                 .ok()
                 .and_then(|path| path.parent().map(|p| p.join(DIR_DEPS)))
                 .filter(|path| path.exists())

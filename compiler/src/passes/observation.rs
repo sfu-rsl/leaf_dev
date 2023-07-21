@@ -34,11 +34,7 @@ where
         self.pass.visit_ast_after(krate)
     }
 
-    fn visit_ctxt<'tcx>(
-        &mut self,
-        tcx: TyCtxt<'tcx>,
-        storage: &mut dyn super::Storage,
-    ) -> Compilation {
+    fn visit_ctxt(&mut self, tcx: TyCtxt, storage: &mut dyn super::Storage) -> Compilation {
         log::info!(target: target!(), "Visiting TyCtxt");
         self.pass.visit_ctxt(tcx, storage)
     }

@@ -47,11 +47,7 @@ pub(crate) trait CompilationPass {
         }
     }
 
-    fn visit_ctxt<'tcx>(
-        &mut self,
-        tcx: mir_ty::TyCtxt<'tcx>,
-        storage: &mut dyn Storage,
-    ) -> Compilation {
+    fn visit_ctxt(&mut self, tcx: mir_ty::TyCtxt, storage: &mut dyn Storage) -> Compilation {
         Compilation::Continue
     }
 
@@ -277,10 +273,7 @@ mod implementation {
             _compiler: &interface::Compiler,
             queries: &'tcx Queries<'tcx>,
         ) -> Compilation {
-            queries
-                .global_ctxt()
-                .unwrap()
-                .enter(|tcx| global::set_ctxt_id(tcx));
+            queries.global_ctxt().unwrap().enter(global::set_ctxt_id);
             queries
                 .global_ctxt()
                 .unwrap()
@@ -322,11 +315,7 @@ mod implementation {
             Compilation::Continue
         }
 
-        fn visit_ctxt<'tcx>(
-            &mut self,
-            tcx: mir_ty::TyCtxt<'tcx>,
-            storage: &mut dyn Storage,
-        ) -> Compilation {
+        fn visit_ctxt(&mut self, tcx: mir_ty::TyCtxt, storage: &mut dyn Storage) -> Compilation {
             stop_if_stop!(self.first.visit_ctxt(tcx, storage));
             stop_if_stop!(self.second.visit_ctxt(tcx, storage));
 

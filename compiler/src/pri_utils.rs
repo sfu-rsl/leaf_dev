@@ -113,7 +113,7 @@ pub(crate) fn find_pri_types<'tcx>(pri_symbols: &[DefId], tcx: TyCtxt<'tcx>) -> 
         .collect();
 
     let get_ty = |name: &str| -> Ty {
-        tcx.type_of(def_ids.get(&normalize_str_path(&name)).unwrap())
+        tcx.type_of(def_ids.get(&normalize_str_path(name)).unwrap())
             .no_bound_vars()
             .expect("PRI types are not expected to have bound vars (generics).")
     };
