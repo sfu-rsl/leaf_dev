@@ -382,8 +382,8 @@ impl<'tcx> BodyModificationUnit<'tcx> {
         };
 
         while let Some(target) = std::cmp::max(
-            target_of_last(&before_chunks),
-            target_of_last(&before_chunks),
+            target_of_last(before_chunks),
+            target_of_last(after_chunks),
         )
         // This is an indirect target
         && target >= min_new_block_index
@@ -477,24 +477,35 @@ impl<'tcx> BodyModificationUnit<'tcx> {
         original_block_index: BasicBlock,
     ) {
         let original_block_target: BasicBlock = {
-            let mut original_block = blocks.get_mut(original_block_index);
-            let mut successors = original_block
-                .as_mut()
+            let terminator = blocks
+                .get_mut(original_block_index)
                 .unwrap()
-                .terminator
-                .as_mut()
-                .unwrap()
-                .successors_mut();
+                .terminator_mut();
+            let mut successors = terminator.successors_mut();
             let target: &mut BasicBlock = successors.next().unwrap();
 
-            assert!(
-                successors.next().is_none(),
-                "Unexpected insertion after a block with multiple succesors."
-            );
-
-            // update jump target of the original block & save original target
+            // Update jump target of the original block & save the original target
             let original_block_target = *target;
             *target = NEXT_BLOCK;
+
+            // Make sure that there is only one successor
+            if let Some(other_target) = successors.next().cloned() {
+                // A cleanup unwind is also included in the successors, which we currently ignore.
+                // TODO: #206
+                if !terminator.unwind().is_some_and(|unwind| {
+                    if let UnwindAction::Cleanup(block) = unwind {
+                        other_target == *block
+                    } else {
+                        false
+                    }
+                }) {
+                    panic!(
+                        "Unexpected insertion after a block with multiple successors. Basic Block: {:?}, Terminator: {:#?}",
+                        original_block_index, terminator,
+                    );
+                }
+            };
+
             original_block_target
         };
 
