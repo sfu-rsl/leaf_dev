@@ -182,6 +182,9 @@ mod implementation {
 
     use utils::*;
 
+    use rustc_middle::mir::{BasicBlock, BasicBlockData, Terminator, UnevaluatedConst};
+    use rustc_middle::ty::TyKind;
+
     pub(crate) trait MirCallAdder<'tcx> {
         fn make_bb_for_call(
             &mut self,
@@ -594,6 +597,8 @@ mod implementation {
                 )
             } else if let TyKind::FnDef(def_id, substs) = ty.kind() {
                 self.internal_reference_func_def_const_operand(def_id, substs)
+            } else if let Some(c) = operand::const_try_as_unevaluated(constant) {
+                self.internal_reference_unevaluated_const_operand(&c, ty)
             } else {
                 unimplemented!("Unsupported constant type: {:?}", ty)
             }
@@ -660,7 +665,7 @@ mod implementation {
         fn internal_reference_func_def_const_operand(
             &mut self,
             def_id: &rustc_span::def_id::DefId,
-            substs: &&rustc_middle::ty::List<rustc_middle::ty::GenericArg>,
+            substs: &[rustc_middle::ty::GenericArg],
         ) -> BlocksAndResult<'tcx> {
             if !substs.is_empty() {
                 log::warn!("Referencing a function with substitution variables (generic).");
@@ -674,6 +679,47 @@ mod implementation {
                 vec![operand::const_from_uint(self.context.tcx(), func_id)],
             )
             .into()
+        }
+
+        fn internal_reference_unevaluated_const_operand(
+            &mut self,
+            constant: &UnevaluatedConst,
+            ty: Ty<'tcx>,
+        ) -> BlocksAndResult<'tcx> {
+            let result_local = self.context.add_local(ty);
+            {
+                use crate::passes::ctfe::{get_nctfe_func, CtfeId};
+                let tcx = self.tcx();
+                let id = if let Some(index) = constant.promoted {
+                    CtfeId::Promoted(constant.def.expect_local(), index)
+                } else {
+                    CtfeId::Const(constant.def.expect_local())
+                };
+
+                let nctfe_id = get_nctfe_func(id, self.context.storage());
+                let call_block = BasicBlockData::new(Some(terminator::call(
+                    tcx,
+                    nctfe_id,
+                    Vec::default(),
+                    result_local.into(),
+                    None,
+                )));
+                let call_block_index = self.insert_blocks([call_block])[0];
+
+                // NOTE: You cannot call reference operand here because of the infinite loop in types.
+                let BlocksAndResult(blocks, func_ref) =
+                    self.internal_reference_func_def_const_operand(&nctfe_id, &[]);
+                self.at(call_block_index).insert_blocks(blocks);
+                super::super::passes::LeafTerminatorKindVisitor::instrument_call(
+                    &mut self.at(call_block_index),
+                    func_ref.into(),
+                    std::iter::empty(),
+                    &result_local.into(),
+                    &Some(NEXT_BLOCK),
+                );
+            };
+
+            self.internal_reference_operand(&operand::move_for_local(result_local))
         }
 
         fn make_bb_for_operand_ref_call(
@@ -1384,7 +1430,7 @@ mod implementation {
 
             use rustc_const_eval::interpret::Scalar;
             use rustc_middle::{
-                mir::{Constant, ConstantKind, Local, Operand, Place},
+                mir::{self, Constant, ConstantKind, Local, Operand, Place},
                 ty::{self, ScalarInt, Ty, TyCtxt},
             };
             use rustc_span::DUMMY_SP;
@@ -1444,6 +1490,33 @@ mod implementation {
                 Operand::const_from_scalar(tcx, ty, Scalar::Int(value), DUMMY_SP)
             }
 
+            pub fn const_try_as_unevaluated<'tcx>(
+                constant: &Constant<'tcx>,
+            ) -> Option<mir::UnevaluatedConst<'tcx>> {
+                match constant.literal {
+                    ConstantKind::Unevaluated(c, _) => Some(c),
+                    ConstantKind::Ty(c) => match c.kind() {
+                        ty::ConstKind::Unevaluated(ty::UnevaluatedConst { def, substs }) => {
+                            Some(mir::UnevaluatedConst {
+                                def,
+                                substs,
+                                promoted: None,
+                            })
+                        }
+                        _ => None,
+                    },
+                    _ => None,
+                }
+            }
+
+            pub fn const_from_zst_ty(ty: Ty) -> Operand {
+                Operand::Constant(Box::new(Constant {
+                    span: DUMMY_SP,
+                    user_ty: None,
+                    literal: ConstantKind::zero_sized(ty),
+                }))
+            }
+
             pub fn copy_for_local<'tcx>(value: Local) -> Operand<'tcx> {
                 for_local(value, true)
             }
@@ -1459,6 +1532,10 @@ mod implementation {
                 } else {
                     Operand::Move(place)
                 }
+            }
+
+            pub fn func(tcx: TyCtxt, def_id: rustc_span::def_id::DefId) -> Operand {
+                Operand::function_handle(tcx, def_id, std::iter::empty(), DUMMY_SP)
             }
         }
 
@@ -1605,12 +1682,7 @@ mod implementation {
                     kind: TerminatorKind::Call {
                         /* NOTE: Check if it is supposed to be the same operand for each function definition,
                          * i.e. caching/lazy singleton. */
-                        func: Operand::function_handle(
-                            tcx,
-                            func_def_id,
-                            std::iter::empty(),
-                            DUMMY_SP,
-                        ),
+                        func: operand::func(tcx, func_def_id),
                         args,
                         destination,
                         target: Some(target.unwrap_or(NEXT_BLOCK)),
@@ -1740,37 +1812,31 @@ mod implementation {
         impl<'tcx, C> Basic<'tcx> for C where C: BaseContext<'tcx> {}
 
         pub(crate) trait ForPlaceRef<'tcx>:
-            BaseContext<'tcx> + LocationProvider + BodyProvider<'tcx>
+            Basic<'tcx> + LocationProvider + BodyProvider<'tcx>
         {
         }
-        impl<'tcx, C> ForPlaceRef<'tcx> for C where
-            C: BaseContext<'tcx> + LocationProvider + BodyProvider<'tcx>
-        {
-        }
+        impl<'tcx, C> ForPlaceRef<'tcx> for C where C: Basic<'tcx> + LocationProvider + BodyProvider<'tcx> {}
 
         pub(crate) trait ForOperandRef<'tcx>:
-            ForPlaceRef<'tcx> + BodyLocalManager<'tcx>
+            ForPlaceRef<'tcx> + ForFunctionCalling<'tcx>
         {
         }
-        impl<'tcx, C> ForOperandRef<'tcx> for C where C: ForPlaceRef<'tcx> {}
+        impl<'tcx, C> ForOperandRef<'tcx> for C where C: ForPlaceRef<'tcx> + ForFunctionCalling<'tcx> {}
 
         pub(crate) trait ForAssignment<'tcx>:
-            BaseContext<'tcx> + DestinationReferenceProvider + LocationProvider
+            Basic<'tcx> + DestinationReferenceProvider + LocationProvider
         {
         }
         impl<'tcx, C> ForAssignment<'tcx> for C where
-            C: BaseContext<'tcx> + DestinationReferenceProvider + LocationProvider
+            C: Basic<'tcx> + DestinationReferenceProvider + LocationProvider
         {
         }
 
         pub(crate) trait ForBranching<'tcx>:
-            BaseContext<'tcx> + LocationProvider + JumpTargetModifier
+            Basic<'tcx> + LocationProvider + JumpTargetModifier
         {
         }
-        impl<'tcx, C> ForBranching<'tcx> for C where
-            C: BaseContext<'tcx> + LocationProvider + JumpTargetModifier
-        {
-        }
+        impl<'tcx, C> ForBranching<'tcx> for C where C: Basic<'tcx> + LocationProvider + JumpTargetModifier {}
 
         pub(crate) trait ForAssertion<'tcx>: ForOperandRef<'tcx> {}
         impl<'tcx, C> ForAssertion<'tcx> for C where C: ForOperandRef<'tcx> {}
@@ -1781,15 +1847,15 @@ mod implementation {
         }
         impl<'tcx, C> ForFunctionCalling<'tcx> for C where C: ForPlaceRef<'tcx> + JumpTargetModifier {}
 
-        pub(crate) trait ForReturning<'tcx>: BaseContext<'tcx> {}
-        impl<'tcx, C> ForReturning<'tcx> for C where C: BaseContext<'tcx> {}
+        pub(crate) trait ForReturning<'tcx>: Basic<'tcx> {}
+        impl<'tcx, C> ForReturning<'tcx> for C where C: Basic<'tcx> {}
 
         pub(crate) trait ForEntryFunction<'tcx>:
-            BaseContext<'tcx> + BodyProvider<'tcx> + LocationProvider + InEntryFunction
+            Basic<'tcx> + BodyProvider<'tcx> + LocationProvider + InEntryFunction
         {
         }
         impl<'tcx, C> ForEntryFunction<'tcx> for C where
-            C: BaseContext<'tcx> + BodyProvider<'tcx> + LocationProvider + InEntryFunction
+            C: Basic<'tcx> + BodyProvider<'tcx> + LocationProvider + InEntryFunction
         {
         }
     }

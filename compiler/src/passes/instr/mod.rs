@@ -39,7 +39,10 @@ fn transform<'tcx>(
     body: &mut rustc_middle::mir::Body<'tcx>,
     storage: &mut dyn Storage,
 ) {
-    log::info!("Running instrumentation pass on body at {:#?}", body.span);
+    log::info!(
+        "Running instrumentation pass on body of {:#?}",
+        body.source.def_id()
+    );
 
     let mut modification = BodyModificationUnit::new(body.local_decls().next_index());
     let mut call_adder = RuntimeCallAdder::new(tcx, &mut modification, storage);
@@ -134,8 +137,8 @@ impl VisitorFactory {
 }
 
 macro_rules! make_general_visitor {
-    ($name:ident) => {
-        struct $name<C> {
+    ($vis:vis $name:ident) => {
+        $vis struct $name<C> {
             call_adder: RuntimeCallAdder<C>,
         }
     };
@@ -201,7 +204,7 @@ where
     }
 }
 
-make_general_visitor!(LeafTerminatorKindVisitor);
+make_general_visitor!(pub(crate) LeafTerminatorKindVisitor);
 
 impl<'tcx, C> TerminatorKindVisitor<'tcx, ()> for LeafTerminatorKindVisitor<C>
 where
@@ -253,19 +256,15 @@ where
         let func_ref = self.call_adder.reference_operand(func);
         let arg_refs = args
             .iter()
-            .map(|a| self.call_adder.reference_operand(a))
-            .collect::<Vec<OperandRef>>();
-        self.call_adder
-            .before_call_func(func_ref, arg_refs.iter().copied());
-
-        if target.is_some() {
-            self.call_adder.after_call_func(destination);
-        } else {
-            // This branch is only triggered by hitting a divergent function:
-            // https://doc.rust-lang.org/rust-by-example/fn/diverging.html
-            // (this means the program will exit immediately)
-            log::warn!("visit_call() had no target, so couldn't insert block");
-        }
+            .map(|arg| self.call_adder.reference_operand(arg))
+            .collect::<Vec<_>>();
+        Self::instrument_call(
+            &mut self.call_adder,
+            func_ref,
+            arg_refs.into_iter(),
+            destination,
+            target,
+        );
     }
 
     fn visit_assert(
@@ -306,6 +305,30 @@ where
         _unwind: &UnwindAction,
     ) {
         Default::default()
+    }
+}
+
+impl<'tcx, C> LeafTerminatorKindVisitor<C>
+where
+    C: ctxtreqs::ForFunctionCalling<'tcx>,
+{
+    pub(crate) fn instrument_call(
+        call_adder: &mut RuntimeCallAdder<C>,
+        func: OperandRef,
+        args: impl Iterator<Item = OperandRef>,
+        destination: &Place<'tcx>,
+        target: &Option<BasicBlock>,
+    ) {
+        call_adder.before_call_func(func, args);
+
+        if target.is_some() {
+            call_adder.after_call_func(destination);
+        } else {
+            // This branch is only triggered by hitting a divergent function:
+            // https://doc.rust-lang.org/rust-by-example/fn/diverging.html
+            // (this means the program will exit immediately)
+            log::warn!("visit_call() had no target, so couldn't insert block");
+        }
     }
 }
 
