@@ -67,21 +67,6 @@ where
     C: ctxtreqs::ForEntryFunction<'tcx> + ctxtreqs::ForFunctionCalling<'tcx>,
 {
     call_adder.init_runtime_lib();
-
-    // report that the entry function was "called" as a special case
-    let func = Operand::function_handle(
-        call_adder.tcx(),
-        call_adder.body().source.def_id(),
-        std::iter::empty(),
-        call_adder.body().span,
-    );
-
-    let func_ref = call_adder
-        .at(call_adder.body().basic_blocks.indices().next().unwrap())
-        .reference_operand(&func);
-    call_adder
-        .at(call_adder.body().basic_blocks.indices().next().unwrap())
-        .before_call_func(func_ref, ::std::iter::empty());
 }
 
 struct VisitorFactory;

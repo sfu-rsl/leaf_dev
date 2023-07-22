@@ -5,7 +5,7 @@ use crate::abs::{
 };
 
 use super::{
-    operand::{DefaultOperandHandler, PlaceUsage},
+    operand::{Constant, DefaultOperandHandler, PlaceUsage},
     place::{DefaultPlaceHandler, Place, Projection},
 };
 
@@ -305,7 +305,7 @@ impl FunctionHandler for LoggerFunctionHandler<'_> {
 
     fn before_call(self, func: Self::Operand, args: impl Iterator<Item = Self::Operand>) {
         log_info!("Just before call {}({})", func, comma_separated(args));
-        self.call_manager.notify_before_call(CallInfo { func });
+        self.call_manager.notify_before_call(func);
     }
 
     fn enter(self) {
@@ -334,19 +334,27 @@ struct CallInfo {
 
 struct CallManager {
     stack: Vec<CallInfo>,
+    last_called: Option<Operand>,
 }
 
 impl CallManager {
     fn new() -> Self {
-        Self { stack: vec![] }
+        Self {
+            stack: vec![],
+            last_called: None,
+        }
     }
 
-    fn notify_before_call(&mut self, call: CallInfo) {
-        self.stack.push(call);
+    fn notify_before_call(&mut self, func: Operand) {
+        self.last_called = Some(func);
     }
 
-    fn notify_enter_call(&self) -> &CallInfo {
-        // peek at the top of the stack
+    fn notify_enter_call(&mut self) -> &CallInfo {
+        let last_called = self
+            .last_called
+            .take()
+            .unwrap_or(Operand::Const(Constant::Func(u64::MAX)));
+        self.stack.push(CallInfo { func: last_called });
         self.stack.last().unwrap()
     }
 
