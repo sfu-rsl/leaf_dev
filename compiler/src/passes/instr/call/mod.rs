@@ -169,16 +169,18 @@ pub(crate) struct RuntimeCallAdder<C> {
 }
 
 mod implementation {
+    use rustc_middle::mir::{BasicBlock, BasicBlockData, Terminator};
+    use rustc_middle::ty::TyKind;
+
+    use delegate::delegate;
+
     use self::ctxtreqs::*;
     use super::context::*;
     use super::*;
-    use crate::mir_transform::modification::*;
+    use crate::mir_transform::*;
     use crate::passes::Storage;
-    use delegate::delegate;
-    use utils::*;
 
-    use rustc_middle::mir::{BasicBlock, BasicBlockData, Terminator};
-    use rustc_middle::ty::TyKind;
+    use utils::*;
 
     pub(crate) trait MirCallAdder<'tcx> {
         fn make_bb_for_call(
@@ -324,6 +326,16 @@ mod implementation {
         delegate! {
             to self.context {
                 fn tcx(&self) -> TyCtxt<'tcx>;
+            }
+        }
+    }
+    impl<'tcx, C> BodyProvider<'tcx> for RuntimeCallAdder<C>
+    where
+        C: BodyProvider<'tcx>,
+    {
+        delegate! {
+            to self.context {
+                fn body(&self) -> &Body<'tcx>;
             }
         }
     }
@@ -1331,7 +1343,7 @@ mod implementation {
     impl<'tcx, C> EntryFunctionHandler for RuntimeCallAdder<C>
     where
         Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
-        C: InEntryFunction,
+        C: ForEntryFunction<'tcx>,
     {
         fn init_runtime_lib(&mut self) {
             let block = self.make_bb_for_call(stringify!(pri::init_runtime_lib), vec![]);
@@ -1360,7 +1372,7 @@ mod implementation {
             ty::{Ty, TyCtxt},
         };
 
-        use crate::mir_transform::modification::BodyLocalManager;
+        use crate::mir_transform::{BodyLocalManager, NEXT_BLOCK};
 
         use self::assignment::rvalue;
 
@@ -1579,8 +1591,6 @@ mod implementation {
             };
             use rustc_span::DUMMY_SP;
 
-            use crate::mir_transform::modification;
-
             use super::*;
 
             pub fn call<'tcx>(
@@ -1603,7 +1613,7 @@ mod implementation {
                         ),
                         args,
                         destination,
-                        target: Some(target.unwrap_or(modification::NEXT_BLOCK)),
+                        target: Some(target.unwrap_or(NEXT_BLOCK)),
                         unwind: UnwindAction::Continue,
                         call_source: mir::CallSource::Normal,
                         fn_span: DUMMY_SP,
@@ -1775,10 +1785,13 @@ mod implementation {
         impl<'tcx, C> ForReturning<'tcx> for C where C: BaseContext<'tcx> {}
 
         pub(crate) trait ForEntryFunction<'tcx>:
-            BaseContext<'tcx> + InEntryFunction
+            BaseContext<'tcx> + BodyProvider<'tcx> + LocationProvider + InEntryFunction
         {
         }
-        impl<'tcx, C> ForEntryFunction<'tcx> for C where C: BaseContext<'tcx> + InEntryFunction {}
+        impl<'tcx, C> ForEntryFunction<'tcx> for C where
+            C: BaseContext<'tcx> + BodyProvider<'tcx> + LocationProvider + InEntryFunction
+        {
+        }
     }
 }
 

@@ -1,3 +1,5 @@
+mod call;
+
 use rustc_abi::{FieldIdx, VariantIdx};
 use rustc_index::IndexVec;
 use rustc_middle::mir::{
@@ -6,69 +8,80 @@ use rustc_middle::mir::{
 };
 
 use crate::{
-    mir_transform::modification::{BodyModificationUnit, JumpTargetModifier},
-    passes::Storage,
+    mir_transform::{BodyModificationUnit, JumpTargetModifier},
     visit::*,
 };
 
-use super::call::{
+use call::{
     context::{BodyProvider, TyContextProvider},
     ctxtreqs, AssertionHandler, Assigner, BranchingHandler, BranchingReferencer, CastAssigner,
     EntryFunctionHandler, FunctionHandler, OperandRef, OperandReferencer, PlaceReferencer,
     RuntimeCallAdder,
 };
 
-pub(crate) struct LeafPass;
+use super::{CompilationPass, Storage};
 
-impl LeafPass {
-    pub(crate) fn transform<'tcx>(
-        &self,
+#[derive(Default)]
+pub(crate) struct Instrumentator;
+
+impl CompilationPass for Instrumentator {
+    fn transform_mir_body<'tcx>(
         tcx: rustc_middle::ty::TyCtxt<'tcx>,
-        body: &mut rustc_middle::mir::Body<'tcx>,
+        body: &mut mir::Body<'tcx>,
         storage: &mut dyn Storage,
     ) {
-        log::info!("Running leaf pass on body at {:#?}", body.span);
-
-        let mut modification = BodyModificationUnit::new(body.local_decls().next_index());
-        let mut call_adder = RuntimeCallAdder::new(tcx, &mut modification, storage);
-        let mut call_adder = call_adder.in_body(body);
-        if tcx.entry_fn(()).expect("No entry function was found").0 == body.source.def_id() {
-            Self::handle_entry_function(
-                &mut call_adder
-                    .at(body.basic_blocks.indices().next().unwrap())
-                    .in_entry_fn(),
-            );
-
-            // report that the entry function was "called" as a special case
-            let func = Operand::function_handle(
-                tcx,
-                body.source.def_id(),
-                ::std::iter::empty(),
-                body.span, // for error handling
-            );
-            let func_ref = call_adder
-                .at(body.basic_blocks.indices().next().unwrap())
-                .reference_operand(&func);
-            call_adder
-                .at(body.basic_blocks.indices().next().unwrap())
-                .before_call_func(func_ref, ::std::iter::empty());
-        }
-
-        // TODO: determine if body will ever be a promoted block
-        let _is_promoted_block = body.source.promoted.is_some();
-        call_adder
-            .at(body.basic_blocks.indices().next().unwrap())
-            .enter_func();
-
-        VisitorFactory::make_body_visitor(&mut call_adder).visit_body(body);
-        modification.commit(body);
+        transform(tcx, body, storage);
     }
 }
 
-impl LeafPass {
-    fn handle_entry_function(call_adder: &mut impl EntryFunctionHandler) {
-        call_adder.init_runtime_lib();
+fn transform<'tcx>(
+    tcx: rustc_middle::ty::TyCtxt<'tcx>,
+    body: &mut rustc_middle::mir::Body<'tcx>,
+    storage: &mut dyn Storage,
+) {
+    log::info!("Running instrumentation pass on body at {:#?}", body.span);
+
+    let mut modification = BodyModificationUnit::new(body.local_decls().next_index());
+    let mut call_adder = RuntimeCallAdder::new(tcx, &mut modification, storage);
+    let mut call_adder = call_adder.in_body(body);
+    if tcx.entry_fn(()).expect("No entry function was found").0 == body.source.def_id() {
+        handle_entry_function(
+            &mut call_adder
+                .at(body.basic_blocks.indices().next().unwrap())
+                .in_entry_fn(),
+        );
     }
+
+    // TODO: determine if body will ever be a promoted block
+    let _is_promoted_block = body.source.promoted.is_some();
+    call_adder
+        .at(body.basic_blocks.indices().next().unwrap())
+        .enter_func();
+
+    VisitorFactory::make_body_visitor(&mut call_adder).visit_body(body);
+    modification.commit(body);
+}
+
+fn handle_entry_function<'tcx, C>(call_adder: &mut RuntimeCallAdder<C>)
+where
+    C: ctxtreqs::ForEntryFunction<'tcx> + ctxtreqs::ForFunctionCalling<'tcx>,
+{
+    call_adder.init_runtime_lib();
+
+    // report that the entry function was "called" as a special case
+    let func = Operand::function_handle(
+        call_adder.tcx(),
+        call_adder.body().source.def_id(),
+        std::iter::empty(),
+        call_adder.body().span,
+    );
+
+    let func_ref = call_adder
+        .at(call_adder.body().basic_blocks.indices().next().unwrap())
+        .reference_operand(&func);
+    call_adder
+        .at(call_adder.body().basic_blocks.indices().next().unwrap())
+        .before_call_func(func_ref, ::std::iter::empty());
 }
 
 struct VisitorFactory;

@@ -8,8 +8,9 @@ use rustc_middle::{
 };
 
 use crate::{
-    mir_transform::modification::{
-        self, BodyBlockManager, BodyLocalManager, BodyModificationUnit, JumpTargetModifier,
+    mir_transform::{
+        BodyBlockManager, BodyLocalManager, BodyModificationUnit, JumpModificationConstraint,
+        JumpTargetModifier, NewLocalDecl,
     },
     passes::Storage,
     pri_utils,
@@ -130,7 +131,7 @@ impl<'tcx> TyContextProvider<'tcx> for DefaultContext<'tcx, '_, '_> {
 impl<'tcx> BodyLocalManager<'tcx> for DefaultContext<'tcx, '_, '_> {
     fn add_local<T>(&mut self, decl_info: T) -> Local
     where
-        T: Into<modification::NewLocalDecl<'tcx>>,
+        T: Into<NewLocalDecl<'tcx>>,
     {
         self.modification_unit.add_local(decl_info)
     }
@@ -164,7 +165,7 @@ impl JumpTargetModifier for DefaultContext<'_, '_, '_> {
         terminator_location: BasicBlock,
         from: BasicBlock,
         to: BasicBlock,
-        constraint: modification::JumpModificationConstraint,
+        constraint: JumpModificationConstraint,
     ) {
         self.modification_unit
             .modify_jump_target_where(terminator_location, from, to, constraint)
@@ -336,7 +337,7 @@ make_impl_macro! {
     self,
     fn add_local<T>(&mut self, decl_info: T) -> Local
     where
-        T: Into<modification::NewLocalDecl<'tcx>>;
+        T: Into<NewLocalDecl<'tcx>>;
 }
 
 make_impl_macro! {
@@ -361,7 +362,7 @@ make_impl_macro! {
         terminator_location: BasicBlock,
         from: BasicBlock,
         to: BasicBlock,
-        constraint: modification::JumpModificationConstraint,
+        constraint: JumpModificationConstraint,
     );
 }
 
