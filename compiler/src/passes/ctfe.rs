@@ -1,3 +1,24 @@
+/// This pass finds all the CTFE (Compile-time Function Evaluation) blocks and
+/// adds an empty function (a Non-CTFE) for each of them.
+/// Later, these functions will be assigned to the corresponding CTFE blocks on demand.
+/// The body of the newly added functions will be filled with the MIR of the corresponding CTFE.
+/// In this way, we will be able to perform instrumentation for these blocks when the return
+/// value is from a complex type (like references or structures).
+///
+/// NOTE: Declaring new functions is only possible prior to the AST lowering. So, as we do not
+/// have access to the MIR of the CTFE blocks yet, we add empty functions and later fill them.
+/// Also, CTFE blocks may be detected after MIR construction. So, we have to perform the scan
+/// in a separate pass first and later in another pass add the functions in the AST transformation
+/// phase.
+///
+/// NOTE: The DefId of the newly-added functions (NCTFEs) can be determined after the AST lowering.
+/// Also, the DefId of CTFEs may change after adding the functions. So, we have to find and retrieve
+/// id of NCTFEs by scanning the HIR (or MIR) again. To avoid relying on the name of the functions,
+/// which is not MIR-friendly, we add a marker statement to each of NCTFEs during
+/// the AST transformation. Then, we can find the NCTFEs by searching for the
+/// marker statement. We prefer scanning the HIR instead of MIR to avoid MIR body
+/// construction during the scanning and possibility of infinite loops or invalid
+/// states.
 use std::collections::HashSet;
 
 use bimap::BiHashMap;
@@ -8,7 +29,6 @@ use rustc_span::def_id::{DefId, LocalDefId};
 use thin_vec::{thin_vec, ThinVec};
 
 use crate::constants::LEAF_AUG_MOD_NAME;
-use crate::pri_utils;
 
 use super::{Compilation, CompilationPass, HasResult, Storage, StorageExt};
 
@@ -61,7 +81,7 @@ impl CompilationPass for NctfeFunctionAdder {
         /* Adding an empty function (NCTFE) for each CTFE.
          * Later, we will fill them with the corresponding MIR of the CTFE.
          * NOTE: Here we set the return type of the function as unit but later it will be changed
-         * to the type of the constant. Apparently, this change in the MIR is not a problem.
+         * to the type of the constant. Apparently, this change in the MIR is not problematic.
          */
 
         if self.ctfe_count == 0 {
@@ -103,12 +123,12 @@ impl CompilationPass for NctfeFunctionAdder {
 
         let def_id = body.source.def_id();
 
-        // This NCTFE function is already assigned to some CTFE.
+        // This NCTFE function is already associated to some CTFE.
         let ctfe_id = if let Some(id) = get_nctfe_map(storage).get_by_right(&def_id) {
             log::debug!("NCTFE is already associated with {:?}", id);
             *id
         }
-        // Find an unassigned CTFE and this NCTFE function to.
+        // Find an unassociated CTFE and associate this NCTFE function to.
         else if let Some(id) = get_free_ctfe_ids(storage).iter().next() {
             let id = *id;
             associate(id, def_id, storage);
@@ -132,6 +152,8 @@ impl CompilationPass for NctfeFunctionAdder {
     }
 }
 
+/// Returns id of the associated NCTFE function for the given CTFE,
+/// or associates a free one to it.
 pub(crate) fn get_nctfe_func(id: CtfeId, storage: &mut dyn Storage) -> DefId {
     if let Some(def_id) = get_nctfe_map(storage).get_by_left(&id) {
         *def_id
@@ -145,6 +167,7 @@ pub(crate) fn get_nctfe_func(id: CtfeId, storage: &mut dyn Storage) -> DefId {
     }
 }
 
+/// Removes the ids from free lists and adds them to the association map.
 fn associate(ctfe_id: CtfeId, nctfe_id: DefId, storage: &mut dyn Storage) {
     log::info!("Associating CTFE {ctfe_id:?} with NCTFE {nctfe_id:?}");
     assert!(get_free_ctfe_ids(storage).remove(&ctfe_id));
@@ -198,6 +221,7 @@ fn find_nctfes(tcx: TyCtxt) -> Vec<DefId> {
     })
 }
 
+/// Finds the id given to the augmentation module (if it is added).
 fn find_aug_module(tcx: TyCtxt) -> Option<LocalDefId> {
     tcx.hir_crate_items(())
         .items()
@@ -224,22 +248,10 @@ fn is_nctfe(tcx: TyCtxt, def_id: LocalDefId) -> bool {
     let ExprKind::Block(block, _) = tcx.hir().body(body_id).value.peel_blocks().kind else {
         return false;
     };
-    block.stmts.first().is_some_and(|stmt| match stmt.kind {
-        StmtKind::Semi(Expr {
-            kind:
-                ExprKind::Call(
-                    Expr {
-                        kind: ExprKind::Path(QPath::Resolved(None, path)),
-                        ..
-                    },
-                    _,
-                ),
-            ..
-        }) => path.res.opt_def_id().is_some_and(|id| {
-            pri_utils::eq_def_path_str(tcx, &id, pri_utils::helper_item_name!(mark_as_nctfe))
-        }),
-        _ => false,
-    })
+    block
+        .stmts
+        .first()
+        .is_some_and(|stmt| is_marker_statement(stmt, tcx))
 }
 
 mod utils {
@@ -309,17 +321,44 @@ mod utils {
         }
     }
 
+    macro_rules! marker_fn_name {
+        () => {
+            pri_utils::helper_item_name!(mark_as_nctfe)
+        };
+    }
+
     pub(super) fn make_marker_statement() -> Stmt {
         Stmt {
             id: DUMMY_NODE_ID,
             kind: StmtKind::Semi(P(make_dummy_expr(ExprKind::Call(
                 P(make_dummy_expr(ExprKind::Path(
                     None,
-                    make_pri_helper_item_path(pri_utils::helper_item_name!(mark_as_nctfe)),
+                    make_pri_helper_item_path(marker_fn_name!()),
                 ))),
                 Default::default(),
             )))),
             span: DUMMY_SP,
+        }
+    }
+
+    pub(super) fn is_marker_statement(stmt: &rustc_hir::Stmt<'_>, tcx: TyCtxt<'_>) -> bool {
+        use rustc_hir::{Expr, ExprKind, QPath, StmtKind};
+        match stmt.kind {
+            StmtKind::Semi(Expr {
+                kind:
+                    ExprKind::Call(
+                        Expr {
+                            kind: ExprKind::Path(QPath::Resolved(None, path)),
+                            ..
+                        },
+                        _,
+                    ),
+                ..
+            }) => path
+                .res
+                .opt_def_id()
+                .is_some_and(|id| pri_utils::eq_def_path_str(tcx, &id, marker_fn_name!())),
+            _ => false,
         }
     }
 
