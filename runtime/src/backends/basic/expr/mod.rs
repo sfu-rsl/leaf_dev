@@ -350,6 +350,8 @@ impl ConstValue {
                     _ => unreachable!(),
                 };
 
+                let result = Wrapping(Self::to_size(result.0, first_ty));
+
                 Self::Int {
                     bit_rep: result,
                     ty: *first_ty,
@@ -441,7 +443,7 @@ impl ConstValue {
         bit_rep & mask == 0
     }
 
-    /// convert the bit representation of a signed integer contained in a u128, into an i128
+    /// convert the bit representation of a signed integer contained in a u128, into an i128 of size.
     fn as_signed(bit_rep: u128, size: u64) -> i128 {
         let mask: u128 = (1 << (size - 1)) - 1; // Create a mask of 1s with the given size except the sign bit
         let sign_mask: u128 = 1 << (size - 1); // Create a mask for the sign bit, for example 1000...0
@@ -460,6 +462,31 @@ impl ConstValue {
     fn as_unsigned(value: i128) -> u128 {
         // a signed to unsigned integer is a bitwise transmutation (per C specs)
         value as u128
+    }
+
+    // applies truncation and casting as necessary to keep value within ty's size bounds
+    fn to_size(value: u128, ty: &IntType) -> u128 {
+        if ty.bit_size == 128 {
+            return value;
+        }
+
+        // create a mask of all the significant bits, then truncate to size
+        let mask: u128 = (1_u128 << (ty.bit_size as u128)) - 1;
+        let value = value & mask;
+
+        // cast type to fit in u128
+        if ty.is_signed {
+            match ty.bit_size {
+                8 => (value as i8) as u128,
+                16 => (value as i16) as u128,
+                32 => (value as i32) as u128,
+                64 => (value as i64) as u128,
+                128 => value,
+                _ => unreachable!("invalid integer size"),
+            }
+        } else {
+            value
+        }
     }
 }
 
