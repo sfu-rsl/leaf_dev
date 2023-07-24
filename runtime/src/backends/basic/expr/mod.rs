@@ -381,7 +381,10 @@ impl ConstValue {
                 ) => {
                     assert_eq!(*first_ty, *second_ty);
 
-                    if !first_ty.is_signed {
+                    if first_ty.is_signed {
+                        // `as i128` is a bitwise transmute
+                        let first = first.0 as i128;
+                        let second = second.0 as i128;
                         return match operator {
                             BinaryOp::Lt => first < second,
                             BinaryOp::Le => first <= second,
@@ -389,48 +392,14 @@ impl ConstValue {
                             BinaryOp::Gt => first > second,
                             _ => unreachable!(),
                         };
-                    }
-
-                    let signs = (
-                        Self::is_positive(first.0, first_ty.bit_size),
-                        Self::is_positive(second.0, second_ty.bit_size),
-                    );
-
-                    match signs {
-                        (true, true) => match operator {
+                    } else {
+                        match operator {
                             BinaryOp::Lt => first < second,
                             BinaryOp::Le => first <= second,
                             BinaryOp::Ge => first >= second,
                             BinaryOp::Gt => first > second,
                             _ => unreachable!(),
-                        },
-
-                        (false, false) => {
-                            let first = Self::as_signed(first.0, first_ty.bit_size);
-                            let second = Self::as_signed(second.0, second_ty.bit_size);
-                            match operator {
-                                BinaryOp::Lt => first < second,
-                                BinaryOp::Le => first <= second,
-                                BinaryOp::Ge => first >= second,
-                                BinaryOp::Gt => first > second,
-                                _ => unreachable!(),
-                            }
                         }
-
-                        (false, true) => match operator {
-                            BinaryOp::Lt => true,
-                            BinaryOp::Le => true,
-                            BinaryOp::Ge => false,
-                            BinaryOp::Gt => false,
-                            _ => unreachable!(),
-                        },
-                        (true, false) => match operator {
-                            BinaryOp::Lt => false,
-                            BinaryOp::Le => false,
-                            BinaryOp::Ge => true,
-                            BinaryOp::Gt => true,
-                            _ => unreachable!(),
-                        },
                     }
                 }
 
@@ -444,21 +413,6 @@ impl ConstValue {
     fn is_positive(bit_rep: u128, size: u64) -> bool {
         let mask: u128 = 1 << (size - 1);
         bit_rep & mask == 0
-    }
-
-    /// convert the bit representation of a signed integer contained in a u128, into an i128 of size.
-    fn as_signed(bit_rep: u128, size: u64) -> i128 {
-        let mask: u128 = (1 << (size - 1)) - 1; // Create a mask of 1s with the given size except the sign bit
-        let sign_mask: u128 = 1 << (size - 1); // Create a mask for the sign bit, for example 1000...0
-
-        let sign_bit: bool = (bit_rep & sign_mask) != 0;
-        let value = bit_rep & mask;
-
-        if sign_bit {
-            (value | sign_mask) as i128
-        } else {
-            value as i128
-        }
     }
 
     /// convert a signed value into its bit representation
