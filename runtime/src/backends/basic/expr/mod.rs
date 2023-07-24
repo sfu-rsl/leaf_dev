@@ -245,9 +245,8 @@ impl ConstValue {
                 };
 
                 if let Some(result) = result {
-                    // case: i128 has not overflowed, so result is valid. (But it may not be
-                    // stored correctly in the integer) Check if we're higher than our
-                    // type's max value or lower than it's min value.
+                    // case: i128 has not overflowed, so result is valid. Check if we're
+                    // higher than our type's max value or lower than it's min value.
                     let max = ((1_u128 << (bit_size - 1)) - 1) as i128;
                     let min = match bit_size {
                         0..=127 => -(1_i128 << (bit_size - 1)),
