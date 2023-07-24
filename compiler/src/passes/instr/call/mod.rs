@@ -171,6 +171,7 @@ pub(crate) struct RuntimeCallAdder<C> {
 mod implementation {
     use rustc_middle::mir::{BasicBlock, BasicBlockData, Terminator, UnevaluatedConst};
     use rustc_middle::ty::TyKind;
+    use rustc_span::def_id::DefId;
 
     use delegate::delegate;
 
@@ -683,13 +684,10 @@ mod implementation {
             &mut self,
             constant: &Box<Constant<'tcx>>,
         ) -> BlocksAndResult<'tcx> {
-            let ty = constant.ty();
-            debug_assert!(
-                ty.is_ref()
-                    && ty.peel_refs().sequence_element_type(self.tcx()) == self.tcx().types.u8 // && matches!(ty.kind(), TyKind::Ref(region, _, _) if region.is_static()),
-            );
-
             let tcx = self.tcx();
+            let ty = constant.ty();
+            debug_assert!(ty.is_ref() && ty.peel_refs().sequence_element_type(tcx) == tcx.types.u8,);
+
             let (slice_local, slice_assignment) = cast_array_ref_to_slice(
                 tcx,
                 &mut self.context,
@@ -706,7 +704,7 @@ mod implementation {
 
         fn internal_reference_func_def_const_operand(
             &mut self,
-            def_id: &rustc_span::def_id::DefId,
+            def_id: &DefId,
             substs: &[rustc_middle::ty::GenericArg],
         ) -> BlocksAndResult<'tcx> {
             if !substs.is_empty() {
@@ -723,6 +721,24 @@ mod implementation {
             .into()
         }
 
+        /// ## Remarks
+        /// In this case, instead of referencing the constant itself,
+        /// we pretend that it is replaced with calling the CTFE block, then
+        /// reference the result of calling the corresponding NCTFE.
+        /// Note that it is only about the instrumentation and the real
+        /// block remains intact.
+        /// For example, for the following assignment:
+        /// ```
+        /// let _1 = const XYZ;
+        /// ```
+        /// will be instrumented as:
+        /// ```
+        /// // related instrumentations like before_call
+        /// let _10 = nctfe_of_XYZ();
+        /// // related instrumentations like after_call
+        /// let _11 = reference(10);
+        /// assign(_1, _11);
+        /// ```
         fn internal_reference_unevaluated_const_operand(
             &mut self,
             constant: &UnevaluatedConst,
@@ -1456,29 +1472,30 @@ mod implementation {
     mod utils {
         use rustc_middle::{
             mir::{
-                self, BasicBlockData, Constant, HasLocalDecls, Local, Operand, Place, Rvalue,
-                Statement,
+                self, BasicBlock, BasicBlockData, Constant, HasLocalDecls, Local, Operand, Place,
+                Rvalue, SourceInfo, Statement,
             },
             ty::{Ty, TyCtxt, TyKind},
         };
+        use rustc_span::DUMMY_SP;
 
         use crate::mir_transform::{BodyLocalManager, NEXT_BLOCK};
 
         use self::assignment::rvalue;
 
-        use super::context::PriItemsProvider;
+        use super::{context::PriItemsProvider, DefId};
 
         pub(super) mod operand {
-
             use std::mem::size_of;
 
             use rustc_const_eval::interpret::Scalar;
             use rustc_middle::{
-                mir::{self, Constant, ConstantKind, Local, Operand, Place},
-                ty::{self, ScalarInt, Ty, TyCtxt},
+                mir::ConstantKind,
+                ty::{self, ScalarInt},
             };
-            use rustc_span::DUMMY_SP;
             use rustc_type_ir::UintTy;
+
+            use super::*;
 
             fn uint_ty_from_bytes(size: usize) -> UintTy {
                 [
@@ -1553,14 +1570,6 @@ mod implementation {
                 }
             }
 
-            pub fn const_from_zst_ty(ty: Ty) -> Operand {
-                Operand::Constant(Box::new(Constant {
-                    span: DUMMY_SP,
-                    user_ty: None,
-                    literal: ConstantKind::zero_sized(ty),
-                }))
-            }
-
             pub fn copy_for_local<'tcx>(value: Local) -> Operand<'tcx> {
                 for_local(value, true)
             }
@@ -1578,18 +1587,15 @@ mod implementation {
                 }
             }
 
-            pub fn func(tcx: TyCtxt, def_id: rustc_span::def_id::DefId) -> Operand {
+            pub fn func(tcx: TyCtxt, def_id: DefId) -> Operand {
                 Operand::function_handle(tcx, def_id, std::iter::empty(), DUMMY_SP)
             }
         }
 
         pub(super) mod enums {
-            use rustc_middle::{
-                mir::{Local, Place, SourceInfo, Statement},
-                ty::{Ty, TyCtxt, TyKind},
-            };
-            use rustc_span::DUMMY_SP;
             use rustc_target::abi::VariantIdx;
+
+            use super::*;
 
             pub fn set_variant_to_local<'tcx>(
                 tcx: TyCtxt<'tcx>,
@@ -1633,9 +1639,9 @@ mod implementation {
         }
 
         pub(super) mod assignment {
+            use rustc_middle::mir::StatementKind;
 
-            use rustc_middle::mir::{Place, Rvalue, SourceInfo, Statement, StatementKind};
-            use rustc_span::DUMMY_SP;
+            use super::*;
 
             pub(super) mod rvalue {
 
@@ -1674,7 +1680,9 @@ mod implementation {
 
         pub(super) mod ty {
             use rustc_abi::Size;
-            use rustc_middle::ty::{ParamEnv, ParamEnvAnd, Ty, TyCtxt};
+            use rustc_middle::ty::{ParamEnv, ParamEnvAnd};
+
+            use super::*;
 
             pub fn mk_imm_ref<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>) -> Ty<'tcx> {
                 tcx.mk_imm_ref(tcx.lifetimes.re_erased, ty)
@@ -1706,11 +1714,7 @@ mod implementation {
         }
 
         pub(super) mod terminator {
-            use rustc_hir::def_id::DefId;
-            use rustc_middle::mir::{
-                BasicBlock, SourceInfo, Terminator, TerminatorKind, UnwindAction,
-            };
-            use rustc_span::DUMMY_SP;
+            use rustc_middle::mir::{Terminator, TerminatorKind, UnwindAction};
 
             use super::*;
 
@@ -1782,6 +1786,7 @@ mod implementation {
             let item_ty = array_ty.sequence_element_type(tcx);
             let slice_ty =
                 tcx.mk_ty_from_kind(TyKind::Ref(*region, tcx.mk_slice(item_ty), *mutability));
+
             let local: Local = local_manager.add_local(slice_ty);
             let assignment = assignment::create(
                 Place::from(local),

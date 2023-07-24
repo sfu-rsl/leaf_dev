@@ -40,8 +40,9 @@ fn transform<'tcx>(
     storage: &mut dyn Storage,
 ) {
     log::info!(
-        "Running instrumentation pass on body of {:#?}",
-        body.source.def_id()
+        "Running instrumentation pass on body of {:#?} at {:?}",
+        body.source.def_id(),
+        body.span,
     );
 
     let mut modification = BodyModificationUnit::new(body.local_decls().next_index());

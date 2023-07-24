@@ -365,6 +365,11 @@ impl<'tcx> BodyModificationUnit<'tcx> {
         index_mapping
     }
 
+    /// Finds and flattens indirect new blocks.
+    /// An indirect new block is a new block that its target is another new block.
+    ///
+    /// For these blocks we just flatten them by putting them in the same chunk as their target.
+    /// In other words, we make them direct new blocks.
     fn resolve_indirect_new_blocks(
         before_chunks: &mut Vec<InsertionPair<'tcx>>,
         after_chunks: &mut Vec<InsertionPair<'tcx>>,
@@ -401,24 +406,22 @@ impl<'tcx> BodyModificationUnit<'tcx> {
         }
     }
 
-    /// Inserts blocks that have to be inserted before/after newly created blocks.
+    /// Inserts blocks that have to be inserted before/after a newly created block.
     ///
     /// # Arguments
     /// * target - The newly created block index that the chunks should be inserted before/after.
-    /// * all_chunks - All chunks out there that hold a new block with pseudo index of `target`.
-    /// * before_chunk - The blocks that should be inserted before `at`.
-    /// * after_chunk - The blocks that should be inserted after `at`.
+    /// * all_chunks - All chunks out there that one of them holds a new block
+    ///   with pseudo index of `target`.
+    /// * before - The blocks that should be inserted before `target`.
+    /// * after - The blocks that should be inserted after `target`.
     fn insert_indirect_blocks<'a>(
         target: BasicBlock,
         mut all_chunks: impl Iterator<Item = &'a mut Vec<NewBasicBlock<'tcx>>>,
-        before_chunk: Option<Vec<NewBasicBlock<'tcx>>>,
-        after_chunk: Option<Vec<NewBasicBlock<'tcx>>>,
+        before: Option<Vec<NewBasicBlock<'tcx>>>,
+        after: Option<Vec<NewBasicBlock<'tcx>>>,
     ) where
         'tcx: 'a,
     {
-        /* For these blocks we just flatten them by putting them in the same list as their target.
-         * In other words, we make them direct new blocks.
-         */
         let (target_container, target_index) = all_chunks
             .find_map(|chunk| {
                 chunk
@@ -437,8 +440,8 @@ impl<'tcx> BodyModificationUnit<'tcx> {
             target_container.splice(index..index, chunk);
         };
 
-        insert(target_index + 1, after_chunk);
-        insert(target_index, before_chunk);
+        insert(target_index + 1, after);
+        insert(target_index, before);
     }
 
     fn insert_blocks_before(

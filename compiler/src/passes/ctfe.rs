@@ -19,18 +19,19 @@
 /// marker statement. We prefer scanning the HIR instead of MIR to avoid MIR body
 /// construction during the scanning and possibility of infinite loops or invalid
 /// states.
-use std::collections::HashSet;
-
-use bimap::BiHashMap;
 use rustc_ast::ptr::P;
+use rustc_hir as hir;
 use rustc_middle::mir::{self};
 use rustc_middle::ty::TyCtxt;
 use rustc_span::def_id::{DefId, LocalDefId};
+
+use std::collections::HashSet;
+
+use bimap::BiHashMap;
 use thin_vec::{thin_vec, ThinVec};
 
-use crate::constants::LEAF_AUG_MOD_NAME;
-
 use super::{Compilation, CompilationPass, HasResult, Storage, StorageExt};
+use crate::constants::LEAF_AUG_MOD_NAME;
 
 use utils::*;
 
@@ -117,11 +118,11 @@ impl CompilationPass for NctfeFunctionAdder {
         body: &mut mir::Body<'tcx>,
         storage: &mut dyn Storage,
     ) {
-        if !is_nctfe(tcx, body.source.def_id().expect_local()) {
+        let def_id = body.source.def_id().expect_local();
+
+        if !is_nctfe(tcx, def_id) {
             return;
         }
-
-        let def_id = body.source.def_id();
 
         // This NCTFE function is already associated to some CTFE.
         let ctfe_id = if let Some(id) = get_nctfe_map(storage).get_by_right(&def_id) {
@@ -165,29 +166,30 @@ pub(crate) fn get_nctfe_func(id: CtfeId, storage: &mut dyn Storage) -> DefId {
         associate(id, def_id, storage);
         def_id
     }
+    .to_def_id()
 }
 
 /// Removes the ids from free lists and adds them to the association map.
-fn associate(ctfe_id: CtfeId, nctfe_id: DefId, storage: &mut dyn Storage) {
+fn associate(ctfe_id: CtfeId, nctfe_id: LocalDefId, storage: &mut dyn Storage) {
     log::info!("Associating CTFE {ctfe_id:?} with NCTFE {nctfe_id:?}");
     assert!(get_free_ctfe_ids(storage).remove(&ctfe_id));
     assert!(get_free_nctfe_func_ids(storage).remove(&nctfe_id));
     get_nctfe_map(storage).insert(ctfe_id, nctfe_id);
 }
 
-fn get_nctfe_map(storage: &mut dyn Storage) -> &mut BiHashMap<CtfeId, DefId> {
-    storage.get_or_default::<BiHashMap<CtfeId, DefId>>(KEY_NCTFE_MAP.to_owned())
+fn get_nctfe_map(storage: &mut dyn Storage) -> &mut BiHashMap<CtfeId, LocalDefId> {
+    storage.get_or_default::<BiHashMap<CtfeId, LocalDefId>>(KEY_NCTFE_MAP.to_owned())
 }
 
 fn get_free_ctfe_ids(storage: &mut dyn Storage) -> &mut HashSet<CtfeId> {
     storage.get_or_default::<HashSet<CtfeId>>(KEY_FREE_CTFE_IDS.to_owned())
 }
 
-fn get_free_nctfe_func_ids(storage: &mut dyn Storage) -> &mut HashSet<DefId> {
-    storage.get_or_default::<HashSet<DefId>>(KEY_FREE_NCTFE_FUNC_IDS.to_owned())
+fn get_free_nctfe_func_ids(storage: &mut dyn Storage) -> &mut HashSet<LocalDefId> {
+    storage.get_or_default::<HashSet<LocalDefId>>(KEY_FREE_NCTFE_FUNC_IDS.to_owned())
 }
 
-fn find_ctfes<'tcx>(tcx: TyCtxt<'tcx>) -> impl Iterator<Item = CtfeId> + 'tcx {
+fn find_ctfes(tcx: TyCtxt<'_>) -> impl Iterator<Item = CtfeId> + '_ {
     let constants = tcx
         .mir_keys(())
         .iter()
@@ -211,37 +213,31 @@ fn find_ctfes<'tcx>(tcx: TyCtxt<'tcx>) -> impl Iterator<Item = CtfeId> + 'tcx {
     constants.chain(promoteds)
 }
 
-fn find_nctfes(tcx: TyCtxt) -> Vec<DefId> {
-    find_aug_module(tcx).map_or(Vec::default(), |m| {
-        tcx.hir()
-            .module_items(m)
-            .filter(move |id| is_nctfe(tcx, id.owner_id.def_id))
-            .map(|id| id.owner_id.to_def_id())
-            .collect()
-    })
+fn find_nctfes(tcx: TyCtxt) -> Vec<LocalDefId> {
+    find_aug_module(tcx)
+        .map(|m| {
+            tcx.hir()
+                .module_items(m)
+                .map(|id| id.owner_id.def_id)
+                .filter(move |id| is_nctfe(tcx, *id))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// Finds the id given to the augmentation module (if it is added).
 fn find_aug_module(tcx: TyCtxt) -> Option<LocalDefId> {
-    tcx.hir_crate_items(())
-        .items()
-        .find(|id| {
-            matches!(tcx.hir().item(*id).kind, rustc_hir::ItemKind::Mod(_))
-                && tcx
-                    .def_path(id.owner_id.to_def_id())
-                    .data
-                    .last()
-                    .is_some_and(|d| {
-                        d.data
-                            .get_opt_name()
-                            .is_some_and(|name| name.as_str() == LEAF_AUG_MOD_NAME)
-                    })
+    modules(tcx).find(|id| {
+        tcx.def_path(id.to_def_id()).data.last().is_some_and(|d| {
+            d.data
+                .get_opt_name()
+                .is_some_and(|name| name.as_str() == LEAF_AUG_MOD_NAME)
         })
-        .map(|id| id.owner_id.def_id)
+    })
 }
 
 fn is_nctfe(tcx: TyCtxt, def_id: LocalDefId) -> bool {
-    use rustc_hir::*;
+    use hir::*;
     let Some(body_id) = tcx.hir().maybe_body_owned_by(def_id) else {
         return false;
     };
@@ -341,7 +337,7 @@ mod utils {
         }
     }
 
-    pub(super) fn is_marker_statement(stmt: &rustc_hir::Stmt<'_>, tcx: TyCtxt<'_>) -> bool {
+    pub(super) fn is_marker_statement(stmt: &hir::Stmt<'_>, tcx: TyCtxt<'_>) -> bool {
         use rustc_hir::{Expr, ExprKind, QPath, StmtKind};
         match stmt.kind {
             StmtKind::Semi(Expr {
@@ -373,7 +369,7 @@ mod utils {
         }
     }
 
-    fn make_pri_helper_item_path(name: &String) -> Path {
+    fn make_pri_helper_item_path(name: &str) -> Path {
         Path {
             span: DUMMY_SP,
             segments: name
@@ -385,5 +381,12 @@ mod utils {
                 .collect(),
             tokens: None,
         }
+    }
+
+    pub(super) fn modules(tcx: TyCtxt) -> impl Iterator<Item = LocalDefId> + '_ {
+        tcx.hir_crate_items(())
+            .items()
+            .filter(move |id| matches!(tcx.hir().item(*id).kind, hir::ItemKind::Mod(_)))
+            .map(|id| id.owner_id.def_id)
     }
 }
