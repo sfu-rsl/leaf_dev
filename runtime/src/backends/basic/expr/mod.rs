@@ -753,29 +753,10 @@ mod convert {
         }
     }
 
-    impl From<ConcreteValue> for Value {
-        #[inline]
-        fn from(val: ConcreteValue) -> Self {
-            Value::Concrete(val)
-        }
-    }
-
-    impl ConstValue {
+    impl ConcreteValue {
         #[inline]
         pub(crate) fn to_value_ref(self) -> ValueRef {
             Into::<Value>::into(self).to_value_ref()
-        }
-    }
-    impl From<ConstValue> for ConcreteValue {
-        #[inline]
-        fn from(val: ConstValue) -> Self {
-            ConcreteValue::Const(val)
-        }
-    }
-    impl From<ConstValue> for Value {
-        #[inline]
-        fn from(val: ConstValue) -> Self {
-            Into::<ConcreteValue>::into(val).into()
         }
     }
     impl From<operand::Constant> for ConcreteValue {
@@ -792,6 +773,19 @@ mod convert {
                 }),
                 _ => Self::Const(val.into()),
             }
+        }
+    }
+    impl From<ConcreteValue> for Value {
+        #[inline]
+        fn from(val: ConcreteValue) -> Self {
+            Value::Concrete(val)
+        }
+    }
+
+    impl ConstValue {
+        #[inline]
+        pub(crate) fn to_value_ref(self) -> ValueRef {
+            Into::<ConcreteValue>::into(self).to_value_ref()
         }
     }
     impl From<operand::Constant> for ConstValue {
@@ -813,11 +807,23 @@ mod convert {
             }
         }
     }
+    impl From<ConstValue> for ConcreteValue {
+        #[inline]
+        fn from(val: ConstValue) -> Self {
+            ConcreteValue::Const(val)
+        }
+    }
+    impl From<ConstValue> for Value {
+        #[inline]
+        fn from(val: ConstValue) -> Self {
+            Into::<ConcreteValue>::into(val).into()
+        }
+    }
 
     impl SymValue {
         #[inline]
         pub fn to_value_ref(self) -> SymValueRef {
-            SymValueGuard::new(ValueRef::new(self.into()))
+            SymValueRef::new(ValueRef::new(self.into()))
         }
     }
     impl From<SymValue> for Value {
