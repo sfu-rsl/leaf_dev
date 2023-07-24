@@ -233,8 +233,9 @@ impl ConstValue {
             // we don't want any wrapping in this function, so we take the 0th parameter
             let (first, second) = (first.0, second.0);
             if is_signed {
-                let first = ConstValue::as_signed(first, bit_size);
-                let second = ConstValue::as_signed(second, bit_size);
+                // casting between same sized integers is a no-op (see rust docs), and thus is a bit transmute.
+                let first = first as i128;
+                let second = second as i128;
 
                 let result = match operator {
                     BinaryOp::Add => first.checked_add(second),
@@ -244,14 +245,16 @@ impl ConstValue {
                 };
 
                 if let Some(result) = result {
-                    // case: i128 has not overflowed, so result is valid. Check if we're
-                    // higher than our type's max value or lower than it's min value.
+                    // case: i128 has not overflowed, so result is valid. (But it may not be
+                    // stored correctly in the integer) Check if we're higher than our
+                    // type's max value or lower than it's min value.
                     let max = ((1_u128 << (bit_size - 1)) - 1) as i128;
                     let min = match bit_size {
                         0..=127 => -(1_i128 << (bit_size - 1)),
                         128 => i128::MIN,
                         129..=u64::MAX => panic!("unsupported integer size; too large"),
                     };
+
                     if result > max || result < min {
                         None
                     } else {
