@@ -26,6 +26,8 @@ fn main() {
 
     let s = foo("Hello, world!");
 
+    let b = foo(b"Hello, world!");
+
     let u = foo(());
 }
 

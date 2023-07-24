@@ -763,14 +763,17 @@ mod convert {
         #[inline]
         fn from(val: operand::Constant) -> Self {
             match val {
-                operand::Constant::ByteStr(bytes) => Self::Array(ArrayValue {
-                    elements: bytes
-                        .iter()
-                        .copied()
-                        .map(ConstValue::from)
-                        .map(ConstValue::to_value_ref)
-                        .collect(),
-                }),
+                operand::Constant::ByteStr(bytes) => Self::Ref(RefValue::Immut(
+                    Self::Array(ArrayValue {
+                        elements: bytes
+                            .iter()
+                            .copied()
+                            .map(ConstValue::from)
+                            .map(ConstValue::to_value_ref)
+                            .collect(),
+                    })
+                    .to_value_ref(),
+                )),
                 _ => Self::Const(val.into()),
             }
         }
