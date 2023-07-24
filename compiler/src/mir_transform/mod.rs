@@ -693,11 +693,12 @@ where
         _args: &mut [Operand<'tcx>],
         _destination: &mut Place<'tcx>,
         target: &mut Option<BasicBlock>,
-        _unwind: &mut UnwindAction,
+        unwind: &mut UnwindAction,
         _call_source: &mut rustc_middle::mir::CallSource,
         _fn_span: Span,
     ) {
         self.update_maybe(target.as_mut());
+        self.update_maybe(unwind.basic_block());
     }
 
     fn visit_assert(
