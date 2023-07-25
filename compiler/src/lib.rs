@@ -59,7 +59,7 @@ pub fn run_compiler(args: impl Iterator<Item = String>, input_path: Option<PathB
     };
 
     let mut pass =
-        chain!(<PrerequisitePass>, NctfeFunctionAdder::new(ctfe_block_ids.len()), <Instrumentator>,)
+        chain!(<PrerequisitePass>, NctfeFunctionAdder::new(ctfe_block_ids.len()), <Instrumentor>,)
             .into_logged();
     run_pass(pass.to_callbacks())
 }
@@ -71,7 +71,7 @@ pub mod constants {
 
     pub(super) const LEAF_AUG_MOD_NAME: &str = "__leaf_augmentation";
 
-    pub const LOG_PASS_OBJECTS_TAG: &str = super::passes::observation::OBJECTS_TAG;
+    pub const LOG_PASS_OBJECTS_TAG: &str = super::passes::logger::OBJECTS_TAG;
 }
 
 mod driver_args {

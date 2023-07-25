@@ -728,15 +728,15 @@ mod implementation {
         /// Note that it is only about the instrumentation and the real
         /// block remains intact.
         /// For example, for the following assignment:
-        /// ```
-        /// let _1 = const XYZ;
+        /// ```mir
+        /// _1 = const XYZ;
         /// ```
         /// will be instrumented as:
-        /// ```
+        /// ```mir
         /// // related instrumentations like before_call
-        /// let _10 = nctfe_of_XYZ();
+        /// _10 = nctfe_of_XYZ();
         /// // related instrumentations like after_call
-        /// let _11 = reference(10);
+        /// _11 = reference(10);
         /// assign(_1, _11);
         /// ```
         fn internal_reference_unevaluated_const_operand(

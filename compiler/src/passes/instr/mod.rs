@@ -22,9 +22,9 @@ use call::{
 use super::{CompilationPass, Storage};
 
 #[derive(Default)]
-pub(crate) struct Instrumentator;
+pub(crate) struct Instrumentor;
 
-impl CompilationPass for Instrumentator {
+impl CompilationPass for Instrumentor {
     fn transform_mir_body<'tcx>(
         tcx: rustc_middle::ty::TyCtxt<'tcx>,
         body: &mut mir::Body<'tcx>,

@@ -1,6 +1,6 @@
 pub(crate) mod ctfe;
 mod instr;
-pub(crate) mod observation;
+pub(crate) mod logger;
 mod runtime_adder;
 
 use std::any::Any;
@@ -20,8 +20,8 @@ use self::implementation::CompilationPassAdapter;
 use crate::utils::Chain;
 
 pub(crate) use ctfe::{CtfeScanner, NctfeFunctionAdder};
-pub(crate) use instr::Instrumentator;
-pub(crate) use observation::CompilationPassLogExt;
+pub(crate) use instr::Instrumentor;
+pub(crate) use logger::CompilationPassLogExt;
 pub(crate) use runtime_adder::RuntimeAdder;
 
 pub(super) type Callbacks<'a> = Box<dyn driver::Callbacks + Send + 'a>;
