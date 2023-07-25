@@ -151,11 +151,15 @@ impl ConstValue {
              * this covers any of the casting that would need to be done here. If the original number was unsigned then
              * the leading bits of the u128 will be 0s and if it was signed then the leading bits will be 1s to handle
              * the sign extension. Now here when we track the actual cast that needs to be done, the target type has at
-             * most 128 bits so we can just truncate the leading bits to get the correct bit representation. The
-             * truncation is handled by just recording the size of the target type.
+             * most 128 bits so we can just truncate the leading bits to get the correct bit representation.
              */
             Self::Int { bit_rep, .. } => Self::Int {
-                bit_rep: *bit_rep,
+                bit_rep: {
+                    // truncate leading bits as necessary
+                    let result = Wrapping(Self::to_size((*bit_rep).0, &to));
+                    debug_assert!(Self::in_bounds(result.0, &to), "result out of bounds");
+                    result
+                },
                 ty: to,
             },
             Self::Bool(value) => Self::Int {
@@ -341,11 +345,6 @@ impl ConstValue {
                 };
 
                 let result = Wrapping(Self::to_size(result.0, first_ty));
-
-                println!(
-                    "shift:\n{} {} {} = {} (of {})",
-                    first, operator, second, result, *first_ty
-                );
 
                 debug_assert!(Self::in_bounds(result.0, first_ty), "result out of bounds");
 

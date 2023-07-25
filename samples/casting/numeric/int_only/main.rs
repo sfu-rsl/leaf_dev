@@ -16,6 +16,7 @@ fn main() {
     let k = get_char();
     let l = k as u64;
 
+    // this is considered a char cast in the runtime (non-integer)
     let m = get_u8();
     let n = m as char;
 }
