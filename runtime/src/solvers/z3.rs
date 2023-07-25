@@ -121,7 +121,7 @@ where
         constraints: &[ast::Bool<'ctx>],
         vars: HashMap<I, AstNode<'ctx>>,
     ) -> backend::SolveResult<I, V> {
-        log_debug!("Sending constraints to Z3 : {:#?}", constraints);
+        log::debug!("Sending constraints to Z3: {:#?}", constraints);
 
         solver.push();
 

@@ -127,27 +127,10 @@ pub(crate) struct IntType {
     pub is_signed: bool,
 }
 
-impl Display for IntType {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(
-            f,
-            "{}{}",
-            if self.is_signed { 'i' } else { 'u' },
-            self.bit_size
-        )
-    }
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub(crate) struct FloatType {
     pub e_bits: u64,
     pub s_bits: u64,
-}
-
-impl Display for FloatType {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "f{}", self.e_bits + self.s_bits)
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -168,5 +151,33 @@ impl TryFrom<CastKind> for ValueType {
             CastKind::ToFloat(to) => Ok(ValueType::Float(to)),
             _ => Err(value),
         }
+    }
+}
+
+impl Display for ValueType {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::Bool => write!(f, "bool"),
+            Self::Char => write!(f, "char"),
+            Self::Int(int) => write!(f, "{}", int),
+            Self::Float(float) => write!(f, "{}", float),
+        }
+    }
+}
+
+impl Display for IntType {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "{}{}",
+            if self.is_signed { 'i' } else { 'u' },
+            self.bit_size
+        )
+    }
+}
+
+impl Display for FloatType {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "f{}", self.e_bits + self.s_bits)
     }
 }

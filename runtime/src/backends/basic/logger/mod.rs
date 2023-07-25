@@ -419,7 +419,7 @@ impl PlaceFormatter {
                     if *from_end { "^" } else { "" }
                 )
             }
-            Projection::Downcast(variant) => write!(f, " as {variant}th"),
+            Projection::Downcast(variant) => write!(f, " as V#{variant}"),
             _ => Result::Ok(()),
         }
     }

@@ -44,6 +44,7 @@ pub(crate) mod z3 {
 
     impl<'ctx> Z3ValueTranslator<'ctx> {
         fn translate(&mut self, value: &ValueRef) -> AstPair<'ctx, SymVarId> {
+            log::debug!("Translating value: {}", value);
             let ast = self.translate_value(value);
             match ast {
                 AstNode::Bool(ast) => AstPair(ast, self.variables.drain().collect()),
