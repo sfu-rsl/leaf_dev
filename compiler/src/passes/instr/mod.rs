@@ -152,6 +152,12 @@ where
     C: ctxtreqs::Basic<'tcx> + JumpTargetModifier + BodyProvider<'tcx>,
 {
     fn visit_basic_block_data(&mut self, block: BasicBlock, data: &BasicBlockData<'tcx>) {
+        if data.is_cleanup {
+            // NOTE: Cleanup blocks will be investigated in #206.
+            log::debug!("Skipping instrumenting cleanup block: {:?}", block);
+            return;
+        }
+
         VisitorFactory::make_basic_block_visitor(&mut self.call_adder, block)
             .visit_basic_block_data(block, data);
     }
