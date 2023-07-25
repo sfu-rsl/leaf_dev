@@ -17,7 +17,7 @@
 /// which is not MIR-friendly, we add a marker statement to each of NCTFEs during
 /// the AST transformation. Then, we can find the NCTFEs by searching for the
 /// marker statement. We prefer scanning the HIR instead of MIR to avoid MIR body
-/// construction during the scanning and possibility of infinite loops or invalid
+/// construction during the scanning and the possibility of infinite loops or invalid
 /// states.
 use rustc_ast::ptr::P;
 use rustc_hir as hir;
@@ -124,12 +124,14 @@ impl CompilationPass for NctfeFunctionAdder {
             return;
         }
 
-        // This NCTFE function is already associated to some CTFE.
+        // This NCTFE function is already associated with a CTFE.
         let ctfe_id = if let Some(id) = get_nctfe_map(storage).get_by_right(&def_id) {
             log::debug!("NCTFE is already associated with {:?}", id);
             *id
         }
-        // Find an unassociated CTFE and associate this NCTFE function to.
+        /* This NCTFE function is getting processed before being associated with a CTFE.
+         * As this is our only chance to fill its body, we find a CTFE that is not
+         * associated with an NCTFE yet. */
         else if let Some(id) = get_free_ctfe_ids(storage).iter().next() {
             let id = *id;
             associate(id, def_id, storage);
@@ -153,8 +155,8 @@ impl CompilationPass for NctfeFunctionAdder {
     }
 }
 
-/// Returns id of the associated NCTFE function for the given CTFE,
-/// or associates a free one to it.
+/// Returns the id of the associated NCTFE function for the given CTFE.
+/// Picks a free one if this CTFE is not associated with any before.
 pub(crate) fn get_nctfe_func(id: CtfeId, storage: &mut dyn Storage) -> DefId {
     if let Some(def_id) = get_nctfe_map(storage).get_by_left(&id) {
         *def_id
