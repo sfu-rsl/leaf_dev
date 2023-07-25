@@ -19,3 +19,8 @@ pub mod pri;
 pub(crate) mod solvers;
 pub(crate) mod trace;
 pub(crate) mod utils;
+
+fn init() {
+    utils::logging::init_logging();
+    log::debug!("Initializing runtime");
+}

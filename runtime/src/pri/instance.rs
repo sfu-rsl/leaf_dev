@@ -45,6 +45,7 @@ static mut OPERAND_REF_MANAGER: DefaultRefManager<OperandImpl> = DefaultRefManag
 
 pub(super) fn init_backend() {
     INIT.call_once(|| {
+        crate::init();
         #[cfg(runtime_access = "safe_mt")]
         {
             let mut guard = BACKEND.lock().unwrap();
