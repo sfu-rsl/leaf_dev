@@ -1,3 +1,5 @@
+// NOTE: The expected behavior is not obvious
+
 fn main() {
     let mut x: u8 = 7;
     loop {

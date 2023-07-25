@@ -1,3 +1,5 @@
+// NOTE: The expected behavior is not obvious
+
 fn main() {
     do_div(10);
     do_div(0);

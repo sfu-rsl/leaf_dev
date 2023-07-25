@@ -1,3 +1,5 @@
+// NOTE: The expected behavior is not obvious
+
 fn main() {
     do_rem(10);
     do_rem(0);
