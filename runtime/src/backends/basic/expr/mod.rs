@@ -225,15 +225,12 @@ impl ConstValue {
             operator: BinaryOp,
             first: &Wrapping<u128>,
             second: &Wrapping<u128>,
-            IntType {
-                bit_size,
-                is_signed,
-            }: IntType, // pattern matching in function args, cool!
+            ty @ IntType { is_signed, .. }: IntType, // pattern matching in function args, cool!
         ) -> Option<u128> {
             // we don't want any wrapping in this function, so we take the 0th parameter
             let (first, second) = (first.0, second.0);
             if is_signed {
-                // casting between same sized integers is a no-op (see rust docs), and thus is a bit transmute.
+                // casting between same sized integers is a no-op (see rust docs)
                 let first = first as i128;
                 let second = second as i128;
 
@@ -245,19 +242,11 @@ impl ConstValue {
                 };
 
                 if let Some(result) = result {
-                    // case: i128 has not overflowed, so result is valid. Check if we're
-                    // higher than our type's max value or lower than it's min value.
-                    let max = ((1_u128 << (bit_size - 1)) - 1) as i128;
-                    let min = match bit_size {
-                        0..=127 => -(1_i128 << (bit_size - 1)),
-                        128 => i128::MIN,
-                        129..=u64::MAX => panic!("unsupported integer size; too large"),
-                    };
-
-                    if result > max || result < min {
-                        None
+                    // case: i128 has not overflowed, so result is valid. Ensure we're in our type's bounds
+                    if ConstValue::in_bounds(result as u128, &ty) {
+                        Some(result as u128)
                     } else {
-                        Some(ConstValue::as_unsigned(result))
+                        None
                     }
                 } else {
                     // case: i128 overflowed, so any smaller type also overflowed
@@ -273,12 +262,11 @@ impl ConstValue {
 
                 if let Some(result) = result {
                     // case: u128 has not overflowed, check if we're higher than our max
-                    let max = match bit_size {
-                        0..=127 => (1_u128 << bit_size) - 1,
-                        128 => u128::MAX,
-                        129..=u64::MAX => panic!("unsupported integer size; too large"),
-                    };
-                    if result > max { None } else { Some(result) }
+                    if ConstValue::in_bounds(result, &ty) {
+                        Some(result)
+                    } else {
+                        None
+                    }
                 } else {
                     // case: u128 overflowed, so any smaller type also overflowed
                     None
@@ -286,7 +274,7 @@ impl ConstValue {
             }
         }
 
-        // the rust docs claims that only integers are supported:
+        // only integers are supported, as per the rust docs:
         // https://doc.rust-lang.org/beta/nightly-rustc/rustc_middle/mir/syntax/enum.Rvalue.html#variant.CheckedBinaryOp
         match (first, second) {
             (
@@ -354,6 +342,13 @@ impl ConstValue {
 
                 let result = Wrapping(Self::to_size(result.0, first_ty));
 
+                println!(
+                    "shift:\n{} {} {} = {} (of {})",
+                    first, operator, second, result, *first_ty
+                );
+
+                debug_assert!(Self::in_bounds(result.0, first_ty), "result out of bounds");
+
                 Self::Int {
                     bit_rep: result,
                     ty: *first_ty,
@@ -414,10 +409,25 @@ impl ConstValue {
         bit_rep & mask == 0
     }
 
-    /// convert a signed value into its bit representation
-    fn as_unsigned(value: i128) -> u128 {
-        // a signed to unsigned integer is a bitwise transmutation (per C specs)
-        value as u128
+    /// determines whether value is valid for the type ty (not left zero-padded, for example)
+    fn in_bounds(value: u128, ty: &IntType) -> bool {
+        if ty.is_signed {
+            let max = ((1_u128 << (ty.bit_size - 1)) - 1) as i128;
+            let min = match ty.bit_size {
+                0..=127 => -(1_i128 << (ty.bit_size - 1)),
+                128 => i128::MIN,
+                129..=u64::MAX => panic!("unsupported integer size; too large"),
+            };
+            let value = value as i128;
+            value <= max && value >= min
+        } else {
+            let max = match ty.bit_size {
+                0..=127 => (1_u128 << ty.bit_size) - 1,
+                128 => u128::MAX,
+                129..=u64::MAX => panic!("unsupported integer size; too large"),
+            };
+            value <= max
+        }
     }
 
     /// applies truncation and casting as necessary to keep value within ty's size bounds
