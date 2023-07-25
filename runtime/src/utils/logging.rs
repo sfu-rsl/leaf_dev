@@ -14,6 +14,10 @@ pub(crate) fn init_logging() {
     use env_logger::Env;
     const ENV_LOG: &str = "LEAF_LOG";
     const ENV_WRITE_STYLE: &str = "LEAF_LOG_STYLE";
-    env_logger::init_from_env(Env::new().filter(ENV_LOG).write_style(ENV_WRITE_STYLE));
+    env_logger::Builder::new()
+        .filter_module("z3", log::LevelFilter::Off)
+        .parse_env(Env::new().filter(ENV_LOG).write_style(ENV_WRITE_STYLE))
+        .init();
+
     log::debug!("Logging initialized");
 }
