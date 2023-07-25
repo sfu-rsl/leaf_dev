@@ -420,7 +420,7 @@ impl ConstValue {
         value as u128
     }
 
-    // applies truncation and casting as necessary to keep value within ty's size bounds
+    /// applies truncation and casting as necessary to keep value within ty's size bounds
     fn to_size(value: u128, ty: &IntType) -> u128 {
         if ty.bit_size == 128 {
             return value;
@@ -430,7 +430,7 @@ impl ConstValue {
         let mask: u128 = (1_u128 << (ty.bit_size as u128)) - 1;
         let value = value & mask;
 
-        // cast type to fit in u128
+        // cast type to fit in u128, which results in sign extension for negative signed values
         if ty.is_signed {
             match ty.bit_size {
                 8 => (value as i8) as u128,
