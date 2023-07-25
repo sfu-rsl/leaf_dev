@@ -1,14 +1,11 @@
-// Currently, we haven't added the support for transitive dependencies. Thus,
-// the logger library doesn't work.
-
+#[deprecated(note = "Use `log::info!` instead")]
 macro_rules! log_info {
-    // ($($arg:tt)+) => (log::info!($($arg)+))
-    ($($arg:tt)+) => (println!($($arg)+))
+    ($($arg:tt)+) => (log::info!($($arg)+))
 }
 
+#[deprecated(note = "Use `log::debug!` instead")]
 macro_rules! log_debug {
-    // ($($arg:tt)+) => (log::debug!($($arg)+))
-    ($($arg:tt)+) => (println!($($arg)+))
+    ($($arg:tt)+) => (log::debug!($($arg)+))
 }
 
 pub(crate) use {log_debug, log_info};
