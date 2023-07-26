@@ -1,15 +1,17 @@
-use std::fmt::Debug;
+use std::fmt::Display;
 
 use crate::{abs::backend::OutputGenerator, utils::logging::log_info};
 
 pub(crate) struct LoggerOutputGenerator;
 
-impl<I: Debug, V: Debug> OutputGenerator<I, V> for LoggerOutputGenerator {
+impl<I: Display, V: Display> OutputGenerator<I, V> for LoggerOutputGenerator {
     fn generate(&mut self, values: Vec<(&I, &V)>) {
-        log_info!("Found a solution:");
-
-        for (key, value) in values {
-            log_info!("{:#?} = {:#?}", key, value);
-        }
+        log::info!(
+            "Found a solution:\n{:#?}",
+            values
+                .iter()
+                .map(|(key, value)| format!("{} = {}", key, value))
+                .collect::<Vec<_>>()
+        );
     }
 }

@@ -1,7 +1,6 @@
-use std::collections::HashMap;
-use std::fmt::Debug;
 use std::ops::Index;
 use std::slice::SliceIndex;
+use std::{collections::HashMap, fmt::Display};
 
 use crate::{
     abs::{
@@ -10,7 +9,6 @@ use crate::{
     },
     outgen::LoggerOutputGenerator,
     pathics::AllPathInterestChecker,
-    utils::logging::{log_debug, log_info},
 };
 
 pub(crate) struct ImmediateTraceManager<Step, Id, Val> {
@@ -39,7 +37,7 @@ impl<S, I, V> ImmediateTraceManager<S, I, V> {
         }
     }
 }
-impl<S, I: Debug, V: Debug> ImmediateTraceManager<S, I, V> {
+impl<S, I: Display, V: Display> ImmediateTraceManager<S, I, V> {
     pub fn new_basic(solver: Box<dyn Solver<I, V>>) -> Self {
         Self::new(
             Box::new(AllPathInterestChecker),
@@ -50,12 +48,16 @@ impl<S, I: Debug, V: Debug> ImmediateTraceManager<S, I, V> {
     }
 }
 
-impl<S: Debug, I, V: Debug> TraceManager<S, V> for ImmediateTraceManager<S, I, V> {
+impl<S: Display, I, V: Display> TraceManager<S, V> for ImmediateTraceManager<S, I, V> {
     fn notify_step(&mut self, step: S, new_constraints: Vec<Constraint<V>>) {
-        log_info!(
-            "Took step: {:?} with constraints {:?}",
+        log::info!(
+            "Took step: {} with constraints [{}]",
             step,
             &new_constraints
+                .iter()
+                .map(|c| c.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
         );
 
         self.trace.push(step);
@@ -104,7 +106,7 @@ impl<S, I, V> ImmediateTraceManager<S, I, V> {
                 true
             }
             _ => {
-                log_debug!("Unsatisfiable or unknown result.");
+                log::info!("Unsatisfiable or unknown result.");
                 false
             }
         }

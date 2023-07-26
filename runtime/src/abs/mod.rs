@@ -154,6 +154,18 @@ impl TryFrom<CastKind> for ValueType {
     }
 }
 
+impl<V> Display for Constraint<V>
+where
+    V: Display,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Constraint::Bool(value) => write!(f, "({})", value),
+            Constraint::Not(value) => write!(f, "!({})", value),
+        }
+    }
+}
+
 impl Display for ValueType {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {

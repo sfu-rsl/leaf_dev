@@ -885,20 +885,6 @@ mod fmt {
 
     use super::*;
 
-    macro_rules! impl_display_by_debug {
-        ($($t:ty),* $(,)?) => {
-            $(
-                impl Display for $t {
-                    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-                        write!(f, "{:#?}", self)
-                    }
-                }
-            )*
-        };
-    }
-
-    impl_display_by_debug!(ProjExpr);
-
     impl Display for Value {
         fn fmt(&self, f: &mut Formatter<'_>) -> Result {
             match self {
@@ -1008,7 +994,7 @@ mod fmt {
 
     impl Display for SymbolicVar {
         fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-            write!(f, "Var {{{:?}: {}}}", self.id, self.ty)
+            write!(f, "<Var{}: {}>", self.id, self.ty)
         }
     }
 
@@ -1035,8 +1021,8 @@ mod fmt {
                     operator,
                     checked: true,
                     ..
-                } => write!(f, "C_{operator}"),
-                Expr::Cast { .. } => write!(f, "As"),
+                } => write!(f, "{operator}ꟲ"),
+                Expr::Cast { .. } => write!(f, "Cast"),
                 Expr::AddrOf() => write!(f, "AddrOf"),
                 Expr::Len { .. } => write!(f, "Len"),
                 Expr::Projection(_) => write!(f, "Proj"),
@@ -1053,14 +1039,55 @@ mod fmt {
                 Expr::Cast { from, to } => write!(f, "{from} -> {to}"),
                 Expr::AddrOf() => todo!(),
                 Expr::Len { of } => write!(f, "{of}"),
-                Expr::Projection(proj) => {
-                    match proj {
-                        ProjExpr::SymIndex { host, .. } => write!(f, "{host}"),
-                        ProjExpr::SymHost { host, .. } => write!(f, "{host}"),
-                    }?;
-                    write!(f, " [{proj}]")
+                Expr::Projection(proj) => write!(f, "{proj}"),
+            }
+        }
+    }
+
+    impl Display for ProjExpr {
+        fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+            match self {
+                ProjExpr::SymIndex {
+                    host,
+                    index,
+                    from_end,
+                } => write!(f, "({host})[{index}{}]", end_symbol(from_end)),
+                ProjExpr::SymHost { host, kind } => {
+                    kind.fmt_pre(f)?;
+                    write!(f, "({host})")?;
+                    kind.fmt_post(f)
                 }
             }
         }
+    }
+
+    impl ProjKind {
+        // FIXME: Almost duplicate with the logger backend's display for Projection
+
+        fn fmt_pre(&self, f: &mut Formatter<'_>) -> Result {
+            match self {
+                ProjKind::Deref => write!(f, "*"),
+                _ => Result::Ok(()),
+            }
+        }
+
+        fn fmt_post(&self, f: &mut Formatter<'_>) -> Result {
+            match self {
+                ProjKind::Deref => Ok(()),
+                ProjKind::Field(index) => write!(f, ".{}", index),
+                ProjKind::Index { index, from_end } => {
+                    write!(f, "[{index}{}]", end_symbol(from_end))
+                }
+                ProjKind::Subslice { from, to, from_end } => {
+                    write!(f, "[{from}..{to}{}]", end_symbol(from_end))
+                }
+                ProjKind::Downcast(variant) => write!(f, "as V#{}", variant),
+            }
+        }
+    }
+
+    #[inline]
+    fn end_symbol(from_end: &bool) -> &str {
+        if *from_end { "^" } else { "" }
     }
 }
