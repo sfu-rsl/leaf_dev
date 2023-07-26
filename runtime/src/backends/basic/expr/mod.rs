@@ -346,7 +346,11 @@ impl ConstValue {
 
                 let result = Wrapping(Self::to_size(result.0, first_ty));
 
-                debug_assert!(Self::in_bounds(result.0, first_ty), "result out of bounds");
+                debug_assert!(
+                    Self::in_bounds(result.0, first_ty),
+                    "result {} out of bounds",
+                    result.0
+                );
 
                 Self::Int {
                     bit_rep: result,
@@ -440,7 +444,6 @@ impl ConstValue {
         let mask: u128 = (1_u128 << (ty.bit_size as u128)) - 1;
         let value = value & mask;
 
-        // cast type to fit in u128
         if ty.is_signed {
             Self::sign_ext(value, ty.bit_size)
         } else {
@@ -451,7 +454,8 @@ impl ConstValue {
     /// A sign extension is equivalent to casting value to ty, then to u128
     fn sign_ext(value: u128, bit_size: u64) -> u128 {
         let bits_to_shift = 128 - bit_size;
-        (value << bits_to_shift) >> bits_to_shift
+        let value = value as i128;
+        ((value << bits_to_shift) >> bits_to_shift) as u128
     }
 }
 
