@@ -37,7 +37,7 @@ impl<S, I, V> ImmediateTraceManager<S, I, V> {
         }
     }
 }
-impl<S, I: Display, V: Display> ImmediateTraceManager<S, I, V> {
+impl<S, I: Display + Ord + std::hash::Hash, V: Display> ImmediateTraceManager<S, I, V> {
     pub fn new_basic(solver: Box<dyn Solver<I, V>>) -> Self {
         Self::new(
             Box::new(AllPathInterestChecker),
@@ -97,9 +97,20 @@ impl<S: Display, I, V: Display> TraceManager<S, V> for ImmediateTraceManager<S, 
     }
 }
 
-impl<S, I, V> ImmediateTraceManager<S, I, V> {
+impl<S, I, V: Display> ImmediateTraceManager<S, I, V> {
     fn check(&mut self, range: impl SliceIndex<[Constraint<V>], Output = [Constraint<V>]>) -> bool {
-        let result = self.solver.check(self.constraints.index(range));
+        let constraints = self.constraints.index(range);
+
+        log::debug!(
+            "Sending constraints to the solver: [\n{}\n]",
+            constraints
+                .iter()
+                .map(|c| c.to_string())
+                .collect::<Vec<_>>()
+                .join(",\n")
+        );
+
+        let result = self.solver.check(constraints);
         match result {
             SolveResult::Sat(values) => {
                 self.generate_output(values);
@@ -113,6 +124,6 @@ impl<S, I, V> ImmediateTraceManager<S, I, V> {
     }
 
     fn generate_output(&mut self, values: HashMap<I, V>) {
-        self.output_generator.generate(values.iter().collect());
+        self.output_generator.generate(values);
     }
 }
