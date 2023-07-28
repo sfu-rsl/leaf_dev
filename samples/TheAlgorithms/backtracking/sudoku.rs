@@ -1,5 +1,7 @@
 /* Adapted from: https://github.com/TheAlgorithms/Rust */
 
+include!("../nstd/lib.rs");
+
 fn main() {
     test_sudoku_correct();
 }
@@ -22,14 +24,6 @@ fn are_equal(a: &[[u8; BOARD_SIZE]; BOARD_SIZE], b: &[[u8; BOARD_SIZE]; BOARD_SI
 
     true
 }
-
-// Non-STD Option
-enum NSOption<T> {
-    Some(T),
-    None,
-}
-
-use NSOption::*;
 
 fn test_sudoku_correct() {
     let board: [[u8; BOARD_SIZE]; BOARD_SIZE] = [
