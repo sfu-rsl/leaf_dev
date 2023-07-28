@@ -501,8 +501,9 @@ where
         todo!("Not sure yet.")
     }
 
-    fn visit_copy_for_deref(&mut self, _place: &Place<'tcx>) {
-        todo!("Not sure yet.")
+    fn visit_copy_for_deref(&mut self, place: &Place<'tcx>) {
+        let operand = Operand::Copy(*place);
+        self.visit_use(&operand)
     }
 }
 
