@@ -54,6 +54,7 @@ pub(crate) enum ConstValue {
     },
     Str(&'static str),
     Func(u64),
+    Zst,
 }
 
 impl ConstValue {
@@ -812,6 +813,7 @@ mod convert {
                     panic!("Byte strings are not handled as constants in this module.")
                 }
                 operand::Constant::Func(value) => ConstValue::Func(value),
+                operand::Constant::Zst => ConstValue::Zst,
             }
         }
     }
@@ -924,6 +926,7 @@ mod fmt {
                 ConstValue::Float { .. } => write!(f, "{self:?}"),
                 ConstValue::Str(value) => write!(f, "\"{value}\""),
                 ConstValue::Func(_) => write!(f, "{self:?}"),
+                ConstValue::Zst => write!(f, "_ZST_"),
             }
         }
     }

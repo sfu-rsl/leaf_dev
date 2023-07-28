@@ -29,6 +29,7 @@ pub(crate) enum Constant {
     Str(&'static str),
     ByteStr(&'static [u8]),
     Func(u64),
+    Zst,
 }
 
 impl<S> From<Constant> for Operand<S> {
@@ -100,5 +101,9 @@ impl<O: From<Constant>> ConstantHandler for DefaultConstantHandler<O> {
 
     fn func(self, id: u64) -> Self::Operand {
         Constant::Func(id).into()
+    }
+
+    fn zst(self) -> Self::Operand {
+        Constant::Zst.into()
     }
 }

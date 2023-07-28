@@ -96,6 +96,8 @@ pub(crate) trait ConstantHandler {
     fn byte_str(self, value: &'static [u8]) -> Self::Operand;
 
     fn func(self, id: u64) -> Self::Operand;
+
+    fn zst(self) -> Self::Operand;
 }
 
 pub(crate) trait AssignmentHandler {

@@ -117,6 +117,9 @@ pub(crate) mod z3 {
                 ConstValue::Float { .. } => todo!(),
                 ConstValue::Str(_) => todo!(),
                 ConstValue::Func(_) => todo!(),
+                ConstValue::Zst => unreachable!(
+                    "Zero-sized-typed values are not supposed to appear in symbolic expressions."
+                ),
             }
         }
 
