@@ -589,6 +589,12 @@ mod implementation {
                     stringify!(pri::ref_operand_const_char),
                     constant,
                 )
+            } else if ty.is_trivially_sized(tcx) && ty::size_of(tcx, ty) == rustc_abi::Size::ZERO {
+                self.make_bb_for_operand_ref_call(
+                    stringify!(pri::ref_operand_const_zst),
+                    Default::default(),
+                )
+                .into()
             } else if ty.peel_refs().is_str() {
                 self.internal_reference_const_operand_directly(
                     stringify!(pri::ref_operand_const_str),
