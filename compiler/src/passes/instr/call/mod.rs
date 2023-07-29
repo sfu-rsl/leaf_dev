@@ -596,13 +596,11 @@ mod implementation {
                 )
             }
             // &[u8]
-            else if let TyKind::Ref(_, ty, _) = ty.kind()
-                && let TyKind::Slice(ty) = ty.kind()
-                && ty == &tcx.types.u8 {
-                    self.internal_reference_const_operand_directly(
-                        stringify!(pri::ref_operand_const_byte_str),
-                        constant,
-                    )
+            else if Self::is_u8_slice_ref(tcx, ty) {
+                self.internal_reference_const_operand_directly(
+                    stringify!(pri::ref_operand_const_byte_str),
+                    constant,
+                )
             }
             // &[u8; N]
             else if ty.peel_refs().is_array()
@@ -794,6 +792,18 @@ mod implementation {
             args: Vec<Operand<'tcx>>,
         ) -> (BasicBlockData<'tcx>, Local) {
             self.make_bb_for_call_with_ret(func_name, args)
+        }
+
+        #[inline]
+        fn is_u8_slice_ref(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>) -> bool {
+            // This is just for mitigating the bug in rustfmt. Track: rustfmt#5863
+            if let TyKind::Ref(_, ty, _) = ty.kind() {
+                if let TyKind::Slice(ty) = ty.kind() {
+                    return ty == &tcx.types.u8;
+                }
+            }
+
+            false
         }
     }
 
