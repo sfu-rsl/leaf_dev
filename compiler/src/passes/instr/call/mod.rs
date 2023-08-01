@@ -179,6 +179,8 @@ mod implementation {
     use super::context::*;
     use super::*;
     use crate::mir_transform::*;
+    use crate::passes::ctfe::CtfeId;
+    use crate::passes::instr;
     use crate::passes::Storage;
 
     use utils::*;
@@ -632,7 +634,9 @@ mod implementation {
                 )
                 .into()
             } else if let Some(c) = operand::const_try_as_unevaluated(constant) {
-                self.internal_reference_unevaluated_const_operand(&c, ty)
+                self.internal_reference_unevaluated_const_operand(&c)
+            } else if let Some(def_id) = Self::try_as_immut_static(tcx, constant) {
+                self.internal_reference_static_ref_const_operand(def_id, ty)
             } else {
                 unimplemented!(
                     "Unsupported constant: {:?} with type: {:?}",
@@ -762,42 +766,87 @@ mod implementation {
         fn internal_reference_unevaluated_const_operand(
             &mut self,
             constant: &UnevaluatedConst,
-            ty: Ty<'tcx>,
         ) -> BlocksAndResult<'tcx> {
-            let result_local = self.context.add_local(ty);
-            {
-                use crate::passes::ctfe::{get_nctfe_func, CtfeId};
-                let tcx = self.tcx();
-                let id = if let Some(index) = constant.promoted {
-                    CtfeId::Promoted(constant.def.expect_local(), index)
-                } else {
-                    CtfeId::Const(constant.def.expect_local())
-                };
-
-                let nctfe_id = get_nctfe_func(id, self.context.storage());
-                let call_block = BasicBlockData::new(Some(terminator::call(
-                    tcx,
-                    nctfe_id,
-                    Vec::default(),
-                    result_local.into(),
-                    None,
-                )));
-                let call_block_index = self.insert_blocks([call_block])[0];
-
-                // NOTE: You cannot call reference operand here because of the infinite loop in types.
-                let BlocksAndResult(blocks, func_ref) =
-                    self.internal_reference_func_def_const_operand(&nctfe_id, &[]);
-                self.at(call_block_index).insert_blocks(blocks);
-                super::super::LeafTerminatorKindVisitor::instrument_call(
-                    &mut self.at(call_block_index),
-                    func_ref.into(),
-                    std::iter::empty(),
-                    &result_local.into(),
-                    &Some(NEXT_BLOCK),
-                );
+            let def_id = constant.def.expect_local();
+            let ctfe_id = if let Some(index) = constant.promoted {
+                CtfeId::Promoted(def_id, index)
+            } else {
+                CtfeId::Const(def_id)
             };
 
-            self.internal_reference_operand(&operand::move_for_local(result_local))
+            let nctfe_result_local = self.call_nctfe(ctfe_id);
+            self.internal_reference_operand(&operand::move_for_local(nctfe_result_local))
+        }
+
+        fn internal_reference_static_ref_const_operand(
+            &mut self,
+            def_id: DefId,
+            ty: Ty<'tcx>,
+        ) -> BlocksAndResult<'tcx> {
+            let item_ty = match ty.kind() {
+                TyKind::Ref(_, ty, rustc_ast::Mutability::Not) => ty.clone(),
+                _ => unreachable!("Constant type should be an immutable reference."),
+            };
+
+            let tcx = self.tcx();
+            let ctfe_id = CtfeId::Const(def_id.expect_local());
+
+            assert!(
+                ty::is_ref_assignable(&item_ty, &ctfe_id.ty(tcx)),
+                concat!(
+                    "Constant type should be the reference of the init block's return type.",
+                    "Constant type: {:?}, init block return type: {:?}",
+                ),
+                ty,
+                ctfe_id.ty(tcx)
+            );
+
+            let nctfe_result_local = self.call_nctfe(ctfe_id);
+
+            // Simulate referencing the result of the NCTFE call.
+            let ref_local = self.context.add_local(ty);
+            {
+                // FIXME: Duplicate code with `LeafStatementVisitor::visit_assign`.
+                let ref_local_ref = self.reference_place(&ref_local.into());
+                instr::LeafAssignmentVisitor::instrument_ref(
+                    &mut self.assign(ref_local_ref),
+                    &rustc_middle::mir::BorrowKind::Shared,
+                    &nctfe_result_local.into(),
+                );
+            }
+
+            self.internal_reference_operand(&operand::move_for_local(ref_local))
+        }
+
+        fn call_nctfe(&mut self, id: CtfeId) -> Local {
+            use crate::passes::ctfe::get_nctfe_func;
+
+            let tcx = self.tcx();
+            let result_local = self.context.add_local(id.ty(tcx));
+
+            let nctfe_id = get_nctfe_func(id, self.context.storage());
+            let call_block = BasicBlockData::new(Some(terminator::call(
+                tcx,
+                nctfe_id,
+                Vec::default(),
+                result_local.into(),
+                None,
+            )));
+            let call_block_index = self.insert_blocks([call_block])[0];
+
+            // NOTE: You cannot call reference operand here because of the infinite loop in types.
+            let BlocksAndResult(blocks, func_ref) =
+                self.internal_reference_func_def_const_operand(&nctfe_id, &[]);
+            self.at(call_block_index).insert_blocks(blocks);
+            instr::LeafTerminatorKindVisitor::instrument_call(
+                &mut self.at(call_block_index),
+                func_ref.into(),
+                std::iter::empty(),
+                &result_local.into(),
+                &Some(NEXT_BLOCK),
+            );
+
+            result_local
         }
 
         fn make_bb_for_operand_ref_call(
@@ -818,6 +867,23 @@ mod implementation {
             }
 
             false
+        }
+
+        #[inline]
+        fn try_as_immut_static(tcx: TyCtxt<'tcx>, constant: &Box<Constant<'tcx>>) -> Option<DefId> {
+            /* Immutable statics are accessed by a constant reference which points to a statically
+             * allocated program memory block. If the static item's type is T then the constant is
+             * of type &T. */
+            constant
+                .ty()
+                .ref_mutability()
+                .is_some_and(|m| m.is_not())
+                .then(|| operand::const_try_as_ptr(constant))
+                .flatten()
+                .and_then(|alloc_id| match tcx.global_alloc(alloc_id) {
+                    rustc_middle::mir::interpret::GlobalAlloc::Static(id) => Some(id),
+                    _ => None,
+                })
         }
     }
 
@@ -1519,7 +1585,7 @@ mod implementation {
 
         use crate::mir_transform::{BodyLocalManager, NEXT_BLOCK};
 
-        use self::assignment::rvalue;
+        pub(super) use self::assignment::rvalue;
 
         use super::{context::PriItemsProvider, DefId};
 
@@ -1608,6 +1674,18 @@ mod implementation {
                 }
             }
 
+            pub fn const_try_as_ptr<'tcx>(
+                constant: &Constant<'tcx>,
+            ) -> Option<mir::interpret::AllocId> {
+                if let ConstantKind::Val(value, _) = constant.literal {
+                    if let Some(Scalar::Ptr(ptr, _)) = value.try_to_scalar() {
+                        return Some(ptr.provenance);
+                    }
+                }
+
+                None
+            }
+
             pub fn copy_for_local<'tcx>(value: Local) -> Operand<'tcx> {
                 for_local(value, true)
             }
@@ -1681,7 +1759,7 @@ mod implementation {
 
             use super::*;
 
-            pub(super) mod rvalue {
+            pub mod rvalue {
 
                 use rustc_index::IndexVec;
                 use rustc_middle::{
@@ -1748,6 +1826,14 @@ mod implementation {
                     Double::PRECISION
                 } as u64;
                 (ebit_size, bit_size - ebit_size)
+            }
+
+            #[inline]
+            pub fn is_ref_assignable<'tcx>(ty: &Ty<'tcx>, from: &Ty<'tcx>) -> bool {
+                match (ty.kind(), from.kind()) {
+                    (TyKind::Ref(_, ty, _), TyKind::Ref(_, from, _)) => is_ref_assignable(ty, from),
+                    _ => ty == from,
+                }
             }
         }
 

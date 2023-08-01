@@ -3,8 +3,8 @@ mod call;
 use rustc_abi::{FieldIdx, VariantIdx};
 use rustc_index::IndexVec;
 use rustc_middle::mir::{
-    self, visit::Visitor, BasicBlock, BasicBlockData, CastKind, HasLocalDecls, Location, Operand,
-    Place, Rvalue, UnwindAction,
+    self, visit::Visitor, BasicBlock, BasicBlockData, BorrowKind, CastKind, HasLocalDecls,
+    Location, Operand, Place, Rvalue, UnwindAction,
 };
 
 use crate::{
@@ -319,7 +319,7 @@ impl<'tcx, C> LeafTerminatorKindVisitor<C>
 where
     C: ctxtreqs::ForFunctionCalling<'tcx>,
 {
-    pub(crate) fn instrument_call(
+    fn instrument_call(
         call_adder: &mut RuntimeCallAdder<C>,
         func: OperandRef,
         args: impl Iterator<Item = OperandRef>,
@@ -363,14 +363,10 @@ where
     fn visit_ref(
         &mut self,
         _region: &rustc_middle::ty::Region,
-        borrow_kind: &rustc_middle::mir::BorrowKind,
+        borrow_kind: &BorrowKind,
         place: &Place<'tcx>,
     ) {
-        let place_ref = self.call_adder.reference_place(place);
-        self.call_adder.by_ref(
-            place_ref,
-            matches!(borrow_kind, rustc_middle::mir::BorrowKind::Mut { .. }),
-        )
+        Self::instrument_ref(&mut self.call_adder, borrow_kind, place)
     }
 
     fn visit_thread_local_ref(&mut self) {
@@ -509,14 +505,27 @@ where
 
 impl<'tcx, C> LeafAssignmentVisitor<C>
 where
-    C: ctxtreqs::ForOperandRef<'tcx> + ctxtreqs::ForAssignment<'tcx>,
+    C: ctxtreqs::ForAssignment<'tcx>,
 {
+    fn instrument_ref(
+        call_adder: &mut RuntimeCallAdder<C>,
+        borrow_kind: &BorrowKind,
+        place: &Place<'tcx>,
+    ) where
+        C: ctxtreqs::ForPlaceRef<'tcx>,
+    {
+        let place_ref = call_adder.reference_place(place);
+        call_adder.by_ref(place_ref, matches!(borrow_kind, BorrowKind::Mut { .. }))
+    }
+
     fn visit_binary_op_general(
         &mut self,
         op: &mir::BinOp,
         operands: &(Operand<'tcx>, Operand<'tcx>),
         checked: bool,
-    ) {
+    ) where
+        C: ctxtreqs::ForOperandRef<'tcx>,
+    {
         let first_ref = self.call_adder.reference_operand(&operands.0);
         let second_ref = self.call_adder.reference_operand(&operands.1);
         self.call_adder

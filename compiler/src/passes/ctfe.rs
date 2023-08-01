@@ -22,7 +22,7 @@
 use rustc_ast::ptr::P;
 use rustc_hir as hir;
 use rustc_middle::mir::{self};
-use rustc_middle::ty::TyCtxt;
+use rustc_middle::ty::{Ty, TyCtxt};
 use rustc_span::def_id::{DefId, LocalDefId};
 
 use std::collections::HashSet;
@@ -37,8 +37,22 @@ use utils::*;
 
 #[derive(Debug, Eq, Hash, PartialEq, Clone, Copy)]
 pub(crate) enum CtfeId {
+    /// Constant block
     Const(LocalDefId),
+    /// Promoted block
     Promoted(LocalDefId, rustc_middle::mir::Promoted),
+}
+
+impl CtfeId {
+    pub(crate) fn ty<'tcx>(&self, tcx: TyCtxt<'tcx>) -> Ty<'tcx> {
+        match self {
+            Self::Const(id) => tcx
+                .type_of(id.to_def_id())
+                .no_bound_vars()
+                .expect("Bound types are not supported."),
+            Self::Promoted(id, index) => tcx.promoted_mir(id.to_def_id())[*index].return_ty(),
+        }
+    }
 }
 
 #[derive(Default)]
@@ -199,7 +213,7 @@ fn find_ctfes(tcx: TyCtxt<'_>) -> impl Iterator<Item = CtfeId> + '_ {
             use rustc_hir::def::DefKind;
             matches!(
                 tcx.def_kind(id.to_def_id()),
-                DefKind::Const | DefKind::ConstParam | DefKind::InlineConst
+                DefKind::Const | DefKind::ConstParam | DefKind::InlineConst | DefKind::Static(_)
             )
         })
         .cloned()
