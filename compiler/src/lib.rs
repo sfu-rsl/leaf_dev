@@ -9,6 +9,7 @@
 #![feature(macro_metavar_expr)]
 #![feature(local_key_cell_methods)]
 #![feature(box_into_inner)]
+#![feature(result_option_inspect)]
 
 mod mir_transform;
 mod passes;
@@ -78,7 +79,7 @@ mod driver_args {
     use super::*;
 
     use std::env;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     const CMD_RUSTC: &str = "rustc";
 
@@ -180,28 +181,54 @@ mod driver_args {
     fn find_runtime_lib_path() -> String {
         // FIXME: Do not depend on the project's structure and adjacency of runtime.
 
-        let try_exe_path = || {
-            env::current_exe()
-                .ok()
-                .and_then(|path| path.parent().map(|p| p.join(FILE_RUNTIME_LIB)))
-                .filter(|path| path.exists())
-                .map(|path| path.to_string_lossy().to_string())
-        };
+        fn try_dir(path: &Path) -> Option<PathBuf> {
+            log::debug!("Trying dir for runtime lib: {:?}", path);
+            try_join(path, FILE_RUNTIME_LIB)
+        }
 
-        try_exe_path().expect("Unable to find runtime lib file.")
+        let try_cwd = || try_cwd(try_dir);
+
+        let try_exe_path = || try_exe_ancestors(try_dir);
+
+        try_cwd()
+            .or_else(try_exe_path)
+            .map(|path| path.to_string_lossy().to_string())
+            .expect("Unable to find runtime lib file.")
     }
 
     fn find_deps_path() -> String {
         // FIXME: Don't depend on the project structure and adjacency of runtime.
 
-        let try_exe_path = || {
-            env::current_exe()
-                .ok()
-                .and_then(|path| path.parent().map(|p| p.join(DIR_DEPS)))
-                .filter(|path| path.exists())
-                .map(|path| path.to_string_lossy().to_string())
-        };
+        fn try_dir(path: &Path) -> Option<PathBuf> {
+            log::debug!("Trying dir for deps dir: {:?}", path);
+            try_join(path, DIR_DEPS)
+        }
 
-        try_exe_path().expect("Unable to find deps path.")
+        let try_cwd = || try_cwd(try_dir);
+        let try_exe_path = || try_exe_ancestors(try_dir);
+
+        try_cwd()
+            .or_else(try_exe_path)
+            .map(|path| path.to_string_lossy().to_string())
+            .expect("Unable to find runtime lib file.")
+    }
+
+    fn try_cwd(f: impl Fn(&Path) -> Option<PathBuf>) -> Option<PathBuf> {
+        env::current_dir().ok().and_then(|p| f(p.as_path()))
+    }
+
+    fn try_exe_ancestors(f: impl Fn(&Path) -> Option<PathBuf>) -> Option<PathBuf> {
+        env::current_exe()
+            .ok()
+            .and_then(|p| p.ancestors().skip(1).find_map(f))
+    }
+
+    fn try_join(path: impl AsRef<Path>, child: impl AsRef<Path>) -> Option<PathBuf> {
+        let path = path.as_ref().join(child);
+        if path.exists() {
+            Some(path.to_owned())
+        } else {
+            None
+        }
     }
 }
