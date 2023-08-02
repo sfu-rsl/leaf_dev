@@ -1,7 +1,8 @@
 use crate::{abs::Local, utils::Hierarchical};
 
 use super::{
-    get_operand_value, operand::Operand, place::Place, CallStackManager, ValueRef, VariablesState,
+    get_operand_value, operand::Operand, place::Place, CallStackManager, EntranceKind, ValueRef,
+    VariablesState,
 };
 
 type VariablesStateFactory<VS> = Box<dyn Fn(usize) -> VS>;
@@ -9,21 +10,20 @@ type VariablesStateFactory<VS> = Box<dyn Fn(usize) -> VS>;
 pub(super) struct BasicCallStackManager<VS: VariablesState> {
     stack: Vec<CallStackFrame>,
     vars_state_factory: VariablesStateFactory<VS>,
-    call_info: CallInfo,
+    latest_call: Option<CallInfo>,
+    latest_returned_val: Option<ValueRef>,
     vars_state: Option<VS>,
 }
 
+#[derive(Default)]
 pub(super) struct CallStackFrame {
-    /* This struct previously contained the variables state.
-     * Currently, there's no specific information to put here,
-     * but as the call stack is a principle entity, we keep it for now.
-     */
+    // this doesn't refer to the current stack frame, but the function that is about to be / was just called
+    is_callee_external: Option<bool>,
 }
 
 pub(super) struct CallInfo {
-    passed_args: Vec<Operand>,
-    returned_val: Option<ValueRef>,
-    is_external: bool,
+    expected_func: ValueRef,
+    args: Vec<Operand>,
 }
 
 impl<VS: VariablesState> BasicCallStackManager<VS> {
@@ -31,27 +31,18 @@ impl<VS: VariablesState> BasicCallStackManager<VS> {
         Self {
             stack: vec![],
             vars_state_factory,
-            call_info: CallInfo {
-                passed_args: vec![],
-                returned_val: None,
-                is_external: true,
-            },
+            latest_call: None,
+            latest_returned_val: None,
             vars_state: None,
         }
     }
 }
 
-impl<VS: VariablesState + Hierarchical<VS>> CallStackManager for BasicCallStackManager<VS> {
-    fn update_args(&mut self, args: Vec<Operand>) {
-        self.call_info.passed_args = args;
-    }
-
-    fn push_stack_frame(&mut self) {
+impl<VS: VariablesState + Hierarchical<VS>> BasicCallStackManager<VS> {
+    fn push_new_stack_frame(&mut self, args: &mut Vec<Operand>) {
         self.vars_state = Some(if let Some(mut current_vars) = self.vars_state.take() {
-            let passed_args = &mut self.call_info.passed_args;
-            let args = if !passed_args.is_empty() {
-                passed_args
-                    .drain(..)
+            let args = if !args.is_empty() {
+                args.drain(..)
                     .map(|operand| get_operand_value(&mut current_vars, operand))
                     .collect()
             } else {
@@ -68,31 +59,70 @@ impl<VS: VariablesState + Hierarchical<VS>> CallStackManager for BasicCallStackM
             }
 
             vars_state
-        }
-        // The first push when the stack is empty
-        else {
+        } else {
+            // The first push when the stack is empty
             (self.vars_state_factory)(0)
         });
 
-        self.stack.push(CallStackFrame {});
+        self.stack.push(CallStackFrame::default());
+    }
+
+    fn top_frame(&mut self) -> &mut CallStackFrame {
+        self.stack.last_mut().expect("Call stack is empty")
+    }
+}
+
+impl<VS: VariablesState + Hierarchical<VS>> CallStackManager for BasicCallStackManager<VS> {
+    fn prepare_for_call(&mut self, func: ValueRef, args: Vec<Operand>) {
+        self.latest_call = Some(CallInfo {
+            expected_func: func,
+            args,
+        });
+    }
+
+    /// This function is called when a function is entered. `kind` tells us whether the entered function is
+    /// instrumented (internal) or not.
+    fn notify_enter(&mut self, kind: EntranceKind) {
+        // if parent_frame doesn't exist, we can assume we're in an instrumented function
+        if let Some(parent_frame) = self.stack.last_mut() {
+            parent_frame.is_callee_external = Some(match kind {
+                EntranceKind::ForcedInternal => false,
+                EntranceKind::ByFuncId(curr) => {
+                    // If the entered func's id matches what was expected in the parent, it's an internal function
+                    let CallInfo { expected_func, .. } = self.latest_call.as_ref().unwrap();
+                    curr.unwrap_func_id() != expected_func.unwrap_func_id()
+                }
+            });
+        }
+
+        let mut args = self
+            .latest_call
+            .take()
+            .map(|call| call.args)
+            .unwrap_or(vec![]);
+        self.push_new_stack_frame(&mut args);
     }
 
     fn pop_stack_frame(&mut self) {
-        self.call_info.returned_val = self.top().try_take_place(&Place::new(Local::ReturnValue));
-        self.call_info.is_external = false;
+        self.latest_returned_val = self.top().try_take_place(&Place::new(Local::ReturnValue));
         self.stack.pop().unwrap();
         self.vars_state = self.vars_state.take().unwrap().give_back_parent();
     }
 
-    fn get_return_info(&mut self) -> (Option<ValueRef>, bool) {
-        let returned_val = self.call_info.returned_val.take();
-        let is_external = self.call_info.is_external;
-        self.call_info.is_external = true;
-
-        (returned_val, is_external)
+    fn finalize_call(&mut self, result_dest: Place) {
+        let is_external = self.top_frame().is_callee_external.take().unwrap_or(true);
+        if is_external {
+            // NOTE: The return value of an external function must be an untracked constant,
+            //       because it's not possible to track it.
+            todo!("handle the case when an external function is called")
+        } else if let Some(returned_val) = self.latest_returned_val.take() {
+            self.top().set_place(&result_dest, returned_val)
+        } else {
+            // The unit return type
+        }
     }
 
     fn top(&mut self) -> &mut dyn VariablesState {
-        self.vars_state.as_mut().expect("Call stack is empty.")
+        self.vars_state.as_mut().expect("Call stack is empty")
     }
 }

@@ -532,12 +532,28 @@ impl FunctionHandler for BasicFunctionHandler<'_> {
     type Place = Place;
     type Operand = Operand;
 
-    fn before_call(self, _func: Self::Operand, args: impl Iterator<Item = Self::Operand>) {
-        self.call_stack_manager.update_args(args.collect());
+    fn before_call(self, func: Self::Operand, args: impl Iterator<Item = Self::Operand>) {
+        // we don't know whether func will be internal or external
+        let func_val = match try_const_operand_value(func) {
+            Some(func) => func,
+            None => unimplemented!("handle when func may be a non-const function pointer"),
+        };
+        self.call_stack_manager
+            .prepare_for_call(func_val, args.collect());
     }
 
-    fn enter(self) {
-        self.call_stack_manager.push_stack_frame();
+    fn enter(self, func: Self::Operand) {
+        let func_val = match try_const_operand_value(func) {
+            Some(func) => func,
+            None => unimplemented!("handle when func may be a non-const function pointer"),
+        };
+        self.call_stack_manager
+            .notify_enter(EntranceKind::ByFuncId(func_val));
+    }
+
+    fn internal_enter(self) {
+        self.call_stack_manager
+            .notify_enter(EntranceKind::ForcedInternal);
     }
 
     fn ret(self) {
@@ -545,16 +561,7 @@ impl FunctionHandler for BasicFunctionHandler<'_> {
     }
 
     fn after_call(self, result_dest: Self::Place) {
-        let (returned_val, is_external_function) = self.call_stack_manager.get_return_info();
-        if is_external_function {
-            todo!("handle the case when an external function is called")
-        } else if let Some(returned_val) = returned_val {
-            self.call_stack_manager
-                .top()
-                .set_place(&result_dest, returned_val)
-        } else {
-            // Unit return type
-        }
+        self.call_stack_manager.finalize_call(result_dest);
     }
 }
 
@@ -569,6 +576,14 @@ fn get_operand_value(vars_state: &mut dyn VariablesState, operand: Operand) -> V
         | Operand::Place(place, operand::PlaceUsage::Move) => vars_state.copy_place(&place),
         Operand::Const(constant) => Into::<ConcreteValue>::into(constant).to_value_ref(),
         Operand::Symbolic(sym) => sym.into(),
+    }
+}
+
+/// This function should only be used when you know your operand will be const
+fn try_const_operand_value(operand: Operand) -> Option<ValueRef> {
+    match operand {
+        Operand::Const(constant) => Some(Into::<ConcreteValue>::into(constant).to_value_ref()),
+        _ => None,
     }
 }
 
@@ -591,14 +606,18 @@ trait VariablesState {
     fn set_place(&mut self, place: &Place, value: ValueRef);
 }
 
-trait CallStackManager {
-    fn update_args(&mut self, args: Vec<Operand>);
+enum EntranceKind {
+    ForcedInternal,
+    ByFuncId(ValueRef),
+}
 
-    fn push_stack_frame(&mut self);
+trait CallStackManager {
+    fn notify_enter(&mut self, kind: EntranceKind);
+
+    fn prepare_for_call(&mut self, func: ValueRef, args: Vec<Operand>);
+    fn finalize_call(&mut self, result_dest: Place);
 
     fn pop_stack_frame(&mut self);
-
-    fn get_return_info(&mut self) -> (Option<ValueRef>, bool);
 
     fn top(&mut self) -> &mut dyn VariablesState;
 }

@@ -320,6 +320,20 @@ mod implementation {
         }
     }
 
+    impl<'tcx, C> RuntimeCallAdder<C>
+    where
+        C: context::BodyProvider<'tcx> + context::TyContextProvider<'tcx>,
+    {
+        pub fn current_func(&self) -> rustc_middle::mir::Operand<'tcx> {
+            rustc_middle::mir::Operand::function_handle(
+                self.context.tcx(),
+                self.context.body().source.def_id(),
+                ::std::iter::empty(),
+                self.context.body().span,
+            )
+        }
+    }
+
     impl<'tcx, C> TyContextProvider<'tcx> for RuntimeCallAdder<C>
     where
         C: TyContextProvider<'tcx>,
@@ -1332,7 +1346,13 @@ mod implementation {
         }
 
         fn enter_func(&mut self) {
-            let block = self.make_bb_for_call(stringify!(pri::enter_func), vec![]);
+            let func = self.current_func();
+            let func_ref = self.reference_operand(&func);
+
+            let block = self.make_bb_for_call(
+                stringify!(pri::enter_func),
+                vec![operand::copy_for_local(func_ref.into())],
+            );
             self.insert_blocks([block]);
         }
 

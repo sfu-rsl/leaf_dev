@@ -18,7 +18,7 @@ pub type OperandRef = Ref;
 pub static MODULE_MARKER: u8 = 0;
 
 pub fn init_runtime_lib() {
-    init_backend()
+    init_backend();
 }
 
 pub fn ref_place_return_value() -> PlaceRef {
@@ -273,12 +273,18 @@ pub fn before_call_func(func: OperandRef, args: &[OperandRef]) {
         )
     });
 }
-pub fn enter_func() {
-    func_control(|h| h.enter())
+
+pub fn enter_func(func: OperandRef) {
+    func_control(|h| h.enter(take_back_operand_ref(func)))
 }
+pub fn internal_enter_func() {
+    func_control(|h| h.internal_enter())
+}
+
 pub fn return_from_func() {
     func_control(|h| h.ret())
 }
+
 pub fn after_call_func(destination: PlaceRef) {
     func_control(|h| h.after_call(take_back_place_ref(destination)))
 }

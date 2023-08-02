@@ -83,6 +83,9 @@ Found a solution:
 [2023-05-29T06:41:42Z DEBUG compiler::mir_transform::modification] Updating jump target from bb4294967040 to bb1
 [2023-05-29T06:41:42Z DEBUG compiler::mir_transform::modification] Updating jump target from bb4294967040 to bb2
 ```
+- To see debug logging from the leaf runtime, set the environment variable `LEAF_LOG=debug`
+  - linux: `export LEAF_LOG=debug`
+  - powershell: `$Env:LEAF_LOG="debug"`
 
 ### Emit MIR:
 - `cd ./samples/function/sym_arg/`

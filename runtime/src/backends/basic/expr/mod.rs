@@ -757,6 +757,14 @@ mod convert {
         pub(crate) fn to_value_ref(self) -> ValueRef {
             ValueRef::new(self)
         }
+
+        pub(crate) fn unwrap_func_id(&self) -> u64 {
+            if let Value::Concrete(ConcreteValue::Const(ConstValue::Func(f))) = *self {
+                f
+            } else {
+                panic!("func must be ConstValue::Func(f)")
+            }
+        }
     }
 
     impl ConcreteValue {
