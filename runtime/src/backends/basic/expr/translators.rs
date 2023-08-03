@@ -360,11 +360,7 @@ pub(crate) mod z3 {
 
         fn translate_projection_expr(&mut self, proj_expr: &ProjExpr) -> AstNode<'ctx> {
             match proj_expr {
-                ProjExpr::SymIndex {
-                    host: _,
-                    index: _,
-                    from_end: _,
-                } => {
+                ProjExpr::SymIndex(_) => {
                     todo!("add support for symbolic indexes")
                 }
                 ProjExpr::SymHost { host, kind } => match kind {

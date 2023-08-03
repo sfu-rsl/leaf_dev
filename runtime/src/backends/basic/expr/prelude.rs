@@ -1,4 +1,5 @@
 pub(crate) use super::{
     AdtKind, AdtValue, ArrayValue, ConcreteValue, ConcreteValueMutRef, ConcreteValueRef,
-    ConstValue, Expr, ProjExpr, RefValue, SymValue, SymValueRef, SymbolicVar, Value, ValueRef,
+    ConstValue, Expr, ProjExpr, RefValue, SymValue, SymValueRef, SymbolicIndex, SymbolicVar, Value,
+    ValueRef,
 };

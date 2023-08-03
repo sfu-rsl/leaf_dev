@@ -1,7 +1,7 @@
 use crate::abs::{expr::proj::Projector, FieldIndex, VariantIndex};
 
 use super::super::alias::SymValueRefProjector;
-use super::{ConcreteValueRef, ProjExpr, ProjKind, SymIndexPair, SymValueRef};
+use super::{ConcreteValueRef, ProjExpr, ProjKind, SymIndexPair, SymValueRef, SymbolicIndex};
 
 pub(crate) type DefaultSymProjector = core::CoreProjector;
 
@@ -43,11 +43,11 @@ mod core {
                     kind: ProjKind::Index { index, from_end },
                 },
                 SymIndexPair::SymIndex { index, host } if !host.is_symbolic() => {
-                    ProjExpr::SymIndex {
+                    ProjExpr::SymIndex(SymbolicIndex {
                         host: ConcreteValueRef::new(host),
                         index,
                         from_end,
-                    }
+                    })
                 }
                 /* This case is not expected, however is structurally possible. */
                 SymIndexPair::SymIndex { index, host } => ProjExpr::SymHost {
