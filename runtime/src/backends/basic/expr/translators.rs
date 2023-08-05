@@ -1,6 +1,7 @@
 pub(crate) mod z3 {
     use std::{
         collections::HashMap,
+        default::Default,
         mem::{discriminant, size_of},
         ops::Not,
     };
@@ -31,23 +32,25 @@ pub(crate) mod z3 {
     pub(crate) struct Z3ValueTranslator<'ctx> {
         context: &'ctx Context,
         variables: HashMap<SymVarId, AstNode<'ctx>>,
+        constraints: Vec<ast::Bool<'ctx>>,
     }
 
     impl<'ctx> Z3ValueTranslator<'ctx> {
         pub(crate) fn new(context: &'ctx Context) -> Self {
             Self {
                 context,
-                variables: HashMap::new(),
+                variables: Default::default(),
+                constraints: Default::default(),
             }
         }
     }
 
     impl<'ctx> Z3ValueTranslator<'ctx> {
-        fn translate(&mut self, value: &ValueRef) -> AstPair<'ctx, SymVarId> {
+        fn translate(mut self, value: &ValueRef) -> AstPair<'ctx, SymVarId> {
             log::debug!("Translating value: {}", value);
             let ast = self.translate_value(value);
             match ast {
-                AstNode::Bool(ast) => AstPair(ast, self.variables.drain().collect()),
+                AstNode::Bool(ast) => AstPair(ast, self.variables, self.constraints),
                 _ => panic!("Expected the value to be a boolean expression but it is a {ast:#?}.",),
             }
         }

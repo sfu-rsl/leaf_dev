@@ -49,7 +49,11 @@ impl<'ctx> AstNode<'ctx> {
     }
 }
 
-pub(crate) struct AstPair<'ctx, I>(pub ast::Bool<'ctx>, pub HashMap<I, AstNode<'ctx>>);
+pub(crate) struct AstPair<'ctx, I>(
+    pub ast::Bool<'ctx>,
+    pub HashMap<I, AstNode<'ctx>>,
+    pub Vec<ast::Bool<'ctx>>,
+);
 
 lazy_static! {
     /* FIXME: Can we have a safer and still clean approach?
@@ -97,11 +101,17 @@ where
         let mut all_vars = HashMap::<I, AstNode>::new();
         let asts = constraints
             .iter()
-            .map(|constraint| {
+            .flat_map(|constraint| {
                 let (value, is_negated) = constraint.destruct_ref();
-                let AstPair(ast, variables) = AstPair::from((value, self.context));
+                let AstPair(ast, variables, additional_constraints) =
+                    AstPair::from((value, self.context));
                 all_vars.extend(variables);
-                if is_negated { ast.not() } else { ast }
+
+                let constraint = if is_negated { ast.not() } else { ast };
+
+                additional_constraints
+                    .into_iter()
+                    .chain(std::iter::once(constraint))
             })
             .collect::<Vec<_>>();
 
