@@ -1,11 +1,12 @@
 use std::{borrow::Borrow, collections::HashMap, hash::Hash};
 
-use crate::{
-    abs::backend,
-    utils::{logging::log_debug, UnsafeSync},
-};
+use crate::{abs::backend, utils::UnsafeSync};
 use lazy_static::lazy_static;
-use z3::{self, ast, Config, Context, SatResult, Solver};
+use z3::{
+    self,
+    ast::{self, Ast},
+    Config, Context, SatResult, Solver,
+};
 
 /* NOTE: Why not using `Dynamic`?
  * In this way we have a little more freedom to include our information such
@@ -31,6 +32,24 @@ impl<'ctx> AstNode<'ctx> {
     pub fn from_bv(ast: ast::BV<'ctx>, is_signed: bool) -> Self {
         Self::BitVector { ast, is_signed }
     }
+
+    /// Wraps a dynamic AST in a (typed) `AstNode` using another instance that is known to have the
+    /// same sort as the new one.
+    pub fn from_ast(ast: ast::Dynamic<'ctx>, variant: &Self) -> Self {
+        match variant {
+            Self::Bool(_) => ast.as_bool().map(Self::Bool),
+            Self::BitVector { is_signed, .. } => ast.as_bv().map(|ast| Self::BitVector {
+                ast,
+                is_signed: *is_signed,
+            }),
+        }
+        .unwrap_or_else(|| {
+            panic!(
+                "Sort of ${:?} is not compatible with the expected one.",
+                ast
+            )
+        })
+    }
 }
 
 impl<'ctx> AstNode<'ctx> {
@@ -45,6 +64,22 @@ impl<'ctx> AstNode<'ctx> {
         match self {
             Self::BitVector { ast, .. } => ast,
             _ => panic!("Expected the value to be a bit vector."),
+        }
+    }
+}
+
+impl<'ctx> AstNode<'ctx> {
+    pub fn ast(&self) -> ast::Dynamic<'ctx> {
+        ast::Dynamic::from_ast(match self {
+            Self::Bool(ast) => ast,
+            Self::BitVector { ast, .. } => ast,
+        })
+    }
+
+    pub fn sort(&self) -> z3::Sort<'ctx> {
+        match self {
+            Self::Bool(ast) => ast.get_sort(),
+            Self::BitVector { ast, .. } => ast.get_sort(),
         }
     }
 }

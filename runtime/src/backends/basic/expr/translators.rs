@@ -13,19 +13,19 @@ pub(crate) mod z3 {
 
     use crate::{
         abs::{BinaryOp, FieldIndex, IntType, UnaryOp, ValueType},
-        backends::basic::expr::{prelude::*, ProjKind, SymBinaryOperands, SymVarId},
+        backends::basic::expr::{prelude::*, ProjKind, SymBinaryOperands, SymVarId, SymbolicHost},
     };
 
     use crate::solvers::z3::{AstNode, AstPair};
 
     const CHAR_BIT_SIZE: u32 = size_of::<char>() as u32 * 8;
+    const USIZE_BIT_SIZE: u32 = size_of::<usize>() as u32 * 8;
     const TO_CHAR_BIT_SIZE: u32 = 8; // Can only cast to a char from a u8
 
     impl<'ctx> From<(&ValueRef, &'ctx Context)> for AstPair<'ctx, SymVarId> {
         fn from(value_with_context: (&ValueRef, &'ctx Context)) -> Self {
             let (value, context) = value_with_context;
-            let mut translator = Z3ValueTranslator::new(context);
-            translator.translate(value)
+            Z3ValueTranslator::new(context).translate(value)
         }
     }
 
@@ -363,6 +363,7 @@ pub(crate) mod z3 {
 
         fn translate_projection_expr(&mut self, proj_expr: &ProjExpr) -> AstNode<'ctx> {
             match proj_expr {
+                ProjExpr::SymIndex(sym_index) => self.translate_symbolic_index(sym_index),
                 ProjExpr::SymHost(SymbolicHost { host, kind }) => match kind {
                     ProjKind::Deref => todo!(),
                     ProjKind::Field(field_index) => {
@@ -380,6 +381,52 @@ pub(crate) mod z3 {
                     ProjKind::Downcast(_) => todo!(),
                 },
             }
+        }
+
+        fn translate_symbolic_index(&mut self, sym_index: &SymbolicIndex) -> AstNode<'ctx> {
+            let index = self.translate_symbolic(sym_index.index.as_ref());
+            debug_assert_eq!(
+                index.sort(),
+                z3::Sort::bitvector(self.context, USIZE_BIT_SIZE)
+            );
+
+            let possible_values = match sym_index.host.as_ref() {
+                ConcreteValue::Array(ArrayValue { elements }) => elements
+                    .iter()
+                    .map(|x| self.translate_value(x))
+                    .collect::<Vec<_>>(),
+                _ => unreachable!("Symbolic index is only expected on an array."),
+            };
+
+            /* NOTE: Do we need to add constraint that index is within bounds?
+             * This code is meant for safe Rust. Thus,
+             * Bound constraints are automatically implied by the bound checks compiler adds.
+             * Also, we don't need to worry about the empty arrays for the same reason. */
+
+            let type_holder = possible_values
+                .first()
+                .expect("Indices on zero-sized arrays should be prevented by the bound checks.");
+
+            const POSSIBLE_VALUES_PREFIX: &str = "pvs";
+            let array = ast::Array::fresh_const(
+                self.context,
+                POSSIBLE_VALUES_PREFIX,
+                &index.sort(),
+                &type_holder.sort(),
+            );
+            let result = AstNode::from_ast(ast::Array::select(&array, &index.ast()), type_holder);
+
+            for (i, value) in possible_values.into_iter().enumerate() {
+                self.constraints.push(ast::Ast::_eq(
+                    &ast::Array::select(
+                        &array,
+                        &ast::BV::from_u64(self.context, i as u64, USIZE_BIT_SIZE),
+                    ),
+                    &value.ast(),
+                ));
+            }
+
+            result
         }
 
         fn translate_field_projection(
