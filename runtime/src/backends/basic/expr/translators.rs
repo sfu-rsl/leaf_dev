@@ -363,10 +363,7 @@ pub(crate) mod z3 {
 
         fn translate_projection_expr(&mut self, proj_expr: &ProjExpr) -> AstNode<'ctx> {
             match proj_expr {
-                ProjExpr::SymIndex(_) => {
-                    todo!("add support for symbolic indexes")
-                }
-                ProjExpr::SymHost { host, kind } => match kind {
+                ProjExpr::SymHost(SymbolicHost { host, kind }) => match kind {
                     ProjKind::Deref => todo!(),
                     ProjKind::Field(field_index) => {
                         self.translate_field_projection(host.as_ref(), *field_index)
