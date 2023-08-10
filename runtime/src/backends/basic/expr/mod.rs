@@ -2,13 +2,12 @@ pub(super) mod builders;
 pub(crate) mod prelude;
 pub(super) mod proj;
 pub(super) mod translators;
-pub(crate) mod utils;
 
 use std::{assert_matches::assert_matches, num::Wrapping, ops::Deref, rc::Rc};
 
 use crate::abs::{BinaryOp, FieldIndex, FloatType, IntType, UnaryOp, ValueType, VariantIndex};
 
-use self::utils::define_reversible_pair;
+use crate::utils::meta::define_reversible_pair;
 
 use super::place::FullPlace;
 

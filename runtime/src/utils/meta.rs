@@ -1,6 +1,15 @@
 macro_rules! define_reversible_pair {
-    ($(#[$attr: ident($($attr_params: tt)*)])* $name: ident $(<$($generic_type: ident),*>)? { ($orig: ident, $rev: ident) { $first: ident : $t_first: ty, $second: ident : $t_second: ty $(,)?} } $(,)? $($(#[$impl_attr: ident($($impl_attr_params: tt)*)])* impl)?) => {
-        $(#[$attr($($attr_params)*)])*
+    (
+        $(#[$($attr: meta)*])*
+        $name: ident $(<$($generic_type: ident),*>)? {
+            ($orig: ident, $rev: ident) {
+                $first: ident : $t_first: ty,
+                $second: ident : $t_second: ty $(,)?
+            }
+        } $(,)?
+        $($(#[$($impl_attr:meta)*])* impl)?
+    ) => {
+        $(#[$($attr)*])*
         pub(crate) enum $name$(<$($generic_type),*>)? {
             $orig {
                 $first: $t_first,
@@ -12,7 +21,7 @@ macro_rules! define_reversible_pair {
             },
         }
 
-        $($(#[$impl_attr($($impl_attr_params)*)])*)?
+        $($(#[$($impl_attr)*])*)?
         impl$(<$($generic_type),*>)? $name$(<$($generic_type),*>)? {
             #[inline]
             pub fn flatten(self) -> ($t_first, $t_second, bool) {
@@ -57,5 +66,38 @@ macro_rules! define_reversible_pair {
         }
     };
 }
-
 pub(crate) use define_reversible_pair;
+
+macro_rules! define_either_pair {
+    (
+        $(#[$($attr: meta)*])*
+        $vis:vis $name:ident $(<$($generic_type: ident),*>)? {
+            $left: ident : $t_left: ty,
+            $right: ident : $t_right: ty $(,)?
+        } $(,)?
+        $($(#[$($impl_attr:meta)*])* impl)?
+    ) => {
+        $(#[$($attr)*])*
+        $vis enum $name$(<$($generic_type),*>)? {
+            $left($t_left),
+            $right($t_right),
+        }
+
+        $($(#[$($impl_attr)*])*)?
+        impl$(<$($generic_type),*>)? $name$(<$($generic_type),*>)? {
+        }
+
+        impl$(<$($generic_type),*>)? From<$t_left> for $name$(<$($generic_type),*>)? {
+            fn from(left: $t_left) -> Self {
+                Self::$left(left)
+            }
+        }
+
+        impl$(<$($generic_type),*>)? From<$t_right> for $name$(<$($generic_type),*>)? {
+            fn from(right: $t_right) -> Self {
+                Self::$right(right)
+            }
+        }
+    };
+}
+pub(crate) use define_either_pair;
