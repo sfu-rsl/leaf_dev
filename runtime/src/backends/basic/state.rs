@@ -450,7 +450,10 @@ mod mutation {
 mod proj {
     use super::*;
     use crate::{
-        abs::{expr::proj::Projector, FieldIndex, VariantIndex},
+        abs::{
+            expr::proj::{macros::impl_general_proj_through_singulars, Projector},
+            FieldIndex, VariantIndex,
+        },
         backends::basic::{
             expr::SymIndexPair,
             place::{FullPlace, Projection},
@@ -471,6 +474,8 @@ mod proj {
         type HostRef<'a> = ConcreteValueRef;
         type HIRefPair<'a> = (ConcreteValueRef, ValueRef);
         type Proj<'a> = Result<ValueRef, ConcreteValueRef>;
+
+        impl_general_proj_through_singulars!();
 
         fn deref<'a>(&mut self, host: Self::HostRef<'a>) -> Self::Proj<'a> {
             match host.as_ref() {
@@ -566,6 +571,8 @@ mod proj {
         type HostRef<'a> = ConcreteValueMutRef<'a>;
         type HIRefPair<'a> = (ConcreteValueMutRef<'a>, ValueRef);
         type Proj<'a> = Result<MutPlaceValue<'a>, &'a mut ConcreteValue>;
+
+        impl_general_proj_through_singulars!();
 
         fn field<'a>(&mut self, host: Self::HostRef<'a>, field: FieldIndex) -> Self::Proj<'a> {
             match Self::make_mut(host) {

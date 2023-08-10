@@ -1,4 +1,7 @@
-use crate::abs::{expr::proj::Projector, FieldIndex, VariantIndex};
+use crate::abs::{
+    expr::proj::{macros::impl_general_proj_through_singulars, Projector},
+    FieldIndex, VariantIndex,
+};
 
 use super::super::alias::SymValueRefProjector;
 use super::{
@@ -23,6 +26,8 @@ mod core {
         type HostRef<'a> = SymValueRef;
         type HIRefPair<'a> = SymIndexPair;
         type Proj<'a> = ProjExpr;
+
+        impl_general_proj_through_singulars!();
 
         fn deref<'a>(&mut self, host: Self::HostRef<'a>) -> Self::Proj<'a> {
             ProjExpr::SymHost(SymbolicHost {
