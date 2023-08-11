@@ -2,6 +2,7 @@ pub(crate) mod chained;
 pub(crate) mod composite;
 pub(crate) mod macros;
 pub(crate) mod proj;
+pub(crate) mod sym_place;
 pub(crate) mod variance;
 
 use self::macros::macro_rules_method_with_optional_args;

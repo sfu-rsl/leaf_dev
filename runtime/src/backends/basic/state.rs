@@ -447,7 +447,7 @@ mod mutation {
     }
 }
 
-mod proj {
+pub(super) mod proj {
     use super::*;
     use crate::{
         abs::{
@@ -461,9 +461,9 @@ mod proj {
     };
     use std::ops::DerefMut;
 
-    struct ConcreteProjector<F, I> {
-        get_place: F,
-        handle_sym_index: I,
+    pub(crate) struct ConcreteProjector<F, I> {
+        pub get_place: F,
+        pub handle_sym_index: I,
     }
 
     impl<F, I> Projector for ConcreteProjector<F, I>
@@ -739,12 +739,7 @@ mod proj {
             proj,
             &mut projector,
         )
-        .unwrap_or_else(|host| {
-            panic!(
-                "Projection {:?} is not possible on this value {:?}.",
-                &proj, &host
-            )
-        })
+        .unwrap_result(proj)
     }
 
     #[inline]
@@ -826,12 +821,7 @@ mod proj {
             proj,
             &mut projector,
         )
-        .unwrap_or_else(|host_conc| {
-            panic!(
-                "Projection {:?} is not possible on this value {:?}.",
-                &proj, &host_conc
-            )
-        })
+        .unwrap_result(proj)
     }
 
     fn apply_proj<'b, 'h, 'p, Host, IndexPair, P, Result>(
@@ -871,5 +861,19 @@ mod proj {
             Projection::OpaqueCast => todo!(),
         }
         .into()
+    }
+
+    pub(crate) trait ProjResultExt<R, P> {
+        fn unwrap_result(self, proj: &P) -> R;
+    }
+    impl<R, H: Debug, P: Debug> ProjResultExt<R, P> for Result<R, H> {
+        fn unwrap_result(self, proj: &P) -> R {
+            self.unwrap_or_else(|host| {
+                panic!(
+                    "Projection {:?} is not possible on this value {:?}.",
+                    &proj, &host
+                )
+            })
+        }
     }
 }

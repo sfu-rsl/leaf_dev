@@ -1,6 +1,7 @@
 pub(super) mod builders;
 pub(crate) mod prelude;
 pub(super) mod proj;
+pub(super) mod sym_place;
 pub(super) mod translators;
 
 use std::{assert_matches::assert_matches, num::Wrapping, ops::Deref, rc::Rc};
