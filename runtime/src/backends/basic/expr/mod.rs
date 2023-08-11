@@ -635,8 +635,7 @@ pub(crate) enum ProjExpr {
 #[derive(Clone, Debug)]
 pub(crate) struct ConcreteHostProj {
     host: ConcreteValueRef,
-    index: SymValueRef,
-    from_end: bool,
+    index: SliceIndex<SymValueRef>,
 }
 
 #[allow(unused)]
@@ -652,9 +651,15 @@ pub(crate) struct SymHostProj {
 pub(crate) enum ProjKind {
     Deref,
     Field(FieldIndex),
-    Index { index: ValueRef, from_end: bool },
+    Index(SliceIndex<ValueRef>),
     Subslice { from: u64, to: u64, from_end: bool },
     Downcast(VariantIndex),
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct SliceIndex<I> {
+    pub index: I,
+    pub from_end: bool,
 }
 
 macro_rules! define_value_guard {
@@ -1059,8 +1064,7 @@ mod fmt {
             match self {
                 ProjExpr::SymIndex(ConcreteHostProj {
                     host,
-                    index,
-                    from_end,
+                    index: SliceIndex { index, from_end },
                 }) => write!(f, "({host})[{index}{}]", end_symbol(from_end)),
                 ProjExpr::SymHost(SymHostProj { host, kind }) => {
                     kind.fmt_pre(f)?;
@@ -1085,7 +1089,7 @@ mod fmt {
             match self {
                 ProjKind::Deref => Ok(()),
                 ProjKind::Field(index) => write!(f, ".{}", index),
-                ProjKind::Index { index, from_end } => {
+                ProjKind::Index(SliceIndex { index, from_end }) => {
                     write!(f, "[{index}{}]", end_symbol(from_end))
                 }
                 ProjKind::Subslice { from, to, from_end } => {
