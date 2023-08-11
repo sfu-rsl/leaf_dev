@@ -72,8 +72,8 @@ macro_rules! define_either_pair {
     (
         $(#[$($attr: meta)*])*
         $vis:vis $name:ident $(<$($generic_type: ident),*>)? {
-            $left: ident : $t_left: ty,
-            $right: ident : $t_right: ty $(,)?
+            $left: ident($t_left: ty),
+            $right: ident($t_right: ty) $(,)?
         } $(,)?
         $($(#[$($impl_attr:meta)*])* impl)?
     ) => {
