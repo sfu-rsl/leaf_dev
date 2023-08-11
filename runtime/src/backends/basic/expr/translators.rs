@@ -12,8 +12,16 @@ pub(crate) mod z3 {
     };
 
     use crate::{
-        abs::{BinaryOp, FieldIndex, IntType, UnaryOp, ValueType},
-        backends::basic::expr::{prelude::*, ProjKind, SymBinaryOperands, SymVarId, SymbolicHost},
+        abs::{
+            expr::sym_place::{SelectTarget, SymbolicReadResolver},
+            BinaryOp, FieldIndex, IntType, UnaryOp, ValueType,
+        },
+        backends::basic::expr::{
+            prelude::*,
+            sym_place::SymReadResult,
+            sym_place::{ProjExprReadResolver, Select},
+            ProjKind, SymBinaryOperands, SymVarId,
+        },
     };
 
     use crate::solvers::z3::{AstNode, AstPair};
@@ -362,120 +370,133 @@ pub(crate) mod z3 {
         }
 
         fn translate_projection_expr(&mut self, proj_expr: &ProjExpr) -> AstNode<'ctx> {
-            match proj_expr {
-                ProjExpr::SymIndex(sym_index) => self.translate_symbolic_index(sym_index),
-                ProjExpr::SymHost(SymbolicHost { host, kind }) => match kind {
-                    ProjKind::Deref => todo!(),
-                    ProjKind::Field(field_index) => {
-                        self.translate_field_projection(host.as_ref(), *field_index)
-                    }
-                    ProjKind::Index {
-                        index: _,
-                        from_end: _,
-                    } => todo!(),
-                    ProjKind::Subslice {
-                        from: _,
-                        to: _,
-                        from_end: _,
-                    } => todo!(),
-                    ProjKind::Downcast(_) => todo!(),
-                },
+            if let ProjExpr::SymHost(sym_host) = proj_expr {
+                if let (
+                    SymValue::Expression(Expr::Binary {
+                        operator,
+                        operands,
+                        checked,
+                    }),
+                    ProjKind::Field(field_index),
+                ) = (sym_host.host.as_ref(), &sym_host.kind)
+                {
+                    assert!(checked, "unexpected field projection on unchecked binop");
+                    return self.translate_field_on_checked_binary_expression(
+                        *operator,
+                        operands,
+                        *field_index,
+                    );
+                }
             }
+
+            let select = ProjExprReadResolver.resolve(proj_expr);
+            self.translate_select(&select)
         }
 
-        fn translate_symbolic_index(&mut self, sym_index: &SymbolicIndex) -> AstNode<'ctx> {
-            let index = self.translate_symbolic(sym_index.index.as_ref());
+        fn translate_select<'a>(&mut self, select: &Select<SymReadResult>) -> AstNode<'ctx> {
+            let index = {
+                let index_expr = if select.index.from_end {
+                    todo!("Handle from end")
+                } else {
+                    select.index.index.clone()
+                };
+                self.translate_symbolic(&index_expr)
+            };
             debug_assert_eq!(
                 index.sort(),
                 z3::Sort::bitvector(self.context, USIZE_BIT_SIZE)
             );
-
-            let possible_values = match sym_index.host.as_ref() {
-                ConcreteValue::Array(ArrayValue { elements }) => elements
-                    .iter()
-                    .map(|x| self.translate_value(x))
-                    .collect::<Vec<_>>(),
-                _ => unreachable!("Symbolic index is only expected on an array."),
-            };
 
             /* NOTE: Do we need to add constraint that index is within bounds?
              * This code is meant for safe Rust. Thus,
              * Bound constraints are automatically implied by the bound checks compiler adds.
              * Also, we don't need to worry about the empty arrays for the same reason. */
 
-            let type_holder = possible_values
-                .first()
-                .expect("Indices on zero-sized arrays should be prevented by the bound checks.");
+            match &select.target {
+                SelectTarget::Array(possible_values) => {
+                    let possible_values = possible_values
+                        .iter()
+                        .map(|v| self.translate_symbolic_read_result(v))
+                        .collect::<Vec<_>>();
 
-            const POSSIBLE_VALUES_PREFIX: &str = "pvs";
-            let array = ast::Array::fresh_const(
-                self.context,
-                POSSIBLE_VALUES_PREFIX,
-                &index.sort(),
-                &type_holder.sort(),
-            );
-            let result = AstNode::from_ast(ast::Array::select(&array, &index.ast()), type_holder);
+                    let type_holder = possible_values.first().expect(
+                        "Indices on zero-sized arrays should be prevented by the bound checks.",
+                    );
 
-            for (i, value) in possible_values.into_iter().enumerate() {
-                self.constraints.push(ast::Ast::_eq(
-                    &ast::Array::select(
-                        &array,
-                        &ast::BV::from_u64(self.context, i as u64, USIZE_BIT_SIZE),
-                    ),
-                    &value.ast(),
-                ));
+                    const POSSIBLE_VALUES_PREFIX: &str = "pvs";
+                    let array = ast::Array::fresh_const(
+                        self.context,
+                        POSSIBLE_VALUES_PREFIX,
+                        &index.sort(),
+                        &type_holder.sort(),
+                    );
+                    let result =
+                        AstNode::from_ast(ast::Array::select(&array, &index.ast()), type_holder);
+
+                    for (i, value) in possible_values.into_iter().enumerate() {
+                        self.constraints.push(ast::Ast::_eq(
+                            &ast::Array::select(
+                                &array,
+                                &ast::BV::from_u64(self.context, i as u64, USIZE_BIT_SIZE),
+                            ),
+                            &value.ast(),
+                        ));
+                    }
+                    result
+                }
+                SelectTarget::Nested(box inner) => {
+                    let inner = self.translate_select(inner);
+                    AstNode::from_ast(ast::Array::select(&inner.as_array(), &index.ast()), todo!())
+                }
             }
-
-            result
         }
 
-        fn translate_field_projection(
+        fn translate_symbolic_read_result<'a>(
             &mut self,
-            host: &SymValue,
+            read_result: &SymReadResult,
+        ) -> AstNode<'ctx> {
+            match read_result {
+                SymReadResult::Value(value) => self.translate_value(value),
+                SymReadResult::SymRead(select) => self.translate_select(select),
+            }
+        }
+
+        fn translate_field_on_checked_binary_expression(
+            &mut self,
+            operator: BinaryOp,
+            operands: &SymBinaryOperands,
             field_index: FieldIndex,
         ) -> AstNode<'ctx> {
             const RESULT: u32 = 0;
             const DID_OVERFLOW: u32 = 1;
-            match host {
-                SymValue::Expression(Expr::Binary {
-                    operator,
-                    operands,
-                    checked,
-                }) => {
-                    assert!(checked, "unexpected field projection on unchecked binop");
-                    match field_index {
-                        RESULT => {
-                            // If we see a `.0` field projection on a symbolic expression that is a checked
-                            // binop, we can safely ignore the projection and treat the expression as normal,
-                            // since checked binary operations return the tuple `(binop(x, y), did_overflow)`,
-                            // and failed checked binops immediately assert!(no_overflow == true), then panic.
-                            let unchecked_host = SymValue::Expression(Expr::Binary {
-                                operator: *operator,
-                                operands: operands.clone(),
-                                checked: false,
-                            });
-                            self.translate_symbolic(&unchecked_host)
-                        }
-                        DID_OVERFLOW => self.translate_overflow(operator, operands),
-                        _ => unreachable!(
-                            "invalid field index. A checked binop returns a size 2 tuple"
-                        ),
-                    }
+            match field_index {
+                RESULT => {
+                    // If we see a `.0` field projection on a symbolic expression that is a checked
+                    // binop, we can safely ignore the projection and treat the expression as normal,
+                    // since checked binary operations return the tuple `(binop(x, y), did_overflow)`,
+                    // and failed checked binops immediately assert!(no_overflow == true), then panic.
+                    let unchecked_host = SymValue::Expression(Expr::Binary {
+                        operator,
+                        operands: operands.clone(),
+                        checked: false,
+                    });
+                    self.translate_symbolic(&unchecked_host)
                 }
-                _ => todo!("implement regular field access"),
+                DID_OVERFLOW => self.translate_overflow(operator, operands),
+                _ => unreachable!("Invalid field index. A checked binop returns a size 2 tuple"),
             }
         }
 
         /// generate an expression that evaluates true if overflow, false otherwise
         fn translate_overflow(
             &mut self,
-            operator: &BinaryOp,
+            operator: BinaryOp,
             operands: &SymBinaryOperands,
         ) -> AstNode<'ctx> {
             let (left, right) = self.translate_binary_operands(operands);
             let is_signed = match left {
-                AstNode::Bool(_) => unreachable!("booleans cannot be added"),
                 AstNode::BitVector { is_signed, .. } => is_signed,
+                _ => unreachable!("Overflow only applies to numerical arithmetic operations."),
             };
 
             let left = left.as_bit_vector();
