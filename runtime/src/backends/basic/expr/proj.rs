@@ -5,7 +5,7 @@ use crate::abs::{
 
 use super::super::alias::SymValueRefProjector;
 use super::{
-    ConcreteValueRef, ProjExpr, ProjKind, SymIndexPair, SymValueRef, SymbolicHost, SymbolicIndex,
+    ConcreteHostProj, ConcreteValueRef, ProjExpr, ProjKind, SymHostProj, SymIndexPair, SymValueRef,
 };
 
 pub(crate) type DefaultSymProjector = core::CoreProjector;
@@ -30,14 +30,14 @@ mod core {
         impl_general_proj_through_singulars!();
 
         fn deref<'a>(&mut self, host: Self::HostRef<'a>) -> Self::Proj<'a> {
-            ProjExpr::SymHost(SymbolicHost {
+            ProjExpr::SymHost(SymHostProj {
                 host,
                 kind: ProjKind::Deref,
             })
         }
 
         fn field<'a>(&mut self, host: Self::HostRef<'a>, field: FieldIndex) -> Self::Proj<'a> {
-            ProjExpr::SymHost(SymbolicHost {
+            ProjExpr::SymHost(SymHostProj {
                 host,
                 kind: ProjKind::Field(field),
             })
@@ -45,19 +45,19 @@ mod core {
 
         fn index<'a>(&mut self, host_index: Self::HIRefPair<'a>, from_end: bool) -> Self::Proj<'a> {
             match host_index {
-                SymIndexPair::SymHost { host, index } => ProjExpr::SymHost(SymbolicHost {
+                SymIndexPair::SymHost { host, index } => ProjExpr::SymHost(SymHostProj {
                     host,
                     kind: ProjKind::Index { index, from_end },
                 }),
                 SymIndexPair::SymIndex { index, host } if !host.is_symbolic() => {
-                    ProjExpr::SymIndex(SymbolicIndex {
+                    ProjExpr::SymIndex(ConcreteHostProj {
                         host: ConcreteValueRef::new(host),
                         index,
                         from_end,
                     })
                 }
                 /* This case is not expected, however is structurally possible. */
-                SymIndexPair::SymIndex { index, host } => ProjExpr::SymHost(SymbolicHost {
+                SymIndexPair::SymIndex { index, host } => ProjExpr::SymHost(SymHostProj {
                     host: SymValueRef::new(host),
                     kind: ProjKind::Index {
                         index: index.into(),
@@ -74,7 +74,7 @@ mod core {
             to: u64,
             from_end: bool,
         ) -> Self::Proj<'a> {
-            ProjExpr::SymHost(SymbolicHost {
+            ProjExpr::SymHost(SymHostProj {
                 host,
                 kind: ProjKind::Subslice { from, to, from_end },
             })
@@ -85,7 +85,7 @@ mod core {
             host: Self::HostRef<'a>,
             to_variant: VariantIndex,
         ) -> Self::Proj<'a> {
-            ProjExpr::SymHost(SymbolicHost {
+            ProjExpr::SymHost(SymHostProj {
                 host,
                 kind: ProjKind::Downcast(to_variant),
             })

@@ -628,12 +628,12 @@ pub(crate) enum Expr {
 #[allow(unused)]
 #[derive(Clone, Debug)]
 pub(crate) enum ProjExpr {
-    SymIndex(SymbolicIndex),
-    SymHost(SymbolicHost),
+    SymIndex(ConcreteHostProj),
+    SymHost(SymHostProj),
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct SymbolicIndex {
+pub(crate) struct ConcreteHostProj {
     host: ConcreteValueRef,
     index: SymValueRef,
     from_end: bool,
@@ -641,11 +641,10 @@ pub(crate) struct SymbolicIndex {
 
 #[allow(unused)]
 #[derive(Clone, Debug)]
-pub(crate) struct SymbolicHost {
+pub(crate) struct SymHostProj {
     host: SymValueRef,
     kind: ProjKind,
 }
-
 
 // FIXME: Remove this error suppression after adding support for symbolic projection.
 #[allow(unused)]
@@ -1058,12 +1057,12 @@ mod fmt {
     impl Display for ProjExpr {
         fn fmt(&self, f: &mut Formatter<'_>) -> Result {
             match self {
-                ProjExpr::SymIndex(SymbolicIndex {
+                ProjExpr::SymIndex(ConcreteHostProj {
                     host,
                     index,
                     from_end,
                 }) => write!(f, "({host})[{index}{}]", end_symbol(from_end)),
-                ProjExpr::SymHost(SymbolicHost { host, kind }) => {
+                ProjExpr::SymHost(SymHostProj { host, kind }) => {
                     kind.fmt_pre(f)?;
                     write!(f, "({host})")?;
                     kind.fmt_post(f)
