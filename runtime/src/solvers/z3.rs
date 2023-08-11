@@ -16,6 +16,27 @@ use z3::{
 pub(crate) enum AstNode<'ctx> {
     Bool(ast::Bool<'ctx>),
     BitVector { ast: ast::BV<'ctx>, is_signed: bool },
+    Array(ArrayNode<'ctx>),
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ArrayNode<'ctx>(pub(crate) ast::Array<'ctx>, pub(crate) ArraySort);
+
+#[derive(Debug, Clone)]
+pub(crate) enum AstNodeSort {
+    Bool,
+    BitVector(BVSort),
+    Array(ArraySort),
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct BVSort {
+    pub is_signed: bool,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ArraySort {
+    pub range: Box<AstNodeSort>,
 }
 
 impl<'ctx> From<ast::Bool<'ctx>> for AstNode<'ctx> {
@@ -33,15 +54,18 @@ impl<'ctx> AstNode<'ctx> {
         Self::BitVector { ast, is_signed }
     }
 
-    /// Wraps a dynamic AST in a (typed) `AstNode` using another instance that is known to have the
-    /// same sort as the new one.
-    pub fn from_ast(ast: ast::Dynamic<'ctx>, variant: &Self) -> Self {
-        match variant {
-            Self::Bool(_) => ast.as_bool().map(Self::Bool),
-            Self::BitVector { is_signed, .. } => ast.as_bv().map(|ast| Self::BitVector {
-                ast,
-                is_signed: *is_signed,
-            }),
+    pub fn from_ast(ast: ast::Dynamic<'ctx>, sort: &AstNodeSort) -> Self {
+        match sort {
+            AstNodeSort::Bool => ast.as_bool().map(Self::Bool),
+            AstNodeSort::BitVector(BVSort { is_signed }) => {
+                ast.as_bv().map(|ast| Self::BitVector {
+                    ast,
+                    is_signed: *is_signed,
+                })
+            }
+            AstNodeSort::Array(sort) => ast
+                .as_array()
+                .map(|ast| Self::Array(ArrayNode(ast, sort.clone()))),
         }
         .unwrap_or_else(|| {
             panic!(
@@ -73,13 +97,25 @@ impl<'ctx> AstNode<'ctx> {
         ast::Dynamic::from_ast(match self {
             Self::Bool(ast) => ast,
             Self::BitVector { ast, .. } => ast,
+            Self::Array(ArrayNode(ast, _)) => ast,
         })
     }
 
-    pub fn sort(&self) -> z3::Sort<'ctx> {
+    pub fn sort(&self) -> AstNodeSort {
+        match self {
+            Self::Bool(_) => AstNodeSort::Bool,
+            Self::BitVector { is_signed, .. } => AstNodeSort::BitVector(BVSort {
+                is_signed: *is_signed,
+            }),
+            Self::Array(ArrayNode(_, sort)) => AstNodeSort::Array(sort.clone()),
+        }
+    }
+
+    pub fn z3_sort(&self) -> z3::Sort<'ctx> {
         match self {
             Self::Bool(ast) => ast.get_sort(),
             Self::BitVector { ast, .. } => ast.get_sort(),
+            Self::Array(ArrayNode(ast, _)) => ast.get_sort(),
         }
     }
 }
@@ -185,6 +221,9 @@ where
                             ast: model.eval(&ast, true).unwrap(),
                             is_signed,
                         },
+                        AstNode::Array(ArrayNode(ast, sort)) => {
+                            AstNode::Array(ArrayNode(model.eval(&ast, true).unwrap(), sort))
+                        }
                     };
                     values.insert(id, value.into());
                 }

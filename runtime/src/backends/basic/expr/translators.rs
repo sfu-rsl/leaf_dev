@@ -22,6 +22,7 @@ pub(crate) mod z3 {
             sym_place::{ProjExprReadResolver, Select},
             ProjKind, SymBinaryOperands, SymVarId,
         },
+        solvers::z3::{ArrayNode, ArraySort},
     };
 
     use crate::solvers::z3::{AstNode, AstPair};
@@ -78,7 +79,7 @@ pub(crate) mod z3 {
                 ConcreteValue::Adt(_) => {
                     unimplemented!("Expressions involving ADTs directly are not supported.")
                 }
-                ConcreteValue::Array(_) => todo!(),
+                ConcreteValue::Array(array) => AstNode::Array(self.translate_array(array)),
                 ConcreteValue::Ref(_) => todo!(),
             }
         }
@@ -132,6 +133,10 @@ pub(crate) mod z3 {
                     "Zero-sized-typed values are not supposed to appear in symbolic expressions."
                 ),
             }
+        }
+
+        fn translate_array(&mut self, array: &ArrayValue) -> ArrayNode<'ctx> {
+            self.translate_possible_values(array.elements.iter(), Self::translate_value)
         }
 
         fn translate_symbolic(&mut self, symbolic: &SymValue) -> AstNode<'ctx> {
@@ -202,13 +207,14 @@ pub(crate) mod z3 {
                     AstNode::BitVector { ast, is_signed } => {
                         AstNode::from_bv(ast.bvnot(), is_signed)
                     }
+                    _ => unreachable!("Not is not supported for this operand: {operand:#?}"),
                 },
                 UnaryOp::Neg => match operand {
                     AstNode::BitVector {
                         ast,
                         is_signed: true,
                     } => AstNode::from_bv(ast.bvneg(), true),
-                    _ => unreachable!("Neg is only supposed to be applied to signed numbers."),
+                    _ => unreachable!("Neg is not supported for this operand: {operand:#?}"),
                 },
             }
         }
@@ -310,6 +316,7 @@ pub(crate) mod z3 {
                         logical_func(left, right).into()
                     }
                 }
+                _ => unreachable!("Binary expressions are not supported for this type: {left:#?}"),
             }
         }
 
@@ -362,6 +369,7 @@ pub(crate) mod z3 {
                                 AstNode::from_bv(ast.extract(size - 1, 0), is_signed)
                             }
                         }
+                        _ => unreachable!("Casting from {from:#?} to int is not supported."),
                     }
                 }
                 ValueType::Float { .. } => todo!(),
@@ -393,7 +401,7 @@ pub(crate) mod z3 {
             self.translate_select(&select)
         }
 
-        fn translate_select<'a>(&mut self, select: &Select<SymReadResult>) -> AstNode<'ctx> {
+        fn translate_select(&mut self, select: &Select<SymReadResult>) -> AstNode<'ctx> {
             let index = {
                 let index_expr = if select.index.from_end {
                     todo!("Handle from end")
@@ -403,7 +411,7 @@ pub(crate) mod z3 {
                 self.translate_symbolic(&index_expr)
             };
             debug_assert_eq!(
-                index.sort(),
+                index.z3_sort(),
                 z3::Sort::bitvector(self.context, USIZE_BIT_SIZE)
             );
 
@@ -414,47 +422,72 @@ pub(crate) mod z3 {
 
             match &select.target {
                 SelectTarget::Array(possible_values) => {
-                    let possible_values = possible_values
-                        .iter()
-                        .map(|v| self.translate_symbolic_read_result(v))
-                        .collect::<Vec<_>>();
-
-                    let type_holder = possible_values.first().expect(
-                        "Indices on zero-sized arrays should be prevented by the bound checks.",
+                    let ArrayNode(
+                        ast,
+                        ArraySort {
+                            range: box elem_sort,
+                        },
+                    ) = self.translate_possible_values(
+                        possible_values.iter(),
+                        Self::translate_symbolic_read_result,
                     );
 
-                    const POSSIBLE_VALUES_PREFIX: &str = "pvs";
-                    let array = ast::Array::fresh_const(
-                        self.context,
-                        POSSIBLE_VALUES_PREFIX,
-                        &index.sort(),
-                        &type_holder.sort(),
-                    );
                     let result =
-                        AstNode::from_ast(ast::Array::select(&array, &index.ast()), type_holder);
-
-                    for (i, value) in possible_values.into_iter().enumerate() {
-                        self.constraints.push(ast::Ast::_eq(
-                            &ast::Array::select(
-                                &array,
-                                &ast::BV::from_u64(self.context, i as u64, USIZE_BIT_SIZE),
-                            ),
-                            &value.ast(),
-                        ));
-                    }
+                        AstNode::from_ast(ast::Array::select(&ast, &index.ast()), &elem_sort);
                     result
                 }
                 SelectTarget::Nested(box inner) => {
                     let inner = self.translate_select(inner);
-                    AstNode::from_ast(ast::Array::select(&inner.as_array(), &index.ast()), todo!())
+                    if let AstNode::Array(ArrayNode(array, ArraySort { range: range_sort })) = inner
+                    {
+                        AstNode::from_ast(ast::Array::select(&array, &index.ast()), &range_sort)
+                    } else {
+                        unreachable!("Nested select result should be an array.")
+                    }
                 }
             }
         }
 
-        fn translate_symbolic_read_result<'a>(
+        fn translate_possible_values<'a, V: 'a>(
             &mut self,
-            read_result: &SymReadResult,
-        ) -> AstNode<'ctx> {
+            values: impl Iterator<Item = &'a V>,
+            translate_value: impl Fn(&mut Self, &V) -> AstNode<'ctx>,
+        ) -> ArrayNode<'ctx>
+        where
+            'ctx: 'a,
+        {
+            let context = self.context;
+
+            let mut values = values.map(|v| translate_value(self, v));
+            let first = values
+                .next()
+                .expect("Indices on zero-sized arrays should be prevented by the bound checks.");
+            let element_sort = first.sort().clone();
+
+            const POSSIBLE_VALUES_PREFIX: &str = "pvs";
+            let mut array = ast::Array::fresh_const(
+                context,
+                POSSIBLE_VALUES_PREFIX,
+                &z3::Sort::bitvector(context, USIZE_BIT_SIZE),
+                &first.z3_sort(),
+            );
+
+            for (i, value) in std::iter::once(first).chain(values).enumerate() {
+                array = array.store(
+                    &ast::BV::from_u64(context, i as u64, USIZE_BIT_SIZE),
+                    &value.ast(),
+                );
+            }
+
+            ArrayNode(
+                array,
+                ArraySort {
+                    range: Box::new(element_sort),
+                },
+            )
+        }
+
+        fn translate_symbolic_read_result(&mut self, read_result: &SymReadResult) -> AstNode<'ctx> {
             match read_result {
                 SymReadResult::Value(value) => self.translate_value(value),
                 SymReadResult::SymRead(select) => self.translate_select(select),
@@ -563,6 +596,9 @@ pub(crate) mod z3 {
                             is_signed,
                         },
                     )
+                }
+                AstNode::Array(_) => {
+                    unimplemented!("Symbolic arrays are not supported by this converter.")
                 }
             }
             .to_value_ref()
