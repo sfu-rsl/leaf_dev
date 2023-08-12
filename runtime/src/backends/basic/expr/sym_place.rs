@@ -55,11 +55,15 @@ impl SymbolicReadResolver<SymIndex> for ProjExprReadResolver {
 
         let mut current = Self::resolve_concrete_host(base);
 
-        let mut last_index: isize = -1;
+        let mut last_index = 0;
         for (i, index) in indices {
-            current = self.project_one_to_ones(current, &projs[(last_index + 1) as usize..i]);
-            last_index = i as isize + 1;
+            current = self.project_one_to_ones(current, &projs[last_index..i]);
+            last_index = i + 1;
             current = current.select(index);
+        }
+
+        if last_index < projs.len() {
+            current = self.project_one_to_ones(current, &projs[last_index..]);
         }
 
         current
