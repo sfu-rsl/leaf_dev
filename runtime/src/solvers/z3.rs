@@ -15,12 +15,51 @@ use z3::{
 #[derive(Debug, Clone)]
 pub(crate) enum AstNode<'ctx> {
     Bool(ast::Bool<'ctx>),
-    BitVector { ast: ast::BV<'ctx>, is_signed: bool },
+    BitVector(BVNode<'ctx>),
     Array(ArrayNode<'ctx>),
 }
 
+impl<'ctx> From<BVNode<'ctx>> for AstNode<'ctx> {
+    fn from(node: BVNode<'ctx>) -> Self {
+        Self::BitVector(node)
+    }
+}
+
+impl<'ctx> From<ArrayNode<'ctx>> for AstNode<'ctx> {
+    fn from(node: ArrayNode<'ctx>) -> Self {
+        Self::Array(node)
+    }
+}
+
 #[derive(Debug, Clone)]
-pub(crate) struct ArrayNode<'ctx>(pub(crate) ast::Array<'ctx>, pub(crate) ArraySort);
+pub(crate) struct BVNode<'ctx>(pub ast::BV<'ctx>, pub BVSort);
+
+impl<'ctx> BVNode<'ctx> {
+    pub fn new(ast: ast::BV<'ctx>, is_signed: bool) -> Self {
+        Self(ast, BVSort { is_signed })
+    }
+
+    #[inline]
+    pub(crate) fn map<F>(&self, f: F) -> Self
+    where
+        F: FnOnce(&ast::BV<'ctx>) -> ast::BV<'ctx>,
+    {
+        Self(f(&self.0), self.1)
+    }
+
+    #[inline(always)]
+    pub(crate) fn is_signed(&self) -> bool {
+        self.1.is_signed
+    }
+
+    #[inline(always)]
+    pub(crate) fn size(&self) -> u32 {
+        self.0.get_size()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ArrayNode<'ctx>(pub ast::Array<'ctx>, pub ArraySort);
 
 #[derive(Debug, Clone)]
 pub(crate) enum AstNodeSort {
@@ -47,21 +86,14 @@ impl<'ctx> From<ast::Bool<'ctx>> for AstNode<'ctx> {
 
 impl<'ctx> AstNode<'ctx> {
     pub fn from_ubv(ast: ast::BV<'ctx>) -> Self {
-        Self::from_bv(ast, false)
-    }
-
-    pub fn from_bv(ast: ast::BV<'ctx>, is_signed: bool) -> Self {
-        Self::BitVector { ast, is_signed }
+        BVNode::new(ast, false).into()
     }
 
     pub fn from_ast(ast: ast::Dynamic<'ctx>, sort: &AstNodeSort) -> Self {
         match sort {
             AstNodeSort::Bool => ast.as_bool().map(Self::Bool),
-            AstNodeSort::BitVector(BVSort { is_signed }) => {
-                ast.as_bv().map(|ast| Self::BitVector {
-                    ast,
-                    is_signed: *is_signed,
-                })
+            AstNodeSort::BitVector(sort) => {
+                ast.as_bv().map(|ast| Self::BitVector(BVNode(ast, *sort)))
             }
             AstNodeSort::Array(sort) => ast
                 .as_array()
@@ -86,7 +118,7 @@ impl<'ctx> AstNode<'ctx> {
 
     pub fn as_bit_vector(&self) -> &ast::BV<'ctx> {
         match self {
-            Self::BitVector { ast, .. } => ast,
+            Self::BitVector(BVNode(ast, _)) => ast,
             _ => panic!("Expected the value to be a bit vector."),
         }
     }
@@ -96,7 +128,7 @@ impl<'ctx> AstNode<'ctx> {
     pub fn ast(&self) -> ast::Dynamic<'ctx> {
         ast::Dynamic::from_ast(match self {
             Self::Bool(ast) => ast,
-            Self::BitVector { ast, .. } => ast,
+            Self::BitVector(BVNode(ast, _)) => ast,
             Self::Array(ArrayNode(ast, _)) => ast,
         })
     }
@@ -104,9 +136,7 @@ impl<'ctx> AstNode<'ctx> {
     pub fn sort(&self) -> AstNodeSort {
         match self {
             Self::Bool(_) => AstNodeSort::Bool,
-            Self::BitVector { is_signed, .. } => AstNodeSort::BitVector(BVSort {
-                is_signed: *is_signed,
-            }),
+            Self::BitVector(BVNode(_, sort)) => AstNodeSort::BitVector(*sort),
             Self::Array(ArrayNode(_, sort)) => AstNodeSort::Array(sort.clone()),
         }
     }
@@ -114,7 +144,7 @@ impl<'ctx> AstNode<'ctx> {
     pub fn z3_sort(&self) -> z3::Sort<'ctx> {
         match self {
             Self::Bool(ast) => ast.get_sort(),
-            Self::BitVector { ast, .. } => ast.get_sort(),
+            Self::BitVector(BVNode(ast, _)) => ast.get_sort(),
             Self::Array(ArrayNode(ast, _)) => ast.get_sort(),
         }
     }
@@ -217,10 +247,9 @@ where
                 for (id, node) in vars {
                     let value = match node {
                         AstNode::Bool(ast) => AstNode::Bool(model.eval(&ast, true).unwrap()),
-                        AstNode::BitVector { ast, is_signed } => AstNode::BitVector {
-                            ast: model.eval(&ast, true).unwrap(),
-                            is_signed,
-                        },
+                        AstNode::BitVector(BVNode(ast, is_signed)) => {
+                            AstNode::BitVector(BVNode(model.eval(&ast, true).unwrap(), is_signed))
+                        }
                         AstNode::Array(ArrayNode(ast, sort)) => {
                             AstNode::Array(ArrayNode(model.eval(&ast, true).unwrap(), sort))
                         }
