@@ -18,8 +18,7 @@ pub(crate) mod z3 {
         },
         backends::basic::expr::{
             prelude::*,
-            sym_place::SymReadResult,
-            sym_place::{ProjExprReadResolver, Select},
+            sym_place::{ProjExprReadResolver, Select, SymReadResult},
             ProjKind, SymBinaryOperands, SymVarId,
         },
         solvers::z3::{ArrayNode, ArraySort, BVNode, BVSort},
