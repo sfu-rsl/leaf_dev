@@ -265,17 +265,11 @@ impl ConstValue {
                     _ => unreachable!("unsupported by rust"),
                 };
 
-                if let Some(result) = result {
-                    // case: u128 has not overflowed, check if we're higher than our max
-                    if ConstValue::in_bounds(result, &ty) {
-                        Some(result)
-                    } else {
-                        None
-                    }
-                } else {
-                    // case: u128 overflowed, so any smaller type also overflowed
-                    None
-                }
+                // If u128 overflows, any smaller type also overflows.
+                result.filter(|result| {
+                    // u128 has not overflowed, check if we're higher than our max.
+                    ConstValue::in_bounds(*result, &ty)
+                })
             }
         }
 
@@ -376,13 +370,13 @@ impl ConstValue {
                         // `as i128` is a bitwise transmute
                         let first = first.0 as i128;
                         let second = second.0 as i128;
-                        return match operator {
+                        match operator {
                             BinaryOp::Lt => first < second,
                             BinaryOp::Le => first <= second,
                             BinaryOp::Ge => first >= second,
                             BinaryOp::Gt => first > second,
                             _ => unreachable!(),
-                        };
+                        }
                     } else {
                         match operator {
                             BinaryOp::Lt => first < second,

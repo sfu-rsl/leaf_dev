@@ -14,15 +14,15 @@ impl<H, HI> ProjectionOn<H, HI> {
     #[inline]
     pub(crate) fn map<HNew, HINew>(
         self,
-        map_host: impl FnOnce(H) -> HNew,
-        map_host_index: impl FnOnce(HI) -> HINew,
+        f: impl FnOnce(H) -> HNew,
+        f_index: impl FnOnce(HI) -> HINew,
     ) -> ProjectionOn<HNew, HINew> {
         match self {
-            Deref(host) => Deref(map_host(host)),
-            Field(host, field) => Field(map_host(host), field),
-            Index(host_index, from_end) => Index(map_host_index(host_index), from_end),
-            Subslice(host, from, to, from_end) => Subslice(map_host(host), from, to, from_end),
-            Downcast(host, to_variant) => Downcast(map_host(host), to_variant),
+            Deref(host) => Deref(f(host)),
+            Field(host, field) => Field(f(host), field),
+            Index(host_index, from_end) => Index(f_index(host_index), from_end),
+            Subslice(host, from, to, from_end) => Subslice(f(host), from, to, from_end),
+            Downcast(host, to_variant) => Downcast(f(host), to_variant),
         }
     }
 
@@ -38,14 +38,6 @@ impl<H, HI> ProjectionOn<H, HI> {
 
 impl<H, I> ProjectionOn<H, (H, I)> {
     #[inline(always)]
-    pub(crate) fn host_into<HInto>(self) -> ProjectionOn<HInto, (HInto, I)>
-    where
-        H: Into<HInto>,
-    {
-        self.map_host(Into::into)
-    }
-
-    #[inline(always)]
     pub(crate) fn index_into<IInto>(self) -> ProjectionOn<H, (H, IInto)>
     where
         I: Into<IInto>,
@@ -55,17 +47,6 @@ impl<H, I> ProjectionOn<H, (H, I)> {
 }
 
 impl<H, I> ProjectionOn<H, (H, I)> {
-    #[inline]
-    pub(crate) fn host(&self) -> &H {
-        match self {
-            Deref(host) => host,
-            Field(host, _) => host,
-            Index((host, _), _) => host,
-            Subslice(host, _, _, _) => host,
-            Downcast(host, _) => host,
-        }
-    }
-
     #[inline(always)]
     pub(crate) fn map_host<T>(self, f: impl FnOnce(H) -> T) -> ProjectionOn<T, (T, I)> {
         match self {
@@ -77,48 +58,15 @@ impl<H, I> ProjectionOn<H, (H, I)> {
         }
     }
 
-    pub(crate) fn replace_host(&mut self, host: H) -> H {
-        use std::mem::replace;
-        match self {
-            Deref(old_host) => replace(old_host, host),
-            Field(old_host, _) => replace(old_host, host),
-            Index((old_host, _), _) => replace(old_host, host),
-            Subslice(old_host, _, _, _) => replace(old_host, host),
-            Downcast(old_host, _) => replace(old_host, host),
-        }
-    }
-
-    pub(crate) fn replace_host_with<T>(
-        self,
-        f: impl FnOnce(&H) -> T,
-    ) -> (H, ProjectionOn<T, (T, I)>) {
-        match self {
-            Deref(old_host) => {
-                let new_host = f(&old_host);
-                (old_host, Deref(new_host))
-            }
-            Field(old_host, field) => {
-                let new_host = f(&old_host);
-                (old_host, Field(new_host, field))
-            }
-            Index((old_host, index), from_end) => {
-                let new_host = f(&old_host);
-                (old_host, Index((new_host, index), from_end))
-            }
-            Subslice(old_host, from, to, from_end) => {
-                let new_host = f(&old_host);
-                (old_host, Subslice(new_host, from, to, from_end))
-            }
-            Downcast(old_host, to_variant) => {
-                let new_host = f(&old_host);
-                (old_host, Downcast(new_host, to_variant))
-            }
-        }
-    }
-
     #[inline]
     pub(crate) fn destruct(self) -> (H, ProjectionOn<(), ((), I)>) {
-        self.replace_host_with(|_| ())
+        match self {
+            Deref(old_host) => (old_host, Deref(())),
+            Field(old_host, field) => (old_host, Field((), field)),
+            Index((old_host, index), from_end) => (old_host, Index(((), index), from_end)),
+            Subslice(old_host, from, to, from_end) => (old_host, Subslice((), from, to, from_end)),
+            Downcast(old_host, to_variant) => (old_host, Downcast((), to_variant)),
+        }
     }
 
     pub(crate) fn clone_with_host<T>(&self, host: T) -> ProjectionOn<T, (T, I)>
