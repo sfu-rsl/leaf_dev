@@ -1,3 +1,28 @@
+/* What is going on for a symbolic read?
+ * In a nutshell a symbolic read corresponds to multiple possible values.
+ * In safe Rust, the only point for a symbolic read is a symbolic index over a slice.
+ * However, any further projection on the symbolic index is effectively another symbolic read.
+ * The difference is that the symbolic index is resolved to multiple possible values
+ * but other projections select a single value out of a possible value.
+ * In this way, we can separate the symbolic index from other projections and
+ * apply other projections on the possible values of the underlying symbolic index (select).
+ * Example:
+ * If `a` is an array of compound values, `a[x].1` is equivalent to `b[x]`,
+ * where `for all i. b[i] == a[i].1`.
+ *
+ * Symbolic indices over symbolic reads only add another layer of select.
+ * So if `a[x]` is represented as `select(a, x)` then `a[x][y]` is represented as
+ * `select(select(a, x), y)`.
+ * This effectively means that it doesn't matter where the other projections are
+ * located. In other words, both `*(a[x].1)[y]` and `*(a[x][y].1)` will be
+ * represented by two layers selections.
+ *
+ * Assuming that symbolic variables only come from primitive types, the start
+ * point for a symbolic read is always an index projection over a concrete array.
+ * Moreover, if a projection is applied on a symbolic value, it has to be another
+ * symbolic read, which may be resolved on demand.
+ */
+
 use crate::{
     abs::expr::{
         proj::{macros::impl_singular_projs_through_general, ProjectionOn, Projector},
@@ -14,21 +39,17 @@ use super::{prelude::*, ProjKind, SliceIndex, SymHostProj};
 
 type SymIndex = SliceIndex<SymValueRef>;
 pub(super) type Select<V> = crate::abs::expr::sym_place::Select<SymIndex, V>;
-// type SelectTarget<V> = crate::abs::expr::sym_place::SelectTarget<V, Select<V>>;
 
 define_either_pair! {
+    /// Represents a possible value of a symbolic read.
+    /// It can be either a value or the result of another symbolic read (e.g., an
+    /// consider `a[x]` is stored in `b[1]`. Then a possible value for `b[x]` is
+    /// is `a[x]` which is a symbolic read). This is particularly used when
+    /// applying further projections after the symbolic index.
     #[derive(Debug)]
     pub(crate) SymReadResult {
         Value(ValueRef),
         SymRead(Select<SymReadResult>),
-    }
-}
-
-define_either_pair! {
-    #[derive(Debug)]
-    pub(crate) ResolvedSymHost {
-        Value(ConcreteValueRef),
-        Nested(Select<ResolvedSymHost>),
     }
 }
 
@@ -71,6 +92,8 @@ impl SymbolicReadResolver<SymIndex> for ProjExprReadResolver {
 }
 
 impl ProjExprReadResolver {
+    /// # Remarks
+    /// This is the base case for creation of a `Select`.
     fn resolve_concrete_host(proj: &ConcreteHostProj) -> Select<SymReadResult> {
         let possible_values = match proj.host.as_ref() {
             ConcreteValue::Array(ArrayValue { elements }) => elements
@@ -85,6 +108,12 @@ impl ProjExprReadResolver {
         }
     }
 
+    /// Applies the given one-to-one projections to the given host.
+    /// By one-to-one projection we mean a projection that doesn't get resolved
+    /// to many possible values, i.e., all projections other than a symbolic index.
+    /// These projections can be applied on the possible values of a `Select`.
+    /// Given a `Select` value, this method returns a `Select` value which has
+    /// the same index but with possible values with the projections applied on them.
     fn project_one_to_ones(
         &mut self,
         host: Select<SymReadResult>,
@@ -101,8 +130,10 @@ impl ProjExprReadResolver {
             return host;
         }
 
-        let mut projector = PossibleValuesInplaceProjector {
-            projector: ConcreteProjectorAdapter::new(|p: &FullPlace| -> ValueRef { todo!() }),
+        let mut projector = PossibleValuesInPlaceProjector {
+            projector: ConcreteProjectorAdapter::new(|_p: &FullPlace| -> ValueRef {
+                todo!("#234")
+            }),
             resolver: self,
         };
 
@@ -120,56 +151,91 @@ impl ProjExprReadResolver {
         );
         current
     }
-
-    // fn resolve_for_projection(&mut self, mut value: SymReadResult) -> ResolvedSymHost {
-    //     self.resolve_recursive(&mut value);
-    //     value.try_into().expect("Complex symbolic values are not supported by this resolver. The symbolic host is expected to be a projection expression.")
-    // }
-
-    // fn resolve_recursive(&mut self, result: &mut SymReadResult) {
-    //     match result {
-    //         SymReadResult::Value(value) => {
-    //             if let Some(proj) = value.as_proj() {
-    //                 let mut select = self.resolve(proj);
-    //                 self.resolve_recursive_select(&mut select);
-    //                 *result = SymReadResult::SymRead(select);
-    //             }
-    //         }
-    //         SymReadResult::SymRead(select) => {
-    //             self.resolve_recursive_select(select);
-    //         }
-    //     }
-    // }
-
-    // fn resolve_recursive_select(&mut self, select: &mut Select<SymReadResult>) {
-    //     match &mut select.target {
-    //         SelectTarget::Values(values) => values.iter_mut().for_each(|v| {
-    //             self.resolve_recursive(v);
-    //         }),
-    //         SelectTarget::Nested(box inner) => self.resolve_recursive_select(inner),
-    //     };
-    // }
 }
 
-impl ProjExpr {
-    fn flatten(&self) -> (&ConcreteHostProj, Vec<&ProjKind>) {
-        match self {
-            ProjExpr::SymIndex(sym_index) => (sym_index, vec![]),
-            ProjExpr::SymHost(sym_host) => sym_host.flatten(),
+/// A projector for `Select` values that performs the projection in-place over
+/// their target.
+/// As the `Select` values are generated per each symbolic index, and they have
+/// a recursive structure, this projector should have less overhead than another
+/// that follows an immutable fashion.
+/// Note that it doesn't mutate actual `Value`s, but only the `Select` values.
+///
+/// # Fields
+/// `projector`: The regular projector that is used for (concrete) leaf nodes.
+/// `resolver`: Used to resolve the inner symbolic values if they appear as a
+///             leaf node that we need to apply some projections on.
+struct PossibleValuesInPlaceProjector<'r, P> {
+    projector: P,
+    resolver: &'r mut ProjExprReadResolver,
+}
+
+impl<'r, P> Projector for PossibleValuesInPlaceProjector<'r, P>
+where
+    P: Projector,
+    for<'h> P::HostRef<'h>: From<ConcreteValueRef>,
+    for<'h> P::HIRefPair<'h>: From<(ConcreteValueRef, ConcreteValueRef)>,
+    for<'h> P::Proj<'h>: Into<ValueRef>,
+{
+    type HostRef<'a> = &'a mut Select<SymReadResult>;
+
+    type HIRefPair<'a> = (Self::HostRef<'a>, ConcreteValueRef);
+
+    type Proj<'a> = ();
+
+    fn project<'a>(
+        &mut self,
+        proj_on: ProjectionOn<Self::HostRef<'a>, Self::HIRefPair<'a>>,
+    ) -> Self::Proj<'a> {
+        let (host, proj) = proj_on.destruct();
+
+        match &mut host.target {
+            SelectTarget::Array(values) => values
+                .iter_mut()
+                .for_each(|v| self.project_leaf_node(v, &proj)),
+            // Let the projection pass through the selects.
+            SelectTarget::Nested(box nested) => self.project(proj.map_host(|_| nested)),
+        };
+    }
+
+    impl_singular_projs_through_general!();
+}
+
+impl<'r, P> PossibleValuesInPlaceProjector<'r, P>
+where
+    P: Projector,
+    for<'h> P::HostRef<'h>: From<ConcreteValueRef>,
+    for<'h> P::HIRefPair<'h>: From<(ConcreteValueRef, ConcreteValueRef)>,
+    for<'h> P::Proj<'h>: Into<ValueRef>,
+{
+    fn project_leaf_node(
+        &mut self,
+        host: &mut SymReadResult,
+        proj: &ProjectionOn<(), ((), ConcreteValueRef)>,
+    ) {
+        match host {
+            SymReadResult::Value(ref mut value) => match value.as_ref() {
+                Value::Concrete(_) => {
+                    *value = self
+                        .projector
+                        .project(
+                            proj.clone_with_host(ConcreteValueRef::new(value.clone()))
+                                .into(),
+                        )
+                        .into();
+                }
+                Value::Symbolic(value) => {
+                    let sym_proj = value.expect_proj();
+                    let mut resolved = self.resolver.resolve(sym_proj);
+                    self.project(proj.clone_with_host(&mut resolved));
+                    *host = SymReadResult::SymRead(resolved);
+                }
+            },
+            SymReadResult::SymRead(select) => self.project(proj.clone_with_host(select)),
         }
     }
 }
 
-impl SymHostProj {
-    fn flatten(&self) -> (&ConcreteHostProj, Vec<&ProjKind>) {
-        let SymHostProj { host, kind } = self;
-        let host = host.expect_proj();
-        let (sym_index, mut projs) = host.flatten();
-        projs.push(kind);
-        (sym_index, projs)
-    }
-}
-
+/// Makes the existing `ConcreteProjector` compatible for the usage of the resolver.
 struct ConcreteProjectorAdapter<F, I>(ConcreteProjector<F, I>);
 
 impl<F> ConcreteProjectorAdapter<F, ()> {
@@ -199,19 +265,12 @@ where
         &mut self,
         pair: ProjectionOn<Self::HostRef<'a>, Self::HIRefPair<'a>>,
     ) -> Self::Proj<'a> {
-        self.0.project(pair.index_into()).unwrap_result(&())
+        self.0
+            .project(pair.index_into())
+            .unwrap_result(/* FIXME */ &())
     }
 
     impl_singular_projs_through_general!();
-}
-
-impl Value {
-    fn as_proj(&self) -> Option<&ProjExpr> {
-        match self {
-            Value::Symbolic(sym) => sym.as_proj(),
-            _ => None,
-        }
-    }
 }
 
 impl SymValue {
@@ -223,7 +282,29 @@ impl SymValue {
     }
 
     fn expect_proj(&self) -> &ProjExpr {
-        self.as_proj().expect("Complex symbolic values are not supported by this resolver. The symbolic host is expected to be a projection expression.")
+        self.as_proj().expect(concat!(
+            "Complex symbolic values are not supported by this resolver. ",
+            "The symbolic host is expected to be a projection expression."
+        ))
+    }
+}
+
+impl ProjExpr {
+    fn flatten(&self) -> (&ConcreteHostProj, Vec<&ProjKind>) {
+        match self {
+            ProjExpr::SymIndex(sym_index) => (sym_index, vec![]),
+            ProjExpr::SymHost(sym_host) => sym_host.flatten(),
+        }
+    }
+}
+
+impl SymHostProj {
+    fn flatten(&self) -> (&ConcreteHostProj, Vec<&ProjKind>) {
+        let SymHostProj { host, kind } = self;
+        let host = host.expect_proj();
+        let (sym_index, mut projs) = host.flatten();
+        projs.push(kind);
+        (sym_index, projs)
     }
 }
 
@@ -243,76 +324,6 @@ impl ProjKind {
                 ProjectionOn::Subslice(host, *from, *to, *from_end)
             }
             ProjKind::Downcast(to_variant) => ProjectionOn::Downcast(host, *to_variant),
-        }
-    }
-}
-
-struct PossibleValuesInplaceProjector<'r, P> {
-    projector: P,
-    resolver: &'r mut ProjExprReadResolver,
-}
-
-impl<'r, P> Projector for PossibleValuesInplaceProjector<'r, P>
-where
-    P: Projector,
-    for<'h> P::HostRef<'h>: From<ConcreteValueRef>,
-    for<'h> P::HIRefPair<'h>: From<(ConcreteValueRef, ConcreteValueRef)>,
-    for<'h> P::Proj<'h>: Into<ValueRef>,
-{
-    type HostRef<'a> = &'a mut Select<SymReadResult>;
-
-    type HIRefPair<'a> = (Self::HostRef<'a>, ConcreteValueRef);
-
-    type Proj<'a> = ();
-
-    fn project<'a>(
-        &mut self,
-        proj_on: ProjectionOn<Self::HostRef<'a>, Self::HIRefPair<'a>>,
-    ) -> Self::Proj<'a> {
-        let (host, proj) = proj_on.destruct();
-
-        // Let the projection pass through the selects.
-        match &mut host.target {
-            SelectTarget::Array(values) => values
-                .iter_mut()
-                .for_each(|v| self.project_leaf_result(v, &proj)),
-            SelectTarget::Nested(box nested) => self.project(proj.map_host(|_| nested)),
-        };
-    }
-
-    impl_singular_projs_through_general!();
-}
-
-impl<'r, P> PossibleValuesInplaceProjector<'r, P>
-where
-    P: Projector,
-    for<'h> P::HostRef<'h>: From<ConcreteValueRef>,
-    for<'h> P::HIRefPair<'h>: From<(ConcreteValueRef, ConcreteValueRef)>,
-    for<'h> P::Proj<'h>: Into<ValueRef>,
-{
-    fn project_leaf_result(
-        &mut self,
-        host: &mut SymReadResult,
-        proj: &ProjectionOn<(), ((), ConcreteValueRef)>,
-    ) {
-        match host {
-            SymReadResult::Value(ref mut value) => match value.as_ref() {
-                Value::Concrete(_) => {
-                    *value = self
-                        .projector
-                        .project(
-                            proj.clone_with_host(ConcreteValueRef::new(value.clone()))
-                                .into(),
-                        )
-                        .into();
-                }
-                Value::Symbolic(value) => {
-                    let mut resolved = self.resolver.resolve(value.expect_proj());
-                    self.project(proj.clone_with_host(&mut resolved));
-                    *host = SymReadResult::SymRead(resolved);
-                }
-            },
-            SymReadResult::SymRead(select) => self.project(proj.clone_with_host(select)),
         }
     }
 }
