@@ -86,6 +86,7 @@ Found a solution:
 - To see debug logging from the leaf runtime, set the environment variable `LEAF_LOG=debug`
   - linux: `export LEAF_LOG=debug`
   - powershell: `$Env:LEAF_LOG="debug"`
+    - a helpful pattern for separating large output streams: `cargo run main.rs; .\main.exe 2> out.txt`
 
 ### Emit MIR:
 - `cd ./samples/function/sym_arg/`

@@ -326,23 +326,16 @@ impl ConstValue {
                     ty: second_ty,
                 },
             ) => {
-                let result = match operator {
-                    BinaryOp::Shl => {
-                        assert!(
-                            !second_ty.is_signed || Self::is_positive(second.0, second_ty.bit_size),
-                            "Shifting by a negative value is not expected."
-                        ); //TODO we can get rid of this assertion in the future
-                        first << second.0 as usize
-                    }
-                    BinaryOp::Shr => {
-                        assert!(
-                            !second_ty.is_signed || Self::is_positive(second.0, second_ty.bit_size),
-                            "Shifting by a negative value is not expected."
-                        ); //TODO we can get rid of this assertion in the future
-                        first >> second.0 as usize
-                    }
+                assert!(
+                    !second_ty.is_signed || Self::is_positive(second.0, second_ty.bit_size),
+                    "Shifting by a negative value is not expected."
+                ); //TODO we can get rid of this assertion in the future
 
-                    _ => unreachable!(),
+                let result = match operator {
+                    // if second.0 is u128 or u64 & too big for usize, it will be usize::MAX
+                    BinaryOp::Shl => first << second.0 as usize,
+                    BinaryOp::Shr => first >> second.0 as usize,
+                    _ => unreachable!("invalid binop"),
                 };
 
                 let result = Wrapping(Self::to_size(result.0, first_ty));

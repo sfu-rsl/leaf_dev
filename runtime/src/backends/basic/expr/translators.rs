@@ -240,7 +240,23 @@ pub(crate) mod z3 {
                 }
                 AstNode::BitVector { is_signed, .. } => {
                     let left = left.as_bit_vector();
+                    let right = match operator {
+                        BinaryOp::Shl | BinaryOp::Shr
+                            if left.get_sort() != right.as_bit_vector().get_sort() =>
+                        {
+                            // This cast may truncate `right`, but since the smallest sort is 8 bits, the largest value
+                            // is 127, which is equal to the largest valid left or right shift of 127 for 128 bit values,
+                            // so everything works out!
+                            self.translate_cast_expr(
+                                right,
+                                // right must always be positive, so we can do an unsigned cast
+                                &ValueType::new_int(left.get_size() as u64, false),
+                            )
+                        }
+                        _ => right,
+                    };
                     let right = right.as_bit_vector();
+
                     let ar_func: Option<fn(&ast::BV<'ctx>, &ast::BV<'ctx>) -> ast::BV<'ctx>> =
                         match (operator, is_signed) {
                             (BinaryOp::Add, _) => Some(ast::BV::bvadd),
