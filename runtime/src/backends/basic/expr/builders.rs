@@ -253,7 +253,7 @@ mod core {
         }
 
         fn len<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
-            Expr::Len { of: operand }
+            Expr::Len(ProjExprRef::new(operand.into()))
         }
 
         fn cast<'a>(&mut self, operand: Self::ExprRef<'a>, target: CastKind) -> Self::Expr<'a> {

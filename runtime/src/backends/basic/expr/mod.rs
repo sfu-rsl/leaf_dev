@@ -16,6 +16,8 @@ pub(crate) type ValueRef = Rc<Value>;
 pub(crate) type ConcreteValueRef = ConcreteValueGuard<ValueRef>;
 pub(crate) type ConcreteValueMutRef<'a> = ConcreteValueGuard<&'a mut ValueRef>;
 pub(crate) type SymValueRef = SymValueGuard<ValueRef>;
+pub(crate) type ProjExprRef = ProjExprGuard<ValueRef>;
+
 pub(crate) type SymVarId = u32;
 
 #[derive(Clone, Debug)]
@@ -612,9 +614,7 @@ pub(crate) enum Expr {
 
     AddrOf(/* TODO */),
 
-    Len {
-        of: SymValueRef,
-    },
+    Len(ProjExprRef),
 
     Projection(ProjExpr),
 }
@@ -734,6 +734,12 @@ define_value_guard!(
     value
 );
 define_value_guard!(SymValue, SymValueGuard, Value::Symbolic(value), value);
+define_value_guard!(
+    ProjExpr,
+    ProjExprGuard,
+    Value::Symbolic(SymValue::Expression(Expr::Projection(proj))),
+    proj
+);
 
 define_reversible_pair!(
     SymIndexPair {
@@ -1034,7 +1040,7 @@ mod fmt {
                 } => write!(f, "{operator}ꟲ"),
                 Expr::Cast { .. } => write!(f, "Cast"),
                 Expr::AddrOf() => write!(f, "AddrOf"),
-                Expr::Len { .. } => write!(f, "Len"),
+                Expr::Len(_) => write!(f, "Len"),
                 Expr::Projection(_) => write!(f, "Proj"),
             }
         }
@@ -1048,7 +1054,7 @@ mod fmt {
                 },
                 Expr::Cast { from, to } => write!(f, "{from} -> {to}"),
                 Expr::AddrOf() => todo!(),
-                Expr::Len { of } => write!(f, "{of}"),
+                Expr::Len(of) => write!(f, "{of}"),
                 Expr::Projection(proj) => write!(f, "{proj}"),
             }
         }
