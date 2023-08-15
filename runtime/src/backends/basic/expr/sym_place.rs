@@ -35,10 +35,10 @@ use crate::{
     utils::meta::define_either_pair,
 };
 
-use super::{prelude::*, ProjKind, SliceIndex, SymHostProj};
+use super::{builders::ConcreteBuilder, prelude::*, ProjKind, SliceIndex, SymHostProj};
 
 type SymIndex = SliceIndex<SymValueRef>;
-pub(super) type Select<V> = crate::abs::expr::sym_place::Select<SymIndex, V>;
+pub(super) type Select<V = SymReadResult> = crate::abs::expr::sym_place::Select<SymIndex, V>;
 
 define_either_pair! {
     /// Represents a possible value of a symbolic read.
@@ -49,13 +49,65 @@ define_either_pair! {
     #[derive(Debug)]
     pub(crate) SymReadResult {
         Value(ValueRef),
-        SymRead(Select<SymReadResult>),
+        SymRead(Select),
     }
 }
 
-pub(super) struct ProjExprReadResolver;
+pub(super) trait ProjExprReadResolver:
+    for<'a, 'b> SymbolicReadResolver<
+        SymIndex,
+        SymValue<'a> = &'a ProjExpr,
+        PossibleValue<'a> = SymReadResult,
+    >
+{
+}
+impl<T> ProjExprReadResolver for T where
+    T: for<'a, 'b> SymbolicReadResolver<
+            SymIndex,
+            SymValue<'a> = &'a ProjExpr,
+            PossibleValue<'a> = SymReadResult,
+        >
+{
+}
 
-impl SymbolicReadResolver<SymIndex> for ProjExprReadResolver {
+impl SymReadResult {
+    fn mut_concrete_value(
+        &mut self,
+        f: &mut impl FnMut(ConcreteValueRef) -> ValueRef,
+        resolve: &mut impl ProjExprReadResolver,
+    ) {
+        match self {
+            SymReadResult::Value(value) => match value.as_ref() {
+                Value::Concrete(_) => {
+                    *value = f(ConcreteValueRef::new(value.clone()));
+                    return;
+                }
+                Value::Symbolic(sym_value) => {
+                    let mut resolved = resolve.resolve(sym_value.expect_proj());
+                    Self::mut_values(&mut resolved, &mut |v| v.mut_concrete_value(f, resolve));
+                    *self = SymReadResult::SymRead(resolved);
+                }
+            },
+            SymReadResult::SymRead(select) => {
+                Self::mut_values(select, &mut |v| v.mut_concrete_value(f, resolve));
+            }
+        }
+    }
+
+    fn mut_values(select: &mut Select, f: &mut impl FnMut(&mut SymReadResult)) {
+        match &mut select.target {
+            SelectTarget::Array(ref mut values) => {
+                values.iter_mut().for_each(f);
+            }
+            SelectTarget::Nested(box nested) => Self::mut_values(nested, f),
+        }
+    }
+}
+
+#[derive(Default)]
+pub(super) struct DefaultProjExprReadResolver;
+
+impl SymbolicReadResolver<SymIndex> for DefaultProjExprReadResolver {
     type SymValue<'a> = &'a ProjExpr;
 
     type PossibleValue<'a> = SymReadResult;
@@ -91,10 +143,10 @@ impl SymbolicReadResolver<SymIndex> for ProjExprReadResolver {
     }
 }
 
-impl ProjExprReadResolver {
+impl DefaultProjExprReadResolver {
     /// # Remarks
     /// This is the base case for creation of a `Select`.
-    fn resolve_concrete_host(proj: &ConcreteHostProj) -> Select<SymReadResult> {
+    fn resolve_concrete_host(proj: &ConcreteHostProj) -> Select {
         let possible_values = match proj.host.as_ref() {
             ConcreteValue::Array(ArrayValue { elements }) => elements
                 .iter()
@@ -114,11 +166,7 @@ impl ProjExprReadResolver {
     /// These projections can be applied on the possible values of a `Select`.
     /// Given a `Select` value, this method returns a `Select` value which has
     /// the same index but with possible values with the projections applied on them.
-    fn project_one_to_ones(
-        &mut self,
-        host: Select<SymReadResult>,
-        projs: &[&ProjKind],
-    ) -> Select<SymReadResult> {
+    fn project_one_to_ones(&mut self, host: Select, projs: &[&ProjKind]) -> Select {
         debug_assert!(
             !projs.iter().any(
                 |p| matches!(p, ProjKind::Index (SliceIndex{ index, .. }) if index.is_symbolic())
@@ -166,7 +214,7 @@ impl ProjExprReadResolver {
 ///             leaf node that we need to apply some projections on.
 struct PossibleValuesInPlaceProjector<'r, P> {
     projector: P,
-    resolver: &'r mut ProjExprReadResolver,
+    resolver: &'r mut DefaultProjExprReadResolver,
 }
 
 impl<'r, P> Projector for PossibleValuesInPlaceProjector<'r, P>
@@ -177,7 +225,7 @@ where
             Proj<'h> = Result<ValueRef, ConcreteValueRef>,
         >,
 {
-    type HostRef<'a> = &'a mut Select<SymReadResult>;
+    type HostRef<'a> = &'a mut Select;
 
     type HIRefPair<'a> = (Self::HostRef<'a>, ConcreteValueRef);
 
@@ -214,23 +262,14 @@ where
         host: &mut SymReadResult,
         proj: &ProjectionOn<(), ((), ConcreteValueRef)>,
     ) {
-        match host {
-            SymReadResult::Value(ref mut value) => match value.as_ref() {
-                Value::Concrete(_) => {
-                    *value = self
-                        .projector
-                        .project(proj.clone_with_host(ConcreteValueRef::new(value.clone())))
-                        .unwrap_result(proj);
-                }
-                Value::Symbolic(value) => {
-                    let sym_proj = value.expect_proj();
-                    let mut resolved = self.resolver.resolve(sym_proj);
-                    self.project(proj.clone_with_host(&mut resolved));
-                    *host = SymReadResult::SymRead(resolved);
-                }
+        host.mut_concrete_value(
+            &mut |value| {
+                self.projector
+                    .project(proj.clone_with_host(value))
+                    .unwrap_result(proj)
             },
-            SymReadResult::SymRead(select) => self.project(proj.clone_with_host(select)),
-        }
+            self.resolver,
+        );
     }
 }
 
@@ -323,4 +362,17 @@ impl ProjKind {
             ProjKind::Downcast(to_variant) => ProjectionOn::Downcast(host, *to_variant),
         }
     }
+}
+
+pub(super) fn apply_len(mut host: Select, resolver: &mut impl ProjExprReadResolver) -> Select {
+    SymReadResult::mut_values(&mut host, &mut |v| {
+        v.mut_concrete_value(
+            &mut |value| {
+                use crate::abs::expr::UnaryExprBuilder;
+                ConcreteBuilder::default().len(value)
+            },
+            resolver,
+        )
+    });
+    host
 }

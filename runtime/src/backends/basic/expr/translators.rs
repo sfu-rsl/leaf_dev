@@ -18,7 +18,7 @@ pub(crate) mod z3 {
         },
         backends::basic::expr::{
             prelude::*,
-            sym_place::{ProjExprReadResolver, Select, SymReadResult},
+            sym_place::{apply_len, DefaultProjExprReadResolver, Select, SymReadResult},
             ProjKind, SymBinaryOperands, SymVarId,
         },
         solvers::z3::{ArrayNode, ArraySort, BVNode, BVSort},
@@ -191,7 +191,10 @@ pub(crate) mod z3 {
                     self.translate_cast_expr(from, to)
                 }
                 Expr::AddrOf() => todo!(),
-                Expr::Len { .. } => todo!(),
+                Expr::Len(of) => {
+                    let of = self.resolve_proj_expression(&of);
+                    self.translate_len_expr(of)
+                }
                 Expr::Projection(proj_expr) => self.translate_projection_expr(proj_expr),
             }
         }
@@ -368,6 +371,12 @@ pub(crate) mod z3 {
                 ValueType::Float { .. } => todo!(),
                 _ => unreachable!("Casting from int to {to:#?} is not supported."),
             }
+        }
+
+        fn translate_len_expr(&mut self, of: Select) -> AstNode<'ctx> {
+            let select = apply_len(of, &mut DefaultProjExprReadResolver::default());
+            const LEN_VALUES_PREFIX: &str = "len";
+            self.translate_select(&select, Some(LEN_VALUES_PREFIX))
         }
 
         fn translate_projection_expr(&mut self, proj_expr: &ProjExpr) -> AstNode<'ctx> {

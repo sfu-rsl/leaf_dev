@@ -25,6 +25,8 @@ impl ExprBuilder<ValueRef> for DefaultExprBuilder {
 
 impl ValueRefBinaryExprBuilder for DefaultExprBuilder {}
 
+pub(super) use adapters::ConcreteBuilder;
+
 mod toplevel {
 
     use super::{adapters::ConcreteBuilder, symbolic::SymbolicBuilder, *};
