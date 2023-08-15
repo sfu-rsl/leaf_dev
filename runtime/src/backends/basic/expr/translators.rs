@@ -136,7 +136,7 @@ pub(crate) mod z3 {
         }
 
         fn translate_array(&mut self, array: &ArrayValue) -> ArrayNode<'ctx> {
-            self.translate_array_of_values(array.elements.iter(), Self::translate_value)
+            self.translate_array_of_values("arr", array.elements.iter(), Self::translate_value)
         }
 
         fn translate_symbolic(&mut self, symbolic: &SymValue) -> AstNode<'ctx> {
@@ -390,11 +390,15 @@ pub(crate) mod z3 {
                 }
             }
 
-            let select = ProjExprReadResolver.resolve(proj_expr);
-            self.translate_select(&select)
+            let select = self.resolve_proj_expression(proj_expr);
+            self.translate_select(&select, None)
         }
 
-        fn translate_select(&mut self, select: &Select<SymReadResult>) -> AstNode<'ctx> {
+        fn translate_select(
+            &mut self,
+            select: &Select,
+            const_prefix: Option<&str>,
+        ) -> AstNode<'ctx> {
             let index = {
                 let index_expr = if select.index.from_end {
                     todo!("Handle from end")
@@ -415,14 +419,16 @@ pub(crate) mod z3 {
 
             match &select.target {
                 SelectTarget::Array(possible_values) => {
+                    const POSSIBLE_VALUES_PREFIX: &str = "pvs";
                     let ArrayNode(
                         ast,
                         ArraySort {
                             range: box elem_sort,
                         },
                     ) = self.translate_array_of_values(
+                        const_prefix.unwrap_or(POSSIBLE_VALUES_PREFIX),
                         possible_values.iter(),
-                        Self::translate_symbolic_read_result,
+                        |this, r| this.translate_symbolic_read_result(r, const_prefix),
                     );
 
                     let result =
@@ -430,7 +436,7 @@ pub(crate) mod z3 {
                     result
                 }
                 SelectTarget::Nested(box inner) => {
-                    let inner = self.translate_select(inner);
+                    let inner = self.translate_select(inner, const_prefix);
                     if let AstNode::Array(ArrayNode(array, ArraySort { range: range_sort })) = inner
                     {
                         AstNode::from_ast(ast::Array::select(&array, &index.ast()), &range_sort)
@@ -443,6 +449,7 @@ pub(crate) mod z3 {
 
         fn translate_array_of_values<'a, V: 'a>(
             &mut self,
+            const_prefix: &str,
             values: impl Iterator<Item = &'a V>,
             translate: impl Fn(&mut Self, &V) -> AstNode<'ctx>,
         ) -> ArrayNode<'ctx>
@@ -457,10 +464,9 @@ pub(crate) mod z3 {
                 .expect("Indices on zero-sized arrays should be prevented by the bound checks.");
             let element_sort = first.sort().clone();
 
-            const POSSIBLE_VALUES_PREFIX: &str = "pvs";
             let mut array = ast::Array::fresh_const(
                 context,
-                POSSIBLE_VALUES_PREFIX,
+                const_prefix,
                 &z3::Sort::bitvector(context, USIZE_BIT_SIZE),
                 &first.z3_sort(),
             );
@@ -480,10 +486,14 @@ pub(crate) mod z3 {
             )
         }
 
-        fn translate_symbolic_read_result(&mut self, read_result: &SymReadResult) -> AstNode<'ctx> {
+        fn translate_symbolic_read_result(
+            &mut self,
+            read_result: &SymReadResult,
+            const_prefix: Option<&str>,
+        ) -> AstNode<'ctx> {
             match read_result {
                 SymReadResult::Value(value) => self.translate_value(value),
-                SymReadResult::SymRead(select) => self.translate_select(select),
+                SymReadResult::SymRead(select) => self.translate_select(select, const_prefix),
             }
         }
 
@@ -564,6 +574,10 @@ pub(crate) mod z3 {
                 }
             };
             ast::Bool::not(&no_overflow).into()
+        }
+
+        fn resolve_proj_expression(&mut self, proj_expr: &ProjExpr) -> Select {
+            DefaultProjExprReadResolver::default().resolve(proj_expr)
         }
     }
 
