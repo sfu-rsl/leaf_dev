@@ -1,3 +1,7 @@
+/// Defines an enum with two variants, one for each of the two possible orders
+/// of two items of possibly different types.
+/// In other words, it keeps the order information as variant index.
+/// The memory layout for variants are the same.
 macro_rules! define_reversible_pair {
     (
         $(#[$($attr: meta)*])*
@@ -68,6 +72,11 @@ macro_rules! define_reversible_pair {
 }
 pub(crate) use define_reversible_pair;
 
+/// Defines an enum with two variants, one for each of the two possible types.
+/// Mostly like the original definition plus some implementations like `From`
+/// for convenience.
+/// # Remarks
+/// Better to be replaced with a derive macro.
 macro_rules! define_either_pair {
     (
         $(#[$($attr: meta)*])*

@@ -171,10 +171,11 @@ struct PossibleValuesInPlaceProjector<'r, P> {
 
 impl<'r, P> Projector for PossibleValuesInPlaceProjector<'r, P>
 where
-    P: Projector,
-    for<'h> P::HostRef<'h>: From<ConcreteValueRef>,
-    for<'h> P::HIRefPair<'h>: From<(ConcreteValueRef, ConcreteValueRef)>,
-    for<'h> P::Proj<'h>: Into<ValueRef>,
+    for<'h> P: Projector<
+            HostRef<'h> = ConcreteValueRef,
+            HIRefPair<'h> = (ConcreteValueRef, ConcreteValueRef),
+            Proj<'h> = Result<ValueRef, ConcreteValueRef>,
+        >,
 {
     type HostRef<'a> = &'a mut Select<SymReadResult>;
 
@@ -202,10 +203,11 @@ where
 
 impl<'r, P> PossibleValuesInPlaceProjector<'r, P>
 where
-    P: Projector,
-    for<'h> P::HostRef<'h>: From<ConcreteValueRef>,
-    for<'h> P::HIRefPair<'h>: From<(ConcreteValueRef, ConcreteValueRef)>,
-    for<'h> P::Proj<'h>: Into<ValueRef>,
+    for<'h> P: Projector<
+            HostRef<'h> = ConcreteValueRef,
+            HIRefPair<'h> = (ConcreteValueRef, ConcreteValueRef),
+            Proj<'h> = Result<ValueRef, ConcreteValueRef>,
+        >,
 {
     fn project_leaf_node(
         &mut self,
@@ -217,11 +219,8 @@ where
                 Value::Concrete(_) => {
                     *value = self
                         .projector
-                        .project(
-                            proj.clone_with_host(ConcreteValueRef::new(value.clone()))
-                                .into(),
-                        )
-                        .into();
+                        .project(proj.clone_with_host(ConcreteValueRef::new(value.clone())))
+                        .unwrap_result(proj);
                 }
                 Value::Symbolic(value) => {
                     let sym_proj = value.expect_proj();
@@ -259,15 +258,13 @@ where
 {
     type HostRef<'a> = ConcreteValueRef;
     type HIRefPair<'a> = (ConcreteValueRef, ConcreteValueRef);
-    type Proj<'a> = ValueRef;
+    type Proj<'a> = Result<ValueRef, ConcreteValueRef>;
 
     fn project<'a>(
         &mut self,
         pair: ProjectionOn<Self::HostRef<'a>, Self::HIRefPair<'a>>,
     ) -> Self::Proj<'a> {
-        self.0
-            .project(pair.index_into())
-            .unwrap_result(/* FIXME */ &())
+        self.0.project(pair.index_into())
     }
 
     impl_singular_projs_through_general!();

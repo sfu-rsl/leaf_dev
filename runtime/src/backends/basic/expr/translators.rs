@@ -104,14 +104,12 @@ pub(crate) mod z3 {
                         },
                 } => {
                     // TODO: Add support for 128 bit integers.
-                    {
-                        let ast = ast::BV::from_u64(
-                            self.context,
-                            bit_rep.0 as u64,
-                            (*bit_size).try_into().expect("Size is too large."),
-                        );
-                        BVNode::new(ast, false).into()
-                    }
+                    let ast = ast::BV::from_u64(
+                        self.context,
+                        bit_rep.0 as u64,
+                        (*bit_size).try_into().expect("Size is too large."),
+                    );
+                    BVNode::new(ast, false).into()
                 }
                 ConstValue::Int {
                     bit_rep,
@@ -122,14 +120,12 @@ pub(crate) mod z3 {
                         },
                 } => {
                     // TODO: Add support for 128 bit integers.
-                    {
-                        let ast = ast::BV::from_i64(
-                            self.context,
-                            bit_rep.0 as i64,
-                            (*bit_size).try_into().expect("Size is too large."),
-                        );
-                        BVNode::new(ast, true).into()
-                    }
+                    let ast = ast::BV::from_i64(
+                        self.context,
+                        bit_rep.0 as i64,
+                        (*bit_size).try_into().expect("Size is too large."),
+                    );
+                    BVNode::new(ast, true).into()
                 }
                 ConstValue::Float { .. } => todo!(),
                 ConstValue::Str(_) => todo!(),
