@@ -25,13 +25,13 @@ pub(crate) mod z3 {
         solvers::z3::{ArrayNode, ArraySort, BVNode, BVSort},
     };
 
-    use crate::solvers::z3::{AstNode, AstPair};
+    use crate::solvers::z3::{AstNode, TranslatedConstraint};
 
     const CHAR_BIT_SIZE: u32 = size_of::<char>() as u32 * 8;
     const USIZE_BIT_SIZE: u32 = size_of::<usize>() as u32 * 8;
     const TO_CHAR_BIT_SIZE: u32 = 8; // Can only cast to a char from a u8
 
-    impl<'ctx> From<(&ValueRef, &'ctx Context)> for AstPair<'ctx, SymVarId> {
+    impl<'ctx> From<(&ValueRef, &'ctx Context)> for TranslatedConstraint<'ctx, SymVarId> {
         fn from(value_with_context: (&ValueRef, &'ctx Context)) -> Self {
             let (value, context) = value_with_context;
             Z3ValueTranslator::new(context).translate(value)
@@ -49,17 +49,22 @@ pub(crate) mod z3 {
             Self {
                 context,
                 variables: Default::default(),
-                constraints: Default::default(),
+                // Additional constraints are not common.
+                constraints: Vec::with_capacity(0),
             }
         }
     }
 
     impl<'ctx> Z3ValueTranslator<'ctx> {
-        fn translate(mut self, value: &ValueRef) -> AstPair<'ctx, SymVarId> {
+        fn translate(mut self, value: &ValueRef) -> TranslatedConstraint<'ctx, SymVarId> {
             log::debug!("Translating value: {}", value);
             let ast = self.translate_value(value);
             match ast {
-                AstNode::Bool(ast) => AstPair(ast, self.variables, self.constraints),
+                AstNode::Bool(ast) => TranslatedConstraint {
+                    constraint: ast,
+                    variables: self.variables,
+                    extra: self.constraints,
+                },
                 _ => panic!("Expected the value to be a boolean expression but it is a {ast:#?}.",),
             }
         }

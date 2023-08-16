@@ -150,11 +150,11 @@ impl<'ctx> AstNode<'ctx> {
     }
 }
 
-pub(crate) struct AstPair<'ctx, I>(
-    pub ast::Bool<'ctx>,
-    pub HashMap<I, AstNode<'ctx>>,
-    pub Vec<ast::Bool<'ctx>>,
-);
+pub(crate) struct TranslatedConstraint<'ctx, I> {
+    pub constraint: ast::Bool<'ctx>,
+    pub variables: HashMap<I, AstNode<'ctx>>,
+    pub extra: Vec<ast::Bool<'ctx>>,
+}
 
 lazy_static! {
     /* FIXME: Can we have a safer and still clean approach?
@@ -191,7 +191,7 @@ impl<'ctx, I, V> Z3Solver<'ctx, I, V> {
 
 impl<'ctx, I, V> backend::Solver<I, V> for Z3Solver<'ctx, I, V>
 where
-    AstPair<'ctx, I>: for<'v> From<(&'v V, &'ctx Context)>,
+    TranslatedConstraint<'ctx, I>: for<'v> From<(&'v V, &'ctx Context)>,
     I: Eq + Hash,
     V: From<AstNode<'ctx>>,
     Self: 'ctx,
@@ -204,15 +204,16 @@ where
             .iter()
             .flat_map(|constraint| {
                 let (value, is_negated) = constraint.destruct_ref();
-                let AstPair(ast, variables, additional_constraints) =
-                    AstPair::from((value, self.context));
+                let TranslatedConstraint {
+                    constraint: ast,
+                    variables,
+                    extra,
+                } = TranslatedConstraint::from((value, self.context));
                 all_vars.extend(variables);
 
                 let constraint = if is_negated { ast.not() } else { ast };
 
-                additional_constraints
-                    .into_iter()
-                    .chain(std::iter::once(constraint))
+                extra.into_iter().chain(std::iter::once(constraint))
             })
             .collect::<Vec<_>>();
 
