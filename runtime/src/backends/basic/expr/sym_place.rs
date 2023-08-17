@@ -243,6 +243,20 @@ impl DefaultProjExprReadResolver {
     }
 }
 
+/// Applies the length operator on the given `Select` value, i.e. the result `Select` leaf values
+/// correspond to the lengths of the host leaf values.
+pub(super) fn apply_len(mut host: Select, resolver: &mut impl ProjExprReadResolver) -> Select {
+    SymReadResult::mut_concrete_values(
+        &mut host,
+        &mut |value| {
+            use crate::abs::expr::UnaryExprBuilder;
+            ConcreteBuilder::default().len(value)
+        },
+        resolver,
+    );
+    host
+}
+
 /// A projector for `Select` values that performs the projection in-place over
 /// their target.
 /// As the `Select` values are generated per each symbolic index, and they have
@@ -282,7 +296,7 @@ where
             host,
             &mut |value| {
                 self.projector
-                    .project((&proj).clone_with_host(value))
+                    .project(proj.clone_with_host(value))
                     .unwrap_result(&proj)
             },
             self.resolver,
@@ -290,15 +304,6 @@ where
     }
 
     impl_singular_projs_through_general!();
-}
-
-impl<'r, P> PossibleValuesInPlaceProjector<'r, P> where
-    for<'h> P: Projector<
-            HostRef<'h> = ConcreteValueRef,
-            HIRefPair<'h> = (ConcreteValueRef, ConcreteValueRef),
-            Proj<'h> = Result<ValueRef, ConcreteValueRef>,
-        >
-{
 }
 
 /// Makes the existing `ConcreteProjector` compatible for the usage of the resolver.
@@ -390,18 +395,6 @@ impl ProjKind {
             ProjKind::Downcast(to_variant) => ProjectionOn::Downcast(host, *to_variant),
         }
     }
-}
-
-pub(super) fn apply_len(mut host: Select, resolver: &mut impl ProjExprReadResolver) -> Select {
-    SymReadResult::mut_concrete_values(
-        &mut host,
-        &mut |value| {
-            use crate::abs::expr::UnaryExprBuilder;
-            ConcreteBuilder::default().len(value)
-        },
-        resolver,
-    );
-    host
 }
 
 impl Display for SymIndex {

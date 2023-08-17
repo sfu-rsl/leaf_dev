@@ -194,7 +194,7 @@ pub(crate) mod z3 {
                 }
                 Expr::AddrOf() => todo!(),
                 Expr::Len(of) => {
-                    let of = self.resolve_proj_expression(&of);
+                    let of = self.resolve_proj_expression(of);
                     self.translate_len_expr(of)
                 }
                 Expr::Projection(proj_expr) => self.translate_projection_expr(proj_expr),
@@ -376,7 +376,7 @@ pub(crate) mod z3 {
         }
 
         fn translate_len_expr(&mut self, of: Select) -> AstNode<'ctx> {
-            let select = apply_len(of, &mut DefaultProjExprReadResolver::default());
+            let select = apply_len(of, &mut DefaultProjExprReadResolver);
             const LEN_VALUES_PREFIX: &str = "len";
             self.translate_select(&select, Some(LEN_VALUES_PREFIX))
         }
@@ -602,7 +602,7 @@ pub(crate) mod z3 {
         }
 
         fn resolve_proj_expression(&mut self, proj_expr: &ProjExpr) -> Select {
-            DefaultProjExprReadResolver::default().resolve(proj_expr)
+            DefaultProjExprReadResolver.resolve(proj_expr)
         }
     }
 

@@ -1,7 +1,4 @@
-use std::{
-    collections::btree_map::Values,
-    fmt::{Display, Formatter, Result},
-};
+use std::fmt::{Display, Formatter, Result};
 
 use crate::backends::basic::logger::comma_separated;
 

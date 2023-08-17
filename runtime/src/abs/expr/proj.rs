@@ -25,15 +25,6 @@ impl<H, HI> ProjectionOn<H, HI> {
             Downcast(host, to_variant) => Downcast(f(host), to_variant),
         }
     }
-
-    #[inline(always)]
-    pub(crate) fn into<HInto, HIInto>(self) -> ProjectionOn<HInto, HIInto>
-    where
-        H: Into<HInto>,
-        HI: Into<HIInto>,
-    {
-        self.map(Into::into, Into::into)
-    }
 }
 
 impl<H, I> ProjectionOn<H, (H, I)> {
@@ -47,17 +38,6 @@ impl<H, I> ProjectionOn<H, (H, I)> {
 }
 
 impl<H, I> ProjectionOn<H, (H, I)> {
-    #[inline(always)]
-    pub(crate) fn map_host<T>(self, f: impl FnOnce(H) -> T) -> ProjectionOn<T, (T, I)> {
-        match self {
-            Deref(host) => Deref(f(host)),
-            Field(host, field) => Field(f(host), field),
-            Index((host, index), from_end) => Index((f(host), index), from_end),
-            Subslice(host, from, to, from_end) => Subslice(f(host), from, to, from_end),
-            Downcast(host, to_variant) => Downcast(f(host), to_variant),
-        }
-    }
-
     #[inline]
     pub(crate) fn destruct(self) -> (H, ProjectionOn<(), ((), I)>) {
         match self {
