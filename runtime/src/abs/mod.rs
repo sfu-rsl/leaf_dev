@@ -1,7 +1,6 @@
-use std::fmt::Display;
-
 pub(crate) mod backend;
 pub(crate) mod expr;
+pub(crate) mod fmt;
 
 pub(crate) type LocalIndex = u32;
 pub type BasicBlockIndex = u32;
@@ -13,15 +12,6 @@ pub(crate) enum Local {
     ReturnValue,          // 0
     Argument(LocalIndex), // 1-n
     Normal(LocalIndex),   // > n
-}
-impl std::fmt::Display for Local {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            Self::ReturnValue => write!(f, "ReturnValue"),
-            Self::Argument(local) => write!(f, "Arg({})", local),
-            Self::Normal(local) => write!(f, "Var({})", local),
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -151,45 +141,5 @@ impl TryFrom<CastKind> for ValueType {
             CastKind::ToFloat(to) => Ok(ValueType::Float(to)),
             _ => Err(value),
         }
-    }
-}
-
-impl<V> Display for Constraint<V>
-where
-    V: Display,
-{
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Constraint::Bool(value) => write!(f, "({})", value),
-            Constraint::Not(value) => write!(f, "!({})", value),
-        }
-    }
-}
-
-impl Display for ValueType {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            Self::Bool => write!(f, "bool"),
-            Self::Char => write!(f, "char"),
-            Self::Int(int) => write!(f, "{}", int),
-            Self::Float(float) => write!(f, "{}", float),
-        }
-    }
-}
-
-impl Display for IntType {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(
-            f,
-            "{}{}",
-            if self.is_signed { 'i' } else { 'u' },
-            self.bit_size
-        )
-    }
-}
-
-impl Display for FloatType {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "f{}", self.e_bits + self.s_bits)
     }
 }

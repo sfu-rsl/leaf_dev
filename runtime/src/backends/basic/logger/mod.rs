@@ -475,6 +475,6 @@ impl Display for UnaryOp {
     }
 }
 
-fn comma_separated<T: Display>(iter: impl Iterator<Item = T>) -> String {
+pub(crate) fn comma_separated<T: Display>(iter: impl Iterator<Item = T>) -> String {
     iter.map(|t| format!("{t}")).collect::<Vec<_>>().join(", ")
 }

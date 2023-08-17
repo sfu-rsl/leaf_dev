@@ -23,6 +23,8 @@
  * symbolic read, which may be resolved on demand.
  */
 
+use std::fmt::Display;
+
 use crate::{
     abs::expr::{
         proj::{macros::impl_singular_projs_through_general, ProjectionOn, Projector},
@@ -375,4 +377,10 @@ pub(super) fn apply_len(mut host: Select, resolver: &mut impl ProjExprReadResolv
         )
     });
     host
+}
+
+impl Display for SymIndex {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}{}ˢ", self.index, if self.from_end { "^" } else { "" })
+    }
 }
