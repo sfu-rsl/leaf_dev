@@ -30,6 +30,8 @@ pub(crate) mod z3 {
     const USIZE_BIT_SIZE: u32 = size_of::<usize>() as u32 * 8;
     const TO_CHAR_BIT_SIZE: u32 = 8; // Can only cast to a char from a u8
 
+    const POSSIBLE_VALUES_PREFIX: &str = "pvs";
+
     impl<'ctx> From<(&ValueRef, &'ctx Context)> for TranslatedConstraint<'ctx, SymVarId> {
         fn from(value_with_context: (&ValueRef, &'ctx Context)) -> Self {
             let (value, context) = value_with_context;
@@ -428,7 +430,6 @@ pub(crate) mod z3 {
 
             match &select.target {
                 SelectTarget::Array(possible_values) => {
-                    const POSSIBLE_VALUES_PREFIX: &str = "pvs";
                     let ArrayNode(
                         ast,
                         ArraySort {
@@ -502,6 +503,13 @@ pub(crate) mod z3 {
         ) -> AstNode<'ctx> {
             match read_result {
                 SymReadResult::Value(value) => self.translate_value(value),
+                SymReadResult::Array(values) => {
+                    let const_prefix = const_prefix.unwrap_or(POSSIBLE_VALUES_PREFIX);
+                    self.translate_array_of_values(const_prefix, values.iter(), |this, v| {
+                        this.translate_symbolic_read_result(v, Some(const_prefix))
+                    })
+                    .into()
+                }
                 SymReadResult::SymRead(select) => self.translate_select(select, const_prefix),
             }
         }

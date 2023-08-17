@@ -31,10 +31,10 @@ use crate::{
         sym_place::{SelectTarget, SymbolicReadResolver},
     },
     backends::basic::{
+        logger::comma_separated,
         place::FullPlace,
         state::proj::{ConcreteProjector, ProjResultExt},
     },
-    utils::meta::define_either_pair,
 };
 
 use super::{builders::ConcreteBuilder, prelude::*, ProjKind, SliceIndex, SymHostProj};
@@ -42,17 +42,16 @@ use super::{builders::ConcreteBuilder, prelude::*, ProjKind, SliceIndex, SymHost
 type SymIndex = SliceIndex<SymValueRef>;
 pub(super) type Select<V = SymReadResult> = crate::abs::expr::sym_place::Select<SymIndex, V>;
 
-define_either_pair! {
-    /// Represents a possible value of a symbolic read.
-    /// It can be either a value or the result of another symbolic read (e.g., an
-    /// consider `a[x]` is stored in `b[1]`. Then a possible value for `b[x]` is
-    /// is `a[x]` which is a symbolic read). This is particularly used when
-    /// applying further projections after the symbolic index.
-    #[derive(Debug)]
-    pub(crate) SymReadResult {
-        Value(ValueRef),
-        SymRead(Select),
-    }
+/// Represents a possible value of a symbolic read.
+/// It can be either a value or the result of another symbolic read (e.g.,
+/// consider `a[x]` is stored in `b[1]`. Then a possible value for `b[y]` is
+/// `a[x]` which is another symbolic read). This is particularly used when
+/// applying further projections after the symbolic index.
+#[derive(Debug)]
+pub(crate) enum SymReadResult {
+    Value(ValueRef),
+    Array(Vec<SymReadResult>),
+    SymRead(Select),
 }
 
 pub(super) trait ProjExprReadResolver:
@@ -73,35 +72,72 @@ impl<T> ProjExprReadResolver for T where
 }
 
 impl SymReadResult {
-    fn mut_concrete_value(
-        &mut self,
+    fn mut_concrete_values(
+        select: &mut Select,
         f: &mut impl FnMut(ConcreteValueRef) -> ValueRef,
-        resolve: &mut impl ProjExprReadResolver,
+        resolver: &mut impl ProjExprReadResolver,
     ) {
-        match self {
-            SymReadResult::Value(value) => match value.as_ref() {
-                Value::Concrete(_) => {
-                    *value = f(ConcreteValueRef::new(value.clone()));
-                    return;
-                }
-                Value::Symbolic(sym_value) => {
-                    let mut resolved = resolve.resolve(sym_value.expect_proj());
-                    Self::mut_values(&mut resolved, &mut |v| v.mut_concrete_value(f, resolve));
-                    *self = SymReadResult::SymRead(resolved);
-                }
-            },
-            SymReadResult::SymRead(select) => {
-                Self::mut_values(select, &mut |v| v.mut_concrete_value(f, resolve));
+        Self::internal_mut_concrete_values(select, 1, f, resolver)
+    }
+
+    fn internal_mut_concrete_values(
+        select: &mut Select,
+        expected_dim: usize,
+        f: &mut impl FnMut(ConcreteValueRef) -> ValueRef,
+        resolver: &mut impl ProjExprReadResolver,
+    ) {
+        match &mut select.target {
+            SelectTarget::Array(ref mut values) => {
+                values
+                    .iter_mut()
+                    .for_each(|v| v.internal_mut_concrete_value(expected_dim - 1, f, resolver));
+            }
+            SelectTarget::Nested(box nested) => {
+                Self::internal_mut_concrete_values(nested, expected_dim + 1, f, resolver)
             }
         }
     }
 
-    fn mut_values(select: &mut Select, f: &mut impl FnMut(&mut SymReadResult)) {
-        match &mut select.target {
-            SelectTarget::Array(ref mut values) => {
-                values.iter_mut().for_each(f);
+    fn internal_mut_concrete_value(
+        &mut self,
+        dim: usize,
+        f: &mut impl FnMut(ConcreteValueRef) -> ValueRef,
+        resolver: &mut impl ProjExprReadResolver,
+    ) {
+        // Resolve or expand value for further mutation.
+        if let SymReadResult::Value(value) = self {
+            match value.as_ref() {
+                Value::Concrete(ConcreteValue::Array(array)) if dim > 0 => {
+                    *self = SymReadResult::Array(
+                        array
+                            .elements
+                            .iter()
+                            .cloned()
+                            .map(SymReadResult::Value)
+                            .collect(),
+                    )
+                }
+                Value::Symbolic(sym_value) => {
+                    *self = SymReadResult::SymRead(resolver.resolve(sym_value.expect_proj()))
+                }
+                _ => (),
+            };
+        }
+
+        match self {
+            SymReadResult::Value(value) => match value.as_ref() {
+                Value::Concrete(_) => {
+                    assert_eq!(dim, 0, "Concrete value is expected to be expandable.");
+                    *value = f(ConcreteValueRef::new(value.clone()));
+                }
+                _ => unreachable!(),
+            },
+            SymReadResult::Array(values) => values
+                .iter_mut()
+                .for_each(|v| v.internal_mut_concrete_value(dim - 1, f, resolver)),
+            SymReadResult::SymRead(select) => {
+                Self::internal_mut_concrete_values(select, dim, f, resolver)
             }
-            SelectTarget::Nested(box nested) => Self::mut_values(nested, f),
         }
     }
 }
@@ -134,6 +170,8 @@ impl SymbolicReadResolver<SymIndex> for DefaultProjExprReadResolver {
         for (i, index) in indices {
             current = self.project_one_to_ones(current, &projs[last_index..i]);
             last_index = i + 1;
+
+            log::debug!("Found a symbolic index in the projection chain at {i}");
             current = current.select(index);
         }
 
@@ -175,6 +213,8 @@ impl DefaultProjExprReadResolver {
             ),
             "Not meant for one-to-many projections (symbolic indices)."
         );
+
+        log::debug!("Applying one-to-one projections: {projs:?} on {host}");
 
         if projs.is_empty() {
             return host;
@@ -238,41 +278,27 @@ where
         proj_on: ProjectionOn<Self::HostRef<'a>, Self::HIRefPair<'a>>,
     ) -> Self::Proj<'a> {
         let (host, proj) = proj_on.destruct();
-
-        match &mut host.target {
-            SelectTarget::Array(values) => values
-                .iter_mut()
-                .for_each(|v| self.project_leaf_node(v, &proj)),
-            // Let the projection pass through the selects.
-            SelectTarget::Nested(box nested) => self.project(proj.map_host(|_| nested)),
-        };
+        SymReadResult::mut_concrete_values(
+            host,
+            &mut |value| {
+                self.projector
+                    .project((&proj).clone_with_host(value))
+                    .unwrap_result(&proj)
+            },
+            self.resolver,
+        );
     }
 
     impl_singular_projs_through_general!();
 }
 
-impl<'r, P> PossibleValuesInPlaceProjector<'r, P>
-where
+impl<'r, P> PossibleValuesInPlaceProjector<'r, P> where
     for<'h> P: Projector<
             HostRef<'h> = ConcreteValueRef,
             HIRefPair<'h> = (ConcreteValueRef, ConcreteValueRef),
             Proj<'h> = Result<ValueRef, ConcreteValueRef>,
-        >,
+        >
 {
-    fn project_leaf_node(
-        &mut self,
-        host: &mut SymReadResult,
-        proj: &ProjectionOn<(), ((), ConcreteValueRef)>,
-    ) {
-        host.mut_concrete_value(
-            &mut |value| {
-                self.projector
-                    .project(proj.clone_with_host(value))
-                    .unwrap_result(proj)
-            },
-            self.resolver,
-        );
-    }
 }
 
 /// Makes the existing `ConcreteProjector` compatible for the usage of the resolver.
@@ -367,20 +393,29 @@ impl ProjKind {
 }
 
 pub(super) fn apply_len(mut host: Select, resolver: &mut impl ProjExprReadResolver) -> Select {
-    SymReadResult::mut_values(&mut host, &mut |v| {
-        v.mut_concrete_value(
-            &mut |value| {
-                use crate::abs::expr::UnaryExprBuilder;
-                ConcreteBuilder::default().len(value)
-            },
-            resolver,
-        )
-    });
+    SymReadResult::mut_concrete_values(
+        &mut host,
+        &mut |value| {
+            use crate::abs::expr::UnaryExprBuilder;
+            ConcreteBuilder::default().len(value)
+        },
+        resolver,
+    );
     host
 }
 
 impl Display for SymIndex {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}{}ˢ", self.index, if self.from_end { "^" } else { "" })
+    }
+}
+
+impl Display for SymReadResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SymReadResult::Value(value) => write!(f, "{}", value),
+            SymReadResult::Array(values) => write!(f, "{}", comma_separated(values.iter())),
+            SymReadResult::SymRead(select) => write!(f, "{}", select),
+        }
     }
 }
