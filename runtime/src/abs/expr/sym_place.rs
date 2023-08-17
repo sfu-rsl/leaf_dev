@@ -1,5 +1,3 @@
-use crate::utils::meta::define_either_pair;
-
 /// Represents a selection over a `target` using an `index`.
 #[derive(Debug)]
 pub(crate) struct Select<I, V> {
@@ -7,14 +5,12 @@ pub(crate) struct Select<I, V> {
     pub target: SelectTarget<V, Self>,
 }
 
-define_either_pair! {
-    /// Represents the possible targets of a selection, which can be an array of
-    /// values or recursively the result of another selection.
-    #[derive(Debug)]
-    pub(crate) SelectTarget<V, S> {
-        Array(Vec<V>),
-        Nested(Box<S>),
-    }
+/// Represents the possible targets of a selection, which can be an array of
+/// values or recursively the result of another selection.
+#[derive(Debug)]
+pub(crate) enum SelectTarget<V, S> {
+    Array(Vec<V>),
+    Nested(Box<S>),
 }
 
 impl<I, V> Select<I, V> {
