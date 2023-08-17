@@ -47,7 +47,7 @@ pub(super) type Select<V = SymReadResult> = crate::abs::expr::sym_place::Select<
 /// consider `a[x]` is stored in `b[1]`. Then a possible value for `b[y]` is
 /// `a[x]` which is another symbolic read). This is particularly used when
 /// applying further projections after the symbolic index.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) enum SymReadResult {
     Value(ValueRef),
     Array(Vec<SymReadResult>),
