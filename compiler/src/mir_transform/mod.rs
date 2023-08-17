@@ -1,18 +1,19 @@
 /// This module hosts general utilities for modifying MIR bodies.
-use std::{cell::RefCell, collections::HashMap, marker::PhantomData};
+mod jump;
 
-use crate::visit::{self, TerminatorKindMutVisitor};
+use std::{cell::RefCell, collections::HashMap};
 
 use rustc_ast::Mutability;
 use rustc_index::IndexVec;
 use rustc_middle::{
     mir::{
-        BasicBlock, BasicBlockData, Body, ClearCrossCrate, Local, LocalDecl, Operand, Place,
-        SourceInfo, Terminator, UnwindAction,
+        BasicBlock, BasicBlockData, Body, ClearCrossCrate, Local, LocalDecl, SourceInfo,
+        UnwindAction,
     },
     ty::Ty,
 };
-use rustc_span::Span;
+
+use self::jump::{JumpTargetAttribute, JumpUpdater};
 
 pub(crate) const NEXT_BLOCK: BasicBlock = BasicBlock::MAX;
 
@@ -174,8 +175,6 @@ pub(crate) enum JumpModificationConstraint {
     SwitchValue(u128),
     SwitchOtherwise,
 }
-
-type JumpTargetAttribute = JumpModificationConstraint;
 
 impl JumpModificationConstraint {
     /// Checks if this constraint satisfies a target situation.
@@ -610,201 +609,6 @@ impl<'tcx> BodyModificationUnit<'tcx> {
             if !sanity_check(index, update_count) {
                 panic!("Update count of {update_count} was not acceptable at index {index:?}");
             }
-        }
-    }
-}
-
-trait MapFunc: Fn(BasicBlock, &JumpModificationConstraint) -> Option<BasicBlock> {}
-impl<T: Fn(BasicBlock, &JumpModificationConstraint) -> Option<BasicBlock>> MapFunc for T {}
-
-struct JumpUpdater<'tcx, M>
-where
-    M: MapFunc,
-{
-    index_mapping: M,
-    count: usize,
-    recursive: bool,
-    phantom: PhantomData<&'tcx ()>,
-}
-
-impl<'tcx, M> JumpUpdater<'tcx, M>
-where
-    M: MapFunc,
-{
-    fn new(index_mapping: M, recursive: bool) -> Self {
-        Self {
-            index_mapping,
-            count: 0,
-            recursive,
-            phantom: PhantomData,
-        }
-    }
-}
-
-impl<'tcx, M> visit::TerminatorKindMutVisitor<'tcx, ()> for JumpUpdater<'tcx, M>
-where
-    M: MapFunc,
-{
-    fn visit_goto(&mut self, target: &mut BasicBlock) {
-        self.update(target);
-    }
-
-    fn visit_switch_int(
-        &mut self,
-        _discr: &mut rustc_middle::mir::Operand<'tcx>,
-        targets: &mut rustc_middle::mir::SwitchTargets,
-    ) {
-        // Because of API limitations we have to take this weird approach.
-        let values: Vec<u128> = targets.iter().map(|(v, _)| v).collect();
-        for (index, target) in targets.all_targets_mut().iter_mut().enumerate() {
-            if index < values.len() {
-                self.update_with_attr(
-                    &mut *target,
-                    JumpTargetAttribute::SwitchValue(values[index]),
-                );
-            } else {
-                self.update_with_attr(&mut *target, JumpTargetAttribute::SwitchOtherwise);
-            }
-        }
-    }
-
-    fn visit_drop(
-        &mut self,
-        _place: &mut rustc_middle::mir::Place<'tcx>,
-        target: &mut BasicBlock,
-        unwind: &mut UnwindAction,
-        _replace: &mut bool,
-    ) {
-        self.update(target);
-        self.update_maybe(unwind.basic_block());
-    }
-
-    fn visit_drop_and_replace(
-        &mut self,
-        _place: &mut rustc_middle::mir::Place<'tcx>,
-        _value: &mut rustc_middle::mir::Operand<'tcx>,
-        target: &mut BasicBlock,
-        unwind: &mut UnwindAction,
-    ) {
-        self.update(target);
-        self.update_maybe(unwind.basic_block());
-    }
-
-    fn visit_call(
-        &mut self,
-        _func: &mut Operand<'tcx>,
-        _args: &mut [Operand<'tcx>],
-        _destination: &mut Place<'tcx>,
-        target: &mut Option<BasicBlock>,
-        unwind: &mut UnwindAction,
-        _call_source: &mut rustc_middle::mir::CallSource,
-        _fn_span: Span,
-    ) {
-        self.update_maybe(target.as_mut());
-        self.update_maybe(unwind.basic_block());
-    }
-
-    fn visit_assert(
-        &mut self,
-        _cond: &mut rustc_middle::mir::Operand<'tcx>,
-        _expected: &mut bool,
-        _msg: &mut rustc_middle::mir::AssertMessage<'tcx>,
-        target: &mut BasicBlock,
-        unwind: &mut UnwindAction,
-    ) {
-        self.update(target);
-        self.update_maybe(unwind.basic_block());
-    }
-
-    fn visit_yield(
-        &mut self,
-        _value: &mut rustc_middle::mir::Operand<'tcx>,
-        resume: &mut BasicBlock,
-        _resume_arg: &mut rustc_middle::mir::Place<'tcx>,
-        drop: &mut Option<BasicBlock>,
-    ) {
-        self.update(resume);
-        self.update_maybe(drop.as_mut());
-    }
-
-    fn visit_false_edge(
-        &mut self,
-        real_target: &mut BasicBlock,
-        imaginary_target: &mut BasicBlock,
-    ) {
-        self.update(real_target);
-        self.update(imaginary_target);
-    }
-
-    fn visit_false_unwind(&mut self, real_target: &mut BasicBlock, unwind: &mut UnwindAction) {
-        self.update(real_target);
-        self.update_maybe(unwind.basic_block());
-    }
-
-    fn visit_inline_asm(
-        &mut self,
-        _template: &mut &[rustc_ast::InlineAsmTemplatePiece],
-        _operands: &mut [rustc_middle::mir::InlineAsmOperand<'tcx>],
-        _options: &mut rustc_ast::InlineAsmOptions,
-        _line_spans: &'tcx [Span],
-        destination: &mut Option<BasicBlock>,
-        unwind: &mut UnwindAction,
-    ) {
-        self.update_maybe(destination.as_mut());
-        self.update_maybe(unwind.basic_block());
-    }
-}
-
-impl<'tcx, M> JumpUpdater<'tcx, M>
-where
-    M: MapFunc,
-{
-    pub fn update_terminator(&mut self, terminator: &mut Terminator<'tcx>) -> usize {
-        self.count = 0;
-        Self::visit_terminator_kind(self, &mut terminator.kind);
-        self.count
-    }
-
-    fn update(&mut self, target: &mut BasicBlock) {
-        self.update_with_attr(target, JumpTargetAttribute::None)
-    }
-
-    fn update_maybe(&mut self, target: Option<&mut BasicBlock>) {
-        self.update_maybe_with_attr(target, JumpTargetAttribute::None)
-    }
-
-    fn update_with_attr(&mut self, target: &mut BasicBlock, target_attr: JumpTargetAttribute) {
-        let new_index = (self.index_mapping)(*target, &target_attr);
-        if let Some(new_index) = new_index {
-            log::debug!("Updating jump target from {:?} to {:?}", target, new_index);
-            *target = new_index;
-            self.count += 1;
-            if self.recursive {
-                self.update(target);
-            }
-        }
-    }
-
-    fn update_maybe_with_attr(
-        &mut self,
-        target: Option<&mut BasicBlock>,
-        target_attr: JumpTargetAttribute,
-    ) {
-        if let Some(t) = target {
-            self.update_with_attr(t, target_attr);
-        }
-    }
-}
-
-trait UnwindActionExt {
-    fn basic_block(&mut self) -> Option<&mut BasicBlock>;
-}
-
-impl UnwindActionExt for UnwindAction {
-    fn basic_block(&mut self) -> Option<&mut BasicBlock> {
-        match self {
-            UnwindAction::Cleanup(target) => Some(target),
-            _ => None,
         }
     }
 }
