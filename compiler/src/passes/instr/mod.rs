@@ -11,7 +11,7 @@ use rustc_middle::{
 };
 
 use crate::{
-    mir_transform::{BodyInstrumentationUnit, JumpTargetModifier},
+    mir_transform::{split_blocks_with, BodyInstrumentationUnit, JumpTargetModifier},
     visit::*,
 };
 

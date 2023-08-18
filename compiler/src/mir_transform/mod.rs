@@ -7,7 +7,7 @@ use rustc_middle::mir::{BasicBlock, BasicBlockData, Local, LocalDecl};
 
 pub(crate) use self::instr::BodyInstrumentationUnit;
 use self::jump::JumpTargetAttribute;
-pub(crate) use self::split::split_blocks;
+pub(crate) use self::split::split_blocks_with;
 pub(crate) const NEXT_BLOCK: BasicBlock = BasicBlock::MAX;
 
 pub(crate) struct NewLocalDecl<'tcx>(LocalDecl<'tcx>);

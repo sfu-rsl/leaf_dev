@@ -6,7 +6,9 @@ use super::update_jumps;
 
 const NEXT_BLOCK: BasicBlock = super::NEXT_BLOCK;
 
-pub(crate) fn split_blocks(body: &mut Body, predicate: impl Fn(&Statement) -> bool) {
+/// Splits all basic blocks and updates jump targets in a MIR body
+/// at statements that the given predicate holds.
+pub(crate) fn split_blocks_with(body: &mut Body, predicate: impl Fn(&Statement) -> bool) {
     let blocks = body.basic_blocks_mut();
     let original_blocks = Vec::from_iter(blocks.drain(..));
     let mut jump_map = HashMap::new();
@@ -32,6 +34,9 @@ pub(crate) trait BasicBlockDataSplitExt<'tcx> {
     fn split_with(self, predicate: impl Fn(&Statement) -> bool) -> Vec<BasicBlockData<'tcx>>;
 }
 
+/// Splits a basic block at statements that the given predicate holds.
+/// The statements passing the predicate will be the last statements in the resulting blocks.
+/// The last block will have the same terminator as the original block.
 impl<'tcx> BasicBlockDataSplitExt<'tcx> for BasicBlockData<'tcx> {
     fn split_with(self, predicate: impl Fn(&Statement) -> bool) -> Vec<BasicBlockData<'tcx>> {
         let mut result = Vec::new();
