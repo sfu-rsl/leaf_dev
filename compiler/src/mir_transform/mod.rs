@@ -1,5 +1,6 @@
 /// This module hosts general utilities for modifying MIR bodies.
 mod jump;
+mod split;
 
 use std::{cell::RefCell, collections::HashMap};
 
@@ -14,6 +15,8 @@ use rustc_middle::{
 };
 
 use self::jump::{JumpTargetAttribute, JumpUpdater};
+
+pub(crate) use self::split::split_blocks;
 
 pub(crate) const NEXT_BLOCK: BasicBlock = BasicBlock::MAX;
 
@@ -553,7 +556,7 @@ impl<'tcx> BodyModificationUnit<'tcx> {
     {
         let blocks = blocks.filter(|(i, _)| jump_modifications.contains_key(i));
 
-        Self::update_jumps(
+        update_jumps(
             blocks,
             |i, target, attr| {
                 jump_modifications
@@ -567,7 +570,7 @@ impl<'tcx> BodyModificationUnit<'tcx> {
                     .cloned()
             },
             false,
-            |i, c| jump_modifications.get(&i).unwrap().len() == c,
+            Some(&|i, c| jump_modifications.get(&i).unwrap().len() == c),
             true,
         );
     }
@@ -576,39 +579,41 @@ impl<'tcx> BodyModificationUnit<'tcx> {
         blocks: &mut IndexVec<BasicBlock, BasicBlockData<'tcx>>,
         index_mapping: HashMap<BasicBlock, BasicBlock>,
     ) {
-        Self::update_jumps(
+        update_jumps(
             blocks.iter_enumerated_mut(),
             |_, target, _| index_mapping.get(&target).cloned(),
             true,
-            |_, _| true,
+            None,
             false,
         );
     }
+}
 
-    fn update_jumps<'b, 'm>(
-        blocks: impl Iterator<Item = (BasicBlock, &'b mut BasicBlockData<'tcx>)>,
-        index_mapping: impl Fn(BasicBlock, BasicBlock, &JumpTargetAttribute) -> Option<BasicBlock>,
-        update_next: bool,
-        sanity_check: impl Fn(BasicBlock, usize) -> bool,
-        recursive: bool,
-    ) where
-        'tcx: 'b,
-    {
-        let index_rc = RefCell::new(BasicBlock::from(0_u32));
-        let map = |target: BasicBlock, attr: &JumpTargetAttribute| -> Option<BasicBlock> {
-            if update_next && target == NEXT_BLOCK {
-                Some(*index_rc.borrow() + 1)
-            } else {
-                index_mapping(*index_rc.borrow(), target, attr)
-            }
-        };
-        let mut updater = JumpUpdater::new(Box::new(map), recursive);
-        for (index, block) in blocks.filter(|(_, b)| b.terminator.is_some()) {
-            *index_rc.borrow_mut() = index;
-            let update_count = updater.update_terminator(block.terminator_mut());
-            if !sanity_check(index, update_count) {
-                panic!("Update count of {update_count} was not acceptable at index {index:?}");
-            }
+fn update_jumps<'tcx, 'b>(
+    blocks: impl Iterator<Item = (BasicBlock, &'b mut BasicBlockData<'tcx>)>,
+    index_mapping: impl Fn(BasicBlock, BasicBlock, &JumpTargetAttribute) -> Option<BasicBlock>,
+    update_next: bool,
+    sanity_check: Option<&dyn Fn(BasicBlock, usize) -> bool>,
+    recursive: bool,
+) where
+    'tcx: 'b,
+{
+    let index_rc = RefCell::new(BasicBlock::from(0_u32));
+    let map = |target: BasicBlock, attr: &JumpTargetAttribute| -> Option<BasicBlock> {
+        if update_next && target == NEXT_BLOCK {
+            Some(*index_rc.borrow() + 1)
+        } else {
+            index_mapping(*index_rc.borrow(), target, attr)
+        }
+    };
+    let mut updater = JumpUpdater::new(Box::new(map), recursive);
+
+    let sanity_check = sanity_check.unwrap_or(&|_, _| true);
+    for (index, block) in blocks.filter(|(_, b)| b.terminator.is_some()) {
+        *index_rc.borrow_mut() = index;
+        let update_count = updater.update_terminator(block.terminator_mut());
+        if !sanity_check(index, update_count) {
+            panic!("Update count of {update_count} was not acceptable at index {index:?}");
         }
     }
 }

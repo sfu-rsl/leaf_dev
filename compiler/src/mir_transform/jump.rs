@@ -171,13 +171,12 @@ where
 
     fn update_with_attr(&mut self, target: &mut BasicBlock, target_attr: JumpTargetAttribute) {
         let new_index = (self.index_mapping)(*target, &target_attr);
-        if let Some(new_index) = new_index {
-            log::debug!("Updating jump target from {:?} to {:?}", target, new_index);
-            *target = new_index;
-            self.count += 1;
-            if self.recursive {
-                self.update(target);
-            }
+        let Some(new_index) = new_index else { return };
+        log::debug!("Updating jump target from {:?} to {:?}", target, new_index);
+        *target = new_index;
+        self.count += 1;
+        if self.recursive {
+            self.update(target);
         }
     }
 
