@@ -10,6 +10,7 @@
 #![feature(local_key_cell_methods)]
 #![feature(box_into_inner)]
 #![feature(result_option_inspect)]
+#![feature(assert_matches)]
 
 mod mir_transform;
 mod passes;

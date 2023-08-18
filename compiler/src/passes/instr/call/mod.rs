@@ -164,11 +164,28 @@ pub(crate) trait AssertionHandler<'tcx> {
     ) -> (&'static str, Vec<Operand<'tcx>>, Vec<Statement<'tcx>>);
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum InsertionLocation {
+    Before(BasicBlock),
+    After(BasicBlock),
+}
+
+impl InsertionLocation {
+    #[inline]
+    fn index(&self) -> BasicBlock {
+        match self {
+            Self::Before(bb) | Self::After(bb) => *bb,
+        }
+    }
+}
+
 pub(crate) struct RuntimeCallAdder<C> {
     context: C,
 }
 
 mod implementation {
+    use std::assert_matches::debug_assert_matches;
+
     use rustc_middle::mir::{BasicBlock, BasicBlockData, Terminator, UnevaluatedConst};
     use rustc_middle::ty::TyKind;
     use rustc_span::def_id::DefId;
@@ -184,6 +201,7 @@ mod implementation {
     use crate::passes::Storage;
 
     use utils::*;
+    use InsertionLocation::*;
 
     pub(crate) trait MirCallAdder<'tcx> {
         fn make_bb_for_call(
@@ -224,9 +242,7 @@ mod implementation {
         fn insert_blocks(
             &mut self,
             blocks: impl IntoIterator<Item = BasicBlockData<'tcx>>,
-        ) -> Vec<BasicBlock> {
-            self.insert_blocks_with_stickiness(blocks, true)
-        }
+        ) -> Vec<BasicBlock>;
 
         fn insert_blocks_with_stickiness(
             &mut self,
@@ -261,63 +277,68 @@ mod implementation {
             &'b mut self,
             body: &'bd Body<'tcx>,
         ) -> RuntimeCallAdder<InBodyContext<'b, 'tcx, 'bd, C>> {
-            RuntimeCallAdder {
-                context: InBodyContext {
-                    base: &mut self.context,
-                    body,
-                },
-            }
+            self.with_context(|base| InBodyContext { base, body })
         }
 
-        pub fn at(&mut self, location: BasicBlock) -> RuntimeCallAdder<AtLocationContext<C>> {
-            RuntimeCallAdder {
-                context: AtLocationContext {
-                    base: &mut self.context,
-                    location,
-                },
-            }
+        pub fn at(
+            &mut self,
+            location: InsertionLocation,
+        ) -> RuntimeCallAdder<AtLocationContext<C>> {
+            self.with_context(|base| AtLocationContext { base, location })
+        }
+
+        pub fn before(&mut self) -> RuntimeCallAdder<AtLocationContext<C>>
+        where
+            C: LocationProvider,
+        {
+            let index = self.context.location();
+            self.with_context(|base| AtLocationContext {
+                base,
+                location: Before(index),
+            })
+        }
+
+        pub fn after(&mut self) -> RuntimeCallAdder<AtLocationContext<C>>
+        where
+            C: LocationProvider,
+        {
+            let index = self.context.location();
+            self.with_context(|base| AtLocationContext {
+                base,
+                location: After(index),
+            })
         }
 
         pub fn assign(&mut self, dest_ref: PlaceRef) -> RuntimeCallAdder<AssignmentContext<C>> {
-            RuntimeCallAdder {
-                context: AssignmentContext {
-                    base: &mut self.context,
-                    dest_ref,
-                },
-            }
+            self.with_context(|base| AssignmentContext { base, dest_ref })
         }
 
         pub fn branch<'tcx, 'b>(
             &'b mut self,
             info: SwitchInfo<'tcx>,
-        ) -> RuntimeCallAdder<BranchingContext<'b, 'tcx, C>>
-        where
-            C: TyContextProvider<'tcx> + HasLocalDecls<'tcx> + LocationProvider,
-            Self: OperandReferencer<'tcx>,
-        {
-            RuntimeCallAdder {
-                context: BranchingContext {
-                    base: &mut self.context,
-                    switch_info: info,
-                },
-            }
+        ) -> RuntimeCallAdder<BranchingContext<'b, 'tcx, C>> {
+            self.with_context(|base| BranchingContext {
+                base,
+                switch_info: info,
+            })
         }
 
         pub fn in_entry_fn(&mut self) -> RuntimeCallAdder<EntryFunctionMarkerContext<C>> {
-            RuntimeCallAdder {
-                context: EntryFunctionMarkerContext {
-                    base: &mut self.context,
-                },
-            }
+            self.with_context(|base| EntryFunctionMarkerContext { base })
         }
 
         pub fn borrow_from(
             other: &mut RuntimeCallAdder<C>,
         ) -> RuntimeCallAdder<TransparentContext<C>> {
+            other.with_context(|base| TransparentContext { base })
+        }
+
+        pub fn with_context<'a: 'b, 'b, NC>(
+            &'a mut self,
+            f: impl FnOnce(&'b mut C) -> NC,
+        ) -> RuntimeCallAdder<NC> {
             RuntimeCallAdder {
-                context: TransparentContext {
-                    base: &mut other.context,
-                },
+                context: f(&mut self.context),
             }
         }
     }
@@ -414,13 +435,29 @@ mod implementation {
 
     impl<'tcx, C> BlockInserter<'tcx> for RuntimeCallAdder<C>
     where
-        C: BodyBlockManager<'tcx> + LocationProvider,
+        C: ForInsertion<'tcx>,
     {
+        #[inline]
+        fn insert_blocks(
+            &mut self,
+            blocks: impl IntoIterator<Item = BasicBlockData<'tcx>>,
+        ) -> Vec<BasicBlock> {
+            match self.context.insertion_loc() {
+                Before(_) => self.insert_blocks_with_stickiness(blocks, true),
+                After(index) => self.context.insert_blocks_after(index, blocks),
+            }
+        }
+
         fn insert_blocks_with_stickiness(
             &mut self,
             blocks: impl IntoIterator<Item = BasicBlockData<'tcx>>,
             sticky: bool,
         ) -> Vec<BasicBlock> {
+            debug_assert_matches!(
+                self.context.insertion_loc(),
+                Before(..),
+                "Stickiness is only defined for insertions before a block."
+            );
             self.context
                 .insert_blocks_before(self.context.location(), blocks, sticky)
         }
@@ -834,17 +871,20 @@ mod implementation {
             )));
             let call_block_index = self.insert_blocks([call_block])[0];
 
-            // NOTE: You cannot call reference operand here because of the infinite loop in types.
-            let BlocksAndResult(blocks, func_ref) =
-                self.internal_reference_func_def_const_operand(&nctfe_id, &[]);
-            self.at(call_block_index).insert_blocks(blocks);
-            instr::LeafTerminatorKindVisitor::instrument_call(
-                &mut self.at(call_block_index),
-                func_ref.into(),
-                std::iter::empty(),
-                &result_local.into(),
-                &Some(NEXT_BLOCK),
-            );
+            {
+                let mut call_adder = self.at(Before(call_block_index));
+                // NOTE: You cannot call reference operand here because of the infinite loop in types.
+                let BlocksAndResult(blocks, func_ref) =
+                    call_adder.internal_reference_func_def_const_operand(&nctfe_id, &[]);
+                call_adder.insert_blocks(blocks);
+                instr::LeafTerminatorKindVisitor::instrument_call(
+                    &mut call_adder,
+                    func_ref.into(),
+                    std::iter::empty(),
+                    &result_local.into(),
+                    &Some(NEXT_BLOCK),
+                );
+            }
 
             result_local
         }
@@ -1408,6 +1448,11 @@ mod implementation {
                 ],
             );
             block.statements.extend(additional_stmts);
+            debug_assert_matches!(
+                self.context.insertion_loc(),
+                Before(..),
+                "Inserting before_call after a block is not expected."
+            );
             self.insert_blocks([block]);
         }
 
@@ -1435,8 +1480,12 @@ mod implementation {
                 vec![operand::copy_for_local(dest_ref)],
             );
             blocks.push(after_call_block);
-            self.context
-                .insert_blocks_after(self.context.location(), blocks);
+            debug_assert_matches!(
+                self.context.insertion_loc(),
+                After(..),
+                "Inserting after_call before a block is not expected."
+            );
+            self.insert_blocks(blocks);
         }
     }
 
@@ -2009,11 +2058,17 @@ mod implementation {
         pub(crate) trait Basic<'tcx>: BaseContext<'tcx> {}
         impl<'tcx, C> Basic<'tcx> for C where C: BaseContext<'tcx> {}
 
-        pub(crate) trait ForPlaceRef<'tcx>:
-            Basic<'tcx> + LocationProvider + BodyProvider<'tcx>
+        pub(crate) trait ForInsertion<'tcx>:
+            Basic<'tcx> + BodyProvider<'tcx> + InsertionLocationProvider
         {
         }
-        impl<'tcx, C> ForPlaceRef<'tcx> for C where C: Basic<'tcx> + LocationProvider + BodyProvider<'tcx> {}
+        impl<'tcx, C> ForInsertion<'tcx> for C where
+            C: Basic<'tcx> + BodyProvider<'tcx> + InsertionLocationProvider
+        {
+        }
+
+        pub(crate) trait ForPlaceRef<'tcx>: ForInsertion<'tcx> {}
+        impl<'tcx, C> ForPlaceRef<'tcx> for C where C: ForInsertion<'tcx> {}
 
         pub(crate) trait ForOperandRef<'tcx>:
             ForPlaceRef<'tcx> + ForFunctionCalling<'tcx>
@@ -2022,19 +2077,16 @@ mod implementation {
         impl<'tcx, C> ForOperandRef<'tcx> for C where C: ForPlaceRef<'tcx> + ForFunctionCalling<'tcx> {}
 
         pub(crate) trait ForAssignment<'tcx>:
-            Basic<'tcx> + DestinationReferenceProvider + LocationProvider
+            ForInsertion<'tcx> + DestinationReferenceProvider
         {
         }
-        impl<'tcx, C> ForAssignment<'tcx> for C where
-            C: Basic<'tcx> + DestinationReferenceProvider + LocationProvider
-        {
-        }
+        impl<'tcx, C> ForAssignment<'tcx> for C where C: ForInsertion<'tcx> + DestinationReferenceProvider {}
 
         pub(crate) trait ForBranching<'tcx>:
-            Basic<'tcx> + LocationProvider + JumpTargetModifier
+            ForInsertion<'tcx> + JumpTargetModifier
         {
         }
-        impl<'tcx, C> ForBranching<'tcx> for C where C: Basic<'tcx> + LocationProvider + JumpTargetModifier {}
+        impl<'tcx, C> ForBranching<'tcx> for C where C: ForInsertion<'tcx> + JumpTargetModifier {}
 
         pub(crate) trait ForAssertion<'tcx>: ForOperandRef<'tcx> {}
         impl<'tcx, C> ForAssertion<'tcx> for C where C: ForOperandRef<'tcx> {}
@@ -2045,17 +2097,14 @@ mod implementation {
         }
         impl<'tcx, C> ForFunctionCalling<'tcx> for C where C: ForPlaceRef<'tcx> + JumpTargetModifier {}
 
-        pub(crate) trait ForReturning<'tcx>: Basic<'tcx> {}
-        impl<'tcx, C> ForReturning<'tcx> for C where C: Basic<'tcx> {}
+        pub(crate) trait ForReturning<'tcx>: ForInsertion<'tcx> {}
+        impl<'tcx, C> ForReturning<'tcx> for C where C: ForInsertion<'tcx> {}
 
         pub(crate) trait ForEntryFunction<'tcx>:
-            Basic<'tcx> + BodyProvider<'tcx> + LocationProvider + InEntryFunction
+            ForInsertion<'tcx> + InEntryFunction
         {
         }
-        impl<'tcx, C> ForEntryFunction<'tcx> for C where
-            C: Basic<'tcx> + BodyProvider<'tcx> + LocationProvider + InEntryFunction
-        {
-        }
+        impl<'tcx, C> ForEntryFunction<'tcx> for C where C: ForInsertion<'tcx> + InEntryFunction {}
     }
 }
 

@@ -16,7 +16,7 @@ use crate::{
     pri_utils,
 };
 
-use super::{OperandRef, PlaceRef, SwitchInfo};
+use super::{InsertionLocation, OperandRef, PlaceRef, SwitchInfo};
 use crate::pri_utils::{FunctionInfo, PriHelperFunctions, PriTypes};
 
 pub(crate) trait TyContextProvider<'tcx> {
@@ -41,6 +41,10 @@ pub(crate) trait StorageProvider {
 
 pub(crate) trait LocationProvider {
     fn location(&self) -> BasicBlock;
+}
+
+pub(crate) trait InsertionLocationProvider: LocationProvider {
+    fn insertion_loc(&self) -> InsertionLocation;
 }
 
 pub(crate) trait DestinationReferenceProvider {
@@ -238,11 +242,17 @@ impl<'b, B> InEntryFunction for EntryFunctionMarkerContext<'b, B> {}
 
 pub(crate) struct AtLocationContext<'b, B> {
     pub(super) base: &'b mut B,
-    pub(super) location: BasicBlock,
+    pub(super) location: InsertionLocation,
 }
 
 impl<B> LocationProvider for AtLocationContext<'_, B> {
     fn location(&self) -> BasicBlock {
+        self.location.index()
+    }
+}
+
+impl<B> InsertionLocationProvider for AtLocationContext<'_, B> {
+    fn insertion_loc(&self) -> InsertionLocation {
         self.location
     }
 }
@@ -409,6 +419,13 @@ make_impl_macro! {
 }
 
 make_impl_macro! {
+    impl_insertion_location_provider,
+    InsertionLocationProvider,
+    self,
+    fn insertion_loc(&self) -> InsertionLocation;
+}
+
+make_impl_macro! {
     impl_dest_ref_provider,
     DestinationReferenceProvider,
     self,
@@ -492,6 +509,7 @@ make_caller_macro!(
         impl_has_local_decls,
         impl_storage_provider,
         impl_location_provider,
+        impl_insertion_location_provider,
         impl_dest_ref_provider,
         impl_cast_operand_provider,
         impl_discr_info_provider,
@@ -501,7 +519,7 @@ make_caller_macro!(
 impl_traits!(all for TransparentContext);
 impl_traits!(all - [ impl_body_provider impl_has_local_decls ] for InBodyContext<'tcxb, 'bd>);
 impl_traits!(all - [ impl_in_entry_function ] for EntryFunctionMarkerContext);
-impl_traits!(all - [ impl_location_provider ] for AtLocationContext);
+impl_traits!(all - [ impl_location_provider impl_insertion_location_provider] for AtLocationContext);
 impl_traits!(all - [ impl_dest_ref_provider ] for AssignmentContext);
 impl_traits!(all - [ impl_cast_operand_provider ] for CastAssignmentContext);
 impl_traits!(all - [ impl_discr_info_provider ] for BranchingContext<'tcxd>);

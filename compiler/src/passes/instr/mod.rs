@@ -5,7 +5,7 @@ use rustc_index::IndexVec;
 use rustc_middle::{
     mir::{
         self, visit::Visitor, BasicBlock, BasicBlockData, Body, BorrowKind, CastKind,
-        HasLocalDecls, Location, Operand, Place, Rvalue, UnwindAction,
+        HasLocalDecls, Location, Operand, Place, Rvalue, Statement, UnwindAction,
     },
     ty::TyCtxt,
 };
@@ -18,9 +18,12 @@ use crate::{
 use call::{
     context::{BodyProvider, TyContextProvider},
     ctxtreqs, AssertionHandler, Assigner, BranchingHandler, BranchingReferencer, CastAssigner,
-    EntryFunctionHandler, FunctionHandler, OperandRef, OperandReferencer, PlaceReferencer,
-    RuntimeCallAdder,
+    EntryFunctionHandler, FunctionHandler,
+    InsertionLocation::*,
+    OperandRef, OperandReferencer, PlaceReferencer, RuntimeCallAdder,
 };
+
+use self::call::{context::LocationProvider, ctxtreqs::Basic};
 
 use super::{CompilationPass, Storage};
 
@@ -50,15 +53,15 @@ fn transform<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>, storage: &mut dyn S
     if tcx.entry_fn(()).expect("No entry function was found").0 == body.source.def_id() {
         handle_entry_function(
             &mut call_adder
-                .at(body.basic_blocks.indices().next().unwrap())
-                .in_entry_fn(),
+                .in_entry_fn()
+                .at(Before(body.basic_blocks.indices().next().unwrap())),
         );
     }
 
     // TODO: determine if body will ever be a promoted block
     let _is_promoted_block = body.source.promoted.is_some();
     call_adder
-        .at(body.basic_blocks.indices().next().unwrap())
+        .at(Before(body.basic_blocks.indices().next().unwrap()))
         .enter_func();
 
     VisitorFactory::make_body_visitor(&mut call_adder).visit_body(body);
@@ -91,10 +94,10 @@ impl VisitorFactory {
         block: BasicBlock,
     ) -> impl Visitor<'tcx> + 'c
     where
-        C: ctxtreqs::Basic<'tcx> + JumpTargetModifier + BodyProvider<'tcx>,
+        C: Basic<'tcx> + BodyProvider<'tcx> + JumpTargetModifier,
     {
         LeafBasicBlockVisitor {
-            call_adder: call_adder.at(block),
+            call_adder: call_adder.at(Before(block)),
         }
     }
 
@@ -113,9 +116,11 @@ impl VisitorFactory {
         call_adder: &'b mut RuntimeCallAdder<C>,
     ) -> impl TerminatorKindVisitor<'tcx, ()> + 'b
     where
-        C: ctxtreqs::ForPlaceRef<'tcx>
-            + ctxtreqs::ForOperandRef<'tcx>
-            + ctxtreqs::ForBranching<'tcx>,
+        C: ctxtreqs::ForOperandRef<'tcx>
+            + ctxtreqs::ForPlaceRef<'tcx>
+            + ctxtreqs::ForBranching<'tcx>
+            + ctxtreqs::ForFunctionCalling<'tcx>
+            + ctxtreqs::ForReturning<'tcx>,
     {
         LeafTerminatorKindVisitor {
             call_adder: RuntimeCallAdder::borrow_from(call_adder),
@@ -166,7 +171,7 @@ make_general_visitor!(LeafBasicBlockVisitor);
 
 impl<'tcx, C> Visitor<'tcx> for LeafBasicBlockVisitor<C>
 where
-    C: ctxtreqs::ForPlaceRef<'tcx> + ctxtreqs::ForOperandRef<'tcx> + JumpTargetModifier,
+    C: Basic<'tcx> + BodyProvider<'tcx> + LocationProvider + JumpTargetModifier,
 {
     fn visit_statement(
         &mut self,
@@ -174,12 +179,12 @@ where
         location: Location,
     ) {
         log::debug!("Visiting statement: {:?} at {:?}", statement.kind, location);
-        VisitorFactory::make_statement_kind_visitor(&mut self.call_adder)
+        VisitorFactory::make_statement_kind_visitor(&mut self.call_adder.after())
             .visit_statement_kind(&statement.kind);
     }
 
     fn visit_terminator(&mut self, terminator: &mir::Terminator<'tcx>, _location: Location) {
-        VisitorFactory::make_terminator_kind_visitor(&mut self.call_adder)
+        VisitorFactory::make_terminator_kind_visitor(&mut self.call_adder.before())
             .visit_terminator_kind(&terminator.kind);
     }
 }
@@ -224,10 +229,10 @@ where
         let switch_info = self.call_adder.store_branching_info(discr);
         let mut call_adder = self.call_adder.branch(switch_info);
         for (value, target) in targets.iter() {
-            call_adder.at(target).take_by_value(value);
+            call_adder.at(Before(target)).take_by_value(value);
         }
         call_adder
-            .at(targets.otherwise())
+            .at(Before(targets.otherwise()))
             .take_otherwise(targets.iter().map(|v| v.0));
     }
 
@@ -325,10 +330,10 @@ where
         destination: &Place<'tcx>,
         target: &Option<BasicBlock>,
     ) {
-        call_adder.before_call_func(func, args);
+        call_adder.before().before_call_func(func, args);
 
         if target.is_some() {
-            call_adder.after_call_func(destination);
+            call_adder.after().after_call_func(destination);
         } else {
             // This branch is only triggered by hitting a divergent function:
             // https://doc.rust-lang.org/rust-by-example/fn/diverging.html
