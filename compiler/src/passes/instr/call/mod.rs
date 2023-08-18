@@ -119,7 +119,7 @@ pub(crate) trait CastAssigner<'tcx> {
 
 #[derive(Clone, Copy)]
 pub struct SwitchInfo<'tcx> {
-    pub(super) node_location: BasicBlock,
+    pub(super) node_index: BasicBlock,
     pub(super) discr_ty: Ty<'tcx>,
     pub(super) runtime_info_store_var: Local,
 }
@@ -289,9 +289,9 @@ mod implementation {
 
         pub fn before(&mut self) -> RuntimeCallAdder<AtLocationContext<C>>
         where
-            C: LocationProvider,
+            C: BlockIndexProvider,
         {
-            let index = self.context.location();
+            let index = self.context.block_index();
             self.with_context(|base| AtLocationContext {
                 base,
                 location: Before(index),
@@ -300,9 +300,9 @@ mod implementation {
 
         pub fn after(&mut self) -> RuntimeCallAdder<AtLocationContext<C>>
         where
-            C: LocationProvider,
+            C: BlockIndexProvider,
         {
-            let index = self.context.location();
+            let index = self.context.block_index();
             self.with_context(|base| AtLocationContext {
                 base,
                 location: After(index),
@@ -459,7 +459,7 @@ mod implementation {
                 "Stickiness is only defined for insertions before a block."
             );
             self.context
-                .insert_blocks_before(self.context.location(), blocks, sticky)
+                .insert_blocks_before(self.context.block_index(), blocks, sticky)
         }
     }
 
@@ -1252,11 +1252,11 @@ mod implementation {
             let operand_ref = self.reference_operand(discr);
             let ty = discr.ty(self.context.local_decls(), tcx);
             let discr_size = ty::size_of(tcx, ty).bits();
-            let node_location = self.context.location();
+            let node_index = self.context.block_index();
             let (block, info_store_var) = self.make_bb_for_call_with_ret(
                 stringify!(pri::BranchingInfo::new),
                 vec![
-                    operand::const_from_uint(tcx, u32::from(node_location)),
+                    operand::const_from_uint(tcx, u32::from(node_index)),
                     operand::copy_for_local(operand_ref.into()),
                     operand::const_from_uint(tcx, discr_size),
                     operand::const_from_bool(tcx, ty.is_signed()),
@@ -1264,7 +1264,7 @@ mod implementation {
             );
             self.insert_blocks([block]);
             SwitchInfo {
-                node_location,
+                node_index,
                 discr_ty: ty,
                 runtime_info_store_var: info_store_var,
             }
@@ -1315,12 +1315,12 @@ mod implementation {
                     additional_args,
                 ]
                 .concat(),
-                Some(self.context.location()),
+                Some(self.context.block_index()),
             );
             let new_block_index = self.insert_blocks_with_stickiness([block], false)[0];
             self.context.modify_jump_target_where(
-                switch_info.node_location,
-                self.context.location(),
+                switch_info.node_index,
+                self.context.block_index(),
                 new_block_index,
                 JumpModificationConstraint::SwitchValue(value),
             );
@@ -1389,13 +1389,13 @@ mod implementation {
                     additional_args,
                 ]
                 .concat(),
-                Some(self.context.location()),
+                Some(self.context.block_index()),
             );
             block.statements.extend(additional_stmts);
             let new_block_index = self.insert_blocks_with_stickiness([block], false)[0];
             self.context.modify_jump_target_where(
-                switch_info.node_location,
-                self.context.location(),
+                switch_info.node_index,
+                self.context.block_index(),
                 new_block_index,
                 JumpModificationConstraint::SwitchOtherwise,
             );

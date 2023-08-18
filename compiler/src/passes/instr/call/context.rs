@@ -39,11 +39,11 @@ pub(crate) trait StorageProvider {
     fn storage(&mut self) -> &mut dyn Storage;
 }
 
-pub(crate) trait LocationProvider {
-    fn location(&self) -> BasicBlock;
+pub(crate) trait BlockIndexProvider {
+    fn block_index(&self) -> BasicBlock;
 }
 
-pub(crate) trait InsertionLocationProvider: LocationProvider {
+pub(crate) trait InsertionLocationProvider: BlockIndexProvider {
     fn insertion_loc(&self) -> InsertionLocation;
 }
 
@@ -245,8 +245,8 @@ pub(crate) struct AtLocationContext<'b, B> {
     pub(super) location: InsertionLocation,
 }
 
-impl<B> LocationProvider for AtLocationContext<'_, B> {
-    fn location(&self) -> BasicBlock {
+impl<B> BlockIndexProvider for AtLocationContext<'_, B> {
+    fn block_index(&self) -> BasicBlock {
         self.location.index()
     }
 }
@@ -413,9 +413,9 @@ make_impl_macro! {
 
 make_impl_macro! {
     impl_location_provider,
-    LocationProvider,
+    BlockIndexProvider,
     self,
-    fn location(&self) -> BasicBlock;
+    fn block_index(&self) -> BasicBlock;
 }
 
 make_impl_macro! {

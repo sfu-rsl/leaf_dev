@@ -23,7 +23,7 @@ use call::{
     OperandRef, OperandReferencer, PlaceReferencer, RuntimeCallAdder,
 };
 
-use self::call::{context::LocationProvider, ctxtreqs::Basic};
+use self::call::{context::BlockIndexProvider, ctxtreqs::Basic};
 
 use super::{CompilationPass, Storage};
 
@@ -178,7 +178,7 @@ make_general_visitor!(LeafBasicBlockVisitor);
 
 impl<'tcx, C> Visitor<'tcx> for LeafBasicBlockVisitor<C>
 where
-    C: Basic<'tcx> + BodyProvider<'tcx> + LocationProvider + JumpTargetModifier,
+    C: Basic<'tcx> + BodyProvider<'tcx> + BlockIndexProvider + JumpTargetModifier,
 {
     fn visit_statement(
         &mut self,
