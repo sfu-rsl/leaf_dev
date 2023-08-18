@@ -9,7 +9,7 @@ use rustc_middle::{
 
 use crate::{
     mir_transform::{
-        BodyBlockManager, BodyLocalManager, BodyModificationUnit, JumpModificationConstraint,
+        BodyBlockManager, BodyInstrumentationUnit, BodyLocalManager, JumpModificationConstraint,
         JumpTargetModifier, NewLocalDecl,
     },
     passes::Storage,
@@ -84,7 +84,7 @@ impl<'tcx, C> BaseContext<'tcx> for C where
 
 pub(crate) struct DefaultContext<'tcx, 'm, 's> {
     tcx: TyCtxt<'tcx>,
-    modification_unit: &'m mut BodyModificationUnit<'tcx>,
+    modification_unit: &'m mut BodyInstrumentationUnit<'tcx>,
     pri: PriItems<'tcx>,
     storage: &'s mut dyn Storage,
 }
@@ -98,7 +98,7 @@ pub(crate) struct PriItems<'tcx> {
 impl<'tcx, 'm, 's> DefaultContext<'tcx, 'm, 's> {
     pub(crate) fn new(
         tcx: TyCtxt<'tcx>,
-        modification_unit: &'m mut BodyModificationUnit<'tcx>,
+        modification_unit: &'m mut BodyInstrumentationUnit<'tcx>,
         storage: &'s mut dyn Storage,
     ) -> Self {
         use crate::pri_utils::*;

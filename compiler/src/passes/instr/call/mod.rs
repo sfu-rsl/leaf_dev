@@ -238,7 +238,7 @@ mod implementation {
     impl<'tcx, 'm, 's> RuntimeCallAdder<DefaultContext<'tcx, 'm, 's>> {
         pub fn new(
             tcx: TyCtxt<'tcx>,
-            modification_unit: &'m mut BodyModificationUnit<'tcx>,
+            modification_unit: &'m mut BodyInstrumentationUnit<'tcx>,
             storage: &'s mut dyn Storage,
         ) -> Self {
             Self {

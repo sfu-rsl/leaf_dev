@@ -2,13 +2,16 @@ mod call;
 
 use rustc_abi::{FieldIdx, VariantIdx};
 use rustc_index::IndexVec;
-use rustc_middle::mir::{
-    self, visit::Visitor, BasicBlock, BasicBlockData, BorrowKind, CastKind, HasLocalDecls,
-    Location, Operand, Place, Rvalue, UnwindAction,
+use rustc_middle::{
+    mir::{
+        self, visit::Visitor, BasicBlock, BasicBlockData, Body, BorrowKind, CastKind,
+        HasLocalDecls, Location, Operand, Place, Rvalue, UnwindAction,
+    },
+    ty::TyCtxt,
 };
 
 use crate::{
-    mir_transform::{BodyModificationUnit, JumpTargetModifier},
+    mir_transform::{BodyInstrumentationUnit, JumpTargetModifier},
     visit::*,
 };
 
@@ -26,26 +29,22 @@ pub(crate) struct Instrumentor;
 
 impl CompilationPass for Instrumentor {
     fn transform_mir_body<'tcx>(
-        tcx: rustc_middle::ty::TyCtxt<'tcx>,
-        body: &mut mir::Body<'tcx>,
+        tcx: TyCtxt<'tcx>,
+        body: &mut Body<'tcx>,
         storage: &mut dyn Storage,
     ) {
         transform(tcx, body, storage);
     }
 }
 
-fn transform<'tcx>(
-    tcx: rustc_middle::ty::TyCtxt<'tcx>,
-    body: &mut rustc_middle::mir::Body<'tcx>,
-    storage: &mut dyn Storage,
-) {
+fn transform<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>, storage: &mut dyn Storage) {
     log::info!(
         "Running instrumentation pass on body of {:#?} at {:?}",
         body.source.def_id(),
         body.span,
     );
 
-    let mut modification = BodyModificationUnit::new(body.local_decls().next_index());
+    let mut modification = BodyInstrumentationUnit::new(body.local_decls().next_index());
     let mut call_adder = RuntimeCallAdder::new(tcx, &mut modification, storage);
     let mut call_adder = call_adder.in_body(body);
     if tcx.entry_fn(()).expect("No entry function was found").0 == body.source.def_id() {
@@ -456,15 +455,16 @@ where
             .map(|o| self.call_adder.reference_operand(o))
             .collect();
 
+        use mir::AggregateKind::*;
         #[allow(clippy::type_complexity)]
         let mut add_call: Box<dyn FnMut(&[OperandRef])> = match kind.as_ref() {
-            mir::AggregateKind::Array(_) => {
+            Array(_) => {
                 Box::new(|items| self.call_adder.by_aggregate_array(items))
             }
-            mir::AggregateKind::Tuple => Box::new(|fields| {
+            Tuple => Box::new(|fields| {
                 self.call_adder.by_aggregate_tuple(fields);
             }),
-            mir::AggregateKind::Adt(def_id, variant, _, _, None) => {
+            Adt(def_id, variant, _, _, None) => {
                 use rustc_hir::def::DefKind;
                 match self.call_adder.tcx().def_kind(def_id) {
                     DefKind::Enum => Box::new(|fields| {self.call_adder.by_aggregate_enum(fields, *variant)}),
@@ -474,7 +474,7 @@ where
                     _ => unreachable!("Only enums and structs are supposed to be ADT.")
                 }
             }
-            mir::AggregateKind::Adt(_, _, _, _, Some(active_field)) /* Union */ => Box::new(|fields| {
+            Adt(_, _, _, _, Some(active_field)) /* Union */ => Box::new(|fields| {
                 assert_eq!(
                     fields.len(),
                     1,
@@ -482,8 +482,8 @@ where
                 );
                 self.call_adder.by_aggregate_union(*active_field, fields[0])
             }),
-            mir::AggregateKind::Closure(_, _) => todo!("Closures are not supported yet."),
-            mir::AggregateKind::Generator(_, _, _) => todo!("Generators are not supported yet."),
+            Closure(_, _) => todo!("Closures are not supported yet."),
+            Generator(_, _, _) => todo!("Generators are not supported yet."),
         };
 
         add_call(operands.as_slice())
