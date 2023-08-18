@@ -47,6 +47,8 @@ fn transform<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>, storage: &mut dyn S
         body.span,
     );
 
+    split_blocks_with(body, requires_immediate_instr_after);
+
     let mut modification = BodyInstrumentationUnit::new(body.local_decls().next_index());
     let mut call_adder = RuntimeCallAdder::new(tcx, &mut modification, storage);
     let mut call_adder = call_adder.in_body(body);
@@ -73,6 +75,11 @@ where
     C: ctxtreqs::ForEntryFunction<'tcx> + ctxtreqs::ForFunctionCalling<'tcx>,
 {
     call_adder.init_runtime_lib();
+}
+
+fn requires_immediate_instr_after(stmt: &Statement) -> bool {
+    use rustc_middle::mir::StatementKind::*;
+    matches!(&stmt.kind, Assign(..) | SetDiscriminant { .. })
 }
 
 struct VisitorFactory;
