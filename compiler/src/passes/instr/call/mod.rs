@@ -871,20 +871,19 @@ mod implementation {
             )));
             let call_block_index = self.insert_blocks([call_block])[0];
 
-            {
-                let mut call_adder = self.at(Before(call_block_index));
-                // NOTE: You cannot call reference operand here because of the infinite loop in types.
-                let BlocksAndResult(blocks, func_ref) =
-                    call_adder.internal_reference_func_def_const_operand(&nctfe_id, &[]);
-                call_adder.insert_blocks(blocks);
-                instr::LeafTerminatorKindVisitor::instrument_call(
-                    &mut call_adder,
-                    func_ref.into(),
-                    std::iter::empty(),
-                    &result_local.into(),
-                    &Some(NEXT_BLOCK),
-                );
-            }
+            instr::LeafTerminatorKindVisitor::instrument_call(
+                &mut self.at(Before(call_block_index)),
+                |call_adder| {
+                    // NOTE: You cannot call reference operand here because of the infinite loop in types.
+                    let BlocksAndResult(blocks, func_ref) =
+                        call_adder.internal_reference_func_def_const_operand(&nctfe_id, &[]);
+                    call_adder.insert_blocks(blocks);
+                    func_ref.into()
+                },
+                |_| Vec::default(),
+                &result_local.into(),
+                &Some(NEXT_BLOCK),
+            );
 
             result_local
         }

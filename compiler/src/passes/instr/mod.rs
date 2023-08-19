@@ -16,7 +16,7 @@ use crate::{
 };
 
 use call::{
-    context::{BodyProvider, TyContextProvider},
+    context::{self, BodyProvider, TyContextProvider},
     ctxtreqs, AssertionHandler, Assigner, BranchingHandler, BranchingReferencer, CastAssigner,
     EntryFunctionHandler, FunctionHandler,
     InsertionLocation::*,
@@ -271,15 +271,14 @@ where
         _call_source: &mir::CallSource,
         _fn_span: rustc_span::Span,
     ) {
-        let func_ref = self.call_adder.reference_operand(func);
-        let arg_refs = args
-            .iter()
-            .map(|arg| self.call_adder.reference_operand(arg))
-            .collect::<Vec<_>>();
         Self::instrument_call(
             &mut self.call_adder,
-            func_ref,
-            arg_refs.into_iter(),
+            |call_adder| call_adder.reference_operand(func),
+            |call_adder| {
+                args.iter()
+                    .map(|arg| call_adder.reference_operand(arg))
+                    .collect::<Vec<_>>()
+            },
             destination,
             target,
         );
@@ -332,12 +331,15 @@ where
 {
     fn instrument_call(
         call_adder: &mut RuntimeCallAdder<C>,
-        func: OperandRef,
-        args: impl Iterator<Item = OperandRef>,
+        ref_func: impl FnOnce(&mut RuntimeCallAdder<context::AtLocationContext<C>>) -> OperandRef,
+        ref_args: impl FnOnce(&mut RuntimeCallAdder<context::AtLocationContext<C>>) -> Vec<OperandRef>,
         destination: &Place<'tcx>,
         target: &Option<BasicBlock>,
     ) {
-        call_adder.before().before_call_func(func, args);
+        let mut call_adder = call_adder.before();
+        let func = ref_func(&mut call_adder);
+        let args = ref_args(&mut call_adder);
+        call_adder.before_call_func(func, args.into_iter());
 
         if target.is_some() {
             call_adder.after().after_call_func(destination);
