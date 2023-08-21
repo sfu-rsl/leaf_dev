@@ -1,6 +1,8 @@
 use std::fmt::{Display, Formatter, Result};
 
-use super::*;
+use crate::backends::basic::logger::comma_separated;
+
+use super::{sym_place::SymReadResult, *};
 
 impl Display for Value {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
@@ -206,4 +208,20 @@ impl ProjKind {
 #[inline]
 fn end_symbol(from_end: &bool) -> &str {
     if *from_end { "^" } else { "" }
+}
+
+impl Display for SliceIndex<SymValueRef> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}{}ˢ", self.index, if self.from_end { "^" } else { "" })
+    }
+}
+
+impl Display for SymReadResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SymReadResult::Value(value) => write!(f, "{}", value),
+            SymReadResult::Array(values) => write!(f, "{}", comma_separated(values.iter())),
+            SymReadResult::SymRead(select) => write!(f, "{}", select),
+        }
+    }
 }

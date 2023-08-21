@@ -23,21 +23,18 @@
  * symbolic read, which may be resolved on demand.
  */
 
-use std::fmt::Display;
-
 use crate::{
     abs::expr::{
         proj::{macros::impl_singular_projs_through_general, ProjectionOn, Projector},
         sym_place::{SelectTarget, SymbolicReadResolver},
     },
     backends::basic::{
-        logger::comma_separated,
         place::FullPlace,
         state::proj::{ConcreteProjector, ProjResultExt},
     },
 };
 
-use super::{builders::ConcreteBuilder, prelude::*, ProjKind, SliceIndex, SymHostProj};
+use super::{builders::ConcreteBuilder, prelude::*, SliceIndex};
 
 type SymIndex = SliceIndex<SymValueRef>;
 pub(super) type Select<V = SymReadResult> = crate::abs::expr::sym_place::Select<SymIndex, V>;
@@ -71,77 +68,6 @@ impl<T> ProjExprReadResolver for T where
 {
 }
 
-impl SymReadResult {
-    fn mut_concrete_values(
-        select: &mut Select,
-        f: &mut impl FnMut(ConcreteValueRef) -> ValueRef,
-        resolver: &mut impl ProjExprReadResolver,
-    ) {
-        Self::internal_mut_concrete_values(select, 1, f, resolver)
-    }
-
-    fn internal_mut_concrete_values(
-        select: &mut Select,
-        expected_dim: usize,
-        f: &mut impl FnMut(ConcreteValueRef) -> ValueRef,
-        resolver: &mut impl ProjExprReadResolver,
-    ) {
-        match &mut select.target {
-            SelectTarget::Array(ref mut values) => {
-                values
-                    .iter_mut()
-                    .for_each(|v| v.internal_mut_concrete_value(expected_dim - 1, f, resolver));
-            }
-            SelectTarget::Nested(box nested) => {
-                Self::internal_mut_concrete_values(nested, expected_dim + 1, f, resolver)
-            }
-        }
-    }
-
-    fn internal_mut_concrete_value(
-        &mut self,
-        dim: usize,
-        f: &mut impl FnMut(ConcreteValueRef) -> ValueRef,
-        resolver: &mut impl ProjExprReadResolver,
-    ) {
-        // Resolve or expand value for further mutation.
-        if let SymReadResult::Value(value) = self {
-            match value.as_ref() {
-                Value::Concrete(ConcreteValue::Array(array)) if dim > 0 => {
-                    *self = SymReadResult::Array(
-                        array
-                            .elements
-                            .iter()
-                            .cloned()
-                            .map(SymReadResult::Value)
-                            .collect(),
-                    )
-                }
-                Value::Symbolic(sym_value) => {
-                    *self = SymReadResult::SymRead(resolver.resolve(sym_value.expect_proj()))
-                }
-                _ => (),
-            };
-        }
-
-        match self {
-            SymReadResult::Value(value) => match value.as_ref() {
-                Value::Concrete(_) => {
-                    assert_eq!(dim, 0, "Concrete value is expected to be expandable.");
-                    *value = f(ConcreteValueRef::new(value.clone()));
-                }
-                _ => unreachable!(),
-            },
-            SymReadResult::Array(values) => values
-                .iter_mut()
-                .for_each(|v| v.internal_mut_concrete_value(dim - 1, f, resolver)),
-            SymReadResult::SymRead(select) => {
-                Self::internal_mut_concrete_values(select, dim, f, resolver)
-            }
-        }
-    }
-}
-
 #[derive(Default)]
 pub(super) struct DefaultProjExprReadResolver;
 
@@ -152,101 +78,14 @@ impl SymbolicReadResolver<SymIndex> for DefaultProjExprReadResolver {
 
     fn resolve<'a>(&mut self, sym_value: Self::SymValue<'a>) -> Select<Self::PossibleValue<'a>> {
         let (base, projs) = sym_value.flatten();
-
-        let indices = projs.iter().enumerate().filter_map(|(i, p)| match p {
-            ProjKind::Index(SliceIndex { index, from_end }) if index.is_symbolic() => Some((
-                i,
-                SliceIndex {
-                    index: SymValueRef::new(index.clone()),
-                    from_end: *from_end,
-                },
-            )),
-            _ => None,
-        });
-
-        let mut current = Self::resolve_concrete_host(base);
-
-        let mut last_index = 0;
-        for (i, index) in indices {
-            current = self.project_one_to_ones(current, &projs[last_index..i]);
-            last_index = i + 1;
-
-            log::debug!("Found a symbolic index in the projection chain at {i}");
-            current = current.select(index);
-        }
-
-        if last_index < projs.len() {
-            current = self.project_one_to_ones(current, &projs[last_index..]);
-        }
-
-        current
-    }
-}
-
-impl DefaultProjExprReadResolver {
-    /// # Remarks
-    /// This is the base case for creation of a `Select`.
-    fn resolve_concrete_host(proj: &ConcreteHostProj) -> Select {
-        let possible_values = match proj.host.as_ref() {
-            ConcreteValue::Array(ArrayValue { elements }) => elements
-                .iter()
-                .map(|v| SymReadResult::Value(v.clone()))
-                .collect(),
-            _ => unreachable!("Symbolic index is only expected on an array."),
-        };
-        Select {
-            index: proj.index.clone(),
-            target: SelectTarget::Array(possible_values),
-        }
-    }
-
-    /// Applies the given one-to-one projections to the given host.
-    /// By one-to-one projection we mean a projection that doesn't get resolved
-    /// to many possible values, i.e., all projections other than a symbolic index.
-    /// These projections can be applied on the possible values of a `Select`.
-    /// Given a `Select` value, this method returns a `Select` value which has
-    /// the same index but with possible values with the projections applied on them.
-    fn project_one_to_ones(&mut self, host: Select, projs: &[&ProjKind]) -> Select {
-        debug_assert!(
-            !projs.iter().any(
-                |p| matches!(p, ProjKind::Index (SliceIndex{ index, .. }) if index.is_symbolic())
-            ),
-            "Not meant for one-to-many projections (symbolic indices)."
-        );
-
-        log::debug!("Applying one-to-one projections: {projs:?} on {host}");
-
-        if projs.is_empty() {
-            return host;
-        }
-
-        let mut projector = PossibleValuesInPlaceProjector {
-            projector: ConcreteProjectorAdapter::new(|_p: &FullPlace| -> ValueRef {
-                todo!("#234")
-            }),
-            resolver: self,
-        };
-
-        #[cfg(debug_assertions)]
-        let original_index = host.index.index.clone();
-
-        let mut current = host;
-        for proj in projs {
-            projector.project(proj.with_host(&mut current, ConcreteValueRef::new));
-        }
-
-        debug_assert!(
-            ValueRef::ptr_eq(&current.index.index.0, &original_index.0),
-            "The projector is expected to pass projection through selects."
-        );
-        current
+        self.resolve_symbolic_projs(base, projs)
     }
 }
 
 /// Applies the length operator on the given `Select` value, i.e. the result `Select` leaf values
 /// correspond to the lengths of the host leaf values.
 pub(super) fn apply_len(mut host: Select, resolver: &mut impl ProjExprReadResolver) -> Select {
-    SymReadResult::mut_concrete_values(
+    SymReadResult::apply_on_leaf_nodes(
         &mut host,
         &mut |value| {
             use crate::abs::expr::UnaryExprBuilder;
@@ -257,158 +96,316 @@ pub(super) fn apply_len(mut host: Select, resolver: &mut impl ProjExprReadResolv
     host
 }
 
-/// A projector for `Select` values that performs the projection in-place over
-/// their target.
-/// As the `Select` values are generated per each symbolic index, and they have
-/// a recursive structure, this projector should have less overhead than another
-/// that follows an immutable fashion.
-/// Note that it doesn't mutate actual `Value`s, but only the `Select` values.
-///
-/// # Fields
-/// `projector`: The regular projector that is used for (concrete) leaf nodes.
-/// `resolver`: Used to resolve the inner symbolic values if they appear as a
-///             leaf node that we need to apply some projections on.
-struct PossibleValuesInPlaceProjector<'r, P> {
-    projector: P,
-    resolver: &'r mut DefaultProjExprReadResolver,
-}
+mod implementation {
+    use super::*;
 
-impl<'r, P> Projector for PossibleValuesInPlaceProjector<'r, P>
-where
-    for<'h> P: Projector<
-            HostRef<'h> = ConcreteValueRef,
-            HIRefPair<'h> = (ConcreteValueRef, ConcreteValueRef),
-            Proj<'h> = Result<ValueRef, ConcreteValueRef>,
-        >,
-{
-    type HostRef<'a> = &'a mut Select;
+    impl DefaultProjExprReadResolver {
+        pub(super) fn resolve_symbolic_projs(
+            &mut self,
+            base: &ConcreteHostProj,
+            projs: Vec<&ProjKind>,
+        ) -> Select {
+            let indices = projs.iter().enumerate().filter_map(|(i, p)| match p {
+                ProjKind::Index(SliceIndex { index, from_end }) if index.is_symbolic() => Some((
+                    i,
+                    SliceIndex {
+                        index: SymValueRef::new(index.clone()),
+                        from_end: *from_end,
+                    },
+                )),
+                _ => None,
+            });
 
-    type HIRefPair<'a> = (Self::HostRef<'a>, ConcreteValueRef);
+            let mut current = Self::resolve_concrete_host(base);
 
-    type Proj<'a> = ();
+            let mut last_index = 0;
+            for (i, index) in indices {
+                current = self.project_one_to_ones(current, &projs[last_index..i]);
+                last_index = i + 1;
 
-    fn project<'a>(
-        &mut self,
-        proj_on: ProjectionOn<Self::HostRef<'a>, Self::HIRefPair<'a>>,
-    ) -> Self::Proj<'a> {
-        let (host, proj) = proj_on.destruct();
-        SymReadResult::mut_concrete_values(
-            host,
-            &mut |value| {
-                self.projector
-                    .project(proj.clone_with_host(value))
-                    .unwrap_result(&proj)
-            },
-            self.resolver,
-        );
+                log::debug!("Found a symbolic index in the projection chain at {i}");
+                current = current.select(index);
+            }
+
+            if last_index < projs.len() {
+                current = self.project_one_to_ones(current, &projs[last_index..]);
+            }
+
+            current
+        }
+
+        /// # Remarks
+        /// This is the base case for creation of a `Select`.
+        fn resolve_concrete_host(proj: &ConcreteHostProj) -> Select {
+            let possible_values = match proj.host.as_ref() {
+                ConcreteValue::Array(ArrayValue { elements }) => elements
+                    .iter()
+                    .map(|v| SymReadResult::Value(v.clone()))
+                    .collect(),
+                _ => unreachable!("Symbolic index is only expected on an array."),
+            };
+            Select {
+                index: proj.index.clone(),
+                target: SelectTarget::Array(possible_values),
+            }
+        }
+
+        /// Applies the given one-to-one projections to the given host.
+        /// By one-to-one projection we mean a projection that doesn't get resolved
+        /// to many possible values, i.e., all projections other than a symbolic index.
+        /// These projections can be applied on the possible values of a `Select`.
+        /// Given a `Select` value, this method returns a `Select` value which has
+        /// the same index but with possible values with the projections applied on them.
+        fn project_one_to_ones(&mut self, host: Select, projs: &[&ProjKind]) -> Select {
+            debug_assert!(
+                !projs.iter().any(
+                    |p| matches!(p, ProjKind::Index (SliceIndex{ index, .. }) if index.is_symbolic())
+                ),
+                "Not meant for one-to-many projections (symbolic indices)."
+            );
+
+            log::debug!("Applying one-to-one projections: {projs:?} on {host}");
+
+            if projs.is_empty() {
+                return host;
+            }
+
+            let mut projector = PossibleValuesInPlaceProjector {
+                projector: ConcreteProjectorAdapter::new(|_p: &FullPlace| -> ValueRef {
+                    todo!("#234")
+                }),
+                resolver: self,
+            };
+
+            #[cfg(debug_assertions)]
+            let original_index = host.index.index.clone();
+
+            let mut current = host;
+            for proj in projs {
+                projector.project(proj.with_host(&mut current, ConcreteValueRef::new));
+            }
+
+            debug_assert!(
+                ValueRef::ptr_eq(&current.index.index.0, &original_index.0),
+                "The projector is expected to pass projection through selects."
+            );
+            current
+        }
     }
 
-    impl_singular_projs_through_general!();
-}
+    impl SymReadResult {
+        pub(super) fn apply_on_leaf_nodes(
+            select: &mut Select,
+            f: &mut impl FnMut(ConcreteValueRef) -> ValueRef,
+            resolver: &mut impl ProjExprReadResolver,
+        ) {
+            Self::internal_apply_on_leaf_nodes(select, 1, f, resolver)
+        }
 
-/// Makes the existing `ConcreteProjector` compatible for the usage of the resolver.
-struct ConcreteProjectorAdapter<F, I>(ConcreteProjector<F, I>);
+        fn internal_apply_on_leaf_nodes(
+            select: &mut Select,
+            expected_dim: usize,
+            f: &mut impl FnMut(ConcreteValueRef) -> ValueRef,
+            resolver: &mut impl ProjExprReadResolver,
+        ) {
+            match &mut select.target {
+                SelectTarget::Array(ref mut values) => {
+                    values
+                        .iter_mut()
+                        .for_each(|v| v.internal_apply_on_value(expected_dim - 1, f, resolver));
+                }
+                SelectTarget::Nested(box nested) => {
+                    Self::internal_apply_on_leaf_nodes(nested, expected_dim + 1, f, resolver)
+                }
+            }
+        }
 
-impl<F> ConcreteProjectorAdapter<F, ()> {
-    fn new(
-        get_place: F,
-    ) -> ConcreteProjectorAdapter<F, impl Fn(ConcreteValueRef, SymValueRef, bool) -> ValueRef>
+        fn internal_apply_on_value(
+            &mut self,
+            dim: usize,
+            f: &mut impl FnMut(ConcreteValueRef) -> ValueRef,
+            resolver: &mut impl ProjExprReadResolver,
+        ) {
+            // Resolve or expand value for further mutation.
+            if let SymReadResult::Value(value) = self {
+                match value.as_ref() {
+                    Value::Concrete(ConcreteValue::Array(array)) if dim > 0 => {
+                        *self = SymReadResult::Array(
+                            array
+                                .elements
+                                .iter()
+                                .cloned()
+                                .map(SymReadResult::Value)
+                                .collect(),
+                        )
+                    }
+                    Value::Symbolic(sym_value) => {
+                        *self = SymReadResult::SymRead(resolver.resolve(sym_value.expect_proj()))
+                    }
+                    _ => (),
+                };
+            }
+
+            match self {
+                SymReadResult::Value(value) => match value.as_ref() {
+                    Value::Concrete(_) => {
+                        assert_eq!(dim, 0, "Concrete value is expected to be expandable.");
+                        *value = f(ConcreteValueRef::new(value.clone()));
+                    }
+                    _ => unreachable!(),
+                },
+                SymReadResult::Array(values) => values
+                    .iter_mut()
+                    .for_each(|v| v.internal_apply_on_value(dim - 1, f, resolver)),
+                SymReadResult::SymRead(select) => {
+                    Self::internal_apply_on_leaf_nodes(select, dim, f, resolver)
+                }
+            }
+        }
+    }
+
+    /// A projector for `Select` values that performs the projection in-place over
+    /// their target.
+    /// As the `Select` values are generated per each symbolic index, and they have
+    /// a recursive structure, this projector should have less overhead than another
+    /// that follows an immutable fashion.
+    /// Note that it doesn't mutate actual `Value`s, but only the `Select` values.
+    ///
+    /// # Fields
+    /// `projector`: The regular projector that is used for (concrete) leaf nodes.
+    /// `resolver`: Used to resolve the inner symbolic values if they appear as a
+    ///             leaf node that we need to apply some projections on.
+    struct PossibleValuesInPlaceProjector<'r, P> {
+        projector: P,
+        resolver: &'r mut DefaultProjExprReadResolver,
+    }
+
+    impl<'r, P> Projector for PossibleValuesInPlaceProjector<'r, P>
+    where
+        for<'h> P: Projector<
+                HostRef<'h> = ConcreteValueRef,
+                HIRefPair<'h> = (ConcreteValueRef, ConcreteValueRef),
+                Proj<'h> = Result<ValueRef, ConcreteValueRef>,
+            >,
+    {
+        type HostRef<'a> = &'a mut Select;
+
+        type HIRefPair<'a> = (Self::HostRef<'a>, ConcreteValueRef);
+
+        type Proj<'a> = ();
+
+        fn project<'a>(
+            &mut self,
+            proj_on: ProjectionOn<Self::HostRef<'a>, Self::HIRefPair<'a>>,
+        ) -> Self::Proj<'a> {
+            let (host, proj) = proj_on.destruct();
+            SymReadResult::apply_on_leaf_nodes(
+                host,
+                &mut |value| {
+                    self.projector
+                        .project(proj.clone_with_host(value))
+                        .unwrap_result(&proj)
+                },
+                self.resolver,
+            );
+        }
+
+        impl_singular_projs_through_general!();
+    }
+
+    /// Makes the existing `ConcreteProjector` compatible for the usage of the resolver.
+    struct ConcreteProjectorAdapter<F, I>(ConcreteProjector<F, I>);
+
+    impl<F> ConcreteProjectorAdapter<F, ()> {
+        fn new(
+            get_place: F,
+        ) -> ConcreteProjectorAdapter<F, impl Fn(ConcreteValueRef, SymValueRef, bool) -> ValueRef>
+        where
+            F: Fn(&FullPlace) -> ValueRef,
+        {
+            ConcreteProjectorAdapter(ConcreteProjector {
+                get_place,
+                handle_sym_index: |_, _, _| unreachable!("Structurally impossible."),
+            })
+        }
+    }
+
+    impl<F, I> Projector for ConcreteProjectorAdapter<F, I>
     where
         F: Fn(&FullPlace) -> ValueRef,
+        I: Fn(ConcreteValueRef, SymValueRef, bool) -> ValueRef,
     {
-        ConcreteProjectorAdapter(ConcreteProjector {
-            get_place,
-            handle_sym_index: |_, _, _| unreachable!("Structurally impossible."),
-        })
-    }
-}
+        type HostRef<'a> = ConcreteValueRef;
+        type HIRefPair<'a> = (ConcreteValueRef, ConcreteValueRef);
+        type Proj<'a> = Result<ValueRef, ConcreteValueRef>;
 
-impl<F, I> Projector for ConcreteProjectorAdapter<F, I>
-where
-    F: Fn(&FullPlace) -> ValueRef,
-    I: Fn(ConcreteValueRef, SymValueRef, bool) -> ValueRef,
-{
-    type HostRef<'a> = ConcreteValueRef;
-    type HIRefPair<'a> = (ConcreteValueRef, ConcreteValueRef);
-    type Proj<'a> = Result<ValueRef, ConcreteValueRef>;
-
-    fn project<'a>(
-        &mut self,
-        pair: ProjectionOn<Self::HostRef<'a>, Self::HIRefPair<'a>>,
-    ) -> Self::Proj<'a> {
-        self.0.project(pair.index_into())
-    }
-
-    impl_singular_projs_through_general!();
-}
-
-impl SymValue {
-    fn as_proj(&self) -> Option<&ProjExpr> {
-        match self {
-            SymValue::Expression(Expr::Projection(host)) => Some(host),
-            _ => None,
+        fn project<'a>(
+            &mut self,
+            pair: ProjectionOn<Self::HostRef<'a>, Self::HIRefPair<'a>>,
+        ) -> Self::Proj<'a> {
+            self.0.project(pair.index_into())
         }
+
+        impl_singular_projs_through_general!();
     }
 
-    fn expect_proj(&self) -> &ProjExpr {
-        self.as_proj().expect(concat!(
-            "Complex symbolic values are not supported by this resolver. ",
-            "The symbolic host is expected to be a projection expression."
-        ))
-    }
-}
+    pub(super) mod utils {
+        use super::SliceIndex;
+        use crate::{abs::expr::proj::ProjectionOn, backends::basic::expr::prelude::*};
 
-impl ProjExpr {
-    fn flatten(&self) -> (&ConcreteHostProj, Vec<&ProjKind>) {
-        match self {
-            ProjExpr::SymIndex(sym_index) => (sym_index, vec![]),
-            ProjExpr::SymHost(sym_host) => sym_host.flatten(),
-        }
-    }
-}
-
-impl SymHostProj {
-    fn flatten(&self) -> (&ConcreteHostProj, Vec<&ProjKind>) {
-        let SymHostProj { host, kind } = self;
-        let host = host.expect_proj();
-        let (sym_index, mut projs) = host.flatten();
-        projs.push(kind);
-        (sym_index, projs)
-    }
-}
-
-impl ProjKind {
-    fn with_host<H, I>(
-        &self,
-        host: H,
-        map_index: impl FnOnce(ValueRef) -> I,
-    ) -> ProjectionOn<H, (H, I)> {
-        match self {
-            ProjKind::Deref => ProjectionOn::Deref(host),
-            ProjKind::Field(field) => ProjectionOn::Field(host, *field),
-            ProjKind::Index(SliceIndex { index, from_end }) => {
-                ProjectionOn::Index((host, map_index(index.clone())), *from_end)
+        impl SymValue {
+            pub(super) fn as_proj(&self) -> Option<&ProjExpr> {
+                match self {
+                    SymValue::Expression(Expr::Projection(host)) => Some(host),
+                    _ => None,
+                }
             }
-            ProjKind::Subslice { from, to, from_end } => {
-                ProjectionOn::Subslice(host, *from, *to, *from_end)
+
+            pub(super) fn expect_proj(&self) -> &ProjExpr {
+                self.as_proj().expect(concat!(
+                    "Complex symbolic values are not supported by this resolver. ",
+                    "The symbolic host is expected to be a projection expression."
+                ))
             }
-            ProjKind::Downcast(to_variant) => ProjectionOn::Downcast(host, *to_variant),
         }
-    }
-}
 
-impl Display for SymIndex {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}{}ˢ", self.index, if self.from_end { "^" } else { "" })
-    }
-}
+        impl ProjExpr {
+            pub(in super::super) fn flatten(&self) -> (&ConcreteHostProj, Vec<&ProjKind>) {
+                match self {
+                    ProjExpr::SymIndex(sym_index) => (sym_index, vec![]),
+                    ProjExpr::SymHost(sym_host) => sym_host.flatten(),
+                }
+            }
+        }
 
-impl Display for SymReadResult {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            SymReadResult::Value(value) => write!(f, "{}", value),
-            SymReadResult::Array(values) => write!(f, "{}", comma_separated(values.iter())),
-            SymReadResult::SymRead(select) => write!(f, "{}", select),
+        impl SymHostProj {
+            fn flatten(&self) -> (&ConcreteHostProj, Vec<&ProjKind>) {
+                let SymHostProj { host, kind } = self;
+                let host = host.expect_proj();
+                let (sym_index, mut projs) = host.flatten();
+                projs.push(kind);
+                (sym_index, projs)
+            }
+        }
+
+        impl ProjKind {
+            pub(super) fn with_host<H, I>(
+                &self,
+                host: H,
+                map_index: impl FnOnce(ValueRef) -> I,
+            ) -> ProjectionOn<H, (H, I)> {
+                match self {
+                    ProjKind::Deref => ProjectionOn::Deref(host),
+                    ProjKind::Field(field) => ProjectionOn::Field(host, *field),
+                    ProjKind::Index(SliceIndex { index, from_end }) => {
+                        ProjectionOn::Index((host, map_index(index.clone())), *from_end)
+                    }
+                    ProjKind::Subslice { from, to, from_end } => {
+                        ProjectionOn::Subslice(host, *from, *to, *from_end)
+                    }
+                    ProjKind::Downcast(to_variant) => ProjectionOn::Downcast(host, *to_variant),
+                }
+            }
         }
     }
 }

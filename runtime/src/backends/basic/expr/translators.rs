@@ -410,21 +410,19 @@ pub(crate) mod z3 {
             select: &Select,
             const_prefix: Option<&str>,
         ) -> AstNode<'ctx> {
-            let index = {
-                let index_ast = self.translate_symbolic(&select.index.index);
-                let index_ast = if select.index.from_end {
-                    let len = match &select.target {
-                        SelectTarget::Array(possible_values) => {
-                            self.translate_const(&possible_values.len().into())
-                        }
-                        SelectTarget::Nested(box select) => self
-                            .translate_len_expr(/* FIXME: May be expensive */ select.clone()),
-                    };
-                    self.translate_binary_expr(&BinaryOp::Sub, len, index_ast)
-                } else {
-                    index_ast
+            let index = self.translate_symbolic(&select.index.index);
+            let index = if select.index.from_end {
+                let len = match &select.target {
+                    SelectTarget::Array(possible_values) => {
+                        self.translate_const(&possible_values.len().into())
+                    }
+                    SelectTarget::Nested(box select) => {
+                        self.translate_len_expr(/* FIXME: May be expensive */ select.clone())
+                    }
                 };
-                index_ast
+                self.translate_binary_expr(&BinaryOp::Sub, len, index)
+            } else {
+                index
             };
             debug_assert_eq!(
                 index.z3_sort(),
