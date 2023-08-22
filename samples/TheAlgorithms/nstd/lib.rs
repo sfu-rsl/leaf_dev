@@ -165,24 +165,6 @@ impl PartialEq<NSString> for NSString {
     }
 }
 
-impl PartialEq<&str> for NSString {
-    fn eq(&self, other: &&str) -> bool {
-        if self.len != other.len() {
-            return false;
-        }
-
-        let mut i = 0;
-        while i < self.len() {
-            if self.chars[i] != other.chars().nth(i).unwrap() {
-                return false;
-            }
-            i += 1;
-        }
-
-        true
-    }
-}
-
 struct NSByteString {
     bytes: [u8; STRING_MAX_CAP],
     len: usize,
