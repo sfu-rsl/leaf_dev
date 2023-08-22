@@ -59,8 +59,10 @@ fn index_of(byte: u8) -> NSOption<usize> {
     None
 }
 
-/// Equivalent of CHARSET[byte as usize]
 fn encode_single(byte: u8) -> u8 {
+    // Symbolic
+    CHARSET[byte as usize]
+
     // Buggy
     /*
     match byte {
@@ -85,12 +87,14 @@ fn encode_single(byte: u8) -> u8 {
     */
 
     // Non-branching
+    /*
     let byte = byte as i16;
     (((byte <= 25) as i16) * (byte + b'A' as i16)
         + (((26 <= byte) & (byte < 52)) as i16) * (byte + b'a' as i16 - 26)
         + (((52 <= byte) & (byte < 62)) as i16) * (byte + b'0' as i16 - 52)
         + ((byte == 62) as i16) * (b'+' as i16)
         + ((byte == 63) as i16) * (b'/' as i16)) as u8
+    */
 }
 
 fn base64_encode(
