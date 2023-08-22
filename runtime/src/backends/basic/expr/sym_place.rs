@@ -220,6 +220,24 @@ mod implementation {
             }
         }
 
+        /// Applies the given function on the concrete value(s) of this `SymReadResult`.
+        /// - Resolves the value if it is symbolic.
+        /// - Expands the value if the expected dimension is more than one.
+        /// - Recurses if self refers to a symbolic read.
+        /// - Iterates over the values if self is an array.
+        ///
+        /// # Remarks
+        /// This method is used to perform a mutation or extraction over concrete values.
+        /// In our case, it translates to projections. Thus, it suppose that symbolic values
+        /// are resolvable to symbolic reads and tries to resolve them if they are encountered.
+        ///
+        /// # Arguments
+        /// - `dim`: The expected dimension of the value(s) of this `SymReadResult`.
+        ///   Effectively this corresponds to one less than the number of `Select` values wrapping
+        ///   this `SymReadResult`.
+        /// - `f`: The function to apply on the value(s).
+        /// - `resolver`: Used to resolve the inner symbolic values if they appear
+        ///   in the traversal.
         fn internal_apply_on_value(
             &mut self,
             dim: usize,
