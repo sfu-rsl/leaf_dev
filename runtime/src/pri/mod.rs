@@ -3,7 +3,7 @@ mod utils;
 
 use crate::abs::{
     backend::*, AssertKind, BasicBlockIndex, BinaryOp, BranchingMetadata, CastKind, FieldIndex,
-    FloatType, IntType, Local, LocalIndex, UnaryOp, ValueType, VariantIndex,
+    FloatType, IntType, Local, LocalIndex, RawPointer, UnaryOp, ValueType, VariantIndex,
 };
 
 use self::instance::*;
@@ -68,6 +68,9 @@ pub fn ref_place_downcast(place: PlaceRef, variant_index: u32 /*, type */) -> Pl
 }
 pub fn ref_place_opaque_cast(place: PlaceRef /*, type */) -> PlaceRef {
     push_place_ref(|p| p.project_on(take_back_place_ref(place)).opaque_cast())
+}
+pub fn set_place_address(place: PlaceRef, raw_ptr: RawPointer) {
+    todo!()
 }
 
 pub fn ref_operand_copy(place: PlaceRef) -> OperandRef {
@@ -364,6 +367,7 @@ pub mod compiler_helpers {
     /* These fields serve as exported symbols to get the types of the desired
      * arguments easier in the compiler. */
     pub static PLACE_REF_TYPE_HOLDER: PlaceRef = 0;
+    pub static RAW_PTR_TYPE_HOLDER: RawPointer = 0;
     pub static OPERAND_REF_TYPE_HOLDER: OperandRef = 0;
     pub static BINARY_OP_TYPE_HOLDER: BinaryOp = BinaryOp::Add;
     pub static UNARY_OP_TYPE_HOLDER: UnaryOp = UnaryOp::Neg;

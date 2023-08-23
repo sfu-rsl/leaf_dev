@@ -186,7 +186,7 @@ where
         location: Location,
     ) {
         log::debug!("Visiting statement: {:?} at {:?}", statement.kind, location);
-        VisitorFactory::make_statement_kind_visitor(&mut self.call_adder.after())
+        VisitorFactory::make_statement_kind_visitor(&mut self.call_adder.before())
             .visit_statement_kind(&statement.kind);
     }
 

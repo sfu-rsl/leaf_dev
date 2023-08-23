@@ -5,8 +5,7 @@ use std::vec;
 use rustc_abi::FieldIdx;
 use rustc_middle::{
     mir::{
-        BasicBlock, BinOp, Body, Constant, HasLocalDecls, Local, Operand, Place, ProjectionElem,
-        Statement, UnOp,
+        BasicBlock, BinOp, Body, Constant, Local, Operand, Place, ProjectionElem, Statement, UnOp,
     },
     ty::{Const, Ty, TyCtxt},
 };
@@ -186,7 +185,7 @@ pub(crate) struct RuntimeCallAdder<C> {
 mod implementation {
     use std::assert_matches::debug_assert_matches;
 
-    use rustc_middle::mir::{BasicBlock, BasicBlockData, Terminator, UnevaluatedConst};
+    use rustc_middle::mir::{self, BasicBlock, BasicBlockData, Terminator, UnevaluatedConst};
     use rustc_middle::ty::TyKind;
     use rustc_span::def_id::DefId;
 
@@ -480,33 +479,46 @@ mod implementation {
         C: ForPlaceRef<'tcx>,
     {
         fn internal_reference_place(&mut self, place: &Place<'tcx>) -> BlocksAndResult<'tcx> {
-            let local = u32::from(place.local);
-            const RETURN_VALUE: u32 = 0;
-            let func_name = if local == RETURN_VALUE {
-                stringify!(pri::ref_place_return_value)
-            } else if local <= self.context.body().arg_count as u32 {
-                stringify!(pri::ref_place_argument)
-            } else {
-                stringify!(pri::ref_place_local)
-            };
-            let args = if local == 0_u32 {
-                vec![]
-            } else {
-                vec![operand::const_from_uint(self.context.tcx(), local)]
-            };
+            let (mut blocks, mut current_ref) = self.reference_place_local(place.local);
 
-            let mut new_blocks = vec![];
-            let (call_block, mut current_ref) = self.make_bb_for_place_ref_call(func_name, args);
-            new_blocks.push(call_block);
+            let tcx = self.tcx();
+
+            // For setting addresses we have to remake a cumulative place up to each projection.
+            let mut cum_place = Place::from(place.local);
+            let mut cum_ty = cum_place.ty(&self.context, tcx);
+            blocks.push(self.make_bb_for_set_addr_call(current_ref, &cum_place, cum_ty.ty));
 
             for (_, proj) in place.iter_projections() {
                 let BlocksAndResult(added_blocks, wrapped_ref) =
                     self.reference_place_projection(current_ref, proj);
                 current_ref = wrapped_ref;
-                new_blocks.extend(added_blocks);
+                blocks.extend(added_blocks);
+
+                cum_place = cum_place.project_deeper(&[proj], tcx);
+                cum_ty = cum_ty.projection_ty(tcx, proj);
+                blocks.push(self.make_bb_for_set_addr_call(current_ref, &cum_place, cum_ty.ty));
             }
 
-            BlocksAndResult(new_blocks, current_ref)
+            BlocksAndResult(blocks, current_ref)
+        }
+
+        fn reference_place_local(&mut self, local: Local) -> (Vec<BasicBlockData<'tcx>>, Local) {
+            let func_name = if local == mir::RETURN_PLACE {
+                stringify!(pri::ref_place_return_value)
+            } else if local.as_usize() <= self.context.body().arg_count {
+                stringify!(pri::ref_place_argument)
+            } else {
+                stringify!(pri::ref_place_local)
+            };
+            let args = if local == mir::RETURN_PLACE {
+                vec![]
+            } else {
+                vec![operand::const_from_uint(self.context.tcx(), local.as_u32())]
+            };
+
+            let (block, current_ref) = self.make_bb_for_place_ref_call(func_name, args);
+
+            (vec![block], current_ref)
         }
 
         fn reference_place_projection<T>(
@@ -577,6 +589,45 @@ mod implementation {
             args: Vec<Operand<'tcx>>,
         ) -> (BasicBlockData<'tcx>, Local) {
             self.make_bb_for_call_with_ret(func_name, args)
+        }
+
+        fn make_bb_for_set_addr_call(
+            &mut self,
+            place_ref: Local,
+            place: &Place<'tcx>,
+            place_ty: Ty<'tcx>,
+        ) -> BasicBlockData<'tcx> {
+            let (statements, x) = self.add_and_set_local_for_ptr(place, place_ty);
+
+            let mut block = self.make_bb_for_call(
+                stringify!(pri::set_place_address),
+                vec![Operand::Copy(place_ref.into()), Operand::Move(x.into())],
+            );
+
+            block.statements.extend(statements);
+            block
+        }
+
+        fn add_and_set_local_for_ptr(
+            &mut self,
+            place: &Place<'tcx>,
+            place_ty: Ty<'tcx>,
+        ) -> ([Statement<'tcx>; 2], Local) {
+            let tcx = self.tcx();
+            let ptr_local = self.context.add_local(tcx.mk_imm_ptr(place_ty));
+            let ptr_place = Place::from(ptr_local);
+            let ptr_assignment = assignment::create(
+                ptr_place,
+                mir::Rvalue::AddressOf(rustc_ast::Mutability::Not, place.clone()),
+            );
+            let pri_ptr_ty = self.context.pri_types().raw_ptr;
+            let cast_local = self.context.add_local(pri_ptr_ty);
+            let cast_assignment = assignment::create(
+                cast_local.into(),
+                rvalue::cast_expose_addr(Operand::Move(ptr_place), pri_ptr_ty),
+            );
+
+            ([ptr_assignment, cast_assignment], cast_local)
         }
     }
 
@@ -1824,6 +1875,13 @@ mod implementation {
                     to_ty: Ty<'tcx>,
                 ) -> Rvalue<'tcx> {
                     Rvalue::Cast(CastKind::Pointer(PointerCast::Unsize), operand, to_ty)
+                }
+
+                pub fn cast_expose_addr<'tcx>(
+                    operand: Operand<'tcx>,
+                    to_ty: Ty<'tcx>,
+                ) -> Rvalue<'tcx> {
+                    Rvalue::Cast(CastKind::PointerExposeAddress, operand, to_ty)
                 }
 
                 pub fn array<'tcx>(ty: Ty<'tcx>, items: Vec<Operand<'tcx>>) -> Rvalue<'tcx> {
