@@ -27,7 +27,6 @@ use self::{
         proj::DefaultSymProjector as SymProjector,
     },
     operand::DefaultOperandHandler,
-    place::{BasicPlaceHandler, PlaceWithAddress},
     state::HierarchicalVariablesState,
 };
 
@@ -35,8 +34,15 @@ type TraceManager = Box<dyn abs::backend::TraceManager<BasicBlockIndex, ValueRef
 
 type BasicCallStackManager = call::BasicCallStackManager<HierarchicalVariablesState<SymProjector>>;
 
-type Place = PlaceWithAddress;
-type Projection = place::Projection;
+#[cfg(place_addr)]
+type Place = place::PlaceWithAddress;
+#[cfg(not(place_addr))]
+type Place = crate::abs::Place;
+type Projection = crate::abs::Projection;
+#[cfg(place_addr)]
+type PlaceHandler = place::BasicPlaceHandler;
+#[cfg(not(place_addr))]
+type PlaceHandler = crate::abs::backend::implementation::DefaultPlaceHandler;
 type FullPlace = place::FullPlace<Place>;
 type Operand = operand::Operand<Place>;
 
@@ -69,7 +75,7 @@ impl BasicBackend {
 }
 
 impl RuntimeBackend for BasicBackend {
-    type PlaceHandler<'a> = BasicPlaceHandler
+    type PlaceHandler<'a> = PlaceHandler
     where
         Self: 'a;
 
@@ -94,7 +100,7 @@ impl RuntimeBackend for BasicBackend {
     type Operand = Operand;
 
     fn place(&mut self) -> Self::PlaceHandler<'_> {
-        BasicPlaceHandler
+        Self::PlaceHandler::default()
     }
 
     fn operand(&mut self) -> Self::OperandHandler<'_> {

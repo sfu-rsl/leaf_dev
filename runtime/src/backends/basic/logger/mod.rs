@@ -6,8 +6,7 @@ use crate::abs::{
 
 use super::{
     operand::{Constant, DefaultOperandHandler, PlaceUsage},
-    place::BasicPlaceHandler,
-    Place,
+    Place, PlaceHandler,
 };
 
 use crate::utils::logging::log_info;
@@ -29,7 +28,7 @@ impl LoggerBackend {
 }
 
 impl RuntimeBackend for LoggerBackend {
-    type PlaceHandler<'a> = BasicPlaceHandler where Self: 'a;
+    type PlaceHandler<'a> = PlaceHandler where Self: 'a;
     type OperandHandler<'a> = DefaultOperandHandler<'a, Place, ValueType> where Self: 'a;
     type AssignmentHandler<'a> = LoggerAssignmentHandler where Self: 'a;
     type BranchingHandler<'a> = LoggerBranchingHandler where Self: 'a;
@@ -39,7 +38,7 @@ impl RuntimeBackend for LoggerBackend {
     type Operand = Operand;
 
     fn place(&mut self) -> Self::PlaceHandler<'_> {
-        BasicPlaceHandler
+        Self::PlaceHandler::default()
     }
 
     fn operand(&mut self) -> Self::OperandHandler<'_> {

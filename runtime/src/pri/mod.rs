@@ -65,6 +65,7 @@ pub fn ref_place_downcast(place: PlaceRef, variant_index: u32 /*, type */) {
 pub fn ref_place_opaque_cast(place: PlaceRef /*, type */) {
     mut_place_ref(place, |p, place| p.project_on(place).opaque_cast())
 }
+#[cfg(place_addr)]
 pub fn set_place_address(place: PlaceRef, raw_ptr: RawPointer) {
     mut_place_ref(place, |p, place| p.metadata(place).set_address(raw_ptr));
 }

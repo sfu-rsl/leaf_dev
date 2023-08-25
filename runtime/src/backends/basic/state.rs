@@ -460,7 +460,7 @@ pub(super) mod proj {
             expr::proj::{macros::impl_general_proj_through_singulars, Projector},
             FieldIndex, VariantIndex,
         },
-        backends::basic::{expr::SymIndexPair, place::Projection},
+        backends::basic::{expr::SymIndexPair, Projection},
     };
     use std::ops::DerefMut;
 

@@ -8,8 +8,6 @@ use crate::abs::{
     Local, Place, RawPointer,
 };
 
-pub(super) type Projection = crate::abs::Projection<Local>;
-
 #[derive(Debug, Clone, derive_more::Deref)]
 pub(crate) struct PlaceWithAddress {
     #[deref]

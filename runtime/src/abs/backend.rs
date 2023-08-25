@@ -253,7 +253,7 @@ pub(crate) mod implementation {
     use super::super::*;
     use super::*;
 
-    pub(crate) struct DefaultPlaceHandler<L, P> {
+    pub(crate) struct DefaultPlaceHandler<L = Local, P = Projection<Local>> {
         _phantom: std::marker::PhantomData<(L, P)>,
     }
 

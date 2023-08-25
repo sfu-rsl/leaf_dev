@@ -486,15 +486,19 @@ mod implementation {
             // For setting addresses we have to remake a cumulative place up to each projection.
             let mut cum_place = Place::from(place.local);
             let mut cum_ty = cum_place.ty(&self.context, tcx);
-            blocks.push(self.make_bb_for_set_addr_call(place_ref, &cum_place, cum_ty.ty));
+            if cfg!(place_addr) {
+                blocks.push(self.make_bb_for_set_addr_call(place_ref, &cum_place, cum_ty.ty));
+            }
 
             for (_, proj) in place.iter_projections() {
                 let added_blocks = self.reference_place_projection(place_ref, proj);
                 blocks.extend(added_blocks);
 
-                cum_place = cum_place.project_deeper(&[proj], tcx);
-                cum_ty = cum_ty.projection_ty(tcx, proj);
-                blocks.push(self.make_bb_for_set_addr_call(place_ref, &cum_place, cum_ty.ty));
+                if cfg!(place_addr) {
+                    cum_place = cum_place.project_deeper(&[proj], tcx);
+                    cum_ty = cum_ty.projection_ty(tcx, proj);
+                    blocks.push(self.make_bb_for_set_addr_call(place_ref, &cum_place, cum_ty.ty));
+                }
             }
 
             BlocksAndResult(blocks, place_ref)
