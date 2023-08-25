@@ -5,10 +5,10 @@ use crate::abs::{
     FloatType, IntType, ValueType,
 };
 
-use super::{expr::SymValueRef, place::Place};
+use super::expr::SymValueRef;
 
 #[derive(Debug)]
-pub(crate) enum Operand<SymValue = SymValueRef> {
+pub(crate) enum Operand<Place, SymValue = SymValueRef> {
     Place(Place, PlaceUsage),
     Const(Constant),
     Symbolic(SymValue),
@@ -32,28 +32,32 @@ pub(crate) enum Constant {
     Zst,
 }
 
-impl<S> From<Constant> for Operand<S> {
+impl<P, S> From<Constant> for Operand<P, S> {
     fn from(constant: Constant) -> Self {
         Self::Const(constant)
     }
 }
 
-pub(crate) struct DefaultOperandHandler<'a, SymValue = SymValueRef> {
+pub(crate) struct DefaultOperandHandler<'a, Place, SymValue = SymValueRef> {
     create_symbolic: Box<dyn FnOnce(ValueType) -> SymValue + 'a>,
+    _phantom: PhantomData<Place>,
 }
 
 pub(crate) struct DefaultConstantHandler<O>(PhantomData<O>);
 
-impl<'a, SymValue> DefaultOperandHandler<'a, SymValue> {
+impl<'a, Place, SymValue> DefaultOperandHandler<'a, Place, SymValue> {
     pub(crate) fn new(create_symbolic: Box<dyn FnOnce(ValueType) -> SymValue + 'a>) -> Self {
-        Self { create_symbolic }
+        Self {
+            create_symbolic,
+            _phantom: PhantomData,
+        }
     }
 }
 
-impl<SymValue> OperandHandler for DefaultOperandHandler<'_, SymValue> {
-    type Operand = Operand<SymValue>;
+impl<Place, SymValue> OperandHandler for DefaultOperandHandler<'_, Place, SymValue> {
+    type Operand = Operand<Place, SymValue>;
     type Place = Place;
-    type ConstantHandler = DefaultConstantHandler<Operand<SymValue>>;
+    type ConstantHandler = DefaultConstantHandler<Self::Operand>;
 
     fn copy_of(self, place: Self::Place) -> Self::Operand {
         Operand::Place(place, PlaceUsage::Copy)

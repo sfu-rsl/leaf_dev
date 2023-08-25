@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use super::{
     AssertKind, BinaryOp, BranchingMetadata, CastKind, Constraint, FieldIndex, FloatType, IntType,
-    Local, UnaryOp, ValueType, VariantIndex,
+    Local, Projection, UnaryOp, ValueType, VariantIndex,
 };
 
 pub(crate) trait RuntimeBackend: Sized {
@@ -41,29 +41,62 @@ pub(crate) trait RuntimeBackend: Sized {
 
 pub(crate) trait PlaceHandler {
     type Place;
-    type ProjectionHandler: PlaceProjectionHandler<Place = Self::Place>;
+    type ProjectionHandler;
+    type MetadataHandler<'a>;
 
     fn of_local(self, local: Local) -> Self::Place;
 
     fn project_on(self, place: Self::Place) -> Self::ProjectionHandler;
+
+    fn metadata<'a>(self, place: &'a mut Self::Place) -> Self::MetadataHandler<'a>;
 }
 
-pub(crate) trait PlaceProjectionHandler {
+pub(crate) trait PlaceProjectionHandler: Sized {
     type Place;
+    type Local: TryFrom<Self::Place>;
 
-    fn deref(self) -> Self::Place;
+    fn by(self, projection: Projection<Self::Local>) -> Self::Place;
 
-    fn for_field(self, field: FieldIndex) -> Self::Place;
+    #[inline]
+    fn deref(self) -> Self::Place {
+        self.by(Projection::Deref)
+    }
 
-    fn at_index(self, index: Self::Place) -> Self::Place;
+    #[inline]
+    fn for_field(self, field: FieldIndex) -> Self::Place {
+        self.by(Projection::Field(field))
+    }
 
-    fn at_constant_index(self, offset: u64, min_length: u64, from_end: bool) -> Self::Place;
+    #[inline]
+    fn at_index(self, index: Self::Place) -> Self::Place {
+        self.by(Projection::Index(index.try_into().unwrap_or_else(|_| {
+            panic!("The place used as an index should be just a local.")
+        })))
+    }
 
-    fn subslice(self, from: u64, to: u64, from_end: bool) -> Self::Place;
+    #[inline]
+    fn at_constant_index(self, offset: u64, min_length: u64, from_end: bool) -> Self::Place {
+        self.by(Projection::ConstantIndex {
+            offset,
+            min_length,
+            from_end,
+        })
+    }
 
-    fn downcast(self, variant_index: u32) -> Self::Place;
+    #[inline]
+    fn subslice(self, from: u64, to: u64, from_end: bool) -> Self::Place {
+        self.by(Projection::Subslice { from, to, from_end })
+    }
 
-    fn opaque_cast(self) -> Self::Place;
+    #[inline]
+    fn downcast(self, variant: VariantIndex) -> Self::Place {
+        self.by(Projection::Downcast(variant))
+    }
+
+    #[inline]
+    fn opaque_cast(self) -> Self::Place {
+        self.by(Projection::OpaqueCast)
+    }
 }
 
 pub(crate) trait OperandHandler {
@@ -216,4 +249,64 @@ pub(crate) enum SolveResult<I, V> {
 
 pub(crate) trait OutputGenerator<I, V> {
     fn generate(&mut self, answers: HashMap<I, V>);
+}
+
+pub(crate) mod implementation {
+    use super::super::*;
+    use super::*;
+
+    pub(crate) struct DefaultPlaceHandler<L, P> {
+        _phantom: std::marker::PhantomData<(L, P)>,
+    }
+
+    impl<L, P> Default for DefaultPlaceHandler<L, P> {
+        fn default() -> Self {
+            Self {
+                _phantom: Default::default(),
+            }
+        }
+    }
+
+    impl<L, P> PlaceHandler for DefaultPlaceHandler<L, P>
+    where
+        L: From<Local>,
+    {
+        type Place = Place<L, P>;
+        type ProjectionHandler = DefaultPlaceProjectionHandler<L, P>;
+        type MetadataHandler<'a> = ();
+
+        fn of_local(self, local: Local) -> Self::Place {
+            Place::new(local.into())
+        }
+
+        fn project_on(self, place: Self::Place) -> Self::ProjectionHandler {
+            DefaultPlaceProjectionHandler { place }
+        }
+
+        fn metadata(self, _place: &mut Self::Place) {}
+    }
+
+    pub(crate) struct DefaultPlaceProjectionHandler<L, P> {
+        place: Place<L, P>,
+    }
+
+    impl<L, P> DefaultPlaceProjectionHandler<L, P> {
+        pub(crate) fn new(place: Place<L, P>) -> Self {
+            Self { place }
+        }
+    }
+
+    impl<L, P> PlaceProjectionHandler for DefaultPlaceProjectionHandler<L, P>
+    where
+        L: TryFrom<Place<L, P>>,
+        P: From<Projection<L>>,
+    {
+        type Place = Place<L, P>;
+
+        type Local = L;
+
+        fn by(self, projection: Projection<Self::Local>) -> Self::Place {
+            self.place.with_projection(projection.into())
+        }
+    }
 }

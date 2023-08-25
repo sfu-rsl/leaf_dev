@@ -6,13 +6,14 @@ use crate::abs::{
 
 use super::{
     operand::{Constant, DefaultOperandHandler, PlaceUsage},
-    place::{DefaultPlaceHandler, Place, Projection},
+    place::BasicPlaceHandler,
+    Place,
 };
 
 use crate::utils::logging::log_info;
 
 // Here we only store the type information for the symbolic value.
-type Operand = super::operand::Operand<ValueType>;
+type Operand = super::operand::Operand<Place, ValueType>;
 
 pub(crate) struct LoggerBackend {
     call_manager: CallManager,
@@ -28,8 +29,8 @@ impl LoggerBackend {
 }
 
 impl RuntimeBackend for LoggerBackend {
-    type PlaceHandler<'a> = DefaultPlaceHandler where Self: 'a;
-    type OperandHandler<'a> = DefaultOperandHandler<'a, ValueType> where Self: 'a;
+    type PlaceHandler<'a> = BasicPlaceHandler where Self: 'a;
+    type OperandHandler<'a> = DefaultOperandHandler<'a, Place, ValueType> where Self: 'a;
     type AssignmentHandler<'a> = LoggerAssignmentHandler where Self: 'a;
     type BranchingHandler<'a> = LoggerBranchingHandler where Self: 'a;
     type FunctionHandler<'a> = LoggerFunctionHandler<'a> where Self: 'a;
@@ -38,7 +39,7 @@ impl RuntimeBackend for LoggerBackend {
     type Operand = Operand;
 
     fn place(&mut self) -> Self::PlaceHandler<'_> {
-        DefaultPlaceHandler {}
+        BasicPlaceHandler
     }
 
     fn operand(&mut self) -> Self::OperandHandler<'_> {
@@ -373,62 +374,6 @@ impl CallManager {
 
 // -----------------------------------
 
-impl Display for Place {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        PlaceFormatter::format(f, self)
-    }
-}
-
-struct PlaceFormatter;
-impl PlaceFormatter {
-    fn format(f: &mut std::fmt::Formatter, place: &Place) -> std::fmt::Result {
-        place
-            .projections
-            .iter()
-            .try_for_each(|proj| Self::pre(proj, f))
-            .and_then(|_| write!(f, "{}", place.local))
-            .and_then(|_| {
-                place
-                    .projections
-                    .iter()
-                    .rev()
-                    .try_for_each(|proj| Self::post(proj, f))
-            })
-    }
-
-    fn pre(proj: &Projection, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match proj {
-            Projection::Deref => f.write_str("*"),
-            _ => Result::Ok(()),
-        }
-    }
-
-    fn post(proj: &Projection, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match proj {
-            Projection::Field(field) => write!(f, ".{field}"),
-            Projection::Index(index) => write!(f, "[{index}]"),
-            Projection::Subslice { from, to, from_end } => {
-                write!(f, "[{}..{}{}]", from, to, if *from_end { "^" } else { "" })
-            }
-            Projection::ConstantIndex {
-                offset,
-                min_length,
-                from_end,
-            } => {
-                write!(
-                    f,
-                    "{{>{}}}[{}{}]",
-                    min_length,
-                    offset,
-                    if *from_end { "^" } else { "" }
-                )
-            }
-            Projection::Downcast(variant) => write!(f, " as V#{variant}"),
-            _ => Result::Ok(()),
-        }
-    }
-}
-
 impl Display for Operand {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
@@ -439,39 +384,6 @@ impl Display for Operand {
             Operand::Const(constant) => write!(f, "Const::{constant:?}"),
             Operand::Symbolic(symbolic) => write!(f, "Symbolic::{symbolic:?}"),
         }
-    }
-}
-
-impl Display for BinaryOp {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        f.write_str(match self {
-            BinaryOp::Add => "+",
-            BinaryOp::Sub => "-",
-            BinaryOp::Mul => "*",
-            BinaryOp::Div => "/",
-            BinaryOp::Rem => "%",
-            BinaryOp::BitAnd => "&",
-            BinaryOp::BitOr => "|",
-            BinaryOp::BitXor => "^",
-            BinaryOp::Shl => "<<",
-            BinaryOp::Shr => ">>",
-            BinaryOp::Eq => "==",
-            BinaryOp::Ne => "!=",
-            BinaryOp::Lt => "<",
-            BinaryOp::Le => "<=",
-            BinaryOp::Gt => ">",
-            BinaryOp::Ge => ">=",
-            BinaryOp::Offset => "->",
-        })
-    }
-}
-
-impl Display for UnaryOp {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        f.write_str(match self {
-            UnaryOp::Not => "!",
-            UnaryOp::Neg => "-",
-        })
     }
 }
 

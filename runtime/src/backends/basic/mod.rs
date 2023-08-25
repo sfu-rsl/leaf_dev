@@ -26,14 +26,19 @@ use self::{
         builders::DefaultExprBuilder as ExprBuilder, prelude::*,
         proj::DefaultSymProjector as SymProjector,
     },
-    operand::{DefaultOperandHandler, Operand},
-    place::{DefaultPlaceHandler, FullPlace, Place},
+    operand::DefaultOperandHandler,
+    place::{BasicPlaceHandler, PlaceWithAddress},
     state::HierarchicalVariablesState,
 };
 
 type TraceManager = Box<dyn abs::backend::TraceManager<BasicBlockIndex, ValueRef>>;
 
 type BasicCallStackManager = call::BasicCallStackManager<HierarchicalVariablesState<SymProjector>>;
+
+type Place = PlaceWithAddress;
+type Projection = place::Projection;
+type FullPlace = place::FullPlace<Place>;
+type Operand = operand::Operand<Place>;
 
 pub struct BasicBackend {
     call_stack_manager: BasicCallStackManager,
@@ -64,11 +69,11 @@ impl BasicBackend {
 }
 
 impl RuntimeBackend for BasicBackend {
-    type PlaceHandler<'a> = DefaultPlaceHandler
+    type PlaceHandler<'a> = BasicPlaceHandler
     where
         Self: 'a;
 
-    type OperandHandler<'a> = DefaultOperandHandler<'a>
+    type OperandHandler<'a> = DefaultOperandHandler<'a, Self::Place>
     where
         Self: 'a;
 
@@ -89,7 +94,7 @@ impl RuntimeBackend for BasicBackend {
     type Operand = Operand;
 
     fn place(&mut self) -> Self::PlaceHandler<'_> {
-        DefaultPlaceHandler {}
+        BasicPlaceHandler
     }
 
     fn operand(&mut self) -> Self::OperandHandler<'_> {

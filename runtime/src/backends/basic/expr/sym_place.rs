@@ -29,8 +29,8 @@ use crate::{
         sym_place::{SelectTarget, SymbolicReadResolver},
     },
     backends::basic::{
-        place::FullPlace,
         state::proj::{ConcreteProjector, ProjResultExt},
+        FullPlace,
     },
 };
 

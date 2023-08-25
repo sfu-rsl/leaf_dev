@@ -34,7 +34,9 @@ pub(super) trait RefManager {
 
     fn push(&mut self, value: Self::Value) -> Self::Ref;
 
-    fn take_back(&mut self, reference: Self::Ref) -> Self::Value;
+    fn take(&mut self, reference: Self::Ref) -> Self::Value;
+
+    fn get_mut(&mut self, reference: Self::Ref) -> &mut Self::Value;
 }
 
 pub(super) struct DefaultRefManager<V> {
@@ -61,12 +63,19 @@ impl<V> RefManager for DefaultRefManager<V> {
         self.counter
     }
 
-    fn take_back(&mut self, reference: Ref) -> V {
-        let index = self
-            .refs
-            .iter()
-            .position(|(r, _)| r.eq(&reference))
-            .unwrap();
+    fn take(&mut self, reference: Ref) -> V {
+        let index = self.find(reference).unwrap();
         self.refs.swap_remove(index).1
+    }
+
+    fn get_mut(&mut self, reference: Ref) -> &mut V {
+        let index = self.find(reference).unwrap();
+        &mut self.refs[index].1
+    }
+}
+
+impl<V> DefaultRefManager<V> {
+    fn find(&self, reference: Ref) -> Option<usize> {
+        self.refs.iter().position(|(r, _)| r.eq(&reference))
     }
 }

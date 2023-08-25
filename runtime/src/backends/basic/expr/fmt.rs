@@ -95,7 +95,7 @@ impl Display for RefValue {
                 write!(
                     f,
                     "&mut ({} in {})",
-                    AsRef::<crate::backends::basic::place::Place>::as_ref(full_place),
+                    AsRef::<crate::backends::basic::Place>::as_ref(full_place),
                     full_place.state_id()
                 )
             }

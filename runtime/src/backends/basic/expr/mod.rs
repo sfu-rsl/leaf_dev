@@ -11,7 +11,7 @@ use crate::abs::{BinaryOp, FieldIndex, FloatType, IntType, UnaryOp, ValueType, V
 
 use crate::utils::meta::define_reversible_pair;
 
-use super::place::FullPlace;
+use super::FullPlace;
 
 pub(crate) type ValueRef = Rc<Value>;
 pub(crate) type ConcreteValueRef = ConcreteValueGuard<ValueRef>;

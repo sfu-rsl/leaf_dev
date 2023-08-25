@@ -70,7 +70,7 @@ pub fn ref_place_opaque_cast(place: PlaceRef /*, type */) -> PlaceRef {
     push_place_ref(|p| p.project_on(take_back_place_ref(place)).opaque_cast())
 }
 pub fn set_place_address(place: PlaceRef, raw_ptr: RawPointer) {
-    todo!()
+    mut_place_ref(place, |p, place| p.metadata(place).set_address(raw_ptr));
 }
 
 pub fn ref_operand_copy(place: PlaceRef) -> OperandRef {

@@ -13,3 +13,4 @@ z3 = { version = "0.11.2" }
 lazy_static = "1.4.0"
 delegate = "0.10.0"
 deref-derive = "0.1.0"
+derive_more = "0.99.11"

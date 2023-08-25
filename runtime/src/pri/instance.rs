@@ -80,6 +80,19 @@ pub(super) fn push_place_ref(
     perform_on_place_ref_manager(|rm| rm.push(place))
 }
 
+pub(super) fn mut_place_ref(
+    place_ref: PlaceRef,
+    mut_place: impl FnOnce(<BackendImpl as RuntimeBackend>::PlaceHandler<'_>, &mut PlaceImpl),
+) {
+    perform_on_place_ref_manager(|rm| {
+        let place = rm.get_mut(place_ref);
+        perform_on_backend(|r| {
+            let handler = r.place();
+            mut_place(handler, place);
+        });
+    });
+}
+
 pub(super) fn assign_to<T>(
     dest: PlaceRef,
     assign_action: impl FnOnce(<BackendImpl as RuntimeBackend>::AssignmentHandler<'_>) -> T,
@@ -89,7 +102,7 @@ pub(super) fn assign_to<T>(
 }
 
 pub(super) fn take_back_place_ref(reference: PlaceRef) -> PlaceImpl {
-    perform_on_place_ref_manager(|rm| rm.take_back(reference))
+    perform_on_place_ref_manager(|rm| rm.take(reference))
 }
 
 pub(super) fn push_operand_ref(
@@ -100,7 +113,7 @@ pub(super) fn push_operand_ref(
 }
 
 pub(super) fn take_back_operand_ref(reference: OperandRef) -> OperandImpl {
-    perform_on_operand_ref_manager(|rm| rm.take_back(reference))
+    perform_on_operand_ref_manager(|rm| rm.take(reference))
 }
 
 pub(super) fn branch<T>(

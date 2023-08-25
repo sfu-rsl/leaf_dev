@@ -6,10 +6,8 @@ use crate::{
 };
 
 use super::{
-    alias::SymValueRefProjector as SymbolicProjector,
-    expr::prelude::*,
-    place::{FullPlace, Place, Projection},
-    ValueRef, VariablesState,
+    alias::SymValueRefProjector as SymbolicProjector, expr::prelude::*, place::Projection,
+    FullPlace, Place, ValueRef, VariablesState,
 };
 
 use mutation::*;
@@ -25,12 +23,12 @@ trait FullPlaceResolver {
 
 trait PlaceResolver {
     fn get_place(&self, place: &Place) -> Result<ValueRef, PlaceError> {
-        self.get_place_iter(place.local, place.projections.iter())
+        self.get_place_iter(place.local(), place.projections().iter())
     }
 
     fn get_place_iter<'b>(
         &self,
-        local: Local,
+        local: &Local,
         projs: impl Iterator<Item = &'b Projection>,
     ) -> Result<ValueRef, PlaceError>;
 }
@@ -104,7 +102,7 @@ impl<SP: SymbolicProjector> VariablesState for HierarchicalVariablesState<SP> {
     }
 
     fn try_take_place(&mut self, place: &Place) -> Option<ValueRef> {
-        let local = place.local;
+        let local = place.local();
         let mut value = self
             .take_local(local)
             .inspect_err(|e| {
@@ -119,7 +117,7 @@ impl<SP: SymbolicProjector> VariablesState for HierarchicalVariablesState<SP> {
             return Some(value);
         }
 
-        let (last, projs) = place.projections.split_last().unwrap();
+        let (last, projs) = place.projections().split_last().unwrap();
         let last = match last {
             Projection::Field(field) => *field,
             _ => unreachable!(
@@ -136,16 +134,20 @@ impl<SP: SymbolicProjector> VariablesState for HierarchicalVariablesState<SP> {
             ),
             last,
         );
-        self.set_place(&Place::new(local), value);
+        self.set_place(&Place::from(*local), value);
         Some(field_val)
     }
 
     fn set_place(&mut self, place: &Place, value: ValueRef) {
         if !place.has_projection() {
-            self.top.set(place.local, value);
+            self.top.set(place.local(), value);
         } else {
-            self.mut_place_iter(place.local, &place.projections, MutateOnce::SetValue(value))
-                .unwrap()
+            self.mut_place_iter(
+                place.local(),
+                &place.projections(),
+                MutateOnce::SetValue(value),
+            )
+            .unwrap()
         }
     }
 }
@@ -153,7 +155,7 @@ impl<SP: SymbolicProjector> VariablesState for HierarchicalVariablesState<SP> {
 impl<SP: SymbolicProjector> HierarchicalVariablesState<SP> {
     fn get_place_iter<'a, 'b>(
         &'a self,
-        local: Local,
+        local: &Local,
         projs: impl Iterator<Item = &'b Projection>,
     ) -> Result<ValueRef, PlaceError> {
         let host = self.top.get_place_iter(local, std::iter::empty())?;
@@ -162,7 +164,7 @@ impl<SP: SymbolicProjector> HierarchicalVariablesState<SP> {
 
     fn mut_place_iter(
         &mut self,
-        local: Local,
+        local: &Local,
         projs: &[Projection],
         mutate: MutateOnce<SP>,
     ) -> Result<(), PlaceError> {
@@ -172,9 +174,9 @@ impl<SP: SymbolicProjector> HierarchicalVariablesState<SP> {
 
             if state_id == self.top.id {
                 // Flattening the inner place.
-                let mut projs = host_place.as_ref().projections.clone();
+                let mut projs = host_place.as_ref().projections().to_vec();
                 projs.extend_from_slice(rest_projs);
-                self.mut_place_iter(host_place.as_ref().local, &projs, mutate)
+                self.mut_place_iter(host_place.as_ref().local(), &projs, mutate)
             } else {
                 self.parent
                     .as_mut()
@@ -192,7 +194,7 @@ impl<SP: SymbolicProjector> HierarchicalVariablesState<SP> {
         }
     }
 
-    fn take_local(&mut self, local: Local) -> Result<ValueRef, PlaceError> {
+    fn take_local(&mut self, local: &Local) -> Result<ValueRef, PlaceError> {
         self.top.take_local(local)
     }
 
@@ -241,7 +243,7 @@ impl<SP: SymbolicProjector> HierarchicalVariablesState<SP> {
     fn get_full_place(&self, place: &FullPlace) -> Result<ValueRef, PlaceError> {
         let state_id = *place.state_id();
         if state_id == self.top.id {
-            self.get_place_iter(place.as_ref().local, place.as_ref().projections.iter())
+            self.get_place_iter(place.as_ref().local(), place.as_ref().projections().iter())
         } else {
             self.parent
                 .as_ref()
@@ -258,7 +260,11 @@ impl<SP: SymbolicProjector> HierarchicalVariablesState<SP> {
     ) -> Result<(), PlaceError> {
         let state_id = *place.state_id();
         if state_id == self.top.id {
-            self.mut_place_iter(place.as_ref().local, &place.as_ref().projections, mutate)
+            self.mut_place_iter(
+                place.as_ref().local(),
+                &place.as_ref().projections(),
+                mutate,
+            )
         } else {
             self.parent
                 .as_mut()
@@ -278,7 +284,7 @@ impl<P: SymbolicProjector> FullPlaceResolver for HierarchicalVariablesState<P> {
 impl<P: SymbolicProjector> PlaceResolver for HierarchicalVariablesState<P> {
     fn get_place_iter<'b>(
         &self,
-        local: Local,
+        local: &Local,
         projs: impl Iterator<Item = &'b Projection>,
     ) -> Result<ValueRef, PlaceError> {
         self.get_place_iter(local, projs)
@@ -295,19 +301,19 @@ struct LocalStorage<SP: SymbolicProjector> {
 impl<SP: SymbolicProjector> LocalStorage<SP> {
     fn get_place_iter<'a, 'b>(
         &'a self,
-        local: Local,
+        local: &Local,
         projs: impl Iterator<Item = &'b Projection>,
     ) -> Result<ValueRef, PlaceError> {
         let host: &ValueRef = self
             .locals
-            .get(&local)
-            .ok_or(PlaceError::LocalNotFound(local))?;
+            .get(local)
+            .ok_or(PlaceError::LocalNotFound(*local))?;
         Ok(apply_projs(self, self.sym_projector.clone(), host, projs))
     }
 
     fn mut_place_iter(
         &mut self,
-        local: Local,
+        local: &Local,
         projs: &[Projection],
         mutate: MutateOnce<SP>,
     ) -> Result<(), PlaceError> {
@@ -316,7 +322,7 @@ impl<SP: SymbolicProjector> LocalStorage<SP> {
         if let Some((value, rest_projs)) = resolve_to_last_deref(self, local, &projs)? {
             let place = ensure_mut_ref(&value);
             self.assert_full_place(place);
-            projs.splice(.., [&place.as_ref().projections, rest_projs].concat());
+            projs.splice(.., [place.as_ref().projections(), rest_projs].concat());
         }
 
         /* NOTE: As we are temporarily removing the local (to mitigate borrowing issues),
@@ -342,14 +348,14 @@ impl<SP: SymbolicProjector> LocalStorage<SP> {
         mutate(value);
     }
 
-    fn take_local(&mut self, local: Local) -> Result<ValueRef, PlaceError> {
+    fn take_local(&mut self, local: &Local) -> Result<ValueRef, PlaceError> {
         self.locals
-            .remove(&local)
-            .ok_or(PlaceError::LocalNotFound(local))
+            .remove(local)
+            .ok_or(PlaceError::LocalNotFound(*local))
     }
 
-    fn set(&mut self, local: Local, value: ValueRef) {
-        self.locals.insert(local, value);
+    fn set(&mut self, local: &Local, value: ValueRef) {
+        self.locals.insert(*local, value);
     }
 
     #[inline(always)]
@@ -365,14 +371,14 @@ impl<SP: SymbolicProjector> LocalStorage<SP> {
 impl<SP: SymbolicProjector> FullPlaceResolver for LocalStorage<SP> {
     fn get_full_place(&self, place: &FullPlace) -> Result<ValueRef, PlaceError> {
         self.assert_full_place(place);
-        self.get_place_iter(place.as_ref().local(), place.as_ref().projections.iter())
+        self.get_place_iter(place.as_ref().local(), place.as_ref().projections().iter())
     }
 }
 
 impl<SP: SymbolicProjector> PlaceResolver for LocalStorage<SP> {
     fn get_place_iter<'b>(
         &self,
-        local: Local,
+        local: &Local,
         projs: impl Iterator<Item = &'b Projection>,
     ) -> Result<ValueRef, PlaceError> {
         self.get_place_iter(local, projs)
@@ -414,7 +420,7 @@ mod mutation {
     /// up to that point, and returns the deref target as well as the remaining projections.
     pub(super) fn resolve_to_last_deref<'b>(
         place_resolver: &impl PlaceResolver,
-        local: Local,
+        local: &Local,
         projs: &'b [Projection],
     ) -> Result<Option<(ValueRef, &'b [Projection])>, PlaceError> {
         /* NOTE: Shouldn't we use a while instead?
@@ -454,10 +460,7 @@ pub(super) mod proj {
             expr::proj::{macros::impl_general_proj_through_singulars, Projector},
             FieldIndex, VariantIndex,
         },
-        backends::basic::{
-            expr::SymIndexPair,
-            place::{FullPlace, Projection},
-        },
+        backends::basic::{expr::SymIndexPair, place::Projection},
     };
     use std::ops::DerefMut;
 
@@ -841,11 +844,7 @@ pub(super) mod proj {
             Projection::Field(field) => projector.field(host.into(), *field),
             Projection::Deref => projector.deref(host.into()),
             Projection::Index(index) => {
-                assert!(
-                    !index.has_projection(),
-                    "Index should be a simple local with no projection."
-                );
-                let index = index_resolver.get_place(index).unwrap();
+                let index = index_resolver.get_place(&Place::from(*index)).unwrap();
                 projector.index(Into::<IndexPair>::into((host, index)).into(), false)
             }
             Projection::ConstantIndex {

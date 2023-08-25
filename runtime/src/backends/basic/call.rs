@@ -1,8 +1,7 @@
 use crate::{abs::Local, utils::Hierarchical};
 
 use super::{
-    get_operand_value, operand::Operand, place::Place, CallStackManager, EntranceKind, ValueRef,
-    VariablesState,
+    get_operand_value, CallStackManager, EntranceKind, Operand, Place, ValueRef, VariablesState,
 };
 
 type VariablesStateFactory<VS> = Box<dyn Fn(usize) -> VS>;
@@ -54,7 +53,7 @@ impl<VS: VariablesState + Hierarchical<VS>> BasicCallStackManager<VS> {
             // set places for the arguments in the new frame using values from the current frame
             for (i, value) in args.into_iter().enumerate() {
                 let local_index = (i + 1) as u32;
-                let place = &Place::new(Local::Argument(local_index));
+                let place = &Place::from(Local::Argument(local_index));
                 vars_state.set_place(place, value);
             }
 
@@ -104,7 +103,7 @@ impl<VS: VariablesState + Hierarchical<VS>> CallStackManager for BasicCallStackM
     }
 
     fn pop_stack_frame(&mut self) {
-        self.latest_returned_val = self.top().try_take_place(&Place::new(Local::ReturnValue));
+        self.latest_returned_val = self.top().try_take_place(&Place::from(Local::ReturnValue));
         self.stack.pop().unwrap();
         self.vars_state = self.vars_state.take().unwrap().give_back_parent();
     }

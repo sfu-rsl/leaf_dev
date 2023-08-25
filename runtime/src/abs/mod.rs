@@ -15,6 +15,85 @@ pub(crate) enum Local {
     Normal(LocalIndex),   // > n
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) struct Place<L = Local, P = Projection<Local>> {
+    local: L,
+    projections: Vec<P>,
+}
+
+impl<L, P> Place<L, P> {
+    pub fn new(local: L) -> Self {
+        Self {
+            local,
+            /* As most of the places are just locals, we try not to allocate at start. */
+            projections: Vec::with_capacity(0),
+        }
+    }
+
+    #[inline]
+    pub fn local(&self) -> &L {
+        &self.local
+    }
+
+    #[inline]
+    pub fn has_projection(&self) -> bool {
+        !self.projections.is_empty()
+    }
+
+    #[inline]
+    pub fn projections(&self) -> &[P] {
+        &self.projections
+    }
+
+    #[inline]
+    pub fn add_projection(&mut self, projection: P) {
+        self.projections.push(projection);
+    }
+
+    #[inline]
+    pub fn with_projection(mut self, projection: P) -> Self {
+        self.add_projection(projection);
+        self
+    }
+}
+
+impl<L, P> From<L> for Place<L, P> {
+    fn from(value: L) -> Self {
+        Self::new(value)
+    }
+}
+
+impl<P> TryFrom<Place<Local, P>> for Local {
+    type Error = Place<Local, P>;
+
+    fn try_from(value: Place<Local, P>) -> Result<Self, Self::Error> {
+        if !value.has_projection() {
+            Ok(value.local)
+        } else {
+            Err(value)
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) enum Projection<L = Local> {
+    Field(FieldIndex),
+    Deref,
+    Index(L),
+    ConstantIndex {
+        offset: u64,
+        min_length: u64,
+        from_end: bool,
+    },
+    Subslice {
+        from: u64,
+        to: u64,
+        from_end: bool,
+    },
+    Downcast(VariantIndex),
+    OpaqueCast,
+}
+
 #[derive(Clone, Copy, Debug)]
 pub enum BinaryOp {
     Add,

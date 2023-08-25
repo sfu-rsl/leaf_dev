@@ -1,68 +1,67 @@
+use std::fmt::Display;
+
 use crate::abs::{
-    backend::{PlaceHandler, PlaceProjectionHandler},
-    FieldIndex, Local, VariantIndex,
+    backend::{
+        implementation::{DefaultPlaceHandler, DefaultPlaceProjectionHandler},
+        PlaceHandler, PlaceProjectionHandler,
+    },
+    Local, Place, RawPointer,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(crate) struct Place {
-    pub local: Local,
-    pub projections: Vec<Projection>,
+pub(super) type Projection = crate::abs::Projection<Local>;
+
+#[derive(Debug, Clone, derive_more::Deref)]
+pub(crate) struct PlaceWithAddress {
+    #[deref]
+    pub place: Place,
+    pub addresses: Vec<RawPointer>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(crate) enum Projection {
-    Field(FieldIndex),
-    Deref,
-    Index(Place),
-    ConstantIndex {
-        offset: u64,
-        min_length: u64,
-        from_end: bool,
-    },
-    Subslice {
-        from: u64,
-        to: u64,
-        from_end: bool,
-    },
-    Downcast(VariantIndex),
-    OpaqueCast,
+impl From<Place> for PlaceWithAddress {
+    fn from(value: Place) -> Self {
+        Self {
+            place: value,
+            addresses: vec![NONE_ADDRESS],
+        }
+    }
 }
 
-impl Place {
-    pub fn new(local: Local) -> Self {
-        Self {
-            local,
-            /* As most of the places are just locals, we try not to allocate at start. */
-            projections: Vec::with_capacity(0),
+impl From<Local> for PlaceWithAddress {
+    fn from(value: Local) -> Self {
+        Self::from(Place::from(value))
+    }
+}
+
+impl TryFrom<PlaceWithAddress> for Local {
+    type Error = PlaceWithAddress;
+
+    fn try_from(place: PlaceWithAddress) -> Result<Self, Self::Error> {
+        if !place.place.has_projection() {
+            Ok(*place.local())
+        } else {
+            Err(place)
         }
     }
+}
 
-    pub fn local(&self) -> Local {
-        self.local
-    }
-
-    pub fn has_projection(&self) -> bool {
-        !self.projections.is_empty()
-    }
-
-    pub fn with_projection(self, projection: Projection) -> Self {
-        let mut projections = self.projections;
-        projections.push(projection);
-        Self {
-            local: self.local,
-            projections,
-        }
+impl PlaceWithAddress {
+    pub(crate) fn address(&self) -> Option<RawPointer> {
+        debug_assert_eq!(self.addresses.len(), self.projections().len() + 1);
+        self.addresses
+            .last()
+            .cloned()
+            .filter(|addr| *addr != NONE_ADDRESS)
     }
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct FullPlace<I = usize> {
-    place: Place,
+pub(crate) struct FullPlace<P, I = usize> {
+    place: P,
     state_id: I,
 }
 
-impl<I> FullPlace<I> {
-    pub(crate) fn new(place: Place, state_id: I) -> Self {
+impl<P, I> FullPlace<P, I> {
+    pub(crate) fn new(place: P, state_id: I) -> Self {
         Self { place, state_id }
     }
 
@@ -71,70 +70,71 @@ impl<I> FullPlace<I> {
     }
 }
 
-/* NOTE: We use [`AsRef`] instead of [`Deref`] to prevent accidentally uses of local place. */
-impl<I> AsRef<Place> for FullPlace<I> {
-    fn as_ref(&self) -> &Place {
+/* NOTE: We use [`AsRef`] instead of [`Deref`] to prevent accidental uses of local place. */
+impl<P, I> AsRef<P> for FullPlace<P, I> {
+    fn as_ref(&self) -> &P {
         &self.place
     }
 }
 
-pub(crate) struct DefaultPlaceHandler {}
+#[derive(Default)]
+pub(crate) struct BasicPlaceHandler;
 
-impl PlaceHandler for DefaultPlaceHandler {
-    type Place = Place;
-    type ProjectionHandler = DefaultPlaceProjectionHandler;
+impl PlaceHandler for BasicPlaceHandler {
+    type Place = PlaceWithAddress;
+
+    type ProjectionHandler = BasicProjectionHandler;
+
+    type MetadataHandler<'a> = BasicPlaceMetadataHandler<'a>;
 
     fn of_local(self, local: Local) -> Self::Place {
-        Place::new(local)
+        PlaceWithAddress::from(DefaultPlaceHandler::default().of_local(local))
     }
 
     fn project_on(self, place: Self::Place) -> Self::ProjectionHandler {
-        DefaultPlaceProjectionHandler { place }
+        BasicProjectionHandler(place)
+    }
+
+    fn metadata(self, place: &mut Self::Place) -> Self::MetadataHandler<'_> {
+        BasicPlaceMetadataHandler(place)
     }
 }
 
-pub(crate) struct DefaultPlaceProjectionHandler {
-    place: Place,
-}
+pub(crate) struct BasicProjectionHandler(PlaceWithAddress);
 
-impl PlaceProjectionHandler for DefaultPlaceProjectionHandler {
-    type Place = Place;
+const NONE_ADDRESS: RawPointer = 0;
 
-    fn deref(self) -> Self::Place {
-        self.create(Projection::Deref)
-    }
+impl PlaceProjectionHandler for BasicProjectionHandler {
+    type Place = PlaceWithAddress;
 
-    fn for_field(self, field: FieldIndex) -> Self::Place {
-        self.create(Projection::Field(field))
-    }
+    type Local = Local;
 
-    fn at_index(self, index: Self::Place) -> Self::Place {
-        self.create(Projection::Index(index))
-    }
-
-    fn at_constant_index(self, offset: u64, min_length: u64, from_end: bool) -> Self::Place {
-        self.create(Projection::ConstantIndex {
-            offset,
-            min_length,
-            from_end,
-        })
-    }
-
-    fn subslice(self, from: u64, to: u64, from_end: bool) -> Self::Place {
-        self.create(Projection::Subslice { from, to, from_end })
-    }
-
-    fn downcast(self, variant: VariantIndex) -> Self::Place {
-        self.create(Projection::Downcast(variant))
-    }
-
-    fn opaque_cast(self) -> Self::Place {
-        self.create(Projection::OpaqueCast)
+    fn by(mut self, projection: crate::abs::Projection<Self::Local>) -> Self::Place {
+        self.0.addresses.push(NONE_ADDRESS);
+        PlaceWithAddress {
+            place: DefaultPlaceProjectionHandler::new(self.0.place).by(projection),
+            addresses: self.0.addresses,
+        }
     }
 }
 
-impl DefaultPlaceProjectionHandler {
-    fn create(self, proj: Projection) -> Place {
-        self.place.with_projection(proj)
+pub(crate) struct BasicPlaceMetadataHandler<'a>(&'a mut PlaceWithAddress);
+
+impl BasicPlaceMetadataHandler<'_> {
+    pub(crate) fn set_address(&mut self, address: RawPointer) {
+        *self.0.addresses.last_mut().unwrap() = address;
+    }
+}
+
+impl Display for PlaceWithAddress {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}@{}",
+            self.place,
+            self.address()
+                .map(|addr| format!("{:x}", addr))
+                .unwrap_or_else(|| "-".to_owned())
+        )
     }
 }
