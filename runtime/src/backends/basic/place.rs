@@ -83,7 +83,7 @@ pub(crate) struct BasicPlaceHandler;
 impl PlaceHandler for BasicPlaceHandler {
     type Place = PlaceWithAddress;
 
-    type ProjectionHandler = BasicProjectionHandler;
+    type ProjectionHandler<'a> = BasicProjectionHandler<'a>;
 
     type MetadataHandler<'a> = BasicPlaceMetadataHandler<'a>;
 
@@ -91,7 +91,7 @@ impl PlaceHandler for BasicPlaceHandler {
         PlaceWithAddress::from(DefaultPlaceHandler::default().of_local(local))
     }
 
-    fn project_on(self, place: Self::Place) -> Self::ProjectionHandler {
+    fn project_on<'a>(self, place: &'a mut Self::Place) -> Self::ProjectionHandler<'a> {
         BasicProjectionHandler(place)
     }
 
@@ -100,21 +100,16 @@ impl PlaceHandler for BasicPlaceHandler {
     }
 }
 
-pub(crate) struct BasicProjectionHandler(PlaceWithAddress);
+pub(crate) struct BasicProjectionHandler<'a>(&'a mut PlaceWithAddress);
 
 const NONE_ADDRESS: RawPointer = 0;
 
-impl PlaceProjectionHandler for BasicProjectionHandler {
-    type Place = PlaceWithAddress;
-
+impl PlaceProjectionHandler for BasicProjectionHandler<'_> {
     type Local = Local;
 
-    fn by(mut self, projection: crate::abs::Projection<Self::Local>) -> Self::Place {
+    fn by(self, projection: crate::abs::Projection<Self::Local>) {
         self.0.addresses.push(NONE_ADDRESS);
-        PlaceWithAddress {
-            place: DefaultPlaceProjectionHandler::new(self.0.place).by(projection),
-            addresses: self.0.addresses,
-        }
+        DefaultPlaceProjectionHandler::new(&mut self.0.place).by(projection);
     }
 }
 

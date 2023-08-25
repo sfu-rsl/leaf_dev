@@ -6,8 +6,8 @@ use crate::{
 };
 
 use super::{
-    alias::SymValueRefProjector as SymbolicProjector, expr::prelude::*, place::Projection,
-    FullPlace, Place, ValueRef, VariablesState,
+    alias::SymValueRefProjector as SymbolicProjector, expr::prelude::*, FullPlace, Place,
+    Projection, ValueRef, VariablesState,
 };
 
 use mutation::*;
