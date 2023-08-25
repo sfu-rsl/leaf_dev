@@ -83,7 +83,7 @@ pub(super) fn push_place_ref(
 pub(super) fn mut_place_ref(
     place_ref: PlaceRef,
     mut_place: impl FnOnce(<BackendImpl as RuntimeBackend>::PlaceHandler<'_>, &mut PlaceImpl),
-) -> PlaceRef {
+) {
     perform_on_place_ref_manager(|rm| {
         let place = rm.get_mut(place_ref);
         perform_on_backend(|r| {
@@ -91,7 +91,6 @@ pub(super) fn mut_place_ref(
             mut_place(handler, place);
         });
     });
-    place_ref
 }
 
 pub(super) fn assign_to<T>(

@@ -479,30 +479,28 @@ mod implementation {
         C: ForPlaceRef<'tcx>,
     {
         fn internal_reference_place(&mut self, place: &Place<'tcx>) -> BlocksAndResult<'tcx> {
-            let (mut blocks, mut current_ref) = self.reference_place_local(place.local);
+            let BlocksAndResult(mut blocks, place_ref) = self.reference_place_local(place.local);
 
             let tcx = self.tcx();
 
             // For setting addresses we have to remake a cumulative place up to each projection.
             let mut cum_place = Place::from(place.local);
             let mut cum_ty = cum_place.ty(&self.context, tcx);
-            blocks.push(self.make_bb_for_set_addr_call(current_ref, &cum_place, cum_ty.ty));
+            blocks.push(self.make_bb_for_set_addr_call(place_ref, &cum_place, cum_ty.ty));
 
             for (_, proj) in place.iter_projections() {
-                let BlocksAndResult(added_blocks, wrapped_ref) =
-                    self.reference_place_projection(current_ref, proj);
-                current_ref = wrapped_ref;
+                let added_blocks = self.reference_place_projection(place_ref, proj);
                 blocks.extend(added_blocks);
 
                 cum_place = cum_place.project_deeper(&[proj], tcx);
                 cum_ty = cum_ty.projection_ty(tcx, proj);
-                blocks.push(self.make_bb_for_set_addr_call(current_ref, &cum_place, cum_ty.ty));
+                blocks.push(self.make_bb_for_set_addr_call(place_ref, &cum_place, cum_ty.ty));
             }
 
-            BlocksAndResult(blocks, current_ref)
+            BlocksAndResult(blocks, place_ref)
         }
 
-        fn reference_place_local(&mut self, local: Local) -> (Vec<BasicBlockData<'tcx>>, Local) {
+        fn reference_place_local(&mut self, local: Local) -> BlocksAndResult<'tcx> {
             let func_name = if local == mir::RETURN_PLACE {
                 stringify!(pri::ref_place_return_value)
             } else if local.as_usize() <= self.context.body().arg_count {
@@ -516,16 +514,14 @@ mod implementation {
                 vec![operand::const_from_uint(self.context.tcx(), local.as_u32())]
             };
 
-            let (block, current_ref) = self.make_bb_for_place_ref_call(func_name, args);
-
-            (vec![block], current_ref)
+            self.make_bb_for_place_ref_call(func_name, args).into()
         }
 
         fn reference_place_projection<T>(
             &mut self,
             current_ref: Local,
             proj: ProjectionElem<Local, T>,
-        ) -> BlocksAndResult<'tcx> {
+        ) -> Vec<BasicBlockData<'tcx>> {
             let mut new_blocks = Vec::new();
 
             let (func_name, additional_args) = match proj {
@@ -576,11 +572,14 @@ mod implementation {
                 ProjectionElem::OpaqueCast(_) => (stringify!(pri::ref_place_opaque_cast), vec![]),
             };
 
-            BlocksAndResult::from(self.make_bb_for_place_ref_call(
-                func_name,
-                [vec![operand::copy_for_local(current_ref)], additional_args].concat(),
-            ))
-            .prepend(new_blocks)
+            new_blocks.push(
+                self.make_bb_for_place_ref_call(
+                    func_name,
+                    [vec![operand::copy_for_local(current_ref)], additional_args].concat(),
+                )
+                .0, // The result is unit.
+            );
+            new_blocks
         }
 
         fn make_bb_for_place_ref_call(

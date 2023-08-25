@@ -31,13 +31,13 @@ pub fn ref_place_local(local_index: LocalIndex) -> PlaceRef {
     push_place_ref(|p| p.of_local(Local::Normal(local_index)))
 }
 
-pub fn ref_place_deref(place: PlaceRef) -> PlaceRef {
+pub fn ref_place_deref(place: PlaceRef) {
     mut_place_ref(place, |p, place| p.project_on(place).deref())
 }
-pub fn ref_place_field(place: PlaceRef, field: FieldIndex /*, type */) -> PlaceRef {
+pub fn ref_place_field(place: PlaceRef, field: FieldIndex /*, type */) {
     mut_place_ref(place, |p, place| p.project_on(place).for_field(field))
 }
-pub fn ref_place_index(place: PlaceRef, index_place: PlaceRef) -> PlaceRef {
+pub fn ref_place_index(place: PlaceRef, index_place: PlaceRef) {
     mut_place_ref(place, |p, place| {
         p.project_on(place).at_index(
             take_back_place_ref(index_place)
@@ -46,28 +46,23 @@ pub fn ref_place_index(place: PlaceRef, index_place: PlaceRef) -> PlaceRef {
         )
     })
 }
-pub fn ref_place_constant_index(
-    place: PlaceRef,
-    offset: u64,
-    min_length: u64,
-    from_end: bool,
-) -> PlaceRef {
+pub fn ref_place_constant_index(place: PlaceRef, offset: u64, min_length: u64, from_end: bool) {
     mut_place_ref(place, |p, place| {
         p.project_on(place)
             .at_constant_index(offset, min_length, from_end)
     })
 }
-pub fn ref_place_subslice(place: PlaceRef, from: u64, to: u64, from_end: bool) -> PlaceRef {
+pub fn ref_place_subslice(place: PlaceRef, from: u64, to: u64, from_end: bool) {
     mut_place_ref(place, |p, place| {
         p.project_on(place).subslice(from, to, from_end)
     })
 }
-pub fn ref_place_downcast(place: PlaceRef, variant_index: u32 /*, type */) -> PlaceRef {
+pub fn ref_place_downcast(place: PlaceRef, variant_index: u32 /*, type */) {
     mut_place_ref(place, |p, place| {
         p.project_on(place).downcast(variant_index)
     })
 }
-pub fn ref_place_opaque_cast(place: PlaceRef /*, type */) -> PlaceRef {
+pub fn ref_place_opaque_cast(place: PlaceRef /*, type */) {
     mut_place_ref(place, |p, place| p.project_on(place).opaque_cast())
 }
 pub fn set_place_address(place: PlaceRef, raw_ptr: RawPointer) {
