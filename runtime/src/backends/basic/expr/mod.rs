@@ -7,6 +7,8 @@ pub(super) mod translators;
 
 use std::{assert_matches::assert_matches, num::Wrapping, ops::Deref, rc::Rc};
 
+use derive_more as dm;
+
 use crate::abs::{
     BinaryOp, FieldIndex, FloatType, IntType, RawPointer, UnaryOp, ValueType, VariantIndex,
 };
@@ -23,9 +25,11 @@ pub(crate) type ProjExprRef = ProjExprGuard<ValueRef>;
 
 pub(crate) type SymVarId = u32;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, dm::From)]
 pub(crate) enum Value {
+    #[from(types(ConstValue))]
     Concrete(ConcreteValue),
+    #[from(types(Expr, ProjExpr))]
     Symbolic(SymValue),
 }
 
@@ -35,7 +39,7 @@ impl Value {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, dm::From)]
 pub(crate) enum ConcreteValue {
     Const(ConstValue),
     Adt(AdtValue),
@@ -46,7 +50,7 @@ pub(crate) enum ConcreteValue {
 
 // FIXME: Remove this error suppression after adding support for floats.
 #[allow(unused)]
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, dm::From)]
 pub(crate) enum ConstValue {
     Bool(bool),
     Char(char),
@@ -59,6 +63,7 @@ pub(crate) enum ConstValue {
         ty: FloatType,
     },
     Str(&'static str),
+    #[from(ignore)]
     Func(u64),
     Zst,
 }
@@ -455,32 +460,6 @@ impl ConstValue {
 
 // ----------------------------------------------- //
 
-macro_rules! impl_from_uint {
-    ($($ty:ty),*) => {
-        $(
-            impl From<$ty> for ConstValue {
-                fn from(value: $ty) -> Self {
-                    Self::Int {
-                        bit_rep: Wrapping(value as u128),
-                        ty: IntType {
-                            bit_size: std::mem::size_of::<$ty>() as u64 * 8,
-                            is_signed: false,
-                        },
-                    }
-                }
-            }
-        )*
-    };
-}
-
-impl_from_uint!(u8, u16, u32, u64, u128, usize);
-
-impl From<char> for ConstValue {
-    fn from(value: char) -> Self {
-        Self::Char(value)
-    }
-}
-
 // FIXME: Remove this error suppression after adding support for more variants
 #[allow(unused)]
 #[derive(Clone, Debug)]
@@ -570,9 +549,10 @@ pub(crate) enum UnevalValue {
     Lazy(RawPointer),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, dm::From)]
 pub(crate) enum SymValue {
     Variable(SymbolicVar),
+    #[from(types(ProjExpr))]
     Expression(Expr),
 }
 
@@ -604,7 +584,7 @@ type SymBinaryOperands = BinaryOperands<SymValueRef, ValueRef>;
 
 // FIXME: Remove this error suppression after adding support for more variants
 #[allow(unused)]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, dm::From)]
 pub(crate) enum Expr {
     Unary {
         operator: UnaryOp,
@@ -624,6 +604,7 @@ pub(crate) enum Expr {
 
     AddrOf(/* TODO */),
 
+    #[from(ignore)]
     Len(ProjExprRef),
 
     Projection(ProjExpr),
@@ -791,8 +772,9 @@ mod convert {
     impl From<operand::Constant> for ConcreteValue {
         #[inline]
         fn from(val: operand::Constant) -> Self {
+            use operand::Constant::*;
             match val {
-                operand::Constant::ByteStr(bytes) => Self::Ref(RefValue::Immut(
+                ByteStr(bytes) => Self::Ref(RefValue::Immut(
                     Self::Array(ArrayValue {
                         elements: bytes
                             .iter()
@@ -803,14 +785,22 @@ mod convert {
                     })
                     .to_value_ref(),
                 )),
-                _ => Self::Const(val.into()),
+                _ => Self::Const(match val {
+                    Bool(value) => value.into(),
+                    Char(value) => value.into(),
+                    Int { bit_rep, ty } => ConstValue::Int {
+                        bit_rep: Wrapping(bit_rep),
+                        ty,
+                    },
+                    Float { bit_rep, ty } => ConstValue::Float { bit_rep, ty },
+                    Str(value) => ConstValue::Str(value),
+                    ByteStr(_) => {
+                        unreachable!()
+                    }
+                    Func(value) => ConstValue::Func(value),
+                    Zst => ConstValue::Zst,
+                }),
             }
-        }
-    }
-    impl From<ConcreteValue> for Value {
-        #[inline]
-        fn from(val: ConcreteValue) -> Self {
-            Value::Concrete(val)
         }
     }
 
@@ -820,49 +810,31 @@ mod convert {
             Into::<ConcreteValue>::into(self).to_value_ref()
         }
     }
-    impl From<operand::Constant> for ConstValue {
-        #[inline]
-        fn from(val: operand::Constant) -> Self {
-            match val {
-                operand::Constant::Bool(value) => ConstValue::Bool(value),
-                operand::Constant::Char(value) => ConstValue::Char(value),
-                operand::Constant::Int { bit_rep, ty } => ConstValue::Int {
-                    bit_rep: Wrapping(bit_rep),
-                    ty,
-                },
-                operand::Constant::Float { bit_rep, ty } => ConstValue::Float { bit_rep, ty },
-                operand::Constant::Str(value) => ConstValue::Str(value),
-                operand::Constant::ByteStr(_) => {
-                    panic!("Byte strings are not handled as constants in this module.")
+
+    macro_rules! impl_from_uint {
+        ($($ty:ty),*) => {
+            $(
+                impl From<$ty> for ConstValue {
+                    fn from(value: $ty) -> Self {
+                        Self::Int {
+                            bit_rep: Wrapping(value as u128),
+                            ty: IntType {
+                                bit_size: std::mem::size_of::<$ty>() as u64 * 8,
+                                is_signed: false,
+                            },
+                        }
+                    }
                 }
-                operand::Constant::Func(value) => ConstValue::Func(value),
-                operand::Constant::Zst => ConstValue::Zst,
-            }
-        }
+            )*
+        };
     }
-    impl From<ConstValue> for ConcreteValue {
-        #[inline]
-        fn from(val: ConstValue) -> Self {
-            ConcreteValue::Const(val)
-        }
-    }
-    impl From<ConstValue> for Value {
-        #[inline]
-        fn from(val: ConstValue) -> Self {
-            Into::<ConcreteValue>::into(val).into()
-        }
-    }
+
+    impl_from_uint!(u8, u16, u32, u64, u128, usize);
 
     impl SymValue {
         #[inline]
         pub fn to_value_ref(self) -> SymValueRef {
             SymValueRef::new(ValueRef::new(self.into()))
-        }
-    }
-    impl From<SymValue> for Value {
-        #[inline]
-        fn from(value: SymValue) -> Self {
-            Value::Symbolic(value)
         }
     }
 
@@ -872,35 +844,11 @@ mod convert {
             Into::<SymValue>::into(self).to_value_ref()
         }
     }
-    impl From<Expr> for SymValue {
-        #[inline]
-        fn from(val: Expr) -> Self {
-            SymValue::Expression(val)
-        }
-    }
-    impl From<Expr> for Value {
-        #[inline]
-        fn from(val: Expr) -> Self {
-            Into::<SymValue>::into(val).into()
-        }
-    }
 
     impl ProjExpr {
         #[inline]
         pub fn to_value_ref(self) -> SymValueRef {
             Into::<SymValue>::into(self).to_value_ref()
-        }
-    }
-    impl From<ProjExpr> for Expr {
-        #[inline]
-        fn from(val: ProjExpr) -> Self {
-            Expr::Projection(val)
-        }
-    }
-    impl From<ProjExpr> for SymValue {
-        #[inline]
-        fn from(val: ProjExpr) -> Self {
-            Into::<Expr>::into(val).into()
         }
     }
 }
