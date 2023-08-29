@@ -87,6 +87,7 @@ pub(crate) mod z3 {
                 }
                 ConcreteValue::Array(array) => AstNode::Array(self.translate_array(array)),
                 ConcreteValue::Ref(_) => todo!(),
+                ConcreteValue::Unevaluated(..) => todo!(),
             }
         }
 

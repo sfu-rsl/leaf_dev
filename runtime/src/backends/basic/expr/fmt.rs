@@ -20,6 +20,7 @@ impl Display for ConcreteValue {
             ConcreteValue::Adt(value) => write!(f, "{value}"),
             ConcreteValue::Array(value) => write!(f, "{value}"),
             ConcreteValue::Ref(value) => write!(f, "{value}"),
+            ConcreteValue::Unevaluated(value) => write!(f, "{value}"),
         }
     }
 }
@@ -99,6 +100,15 @@ impl Display for RefValue {
                     full_place.state_id()
                 )
             }
+        }
+    }
+}
+
+impl Display for UnevalValue {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        match self {
+            UnevalValue::Some => write!(f, ".C."),
+            UnevalValue::Lazy(addr) => write!(f, "@({:x})", addr),
         }
     }
 }

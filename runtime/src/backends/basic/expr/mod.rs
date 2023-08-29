@@ -7,7 +7,9 @@ pub(super) mod translators;
 
 use std::{assert_matches::assert_matches, num::Wrapping, ops::Deref, rc::Rc};
 
-use crate::abs::{BinaryOp, FieldIndex, FloatType, IntType, UnaryOp, ValueType, VariantIndex};
+use crate::abs::{
+    BinaryOp, FieldIndex, FloatType, IntType, RawPointer, UnaryOp, ValueType, VariantIndex,
+};
 
 use crate::utils::meta::define_reversible_pair;
 
@@ -39,6 +41,7 @@ pub(crate) enum ConcreteValue {
     Adt(AdtValue),
     Array(ArrayValue),
     Ref(RefValue),
+    Unevaluated(UnevalValue),
 }
 
 // FIXME: Remove this error suppression after adding support for floats.
@@ -559,6 +562,12 @@ pub(crate) enum RefValue {
      */
     Immut(ValueRef),
     Mut(FullPlace),
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum UnevalValue {
+    Some,
+    Lazy(RawPointer),
 }
 
 #[derive(Clone, Debug)]
