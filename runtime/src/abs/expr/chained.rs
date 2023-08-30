@@ -16,11 +16,11 @@ pub(crate) struct ChainedExprBuilder<Current, Next, Expr, CurrentExpr: Into<Expr
     _phantom: PhantomData<(Expr, CurrentExpr)>,
 }
 
-impl<C, N, E, EC> Default for ChainedExprBuilder<C, N, E, EC>
+impl<C, N, E, CE> Default for ChainedExprBuilder<C, N, E, CE>
 where
     C: Default,
     N: Default,
-    EC: Into<E>,
+    CE: Into<E>,
 {
     fn default() -> Self {
         Self {
@@ -58,14 +58,14 @@ macro_rules_method_with_optional_args!(impl_binary_expr_method {
     };
 });
 
-impl<C, N, E, EC> BinaryExprBuilder for ChainedExprBuilder<C, N, E, EC>
+impl<C, N, E, CE> BinaryExprBuilder for ChainedExprBuilder<C, N, E, CE>
 where
     N: BinaryExprBuilder,
     for<'a> C: BinaryExprBuilder<
             ExprRefPair<'a> = N::ExprRefPair<'a>,
-            Expr<'a> = Result<EC, N::ExprRefPair<'a>>,
+            Expr<'a> = Result<CE, N::ExprRefPair<'a>>,
         >,
-    EC: Into<E>,
+    CE: Into<E>,
     for<'a> N::Expr<'a>: Into<E>,
 {
     type ExprRefPair<'a> = N::ExprRefPair<'a>;
@@ -89,12 +89,12 @@ where
     impl_binary_expr_method!(offset);
 }
 
-impl<C, N, E, EC> UnaryExprBuilder for ChainedExprBuilder<C, N, E, EC>
+impl<C, N, E, CE> UnaryExprBuilder for ChainedExprBuilder<C, N, E, CE>
 where
     N: UnaryExprBuilder,
     for<'a> C:
-        UnaryExprBuilder<ExprRef<'a> = N::ExprRef<'a>, Expr<'a> = Result<EC, N::ExprRef<'a>>>,
-    EC: Into<E>,
+        UnaryExprBuilder<ExprRef<'a> = N::ExprRef<'a>, Expr<'a> = Result<CE, N::ExprRef<'a>>>,
+    CE: Into<E>,
     for<'a> N::Expr<'a>: Into<E>,
 {
     type ExprRef<'a> = N::ExprRef<'a>;
