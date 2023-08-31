@@ -1,0 +1,49 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+// README at: https://github.com/devcontainers/templates/tree/main/src/rust
+{
+	"name": "Rust",
+	"build": {
+		"dockerfile": "Dockerfile",
+		"args": {
+			"CMAKE_BIN_URL": "<The URL for .tar.gz file found in https://cmake.org/download/ or https://cmake.org/files/>",
+		},
+	},
+	"features": {
+		"ghcr.io/devcontainers/features/git:1": {},
+		"ghcr.io/devcontainers/features/rust:1": {},
+		/*
+		// Optional: If you want to use PowerShell in the container.
+		"ghcr.io/devcontainers/features/powershell:1": {
+			"modules": "posh-git"
+		},
+		*/
+	},
+	"mounts": [
+		// Making the cargo cache persistent in a Docker Volume.
+		{
+			"source": "devcontainer-cargo-cache-${devcontainerId}",
+			"target": "/usr/local/cargo",
+			"type": "volume"
+		},
+	],
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				// Rust
+				"rust-lang.rust-analyzer",
+				"tamasfe.even-better-toml",
+				"vadimcn.vscode-lldb",
+				// VSC
+				"eamodio.gitlens",
+				// Experience
+				"streetsidesoftware.code-spell-checker",
+				// Also, look at the recommended extensions in .vscode/extensions.json
+			],
+		},
+	},
+	"remoteUser": "vscode",
+	"postStartCommand": {
+		// Making sure the setup is correct.
+		"build": "cd ${containerWorkspaceFolder} && rustc --version && cargo build",
+	},
+}

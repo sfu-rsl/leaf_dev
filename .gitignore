@@ -12,6 +12,8 @@ target
 
 .idea
 
+.devcontainer/devcontainer.json
+
 # You can use playground folder for your experiments.
 samples/playground
 
