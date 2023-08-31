@@ -1,0 +1,215 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "rust: cargo build",
+            "type": "cargo",
+            "command": "build",
+            "problemMatcher": [
+                "$rustc",
+                "$rust-panic"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+        },
+        {
+            "label": "rust: cargo clippy",
+            "type": "cargo",
+            "command": "clippy",
+            "problemMatcher": [
+                "$rustc",
+                "$rust-panic"
+            ],
+            "group": "build",
+        },
+        {
+            "label": "rust: cargo clean",
+            "type": "cargo",
+            "command": "clean",
+            "problemMatcher": [
+                "$rustc",
+                "$rust-panic"
+            ],
+            "group": "clean",
+        },
+        {
+            "label": "rustc: generate mir",
+            "type": "process",
+            "command": "rustc",
+            "problemMatcher": [
+                "$rustc",
+                "$rust-panic"
+            ],
+            "options": {
+                "cwd": "${fileDirname}"
+            },
+            "args": [
+                "${file}",
+                "--emit=mir",
+                "-o",
+                "${fileBasenameNoExtension}.mir",
+                // "-O" // Release mode
+            ],
+        },
+        {
+            "label": "rustc: show mir",
+            "type": "process",
+            "dependsOn": [
+                "rustc: generate mir"
+            ],
+            "command": "code",
+            "args": [
+                "${fileDirname}/${fileBasenameNoExtension}.mir"
+            ],
+            "problemMatcher": [],
+        },
+        {
+            "label": "rustc: generate llvm",
+            "type": "process",
+            "command": "rustc",
+            "problemMatcher": [
+                "$rustc",
+                "$rust-panic"
+            ],
+            "options": {
+                "cwd": "${fileDirname}"
+            },
+            "args": [
+                "${file}",
+                "--emit=llvm-ir",
+                "-o",
+                "${fileBasenameNoExtension}.ll",
+                "-O" // Release mode
+            ],
+        },
+        {
+            "label": "rustc: show llvm",
+            "type": "process",
+            "dependsOn": [
+                "rustc: generate llvm"
+            ],
+            "command": "code",
+            "args": [
+                "${fileDirname}/${fileBasenameNoExtension}.ll"
+            ],
+            "problemMatcher": [],
+        },
+        {
+            "label": "leaf: compile",
+            "type": "cargo",
+            "command": "run",
+            "problemMatcher": [
+                "$rustc",
+                "$rust-panic"
+            ],
+            "options": {
+                "cwd": "${fileDirname}",
+                "env": {
+                    // Your desired logging settings.
+                    "RUST_LOG": "info,'compiler::utils::Chain<compiler::utils::Chain<compiler::passes::runtime_adder::RuntimeAdder, compiler::passes::NoOpPass>, compiler::utils::Chain<compiler::passes::ctfe::CtfeFunctionAdder, compiler::passes::instr::Instrumentator>>::objects'=off",
+                },
+            },
+            "args": [
+                "--",
+                "${file}",
+                "-o",
+                "${fileBasenameNoExtension}.o",
+                "-g", // Debug info
+                // "-O" // Release mode
+            ],
+        },
+        {
+            "label": "leaf: generate mir",
+            "type": "cargo",
+            "command": "run",
+            "problemMatcher": [
+                "$rustc",
+                "$rust-panic"
+            ],
+            "options": {
+                "cwd": "${fileDirname}",
+                "env": {
+                    "RUST_LOG": "trace"
+                },
+            },
+            "args": [
+                "--",
+                "${file}",
+                "--emit=mir",
+                "-o",
+                "${fileBasenameNoExtension}-leaf.mir",
+                "-g", // Debug info
+                "-O" // Release mode
+            ],
+        },
+        {
+            "label": "leaf: show mir",
+            "type": "process",
+            "dependsOn": [
+                "leaf: generate mir"
+            ],
+            "command": "code",
+            "args": [
+                "${fileDirname}/${fileBasenameNoExtension}-leaf.mir"
+            ],
+            "problemMatcher": [],
+        },
+        {
+            "label": "leaf: generate llvm",
+            "type": "cargo",
+            "command": "run",
+            "problemMatcher": [
+                "$rustc",
+                "$rust-panic"
+            ],
+            "options": {
+                "cwd": "${fileDirname}",
+                "env": {
+                    "RUST_LOG": "trace"
+                },
+            },
+            "args": [
+                "--",
+                "${file}",
+                "--emit=llvm-ir",
+                "-o",
+                "${fileBasenameNoExtension}-leaf.ll",
+                // "-O" // Release mode
+            ],
+        },
+        {
+            "label": "leaf: show llvm",
+            "type": "process",
+            "dependsOn": [
+                "leaf: generate llvm"
+            ],
+            "command": "code",
+            "args": [
+                "${fileDirname}/${fileBasenameNoExtension}-leaf.ll"
+            ],
+            "problemMatcher": [],
+        },
+        {
+            "label": "leaf: run",
+            "type": "process",
+            "command": "${fileBasenameNoExtension}.o",
+            "dependsOn": [
+                "leaf: compile"
+            ],
+            "problemMatcher": [
+                "$rustc",
+                "$rust-panic"
+            ],
+            "options": {
+                "cwd": "${fileDirname}",
+                "env": {
+                    "RUST_BACKTRACE": "1",
+                    // Your desired logging settings.
+                    "LEAF_LOG": "info",
+                }
+            },
+        },
+    ]
+}

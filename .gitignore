@@ -1,12 +1,18 @@
 tags
-.z3-trace
 target
 
+# A folder to put your notes in.
 .notes
 
-.vscode
+.vscode/*
+!.vscode/*.example
+!.vscode/extensions.json
+!.vscode/cspell.json
+!.vscode/dictionaries/*
+
 .idea
 
+# You can use playground folder for your experiments.
 samples/playground
 
 *.pdb
@@ -16,5 +22,5 @@ samples/playground
 *.mir
 *.ll
 *.bc
-
 ./main
+.z3-trace

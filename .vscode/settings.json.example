@@ -1,0 +1,6 @@
+{
+    "rust-analyzer.debug.engine": "vadimcn.vscode-lldb",
+    "rust-analyzer.rustc.source": "discover",
+    "editor.formatOnSave": true,
+    "githubIssues.issueBranchTitle": "${issueNumber}-${sanitizedIssueTitle}",
+}
