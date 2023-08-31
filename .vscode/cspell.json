@@ -1,0 +1,26 @@
+{
+    "version": "0.2",
+    "language": "en",
+    "dictionaryDefinitions": [
+        {
+            "name": "leaf",
+            "description": "Terms used in the project",
+            "path": "./.vscode/dictionaries/leaf.txt"
+        },
+        {
+            "name": "rust",
+            "description": "Terms and names used in Rust",
+            "path": "./.vscode/dictionaries/rust.txt"
+        },
+        {
+            "name": "rustc",
+            "description": "Terms and names used in the Rust compiler",
+            "path": "./.vscode/dictionaries/rustc.txt"
+        }
+    ],
+    "dictionaries": [
+        "leaf",
+        "rust",
+        "rustc",
+    ],
+}
