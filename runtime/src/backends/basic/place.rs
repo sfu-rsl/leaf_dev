@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{borrow::Borrow, fmt::Display};
 
 use crate::abs::{
     backend::{
@@ -8,34 +8,66 @@ use crate::abs::{
     Local, Place, RawPointer,
 };
 
+#[derive(Debug, Clone)]
+pub(crate) struct LocalWithAddress(pub(crate) Local, RawPointer);
+
+impl LocalWithAddress {
+    pub(crate) fn address(&self) -> Option<RawPointer> {
+        if_not_none(&self.1)
+    }
+}
+
+/* NOTE: Why not the following alternative structure?
+   struct PlaceWithAddress {
+       pub place: Place,
+       pub addresses: Vec<RawPointer>,
+   }
+
+   While this structure is more intuitive and more compatible with the original
+   `Place` structure, it causes problems with index projection where the index
+   place should be backed by an address as well.
+*/
+
 #[derive(Debug, Clone, derive_more::Deref)]
 pub(crate) struct PlaceWithAddress {
     #[deref]
-    pub place: Place,
-    pub addresses: Vec<RawPointer>,
+    pub place: Place<LocalWithAddress>,
+    proj_addresses: Vec<RawPointer>,
 }
 
-impl From<Place> for PlaceWithAddress {
-    fn from(value: Place) -> Self {
+impl From<Local> for LocalWithAddress {
+    fn from(value: Local) -> Self {
+        Self(value, NONE_ADDRESS)
+    }
+}
+
+impl From<Place<LocalWithAddress>> for PlaceWithAddress {
+    fn from(value: Place<LocalWithAddress>) -> Self {
         Self {
             place: value,
-            addresses: vec![NONE_ADDRESS],
+            proj_addresses: Vec::with_capacity(0),
         }
     }
 }
 
 impl From<Local> for PlaceWithAddress {
     fn from(value: Local) -> Self {
-        Self::from(Place::from(value))
+        Self::from(Place::from(LocalWithAddress(value, NONE_ADDRESS)))
     }
 }
 
-impl TryFrom<PlaceWithAddress> for Local {
+impl AsRef<Local> for LocalWithAddress {
+    fn as_ref(&self) -> &Local {
+        &self.0
+    }
+}
+
+impl TryFrom<PlaceWithAddress> for LocalWithAddress {
     type Error = PlaceWithAddress;
 
     fn try_from(place: PlaceWithAddress) -> Result<Self, Self::Error> {
         if !place.place.has_projection() {
-            Ok(*place.local())
+            Ok(place.local().clone())
         } else {
             Err(place)
         }
@@ -44,11 +76,16 @@ impl TryFrom<PlaceWithAddress> for Local {
 
 impl PlaceWithAddress {
     pub(crate) fn address(&self) -> Option<RawPointer> {
-        debug_assert_eq!(self.addresses.len(), self.projections().len() + 1);
-        self.addresses
-            .last()
-            .cloned()
-            .filter(|addr| *addr != NONE_ADDRESS)
+        if self.has_projection() {
+            debug_assert_eq!(self.proj_addresses.len(), self.projections().len());
+            if_not_none(self.proj_addresses.last().unwrap())
+        } else {
+            self.local().address()
+        }
+    }
+
+    pub(crate) fn proj_addresses(&self) -> impl Iterator<Item = Option<RawPointer>> + '_ {
+        self.proj_addresses.iter().map(if_not_none)
     }
 }
 
@@ -102,11 +139,20 @@ pub(crate) struct BasicProjectionHandler<'a>(&'a mut PlaceWithAddress);
 
 const NONE_ADDRESS: RawPointer = 0;
 
+fn if_not_none(addr: &RawPointer) -> Option<RawPointer> {
+    let addr = *addr;
+    if addr != NONE_ADDRESS {
+        Some(addr)
+    } else {
+        None
+    }
+}
+
 impl PlaceProjectionHandler for BasicProjectionHandler<'_> {
-    type Local = Local;
+    type Local = LocalWithAddress;
 
     fn by(self, projection: crate::abs::Projection<Self::Local>) {
-        self.0.addresses.push(NONE_ADDRESS);
+        self.0.proj_addresses.push(NONE_ADDRESS);
         DefaultPlaceProjectionHandler::new(&mut self.0.place).by(projection);
     }
 }
@@ -115,7 +161,13 @@ pub(crate) struct BasicPlaceMetadataHandler<'a>(&'a mut PlaceWithAddress);
 
 impl BasicPlaceMetadataHandler<'_> {
     pub(crate) fn set_address(&mut self, address: RawPointer) {
-        *self.0.addresses.last_mut().unwrap() = address;
+        *self.0.proj_addresses.last_mut().unwrap() = address;
+    }
+}
+
+impl Display for LocalWithAddress {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}@{:x}", self.0, self.1)
     }
 }
 

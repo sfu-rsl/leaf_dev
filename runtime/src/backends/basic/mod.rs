@@ -3,14 +3,14 @@ mod call;
 pub(crate) mod expr;
 pub(crate) mod logger;
 pub(crate) mod operand;
-pub(crate) mod place;
+mod place;
 mod state;
 
 use std::{cell::RefCell, ops::DerefMut, rc::Rc};
 
 use crate::{
     abs::{
-        self, backend::*, AssertKind, BasicBlockIndex, BranchingMetadata, CastKind, IntType,
+        self, backend::*, AssertKind, BasicBlockIndex, BranchingMetadata, CastKind, IntType, Local,
         UnaryOp, VariantIndex,
     },
     solvers::z3::Z3Solver,
@@ -28,12 +28,14 @@ use self::{
         proj::DefaultSymProjector as SymProjector,
     },
     operand::DefaultOperandHandler,
-    state::HierarchicalVariablesState,
+    state::{statex::RawPointerVariableState, HierarchicalVariablesState},
 };
 
 type TraceManager = Box<dyn abs::backend::TraceManager<BasicBlockIndex, ValueRef>>;
 
-type BasicCallStackManager = call::BasicCallStackManager<HierarchicalVariablesState<SymProjector>>;
+type BasicCallStackManager = call::BasicCallStackManager<
+    RawPointerVariableState<HierarchicalVariablesState<SymProjector>, SymProjector>,
+>;
 
 type TypeManager =
     Box<dyn abs::backend::TypeManager<Key = String, Value = Option<TypeInformation>>>;
@@ -42,7 +44,7 @@ type TypeManager =
 type Place = place::PlaceWithAddress;
 #[cfg(not(place_addr))]
 type Place = crate::abs::Place;
-type Projection = crate::abs::Projection;
+type Projection<L = Local> = crate::abs::Projection<L>;
 #[cfg(place_addr)]
 type PlaceHandler = place::BasicPlaceHandler;
 #[cfg(not(place_addr))]
@@ -65,7 +67,10 @@ impl BasicBackend {
         let sym_projector = Rc::new(RefCell::new(expr::proj::new_sym_projector()));
         Self {
             call_stack_manager: BasicCallStackManager::new(Box::new(move |id| {
-                HierarchicalVariablesState::new(id, sym_projector.clone())
+                RawPointerVariableState::new(
+                    HierarchicalVariablesState::new(id, sym_projector.clone()),
+                    sym_projector.clone(),
+                )
             })),
             trace_manager: Box::new(
                 ImmediateTraceManager::<BasicBlockIndex, u32, ValueRef>::new_basic(Box::new(
@@ -605,23 +610,25 @@ fn try_const_operand_value(operand: Operand) -> Option<ValueRef> {
     }
 }
 
-trait VariablesState {
+trait VariablesState<P = Place, V = ValueRef> {
     fn id(&self) -> usize;
 
     /// Returns a copy of the value stored at the given place. May not physically copy the value
     /// but the returned value should be independently usable from the original value.
-    fn copy_place(&self, place: &Place) -> ValueRef;
+    fn copy_place(&self, place: &P) -> V;
 
     /// Returns the value stored at the given place. The place should not contain a value after
     /// this operation.
-    fn take_place(&mut self, place: &Place) -> ValueRef;
+    fn take_place(&mut self, place: &P) -> V {
+        self.try_take_place(place).unwrap()
+    }
 
     /// Tries to take the value of a place if available.
-    fn try_take_place(&mut self, place: &Place) -> Option<ValueRef>;
+    fn try_take_place(&mut self, place: &P) -> Option<V>;
 
     /// Sets the value of a place. Overwrites the previous value if any, also defines a new local
     /// variable if it does not exist.
-    fn set_place(&mut self, place: &Place, value: ValueRef);
+    fn set_place(&mut self, place: &P, value: V);
 }
 
 enum EntranceKind {

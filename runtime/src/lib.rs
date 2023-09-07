@@ -9,6 +9,7 @@
 #![feature(fn_traits)]
 #![feature(result_option_inspect)]
 #![feature(const_float_bits_conv)]
+#![feature(entry_insert)]
 
 pub mod abs;
 pub mod annotations;

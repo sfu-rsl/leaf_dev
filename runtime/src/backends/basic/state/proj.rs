@@ -4,7 +4,7 @@ use crate::{
         expr::proj::{macros::impl_general_proj_through_singulars, Projector},
         FieldIndex, VariantIndex,
     },
-    backends::basic::{expr::SymIndexPair, Projection},
+    backends::basic::expr::SymIndexPair,
 };
 use std::ops::DerefMut;
 
@@ -106,7 +106,6 @@ where
         }
     }
 }
-
 struct MutProjector<I> {
     handle_sym_index: I,
 }
@@ -220,41 +219,37 @@ impl<I> MutProjector<I> {
 }
 
 pub(super) fn apply_projs<'a, 'b, SP: SymbolicProjector>(
-    place_resolver: &(impl PlaceResolver + FullPlaceResolver),
+    place_resolver: &impl FullPlaceResolver,
     sym_projector: RRef<SP>,
     host: &'a ValueRef,
-    projs: impl Iterator<Item = &'b Projection>,
+    mut projs: impl Iterator<Item = ResolvedProjection>,
 ) -> ValueRef {
-    projs.fold(host.clone(), |current, proj| {
-        /* FIXME: Based on the current implementation, it is not possible to
-         * get a concrete value after a symbolic projection or a projection
-         * on a symbolic value. So you may want to optimize it.
-         */
-        if !current.is_symbolic() {
-            apply_proj_con(
+    {
+        let mut current = host.clone();
+        while let Some(proj) = projs.next() {
+            current = apply_proj_con(
                 place_resolver,
                 sym_projector.clone(),
                 ConcreteValueRef::new(current),
-                proj,
-            )
-        } else {
-            apply_proj_sym(
-                place_resolver,
-                sym_projector.as_ref().borrow_mut().deref_mut(),
-                SymValueRef::new(current),
-                proj,
-            )
-            .to_value_ref()
-            .into()
+                &proj,
+            );
+
+            if current.is_symbolic() {
+                break;
+            }
         }
-    })
+
+        current = apply_projs_sym(sym_projector.clone(), &SymValueRef::new(current), projs).0;
+
+        current
+    }
 }
 
 fn apply_proj_con<SP: SymbolicProjector>(
-    place_resolver: &(impl PlaceResolver + FullPlaceResolver),
+    place_resolver: &impl FullPlaceResolver,
     projector: RRef<SP>,
     host: ConcreteValueRef,
-    proj: &Projection,
+    proj: &ResolvedProjection,
 ) -> ValueRef {
     let mut projector = ConcreteProjector {
         get_place: |p: &'_ FullPlace| -> ValueRef { place_resolver.get_full_place(p).unwrap() },
@@ -276,30 +271,14 @@ fn apply_proj_con<SP: SymbolicProjector>(
         },
     };
 
-    apply_proj::<_, _, _, Result<ValueRef, ConcreteValueRef>>(
-        place_resolver,
-        host,
-        proj,
-        &mut projector,
-    )
-    .unwrap_result(proj)
-}
-
-#[inline]
-fn apply_proj_sym(
-    place_resolver: &impl PlaceResolver,
-    projector: &mut impl SymbolicProjector,
-    host: SymValueRef,
-    proj: &Projection,
-) -> ProjExpr {
-    apply_proj(place_resolver, host, proj, projector)
+    apply_proj::<_, _, _, Result<ValueRef, ConcreteValueRef>>(host, proj, &mut projector)
+        .unwrap_result(proj)
 }
 
 pub(super) fn apply_projs_mut<'a, 'b, 'h, SP: SymbolicProjector>(
-    place_resolver: &impl PlaceResolver,
     sym_projector: RRef<SP>,
     host: MutPlaceValue<'h>,
-    projs: impl Iterator<Item = &'b Projection>,
+    projs: impl Iterator<Item = ResolvedProjection>,
 ) -> MutPlaceValue<'h> {
     projs.fold(host, |current, proj| {
         /* FIXME: Based on the current implementation, it is not possible to
@@ -310,35 +289,31 @@ pub(super) fn apply_projs_mut<'a, 'b, 'h, SP: SymbolicProjector>(
             MutPlaceValue::Normal(current) => {
                 if !current.is_symbolic() {
                     apply_proj_con_mut(
-                        place_resolver,
                         sym_projector.clone(),
                         ConcreteValueMutRef::new(current),
-                        proj,
+                        &proj,
                     )
                 } else {
                     MutPlaceValue::SymProj(apply_proj_sym(
-                        place_resolver,
                         sym_projector.as_ref().borrow_mut().deref_mut(),
                         SymValueRef::new(current.clone()),
-                        proj,
+                        &proj,
                     ))
                 }
             }
             MutPlaceValue::SymProj(current) => MutPlaceValue::SymProj(apply_proj_sym(
-                place_resolver,
                 sym_projector.as_ref().borrow_mut().deref_mut(),
                 current.to_value_ref(),
-                proj,
+                &proj,
             )),
         }
     })
 }
 
 fn apply_proj_con_mut<'h, SP: SymbolicProjector>(
-    place_resolver: &impl PlaceResolver,
     sym_projector: RRef<SP>,
     host: ConcreteValueMutRef<'h>,
-    proj: &Projection,
+    proj: &ResolvedProjection,
 ) -> MutPlaceValue<'h> {
     let mut projector = MutProjector {
         handle_sym_index: |host: ConcreteValueMutRef<'_>, index: SymValueRef, from_end: bool| {
@@ -356,48 +331,8 @@ fn apply_proj_con_mut<'h, SP: SymbolicProjector>(
                 .into()
         },
     };
-    apply_proj::<_, _, _, Result<MutPlaceValue, &mut ConcreteValue>>(
-        place_resolver,
-        host,
-        proj,
-        &mut projector,
-    )
-    .unwrap_result(proj)
-}
-
-fn apply_proj<'b, 'h, 'p, Host, IndexPair, P, Result>(
-    index_resolver: &impl PlaceResolver,
-    host: Host,
-    proj: &'b Projection,
-    projector: &'p mut P,
-) -> Result
-where
-    P: Projector,
-    P::HostRef<'h>: From<Host>,
-    IndexPair: From<(Host, ValueRef)>,
-    P::HIRefPair<'h>: From<IndexPair>,
-    P::Proj<'h>: Into<Result>,
-{
-    match proj {
-        Projection::Field(field) => projector.field(host.into(), *field),
-        Projection::Deref => projector.deref(host.into()),
-        Projection::Index(index) => {
-            let index = index_resolver.get_place(&Place::from(*index)).unwrap();
-            projector.index(Into::<IndexPair>::into((host, index)).into(), false)
-        }
-        Projection::ConstantIndex {
-            offset, from_end, ..
-        } => {
-            let index = ConstValue::from(*offset).to_value_ref();
-            projector.index(Into::<IndexPair>::into((host, index)).into(), *from_end)
-        }
-        Projection::Subslice { from, to, from_end } => {
-            projector.subslice(host.into(), *from, *to, *from_end)
-        }
-        Projection::Downcast(variant) => projector.downcast(host.into(), *variant),
-        Projection::OpaqueCast => todo!(),
-    }
-    .into()
+    apply_proj::<_, _, _, Result<MutPlaceValue, &mut ConcreteValue>>(host, proj, &mut projector)
+        .unwrap_result(proj)
 }
 
 pub(crate) trait ProjResultExt<R, P> {
@@ -411,5 +346,95 @@ impl<R, H: Debug, P: Debug> ProjResultExt<R, P> for Result<R, H> {
                 &proj, &host
             )
         })
+    }
+}
+
+pub(super) fn apply_projs_sym<'a, 'b, SP: SymbolicProjector>(
+    sym_projector: RRef<SP>,
+    host: &'a SymValueRef,
+    projs: impl Iterator<Item = ResolvedProjection>,
+) -> SymValueRef {
+    projs.fold(host.clone(), |current, proj| {
+        apply_proj_sym(
+            sym_projector.as_ref().borrow_mut().deref_mut(),
+            current,
+            &proj,
+        )
+        .to_value_ref()
+    })
+}
+
+#[inline]
+pub(super) fn apply_proj_sym<'b>(
+    projector: &mut impl SymbolicProjector,
+    host: SymValueRef,
+    proj: &'b ResolvedProjection,
+) -> ProjExpr {
+    apply_proj(host, proj, projector)
+}
+
+pub(super) fn apply_proj<'b, 'h, 'p, Host, IndexPair, P, Result>(
+    host: Host,
+    proj: &'b ResolvedProjection,
+    projector: &'p mut P,
+) -> Result
+where
+    P: Projector,
+    P::HostRef<'h>: From<Host>,
+    IndexPair: From<(Host, ValueRef)>,
+    P::HIRefPair<'h>: From<IndexPair>,
+    P::Proj<'h>: Into<Result>,
+{
+    use crate::abs::Projection::*;
+    match proj {
+        Field(field) => projector.field(host.into(), *field),
+        Deref => projector.deref(host.into()),
+        Index(index) => {
+            projector.index(Into::<IndexPair>::into((host, index.clone())).into(), false)
+        }
+        ConstantIndex {
+            offset, from_end, ..
+        } => {
+            let index = ConstValue::from(*offset).to_value_ref();
+            projector.index(Into::<IndexPair>::into((host, index)).into(), *from_end)
+        }
+        Subslice { from, to, from_end } => projector.subslice(host.into(), *from, *to, *from_end),
+        Downcast(variant) => projector.downcast(host.into(), *variant),
+        OpaqueCast => todo!(),
+    }
+    .into()
+}
+
+pub(super) trait LocalMap<L = Local> {
+    fn get(&self, local: &L) -> Option<ValueRef>;
+}
+
+pub(super) trait ProjectionResolutionExt<L> {
+    fn resolved_index(&self, local_resolver: &impl LocalMap<L>) -> ResolvedProjection;
+}
+impl<L> ProjectionResolutionExt<L> for crate::abs::Projection<L> {
+    fn resolved_index(&self, local_resolver: &impl LocalMap<L>) -> ResolvedProjection {
+        use crate::abs::Projection::*;
+        match self {
+            Field(field) => Field(*field),
+            Deref => Deref,
+            Index(index) => Index(local_resolver.get(index).unwrap()),
+            ConstantIndex {
+                offset,
+                min_length,
+                from_end,
+            } => ConstantIndex {
+                offset: *offset,
+                min_length: *min_length,
+                from_end: *from_end,
+            },
+            Subslice { from, to, from_end } => Subslice {
+                from: *from,
+                to: *to,
+                from_end: *from_end,
+            },
+            Downcast(variant) => Downcast(*variant),
+            OpaqueCast => OpaqueCast,
+        }
     }
 }

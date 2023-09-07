@@ -707,6 +707,12 @@ macro_rules! define_value_guard {
             }
         }
 
+        impl<V: Clone> $name<V> {
+            pub fn clone_to(&self) -> V {
+                self.0.clone()
+            }
+        }
+
         impl<V> std::fmt::Display for $name<V>
         where
             V: std::fmt::Display,
@@ -830,6 +836,13 @@ mod convert {
     }
 
     impl_from_uint!(u8, u16, u32, u64, u128, usize);
+
+    impl UnevalValue {
+        #[inline]
+        pub(crate) fn to_value_ref(self) -> ValueRef {
+            Into::<ConcreteValue>::into(self).to_value_ref()
+        }
+    }
 
     impl SymValue {
         #[inline]
