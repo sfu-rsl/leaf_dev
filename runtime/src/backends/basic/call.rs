@@ -1,4 +1,4 @@
-use crate::{abs::Local, utils::Hierarchical};
+use crate::{abs::Local, utils::SelfHierarchical};
 
 use super::{
     get_operand_value, CallStackManager, EntranceKind, Operand, Place, ValueRef, VariablesState,
@@ -37,7 +37,7 @@ impl<VS: VariablesState> BasicCallStackManager<VS> {
     }
 }
 
-impl<VS: VariablesState + Hierarchical<VS>> BasicCallStackManager<VS> {
+impl<VS: VariablesState + SelfHierarchical> BasicCallStackManager<VS> {
     fn push_new_stack_frame(&mut self, args: &mut Vec<Operand>) {
         self.vars_state = Some(if let Some(mut current_vars) = self.vars_state.take() {
             let args = if !args.is_empty() {
@@ -48,8 +48,7 @@ impl<VS: VariablesState + Hierarchical<VS>> BasicCallStackManager<VS> {
                 vec![]
             };
 
-            let mut vars_state = (self.vars_state_factory)(current_vars.id() + 1);
-            vars_state.set_parent(current_vars);
+            let mut vars_state = current_vars.add_layer();
             // set places for the arguments in the new frame using values from the current frame
             for (i, value) in args.into_iter().enumerate() {
                 let local_index = (i + 1) as u32;
@@ -71,7 +70,7 @@ impl<VS: VariablesState + Hierarchical<VS>> BasicCallStackManager<VS> {
     }
 }
 
-impl<VS: VariablesState + Hierarchical<VS>> CallStackManager for BasicCallStackManager<VS> {
+impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackManager<VS> {
     fn prepare_for_call(&mut self, func: ValueRef, args: Vec<Operand>) {
         self.latest_call = Some(CallInfo {
             expected_func: func,
@@ -105,7 +104,7 @@ impl<VS: VariablesState + Hierarchical<VS>> CallStackManager for BasicCallStackM
     fn pop_stack_frame(&mut self) {
         self.latest_returned_val = self.top().try_take_place(&Place::from(Local::ReturnValue));
         self.stack.pop().unwrap();
-        self.vars_state = self.vars_state.take().unwrap().give_back_parent();
+        self.vars_state = self.vars_state.take().unwrap().drop_layer();
     }
 
     fn finalize_call(&mut self, result_dest: Place) {
