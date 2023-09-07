@@ -94,30 +94,6 @@ pub(crate) enum Projection<L = Local> {
     OpaqueCast,
 }
 
-pub(crate) trait PlaceRef<L> {
-    type Projection = Projection<L>;
-
-    fn local(&self) -> &L;
-
-    fn projections(&self) -> &[Self::Projection];
-
-    fn has_projection(&self) -> bool {
-        !self.projections().is_empty()
-    }
-}
-
-impl<L, P> PlaceRef<L> for Place<L, P> {
-    type Projection = P;
-
-    fn local(&self) -> &L {
-        &self.local
-    }
-
-    fn projections(&self) -> &[P] {
-        &self.projections
-    }
-}
-
 #[derive(Clone, Copy, Debug)]
 pub enum BinaryOp {
     Add,

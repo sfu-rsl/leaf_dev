@@ -28,14 +28,15 @@ use self::{
         proj::DefaultSymProjector as SymProjector,
     },
     operand::DefaultOperandHandler,
-    state::{statex::RawPointerVariableState, HierarchicalVariablesState},
+    state::{RawPointerVariableState, StackedLocalIndexVariablesState},
 };
 
 type TraceManager = Box<dyn abs::backend::TraceManager<BasicBlockIndex, ValueRef>>;
 
-type BasicCallStackManager = call::BasicCallStackManager<
-    RawPointerVariableState<HierarchicalVariablesState<SymProjector>, SymProjector>,
->;
+type BasicVariablesState =
+    RawPointerVariableState<StackedLocalIndexVariablesState<SymProjector>, SymProjector>;
+
+type BasicCallStackManager = call::BasicCallStackManager<BasicVariablesState>;
 
 type TypeManager =
     Box<dyn abs::backend::TypeManager<Key = String, Value = Option<TypeInformation>>>;
@@ -68,7 +69,7 @@ impl BasicBackend {
         Self {
             call_stack_manager: BasicCallStackManager::new(Box::new(move |id| {
                 RawPointerVariableState::new(
-                    HierarchicalVariablesState::new(id, sym_projector.clone()),
+                    StackedLocalIndexVariablesState::new(id, sym_projector.clone()),
                     sym_projector.clone(),
                 )
             })),

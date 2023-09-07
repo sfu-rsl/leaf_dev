@@ -26,60 +26,25 @@ type Projection = crate::abs::Projection<Local>;
 
 type RRef<T> = Rc<RefCell<T>>;
 
-pub(in super::super) struct RawPointerVariableState<
-    VS: VariablesState<Place>,
-    SP: SymbolicProjector,
-> {
+/// Provides a mapping for raw pointers to symbolic values.
+/// All places that have a valid address are handled by this state, otherwise
+/// they will be sent to the `fallback` state to be handled.
+pub(in super::super) struct RawPointerVariableState<VS, SP: SymbolicProjector> {
     memory: HashMap<RawPointer, SymValueRef>,
     fallback: VS,
     sym_projector: RRef<SP>,
 }
 
-impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<VS, SP> {
-    pub fn new(fallback: VS, sym_projector: RRef<SP>) -> Self {
+impl<VS, SP: SymbolicProjector> RawPointerVariableState<VS, SP> {
+    pub fn new(fallback: VS, sym_projector: RRef<SP>) -> Self
+    where
+        VS: VariablesState<Place>,
+    {
         Self {
             memory: HashMap::new(),
             fallback,
             sym_projector,
         }
-    }
-}
-
-impl<VS: VariablesState<Place>, SP: SymbolicProjector> SelfHierarchical
-    for RawPointerVariableState<VS, SP>
-where
-    VS: SelfHierarchical,
-{
-    fn add_layer(self) -> Self {
-        Self {
-            fallback: self.fallback.add_layer(),
-            ..self
-        }
-    }
-
-    fn drop_layer(self) -> Option<Self> {
-        self.fallback.drop_layer().map(|f| Self {
-            fallback: f,
-            ..self
-        })
-    }
-}
-
-impl<VS: VariablesState<Place>, SP: SymbolicProjector> LocalMap<Local>
-    for RawPointerVariableState<VS, SP>
-where
-    VS: LocalMap<Local>,
-{
-    fn get(&self, local: &Local) -> Option<ValueRef> {
-        let Some(address) = local.address() else {
-            return self.fallback.get(local);
-        };
-
-        Some(if let Some(sym_val) = self.get(&address) {
-            sym_val.clone_to()
-        } else {
-            UnevalValue::Lazy(address).to_value_ref()
-        })
     }
 }
 
@@ -159,7 +124,7 @@ where
     }
 }
 
-impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<VS, SP> {
+impl<VS, SP: SymbolicProjector> RawPointerVariableState<VS, SP> {
     /// Finds the first symbolic value in the chain of projections leading to the place.
     /// # Returns
     /// The first symbolic value and the remaining projections to be applied on it.
@@ -186,5 +151,41 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
     #[inline]
     fn get<'a, 'b>(&'a self, address: &'b RawPointer) -> Option<&'a SymValueRef> {
         self.memory.get(address)
+    }
+}
+
+impl<VS, SP: SymbolicProjector> LocalMap<Local> for RawPointerVariableState<VS, SP>
+where
+    VS: LocalMap<Local>,
+{
+    fn get(&self, local: &Local) -> Option<ValueRef> {
+        let Some(address) = local.address() else {
+            return self.fallback.get(local);
+        };
+
+        Some(if let Some(sym_val) = self.get(&address) {
+            sym_val.clone_to()
+        } else {
+            UnevalValue::Lazy(address).to_value_ref()
+        })
+    }
+}
+
+impl<VS, SP: SymbolicProjector> SelfHierarchical for RawPointerVariableState<VS, SP>
+where
+    VS: SelfHierarchical,
+{
+    fn add_layer(self) -> Self {
+        Self {
+            fallback: self.fallback.add_layer(),
+            ..self
+        }
+    }
+
+    fn drop_layer(self) -> Option<Self> {
+        self.fallback.drop_layer().map(|f| Self {
+            fallback: f,
+            ..self
+        })
     }
 }
