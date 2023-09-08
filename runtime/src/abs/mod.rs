@@ -36,6 +36,11 @@ impl<L, P> Place<L, P> {
     }
 
     #[inline]
+    pub fn local_mut(&mut self) -> &mut L {
+        &mut self.local
+    }
+
+    #[inline]
     pub fn has_projection(&self) -> bool {
         !self.projections.is_empty()
     }
@@ -165,7 +170,7 @@ impl<V> Constraint<V> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, derive_more::From)]
 pub(crate) enum ValueType {
     Bool,
     Char,
@@ -202,6 +207,11 @@ pub(crate) struct FloatType {
     pub e_bits: u64,
     pub s_bits: u64,
 }
+
+pub(crate) static USIZE_TYPE: IntType = IntType {
+    bit_size: std::mem::size_of::<usize>() as u64 * 8,
+    is_signed: false,
+};
 
 #[derive(Clone, Debug)]
 pub(crate) enum CastKind {

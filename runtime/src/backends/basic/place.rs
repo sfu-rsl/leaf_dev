@@ -15,6 +15,10 @@ impl LocalWithAddress {
     pub(crate) fn address(&self) -> Option<RawPointer> {
         if_not_none(&self.1)
     }
+
+    pub(crate) fn set_address(&mut self, address: RawPointer) {
+        self.1 = address;
+    }
 }
 
 /* NOTE: Why not the following alternative structure?
@@ -161,7 +165,13 @@ pub(crate) struct BasicPlaceMetadataHandler<'a>(&'a mut PlaceWithAddress);
 
 impl BasicPlaceMetadataHandler<'_> {
     pub(crate) fn set_address(&mut self, address: RawPointer) {
-        *self.0.proj_addresses.last_mut().unwrap() = address;
+        if self.0.has_projection() {
+            *self.0.proj_addresses.last_mut().unwrap() = address;
+        } else {
+            self.0.place.local_mut().set_address(address);
+        }
+    }
+
     }
 }
 
