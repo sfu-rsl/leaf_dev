@@ -87,7 +87,9 @@ pub(crate) mod z3 {
                 }
                 ConcreteValue::Array(array) => AstNode::Array(self.translate_array(array)),
                 ConcreteValue::Ref(_) => todo!(),
-                ConcreteValue::Unevaluated(value) => self.resolve_unevaluated(value),
+                ConcreteValue::Unevaluated(_) => {
+                    panic!("Unevaluated value should not exist at this phase.")
+                }
             }
         }
 
@@ -604,13 +606,6 @@ pub(crate) mod z3 {
                 }
             };
             ast::Bool::not(&no_overflow).into()
-        }
-
-        fn resolve_unevaluated(&mut self, value: &UnevalValue) -> AstNode<'ctx> {
-            log::debug!("Resolving unevaluated value: {}", value);
-            let value = unsafe { value.evaluate().unwrap() };
-            assert!(!matches!(value, ConcreteValue::Unevaluated(..)));
-            self.translate_concrete(&value)
         }
 
         fn resolve_proj_expression(&mut self, proj_expr: &ProjExpr) -> Select {

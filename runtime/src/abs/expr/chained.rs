@@ -8,6 +8,8 @@ use super::*;
 ///
 /// The current builder should return a `Result` that either is the built
 /// expression (as `Ok`) or the expressions passed to it (as `Err`).
+/// The builder may be a transformer over the expressions by returning an `Err`
+/// containing the transformed version.
 ///
 /// This struct is useful for overriding certain functions with optimizations, for example.
 pub(crate) struct ChainedExprBuilder<Current, Next, Expr, CurrentExpr: Into<Expr> = Expr> {

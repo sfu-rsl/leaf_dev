@@ -2,7 +2,7 @@ use std::fmt::{Display, Formatter, Result};
 
 use crate::backends::basic::logger::comma_separated;
 
-use super::{sym_place::SymReadResult, *};
+use super::{sym_place::SymReadResult, RawConcreteValue, *};
 
 impl Display for Value {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
@@ -108,7 +108,7 @@ impl Display for UnevalValue {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
             UnevalValue::Some => write!(f, ".C."),
-            UnevalValue::Lazy(addr, ty) => write!(
+            UnevalValue::Lazy(RawConcreteValue(addr, ty)) => write!(
                 f,
                 "@({:x}:{})",
                 addr,

@@ -129,9 +129,36 @@ mod symbolic {
     use super::{adapters::ConstSimplifier, core::CoreBuilder, *};
 
     pub(crate) type SymbolicBuilder = Composite<
-        /*Binary:*/ Chained<ConstSimplifier, CoreBuilder>,
+        /*Binary:*/ Chained<LazyEvaluatorBuilder, Chained<ConstSimplifier, CoreBuilder>>,
         /*Unary:*/ CoreBuilder,
     >;
+
+    #[derive(Default)]
+    pub(crate) struct LazyEvaluatorBuilder;
+
+    impl BinaryExprBuilder for LazyEvaluatorBuilder {
+        type ExprRefPair<'a> = SymBinaryOperands;
+        type Expr<'a> = Result<ValueRef, SymBinaryOperands>;
+
+        fn binary_op<'a>(
+            &mut self,
+            operands: Self::ExprRefPair<'a>,
+            _op: BinaryOp,
+            _checked: bool,
+        ) -> Self::Expr<'a> {
+            match operands.as_flat().1.as_ref() {
+                Value::Concrete(ConcreteValue::Unevaluated(UnevalValue::Lazy(lazy))) => {
+                    let value = unsafe { lazy.evaluate() }.to_value_ref();
+                    let mut operands = operands.flatten();
+                    operands.1 = value;
+                    Err(Self::ExprRefPair::from(operands))
+                }
+                _ => Err(operands),
+            }
+        }
+
+        impl_singular_binary_ops_through_general!();
+    }
 }
 
 mod adapters {
@@ -415,7 +442,8 @@ mod concrete {
             _op: BinaryOp,
             _checked: bool,
         ) -> Self::Expr<'a> {
-            // If either of the operands is unevaluated, the result is unevaluated.
+            /* If either of the operands is unevaluated, the result will not be evaluated.
+             * (the other operator is also concrete, so the result is concrete.) */
             Self::some_if_uneval(operands.0)
                 .or_else(|_| Self::some_if_uneval(operands.1))
                 .map_err(|_| operands)

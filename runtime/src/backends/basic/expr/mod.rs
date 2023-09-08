@@ -546,31 +546,38 @@ pub(crate) enum RefValue {
 #[derive(Clone, Debug)]
 pub(crate) enum UnevalValue {
     Some,
-    Lazy(RawPointer, Option<ValueType>),
+    Lazy(RawConcreteValue),
 }
 
-impl UnevalValue {
-    pub(crate) unsafe fn evaluate(&self) -> Result<ConcreteValue, &'static str> {
-        match self {
-            Self::Some => Err("Unknown unevaluated values should not appear in expressions."),
-            Self::Lazy(addr, ty) => {
-                let Some(ty) = ty else {
-                    return Err("The type for the lazy value couldn't be inferred at this point.");
-                };
-                use std::ptr::from_exposed_addr as to_ptr;
-                let addr = *addr as usize;
-                let value: ConstValue = match ty {
-                    ValueType::Bool => (*(to_ptr::<bool>(addr))).into(),
-                    ValueType::Char => (*(to_ptr::<char>(addr))).into(),
-                    ValueType::Int(ty @ IntType { bit_size, .. }) => ConstValue::Int {
-                        bit_rep: Wrapping(Self::read_int(addr, *bit_size as usize)),
-                        ty: *ty,
-                    },
-                    ValueType::Float(_) => unimplemented!(),
-                };
-                Ok(value.into())
-            }
-        }
+#[derive(Clone, Debug)]
+pub(crate) struct RawConcreteValue(pub(crate) RawPointer, pub(crate) Option<ValueType>);
+
+impl RawConcreteValue {
+    pub(crate) unsafe fn evaluate(&self) -> ConcreteValue {
+        let Some(ty) = &self.1 else {
+            panic!("The type for the lazy value is not available.");
+        };
+        /* NOTE: Can we perform evaluation without storing the type separately?
+         * It seems to be possible to infer it as we are supposed to evaluate them only when
+         * the concrete value is used in some operation with a symbolic value.
+         * However there are a few cases that this is not easily achievable:
+         * - In shift operations, which the operands may not be from the same type.
+         * - Arrays and effectively symbolic projections.
+         * We have defined the type as an option to not pass the type in future unless
+         * it is necessary.
+         */
+        let addr = self.0 as usize;
+        use std::ptr::from_exposed_addr as to_ptr;
+        let value: ConstValue = match ty {
+            ValueType::Bool => (*(to_ptr::<bool>(addr))).into(),
+            ValueType::Char => (*(to_ptr::<char>(addr))).into(),
+            ValueType::Int(ty @ IntType { bit_size, .. }) => ConstValue::Int {
+                bit_rep: Wrapping(Self::read_int(addr, *bit_size as usize)),
+                ty: *ty,
+            },
+            ValueType::Float(_) => unimplemented!(),
+        };
+        value.into()
     }
 
     unsafe fn read_int(addr: usize, bit_size: usize) -> u128 {

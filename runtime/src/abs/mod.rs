@@ -7,6 +7,7 @@ pub type BasicBlockIndex = u32;
 pub type VariantIndex = u32;
 pub type FieldIndex = u32;
 pub type RawPointer = u64;
+pub type PointerOffset = u64;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Local {
