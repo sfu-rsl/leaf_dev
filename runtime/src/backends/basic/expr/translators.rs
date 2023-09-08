@@ -87,7 +87,7 @@ pub(crate) mod z3 {
                 }
                 ConcreteValue::Array(array) => AstNode::Array(self.translate_array(array)),
                 ConcreteValue::Ref(_) => todo!(),
-                ConcreteValue::Unevaluated(..) => todo!(),
+                ConcreteValue::Unevaluated(value) => self.resolve_unevaluated(value),
             }
         }
 
@@ -272,6 +272,7 @@ pub(crate) mod z3 {
                         }
                         _ => right,
                     };
+                    debug_assert_eq!(left.z3_sort(), right.z3_sort());
                     let right_bv = right.as_bit_vector();
                     let is_signed = left_node.is_signed();
                     let ar_func: Option<fn(&ast::BV<'ctx>, &ast::BV<'ctx>) -> ast::BV<'ctx>> =
@@ -603,6 +604,13 @@ pub(crate) mod z3 {
                 }
             };
             ast::Bool::not(&no_overflow).into()
+        }
+
+        fn resolve_unevaluated(&mut self, value: &UnevalValue) -> AstNode<'ctx> {
+            log::debug!("Resolving unevaluated value: {}", value);
+            let value = unsafe { value.evaluate().unwrap() };
+            assert!(!matches!(value, ConcreteValue::Unevaluated(..)));
+            self.translate_concrete(&value)
         }
 
         fn resolve_proj_expression(&mut self, proj_expr: &ProjExpr) -> Select {

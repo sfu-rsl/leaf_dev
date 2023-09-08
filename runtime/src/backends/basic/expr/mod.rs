@@ -548,6 +548,46 @@ pub(crate) enum UnevalValue {
     Some,
     Lazy(RawPointer, Option<ValueType>),
 }
+
+impl UnevalValue {
+    pub(crate) unsafe fn evaluate(&self) -> Result<ConcreteValue, &'static str> {
+        match self {
+            Self::Some => Err("Unknown unevaluated values should not appear in expressions."),
+            Self::Lazy(addr, ty) => {
+                let Some(ty) = ty else {
+                    return Err("The type for the lazy value couldn't be inferred at this point.");
+                };
+                use std::ptr::from_exposed_addr as to_ptr;
+                let addr = *addr as usize;
+                let value: ConstValue = match ty {
+                    ValueType::Bool => (*(to_ptr::<bool>(addr))).into(),
+                    ValueType::Char => (*(to_ptr::<char>(addr))).into(),
+                    ValueType::Int(ty @ IntType { bit_size, .. }) => ConstValue::Int {
+                        bit_rep: Wrapping(Self::read_int(addr, *bit_size as usize)),
+                        ty: *ty,
+                    },
+                    ValueType::Float(_) => unimplemented!(),
+                };
+                Ok(value.into())
+            }
+        }
+    }
+
+    unsafe fn read_int(addr: usize, bit_size: usize) -> u128 {
+        let bytes =
+            std::slice::from_raw_parts(std::ptr::from_exposed_addr::<u8>(addr), bit_size / 8);
+
+        #[cfg(target_endian = "big")]
+        let bytes = bytes.iter();
+        #[cfg(target_endian = "little")]
+        let bytes = bytes.iter().rev();
+
+        let mut result: u128 = 0;
+        for byte in bytes {
+            result = result << 8 | *byte as u128;
+        }
+        result
+    }
 }
 
 #[derive(Clone, Debug, dm::From)]
