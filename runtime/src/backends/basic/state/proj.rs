@@ -182,20 +182,20 @@ where
     .into()
 }
 
-pub(super) trait LocalMap<L> {
+pub(super) trait IndexResolver<L> {
     fn get(&self, local: &L) -> Option<ValueRef>;
 }
 
 pub(super) trait ProjectionResolutionExt<L> {
-    fn resolved_index(&self, local_resolver: &impl LocalMap<L>) -> ResolvedProjection;
+    fn resolved_index(&self, index_resolver: &impl IndexResolver<L>) -> ResolvedProjection;
 }
 impl<L> ProjectionResolutionExt<L> for crate::abs::Projection<L> {
-    fn resolved_index(&self, local_resolver: &impl LocalMap<L>) -> ResolvedProjection {
+    fn resolved_index(&self, index_resolver: &impl IndexResolver<L>) -> ResolvedProjection {
         use crate::abs::Projection::*;
         match self {
             Field(field) => Field(*field),
             Deref => Deref,
-            Index(index) => Index(local_resolver.get(index).unwrap()),
+            Index(index) => Index(index_resolver.get(index).unwrap()),
             ConstantIndex {
                 offset,
                 min_length,

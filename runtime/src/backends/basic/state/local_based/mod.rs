@@ -396,7 +396,7 @@ impl<SP: SymbolicProjector> MutRefResolver for LocalStorage<SP> {
     }
 }
 
-impl<L, SP: SymbolicProjector> LocalMap<L> for StackedLocalIndexVariablesState<SP>
+impl<L, SP: SymbolicProjector> IndexResolver<L> for StackedLocalIndexVariablesState<SP>
 where
     L: AsRef<Local>,
 {
@@ -407,7 +407,7 @@ where
     }
 }
 
-impl<L, SP: SymbolicProjector> LocalMap<L> for LocalStorage<SP>
+impl<L, SP: SymbolicProjector> IndexResolver<L> for LocalStorage<SP>
 where
     L: AsRef<Local>,
 {

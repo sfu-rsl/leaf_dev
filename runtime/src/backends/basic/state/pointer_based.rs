@@ -17,7 +17,7 @@ use super::{
         alias::SymValueRefProjector as SymbolicProjector, expr::prelude::*,
         place::PlaceWithAddress, ValueRef,
     },
-    proj::{apply_projs_sym, LocalMap, ProjectionResolutionExt},
+    proj::{apply_projs_sym, IndexResolver, ProjectionResolutionExt},
 };
 
 type Local = LocalWithAddress;
@@ -51,7 +51,7 @@ impl<VS, SP: SymbolicProjector> RawPointerVariableState<VS, SP> {
 impl<VS: VariablesState<Place>, SP: SymbolicProjector> VariablesState<Place>
     for RawPointerVariableState<VS, SP>
 where
-    Self: LocalMap<Local>,
+    Self: IndexResolver<Local>,
 {
     delegate! {
         to self.fallback {
@@ -154,9 +154,9 @@ impl<VS, SP: SymbolicProjector> RawPointerVariableState<VS, SP> {
     }
 }
 
-impl<VS, SP: SymbolicProjector> LocalMap<Local> for RawPointerVariableState<VS, SP>
+impl<VS, SP: SymbolicProjector> IndexResolver<Local> for RawPointerVariableState<VS, SP>
 where
-    VS: LocalMap<Local>,
+    VS: IndexResolver<Local>,
 {
     fn get(&self, local: &Local) -> Option<ValueRef> {
         let Some(address) = local.address() else {
