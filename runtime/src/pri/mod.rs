@@ -69,6 +69,26 @@ pub fn ref_place_opaque_cast(place: PlaceRef /*, type */) {
 pub fn set_place_address(place: PlaceRef, raw_ptr: RawPointer) {
     mut_place_ref(place, |p, place| p.metadata(place).set_address(raw_ptr));
 }
+#[cfg(place_addr)]
+pub fn set_place_type_bool(place: PlaceRef) {
+    set_place_type(place, ValueType::Bool)
+}
+#[cfg(place_addr)]
+pub fn set_place_type_char(place: PlaceRef) {
+    set_place_type(place, ValueType::Char)
+}
+#[cfg(place_addr)]
+pub fn set_place_type_int(place: PlaceRef, bit_size: u64, is_signed: bool) {
+    set_place_type(place, ValueType::new_int(bit_size, is_signed))
+}
+#[cfg(place_addr)]
+pub fn set_place_type_float(place: PlaceRef, e_bits: u64, s_bits: u64) {
+    set_place_type(place, ValueType::new_float(e_bits, s_bits))
+}
+#[cfg(place_addr)]
+fn set_place_type(place: PlaceRef, ty: ValueType) {
+    mut_place_ref(place, |p, place| p.metadata(place).set_type(ty));
+}
 
 pub fn ref_operand_copy(place: PlaceRef) -> OperandRef {
     push_operand_ref(|o| o.copy_of(take_back_place_ref(place)))

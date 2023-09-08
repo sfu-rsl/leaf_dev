@@ -546,7 +546,8 @@ pub(crate) enum RefValue {
 #[derive(Clone, Debug)]
 pub(crate) enum UnevalValue {
     Some,
-    Lazy(RawPointer),
+    Lazy(RawPointer, Option<ValueType>),
+}
 }
 
 #[derive(Clone, Debug, dm::From)]

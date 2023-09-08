@@ -1,11 +1,11 @@
-use std::{borrow::Borrow, fmt::Display};
+use std::fmt::Display;
 
 use crate::abs::{
     backend::{
         implementation::{DefaultPlaceHandler, DefaultPlaceProjectionHandler},
         PlaceHandler, PlaceProjectionHandler,
     },
-    Local, Place, RawPointer,
+    Local, Place, RawPointer, ValueType,
 };
 
 #[derive(Debug, Clone)]
@@ -37,6 +37,7 @@ pub(crate) struct PlaceWithAddress {
     #[deref]
     pub place: Place<LocalWithAddress>,
     proj_addresses: Vec<RawPointer>,
+    ty: Option<ValueType>,
 }
 
 impl From<Local> for LocalWithAddress {
@@ -50,6 +51,7 @@ impl From<Place<LocalWithAddress>> for PlaceWithAddress {
         Self {
             place: value,
             proj_addresses: Vec::with_capacity(0),
+            ty: None,
         }
     }
 }
@@ -90,6 +92,10 @@ impl PlaceWithAddress {
 
     pub(crate) fn proj_addresses(&self) -> impl Iterator<Item = Option<RawPointer>> + '_ {
         self.proj_addresses.iter().map(if_not_none)
+    }
+
+    pub(crate) fn ty(&self) -> Option<&ValueType> {
+        self.ty.as_ref()
     }
 }
 
@@ -172,6 +178,8 @@ impl BasicPlaceMetadataHandler<'_> {
         }
     }
 
+    pub(crate) fn set_type(&mut self, ty: ValueType) {
+        self.0.ty = Some(ty);
     }
 }
 

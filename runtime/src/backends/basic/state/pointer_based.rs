@@ -7,7 +7,7 @@ use std::{
 use delegate::delegate;
 
 use crate::{
-    abs::RawPointer,
+    abs::{RawPointer, USIZE_TYPE},
     backends::basic::{place::LocalWithAddress, VariablesState},
     utils::SelfHierarchical,
 };
@@ -72,7 +72,7 @@ where
             )
             .into()
         } else {
-            UnevalValue::Lazy(address).to_value_ref()
+            UnevalValue::Lazy(address, place.ty().cloned()).to_value_ref()
         }
     }
 
@@ -95,7 +95,7 @@ where
                 .into()
             }
         } else {
-            UnevalValue::Lazy(address).to_value_ref()
+            UnevalValue::Lazy(address, place.ty().cloned()).to_value_ref()
         };
         Some(result)
     }
@@ -166,7 +166,7 @@ where
         Some(if let Some(sym_val) = self.get(&address) {
             sym_val.clone_to()
         } else {
-            UnevalValue::Lazy(address).to_value_ref()
+            UnevalValue::Lazy(address, Some(USIZE_TYPE.into())).to_value_ref()
         })
     }
 }

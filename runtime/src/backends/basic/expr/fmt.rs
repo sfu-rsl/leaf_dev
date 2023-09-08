@@ -108,7 +108,12 @@ impl Display for UnevalValue {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
             UnevalValue::Some => write!(f, ".C."),
-            UnevalValue::Lazy(addr) => write!(f, "@({:x})", addr),
+            UnevalValue::Lazy(addr, ty) => write!(
+                f,
+                "@({:x}:{})",
+                addr,
+                ty.as_ref().map_or("?".to_owned(), |ty| format!("{}", ty))
+            ),
         }
     }
 }

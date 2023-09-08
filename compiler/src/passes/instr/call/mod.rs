@@ -501,6 +501,12 @@ mod implementation {
                 }
             }
 
+            if cfg!(place_addr) {
+                if let Some(block) = self.make_bb_for_set_type_call(place_ref, cum_ty.ty) {
+                    blocks.push(block);
+                }
+            }
+
             BlocksAndResult(blocks, place_ref)
         }
 
@@ -600,15 +606,57 @@ mod implementation {
             place: &Place<'tcx>,
             place_ty: Ty<'tcx>,
         ) -> BasicBlockData<'tcx> {
-            let (statements, x) = self.add_and_set_local_for_ptr(place, place_ty);
+            let (statements, addr_local) = self.add_and_set_local_for_ptr(place, place_ty);
 
             let mut block = self.make_bb_for_call(
                 stringify!(pri::set_place_address),
-                vec![Operand::Copy(place_ref.into()), Operand::Move(x.into())],
+                vec![
+                    operand::copy_for_local(place_ref),
+                    operand::move_for_local(addr_local),
+                ],
             );
 
             block.statements.extend(statements);
             block
+        }
+
+        /// Makes a basic block for setting the type of a place if it is from
+        /// primitive types.
+        fn make_bb_for_set_type_call(
+            &mut self,
+            place_ref: Local,
+            ty: Ty<'tcx>,
+        ) -> Option<BasicBlockData<'tcx>> {
+            let tcx = self.context.tcx();
+            let (func_name, additional_args) = if ty.is_bool() {
+                (stringify!(pri::set_place_type_bool), vec![])
+            } else if ty.is_char() {
+                (stringify!(pri::set_place_type_char), vec![])
+            } else if ty.is_integral() {
+                (
+                    stringify!(pri::set_place_type_int),
+                    vec![
+                        operand::const_from_uint(tcx, ty::size_of(self.tcx(), ty).bits()),
+                        operand::const_from_bool(tcx, ty.is_signed()),
+                    ],
+                )
+            } else if ty.is_floating_point() {
+                let (e_bits, s_bits) = ty::ebit_sbit_size(tcx, ty);
+                (
+                    stringify!(pri::set_place_type_float),
+                    vec![
+                        operand::const_from_uint(tcx, e_bits),
+                        operand::const_from_uint(tcx, s_bits),
+                    ],
+                )
+            } else {
+                return None;
+            };
+
+            Some(self.make_bb_for_call(
+                func_name,
+                [vec![operand::copy_for_local(place_ref)], additional_args].concat(),
+            ))
         }
 
         fn add_and_set_local_for_ptr(
