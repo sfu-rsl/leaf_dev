@@ -351,20 +351,25 @@ pub(crate) mod z3 {
                             };
                             BVNode::new(ast, *is_signed).into()
                         }
-                        AstNode::BitVector(BVNode(ast, BVSort { is_signed })) => {
+                        AstNode::BitVector(BVNode(
+                            ast,
+                            BVSort {
+                                is_signed: is_from_signed,
+                            },
+                        )) => {
                             let old_size = ast.get_size();
                             if size > old_size {
                                 let bits_to_add = size - old_size;
-                                let ast = if is_signed {
+                                let ast = if is_from_signed {
                                     ast.sign_ext(bits_to_add)
                                 } else {
                                     ast.zero_ext(bits_to_add)
                                 };
-                                BVNode::new(ast, is_signed).into()
+                                BVNode::new(ast, *is_signed).into()
                             } else {
                                 // This also handles the case where size == old_size since all bits will be extracted
                                 // and the sign will be updated.
-                                BVNode::new(ast.extract(size - 1, 0), is_signed).into()
+                                BVNode::new(ast.extract(size - 1, 0), *is_signed).into()
                             }
                         }
                         _ => unreachable!("Casting from {from:#?} to int is not supported."),
