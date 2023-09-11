@@ -11,7 +11,7 @@ use std::{cell::RefCell, ops::DerefMut, rc::Rc};
 use crate::{
     abs::{
         self, backend::*, AssertKind, BasicBlockIndex, BranchingMetadata, CastKind, IntType, Local,
-        LocalIndex, RawPointer, UnaryOp, VariantIndex,
+        LocalIndex, PlaceUsage, RawPointer, UnaryOp, VariantIndex,
     },
     solvers::z3::Z3Solver,
     trace::ImmediateTraceManager,
@@ -27,7 +27,7 @@ use self::{
         builders::DefaultExprBuilder as ExprBuilder, prelude::*,
         proj::DefaultSymProjector as SymProjector,
     },
-    operand::DefaultOperandHandler,
+    operand::BasicOperandHandler,
     state::{RawPointerVariableState, StackedLocalIndexVariablesState},
 };
 
@@ -52,6 +52,11 @@ type PlaceHandler = place::BasicPlaceHandler;
 type PlaceHandler = crate::abs::backend::implementation::DefaultPlaceHandler;
 type FullPlace = place::FullPlace<Place>;
 type Operand = operand::Operand<Place>;
+#[cfg(place_addr)]
+type OperandHandler<'a, SymValue> = operand::BasicOperandHandler<'a, Place, SymValue>;
+#[cfg(not(place_addr))]
+type OperandHandler<'a, SymValue> =
+    crate::abs::backend::implementation::DefaultOperandHandler<'a, Place, SymValue>;
 
 pub struct BasicBackend {
     call_stack_manager: BasicCallStackManager,
@@ -92,7 +97,7 @@ impl RuntimeBackend for BasicBackend {
     where
         Self: 'a;
 
-    type OperandHandler<'a> = DefaultOperandHandler<'a, Self::Place>
+    type OperandHandler<'a> = BasicOperandHandler<'a, Self::Place>
     where
         Self: 'a;
 
@@ -117,7 +122,7 @@ impl RuntimeBackend for BasicBackend {
     }
 
     fn operand(&mut self) -> Self::OperandHandler<'_> {
-        DefaultOperandHandler::new(Box::new(move |ty| self.new_symbolic_value(ty)))
+        BasicOperandHandler::new(Box::new(move |ty| self.new_symbolic_value(ty)))
     }
 
     fn assign_to<'a>(
@@ -623,8 +628,9 @@ type Constraint = crate::abs::Constraint<ValueRef>;
 fn get_operand_value(vars_state: &mut dyn VariablesState, operand: Operand) -> ValueRef {
     match operand {
         // copy and move are the same, but only for now. see: https://github.com/rust-lang/unsafe-code-guidelines/issues/188
-        Operand::Place(place, operand::PlaceUsage::Copy)
-        | Operand::Place(place, operand::PlaceUsage::Move) => vars_state.copy_place(&place),
+        Operand::Place(place, PlaceUsage::Copy) | Operand::Place(place, PlaceUsage::Move) => {
+            vars_state.copy_place(&place)
+        }
         Operand::Const(constant) => Into::<ConcreteValue>::into(constant).to_value_ref(),
         Operand::Symbolic(sym) => sym.into(),
     }

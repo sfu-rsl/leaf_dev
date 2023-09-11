@@ -100,6 +100,40 @@ pub(crate) enum Projection<L = Local> {
     OpaqueCast,
 }
 
+#[derive(Debug)]
+pub(crate) enum PlaceUsage {
+    Copy,
+    Move,
+}
+
+#[derive(Debug)]
+pub(crate) enum Operand<P, C, S> {
+    Place(P, PlaceUsage),
+    Const(C),
+    Symbolic(S),
+}
+
+#[derive(Debug)]
+pub(crate) enum Constant {
+    Bool(bool),
+    Char(char),
+    Int { bit_rep: u128, ty: IntType },
+    Float { bit_rep: u128, ty: FloatType },
+    Str(&'static str),
+    ByteStr(&'static [u8]),
+    Func(u64),
+    Zst,
+}
+
+impl<P, C, S> From<Constant> for Operand<P, C, S>
+where
+    C: From<Constant>,
+{
+    fn from(value: Constant) -> Self {
+        Self::Const(value.into())
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub enum BinaryOp {
     Add,

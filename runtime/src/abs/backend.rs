@@ -101,6 +101,7 @@ pub(crate) trait OperandHandler {
     type Operand;
     type Place;
     type ConstantHandler: ConstantHandler<Operand = Self::Operand>;
+    type MetadataHandler<'a>;
 
     fn copy_of(self, place: Self::Place) -> Self::Operand;
 
@@ -109,6 +110,8 @@ pub(crate) trait OperandHandler {
     fn const_from(self) -> Self::ConstantHandler;
 
     fn new_symbolic(self, ty: ValueType) -> Self::Operand;
+
+    fn metadata<'a>(self, operand: &'a mut Self::Operand) -> Self::MetadataHandler<'a>;
 }
 
 pub(crate) trait ConstantHandler {
@@ -263,8 +266,10 @@ pub(crate) mod implementation {
     use super::super::*;
     use super::*;
 
+    use std::marker::PhantomData;
+
     pub(crate) struct DefaultPlaceHandler<L = Local, P = Projection<Local>> {
-        _phantom: std::marker::PhantomData<(L, P)>,
+        _phantom: PhantomData<(L, P)>,
     }
 
     impl<L, P> Default for DefaultPlaceHandler<L, P> {
@@ -315,6 +320,83 @@ pub(crate) mod implementation {
 
         fn by(self, projection: Projection<Self::Local>) {
             self.place.add_projection(projection.into())
+        }
+    }
+
+    pub(crate) struct DefaultOperandHandler<'a, P, S> {
+        create_symbolic: Box<dyn FnOnce(ValueType) -> S + 'a>,
+        _phantom: PhantomData<P>,
+    }
+
+    impl<'a, P, S> DefaultOperandHandler<'a, P, S> {
+        pub(crate) fn new(create_symbolic: Box<dyn FnOnce(ValueType) -> S + 'a>) -> Self {
+            Self {
+                create_symbolic,
+                _phantom: Default::default(),
+            }
+        }
+    }
+
+    impl<Place, SymValue> OperandHandler for DefaultOperandHandler<'_, Place, SymValue> {
+        type Operand = Operand<Place, Constant, SymValue>;
+        type Place = Place;
+        type ConstantHandler = DefaultConstantHandler<Self::Operand>;
+        type MetadataHandler<'a> = ();
+
+        fn copy_of(self, place: Self::Place) -> Self::Operand {
+            Operand::Place(place, PlaceUsage::Copy)
+        }
+
+        fn move_of(self, place: Self::Place) -> Self::Operand {
+            Operand::Place(place, PlaceUsage::Move)
+        }
+
+        fn const_from(self) -> Self::ConstantHandler {
+            DefaultConstantHandler(PhantomData)
+        }
+
+        fn new_symbolic(self, ty: ValueType) -> Self::Operand {
+            Operand::Symbolic((self.create_symbolic)(ty))
+        }
+
+        fn metadata<'a>(self, operand: &'a mut Self::Operand) -> Self::MetadataHandler<'a> {}
+    }
+
+    pub(crate) struct DefaultConstantHandler<O>(PhantomData<O>);
+
+    impl<O: From<Constant>> ConstantHandler for DefaultConstantHandler<O> {
+        type Operand = O;
+
+        fn bool(self, value: bool) -> Self::Operand {
+            Constant::Bool(value).into()
+        }
+
+        fn char(self, value: char) -> Self::Operand {
+            Constant::Char(value).into()
+        }
+
+        fn int(self, bit_rep: u128, ty: IntType) -> Self::Operand {
+            Constant::Int { bit_rep, ty }.into()
+        }
+
+        fn float(self, bit_rep: u128, ty: FloatType) -> Self::Operand {
+            Constant::Float { bit_rep, ty }.into()
+        }
+
+        fn str(self, value: &'static str) -> Self::Operand {
+            Constant::Str(value).into()
+        }
+
+        fn byte_str(self, value: &'static [u8]) -> Self::Operand {
+            Constant::ByteStr(value).into()
+        }
+
+        fn func(self, id: u64) -> Self::Operand {
+            Constant::Func(id).into()
+        }
+
+        fn zst(self) -> Self::Operand {
+            Constant::Zst.into()
         }
     }
 }

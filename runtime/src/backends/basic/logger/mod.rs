@@ -4,10 +4,7 @@ use crate::abs::{
     backend::*, AssertKind, BinaryOp, BranchingMetadata, CastKind, UnaryOp, ValueType, VariantIndex,
 };
 
-use super::{
-    operand::{Constant, DefaultOperandHandler, PlaceUsage},
-    Place, PlaceHandler,
-};
+use super::{OperandHandler, Place, PlaceHandler};
 
 use crate::utils::logging::log_info;
 
@@ -29,7 +26,7 @@ impl LoggerBackend {
 
 impl RuntimeBackend for LoggerBackend {
     type PlaceHandler<'a> = PlaceHandler where Self: 'a;
-    type OperandHandler<'a> = DefaultOperandHandler<'a, Place, ValueType> where Self: 'a;
+    type OperandHandler<'a> = OperandHandler<'a, ValueType> where Self: 'a;
     type AssignmentHandler<'a> = LoggerAssignmentHandler where Self: 'a;
     type BranchingHandler<'a> = LoggerBranchingHandler where Self: 'a;
     type FunctionHandler<'a> = LoggerFunctionHandler<'a> where Self: 'a;
@@ -42,7 +39,7 @@ impl RuntimeBackend for LoggerBackend {
     }
 
     fn operand(&mut self) -> Self::OperandHandler<'_> {
-        DefaultOperandHandler::new(Box::new(|ty| ty))
+        OperandHandler::new(Box::new(|ty| ty))
     }
 
     fn assign_to(&mut self, dest: Place) -> Self::AssignmentHandler<'_> {
@@ -360,7 +357,7 @@ impl CallManager {
         let last_called = self
             .last_called
             .take()
-            .unwrap_or(Operand::Const(Constant::Func(u64::MAX)));
+            .unwrap_or(Operand::Const(crate::abs::Constant::Func(u64::MAX)));
         self.stack.push(CallInfo { func: last_called });
         self.stack.last().unwrap()
     }
@@ -378,6 +375,7 @@ impl CallManager {
 
 impl Display for Operand {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        use crate::abs::PlaceUsage;
         match self {
             Operand::Place(place, usage) => match usage {
                 PlaceUsage::Copy => write!(f, "C({place})"),
