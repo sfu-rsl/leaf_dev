@@ -309,6 +309,15 @@ pub fn after_call_func(destination: PlaceRef) {
     func_control(|h| h.after_call(take_back_place_ref(destination)))
 }
 
+#[cfg(place_addr)]
+pub fn set_arg_address(local_index: LocalIndex, raw_ptr: RawPointer) {
+    func_control(|h| h.metadata().set_arg_address(local_index, raw_ptr))
+}
+#[cfg(place_addr)]
+pub fn set_return_value_address(raw_ptr: RawPointer) {
+    func_control(|h| h.metadata().set_return_value_address(raw_ptr))
+}
+
 pub fn check_assert_bounds_check(
     cond: OperandRef,
     expected: bool,

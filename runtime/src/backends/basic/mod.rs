@@ -11,7 +11,7 @@ use std::{cell::RefCell, ops::DerefMut, rc::Rc};
 use crate::{
     abs::{
         self, backend::*, AssertKind, BasicBlockIndex, BranchingMetadata, CastKind, IntType, Local,
-        UnaryOp, VariantIndex,
+        LocalIndex, RawPointer, UnaryOp, VariantIndex,
     },
     solvers::z3::Z3Solver,
     trace::ImmediateTraceManager,
@@ -45,7 +45,7 @@ type TypeManager =
 type Place = place::PlaceWithAddress;
 #[cfg(not(place_addr))]
 type Place = crate::abs::Place;
-type Projection<L = Local> = crate::abs::Projection<L>;
+type Projection<L> = crate::abs::Projection<L>;
 #[cfg(place_addr)]
 type PlaceHandler = place::BasicPlaceHandler;
 #[cfg(not(place_addr))]
@@ -552,9 +552,10 @@ impl<'a> BasicFunctionHandler<'a> {
     }
 }
 
-impl FunctionHandler for BasicFunctionHandler<'_> {
+impl<'a> FunctionHandler for BasicFunctionHandler<'a> {
     type Place = Place;
     type Operand = Operand;
+    type MetadataHandler = BasicFunctionMetadataHandler<'a>;
 
     fn before_call(self, func: Self::Operand, args: impl Iterator<Item = Self::Operand>) {
         // we don't know whether func will be internal or external
@@ -562,8 +563,10 @@ impl FunctionHandler for BasicFunctionHandler<'_> {
             Some(func) => func,
             None => unimplemented!("handle when func may be a non-const function pointer"),
         };
-        self.call_stack_manager
-            .prepare_for_call(func_val, args.collect());
+        let args = args
+            .map(|a| get_operand_value(self.call_stack_manager.top(), a))
+            .collect();
+        self.call_stack_manager.prepare_for_call(func_val, args);
     }
 
     fn enter(self, func: Self::Operand) {
@@ -586,6 +589,30 @@ impl FunctionHandler for BasicFunctionHandler<'_> {
 
     fn after_call(self, result_dest: Self::Place) {
         self.call_stack_manager.finalize_call(result_dest);
+    }
+
+    fn metadata(self) -> Self::MetadataHandler {
+        BasicFunctionMetadataHandler {
+            call_stack_manager: self.call_stack_manager,
+        }
+    }
+}
+
+pub(crate) struct BasicFunctionMetadataHandler<'a> {
+    call_stack_manager: &'a mut dyn CallStackManager,
+}
+
+impl BasicFunctionMetadataHandler<'_> {
+    #[cfg(place_addr)]
+    pub(crate) fn set_return_value_address(&mut self, addr: RawPointer) {
+        self.call_stack_manager
+            .set_local_address(Local::ReturnValue, addr)
+    }
+
+    #[cfg(place_addr)]
+    pub(crate) fn set_arg_address(&mut self, index: LocalIndex, addr: RawPointer) {
+        self.call_stack_manager
+            .set_local_address(Local::Argument(index), addr)
     }
 }
 
@@ -640,10 +667,13 @@ enum EntranceKind {
 trait CallStackManager {
     fn notify_enter(&mut self, kind: EntranceKind);
 
-    fn prepare_for_call(&mut self, func: ValueRef, args: Vec<Operand>);
+    fn prepare_for_call(&mut self, func: ValueRef, args: Vec<ValueRef>);
     fn finalize_call(&mut self, result_dest: Place);
 
     fn pop_stack_frame(&mut self);
 
     fn top(&mut self) -> &mut dyn VariablesState;
+
+    #[cfg(place_addr)]
+    fn set_local_address(&mut self, local: Local, addr: RawPointer);
 }

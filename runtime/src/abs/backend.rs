@@ -206,6 +206,7 @@ pub(crate) trait BranchTakingHandler<T> {
 pub(crate) trait FunctionHandler {
     type Place;
     type Operand;
+    type MetadataHandler;
 
     fn before_call(self, func: Self::Operand, args: impl Iterator<Item = Self::Operand>);
 
@@ -217,6 +218,8 @@ pub(crate) trait FunctionHandler {
     fn ret(self);
 
     fn after_call(self, result_dest: Self::Place);
+
+    fn metadata(self) -> Self::MetadataHandler;
 }
 
 /// Keeps track of all the compounding constraints in a single trace

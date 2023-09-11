@@ -302,6 +302,7 @@ pub(crate) struct LoggerFunctionHandler<'a> {
 impl FunctionHandler for LoggerFunctionHandler<'_> {
     type Place = Place;
     type Operand = Operand;
+    type MetadataHandler = ();
 
     fn before_call(self, func: Self::Operand, args: impl Iterator<Item = Self::Operand>) {
         log_info!("Just before call {}({})", func, comma_separated(args));
@@ -330,6 +331,8 @@ impl FunctionHandler for LoggerFunctionHandler<'_> {
             result_dest
         );
     }
+
+    fn metadata(self) -> Self::MetadataHandler {}
 }
 
 struct CallInfo {

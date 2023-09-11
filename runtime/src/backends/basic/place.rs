@@ -12,6 +12,10 @@ use crate::abs::{
 pub(crate) struct LocalWithAddress(pub(crate) Local, RawPointer);
 
 impl LocalWithAddress {
+    pub(crate) fn new(local: Local, addr: Option<RawPointer>) -> Self {
+        Self(local, addr.unwrap_or(NONE_ADDRESS))
+    }
+
     pub(crate) fn address(&self) -> Option<RawPointer> {
         if_not_none(&self.1)
     }
@@ -58,7 +62,12 @@ impl From<Place<LocalWithAddress>> for PlaceWithAddress {
 
 impl From<Local> for PlaceWithAddress {
     fn from(value: Local) -> Self {
-        Self::from(Place::from(LocalWithAddress(value, NONE_ADDRESS)))
+        Self::from(LocalWithAddress(value, NONE_ADDRESS))
+    }
+}
+impl From<LocalWithAddress> for PlaceWithAddress {
+    fn from(value: LocalWithAddress) -> Self {
+        Self::from(Place::from(value))
     }
 }
 

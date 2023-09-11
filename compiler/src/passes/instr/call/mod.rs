@@ -431,6 +431,19 @@ mod implementation {
             )
         }
     }
+    impl<'tcx, C> RuntimeCallAdder<C>
+    where
+        C: BodyLocalManager<'tcx> + TyContextProvider<'tcx> + PriItemsProvider<'tcx>,
+    {
+        fn make_ptr_to_place(
+            &mut self,
+            place: &Place<'tcx>,
+            place_ty: Ty<'tcx>,
+        ) -> ([Statement<'tcx>; 2], Local) {
+            let ptr_ty = self.context.pri_types().raw_ptr;
+            ptr_to_place(self.tcx(), &mut self.context, place, place_ty, ptr_ty)
+        }
+    }
 
     impl<'tcx, C> BlockInserter<'tcx> for RuntimeCallAdder<C>
     where
@@ -511,17 +524,16 @@ mod implementation {
         }
 
         fn reference_place_local(&mut self, local: Local) -> BlocksAndResult<'tcx> {
-            let func_name = if local == mir::RETURN_PLACE {
-                stringify!(pri::ref_place_return_value)
-            } else if local.as_usize() <= self.context.body().arg_count {
-                stringify!(pri::ref_place_argument)
-            } else {
-                stringify!(pri::ref_place_local)
+            let kind = self.body().local_kind(local);
+            use mir::LocalKind::*;
+            let func_name = match kind {
+                Temp => stringify!(pri::ref_place_local),
+                Arg => stringify!(pri::ref_place_argument),
+                ReturnPointer => stringify!(pri::ref_place_return_value),
             };
-            let args = if local == mir::RETURN_PLACE {
-                vec![]
-            } else {
-                vec![operand::const_from_uint(self.context.tcx(), local.as_u32())]
+            let args = match kind {
+                ReturnPointer => vec![],
+                _ => vec![operand::const_from_uint(self.context.tcx(), local.as_u32())],
             };
 
             self.make_bb_for_place_ref_call(func_name, args).into()
@@ -606,7 +618,7 @@ mod implementation {
             place: &Place<'tcx>,
             place_ty: Ty<'tcx>,
         ) -> BasicBlockData<'tcx> {
-            let (statements, addr_local) = self.add_and_set_local_for_ptr(place, place_ty);
+            let (stmts, addr_local) = self.make_ptr_to_place(place, place_ty);
 
             let mut block = self.make_bb_for_call(
                 stringify!(pri::set_place_address),
@@ -616,7 +628,7 @@ mod implementation {
                 ],
             );
 
-            block.statements.extend(statements);
+            block.statements.extend(stmts);
             block
         }
 
@@ -657,28 +669,6 @@ mod implementation {
                 func_name,
                 [vec![operand::copy_for_local(place_ref)], additional_args].concat(),
             ))
-        }
-
-        fn add_and_set_local_for_ptr(
-            &mut self,
-            place: &Place<'tcx>,
-            place_ty: Ty<'tcx>,
-        ) -> ([Statement<'tcx>; 2], Local) {
-            let tcx = self.tcx();
-            let ptr_local = self.context.add_local(tcx.mk_imm_ptr(place_ty));
-            let ptr_place = Place::from(ptr_local);
-            let ptr_assignment = assignment::create(
-                ptr_place,
-                mir::Rvalue::AddressOf(rustc_ast::Mutability::Not, place.clone()),
-            );
-            let pri_ptr_ty = self.context.pri_types().raw_ptr;
-            let cast_local = self.context.add_local(pri_ptr_ty);
-            let cast_assignment = assignment::create(
-                cast_local.into(),
-                rvalue::cast_expose_addr(Operand::Move(ptr_place), pri_ptr_ty),
-            );
-
-            ([ptr_assignment, cast_assignment], cast_local)
         }
     }
 
@@ -1558,14 +1548,20 @@ mod implementation {
         }
 
         fn enter_func(&mut self) {
+            let mut blocks = vec![];
+
+            if cfg!(place_addr) {
+                blocks.extend(self.make_bb_for_func_set_addresses());
+            }
+
             let func = self.current_func();
             let func_ref = self.reference_operand(&func);
 
-            let block = self.make_bb_for_call(
+            blocks.push(self.make_bb_for_call(
                 stringify!(pri::enter_func),
                 vec![operand::copy_for_local(func_ref.into())],
-            );
-            self.insert_blocks([block]);
+            ));
+            self.insert_blocks(blocks);
         }
 
         fn return_from_func(&mut self) {
@@ -1587,6 +1583,49 @@ mod implementation {
                 "Inserting after_call before a block is not expected."
             );
             self.insert_blocks(blocks);
+        }
+    }
+
+    impl<'tcx, C> RuntimeCallAdder<C>
+    where
+        Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
+        C: ForFunctionCalling<'tcx>,
+    {
+        fn make_bb_for_func_set_addresses(&mut self) -> Vec<BasicBlockData<'tcx>> {
+            let tcx = self.tcx();
+
+            let mut blocks = vec![];
+
+            let make_bb = |this: &mut Self, place, func_name, additional_args| {
+                let (stmts, addr_local) =
+                    this.make_ptr_to_place(&place, place.ty(this.body(), tcx).ty);
+                let args = [additional_args, vec![operand::move_for_local(addr_local)]].concat();
+                let mut block = this.make_bb_for_call(func_name, args);
+                block.statements.extend(stmts);
+                block
+            };
+
+            blocks.extend(self.body().args_iter().map(|local| {
+                make_bb(
+                    self,
+                    Place::from(local),
+                    stringify!(pri::set_arg_address),
+                    vec![operand::const_from_uint(tcx, local.as_u32())],
+                )
+            }));
+
+            let ret_ty = self.body().return_ty();
+            if !ret_ty.is_unit() {
+                let block = make_bb(
+                    self,
+                    Place::return_place(),
+                    stringify!(pri::set_return_value_address),
+                    vec![],
+                );
+                blocks.push(block);
+            }
+
+            blocks
         }
     }
 
@@ -2117,6 +2156,28 @@ mod implementation {
                 None,
             )));
             (bit_rep_local, block)
+        }
+
+        pub(super) fn ptr_to_place<'tcx>(
+            tcx: TyCtxt<'tcx>,
+            local_manager: &mut impl BodyLocalManager<'tcx>,
+            place: &Place<'tcx>,
+            place_ty: Ty<'tcx>,
+            ptr_ty: Ty<'tcx>,
+        ) -> ([Statement<'tcx>; 2], Local) {
+            let ptr_local = local_manager.add_local(tcx.mk_imm_ptr(place_ty));
+            let ptr_place = Place::from(ptr_local);
+            let ptr_assignment = assignment::create(
+                ptr_place,
+                mir::Rvalue::AddressOf(rustc_ast::Mutability::Not, place.clone()),
+            );
+            let cast_local = local_manager.add_local(ptr_ty);
+            let cast_assignment = assignment::create(
+                cast_local.into(),
+                rvalue::cast_expose_addr(Operand::Move(ptr_place), ptr_ty),
+            );
+
+            ([ptr_assignment, cast_assignment], cast_local)
         }
 
         pub(super) fn convert_mir_binop_to_pri(op: &mir::BinOp) -> runtime::abs::BinaryOp {
