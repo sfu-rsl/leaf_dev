@@ -5,7 +5,7 @@ use crate::abs::{
         implementation::{DefaultPlaceHandler, DefaultPlaceProjectionHandler},
         PlaceHandler, PlaceProjectionHandler,
     },
-    Local, Place, RawPointer, ValueType,
+    Local, Place, RawPointer, TypeSize, ValueType,
 };
 
 #[derive(Debug, Clone)]
@@ -42,6 +42,30 @@ pub(crate) struct PlaceWithAddress {
     pub place: Place<LocalWithAddress>,
     proj_addresses: Vec<RawPointer>,
     ty: Option<ValueType>,
+    size: Option<TypeSize>,
+}
+
+impl PlaceWithAddress {
+    pub(crate) fn address(&self) -> Option<RawPointer> {
+        if self.has_projection() {
+            debug_assert_eq!(self.proj_addresses.len(), self.projections().len());
+            if_not_none(self.proj_addresses.last().unwrap())
+        } else {
+            self.local().address()
+        }
+    }
+
+    pub(crate) fn proj_addresses(&self) -> impl Iterator<Item = Option<RawPointer>> + '_ {
+        self.proj_addresses.iter().map(if_not_none)
+    }
+
+    pub(crate) fn ty(&self) -> Option<&ValueType> {
+        self.ty.as_ref()
+    }
+
+    pub(crate) fn size(&self) -> Option<&TypeSize> {
+        self.size.as_ref()
+    }
 }
 
 impl From<Local> for LocalWithAddress {
@@ -56,6 +80,7 @@ impl From<Place<LocalWithAddress>> for PlaceWithAddress {
             place: value,
             proj_addresses: Vec::with_capacity(0),
             ty: None,
+            size: None,
         }
     }
 }
@@ -77,6 +102,12 @@ impl AsRef<Local> for LocalWithAddress {
     }
 }
 
+impl AsMut<PlaceWithAddress> for PlaceWithAddress {
+    fn as_mut(&mut self) -> &mut PlaceWithAddress {
+        self
+    }
+}
+
 impl TryFrom<PlaceWithAddress> for LocalWithAddress {
     type Error = PlaceWithAddress;
 
@@ -86,25 +117,6 @@ impl TryFrom<PlaceWithAddress> for LocalWithAddress {
         } else {
             Err(place)
         }
-    }
-}
-
-impl PlaceWithAddress {
-    pub(crate) fn address(&self) -> Option<RawPointer> {
-        if self.has_projection() {
-            debug_assert_eq!(self.proj_addresses.len(), self.projections().len());
-            if_not_none(self.proj_addresses.last().unwrap())
-        } else {
-            self.local().address()
-        }
-    }
-
-    pub(crate) fn proj_addresses(&self) -> impl Iterator<Item = Option<RawPointer>> + '_ {
-        self.proj_addresses.iter().map(if_not_none)
-    }
-
-    pub(crate) fn ty(&self) -> Option<&ValueType> {
-        self.ty.as_ref()
     }
 }
 
@@ -189,6 +201,10 @@ impl BasicPlaceMetadataHandler<'_> {
 
     pub(crate) fn set_type(&mut self, ty: ValueType) {
         self.0.ty = Some(ty);
+    }
+
+    pub(crate) fn set_size(self, byte_size: crate::abs::TypeSize) {
+        self.0.size = Some(byte_size);
     }
 }
 

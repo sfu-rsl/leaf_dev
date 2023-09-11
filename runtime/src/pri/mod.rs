@@ -3,7 +3,7 @@ mod utils;
 
 use crate::abs::{
     backend::*, AssertKind, BasicBlockIndex, BinaryOp, BranchingMetadata, CastKind, FieldIndex,
-    FloatType, IntType, Local, LocalIndex, RawPointer, UnaryOp, ValueType, VariantIndex,
+    FloatType, IntType, Local, LocalIndex, RawPointer, TypeSize, UnaryOp, ValueType, VariantIndex,
 };
 
 use self::instance::*;
@@ -88,6 +88,10 @@ pub fn set_place_type_float(place: PlaceRef, e_bits: u64, s_bits: u64) {
 #[cfg(place_addr)]
 fn set_place_type(place: PlaceRef, ty: ValueType) {
     mut_place_ref(place, |p, place| p.metadata(place).set_type(ty));
+}
+#[cfg(place_addr)]
+pub fn set_place_size(place: PlaceRef, byte_size: TypeSize) {
+    mut_place_ref(place, |h, p| h.metadata(p).set_size(byte_size))
 }
 
 pub fn ref_operand_copy(place: PlaceRef) -> OperandRef {

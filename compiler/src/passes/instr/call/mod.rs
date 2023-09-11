@@ -691,24 +691,47 @@ mod implementation {
     {
         fn internal_reference_operand(&mut self, operand: &Operand<'tcx>) -> BlocksAndResult<'tcx> {
             match operand {
-                Operand::Copy(place) | Operand::Move(place) => {
-                    let BlocksAndResult(additional_blocks, place_ref) =
-                        self.internal_reference_place(place);
-
-                    let func_name = if let Operand::Copy(_) = operand {
-                        stringify!(pri::ref_operand_copy)
-                    } else {
-                        stringify!(pri::ref_operand_move)
-                    };
-
-                    BlocksAndResult::from(self.make_bb_for_operand_ref_call(
-                        func_name,
-                        vec![operand::copy_for_local(place_ref)],
-                    ))
-                    .prepend(additional_blocks)
-                }
+                Operand::Copy(place) => self.internal_reference_place_operand(place, true),
+                Operand::Move(place) => self.internal_reference_place_operand(place, false),
                 Operand::Constant(constant) => self.internal_reference_const_operand(constant),
             }
+        }
+
+        fn internal_reference_place_operand(
+            &mut self,
+            place: &Place<'tcx>,
+            is_copy: bool,
+        ) -> BlocksAndResult<'tcx> {
+            let BlocksAndResult(mut additional_blocks, place_ref) =
+                self.internal_reference_place(place);
+
+            if cfg!(place_addr) {
+                let tcx = self.tcx();
+                let ty = place.ty(&self.context, tcx).ty;
+                if ty.is_adt() || ty.is_array() {
+                    additional_blocks.push(self.make_bb_for_call(
+                        stringify!(pri::set_place_size),
+                        vec![
+                            operand::copy_for_local(place_ref),
+                            operand::const_from_uint(tcx, ty::size_of(tcx, ty).bytes()),
+                        ],
+                    ));
+                }
+            }
+
+            let func_name = if is_copy {
+                stringify!(pri::ref_operand_copy)
+            } else {
+                stringify!(pri::ref_operand_move)
+            };
+
+            BlocksAndResult::from(
+                self.make_bb_for_operand_ref_call(
+                    func_name,
+                    vec![operand::copy_for_local(place_ref)],
+                ),
+            )
+            .prepend(additional_blocks)
         }
 
         fn internal_reference_const_operand(
