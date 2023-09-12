@@ -34,6 +34,7 @@ where
         match Self::make_mut(host) {
             ConcreteValue::Adt(AdtValue { fields, .. }) => Ok(MutPlaceValue::Normal(
                 fields[field as usize]
+                    .value
                     .as_mut()
                     .unwrap_or_else(|| panic!("Field should not be moved before. {field}")),
             )),

@@ -66,9 +66,12 @@ impl Display for AdtValue {
 }
 impl AdtValue {
     fn fmt_fields(&self, f: &mut Formatter<'_>) -> Result {
-        for (index, value) in self.fields.iter().enumerate() {
-            write!(f, "{}: ", index)?;
-            match value {
+        for (index, field) in self.fields.iter().enumerate() {
+            write!(f, "{}", index)?;
+            #[cfg(place_addr)]
+            write!(f, "@+{}", field.offset)?;
+            write!(f, ": ")?;
+            match &field.value {
                 Some(value) => write!(f, "{}", value)?,
                 None => write!(f, "_")?,
             };

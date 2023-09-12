@@ -268,8 +268,8 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
             }
             Value::Concrete(ConcreteValue::Adt(adt)) => {
                 for field in adt.fields.iter() {
-                    if let Some(field) = field {
-                        self.set_addr(todo!(), field.clone());
+                    if let Some(value) = &field.value {
+                        self.set_addr(addr + field.offset, value.clone());
                     }
                 }
             }

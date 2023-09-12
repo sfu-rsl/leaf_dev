@@ -483,14 +483,17 @@ pub(crate) enum AdtKind {
 #[derive(Clone, Debug)]
 pub(crate) struct AdtValue {
     pub kind: AdtKind,
-    pub fields: Vec<Option<ValueRef>>,
+    pub fields: Vec<AdtField>,
 }
 impl AdtValue {
     /// creates an ADT that is the result of a checked operation that overflowed
     fn checked_overflow() -> Self {
         Self {
             kind: AdtKind::Struct,
-            fields: vec![None, Some(ConstValue::Bool(true).to_value_ref())],
+            fields: vec![
+                Self::field_for_checked(None),
+                Self::field_for_checked(Some(true.into())),
+            ],
         }
     }
 
@@ -499,17 +502,31 @@ impl AdtValue {
         Self {
             kind: AdtKind::Struct,
             fields: vec![
-                Some(
-                    ConstValue::Int {
-                        bit_rep: result,
-                        ty,
-                    }
-                    .to_value_ref(),
-                ),
-                Some(ConstValue::Bool(false).to_value_ref()),
+                Self::field_for_checked(Some(ConstValue::Int {
+                    bit_rep: result,
+                    ty,
+                })),
+                Self::field_for_checked(Some(false.into())),
             ],
         }
     }
+
+    fn field_for_checked(value: Option<ConstValue>) -> AdtField {
+        AdtField {
+            value: value.map(ConstValue::to_value_ref),
+            #[cfg(place_addr)]
+            /* NOTE: As these methods are only used for concrete calculations,
+             * we currently skip setting the offset. */
+            offset: PointerOffset::MAX,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct AdtField {
+    pub value: Option<ValueRef>,
+    #[cfg(place_addr)]
+    pub offset: PointerOffset,
 }
 
 #[derive(Clone, Debug)]

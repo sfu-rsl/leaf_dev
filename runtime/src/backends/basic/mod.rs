@@ -327,7 +327,11 @@ impl<EB: OperationalExprBuilder> BasicAssignmentHandler<'_, EB> {
             kind,
             fields: fields
                 .map(|f| self.get_operand_value(f))
-                .map(Some)
+                .map(|v| AdtField {
+                    value: Some(v),
+                    #[cfg(place_addr)]
+                    offset: todo!(),
+                })
                 .collect(),
         }));
         self.set_value(value)

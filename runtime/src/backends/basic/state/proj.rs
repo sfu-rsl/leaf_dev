@@ -40,6 +40,7 @@ where
     fn field<'a>(&mut self, host: Self::HostRef<'a>, field: FieldIndex) -> Self::Proj<'a> {
         match host.as_ref() {
             ConcreteValue::Adt(AdtValue { fields, .. }) => Ok(fields[field as usize]
+                .value
                 .as_ref()
                 .unwrap_or_else(|| panic!("Field should not be moved before. {field}"))
                 .clone()),

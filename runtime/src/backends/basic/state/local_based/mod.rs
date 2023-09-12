@@ -241,6 +241,7 @@ impl<SP: SymbolicProjector> StackedLocalIndexVariablesState<SP> {
                             kind: AdtKind::Struct,
                             ref mut fields,
                         })) => fields[field as usize]
+                            .value
                             .take()
                             .unwrap_or_else(|| panic!("Field should not be moved before. {field}")),
                         _ => unreachable!("Field projection should be done only on ADTs."),
