@@ -9,7 +9,7 @@
 #![feature(fn_traits)]
 #![feature(result_option_inspect)]
 #![feature(const_float_bits_conv)]
-#![feature(entry_insert)]
+#![feature(btree_cursors)]
 #![feature(strict_provenance)]
 
 pub mod abs;

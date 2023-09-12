@@ -63,8 +63,8 @@ impl PlaceWithAddress {
         self.ty.as_ref()
     }
 
-    pub(crate) fn size(&self) -> Option<&TypeSize> {
-        self.size.as_ref()
+    pub(crate) fn size(&self) -> Option<TypeSize> {
+        self.size.as_ref().copied()
     }
 }
 

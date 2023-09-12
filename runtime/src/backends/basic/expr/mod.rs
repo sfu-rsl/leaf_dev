@@ -10,7 +10,8 @@ use std::{assert_matches::assert_matches, num::Wrapping, ops::Deref, rc::Rc};
 use derive_more as dm;
 
 use crate::abs::{
-    BinaryOp, FieldIndex, FloatType, IntType, RawPointer, UnaryOp, ValueType, VariantIndex,
+    BinaryOp, FieldIndex, FloatType, IntType, PointerOffset, RawPointer, UnaryOp, ValueType,
+    VariantIndex,
 };
 
 use crate::utils::meta::define_reversible_pair;
@@ -27,7 +28,7 @@ pub(crate) type SymVarId = u32;
 
 #[derive(Clone, Debug, dm::From)]
 pub(crate) enum Value {
-    #[from(types(ConstValue))]
+    #[from(types(ConstValue, UnevalValue))]
     Concrete(ConcreteValue),
     #[from(types(Expr, ProjExpr))]
     Symbolic(SymValue),
@@ -41,10 +42,15 @@ impl Value {
 
 #[derive(Clone, Debug, dm::From)]
 pub(crate) enum ConcreteValue {
+    #[from]
     Const(ConstValue),
+    #[from]
     Adt(AdtValue),
+    #[from]
     Array(ArrayValue),
+    #[from]
     Ref(RefValue),
+    #[from(types(RawConcreteValue, SymOwnerValue))]
     Unevaluated(UnevalValue),
 }
 
@@ -543,10 +549,11 @@ pub(crate) enum RefValue {
     Mut(FullPlace),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, dm::From)]
 pub(crate) enum UnevalValue {
     Some,
     Lazy(RawConcreteValue),
+    SymbolicOwner(SymOwnerValue),
 }
 
 #[derive(Clone, Debug)]
@@ -595,6 +602,12 @@ impl RawConcreteValue {
         }
         result
     }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct SymOwnerValue {
+    pub(crate) base: RawPointer,
+    pub(crate) sym_values: Vec<(PointerOffset, SymValueRef)>,
 }
 
 #[derive(Clone, Debug, dm::From)]
@@ -800,7 +813,7 @@ define_reversible_pair!(
 #[allow(clippy::wrong_self_convention)]
 mod convert {
     use super::*;
-    use crate::backends::basic::operand;
+    use crate::abs;
 
     impl Value {
         #[inline]
@@ -823,10 +836,10 @@ mod convert {
             Into::<Value>::into(self).to_value_ref()
         }
     }
-    impl From<operand::Constant> for ConcreteValue {
+    impl From<abs::Constant> for ConcreteValue {
         #[inline]
-        fn from(val: operand::Constant) -> Self {
-            use operand::Constant::*;
+        fn from(val: abs::Constant) -> Self {
+            use abs::Constant::*;
             match val {
                 ByteStr(bytes) => Self::Ref(RefValue::Immut(
                     Self::Array(ArrayValue {
@@ -858,13 +871,6 @@ mod convert {
         }
     }
 
-    impl ConstValue {
-        #[inline]
-        pub(crate) fn to_value_ref(self) -> ValueRef {
-            Into::<ConcreteValue>::into(self).to_value_ref()
-        }
-    }
-
     macro_rules! impl_from_uint {
         ($($ty:ty),*) => {
             $(
@@ -885,12 +891,20 @@ mod convert {
 
     impl_from_uint!(u8, u16, u32, u64, u128, usize);
 
-    impl UnevalValue {
-        #[inline]
-        pub(crate) fn to_value_ref(self) -> ValueRef {
-            Into::<ConcreteValue>::into(self).to_value_ref()
-        }
+    macro_rules! impl_conc_to_value_ref {
+        ($($ty: ty),*) => {
+            $(
+                impl $ty {
+                    #[inline]
+                    pub(crate) fn to_value_ref(self) -> ValueRef {
+                        Into::<ConcreteValue>::into(self).to_value_ref()
+                    }
+                }
+            )*
+        };
     }
+
+    impl_conc_to_value_ref!(ConstValue, UnevalValue, RawConcreteValue, SymOwnerValue);
 
     impl SymValue {
         #[inline]
