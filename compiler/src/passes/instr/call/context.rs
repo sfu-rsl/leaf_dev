@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use rustc_middle::{
     mir::{self, BasicBlock, BasicBlockData, HasLocalDecls, Local, LocalDecls},
-    ty::TyCtxt,
+    ty::{Ty, TyCtxt},
 };
 
 use crate::{
@@ -47,8 +47,9 @@ pub(crate) trait InsertionLocationProvider: BlockIndexProvider {
     fn insertion_loc(&self) -> InsertionLocation;
 }
 
-pub(crate) trait DestinationReferenceProvider {
+pub(crate) trait DestinationProvider<'tcx> {
     fn dest_ref(&self) -> PlaceRef;
+    fn dest_ty(&self) -> Ty<'tcx>;
 }
 
 pub(crate) trait CastOperandProvider {
@@ -257,14 +258,19 @@ impl<B> InsertionLocationProvider for AtLocationContext<'_, B> {
     }
 }
 
-pub(crate) struct AssignmentContext<'b, B> {
+pub(crate) struct AssignmentContext<'b, 'tcx, B> {
     pub(super) base: &'b mut B,
     pub(super) dest_ref: PlaceRef,
+    pub(super) dest_ty: Ty<'tcx>,
 }
 
-impl<B> DestinationReferenceProvider for AssignmentContext<'_, B> {
+impl<'tcx, B> DestinationProvider<'tcx> for AssignmentContext<'_, 'tcx, B> {
     fn dest_ref(&self) -> PlaceRef {
         self.dest_ref
+    }
+
+    fn dest_ty(&self) -> Ty<'tcx> {
+        self.dest_ty
     }
 }
 
@@ -427,9 +433,10 @@ make_impl_macro! {
 
 make_impl_macro! {
     impl_dest_ref_provider,
-    DestinationReferenceProvider,
+    DestinationProvider<'tcx>,
     self,
     fn dest_ref(&self) -> PlaceRef;
+    fn dest_ty(&self) -> Ty<'tcx>;
 }
 
 make_impl_macro! {
@@ -520,6 +527,6 @@ impl_traits!(all for TransparentContext);
 impl_traits!(all - [ impl_body_provider impl_has_local_decls ] for InBodyContext<'tcxb, 'bd>);
 impl_traits!(all - [ impl_in_entry_function ] for EntryFunctionMarkerContext);
 impl_traits!(all - [ impl_location_provider impl_insertion_location_provider] for AtLocationContext);
-impl_traits!(all - [ impl_dest_ref_provider ] for AssignmentContext);
+impl_traits!(all - [ impl_dest_ref_provider ] for AssignmentContext<'tcxd>);
 impl_traits!(all - [ impl_cast_operand_provider ] for CastAssignmentContext);
 impl_traits!(all - [ impl_discr_info_provider ] for BranchingContext<'tcxd>);

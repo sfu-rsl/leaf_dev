@@ -3,7 +3,8 @@ mod utils;
 
 use crate::abs::{
     backend::*, AssertKind, BasicBlockIndex, BinaryOp, BranchingMetadata, CastKind, FieldIndex,
-    FloatType, IntType, Local, LocalIndex, RawPointer, TypeSize, UnaryOp, ValueType, VariantIndex,
+    FloatType, IntType, Local, LocalIndex, PointerOffset, RawPointer, TypeSize, UnaryOp, ValueType,
+    VariantIndex,
 };
 
 use self::instance::*;
@@ -232,33 +233,86 @@ pub fn assign_discriminant(dest: PlaceRef, place: PlaceRef) {
 }
 
 // We use slice to simplify working with the interface.
-pub fn assign_aggregate_array(dest: PlaceRef, items: &[OperandRef]) {
+pub fn assign_aggregate_array(
+    dest: PlaceRef,
+    items: &[OperandRef],
+    #[cfg(place_addr)] align: PointerOffset,
+) {
     assign_to(dest, |h| {
         h.array_from(items.iter().map(|o| take_back_operand_ref(*o)))
     })
 }
-pub fn assign_aggregate_tuple(dest: PlaceRef, fields: &[OperandRef]) {
+pub fn assign_aggregate_tuple(
+    dest: PlaceRef,
+    fields: &[OperandRef],
+    #[cfg(place_addr)] offsets: &[PointerOffset],
+) {
     assign_to(dest, |h| {
-        h.tuple_from(fields.iter().map(|o| take_back_operand_ref(*o)))
+        let fields = take_fields(
+            fields,
+            #[cfg(place_addr)]
+            offsets,
+        );
+        h.tuple_from(fields.into_iter())
     })
 }
-pub fn assign_aggregate_struct(dest: PlaceRef, fields: &[OperandRef]) {
+pub fn assign_aggregate_struct(
+    dest: PlaceRef,
+    fields: &[OperandRef],
+    #[cfg(place_addr)] offsets: &[PointerOffset],
+) {
     assign_to(dest, |h| {
-        h.adt_from(fields.iter().map(|o| take_back_operand_ref(*o)), None)
+        let fields = take_fields(
+            fields,
+            #[cfg(place_addr)]
+            offsets,
+        );
+        h.adt_from(fields.into_iter(), None)
     })
 }
-pub fn assign_aggregate_enum(dest: PlaceRef, fields: &[OperandRef], variant: VariantIndex) {
+pub fn assign_aggregate_enum(
+    dest: PlaceRef,
+    fields: &[OperandRef],
+    #[cfg(place_addr)] offsets: &[PointerOffset],
+    variant: VariantIndex,
+) {
     assign_to(dest, |h| {
-        h.adt_from(
-            fields.iter().map(|o| take_back_operand_ref(*o)),
-            Some(variant),
+        let fields = take_fields(
+            fields,
+            #[cfg(place_addr)]
+            offsets,
+        );
+        h.adt_from(fields.into_iter(), Some(variant))
+    })
+}
+pub fn assign_aggregate_union(
+    dest: PlaceRef,
+    active_field: FieldIndex,
+    value: OperandRef,
+    #[cfg(place_addr)] offset: PointerOffset,
+) {
+    assign_to(dest, |h| {
+        let field = take_fields(
+            &[value],
+            #[cfg(place_addr)]
+            &[offset],
         )
+        .pop()
+        .unwrap();
+        h.union_from(active_field, field)
     })
 }
-pub fn assign_aggregate_union(dest: PlaceRef, active_field: FieldIndex, value: OperandRef) {
-    assign_to(dest, |h| {
-        h.union_from(active_field, take_back_operand_ref(value))
-    })
+fn take_fields(
+    fields: &[OperandRef],
+    #[cfg(place_addr)] offsets: &[PointerOffset],
+) -> Vec<FieldImpl> {
+    let fields = fields.iter().map(|o| take_back_operand_ref(*o));
+    #[cfg(place_addr)]
+    let fields = {
+        debug_assert_eq!(fields.len(), offsets.len());
+        fields.zip(offsets.iter().cloned())
+    };
+    fields.map(Into::<FieldImpl>::into).collect()
 }
 
 pub fn take_branch_true(info: BranchingInfo) {

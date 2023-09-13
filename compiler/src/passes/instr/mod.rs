@@ -140,18 +140,21 @@ impl VisitorFactory {
     ) -> impl RvalueVisitor<'tcx, ()> + 'b
     where
         C: ctxtreqs::ForPlaceRef<'tcx> + ctxtreqs::ForOperandRef<'tcx>,
+        'tcx: 'b,
     {
         let dest_ref = call_adder.reference_place(destination);
+        let dest_ty = destination.ty(call_adder, call_adder.tcx()).ty;
         LeafAssignmentVisitor {
-            call_adder: call_adder.assign(dest_ref),
+            call_adder: call_adder.assign(dest_ref, dest_ty),
         }
     }
 }
 
 macro_rules! make_general_visitor {
-    ($vis:vis $name:ident) => {
+    ($vis:vis $name:ident $({ $($field_name: ident : $field_ty: ty),* })?) => {
         $vis struct $name<C> {
             call_adder: RuntimeCallAdder<C>,
+            $($($field_name: $field_ty),*)?
         }
     };
 }
@@ -209,7 +212,10 @@ where
     fn visit_set_discriminant(&mut self, place: &Place<'tcx>, variant_index: &VariantIdx) {
         let destination = self.call_adder.reference_place(place);
         self.call_adder
-            .assign(destination)
+            .assign(
+                destination,
+                place.ty(&self.call_adder, self.call_adder.tcx()).ty,
+            )
             .its_discriminant_to(variant_index)
     }
 

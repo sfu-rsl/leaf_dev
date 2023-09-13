@@ -1,6 +1,6 @@
 /// This module contains the traits and implementations for adding calls to the
 /// PRI in MIR bodies.
-use std::vec;
+pub(super) mod context;
 
 use rustc_abi::FieldIdx;
 use rustc_middle::{
@@ -11,7 +11,7 @@ use rustc_middle::{
 };
 use rustc_target::abi::VariantIdx;
 
-pub(super) mod context;
+use std::vec;
 
 /*
  * Contexts and RuntimeCallAdder.
@@ -185,7 +185,9 @@ pub(crate) struct RuntimeCallAdder<C> {
 mod implementation {
     use std::assert_matches::debug_assert_matches;
 
-    use rustc_middle::mir::{self, BasicBlock, BasicBlockData, Terminator, UnevaluatedConst};
+    use rustc_middle::mir::{
+        self, BasicBlock, BasicBlockData, HasLocalDecls, Terminator, UnevaluatedConst,
+    };
     use rustc_middle::ty::TyKind;
     use rustc_span::def_id::DefId;
 
@@ -308,8 +310,16 @@ mod implementation {
             })
         }
 
-        pub fn assign(&mut self, dest_ref: PlaceRef) -> RuntimeCallAdder<AssignmentContext<C>> {
-            self.with_context(|base| AssignmentContext { base, dest_ref })
+        pub fn assign<'b, 'tcx>(
+            &'b mut self,
+            dest_ref: PlaceRef,
+            dest_ty: Ty<'tcx>,
+        ) -> RuntimeCallAdder<AssignmentContext<'_, 'tcx, C>> {
+            self.with_context(|base| AssignmentContext {
+                base,
+                dest_ref,
+                dest_ty,
+            })
         }
 
         pub fn branch<'tcx, 'b>(
@@ -373,6 +383,16 @@ mod implementation {
         delegate! {
             to self.context {
                 fn body(&self) -> &Body<'tcx>;
+            }
+        }
+    }
+    impl<'tcx, C> HasLocalDecls<'tcx> for RuntimeCallAdder<C>
+    where
+        C: HasLocalDecls<'tcx>,
+    {
+        delegate! {
+            to self.context {
+                fn local_decls(&self) -> &rustc_middle::mir::LocalDecls<'tcx>;
             }
         }
     }
@@ -961,7 +981,7 @@ mod implementation {
                 // FIXME: Duplicate code with `LeafStatementVisitor::visit_assign`.
                 let ref_local_ref = self.reference_place(&ref_local.into());
                 instr::LeafAssignmentVisitor::instrument_ref(
-                    &mut self.assign(ref_local_ref),
+                    &mut self.assign(ref_local_ref, ty),
                     &rustc_middle::mir::BorrowKind::Shared,
                     &nctfe_result_local.into(),
                 );
@@ -1161,15 +1181,11 @@ mod implementation {
         }
 
         fn by_aggregate_tuple(&mut self, fields: &[OperandRef]) {
-            self.add_bb_for_aggregate_assign_call(
-                stringify!(pri::assign_aggregate_tuple),
-                fields,
-                vec![],
-            )
+            self.add_bb_for_adt_assign_call(stringify!(pri::assign_aggregate_tuple), fields, vec![])
         }
 
         fn by_aggregate_struct(&mut self, fields: &[OperandRef]) {
-            self.add_bb_for_aggregate_assign_call(
+            self.add_bb_for_adt_assign_call(
                 stringify!(pri::assign_aggregate_struct),
                 fields,
                 vec![],
@@ -1177,7 +1193,7 @@ mod implementation {
         }
 
         fn by_aggregate_enum(&mut self, fields: &[OperandRef], variant: VariantIdx) {
-            self.add_bb_for_aggregate_assign_call(
+            self.add_bb_for_adt_assign_call(
                 stringify!(pri::assign_aggregate_enum),
                 fields,
                 vec![operand::const_from_uint(
@@ -1188,12 +1204,23 @@ mod implementation {
         }
 
         fn by_aggregate_union(&mut self, active_field: FieldIdx, value: OperandRef) {
-            self.add_bb_for_assign_call(
+            let mut args = vec![
+                operand::const_from_uint(self.context.tcx(), active_field.as_u32()),
+                operand::copy_for_local(value.into()),
+            ];
+            let mut additional_stmts = Vec::new();
+
+            if cfg!(place_addr) {
+                let (offset_local, offset_assign) =
+                    self.add_and_set_local_for_field_offset(self.context.dest_ty(), active_field);
+                args.push(operand::move_for_local(offset_local));
+                additional_stmts.push(offset_assign);
+            }
+
+            self.add_bb_for_assign_call_with_statements(
                 stringify!(pri::assign_aggregate_union),
-                vec![
-                    operand::const_from_uint(self.context.tcx(), active_field.as_u32()),
-                    operand::copy_for_local(value.into()),
-                ],
+                args,
+                additional_stmts,
             )
         }
 
@@ -1232,6 +1259,31 @@ mod implementation {
             )
         }
 
+        fn add_bb_for_adt_assign_call(
+            &mut self,
+            func_name: &str,
+            fields: &[OperandRef],
+            additional_args: Vec<Operand<'tcx>>,
+        ) {
+            let mut args = Vec::new();
+            let mut additional_stmts = Vec::new();
+
+            let (fields_local, fields_stmts) = self.make_slice_for_adt_elements(fields);
+            args.push(operand::move_for_local(fields_local));
+            additional_stmts.extend(fields_stmts);
+
+            if cfg!(place_addr) {
+                let (offsets_local, offsets_stmts) =
+                    self.make_slice_for_adt_field_offsets(self.context.dest_ty(), fields.len());
+                args.push(operand::move_for_local(offsets_local));
+                additional_stmts.extend(offsets_stmts);
+            }
+
+            args.extend(additional_args);
+
+            self.add_bb_for_assign_call_with_statements(func_name, args, additional_stmts)
+        }
+
         fn make_slice_for_adt_elements(
             &mut self,
             elements: &[OperandRef],
@@ -1247,6 +1299,39 @@ mod implementation {
                     .collect(),
             );
             (items_local, additional_stmts)
+        }
+
+        fn make_slice_for_adt_field_offsets(
+            &mut self,
+            adt_ty: Ty<'tcx>,
+            field_count: usize,
+        ) -> (Local, Vec<Statement<'tcx>>) {
+            let mut stmts = Vec::with_capacity(field_count);
+            let mut items = Vec::with_capacity(field_count);
+            for i in 0..field_count {
+                let (offset_local, offset_assign) =
+                    self.add_and_set_local_for_field_offset(adt_ty, i.into());
+                stmts.push(offset_assign);
+                items.push(operand::move_for_local(offset_local));
+            }
+            let item_ty = self.context.tcx().types.usize;
+            let (items_local, additional_stmts) =
+                prepare_operand_for_slice(self.context.tcx(), &mut self.context, item_ty, items);
+            stmts.extend(additional_stmts);
+            (items_local, stmts)
+        }
+
+        fn add_and_set_local_for_field_offset(
+            &mut self,
+            adt_ty: Ty<'tcx>,
+            field: FieldIdx,
+        ) -> (Local, Statement<'tcx>) {
+            let local = self.context.add_local(self.tcx().types.usize);
+            let offset_assign = assignment::create(
+                Place::from(local),
+                rvalue::offset_of(self.tcx(), adt_ty, field),
+            );
+            (local, offset_assign)
         }
 
         fn add_bb_for_assign_call(&mut self, func_name: &str, args: Vec<Operand<'tcx>>) {
@@ -1972,10 +2057,9 @@ mod implementation {
             use super::*;
 
             pub mod rvalue {
-
                 use rustc_index::IndexVec;
                 use rustc_middle::{
-                    mir::{AggregateKind, BorrowKind, CastKind, Operand, Place, Rvalue},
+                    mir::{AggregateKind, BorrowKind, CastKind, NullOp, Operand, Place, Rvalue},
                     ty::{adjustment::PointerCast, Ty, TyCtxt},
                 };
 
@@ -2002,6 +2086,14 @@ mod implementation {
                         Box::new(AggregateKind::Array(ty)),
                         IndexVec::from_raw(items),
                     )
+                }
+
+                pub fn offset_of<'tcx>(
+                    tcx: TyCtxt<'tcx>,
+                    ty: Ty<'tcx>,
+                    field: rustc_abi::FieldIdx,
+                ) -> Rvalue<'tcx> {
+                    Rvalue::NullaryOp(NullOp::OffsetOf(tcx.mk_fields(&[field])), ty)
                 }
             }
 
@@ -2269,10 +2361,10 @@ mod implementation {
         impl<'tcx, C> ForOperandRef<'tcx> for C where C: ForPlaceRef<'tcx> + ForFunctionCalling<'tcx> {}
 
         pub(crate) trait ForAssignment<'tcx>:
-            ForInsertion<'tcx> + DestinationReferenceProvider
+            ForInsertion<'tcx> + DestinationProvider<'tcx>
         {
         }
-        impl<'tcx, C> ForAssignment<'tcx> for C where C: ForInsertion<'tcx> + DestinationReferenceProvider {}
+        impl<'tcx, C> ForAssignment<'tcx> for C where C: ForInsertion<'tcx> + DestinationProvider<'tcx> {}
 
         pub(crate) trait ForBranching<'tcx>:
             ForInsertion<'tcx> + JumpTargetModifier
