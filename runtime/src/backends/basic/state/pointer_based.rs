@@ -189,10 +189,12 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
             // Checking for the value after each projection.
             proj_addresses
                 .enumerate()
+                // The first symbolic value in the projection chain.
                 .find_map(|(i, addr)| {
                     addr.and_then(|addr| self.get(&addr))
                         .map(|sym_val| (i, sym_val))
                 })
+                // Returning the remaining projections.
                 .map(|(i, sym_val)| (sym_val, &projs[i..projs.len()]))
         }
     }
@@ -205,7 +207,6 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
     where
         Self: IndexResolver<Local>,
     {
-        log::debug!("Handling symbolic value: {:?}", host);
         apply_projs_sym(
             self.sym_projector.clone(),
             host,

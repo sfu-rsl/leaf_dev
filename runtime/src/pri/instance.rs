@@ -1,6 +1,8 @@
 use super::utils::{DefaultRefManager, RefManager, UnsafeSync};
 use super::{BranchingInfo, OperandRef, PlaceRef};
-use crate::abs::backend::{BranchingHandler, OperandHandler, PlaceHandler, RuntimeBackend};
+use crate::abs::backend::{
+    AssignmentHandler, BranchingHandler, OperandHandler, PlaceHandler, RuntimeBackend,
+};
 
 #[allow(unused_imports)] // Mutex is detected as unused unless runtime_access is set to safe_mt
 use std::{
@@ -14,6 +16,8 @@ type BackendImpl = crate::backends::basic::BasicBackend;
 type PlaceImpl = <<BackendImpl as RuntimeBackend>::PlaceHandler<'static> as PlaceHandler>::Place;
 pub(super) type OperandImpl =
     <<BackendImpl as RuntimeBackend>::OperandHandler<'static> as OperandHandler>::Operand;
+pub(super) type FieldImpl =
+    <<BackendImpl as RuntimeBackend>::AssignmentHandler<'static> as AssignmentHandler>::Field;
 
 static INIT: Once = Once::new();
 #[cfg(runtime_access = "safe_mt")]

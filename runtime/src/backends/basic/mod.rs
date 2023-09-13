@@ -11,7 +11,7 @@ use std::{cell::RefCell, ops::DerefMut, rc::Rc};
 use crate::{
     abs::{
         self, backend::*, AssertKind, BasicBlockIndex, BranchingMetadata, CastKind, IntType, Local,
-        LocalIndex, PlaceUsage, RawPointer, UnaryOp, VariantIndex,
+        LocalIndex, PlaceUsage, PointerOffset, RawPointer, UnaryOp, VariantIndex,
     },
     solvers::z3::Z3Solver,
     trace::ImmediateTraceManager,
@@ -51,12 +51,18 @@ type PlaceHandler = place::BasicPlaceHandler;
 #[cfg(not(place_addr))]
 type PlaceHandler = crate::abs::backend::implementation::DefaultPlaceHandler;
 type FullPlace = place::FullPlace<Place>;
-type Operand = operand::Operand<Place>;
+type Operand<S = SymValueRef> = operand::Operand<Place, S>;
 #[cfg(place_addr)]
 type OperandHandler<'a, SymValue> = operand::BasicOperandHandler<'a, Place, SymValue>;
 #[cfg(not(place_addr))]
 type OperandHandler<'a, SymValue> =
     crate::abs::backend::implementation::DefaultOperandHandler<'a, Place, SymValue>;
+#[derive(Debug, derive_more::Into, derive_more::From)]
+pub(crate) struct FieldValue<S>(#[into] Operand<S>, PointerOffset);
+#[cfg(place_addr)]
+pub(crate) type Field<S = SymValueRef> = FieldValue<S>;
+#[cfg(not(place_addr))]
+pub(crate) type Field<S = SymValueRef> = Operand<S>;
 
 pub struct BasicBackend {
     call_stack_manager: BasicCallStackManager,
@@ -180,6 +186,8 @@ impl<'s, EB: OperationalExprBuilder> BasicAssignmentHandler<'s, EB> {
 impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_, EB> {
     type Place = Place;
     type Operand = Operand;
+    #[cfg(place_addr)]
+    type Field = Field;
 
     fn use_of(mut self, operand: Self::Operand) {
         let value = self.get_operand_value(operand);
@@ -268,13 +276,13 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
         self.set_value(value.into())
     }
 
-    fn tuple_from(mut self, fields: impl Iterator<Item = Self::Operand>) {
+    fn tuple_from(mut self, fields: impl Iterator<Item = Self::Field>) {
         self.set_adt_value(AdtKind::Tuple, fields)
     }
 
     fn adt_from(
         mut self,
-        fields: impl Iterator<Item = Self::Operand>,
+        fields: impl Iterator<Item = Self::Field>,
         variant: Option<VariantIndex>,
     ) {
         let kind = match variant {
@@ -284,7 +292,7 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
         self.set_adt_value(kind, fields)
     }
 
-    fn union_from(self, active_field: abs::FieldIndex, value: Self::Operand) {
+    fn union_from(self, active_field: abs::FieldIndex, value: Self::Field) {
         todo!("Unions are not yet supported. {active_field} = {value:?}")
     }
 
@@ -321,16 +329,15 @@ impl<EB: OperationalExprBuilder> BasicAssignmentHandler<'_, EB> {
     fn set_adt_value(
         &mut self,
         kind: AdtKind,
-        fields: impl Iterator<Item = <Self as AssignmentHandler>::Operand>,
+        fields: impl Iterator<Item = <Self as AssignmentHandler>::Field>,
     ) {
         let value = Value::Concrete(ConcreteValue::Adt(AdtValue {
             kind,
             fields: fields
-                .map(|f| self.get_operand_value(f))
-                .map(|v| AdtField {
-                    value: Some(v),
+                .map(|f| AdtField {
                     #[cfg(place_addr)]
-                    offset: todo!(),
+                    offset: f.1,
+                    value: Some(self.get_operand_value(f.into())),
                 })
                 .collect(),
         }));
@@ -632,9 +639,8 @@ type Constraint = crate::abs::Constraint<ValueRef>;
 fn get_operand_value(vars_state: &mut dyn VariablesState, operand: Operand) -> ValueRef {
     match operand {
         // copy and move are the same, but only for now. see: https://github.com/rust-lang/unsafe-code-guidelines/issues/188
-        Operand::Place(place, PlaceUsage::Copy) | Operand::Place(place, PlaceUsage::Move) => {
-            vars_state.copy_place(&place)
-        }
+        Operand::Place(place, PlaceUsage::Copy) => vars_state.copy_place(&place),
+        Operand::Place(place, PlaceUsage::Move) => vars_state.take_place(&place),
         Operand::Const(constant) => Into::<ConcreteValue>::into(constant).to_value_ref(),
         Operand::Symbolic(sym) => sym.into(),
     }

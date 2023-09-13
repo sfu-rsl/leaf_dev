@@ -137,6 +137,7 @@ pub(crate) trait ConstantHandler {
 pub(crate) trait AssignmentHandler {
     type Place;
     type Operand;
+    type Field = Self::Operand;
 
     fn use_of(self, operand: Self::Operand);
 
@@ -166,11 +167,11 @@ pub(crate) trait AssignmentHandler {
 
     fn array_from(self, items: impl Iterator<Item = Self::Operand>);
 
-    fn tuple_from(self, fields: impl Iterator<Item = Self::Operand>);
+    fn tuple_from(self, fields: impl Iterator<Item = Self::Field>);
 
-    fn adt_from(self, fields: impl Iterator<Item = Self::Operand>, variant: Option<VariantIndex>);
+    fn adt_from(self, fields: impl Iterator<Item = Self::Field>, variant: Option<VariantIndex>);
 
-    fn union_from(self, active_field: FieldIndex, value: Self::Operand);
+    fn union_from(self, active_field: FieldIndex, value: Self::Field);
 
     fn variant_index(self, variant_index: VariantIndex);
 }
