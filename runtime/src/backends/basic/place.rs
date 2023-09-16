@@ -1,27 +1,61 @@
-use std::fmt::Display;
+use std::{fmt::Display, ops::Deref};
+
+use derive_more as dm;
 
 use crate::abs::{
     backend::{
         implementation::{DefaultPlaceHandler, DefaultPlaceProjectionHandler},
         PlaceHandler, PlaceProjectionHandler,
     },
-    Local, Place, RawPointer, TypeSize, ValueType,
+    Local, Place, RawPointer, TypeId, TypeSize, ValueType,
 };
 
 #[derive(Debug, Clone)]
-pub(crate) struct LocalWithAddress(pub(crate) Local, RawPointer);
+pub(crate) struct PlaceMetadata {
+    address: RawPointer,
+    type_id: TypeId,
+}
 
-impl LocalWithAddress {
-    pub(crate) fn new(local: Local, addr: Option<RawPointer>) -> Self {
-        Self(local, addr.unwrap_or(NONE_ADDRESS))
+impl PlaceMetadata {
+    #[inline]
+    pub(crate) fn new(addr: Option<RawPointer>, ty: Option<TypeId>) -> Self {
+        Self {
+            address: addr.unwrap_or(NONE_ADDRESS),
+            type_id: ty.unwrap_or(NONE_TYPE),
+        }
     }
 
+    #[inline]
     pub(crate) fn address(&self) -> Option<RawPointer> {
-        if_not_none(&self.1)
+        if_not_none(&self.address)
     }
 
     pub(crate) fn set_address(&mut self, address: RawPointer) {
-        self.1 = address;
+        self.address = address;
+    }
+
+    #[inline]
+    pub(crate) fn type_id(&self) -> Option<TypeId> {
+        if_not_none(&self.type_id)
+    }
+
+    #[inline]
+    pub(crate) fn set_type_id(&mut self, type_id: TypeId) {
+        self.type_id = type_id;
+    }
+}
+
+#[derive(Debug, Clone, dm::Deref, dm::DerefMut)]
+pub(crate) struct LocalWithAddress(
+    pub(crate) Local,
+    #[deref]
+    #[deref_mut]
+    PlaceMetadata,
+);
+
+impl LocalWithAddress {
+    pub(crate) fn new(local: Local, addr: Option<RawPointer>, ty: Option<TypeId>) -> Self {
+        Self(local, PlaceMetadata::new(addr, ty))
     }
 }
 
@@ -36,11 +70,11 @@ impl LocalWithAddress {
    place should be backed by an address as well.
 */
 
-#[derive(Debug, Clone, derive_more::Deref)]
+#[derive(Debug, Clone, dm::Deref)]
 pub(crate) struct PlaceWithAddress {
     #[deref]
     pub place: Place<LocalWithAddress>,
-    proj_addresses: Vec<RawPointer>,
+    proj_addresses: Vec<(RawPointer, TypeId)>,
     ty: Option<ValueType>,
     size: Option<TypeSize>,
 }
@@ -49,14 +83,14 @@ impl PlaceWithAddress {
     pub(crate) fn address(&self) -> Option<RawPointer> {
         if self.has_projection() {
             debug_assert_eq!(self.proj_addresses.len(), self.projections().len());
-            if_not_none(self.proj_addresses.last().unwrap())
+            if_not_none(&self.proj_addresses.last().unwrap().0)
         } else {
             self.local().address()
         }
     }
 
     pub(crate) fn proj_addresses(&self) -> impl Iterator<Item = Option<RawPointer>> + '_ {
-        self.proj_addresses.iter().map(if_not_none)
+        self.proj_addresses.iter().map(|m| &m.0).map(if_not_none)
     }
 
     pub(crate) fn ty(&self) -> Option<&ValueType> {
@@ -70,7 +104,7 @@ impl PlaceWithAddress {
 
 impl From<Local> for LocalWithAddress {
     fn from(value: Local) -> Self {
-        Self(value, NONE_ADDRESS)
+        Self(value, PlaceMetadata::new(None, None))
     }
 }
 
@@ -87,7 +121,7 @@ impl From<Place<LocalWithAddress>> for PlaceWithAddress {
 
 impl From<Local> for PlaceWithAddress {
     fn from(value: Local) -> Self {
-        Self::from(LocalWithAddress(value, NONE_ADDRESS))
+        Self::from(LocalWithAddress::from(value))
     }
 }
 impl From<LocalWithAddress> for PlaceWithAddress {
@@ -170,6 +204,8 @@ pub(crate) struct BasicProjectionHandler<'a>(&'a mut PlaceWithAddress);
 
 const NONE_ADDRESS: RawPointer = 0;
 
+const NONE_TYPE: TypeId = 0;
+
 fn if_not_none(addr: &RawPointer) -> Option<RawPointer> {
     let addr = *addr;
     if addr != NONE_ADDRESS {
@@ -183,7 +219,7 @@ impl PlaceProjectionHandler for BasicProjectionHandler<'_> {
     type Local = LocalWithAddress;
 
     fn by(self, projection: crate::abs::Projection<Self::Local>) {
-        self.0.proj_addresses.push(NONE_ADDRESS);
+        self.0.proj_addresses.push((NONE_ADDRESS, NONE_TYPE));
         DefaultPlaceProjectionHandler::new(&mut self.0.place).by(projection);
     }
 }
@@ -193,9 +229,21 @@ pub(crate) struct BasicPlaceMetadataHandler<'a>(&'a mut PlaceWithAddress);
 impl BasicPlaceMetadataHandler<'_> {
     pub(crate) fn set_address(&mut self, address: RawPointer) {
         if self.0.has_projection() {
-            *self.0.proj_addresses.last_mut().unwrap() = address;
+            let last = &mut self.0.proj_addresses.last_mut().unwrap().0;
+            debug_assert!(if_not_none(last).is_none());
+            *last = address;
         } else {
             self.0.place.local_mut().set_address(address);
+        }
+    }
+
+    pub(crate) fn set_type_id(&mut self, ty_id: TypeId) {
+        if self.0.has_projection() {
+            let last = &mut self.0.proj_addresses.last_mut().unwrap().1;
+            debug_assert_eq!(*last, NONE_TYPE);
+            *last = ty_id;
+        } else {
+            self.0.place.local_mut().set_type_id(ty_id);
         }
     }
 
@@ -210,7 +258,15 @@ impl BasicPlaceMetadataHandler<'_> {
 
 impl Display for LocalWithAddress {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}@{:x}", self.0, self.1)
+        write!(
+            f,
+            "{}@{}",
+            self.0,
+            self.1
+                .address()
+                .map(|a| format!("{:x}", a))
+                .unwrap_or("-".to_owned())
+        )
     }
 }
 

@@ -120,7 +120,8 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
 
             let ret_local = Local::ReturnValue;
             #[cfg(place_addr)]
-            let ret_local = LocalWithAddress::new(ret_local, latest_call.return_value_addr);
+            let ret_local =
+                LocalWithAddress::new(ret_local, latest_call.return_value_addr, todo!());
             self.latest_returned_val = self.top().try_take_place(&Place::from(ret_local));
         }
 
