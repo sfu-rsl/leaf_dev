@@ -163,7 +163,7 @@ where
     P::HIRefPair<'h>: From<IndexPair>,
     P::Proj<'h>: Into<Result>,
 {
-    use crate::abs::Projection::*;
+    use crate::abs::place::Projection::*;
     match proj {
         Field(field) => projector.field(host.into(), *field),
         Deref => projector.deref(host.into()),
@@ -192,7 +192,7 @@ pub(super) trait ProjectionResolutionExt<L> {
 }
 impl<L> ProjectionResolutionExt<L> for crate::abs::Projection<L> {
     fn resolved_index(&self, index_resolver: &impl IndexResolver<L>) -> ResolvedProjection {
-        use crate::abs::Projection::*;
+        use crate::abs::place::Projection::*;
         match self {
             Field(field) => Field(*field),
             Deref => Deref,

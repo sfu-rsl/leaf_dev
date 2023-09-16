@@ -42,7 +42,7 @@ type TypeManager =
     Box<dyn abs::backend::TypeManager<Key = String, Value = Option<TypeInformation>>>;
 
 #[cfg(place_addr)]
-type Place = place::PlaceWithAddress;
+type Place = place::PlaceWithMetadata;
 #[cfg(not(place_addr))]
 type Place = crate::abs::Place;
 type Projection<L> = crate::abs::Projection<L>;

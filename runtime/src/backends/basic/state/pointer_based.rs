@@ -1,9 +1,6 @@
 use std::{
     cell::RefCell,
-    collections::{
-        btree_map::{Cursor, CursorMut, Entry},
-        BTreeMap, HashMap,
-    },
+    collections::{btree_map::Entry, BTreeMap},
     ops::{Bound, RangeBounds},
     rc::Rc,
 };
@@ -11,10 +8,10 @@ use std::{
 use delegate::delegate;
 
 use crate::{
-    abs::{self, PointerOffset, RawPointer, TypeSize, ValueType, USIZE_TYPE},
+    abs::{self, place::HasMetadata, PointerOffset, RawPointer, TypeSize, ValueType, USIZE_TYPE},
     backends::basic::{
         expr::{RawConcreteValue, SymOwnerValue},
-        place::LocalWithAddress,
+        place::LocalWithMetadata,
         VariablesState,
     },
     utils::SelfHierarchical,
@@ -23,13 +20,13 @@ use crate::{
 use super::{
     super::{
         alias::SymValueRefProjector as SymbolicProjector, expr::prelude::*,
-        place::PlaceWithAddress, ValueRef,
+        place::PlaceWithMetadata, ValueRef,
     },
     proj::{apply_projs_sym, IndexResolver, ProjectionResolutionExt},
 };
 
-type Local = LocalWithAddress;
-type Place = PlaceWithAddress;
+type Local = LocalWithMetadata;
+type Place = PlaceWithMetadata;
 type Projection = crate::abs::Projection<Local>;
 
 type RRef<T> = Rc<RefCell<T>>;
@@ -85,7 +82,7 @@ where
             return self.handle_sym_value(sym_val, sym_projs).into();
         }
 
-        if let Some(size) = place.size() {
+        if let Some(size) = place.metadata().size() {
             if let Some(sym_owner) = Self::try_create_sym_owner(
                 addr,
                 size,
@@ -97,7 +94,7 @@ where
             }
         }
 
-        Self::create_lazy(addr, place.ty()).to_value_ref()
+        Self::create_lazy(addr, place.metadata().ty()).to_value_ref()
     }
 
     fn try_take_place(&mut self, place: &Place) -> Option<ValueRef> {
@@ -124,7 +121,7 @@ where
             });
         }
 
-        if let Some(size) = place.size() {
+        if let Some(size) = place.metadata().size() {
             if let Some(sym_owner) = Self::try_create_sym_owner(
                 addr,
                 size,
@@ -138,7 +135,7 @@ where
             }
         }
 
-        Some(Self::create_lazy(addr, place.ty()).to_value_ref())
+        Some(Self::create_lazy(addr, place.metadata().ty()).to_value_ref())
     }
 
     fn set_place(&mut self, place: &Place, value: ValueRef) {

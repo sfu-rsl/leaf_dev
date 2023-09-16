@@ -1,7 +1,7 @@
 mod mutation;
 mod proj;
 
-use std::{cell::RefCell, collections::HashMap, fmt::Debug, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, fmt::Debug, ops::Deref, rc::Rc};
 
 use delegate::delegate;
 
@@ -14,7 +14,7 @@ use super::{
     super::{
         alias::SymValueRefProjector as SymbolicProjector,
         expr::prelude::*,
-        place::{LocalWithAddress, PlaceWithAddress},
+        place::{LocalWithMetadata, PlaceWithMetadata},
         FullPlace, Projection, ValueRef, VariablesState,
     },
     proj::*,
@@ -429,15 +429,15 @@ impl<SP: SymbolicProjector> SelfHierarchical for StackedLocalIndexVariablesState
     }
 }
 
-impl PlaceRef for PlaceWithAddress {
-    type Local = LocalWithAddress;
+impl PlaceRef for PlaceWithMetadata {
+    type Local = LocalWithMetadata;
 
     fn local(&self) -> &Self::Local {
-        &self.place.local()
+        &self.deref().local()
     }
 
     fn projections(&self) -> &[Projection<Self::Local>] {
-        &self.place.projections()
+        &self.deref().projections()
     }
 }
 
