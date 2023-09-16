@@ -682,7 +682,17 @@ mod implementation {
                     ],
                 )
             } else {
-                return None;
+                // TODO: #265
+                let id = {
+                    use std::hash::{Hash, Hasher};
+                    let mut s = std::collections::hash_map::DefaultHasher::new();
+                    ty.hash(&mut s);
+                    s.finish()
+                };
+                (
+                    stringify!(pri::set_place_type_id),
+                    vec![operand::const_from_uint(tcx, id)],
+                )
             };
 
             Some(self.make_bb_for_call(

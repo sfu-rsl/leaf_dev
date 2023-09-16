@@ -3,8 +3,8 @@ mod utils;
 
 use crate::abs::{
     backend::*, AssertKind, BasicBlockIndex, BinaryOp, BranchingMetadata, CastKind, FieldIndex,
-    FloatType, IntType, Local, LocalIndex, PointerOffset, RawPointer, TypeSize, UnaryOp, ValueType,
-    VariantIndex,
+    FloatType, IntType, Local, LocalIndex, PointerOffset, RawPointer, TypeId, TypeSize, UnaryOp,
+    ValueType, VariantIndex,
 };
 
 use self::instance::*;
@@ -69,6 +69,10 @@ pub fn ref_place_opaque_cast(place: PlaceRef /*, type */) {
 #[cfg(place_addr)]
 pub fn set_place_address(place: PlaceRef, raw_ptr: RawPointer) {
     mut_place_ref(place, |p, place| p.metadata(place).set_address(raw_ptr));
+}
+#[cfg(place_addr)]
+pub fn set_place_type_id(place: PlaceRef, type_id: TypeId) {
+    mut_place_ref(place, |h, p| h.metadata(p).set_type_id(type_id))
 }
 #[cfg(place_addr)]
 pub fn set_place_type_bool(place: PlaceRef) {
