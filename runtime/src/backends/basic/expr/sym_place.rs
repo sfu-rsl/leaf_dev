@@ -380,10 +380,16 @@ mod implementation {
             }
 
             pub(super) fn expect_proj(&self) -> &ProjExpr {
-                self.as_proj().expect(concat!(
-                    "Complex symbolic values are not supported by this resolver. ",
-                    "The symbolic host is expected to be a projection expression."
-                ))
+                self.as_proj().unwrap_or_else(|| {
+                    panic!(
+                        concat!(
+                            "Complex symbolic values are not supported by this resolver. ",
+                            "The symbolic host is expected to be a projection expression.",
+                            "Found: {:?}"
+                        ),
+                        self
+                    )
+                })
             }
         }
 

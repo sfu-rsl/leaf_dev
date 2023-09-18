@@ -521,6 +521,11 @@ mod implementation {
             let mut cum_ty = cum_place.ty(&self.context, tcx);
             if cfg!(place_addr) {
                 blocks.push(self.make_bb_for_set_addr_call(place_ref, &cum_place, cum_ty.ty));
+                if cfg!(place_addr) {
+                    if let Some(block) = self.make_bb_for_set_type_call(place_ref, cum_ty.ty) {
+                        blocks.push(block);
+                    }
+                }
             }
 
             for (_, proj) in place.iter_projections() {
@@ -532,11 +537,10 @@ mod implementation {
                     cum_ty = cum_ty.projection_ty(tcx, proj);
                     blocks.push(self.make_bb_for_set_addr_call(place_ref, &cum_place, cum_ty.ty));
                 }
-            }
-
-            if cfg!(place_addr) {
-                if let Some(block) = self.make_bb_for_set_type_call(place_ref, cum_ty.ty) {
-                    blocks.push(block);
+                if cfg!(place_addr) {
+                    if let Some(block) = self.make_bb_for_set_type_call(place_ref, cum_ty.ty) {
+                        blocks.push(block);
+                    }
                 }
             }
 
