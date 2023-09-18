@@ -2,7 +2,7 @@ use std::fmt::{Display, Formatter, Result};
 
 use crate::backends::basic::logger::comma_separated;
 
-use super::{sym_place::SymReadResult, RawConcreteValue, SymOwnerValue, *};
+use super::{sym_place::SymReadResult, PorterValue, RawConcreteValue, *};
 
 impl Display for Value {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
@@ -117,7 +117,7 @@ impl Display for UnevalValue {
                 addr,
                 ty.as_ref().map_or("?".to_owned(), |ty| format!("{}", ty))
             ),
-            UnevalValue::SymbolicOwner(SymOwnerValue { .. }) => write!(f, "{{.S.}}"),
+            UnevalValue::Porter(PorterValue { .. }) => write!(f, "{{.S.}}"),
         }
     }
 }

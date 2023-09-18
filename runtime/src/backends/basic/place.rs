@@ -206,7 +206,7 @@ impl BasicPlaceMetadataHandler<'_> {
         }
     }
 
-    pub(crate) fn set_type(&mut self, ty: ValueType) {
+    pub(crate) fn set_primitive_type(&mut self, ty: ValueType) {
         self.0.metadata_mut().ty = Some(ty);
     }
 

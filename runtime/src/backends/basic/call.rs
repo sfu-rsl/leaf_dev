@@ -4,7 +4,8 @@ use crate::{
 };
 
 use super::{
-    place::LocalWithMetadata, CallStackManager, EntranceKind, Place, ValueRef, VariablesState,
+    place::{LocalWithMetadata, PlaceMetadata},
+    CallStackManager, EntranceKind, Place, ValueRef, VariablesState,
 };
 
 type VariablesStateFactory<VS> = Box<dyn Fn(usize) -> VS>;
@@ -120,7 +121,10 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
 
             let ret_local = Local::ReturnValue;
             #[cfg(place_addr)]
-            let ret_local = LocalWithMetadata::new(ret_local, todo!());
+            let ret_local = LocalWithMetadata::new(
+                ret_local,
+                PlaceMetadata::new(latest_call.return_value_addr, None /* TODO */),
+            );
             self.latest_returned_val = self.top().try_take_place(&Place::from(ret_local));
         }
 

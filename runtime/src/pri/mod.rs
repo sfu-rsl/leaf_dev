@@ -92,7 +92,7 @@ pub fn set_place_type_float(place: PlaceRef, e_bits: u64, s_bits: u64) {
 }
 #[cfg(place_addr)]
 fn set_place_type(place: PlaceRef, ty: ValueType) {
-    mut_place_ref(place, |p, place| p.metadata(place).set_type(ty));
+    mut_place_ref(place, |p, place| p.metadata(place).set_primitive_type(ty));
 }
 #[cfg(place_addr)]
 pub fn set_place_size(place: PlaceRef, byte_size: TypeSize) {

@@ -10,8 +10,8 @@ use std::{assert_matches::assert_matches, num::Wrapping, ops::Deref, rc::Rc};
 use derive_more as dm;
 
 use crate::abs::{
-    BinaryOp, FieldIndex, FloatType, IntType, PointerOffset, RawPointer, UnaryOp, ValueType,
-    VariantIndex,
+    BinaryOp, FieldIndex, FloatType, IntType, PointerOffset, RawPointer, TypeId, UnaryOp,
+    ValueType, VariantIndex,
 };
 
 use crate::utils::meta::define_reversible_pair;
@@ -50,7 +50,7 @@ pub(crate) enum ConcreteValue {
     Array(ArrayValue),
     #[from]
     Ref(RefValue),
-    #[from(types(RawConcreteValue, SymOwnerValue))]
+    #[from(types(RawConcreteValue, PorterValue))]
     Unevaluated(UnevalValue),
 }
 
@@ -570,7 +570,7 @@ pub(crate) enum RefValue {
 pub(crate) enum UnevalValue {
     Some,
     Lazy(RawConcreteValue),
-    SymbolicOwner(SymOwnerValue),
+    Porter(PorterValue),
 }
 
 #[derive(Clone, Debug)]
@@ -622,9 +622,8 @@ impl RawConcreteValue {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct SymOwnerValue {
-    pub(crate) base: RawPointer,
-    pub(crate) sym_values: Vec<(PointerOffset, SymValueRef)>,
+pub(crate) struct PorterValue {
+    pub(crate) sym_values: Vec<(PointerOffset, TypeId, SymValueRef)>,
 }
 
 #[derive(Clone, Debug, dm::From)]
@@ -921,7 +920,7 @@ mod convert {
         };
     }
 
-    impl_conc_to_value_ref!(ConstValue, UnevalValue, RawConcreteValue, SymOwnerValue);
+    impl_conc_to_value_ref!(ConstValue, UnevalValue, RawConcreteValue, PorterValue);
 
     impl SymValue {
         #[inline]
