@@ -18,6 +18,7 @@ mod pri_utils;
 mod utils;
 mod visit;
 
+extern crate lazy_static;
 extern crate rustc_abi;
 extern crate rustc_apfloat;
 extern crate rustc_ast;
