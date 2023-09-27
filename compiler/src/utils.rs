@@ -1,7 +1,7 @@
 use std::{
-    fs::{File, OpenOptions},
-    io::{Read, Seek, Write},
-    ops::{Deref, DerefMut},
+    collections::HashMap,
+    fs::OpenOptions,
+    io::{Read, Write},
 };
 
 #[derive(Default)]
@@ -30,53 +30,28 @@ macro_rules! chain {
 }
 pub(crate) use chain;
 
-pub(crate) struct TypeExport {
-    file: File,
-}
+pub(crate) struct TypeExport {}
 
 impl TypeExport {
-    pub fn new() -> Self {
-        let file = OpenOptions::new()
-            .create(true)
+    pub fn read() -> HashMap<String, String> {
+        let mut content = String::new();
+        let mut file = OpenOptions::new()
             .read(true)
+            .open("types.json")
+            .expect("Unable to open file for type export");
+        file.read_to_string(&mut content).unwrap();
+        serde_json::from_str(&content).unwrap_or(HashMap::new())
+    }
+
+    pub fn write(map: HashMap<String, String>) {
+        let mut file = OpenOptions::new()
+            .create(true)
             .write(true)
             .truncate(true)
             .open("types.json")
             .expect("Unable to open file for type export");
 
-        TypeExport { file }
-    }
-
-    pub fn read(&mut self, content: &mut String) {
-        self.file.read_to_string(content).unwrap();
-    }
-
-    pub fn overwrite(&mut self, content: String) {
-        self.clean();
-        self.write(content);
-    }
-
-    fn clean(&mut self) {
-        self.file.set_len(0).unwrap();
-        self.file.seek(std::io::SeekFrom::Start(0)).unwrap();
-    }
-
-    fn write(&mut self, content: String) {
-        self.file.write_all(content.as_bytes()).unwrap();
-        self.file.seek(std::io::SeekFrom::Start(0)).unwrap();
-    }
-}
-
-impl Deref for TypeExport {
-    type Target = File;
-
-    fn deref(&self) -> &Self::Target {
-        &self.file
-    }
-}
-
-impl DerefMut for TypeExport {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.file
+        file.write_all(serde_json::to_string_pretty(&map).unwrap().as_bytes())
+            .unwrap();
     }
 }
