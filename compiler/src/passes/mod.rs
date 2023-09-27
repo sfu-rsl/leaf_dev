@@ -2,6 +2,7 @@ pub(crate) mod ctfe;
 mod instr;
 pub(crate) mod logger;
 mod runtime_adder;
+pub(crate) mod tyexp;
 
 use std::any::Any;
 use std::collections::HashMap;
@@ -23,6 +24,7 @@ pub(crate) use ctfe::{CtfeScanner, NctfeFunctionAdder};
 pub(crate) use instr::Instrumentor;
 pub(crate) use logger::CompilationPassLogExt;
 pub(crate) use runtime_adder::RuntimeAdder;
+pub(crate) use tyexp::TypePass;
 
 pub(super) type Callbacks<'a> = Box<dyn driver::Callbacks + Send + 'a>;
 pub(super) type PrerequisitePass = Chain<RuntimeAdder, NoOpPass>;

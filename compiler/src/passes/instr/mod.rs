@@ -1,9 +1,5 @@
 mod call;
 
-use serde_json;
-use std::sync::Mutex;
-
-use lazy_static::lazy_static;
 use rustc_abi::{FieldIdx, VariantIdx};
 use rustc_index::IndexVec;
 use rustc_middle::{
@@ -16,7 +12,6 @@ use rustc_middle::{
 
 use crate::{
     mir_transform::{split_blocks_with, BodyInstrumentationUnit, JumpTargetModifier},
-    utils::TypeExport,
     visit::*,
 };
 
@@ -163,10 +158,6 @@ macro_rules! make_general_visitor {
 
 make_general_visitor!(LeafBodyVisitor);
 
-lazy_static! {
-    static ref TYPE_EXPORT: Mutex<TypeExport> = Mutex::new(TypeExport::new());
-}
-
 impl<'tcx, C> Visitor<'tcx> for LeafBodyVisitor<C>
 where
     C: ctxtreqs::Basic<'tcx> + JumpTargetModifier + BodyProvider<'tcx>,
@@ -180,30 +171,6 @@ where
 
         VisitorFactory::make_basic_block_visitor(&mut self.call_adder, block)
             .visit_basic_block_data(block, data);
-    }
-
-    fn visit_place(
-        &mut self,
-        place: &Place<'tcx>,
-        _context: mir::visit::PlaceContext,
-        _location: Location,
-    ) {
-        let cum_place = Place::from(place.local);
-        let cum_ty = cum_place.ty(self.call_adder.body().local_decls(), self.call_adder.tcx());
-        log::debug!("Visiting Place: {:?} with Ty: {:?}", cum_place, cum_ty);
-
-        if let rustc_middle::ty::TyKind::Adt(def, _) = cum_ty.ty.kind() {
-            let mut type_export = TYPE_EXPORT.lock().unwrap();
-            let mut content = String::new();
-            type_export.read(&mut content);
-            // map ADT Ty information to its DefId
-            let mut map: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
-            // TODO add finer details of each type
-            map[def.did().index.as_u32().to_string()] =
-                serde_json::to_value(cum_ty.ty.to_string()).unwrap();
-            // export type information to a JSON file (i.e. types.json)
-            type_export.overwrite(serde_json::to_string_pretty(&map).unwrap());
-        }
     }
 }
 
