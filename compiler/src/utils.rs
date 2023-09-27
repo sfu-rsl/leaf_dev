@@ -40,10 +40,13 @@ impl TypeExport {
             .open("types.json")
             .expect("Unable to open file for type export");
         file.read_to_string(&mut content).unwrap();
-        serde_json::from_str(&content).unwrap_or(HashMap::new())
+        let map = serde_json::from_str(&content).unwrap_or(HashMap::new());
+        log::debug!("Reading {:#?} from types.json", map);
+        map
     }
 
     pub fn write(map: HashMap<String, String>) {
+        log::debug!("Writing {:#?} to types.json", map);
         let mut file = OpenOptions::new()
             .create(true)
             .write(true)
