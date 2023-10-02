@@ -18,6 +18,7 @@ pub(crate) mod pathics;
 pub mod pri;
 pub(crate) mod solvers;
 pub(crate) mod trace;
+pub mod tyexp;
 pub(crate) mod utils;
 
 fn init() {
