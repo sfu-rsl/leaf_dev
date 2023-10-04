@@ -28,17 +28,20 @@ impl TypeInformation {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TypeVariant {
+    // Variant name
+    name: String,
     /**
-     * For AdtTy type variant, id is the DefId (e.g. 0_123).
-     * For other type variant, id is the type name (e.g. char).
+     * Array of types of variant's fields.
+     *
+     * For AdtTy type field, its DefId (e.g. 0_123) will be put in the array.
+     * For other type field, its type name (e.g. char) will be put in the array.
      */
-    id: String,
     fields: Vec<String>,
 }
 
 impl TypeVariant {
-    pub fn new(id: String, fields: Vec<String>) -> TypeVariant {
-        TypeVariant { id, fields }
+    pub fn new(name: String, fields: Vec<String>) -> TypeVariant {
+        TypeVariant { name, fields }
     }
 }
 
