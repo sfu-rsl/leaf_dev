@@ -64,12 +64,13 @@ impl<'tcx, 'b, 's> PlaceVisitor<'tcx, 'b, 's> {
         // we are only interested in exporting ADT Ty information as of now
         if let rustc_middle::ty::TyKind::Adt(def, subst) = ty.kind() {
             let map = get_type_map(self.storage);
+            let def_id = format!("{}_{}", def.did().krate.as_u32(), def.did().index.as_u32());
             // skip current ADT Ty if it has been explored
-            if !map.contains_key(&def.did().index.as_u32().to_string()) {
+            if !map.contains_key(&def_id) {
                 let (tys, variants) = get_tys_and_variants(self.tcx, def.variants(), subst);
                 map.insert(
-                    def.did().index.as_u32().to_string(),
-                    TypeInformation::new(def.did().index.as_u32(), ty.to_string(), variants),
+                    def_id.clone(),
+                    TypeInformation::new(def_id.clone(), ty.to_string(), variants),
                 );
 
                 // recursively explore other ADT Tys found from variants
@@ -99,7 +100,12 @@ fn get_tys_and_variants<'tcx>(
         for field in variant.fields.iter() {
             let field_ty = field.ty(tcx, subst);
             if let rustc_middle::ty::TyKind::Adt(field_def, _) = field_ty.kind() {
-                fields.push(field_def.did().index.as_u32().to_string());
+                let def_id = format!(
+                    "{}_{}",
+                    field_def.did().krate.as_u32(),
+                    field_def.did().index.as_u32()
+                );
+                fields.push(def_id);
                 tys.push(field_ty);
             } else {
                 fields.push(field_ty.to_string());

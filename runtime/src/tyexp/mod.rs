@@ -8,14 +8,16 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TypeInformation {
-    def_id: u32,
+    // A DefId identifies a particular definition, by combining a crate index and a def index.
+    def_id: String,
+    // Type name.
     name: String,
     // Variants of the ADT. If this is a struct or union, then there will be a single variant.
     variants: Vec<TypeVariant>,
 }
 
 impl TypeInformation {
-    pub fn new(def_id: u32, name: String, variants: Vec<TypeVariant>) -> TypeInformation {
+    pub fn new(def_id: String, name: String, variants: Vec<TypeVariant>) -> TypeInformation {
         TypeInformation {
             def_id,
             name,
@@ -26,6 +28,10 @@ impl TypeInformation {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TypeVariant {
+    /**
+     * For AdtTy type variant, id is the DefId (e.g. 0_123).
+     * For other type variant, id is the type name (e.g. char).
+     */
     id: String,
     fields: Vec<String>,
 }
