@@ -55,27 +55,28 @@ impl<'tcx, 'b, 's> Visitor<'tcx> for PlaceVisitor<'tcx, 'b, 's> {
         let place_ty = place.ty(self.local_decls, self.tcx);
         log::debug!("Visiting Place: {:?} with Ty: {:?}", place, place_ty);
 
-        self.get_type_information(place_ty.ty);
+        self.add_type_information_to_map(place_ty.ty);
     }
 }
 
 impl<'tcx, 'b, 's> PlaceVisitor<'tcx, 'b, 's> {
-    fn get_type_information(&mut self, ty: Ty<'tcx>) {
+    fn add_type_information_to_map(&mut self, ty: Ty<'tcx>) {
         // we are only interested in exporting ADT Ty information as of now
         if let rustc_middle::ty::TyKind::Adt(def, subst) = ty.kind() {
             let map = get_type_map(self.storage);
             let def_id = format!("{}_{}", def.did().krate.as_u32(), def.did().index.as_u32());
             // skip current ADT Ty if it has been explored
             if !map.contains_key(&def_id) {
-                let (tys, variants) = get_tys_and_variants(self.tcx, def.variants(), subst);
+                let (variants, variants_tys) =
+                    get_variants_and_tys(self.tcx, def.variants(), subst);
                 map.insert(
                     def_id.clone(),
                     TypeInformation::new(def_id.clone(), ty.to_string(), variants),
                 );
 
                 // recursively explore other ADT Tys found from variants
-                for ty in tys {
-                    self.get_type_information(ty);
+                for ty in variants_tys {
+                    self.add_type_information_to_map(ty);
                 }
             }
         }
@@ -83,11 +84,11 @@ impl<'tcx, 'b, 's> PlaceVisitor<'tcx, 'b, 's> {
 }
 
 // get variants information and ADT Tys found from each variant's fields
-fn get_tys_and_variants<'tcx>(
+fn get_variants_and_tys<'tcx>(
     tcx: TyCtxt<'tcx>,
     vars: &'tcx IndexSlice<VariantIdx, VariantDef>,
     subst: &'tcx List<GenericArg<'tcx>>,
-) -> (Vec<Ty<'tcx>>, Vec<TypeVariant>) {
+) -> (Vec<TypeVariant>, Vec<Ty<'tcx>>) {
     let mut tys: Vec<Ty<'tcx>> = vec![];
     let mut variants: Vec<TypeVariant> = vec![];
     for variant in vars {
@@ -121,5 +122,5 @@ fn get_tys_and_variants<'tcx>(
         variants.push(TypeVariant::new(variant.name.to_string(), fields));
     }
 
-    (tys, variants)
+    (variants, tys)
 }

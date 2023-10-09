@@ -30,12 +30,11 @@ impl TypeInformation {
 pub struct TypeVariant {
     // Variant name
     name: String,
-    /**
-     * Array of types of variant's fields.
-     *
-     * For AdtTy type field, its DefId (e.g. 0_123) will be put in the array.
-     * For other type field, its type name (e.g. char) will be put in the array.
-     */
+    /// Array of types of variant's fields.
+    /// For AdtTy type field, its DefId (e.g. 0_123) will be put in the array.
+    /// For other type fields, its type name (e.g. char) will be put in the array.
+    ///
+    /// TODO: add a well-defined information structure for other type fields
     fields: Vec<String>,
 }
 
