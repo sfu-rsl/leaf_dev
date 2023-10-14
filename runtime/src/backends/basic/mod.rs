@@ -6,7 +6,7 @@ pub(crate) mod operand;
 pub(crate) mod place;
 mod state;
 
-use std::{cell::RefCell, ops::DerefMut, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, ops::DerefMut, rc::Rc};
 
 use crate::{
     abs::{
@@ -15,6 +15,7 @@ use crate::{
     },
     solvers::z3::Z3Solver,
     trace::ImmediateTraceManager,
+    tyexp::{TypeExport, TypeInformation},
 };
 
 use self::{
@@ -52,6 +53,7 @@ pub struct BasicBackend {
     current_constraints: Vec<Constraint>,
     expr_builder: Rc<RefCell<ExprBuilder>>,
     sym_id_counter: u32,
+    type_map: HashMap<String, TypeInformation>,
 }
 
 impl BasicBackend {
@@ -70,6 +72,7 @@ impl BasicBackend {
             current_constraints: Vec::new(),
             expr_builder,
             sym_id_counter: 0,
+            type_map: TypeExport::read(),
         }
     }
 }
@@ -129,6 +132,15 @@ impl RuntimeBackend for BasicBackend {
 
     fn func_control(&mut self) -> Self::FunctionHandler<'_> {
         BasicFunctionHandler::new(&mut self.call_stack_manager)
+    }
+}
+
+impl TypeManager for BasicBackend {
+    type Key = String;
+    type Value = Option<TypeInformation>;
+
+    fn get_type(&self, type_id: Self::Key) -> Self::Value {
+        self.type_map.get(&type_id).cloned()
     }
 }
 

@@ -249,6 +249,13 @@ pub(crate) trait OutputGenerator<I, V> {
     fn generate(&mut self, answers: HashMap<I, V>);
 }
 
+pub(crate) trait TypeManager {
+    type Key;
+    type Value;
+
+    fn get_type(&self, type_id: Self::Key) -> Self::Value;
+}
+
 pub(crate) mod implementation {
     use super::super::*;
     use super::*;
