@@ -108,7 +108,6 @@ pub(in super::super) struct RawPointerVariableState<VS, SP: SymbolicProjector> {
     memory: Memory,
     fallback: VS,
     sym_projector: RRef<SP>,
-    return_value_addr: Option<RawPointer>,
 }
 
 impl<VS, SP: SymbolicProjector> RawPointerVariableState<VS, SP> {
@@ -120,7 +119,6 @@ impl<VS, SP: SymbolicProjector> RawPointerVariableState<VS, SP> {
             memory: Default::default(),
             fallback,
             sym_projector,
-            return_value_addr: None,
         }
     }
 
@@ -211,14 +209,7 @@ where
     }
 
     fn try_take_place(&mut self, place: &Place) -> Option<ValueRef> {
-        let addr = place.address().or_else(|| {
-            if matches!(place.local().as_ref(), abs::Local::ReturnValue) {
-                self.return_value_addr.take()
-            } else {
-                None
-            }
-        });
-        let Some(addr) = addr else {
+        let Some(addr) = place.address() else {
             return self.fallback.try_take_place(place);
         };
 
@@ -261,10 +252,6 @@ where
         let Some(addr) = place.address() else {
             return self.fallback.set_place(place, value);
         };
-
-        if matches!(place.local().as_ref(), abs::Local::ReturnValue) {
-            self.return_value_addr = Some(addr);
-        }
 
         if let Some((_sym_val, sym_projs)) = self.try_find_sym_value(place) {
             if !sym_projs.is_empty() {
