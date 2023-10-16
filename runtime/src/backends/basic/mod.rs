@@ -75,6 +75,7 @@ impl BasicBackend {
             current_constraints: Vec::new(),
             expr_builder,
             sym_id_counter: 0,
+            // FIXME: file IO operation is expensive and should not be done directly here
             type_manager: Box::new(DefaultTypeManager::new()),
         }
     }

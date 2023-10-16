@@ -82,6 +82,7 @@ pub(crate) struct DefaultTypeManager {
 impl DefaultTypeManager {
     pub fn new() -> Self {
         DefaultTypeManager {
+            // read type information from json file and fill the type map
             type_map: TypeExport::read(),
         }
     }
