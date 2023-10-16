@@ -15,7 +15,7 @@ use crate::{
     },
     solvers::z3::Z3Solver,
     trace::ImmediateTraceManager,
-    tyexp::DefaultTypeManager,
+    tyexp::{DefaultTypeManager, TypeInformation},
 };
 
 use self::{
@@ -35,6 +35,9 @@ type TraceManager = Box<dyn abs::backend::TraceManager<BasicBlockIndex, ValueRef
 
 type BasicCallStackManager = call::BasicCallStackManager<HierarchicalVariablesState<SymProjector>>;
 
+type TypeManager =
+    Box<dyn abs::backend::TypeManager<Key = String, Value = Option<TypeInformation>>>;
+
 #[cfg(place_addr)]
 type Place = place::PlaceWithAddress;
 #[cfg(not(place_addr))]
@@ -53,7 +56,7 @@ pub struct BasicBackend {
     current_constraints: Vec<Constraint>,
     expr_builder: Rc<RefCell<ExprBuilder>>,
     sym_id_counter: u32,
-    type_manager: DefaultTypeManager,
+    type_manager: TypeManager,
 }
 
 impl BasicBackend {
@@ -72,7 +75,7 @@ impl BasicBackend {
             current_constraints: Vec::new(),
             expr_builder,
             sym_id_counter: 0,
-            type_manager: DefaultTypeManager::new(),
+            type_manager: Box::new(DefaultTypeManager::new()),
         }
     }
 }
