@@ -1,3 +1,5 @@
+/// This module holds the codes that are mostly related to mutable references
+/// and projections on them.
 use crate::abs::{
     expr::proj::{macros::impl_general_proj_through_singulars, Projector},
     VariantIndex,

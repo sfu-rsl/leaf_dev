@@ -37,21 +37,21 @@ type RRef<T> = Rc<RefCell<T>>;
 /* NOTE: Memory structure
  * How does this state tries to store (symbolic) objects?
  * We divide symbolic objects into two categories:
- * - Primitives: We assume that symbolic variables can be only from primitive types,
- *   and all expressions built from them are also from primitive types.
+ * - Primitives: We assume that symbolic _variables_ can be only from primitive types,
+ *   and all expressions built based on them are also from primitive types.
  *   These contribute to the majority of values we keep in the memory.
- * - Non-primitives: These are symbolic values that correspond to not
- *   necessarily primitive types such as arrays or ADTs. Since symbolic variables
- *   cannot be of these types, they can only be generated when there is a
- *   symbolic projection.
+ * - Non-primitives: These are the rest of symbolic values that may correspond to
+ *   non-primitive types such as arrays or ADTs. Since symbolic variables
+ *   cannot be of these types, they can only appear when a symbolic projection
+ *   occurs.
  *
  * Effectively, non-primitive symbolic values always correspond to multiple
  * objects, and the memory regions they are associated with is non-deterministic.
- * Thus, any read or write to these parts of memory will be also
+ * This means any read or write to these parts of memory will be also
  * non-deterministic, and we cannot store a value inside their target memory
- * regions directly. Instead, if it is a read, we derive another value that
- * corresponds to multiple objects (in case of read), or update their
- * non-determinism information (in case of write).
+ * regions directly. Instead, we derive another symbolic value that corresponds
+ * to multiple objects (in case of read), or update the non-determinism
+ * information of the current symbolic value (in case of write).
  * To understand it better, let's look at an example:
  * ```
  * let x = 10.mark_symbolic();
@@ -59,13 +59,13 @@ type RRef<T> = Rc<RefCell<T>>;
  * let z = y.1 + 20;
  * y.0 = z;
  * ```
- * Here the value of `y` is non-deterministic, since it is a result of a
- * symbolic index on `a`. Later the field projection on `y` is also symbolic but
+ * Here, the value of `y` is non-deterministic (it is the result of a symbolic
+ * index on `a`). Later, the field projection on `y` is also symbolic but
  * corresponds to different objects in the memory (the second field of `a[x]`).
- * We derive another value based on `y` for it. Now in the last line we write to
- * `y.0`. In this case, we need to update the value we have stored in place of
- * `y` to reflect the change that the first field is set to `z`. This happens
- * because `y.0` resides inside a non-deterministic memory region.
+ * We derive another value based on `y` for it. In the last line, we write to
+ * `y.0`, a non-deterministic location, so we need to update the value we have
+ * stored in place of `y` to reflect the change that the first field is set to
+ * `z`.
  *
  * Therefore, any write to any part of a non-deterministic memory region will
  * update the information for the whole region. This brings the important
@@ -189,10 +189,12 @@ where
             return self.fallback.copy_place(place);
         };
 
-        if let Some((sym_val, sym_projs)) = self.first_symbolic_value(place) {
+        // If the place is pointing to a symbolic value.
+        if let Some((sym_val, sym_projs)) = self.try_find_sym_value(place) {
             return self.handle_sym_value(sym_val, sym_projs).into();
         }
 
+        // Or it is pointing to an object embracing symbolic values.
         if let Some(size) = place.metadata().size() {
             if let Some(porter) = Self::try_create_porter(
                 addr,
@@ -220,7 +222,8 @@ where
             return self.fallback.try_take_place(place);
         };
 
-        if let Some((sym_val, sym_projs)) = self.first_symbolic_value_iter(
+        // If the place is pointing to a symbolic value.
+        if let Some((sym_val, sym_projs)) = self.try_find_sym_value_iter(
             place.local().metadata(),
             place.projections(),
             place.projs_metadata(),
@@ -235,6 +238,7 @@ where
             });
         }
 
+        // Or it is pointing to an object embracing symbolic values.
         if let Some(size) = place.metadata().size() {
             if let Some(porter) = Self::try_create_porter(
                 addr,
@@ -262,7 +266,7 @@ where
             self.return_value_addr = Some(addr);
         }
 
-        if let Some((_sym_val, sym_projs)) = self.first_symbolic_value(place) {
+        if let Some((_sym_val, sym_projs)) = self.try_find_sym_value(place) {
             if !sym_projs.is_empty() {
                 todo!("#238");
             }
@@ -283,21 +287,21 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
     /// Finds the first symbolic value in the chain of projections (hosts) leading to the place.
     /// # Returns
     /// The first symbolic value and the remaining projections to be applied on it.
-    fn first_symbolic_value<'a, 'b>(
+    fn try_find_sym_value<'a, 'b>(
         &'a self,
         place: &'b Place,
     ) -> Option<(&'a SymValueRef, &'b [Projection])>
     where
         Self: IndexResolver<Local>,
     {
-        self.first_symbolic_value_iter(
+        self.try_find_sym_value_iter(
             place.local().metadata(),
             place.projections(),
             place.projs_metadata(),
         )
     }
 
-    fn first_symbolic_value_iter<'a, 'b>(
+    fn try_find_sym_value_iter<'a, 'b>(
         &'a self,
         local_metadata: &PlaceMetadata,
         projs: &'b [Projection],
@@ -354,6 +358,9 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
         )
     }
 
+    /// Looks in the region indicated by `addr` and `size` and picks all
+    /// symbolic values that are residing in that region. If there is no
+    /// symbolic value in that region, returns `None`.
     fn try_create_porter<'a, C: 'a>(
         addr: RawPointer,
         size: TypeSize,

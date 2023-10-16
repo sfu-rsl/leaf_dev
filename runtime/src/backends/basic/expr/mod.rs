@@ -582,13 +582,17 @@ impl RawConcreteValue {
             panic!("The type for the lazy value is not available.");
         };
         /* NOTE: Can we perform evaluation without storing the type separately?
-         * It seems to be possible to infer it as we are supposed to evaluate them only when
-         * the concrete value is used in some operation with a symbolic value.
+         * It seems to be possible as we evaluate them only when we
+         * are evaluating a operation which includes a symbolic value (otherwise
+         * the concrete result would be referenced).
+         * Thus, we should be able to infer the type based on the type of symbolic
+         * value.
          * However there are a few cases that this is not easily achievable:
          * - In shift operations, which the operands may not be from the same type.
          * - Arrays and effectively symbolic projections.
-         * We have defined the type as an option to not pass the type in future unless
-         * it is necessary.
+         * So we may end up with a hybrid solution. Currently, we have defined
+         * the type as an option to not pass the type in the future unless it is
+         * necessary.
          */
         let addr = self.0 as usize;
         use std::ptr::from_exposed_addr as to_ptr;
