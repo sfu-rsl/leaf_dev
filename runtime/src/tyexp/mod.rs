@@ -6,6 +6,8 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
+use crate::abs::backend::TypeManager;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TypeInformation {
     // A DefId identifies a particular definition, by combining a crate index and a def index.
@@ -70,5 +72,26 @@ impl TypeExport {
 
         file.write_all(serde_json::to_string_pretty(&map).unwrap().as_bytes())
             .unwrap();
+    }
+}
+
+pub(crate) struct DefaultTypeManager {
+    type_map: HashMap<String, TypeInformation>,
+}
+
+impl DefaultTypeManager {
+    pub fn new() -> Self {
+        DefaultTypeManager {
+            type_map: TypeExport::read(),
+        }
+    }
+}
+
+impl TypeManager for DefaultTypeManager {
+    type Key = String;
+    type Value = Option<TypeInformation>;
+
+    fn get_type(&self, type_id: Self::Key) -> Self::Value {
+        self.type_map.get(&type_id).cloned()
     }
 }
