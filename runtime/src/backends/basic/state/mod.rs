@@ -1,5 +1,3 @@
-use crate::abs::Local;
-
 use super::{alias::SymValueRefProjector as SymbolicProjector, Projection, ValueRef};
 
 mod local_based;
@@ -11,15 +9,16 @@ type RRef<T> = std::rc::Rc<std::cell::RefCell<T>>;
 /// A projection that its possible index is resolved.
 type ResolvedProjection = Projection<ValueRef>;
 
+pub(super) use local_based::PlaceRef;
 pub(super) use local_based::StackedLocalIndexVariablesState;
 pub(super) use pointer_based::RawPointerVariableState;
 
-pub(crate) enum PlaceError {
-    LocalNotFound(Local),
+pub(crate) enum PlaceError<L = crate::abs::Local> {
+    LocalNotFound(L),
     StateNotFound(local_based::StateId),
 }
 
-impl std::fmt::Debug for PlaceError {
+impl<L: std::fmt::Display> std::fmt::Debug for PlaceError<L> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             PlaceError::LocalNotFound(local) => write!(

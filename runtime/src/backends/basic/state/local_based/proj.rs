@@ -13,6 +13,11 @@ pub(super) fn apply_projs<'a, 'b, SP: SymbolicProjector>(
     mut projs: impl Iterator<Item = ResolvedProjection>,
 ) -> ValueRef {
     let mut current = host.clone();
+
+    if current.is_symbolic() {
+        return apply_projs_sym(sym_projector, &SymValueRef::new(current), projs).0;
+    }
+
     while let Some(proj) = projs.next() {
         current = apply_proj_con(
             place_resolver,
@@ -22,11 +27,9 @@ pub(super) fn apply_projs<'a, 'b, SP: SymbolicProjector>(
         );
 
         if current.is_symbolic() {
-            break;
+            return apply_projs_sym(sym_projector, &SymValueRef::new(current), projs).0;
         }
     }
-
-    current = apply_projs_sym(sym_projector.clone(), &SymValueRef::new(current), projs).0;
 
     current
 }

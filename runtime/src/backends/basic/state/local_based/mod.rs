@@ -60,7 +60,7 @@ impl<SP: SymbolicProjector> StackedLocalIndexVariablesState<SP> {
     }
 }
 
-pub(super) trait PlaceRef {
+pub(in super::super) trait PlaceRef {
     type Local;
 
     fn local(&self) -> &Self::Local;
@@ -426,6 +426,18 @@ impl<SP: SymbolicProjector> SelfHierarchical for StackedLocalIndexVariablesState
 
     fn drop_layer(self) -> Option<Self> {
         self.parent.map(|parent| *parent)
+    }
+}
+
+impl PlaceRef for crate::abs::Place {
+    type Local = crate::abs::Local;
+
+    fn local(&self) -> &Self::Local {
+        self.local()
+    }
+
+    fn projections(&self) -> &[Projection<Self::Local>] {
+        self.projections()
     }
 }
 

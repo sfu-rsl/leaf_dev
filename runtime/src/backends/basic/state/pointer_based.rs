@@ -416,6 +416,7 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
             Value::Symbolic(_) => {
                 insert(entry, (SymValueRef::new(value), type_id));
             }
+            #[cfg(place_addr)]
             Value::Concrete(ConcreteValue::Adt(adt)) => {
                 for field in adt.fields.iter() {
                     if let Some(value) = &field.value {
@@ -493,5 +494,8 @@ fn type_key(metadata: &PlaceMetadata) -> TypeKey {
     metadata
         .type_id()
         .map(TypeKey::Id)
-        .unwrap_or_else(|| TypeKey::Primitive(metadata.ty().cloned().unwrap()))
+        .unwrap_or_else(|| TypeKey::Primitive(metadata.ty().cloned().unwrap_or_else(|| {
+            log::warn!("Neither type id nor primitive type information was available. Using a stub primitive type.");
+            ValueType::new_int(32, false)
+        })))
 }

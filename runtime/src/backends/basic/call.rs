@@ -11,17 +11,28 @@ use super::{
 type VariablesStateFactory<VS> = Box<dyn Fn(usize) -> VS>;
 
 pub(super) struct BasicCallStackManager<VS: VariablesState> {
+    /// The call stack. Each frame consists of the data that is held for the
+    /// current function call and is preserved through calls and returns.
     stack: Vec<CallStackFrame>,
     vars_state_factory: VariablesStateFactory<VS>,
+    /// The data passed between from the call point (in the caller)
+    /// to the entrance point (in the callee).
     latest_call: Option<CallInfo>,
+    /// The data (return value) passed between the exit point (in the callee)
+    /// to the return point (in the caller).
     latest_returned_val: Option<ValueRef>,
     vars_state: Option<VS>,
 }
 
 #[derive(Default)]
 pub(super) struct CallStackFrame {
-    // this doesn't refer to the current stack frame, but the function that is about to be / was just called
+    /* this doesn't refer to the current stack frame,
+     * but the function that is about to be / was just called by this function.
+     */
     is_callee_external: Option<bool>,
+    arg_locals: Vec<ArgLocal>,
+    #[cfg(place_addr)]
+    return_value_addr: Option<RawPointer>,
 }
 
 #[cfg(not(place_addr))]
@@ -48,12 +59,18 @@ impl<VS: VariablesState> BasicCallStackManager<VS> {
 }
 
 impl<VS: VariablesState + SelfHierarchical> BasicCallStackManager<VS> {
-    fn push_new_stack_frame(&mut self, args: impl Iterator<Item = (ArgLocal, ValueRef)>) {
+    fn push_new_stack_frame(
+        &mut self,
+        args: impl Iterator<Item = (ArgLocal, ValueRef)>,
+        frame: CallStackFrame,
+    ) {
+        let mut arg_locals = Vec::new();
+
         self.vars_state = Some(if let Some(current_vars) = self.vars_state.take() {
             let mut vars_state = current_vars.add_layer();
-            // set places for the arguments in the new frame using values from the current frame
             for (local, value) in args {
-                vars_state.set_place(&Place::from(local), value);
+                vars_state.set_place(&Place::from(local.clone()), value);
+                arg_locals.push(local);
             }
 
             vars_state
@@ -62,11 +79,13 @@ impl<VS: VariablesState + SelfHierarchical> BasicCallStackManager<VS> {
             (self.vars_state_factory)(0)
         });
 
-        self.stack.push(CallStackFrame::default());
+        self.stack.push(frame);
     }
 
     fn top_frame(&mut self) -> &mut CallStackFrame {
-        self.stack.last_mut().expect("Call stack is empty")
+        self.stack
+            .last_mut()
+            .expect("Call stack should not be empty")
     }
 }
 
@@ -83,52 +102,60 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
                 })
                 .collect(),
             #[cfg(place_addr)]
-            return_value_addr: Default::default(),
+            return_value_addr: None,
         });
     }
 
     /// This function is called when a function is entered. `kind` tells us whether the entered function is
     /// instrumented (internal) or not.
     fn notify_enter(&mut self, kind: EntranceKind) {
+        let call_info = self.latest_call.take();
+
         // if parent_frame doesn't exist, we can assume we're in an instrumented function
         if let Some(parent_frame) = self.stack.last_mut() {
             parent_frame.is_callee_external = Some(match kind {
                 EntranceKind::ForcedInternal => false,
                 EntranceKind::ByFuncId(curr) => {
                     // If the entered func's id matches what was expected in the parent, it's an internal function
-                    let CallInfo { expected_func, .. } = self.latest_call.as_ref().unwrap();
+                    let expected_func = &call_info.as_ref().unwrap().expected_func;
                     curr.unwrap_func_id() != expected_func.unwrap_func_id()
                 }
             });
         }
 
-        let args = self
-            .latest_call
-            .as_ref()
-            .map(|call| call.args.clone())
-            .unwrap_or_default();
-        self.push_new_stack_frame(args.into_iter());
+        #[cfg(place_addr)]
+        let return_value_addr = call_info.as_ref().and_then(|call| call.return_value_addr);
+        let args = call_info.map(|call| call.args).unwrap_or_default();
+        let arg_locals = args.iter().map(|(local, _)| local.clone()).collect();
+        self.push_new_stack_frame(
+            args.into_iter(),
+            CallStackFrame {
+                arg_locals,
+                #[cfg(place_addr)]
+                return_value_addr,
+                ..Default::default()
+            },
+        );
     }
 
     fn pop_stack_frame(&mut self) {
         self.latest_returned_val = None;
 
-        if let Some(latest_call) = self.latest_call.take() {
-            // Cleaning the arguments
-            latest_call.args.into_iter().for_each(|(local, _)| {
-                self.top().take_place(&Place::from(local));
-            });
+        let popped_frame = self.stack.pop().unwrap();
 
-            let ret_local = Local::ReturnValue;
-            #[cfg(place_addr)]
-            let ret_local = LocalWithMetadata::new(
-                ret_local,
-                PlaceMetadata::new(latest_call.return_value_addr, None /* TODO */),
-            );
-            self.latest_returned_val = self.top().try_take_place(&Place::from(ret_local));
-        }
+        // Cleaning the arguments
+        popped_frame.arg_locals.into_iter().for_each(|local| {
+            self.top().take_place(&Place::from(local));
+        });
 
-        self.stack.pop().unwrap();
+        let ret_local = Local::ReturnValue;
+        #[cfg(place_addr)]
+        let ret_local = LocalWithMetadata::new(
+            ret_local,
+            PlaceMetadata::new(popped_frame.return_value_addr, None /* TODO */),
+        );
+        self.latest_returned_val = self.top().try_take_place(&Place::from(ret_local));
+
         self.vars_state = self.vars_state.take().unwrap().drop_layer();
     }
 
@@ -149,6 +176,7 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
         self.vars_state.as_mut().expect("Call stack is empty")
     }
 
+    #[cfg(place_addr)]
     fn set_local_address(&mut self, local: Local, addr: RawPointer) {
         match local {
             Local::ReturnValue => self.latest_call.as_mut().unwrap().return_value_addr = Some(addr),

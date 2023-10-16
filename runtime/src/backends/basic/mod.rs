@@ -33,8 +33,11 @@ use self::{
 
 type TraceManager = Box<dyn abs::backend::TraceManager<BasicBlockIndex, ValueRef>>;
 
+#[cfg(place_addr)]
 type BasicVariablesState =
     RawPointerVariableState<StackedLocalIndexVariablesState<SymProjector>, SymProjector>;
+#[cfg(not(place_addr))]
+type BasicVariablesState = StackedLocalIndexVariablesState<SymProjector>;
 
 type BasicCallStackManager = call::BasicCallStackManager<BasicVariablesState>;
 
@@ -79,10 +82,15 @@ impl BasicBackend {
         let sym_projector = Rc::new(RefCell::new(expr::proj::new_sym_projector()));
         Self {
             call_stack_manager: BasicCallStackManager::new(Box::new(move |id| {
-                RawPointerVariableState::new(
+                #[cfg(place_addr)]
+                let vars_state = RawPointerVariableState::new(
                     StackedLocalIndexVariablesState::new(id, sym_projector.clone()),
                     sym_projector.clone(),
-                )
+                );
+                #[cfg(not(place_addr))]
+                let vars_state = StackedLocalIndexVariablesState::new(id, sym_projector.clone());
+
+                vars_state
             })),
             trace_manager: Box::new(
                 ImmediateTraceManager::<BasicBlockIndex, u32, ValueRef>::new_basic(Box::new(
@@ -640,7 +648,10 @@ fn get_operand_value(vars_state: &mut dyn VariablesState, operand: Operand) -> V
     match operand {
         // copy and move are the same, but only for now. see: https://github.com/rust-lang/unsafe-code-guidelines/issues/188
         Operand::Place(place, PlaceUsage::Copy) => vars_state.copy_place(&place),
+        #[cfg(place_addr)]
         Operand::Place(place, PlaceUsage::Move) => vars_state.take_place(&place),
+        #[cfg(not(place_addr))]
+        Operand::Place(place, PlaceUsage::Move) => vars_state.copy_place(&place),
         Operand::Const(constant) => Into::<ConcreteValue>::into(constant).to_value_ref(),
         Operand::Symbolic(sym) => sym.into(),
     }
@@ -663,8 +674,14 @@ trait VariablesState<P = Place, V = ValueRef> {
 
     /// Returns the value stored at the given place. The place should not contain a value after
     /// this operation.
-    fn take_place(&mut self, place: &P) -> V {
-        self.try_take_place(place).unwrap()
+    fn take_place(&mut self, place: &P) -> V
+    where
+        P: self::state::PlaceRef,
+        P::Local: std::fmt::Display,
+    {
+        self.try_take_place(place)
+            .ok_or(self::state::PlaceError::LocalNotFound(place.local()))
+            .unwrap()
     }
 
     /// Tries to take the value of a place if available.
