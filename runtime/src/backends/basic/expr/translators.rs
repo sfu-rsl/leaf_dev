@@ -19,7 +19,7 @@ pub(crate) mod z3 {
         backends::basic::expr::{
             prelude::*,
             sym_place::{apply_len, DefaultProjExprReadResolver, Select, SymReadResult},
-            ProjKind, SymBinaryOperands, SymVarId,
+            SymBinaryOperands, SymVarId,
         },
         solvers::z3::{ArrayNode, ArraySort, BVNode, BVSort},
     };
@@ -180,11 +180,11 @@ pub(crate) mod z3 {
                     let operand = self.translate_symbolic(operand);
                     self.translate_unary_expr(operator, operand)
                 }
-                Expr::Binary {
+                Expr::Binary(BinaryExpr {
                     operator,
                     operands,
                     checked,
-                } => {
+                }) => {
                     // Only projections care about if a binary operation is checked or not.
                     // A checked binary expression without a field projection is not well formed (before MIR optimizations are run).
                     assert!(!checked, "translating unexpected checked operation");
@@ -393,11 +393,11 @@ pub(crate) mod z3 {
         fn translate_projection_expr(&mut self, proj_expr: &ProjExpr) -> AstNode<'ctx> {
             if let ProjExpr::SymHost(sym_host) = proj_expr {
                 if let (
-                    SymValue::Expression(Expr::Binary {
+                    SymValue::Expression(Expr::Binary(BinaryExpr {
                         operator,
                         operands,
                         checked,
-                    }),
+                    })),
                     ProjKind::Field(field_index),
                 ) = (sym_host.host.as_ref(), &sym_host.kind)
                 {
@@ -543,11 +543,11 @@ pub(crate) mod z3 {
                     // binop, we can safely ignore the projection and treat the expression as normal,
                     // since checked binary operations return the tuple `(binop(x, y), did_overflow)`,
                     // and failed checked binops immediately assert!(no_overflow == true), then panic.
-                    let unchecked_host = SymValue::Expression(Expr::Binary {
+                    let unchecked_host = SymValue::Expression(Expr::Binary(BinaryExpr {
                         operator,
                         operands: operands.clone(),
                         checked: false,
-                    });
+                    }));
                     self.translate_symbolic(&unchecked_host)
                 }
                 DID_OVERFLOW => self.translate_overflow(operator, operands),

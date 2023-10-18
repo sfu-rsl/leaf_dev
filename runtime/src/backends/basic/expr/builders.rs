@@ -255,11 +255,11 @@ mod core {
             op: BinaryOp,
             checked: bool,
         ) -> Self::Expr<'a> {
-            Expr::Binary {
+            Expr::Binary(BinaryExpr {
                 operator: op,
                 operands,
                 checked,
-            }
+            })
         }
 
         impl_singular_binary_ops_through_general!();

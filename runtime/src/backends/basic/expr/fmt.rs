@@ -151,16 +151,16 @@ impl Expr {
     fn fmt_operator(&self, f: &mut Formatter<'_>) -> Result {
         match self {
             Expr::Unary { operator, .. } => write!(f, "{operator}"),
-            Expr::Binary {
+            Expr::Binary(BinaryExpr {
                 operator,
                 checked: false,
                 ..
-            } => write!(f, "{operator}"),
-            Expr::Binary {
+            }) => write!(f, "{operator}"),
+            Expr::Binary(BinaryExpr {
                 operator,
                 checked: true,
                 ..
-            } => write!(f, "{operator}ꟲ"),
+            }) => write!(f, "{operator}ꟲ"),
             Expr::Cast { .. } => write!(f, "Cast"),
             Expr::AddrOf() => write!(f, "AddrOf"),
             Expr::Len(_) => write!(f, "Len"),
@@ -171,7 +171,7 @@ impl Expr {
     fn fmt_params(&self, f: &mut Formatter<'_>) -> Result {
         match self {
             Expr::Unary { operand, .. } => write!(f, "{operand}"),
-            Expr::Binary { operands, .. } => match operands {
+            Expr::Binary(BinaryExpr { operands, .. }) => match operands {
                 BinaryOperands::Orig { first, second } => write!(f, "{first}, {second}"),
                 BinaryOperands::Rev { first, second } => write!(f, "{first}, {second}"),
             },

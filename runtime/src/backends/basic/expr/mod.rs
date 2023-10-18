@@ -672,11 +672,7 @@ pub(crate) enum Expr {
         operand: SymValueRef,
     },
 
-    Binary {
-        operator: BinaryOp,
-        operands: SymBinaryOperands,
-        checked: bool,
-    },
+    Binary(BinaryExpr),
 
     Cast {
         from: SymValueRef,
@@ -689,6 +685,14 @@ pub(crate) enum Expr {
     Len(ProjExprRef),
 
     Projection(ProjExpr),
+}
+
+#[allow(unused)]
+#[derive(Clone, Debug, dm::From)]
+pub(crate) struct BinaryExpr<Operands = SymBinaryOperands> {
+    operator: BinaryOp,
+    operands: Operands,
+    checked: bool,
 }
 
 // FIXME: Remove this error suppression after adding support for symbolic projection.
