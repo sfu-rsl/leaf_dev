@@ -126,10 +126,11 @@ mod toplevel {
 }
 
 mod symbolic {
-    use super::{adapters::ConstSimplifier, core::CoreBuilder, *};
+    use super::{adapters::ConstFolder, adapters::ConstSimplifier, core::CoreBuilder, *};
 
     pub(crate) type SymbolicBuilder = Composite<
-        /*Binary:*/ Chained<LazyEvaluatorBuilder, Chained<ConstSimplifier, CoreBuilder>>,
+        /*Binary:*/
+        Chained<LazyEvaluatorBuilder, Chained<ConstSimplifier, Chained<ConstFolder, CoreBuilder>>>,
         /*Unary:*/ CoreBuilder,
     >;
 
@@ -232,6 +233,53 @@ mod adapters {
             };
 
             first.map_err(|first| (first, second, is_reversed).into())
+        }
+    }
+
+    /// This expression builder is an optimization step that folds constants in
+    /// the expressions if possible and avoids creating a new expression.
+    ///
+    /// For example, when generating an expression for `x * 2 * 3`,
+    /// `mul(mul(x, 1), 2)` will be called, and ConstFolder will return the
+    /// result equivalent to `x * 6` instead of ((x * 2) * 3).
+    #[derive(Default, Clone, Deref, DerefMut)]
+    pub(crate) struct ConstFolder(simp::ConstFolder);
+
+    impl BinaryExprBuilderAdapter for ConstFolder {
+        type TargetExprRefPair<'a> = SymBinaryOperands;
+        type TargetExpr<'a> = Result<ValueRef, SymBinaryOperands>;
+
+        fn adapt<'t, F>(operands: Self::TargetExprRefPair<'t>, build: F) -> Self::TargetExpr<'t>
+        where
+            F: for<'s> FnH<<Self::Target as BEB>::ExprRefPair<'s>, <Self::Target as BEB>::Expr<'s>>,
+        {
+            /* If this is a binary operation between a constant and a binary
+             * expression with a constant operand.
+             */
+            let (first, second, is_reversed) = operands.as_flat();
+            if let Value::Concrete(ConcreteValue::Const(b)) = second.as_ref() {
+                if let SymValue::Expression(Expr::Binary(first)) = first.as_ref() {
+                    let (x, a, is_inner_reversed) = first.operands.as_flat();
+                    if let Value::Concrete(ConcreteValue::Const(a)) = a.as_ref() {
+                        if let Ok(result) = build(
+                            (
+                                BinaryExpr {
+                                    operands: (x, a, is_inner_reversed).into(),
+                                    operator: first.operator,
+                                    checked: first.checked,
+                                },
+                                b,
+                                is_reversed,
+                            )
+                                .into(),
+                        ) {
+                            return Ok(result.to_value_ref().0);
+                        }
+                    }
+                }
+            }
+
+            Err(operands)
         }
     }
 }
@@ -768,6 +816,168 @@ mod simp {
     impl From<&ConstValue> for ValueRef {
         fn from(value: &ConstValue) -> Self {
             value.clone().to_value_ref()
+        }
+    }
+
+    #[derive(Clone, Default)]
+    pub(crate) struct ConstFolder;
+
+    type FoldableOperands<'a> =
+        WithConstOperand<'a, BinaryExpr<WithConstOperand<'a, &'a SymValueRef>>>;
+
+    impl<'a> FoldableOperands<'a> {
+        #[inline]
+        fn a(&self) -> &ConstValue {
+            self.as_flat().0.operands.as_flat().1
+        }
+
+        #[inline]
+        fn b(&self) -> &ConstValue {
+            self.as_flat().1
+        }
+
+        #[inline]
+        fn expr(&self) -> &BinaryExpr<WithConstOperand<'a, &'a SymValueRef>> {
+            self.as_flat().0
+        }
+
+        fn fold(self, folded_value: ConstValue) -> SymBinaryOperands {
+            let (expr, _, is_reversed) = self.flatten();
+            let x = expr.operands.flatten().0;
+            SymBinaryOperands::from((x.clone(), folded_value.to_value_ref(), is_reversed))
+        }
+
+        fn fold_expr(self, folded_value: ConstValue) -> BinaryExpr {
+            let expr = self.flatten().0;
+            let (x, _, is_reversed) = expr.operands.flatten();
+            BinaryExpr {
+                operands: SymBinaryOperands::from((
+                    x.clone(),
+                    folded_value.to_value_ref(),
+                    is_reversed,
+                )),
+                operator: expr.operator,
+                checked: expr.checked,
+            }
+        }
+    }
+
+    impl BinaryExprBuilder for ConstFolder {
+        type ExprRefPair<'a> = FoldableOperands<'a>;
+        type Expr<'a> = Result<BinaryExpr, Self::ExprRefPair<'a>>;
+
+        impl_general_binary_op_through_singulars!();
+
+        fn add<'a>(&mut self, operands: Self::ExprRefPair<'a>, checked: bool) -> Self::Expr<'a> {
+            // TODO: Avoid folding if constants overflow
+
+            let (a, b) = (operands.a(), operands.b());
+            let is_signed = false;
+
+            match operands.expr().operator {
+                // (x + a) + b = x + (a + b)
+                BinaryOp::Add => {
+                    let folded_value = ConstValue::binary_op_arithmetic(a, b, BinaryOp::Add);
+                    Ok(BinaryExpr {
+                        operands: operands.fold(folded_value),
+                        operator: BinaryOp::Add,
+                        checked,
+                    })
+                }
+                BinaryOp::Sub => {
+                    match &operands.expr().operands {
+                        // (x - a) + b = x + (b - a)
+                        BinaryOperands::Orig { .. }
+                            if is_signed || ConstValue::binary_op_cmp(a, b, BinaryOp::Lt) =>
+                        {
+                            let folded_value =
+                                ConstValue::binary_op_arithmetic(b, a, BinaryOp::Sub);
+                            Ok(BinaryExpr {
+                                operands: operands.fold(folded_value),
+                                operator: BinaryOp::Add,
+                                checked,
+                            })
+                        }
+                        // (x - a) + b = x - (a - b)
+                        BinaryOperands::Orig { .. } => {
+                            let folded_value =
+                                ConstValue::binary_op_arithmetic(a, b, BinaryOp::Sub);
+                            Ok(operands.fold_expr(folded_value))
+                        }
+                        // (a - x) + b = (a + b) - x
+                        BinaryOperands::Rev { .. } => {
+                            let folded_value =
+                                ConstValue::binary_op_arithmetic(a, b, BinaryOp::Add);
+                            Ok(operands.fold_expr(folded_value))
+                        }
+                    }
+                }
+                _ => Err(operands),
+            }
+        }
+
+        fn sub<'a>(&mut self, operands: Self::ExprRefPair<'a>, checked: bool) -> Self::Expr<'a> {
+            Err(operands)
+        }
+
+        fn mul<'a>(&mut self, operands: Self::ExprRefPair<'a>, checked: bool) -> Self::Expr<'a> {
+            Err(operands)
+        }
+
+        fn div<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            Err(operands)
+        }
+
+        fn rem<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            Err(operands)
+        }
+
+        fn and<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            Err(operands)
+        }
+
+        fn or<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            Err(operands)
+        }
+
+        fn xor<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            Err(operands)
+        }
+
+        fn shl<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            Err(operands)
+        }
+
+        fn shr<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            Err(operands)
+        }
+
+        fn eq<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            Err(operands)
+        }
+
+        fn ne<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            Err(operands)
+        }
+
+        fn lt<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            Err(operands)
+        }
+
+        fn le<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            Err(operands)
+        }
+
+        fn gt<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            Err(operands)
+        }
+
+        fn ge<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            Err(operands)
+        }
+
+        fn offset<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            Err(operands)
         }
     }
 }

@@ -633,7 +633,7 @@ pub(crate) struct PorterValue {
 #[derive(Clone, Debug, dm::From)]
 pub(crate) enum SymValue {
     Variable(SymbolicVar),
-    #[from(types(ProjExpr))]
+    #[from(types(BinaryExpr, ProjExpr))]
     Expression(Expr),
 }
 
@@ -938,6 +938,13 @@ mod convert {
     }
 
     impl Expr {
+        #[inline]
+        pub fn to_value_ref(self) -> SymValueRef {
+            Into::<SymValue>::into(self).to_value_ref()
+        }
+    }
+
+    impl BinaryExpr {
         #[inline]
         pub fn to_value_ref(self) -> SymValueRef {
             Into::<SymValue>::into(self).to_value_ref()
