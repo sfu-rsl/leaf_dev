@@ -489,12 +489,16 @@ mod simp {
     use super::*;
     use std::marker::PhantomData;
 
+    /// # Generic Parameters
+    /// * `Other`: The type of the other operand in an operation with a constant.
+    /// * `ResultExpr`: The type of the result expression which effectively will
+    ///   be either a constant or the other expression itself.
     #[derive(Clone)]
-    pub(crate) struct ConstSimplifier<Other, Expr> {
-        _phantom: PhantomData<(Other, Expr)>,
+    pub(crate) struct ConstSimplifier<Other = SymValueRef, ResultExpr = ValueRef> {
+        _phantom: PhantomData<(Other, ResultExpr)>,
     }
 
-    impl<Other, Expr> Default for ConstSimplifier<Other, Expr> {
+    impl<Other, ResultExpr> Default for ConstSimplifier<Other, ResultExpr> {
         fn default() -> Self {
             Self {
                 _phantom: PhantomData,
@@ -502,6 +506,7 @@ mod simp {
         }
     }
 
+    /// A pair of operands where one of them is a constant.
     type WithConstOperand<'a, T> = BinaryOperands<T, &'a ConstValue>;
 
     impl<'a, T> WithConstOperand<'a, T> {
@@ -586,12 +591,12 @@ mod simp {
         }
     }
 
-    impl<Other, Expr> BinaryExprBuilder for ConstSimplifier<Other, Expr>
+    impl<Other, ResultExpr> BinaryExprBuilder for ConstSimplifier<Other, ResultExpr>
     where
-        for<'a> Expr: From<&'a ConstValue> + From<Other>,
+        for<'a> ResultExpr: From<&'a ConstValue> + From<Other>,
     {
         type ExprRefPair<'a> = WithConstOperand<'a, Other>;
-        type Expr<'a> = Result<Expr, Self::ExprRefPair<'a>>;
+        type Expr<'a> = Result<ResultExpr, Self::ExprRefPair<'a>>;
 
         impl_general_binary_op_through_singulars!();
 
@@ -623,7 +628,7 @@ mod simp {
             if operands.konst().is_zero() {
                 Ok(operands.konst().into())
             }
-            // x * 1 = x
+            // x * 1 = 1 * x = x
             else if operands.konst().is_one() {
                 Ok(operands.other_into())
             } else {
