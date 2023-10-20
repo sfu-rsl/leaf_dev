@@ -21,15 +21,13 @@ impl CompilationPass for TypeExporter {
         body: &mir::Body<'tcx>,
         storage: &mut dyn Storage,
     ) {
-        if tcx.entry_fn(()).expect("No entry function was found").0 == body.source.def_id() {
-            let mut place_visitor = PlaceVisitor {
-                local_decls: body.local_decls(),
-                tcx,
-                storage,
-            };
-            place_visitor.visit_body(body);
-            TypeExport::write(get_type_map(storage).clone());
-        }
+        let mut place_visitor = PlaceVisitor {
+            local_decls: body.local_decls(),
+            tcx,
+            storage,
+        };
+        place_visitor.visit_body(body);
+        TypeExport::write(get_type_map(storage).clone());
     }
 }
 
