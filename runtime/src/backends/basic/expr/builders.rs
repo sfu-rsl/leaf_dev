@@ -827,11 +827,13 @@ mod simp {
 
     impl<'a> FoldableOperands<'a> {
         #[inline]
+        /// Return the constant of the inner expression
         fn a(&self) -> &ConstValue {
             self.as_flat().0.operands.as_flat().1
         }
 
         #[inline]
+        /// Return the constant of the outer expression
         fn b(&self) -> &ConstValue {
             self.as_flat().1
         }
@@ -841,12 +843,18 @@ mod simp {
             self.as_flat().0
         }
 
+        /// Create a new SymBinaryOperands from the symbolic variable and the folded value.
+        /// Useful when the operator of the inner expression needs to be changed. As you can create
+        /// the BinaryExpr wrapper manually.
         fn fold(self, folded_value: ConstValue) -> SymBinaryOperands {
             let (expr, _, is_reversed) = self.flatten();
             let x = expr.operands.flatten().0;
             SymBinaryOperands::from((x.clone(), folded_value.to_value_ref(), is_reversed))
         }
 
+        /// Create a new BinaryExpr from the inner expression and the folded value.
+        /// Uses the original operator of the inner expression and uses the folded value
+        /// for the constant.
         fn fold_expr(self, folded_value: ConstValue) -> BinaryExpr {
             let expr = self.flatten().0;
             let (x, _, is_reversed) = expr.operands.flatten();
@@ -872,6 +880,7 @@ mod simp {
             // TODO: Avoid folding if constants overflow
 
             let (a, b) = (operands.a(), operands.b());
+            // TODO: Check if the operands are signed or unsigned
             let is_signed = false;
 
             match operands.expr().operator {
@@ -887,6 +896,9 @@ mod simp {
                 BinaryOp::Sub => {
                     match &operands.expr().operands {
                         // (x - a) + b = x + (b - a)
+                        // Take the following example to understand why is_signed is needed: (x - 5) + (-2)
+                        // If we don't check for is_signed, we will end up with (x + 7) instead of (x - 7).
+                        // On the other hand, we need to be careful of unsigned values overflowing.
                         BinaryOperands::Orig { .. }
                             if is_signed || ConstValue::binary_op_cmp(a, b, BinaryOp::Lt) =>
                         {
