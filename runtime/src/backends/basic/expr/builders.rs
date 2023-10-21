@@ -917,7 +917,47 @@ mod simp {
         }
 
         fn sub<'a>(&mut self, operands: Self::ExprRefPair<'a>, checked: bool) -> Self::Expr<'a> {
-            Err(operands)
+            let (a, b) = (operands.a(), operands.b());
+
+            match operands.expr().operator {
+                BinaryOp::Add => {
+                    // (x + a) - b = x + (a - b)
+                    if ConstValue::binary_op_cmp(b, a, BinaryOp::Lt) {
+                        let folded_value = ConstValue::binary_op_arithmetic(a, b, BinaryOp::Sub);
+
+                        Ok(BinaryExpr {
+                            operands: operands.fold(folded_value),
+                            operator: BinaryOp::Add,
+                            checked,
+                        })
+                    // (x + a) - b = x - (b - a)
+                    } else {
+                        let folded_value = ConstValue::binary_op_arithmetic(b, a, BinaryOp::Sub);
+                        Ok(BinaryExpr {
+                            operands: operands.fold(folded_value),
+                            operator: BinaryOp::Sub,
+                            checked,
+                        })
+                    }
+                }
+                BinaryOp::Sub => {
+                    match operands.expr().operands {
+                        BinaryOperands::Orig { .. } => {
+                            // (x - a) - b = x - (a + b)
+                            let folded_value =
+                                ConstValue::binary_op_arithmetic(a, b, BinaryOp::Add);
+                            Ok(operands.fold_expr(folded_value))
+                        }
+                        BinaryOperands::Rev { .. } => {
+                            // (a - x) - b = (a - b) - x
+                            let folded_value =
+                                ConstValue::binary_op_arithmetic(a, b, BinaryOp::Sub);
+                            Ok(operands.fold_expr(folded_value))
+                        }
+                    }
+                }
+                _ => Err(operands),
+            }
         }
 
         fn mul<'a>(&mut self, operands: Self::ExprRefPair<'a>, checked: bool) -> Self::Expr<'a> {
