@@ -7,10 +7,11 @@ use rustc_middle::{
     mir::{
         BasicBlock, BinOp, Body, Constant, Local, Operand, Place, ProjectionElem, Statement, UnOp,
     },
-    ty::{Const, Ty, TyCtxt},
+    ty::{Const, GenericArg, Ty, TyCtxt},
 };
 use rustc_target::abi::VariantIdx;
 
+use core::iter;
 use std::vec;
 
 /*
@@ -219,7 +220,7 @@ mod implementation {
             args: Vec<Operand<'tcx>>,
             target: Option<BasicBlock>,
         ) -> BasicBlockData<'tcx> {
-            self.make_bb_for_call_with_target_and_ret(func_name, args, target)
+            self.make_bb_for_call_with_all(func_name, iter::empty(), args, target)
                 .0
         }
 
@@ -228,12 +229,13 @@ mod implementation {
             func_name: &str,
             args: Vec<Operand<'tcx>>,
         ) -> (BasicBlockData<'tcx>, Local) {
-            self.make_bb_for_call_with_target_and_ret(func_name, args, None)
+            self.make_bb_for_call_with_all(func_name, iter::empty(), args, None)
         }
 
-        fn make_bb_for_call_with_target_and_ret(
+        fn make_bb_for_call_with_all(
             &mut self,
             func_name: &str,
+            generic_args: impl IntoIterator<Item = GenericArg<'tcx>>,
             args: Vec<Operand<'tcx>>,
             target: Option<BasicBlock>,
         ) -> (BasicBlockData<'tcx>, Local);
@@ -360,7 +362,7 @@ mod implementation {
             rustc_middle::mir::Operand::function_handle(
                 self.context.tcx(),
                 self.context.body().source.def_id(),
-                ::std::iter::empty(),
+                iter::empty(),
                 self.context.body().span,
             )
         }
@@ -401,9 +403,10 @@ mod implementation {
     where
         C: BodyLocalManager<'tcx> + TyContextProvider<'tcx> + PriItemsProvider<'tcx>,
     {
-        fn make_bb_for_call_with_target_and_ret(
+        fn make_bb_for_call_with_all(
             &mut self,
             func_name: &str,
+            generic_args: impl IntoIterator<Item = GenericArg<'tcx>>,
             args: Vec<Operand<'tcx>>,
             target: Option<BasicBlock>,
         ) -> (BasicBlockData<'tcx>, Local) {
@@ -411,7 +414,13 @@ mod implementation {
                 .context
                 .add_local(self.context.get_pri_func_info(func_name).ret_ty);
             (
-                self.make_call_bb(func_name, args, Place::from(result_local), target),
+                self.make_call_bb(
+                    func_name,
+                    generic_args,
+                    args,
+                    Place::from(result_local),
+                    target,
+                ),
                 result_local,
             )
         }
@@ -423,32 +432,19 @@ mod implementation {
         fn make_call_bb(
             &self,
             func_name: &str,
+            generic_args: impl IntoIterator<Item = GenericArg<'tcx>>,
             args: Vec<Operand<'tcx>>,
             destination: Place<'tcx>,
             target: Option<BasicBlock>,
         ) -> BasicBlockData<'tcx> {
-            BasicBlockData::new(Some(self.make_call_terminator(
-                func_name,
+            BasicBlockData::new(Some(terminator::call(
+                self.context.tcx(),
+                self.context.get_pri_func_info(func_name).def_id,
+                generic_args,
                 args,
                 destination,
                 target,
             )))
-        }
-
-        fn make_call_terminator(
-            &self,
-            func_name: &str,
-            args: Vec<Operand<'tcx>>,
-            destination: Place<'tcx>,
-            target: Option<BasicBlock>,
-        ) -> Terminator<'tcx> {
-            terminator::call(
-                self.context.tcx(),
-                self.context.get_pri_func_info(func_name).def_id,
-                args,
-                destination,
-                target,
-            )
         }
     }
     impl<'tcx, C> RuntimeCallAdder<C>
@@ -915,7 +911,7 @@ mod implementation {
         fn internal_reference_func_def_const_operand(
             &mut self,
             def_id: &DefId,
-            substs: &[rustc_middle::ty::GenericArg],
+            substs: &[GenericArg],
         ) -> BlocksAndResult<'tcx> {
             if !substs.is_empty() {
                 log::warn!("Referencing a function with substitution variables (generic).");
@@ -1014,6 +1010,7 @@ mod implementation {
             let call_block = BasicBlockData::new(Some(terminator::call(
                 tcx,
                 nctfe_id,
+                iter::empty(),
                 Vec::default(),
                 result_local.into(),
                 None,
@@ -1898,7 +1895,7 @@ mod implementation {
 
         pub(super) use self::assignment::rvalue;
 
-        use super::{context::PriItemsProvider, DefId};
+        use super::*;
 
         pub(super) mod operand {
             use std::mem::size_of;
@@ -2014,8 +2011,12 @@ mod implementation {
                 }
             }
 
-            pub fn func(tcx: TyCtxt, def_id: DefId) -> Operand {
-                Operand::function_handle(tcx, def_id, std::iter::empty(), DUMMY_SP)
+            pub fn func<'tcx>(
+                tcx: TyCtxt<'tcx>,
+                def_id: DefId,
+                substs: impl IntoIterator<Item = GenericArg<'tcx>>,
+            ) -> Operand {
+                Operand::function_handle(tcx, def_id, substs, DUMMY_SP)
             }
         }
 
@@ -2170,6 +2171,7 @@ mod implementation {
             pub fn call<'tcx>(
                 tcx: TyCtxt<'tcx>,
                 func_def_id: DefId,
+                generic_args: impl IntoIterator<Item = GenericArg<'tcx>>,
                 args: Vec<Operand<'tcx>>,
                 destination: Place<'tcx>,
                 target: Option<BasicBlock>,
@@ -2179,7 +2181,7 @@ mod implementation {
                     kind: TerminatorKind::Call {
                         /* NOTE: Check if it is supposed to be the same operand for each function definition,
                          * i.e. caching/lazy singleton. */
-                        func: operand::func(tcx, func_def_id),
+                        func: operand::func(tcx, func_def_id, generic_args),
                         args,
                         destination,
                         target: Some(target.unwrap_or(NEXT_BLOCK)),
@@ -2280,6 +2282,7 @@ mod implementation {
             let block = BasicBlockData::new(Some(terminator::call(
                 tcx,
                 conversion_func,
+                iter::empty(),
                 vec![operand::const_from_existing(constant)],
                 bit_rep_local.into(),
                 None,
