@@ -921,11 +921,55 @@ mod simp {
         }
 
         fn mul<'a>(&mut self, operands: Self::ExprRefPair<'a>, checked: bool) -> Self::Expr<'a> {
-            Err(operands)
+            let (a, b) = (operands.a(), operands.b());
+
+            match operands.expr().operator {
+                // (x * a) * b = x * (a * b)
+                BinaryOp::Mul => {
+                    let folded_value = ConstValue::binary_op_arithmetic(a, b, BinaryOp::Mul);
+                    Ok(BinaryExpr {
+                        operands: operands.fold(folded_value),
+                        operator: BinaryOp::Mul,
+                        checked,
+                    })
+                }
+                // (x / a) * b = x * (b / a)
+                BinaryOp::Div => {
+                    let folded_value = ConstValue::binary_op_arithmetic(b, a, BinaryOp::Div);
+                    Ok(BinaryExpr {
+                        operands: operands.fold(folded_value),
+                        operator: BinaryOp::Mul,
+                        checked,
+                    })
+                }
+                _ => Err(operands),
+            }
         }
 
         fn div<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
-            Err(operands)
+            let (a, b) = (operands.a(), operands.b());
+
+            match operands.expr().operator {
+                // (x / a) / b = x / (a * b)
+                BinaryOp::Div => {
+                    let folded_value = ConstValue::binary_op_arithmetic(a, b, BinaryOp::Mul);
+                    Ok(BinaryExpr {
+                        operands: operands.fold(folded_value),
+                        operator: BinaryOp::Div,
+                        checked: false, // There is no CheckedDiv operation. The checks happen separately.
+                    })
+                }
+                // (x * a) / b = x * (a / b)
+                BinaryOp::Mul => {
+                    let folded_value = ConstValue::binary_op_arithmetic(a, b, BinaryOp::Div);
+                    Ok(BinaryExpr {
+                        operands: operands.fold(folded_value),
+                        operator: BinaryOp::Mul,
+                        checked: false, // There is no CheckedDiv operation. The checks happen separately.
+                    })
+                }
+                _ => Err(operands),
+            }
         }
 
         fn rem<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
