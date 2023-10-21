@@ -11,6 +11,7 @@
 #![feature(const_float_bits_conv)]
 #![feature(btree_cursors)]
 #![feature(strict_provenance)]
+#![feature(never_type)]
 
 pub mod abs;
 pub mod annotations;

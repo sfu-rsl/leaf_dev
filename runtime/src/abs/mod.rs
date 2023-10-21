@@ -10,7 +10,7 @@ pub type FieldIndex = u32;
 pub type RawPointer = u64;
 pub type PointerOffset = u64;
 pub type TypeSize = PointerOffset;
-pub type TypeId = u64;
+pub type TypeId = core::any::TypeId;
 
 pub(crate) type Local = place::Local;
 pub(crate) type Place<L = Local, P = Projection<L>> = place::Place<L, P>;

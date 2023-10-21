@@ -89,18 +89,6 @@ type RRef<T> = Rc<RefCell<T>>;
 type MemoryObject = (SymValueRef, TypeId);
 type Memory = BTreeMap<RawPointer, MemoryObject>;
 
-/* (*)
- * NOTE: Once type system for runtime is built we can use a uniform key for both
- * type categories.
- */
-enum TypeKey {
-    Id(TypeId),
-    Primitive(ValueType),
-}
-
-// (*)
-const PRIMITIVE_TYPE_ID: TypeId = 0;
-
 /// Provides a mapping for raw pointers to symbolic values.
 /// All places that have a valid address are handled by this state, otherwise
 /// they will be sent to the `fallback` state to be handled.
@@ -122,7 +110,7 @@ impl<VS, SP: SymbolicProjector> RawPointerVariableState<VS, SP> {
         }
     }
 
-    fn get<'a, 'b>(&'a self, addr: &'b RawPointer, type_id: TypeKey) -> Option<&'a SymValueRef> {
+    fn get<'a, 'b>(&'a self, addr: &'b RawPointer, type_id: TypeId) -> Option<&'a SymValueRef> {
         let (obj_address, (obj_value, obj_type_id)) = self.get_object(*addr)?;
 
         // FIXME: (*)
@@ -131,13 +119,13 @@ impl<VS, SP: SymbolicProjector> RawPointerVariableState<VS, SP> {
             "Non-deterministic memory regions are not supported yet."
         );
 
-        match type_id {
-            /* We assume that a parent host will be queried before its children.
-             * So, if the type id is not the same, it means that the object is
-             * nested inside the queried object. */
-            TypeKey::Id(type_id) if type_id == *obj_type_id => Some(obj_value),
-            TypeKey::Primitive(_ty) if *obj_type_id == PRIMITIVE_TYPE_ID => Some(obj_value),
-            _ => None,
+        /* We assume that a parent host will be queried before its children.
+         * So, if the type id is not the same, it means that the object is
+         * nested inside the queried object. */
+        if obj_type_id.eq(&type_id) {
+            Some(obj_value)
+        } else {
+            None
         }
     }
 
@@ -263,7 +251,7 @@ where
             addr,
             value,
             /* FIXME: (*) */
-            place.metadata().type_id().unwrap_or(PRIMITIVE_TYPE_ID),
+            type_id_or_unknown(place.metadata()),
         );
 
         log::debug!("Current memory state: {:?}", self.memory);
@@ -297,9 +285,10 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
     where
         Self: IndexResolver<Local>,
     {
-        if let Some(sym_val) =
-            self.get(local_metadata.address().as_ref()?, type_key(local_metadata))
-        {
+        if let Some(sym_val) = self.get(
+            local_metadata.address().as_ref()?,
+            type_id_or_unknown(local_metadata),
+        ) {
             Some((sym_val, projs))
         } else {
             // Checking for the value after each projection.
@@ -322,7 +311,7 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
                     // Or any symbolic value residing in a location in the chain.
                     metadata
                         .address()
-                        .and_then(|addr| self.get(&addr, type_key(metadata)))
+                        .and_then(|addr| self.get(&addr, type_id_or_unknown(metadata)))
                         .map(|sym_val| (i, sym_val))
                 })
                 // Returning the remaining projections.
@@ -418,7 +407,7 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
                             addr + field.offset,
                             value.clone(),
                             // FIXME: (*)
-                            PRIMITIVE_TYPE_ID,
+                            unknown_type(),
                         );
                     }
                 }
@@ -455,7 +444,7 @@ where
         };
 
         Some(
-            if let Some(sym_val) = self.get(&addr, TypeKey::Primitive(USIZE_TYPE.into())) {
+            if let Some(sym_val) = self.get(&addr, TypeId::of::<usize>()) {
                 sym_val.clone_to()
             } else {
                 UnevalValue::Lazy(RawConcreteValue(addr, Some(USIZE_TYPE.into()))).to_value_ref()
@@ -483,13 +472,13 @@ where
     }
 }
 
-fn type_key(metadata: &PlaceMetadata) -> TypeKey {
-    // If type id is sent, it is a non-primitive type.
-    metadata
-        .type_id()
-        .map(TypeKey::Id)
-        .unwrap_or_else(|| TypeKey::Primitive(metadata.ty().cloned().unwrap_or_else(|| {
-            log::warn!("Neither type id nor primitive type information was available. Using a stub primitive type.");
-            ValueType::new_int(32, false)
-        })))
+fn type_id_or_unknown(metadata: &PlaceMetadata) -> TypeId {
+    metadata.type_id().unwrap_or_else(|| {
+        log::warn!("Type id information was not available. Using a stub type id.");
+        unknown_type()
+    })
+}
+
+fn unknown_type() -> TypeId {
+    TypeId::of::<!>()
 }

@@ -15,12 +15,11 @@ use crate::abs::{
 use super::Projection;
 
 const NONE_ADDRESS: RawPointer = 0;
-const NONE_TYPE: TypeId = 0;
 
 #[derive(Debug, Clone)]
 pub(crate) struct PlaceMetadata {
     address: RawPointer,
-    type_id: TypeId,
+    type_id: Option<TypeId>,
     // FIXME: Temporary until merged with type system
     ty: Option<ValueType>,
     size: Option<TypeSize>,
@@ -30,7 +29,7 @@ impl Default for PlaceMetadata {
     fn default() -> Self {
         Self {
             address: NONE_ADDRESS,
-            type_id: NONE_TYPE,
+            type_id: None,
             ty: None,
             size: None,
         }
@@ -42,7 +41,7 @@ impl PlaceMetadata {
     pub(crate) fn new(addr: Option<RawPointer>, type_id: Option<TypeId>) -> Self {
         Self {
             address: addr.unwrap_or(NONE_ADDRESS),
-            type_id: type_id.unwrap_or(NONE_TYPE),
+            type_id: type_id,
             ty: None,
             size: None,
         }
@@ -63,16 +62,12 @@ impl PlaceMetadata {
 
     #[inline]
     pub(crate) fn type_id(&self) -> Option<TypeId> {
-        if self.type_id != NONE_TYPE {
-            Some(self.type_id)
-        } else {
-            None
-        }
+        self.type_id
     }
 
     #[inline]
     pub(crate) fn set_type_id(&mut self, type_id: TypeId) {
-        self.type_id = type_id;
+        self.type_id = Some(type_id);
     }
 
     pub(crate) fn ty(&self) -> Option<&ValueType> {
@@ -200,7 +195,7 @@ impl BasicPlaceMetadataHandler<'_> {
         if self.0.has_projection() {
             let last = &mut self.0.projs_metadata_mut().last().unwrap();
             debug_assert!(last.type_id().is_none());
-            last.set_address(type_id);
+            last.set_type_id(type_id);
         } else {
             self.0.local_mut().set_type_id(type_id);
         }
