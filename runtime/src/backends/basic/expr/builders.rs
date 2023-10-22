@@ -979,20 +979,27 @@ mod simp {
                 // (x * a) * b = x * (a * b)
                 BinaryOp::Mul => {
                     let folded_value = ConstValue::binary_op_arithmetic(a, b, BinaryOp::Mul);
-                    Ok(BinaryExpr {
-                        operands: operands.fold(folded_value),
-                        operator: BinaryOp::Mul,
-                        checked,
-                    })
+                    Ok(operands.fold_expr(folded_value))
                 }
-                // (x / a) * b = x * (b / a)
                 BinaryOp::Div => {
-                    let folded_value = ConstValue::binary_op_arithmetic(b, a, BinaryOp::Div);
-                    Ok(BinaryExpr {
-                        operands: operands.fold(folded_value),
-                        operator: BinaryOp::Mul,
-                        checked,
-                    })
+                    match operands.expr().operands {
+                        // (x / a) * b = x * (b / a)
+                        BinaryOperands::Orig { .. } => {
+                            let folded_value =
+                                ConstValue::binary_op_arithmetic(b, a, BinaryOp::Div);
+                            Ok(BinaryExpr {
+                                operands: operands.fold(folded_value),
+                                operator: BinaryOp::Mul,
+                                checked,
+                            })
+                        }
+                        // (a / x) * b = (a * b) / x
+                        BinaryOperands::Rev { .. } => {
+                            let folded_value =
+                                ConstValue::binary_op_arithmetic(a, b, BinaryOp::Mul);
+                            Ok(operands.fold_expr(folded_value))
+                        }
+                    }
                 }
                 _ => Err(operands),
             }
@@ -1001,6 +1008,7 @@ mod simp {
         fn div<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
             let (a, b) = (operands.a(), operands.b());
 
+            // TODO: Check for reversed operands
             match operands.expr().operator {
                 // (x / a) / b = x / (a * b)
                 BinaryOp::Div => {
