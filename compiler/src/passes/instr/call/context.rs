@@ -133,12 +133,21 @@ impl<'tcx> TyContextProvider<'tcx> for DefaultContext<'tcx, '_, '_> {
     }
 }
 
+impl<'tcx> HasLocalDecls<'tcx> for DefaultContext<'tcx, '_, '_> {
+    delegate! {
+        to self.modification_unit {
+            fn local_decls(&self) -> &LocalDecls<'tcx>;
+        }
+    }
+}
+
 impl<'tcx> BodyLocalManager<'tcx> for DefaultContext<'tcx, '_, '_> {
-    fn add_local<T>(&mut self, decl_info: T) -> Local
-    where
-        T: Into<NewLocalDecl<'tcx>>,
-    {
-        self.modification_unit.add_local(decl_info)
+    delegate! {
+        to self.modification_unit {
+            fn add_local<T>(&mut self, decl_info: T) -> Local
+            where
+                T: Into<NewLocalDecl<'tcx>>;
+        }
     }
 }
 
@@ -226,12 +235,6 @@ pub(crate) struct InBodyContext<'b, 'tcx, 'bd, B> {
 impl<'tcx, B> BodyProvider<'tcx> for InBodyContext<'_, 'tcx, '_, B> {
     fn body(&self) -> &mir::Body<'tcx> {
         self.body
-    }
-}
-
-impl<'tcx, B> mir::HasLocalDecls<'tcx> for InBodyContext<'_, 'tcx, '_, B> {
-    fn local_decls(&self) -> &mir::LocalDecls<'tcx> {
-        self.body().local_decls()
     }
 }
 
@@ -524,7 +527,7 @@ make_caller_macro!(
 );
 
 impl_traits!(all for TransparentContext);
-impl_traits!(all - [ impl_body_provider impl_has_local_decls ] for InBodyContext<'tcxb, 'bd>);
+impl_traits!(all - [ impl_body_provider ] for InBodyContext<'tcxb, 'bd>);
 impl_traits!(all - [ impl_in_entry_function ] for EntryFunctionMarkerContext);
 impl_traits!(all - [ impl_location_provider impl_insertion_location_provider] for AtLocationContext);
 impl_traits!(all - [ impl_dest_ref_provider ] for AssignmentContext<'tcxd>);

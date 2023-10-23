@@ -4,8 +4,8 @@ use rustc_ast::Mutability;
 use rustc_index::IndexVec;
 use rustc_middle::{
     mir::{
-        BasicBlock, BasicBlockData, Body, ClearCrossCrate, Local, LocalDecl, SourceInfo,
-        UnwindAction,
+        BasicBlock, BasicBlockData, Body, ClearCrossCrate, Local, LocalDecl, LocalDecls,
+        SourceInfo, UnwindAction,
     },
     ty::Ty,
 };
@@ -20,8 +20,8 @@ struct NewBasicBlock<'tcx> {
 }
 
 pub(crate) struct BodyInstrumentationUnit<'tcx> {
-    next_local_index: Local,
-    new_locals: Vec<NewLocalDecl<'tcx>>,
+    all_locals: IndexVec<Local, LocalDecl<'tcx>>,
+    first_new_local: Local,
     // new_blocks_before maps BasicBlocks from MIR already in the AST to a list of new basic blocks
     // we'll insert just before it.
     new_blocks_before: HashMap<BasicBlock, Vec<NewBasicBlock<'tcx>>>,
@@ -32,10 +32,12 @@ pub(crate) struct BodyInstrumentationUnit<'tcx> {
 }
 
 impl<'tcx> BodyInstrumentationUnit<'tcx> {
-    pub fn new(nex_local_index: Local) -> Self {
+    pub fn new(local_decls: &LocalDecls<'tcx>) -> Self {
         Self {
-            next_local_index: nex_local_index,
-            new_locals: Vec::new(),
+            /* We clone locals, so we implement HasLocalDecl with both original
+             * and new locals included  */
+            all_locals: local_decls.iter().cloned().collect(),
+            first_new_local: local_decls.next_index(),
             new_blocks_before: HashMap::new(),
             new_blocks_after: HashMap::new(),
             new_blocks_count: 0,
@@ -133,13 +135,18 @@ impl JumpModificationConstraint {
     }
 }
 
+impl<'tcx> HasLocalDecls<'tcx> for BodyInstrumentationUnit<'tcx> {
+    fn local_decls(&self) -> &LocalDecls<'tcx> {
+        &self.all_locals
+    }
+}
+
 impl<'tcx> BodyLocalManager<'tcx> for BodyInstrumentationUnit<'tcx> {
     fn add_local<T>(&mut self, decl_info: T) -> Local
     where
         T: Into<NewLocalDecl<'tcx>>,
     {
-        self.new_locals.push(decl_info.into());
-        self.next_local_index + (self.new_locals.len() - 1)
+        self.all_locals.push(decl_info.into().0)
     }
 }
 
@@ -193,7 +200,7 @@ type InsertionPair<'tcx> = (BasicBlock, Vec<NewBasicBlock<'tcx>>);
 impl<'tcx> BodyInstrumentationUnit<'tcx> {
     // No blocks actually get added to the MIR of the current body until this function gets called.
     pub fn commit(mut self, body: &mut Body<'tcx>) {
-        Self::add_new_locals(&mut body.local_decls, self.new_locals);
+        self.add_new_locals(&mut body.local_decls);
 
         // this function applies any jump modifications to terminators of blocks as specified
         Self::update_jumps_pre_insert(
@@ -218,16 +225,13 @@ impl<'tcx> BodyInstrumentationUnit<'tcx> {
         }
     }
 
-    fn add_new_locals(
-        locals: &mut IndexVec<Local, LocalDecl<'tcx>>,
-        new_locals: Vec<NewLocalDecl<'tcx>>,
-    ) {
-        let first_index = locals.len();
-        for (i, local) in new_locals.into_iter().enumerate() {
-            let index = locals.push(local.0);
-            // Asserting that the indices that we have given are correct.
-            assert_eq!(index, (i + first_index).into());
+    fn add_new_locals(&mut self, original_locals: &mut IndexVec<Local, LocalDecl<'tcx>>) {
+        if self.first_new_local == self.all_locals.next_index() {
+            // No new locals were added
+            return;
         }
+
+        original_locals.extend(self.all_locals.drain(self.first_new_local.as_usize()..))
     }
 
     fn insert_new_blocks(

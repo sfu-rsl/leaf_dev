@@ -49,7 +49,7 @@ fn transform<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>, storage: &mut dyn S
 
     split_blocks_with(body, requires_immediate_instr_after);
 
-    let mut modification = BodyInstrumentationUnit::new(body.local_decls().next_index());
+    let mut modification = BodyInstrumentationUnit::new(body.local_decls());
     let mut call_adder = RuntimeCallAdder::new(tcx, &mut modification, storage);
     let mut call_adder = call_adder.in_body(body);
     if tcx.entry_fn(()).expect("No entry function was found").0 == body.source.def_id() {

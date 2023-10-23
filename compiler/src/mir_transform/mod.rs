@@ -3,7 +3,7 @@ mod instr;
 mod jump;
 mod split;
 
-use rustc_middle::mir::{BasicBlock, BasicBlockData, Local, LocalDecl};
+use rustc_middle::mir::{BasicBlock, BasicBlockData, HasLocalDecls, Local, LocalDecl};
 
 pub(crate) use self::instr::BodyInstrumentationUnit;
 use self::jump::JumpTargetAttribute;
