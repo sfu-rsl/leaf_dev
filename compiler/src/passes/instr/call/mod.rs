@@ -189,7 +189,7 @@ mod implementation {
     use rustc_middle::mir::{
         self, BasicBlock, BasicBlockData, HasLocalDecls, Terminator, UnevaluatedConst,
     };
-    use rustc_middle::ty::TyKind;
+    use rustc_middle::ty::{TyKind, TypeVisitableExt};
     use rustc_span::def_id::DefId;
 
     use delegate::delegate;
@@ -235,6 +235,15 @@ mod implementation {
         fn make_bb_for_call_with_all(
             &mut self,
             func_name: &str,
+            generic_args: impl IntoIterator<Item = GenericArg<'tcx>>,
+            args: Vec<Operand<'tcx>>,
+            target: Option<BasicBlock>,
+        ) -> (BasicBlockData<'tcx>, Local);
+
+        fn make_bb_for_call_raw(
+            &mut self,
+            func_id: DefId,
+            ret_ty: Ty<'tcx>,
             generic_args: impl IntoIterator<Item = GenericArg<'tcx>>,
             args: Vec<Operand<'tcx>>,
             target: Option<BasicBlock>,
@@ -410,12 +419,23 @@ mod implementation {
             args: Vec<Operand<'tcx>>,
             target: Option<BasicBlock>,
         ) -> (BasicBlockData<'tcx>, Local) {
-            let result_local = self
-                .context
-                .add_local(self.context.get_pri_func_info(func_name).ret_ty);
+            let func_info = self.context.get_pri_func_info(func_name);
+            let (def_id, ret_ty) = (func_info.def_id, func_info.ret_ty);
+            self.make_bb_for_call_raw(def_id, ret_ty, generic_args, args, target)
+        }
+
+        fn make_bb_for_call_raw(
+            &mut self,
+            func_id: DefId,
+            ret_ty: Ty<'tcx>,
+            generic_args: impl IntoIterator<Item = GenericArg<'tcx>>,
+            args: Vec<Operand<'tcx>>,
+            target: Option<BasicBlock>,
+        ) -> (BasicBlockData<'tcx>, Local) {
+            let result_local = self.context.add_local(ret_ty);
             (
                 self.make_call_bb(
-                    func_name,
+                    func_id,
                     generic_args,
                     args,
                     Place::from(result_local),
@@ -431,7 +451,7 @@ mod implementation {
     {
         fn make_call_bb(
             &self,
-            func_name: &str,
+            func_id: DefId,
             generic_args: impl IntoIterator<Item = GenericArg<'tcx>>,
             args: Vec<Operand<'tcx>>,
             destination: Place<'tcx>,
@@ -439,7 +459,7 @@ mod implementation {
         ) -> BasicBlockData<'tcx> {
             BasicBlockData::new(Some(terminator::call(
                 self.context.tcx(),
-                self.context.get_pri_func_info(func_name).def_id,
+                func_id,
                 generic_args,
                 args,
                 destination,
@@ -518,9 +538,7 @@ mod implementation {
             if cfg!(place_addr) {
                 blocks.push(self.make_bb_for_set_addr_call(place_ref, &cum_place, cum_ty.ty));
                 if cfg!(place_addr) {
-                    if let Some(block) = self.make_bb_for_set_type_call(place_ref, cum_ty.ty) {
-                        blocks.push(block);
-                    }
+                    blocks.extend(self.set_place_type(place_ref, cum_ty.ty));
                 }
             }
 
@@ -534,9 +552,7 @@ mod implementation {
                     blocks.push(self.make_bb_for_set_addr_call(place_ref, &cum_place, cum_ty.ty));
                 }
                 if cfg!(place_addr) {
-                    if let Some(block) = self.make_bb_for_set_type_call(place_ref, cum_ty.ty) {
-                        blocks.push(block);
-                    }
+                    blocks.extend(self.set_place_type(place_ref, cum_ty.ty));
                 }
             }
 
@@ -654,51 +670,69 @@ mod implementation {
 
         /// Makes a basic block for setting the type of a place if it is from
         /// primitive types.
-        fn make_bb_for_set_type_call(
-            &mut self,
-            place_ref: Local,
-            ty: Ty<'tcx>,
-        ) -> Option<BasicBlockData<'tcx>> {
+        fn set_place_type(&mut self, place_ref: Local, ty: Ty<'tcx>) -> Vec<BasicBlockData<'tcx>> {
+            let mut blocks = vec![];
+
             let tcx = self.context.tcx();
-            let (func_name, additional_args) = if ty.is_bool() {
-                (stringify!(pri::set_place_type_bool), vec![])
+            if let Some((func_name, additional_args)) = if ty.is_bool() {
+                Some((stringify!(pri::set_place_type_bool), vec![]))
             } else if ty.is_char() {
-                (stringify!(pri::set_place_type_char), vec![])
+                Some((stringify!(pri::set_place_type_char), vec![]))
             } else if ty.is_integral() {
-                (
+                Some((
                     stringify!(pri::set_place_type_int),
                     vec![
                         operand::const_from_uint(tcx, ty::size_of(self.tcx(), ty).bits()),
                         operand::const_from_bool(tcx, ty.is_signed()),
                     ],
-                )
+                ))
             } else if ty.is_floating_point() {
                 let (e_bits, s_bits) = ty::ebit_sbit_size(tcx, ty);
-                (
+                Some((
                     stringify!(pri::set_place_type_float),
                     vec![
                         operand::const_from_uint(tcx, e_bits),
                         operand::const_from_uint(tcx, s_bits),
                     ],
-                )
+                ))
             } else {
-                // TODO: #265
-                let id = {
-                    use std::hash::{Hash, Hasher};
-                    let mut s = std::collections::hash_map::DefaultHasher::new();
-                    ty.hash(&mut s);
-                    s.finish()
-                };
-                (
-                    stringify!(pri::set_place_type_id),
-                    vec![operand::const_from_uint(tcx, id)],
-                )
+                None
+            } {
+                blocks.push(self.make_bb_for_call(
+                    func_name,
+                    [vec![operand::copy_for_local(place_ref)], additional_args].concat(),
+                ));
+            }
+
+            let id_local = {
+                /* NOTE: As `TypeId::of` requires static lifetime, do we need to clear lifetimes?
+                 * No. As we are code generation phase, all regions should be erased. */
+                debug_assert!(
+                    !ty.has_erasable_regions() && !ty.has_late_bound_regions(),
+                    "Region erasure assumption does not hold for TypeId call."
+                );
+
+                let type_id_of = &self.context.pri_helper_funcs().type_id_of;
+                let (block, id_local) = self.make_bb_for_call_raw(
+                    type_id_of.def_id,
+                    type_id_of.ret_ty,
+                    vec![ty.into()],
+                    Vec::default(),
+                    None,
+                );
+                blocks.push(block);
+                id_local
             };
 
-            Some(self.make_bb_for_call(
-                func_name,
-                [vec![operand::copy_for_local(place_ref)], additional_args].concat(),
-            ))
+            blocks.push(self.make_bb_for_call(
+                stringify!(pri::set_place_type_id),
+                vec![
+                    operand::copy_for_local(place_ref),
+                    operand::move_for_local(id_local),
+                ],
+            ));
+
+            blocks
         }
     }
 

@@ -32,7 +32,7 @@ pub(crate) trait InEntryFunction {}
 pub(crate) trait PriItemsProvider<'tcx> {
     fn get_pri_func_info(&self, func_name: &str) -> &FunctionInfo<'tcx>;
     fn pri_types(&self) -> &PriTypes<'tcx>;
-    fn pri_helper_funcs(&self) -> &PriHelperFunctions;
+    fn pri_helper_funcs(&self) -> &PriHelperFunctions<'tcx>;
 }
 
 pub(crate) trait StorageProvider {
@@ -97,7 +97,7 @@ pub(crate) struct DefaultContext<'tcx, 'm, 's> {
 pub(crate) struct PriItems<'tcx> {
     pub funcs: HashMap<String, FunctionInfo<'tcx>>,
     pub types: PriTypes<'tcx>,
-    pub helper_funcs: PriHelperFunctions,
+    pub helper_funcs: PriHelperFunctions<'tcx>,
 }
 
 impl<'tcx, 'm, 's> DefaultContext<'tcx, 'm, 's> {
@@ -199,7 +199,7 @@ impl<'tcx> PriItemsProvider<'tcx> for PriItems<'tcx> {
         &self.types
     }
 
-    fn pri_helper_funcs(&self) -> &PriHelperFunctions {
+    fn pri_helper_funcs(&self) -> &PriHelperFunctions<'tcx> {
         &self.helper_funcs
     }
 }
@@ -209,7 +209,7 @@ impl<'tcx> PriItemsProvider<'tcx> for DefaultContext<'tcx, '_, '_> {
         to self.pri {
             fn get_pri_func_info(&self, func_name: &str) -> &FunctionInfo<'tcx>;
             fn pri_types(&self) -> &PriTypes<'tcx>;
-            fn pri_helper_funcs(&self) -> &PriHelperFunctions;
+            fn pri_helper_funcs(&self) -> &PriHelperFunctions<'tcx>;
         }
     }
 }
@@ -347,7 +347,7 @@ make_impl_macro! {
     self,
     fn get_pri_func_info(&self, func_name: &str) -> &FunctionInfo<'tcx>;
     fn pri_types(&self) -> &PriTypes<'tcx>;
-    fn pri_helper_funcs(&self) -> &PriHelperFunctions;
+    fn pri_helper_funcs(&self) -> &PriHelperFunctions<'tcx>;
 }
 
 make_impl_macro! {

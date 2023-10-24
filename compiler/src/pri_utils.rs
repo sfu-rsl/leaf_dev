@@ -17,9 +17,10 @@ pub(crate) struct PriTypes<'tcx> {
     pub raw_ptr: Ty<'tcx>,
 }
 
-pub(crate) struct PriHelperFunctions {
+pub(crate) struct PriHelperFunctions<'tcx> {
     pub f32_to_bits: DefId,
     pub f64_to_bits: DefId,
+    pub type_id_of: FunctionInfo<'tcx>,
 }
 
 pub(crate) fn find_pri_exported_symbols(tcx: TyCtxt) -> Vec<DefId> {
@@ -63,20 +64,7 @@ pub(crate) fn find_pri_funcs<'tcx>(
         .filter_by_marker(tcx, stringify!(runtime::pri::MODULE_MARKER), false)
         .into_iter()
         .filter(|def_id| matches!(tcx.def_kind(def_id), DefKind::Fn | DefKind::AssocFn))
-        .map(|def_id| {
-            (
-                tcx.def_path_str(def_id),
-                FunctionInfo {
-                    def_id,
-                    ret_ty: tcx
-                        .fn_sig(def_id)
-                        .skip_binder()
-                        .output()
-                        .no_bound_vars()
-                        .expect("PRI functions are not expected to have bound vars (generics)."),
-                },
-            )
-        })
+        .map(|def_id| (tcx.def_path_str(def_id), func_info_from(tcx, def_id)))
         .collect()
 }
 
@@ -128,7 +116,10 @@ pub(crate) fn find_pri_types<'tcx>(pri_symbols: &[DefId], tcx: TyCtxt<'tcx>) -> 
     }
 }
 
-pub(crate) fn find_helper_funcs(pri_symbols: &[DefId], tcx: TyCtxt) -> PriHelperFunctions {
+pub(crate) fn find_helper_funcs<'tcx>(
+    pri_symbols: &[DefId],
+    tcx: TyCtxt<'tcx>,
+) -> PriHelperFunctions<'tcx> {
     let def_ids: HashMap<String, DefId> = pri_symbols
         .filter_by_marker(tcx, helper_item_name!(MODULE_MARKER), false)
         .into_iter()
@@ -139,6 +130,26 @@ pub(crate) fn find_helper_funcs(pri_symbols: &[DefId], tcx: TyCtxt) -> PriHelper
     PriHelperFunctions {
         f32_to_bits: *def_ids.get(helper_item_name!(f32_to_bits)).unwrap(),
         f64_to_bits: *def_ids.get(helper_item_name!(f64_to_bits)).unwrap(),
+        type_id_of: func_info_from(
+            tcx,
+            *def_ids
+                .get(helper_item_name!(type_id_of))
+                .expect("`type_id_of` is not exported (probably erased by compiler)."),
+        ),
+    }
+}
+
+fn func_info_from(tcx: TyCtxt, def_id: DefId) -> FunctionInfo {
+    FunctionInfo {
+        def_id,
+        ret_ty: tcx
+            .fn_sig(def_id)
+            .skip_binder()
+            .output()
+            .no_bound_vars()
+            .expect(
+                "PRI functions are not expected to have bound vars (generics) for the return type.",
+            ),
     }
 }
 

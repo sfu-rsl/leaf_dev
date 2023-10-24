@@ -469,4 +469,22 @@ pub mod compiler_helpers {
     }
 
     pub const fn mark_as_nctfe() {}
+
+    /* NOTE:
+     * This is a workaround to prevent the compiler from removing the function
+     * as it is unused. */
+    #[used]
+    static TYPE_ID_OF_USER: fn() -> TypeId = type_id_of::<u32>;
+
+    #[cfg(place_addr)]
+    pub fn type_id_of<T: ?Sized + 'static>() -> TypeId {
+        /* NOTE: Once this function is const in stable build, we can mark this
+         * function as constant as well. */
+        /* NOTE: Do we need to bother about inlining?
+         * Based on the last checks, LLVM is smart enough to inline this function
+         * automatically and even replace everything with u128.
+         * Also, giving this function the `inline` attribute will cause it to
+         * not be exported. */
+        TypeId::of::<T>()
+    }
 }
