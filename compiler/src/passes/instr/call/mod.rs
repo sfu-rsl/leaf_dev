@@ -1218,10 +1218,17 @@ mod implementation {
         }
 
         fn by_aggregate_array(&mut self, items: &[OperandRef]) {
+            let mut additional_args = vec![];
+            if cfg!(place_addr) {
+                /* FIXME: To be replaced by type information. */
+                let align: u64 = 0;
+                additional_args.push(operand::const_from_uint(self.context.tcx(), align));
+            }
+
             self.add_bb_for_aggregate_assign_call(
                 stringify!(pri::assign_aggregate_array),
                 items,
-                vec![],
+                additional_args,
             )
         }
 

@@ -242,6 +242,12 @@ pub fn assign_aggregate_array(
     items: &[OperandRef],
     #[cfg(place_addr)] align: PointerOffset,
 ) {
+    #[cfg(place_addr)]
+    log::warn!(
+        "Align is going to be supported based on types. Ignoring it {}.",
+        align
+    );
+
     assign_to(dest, |h| {
         h.array_from(items.iter().map(|o| take_back_operand_ref(*o)))
     })
