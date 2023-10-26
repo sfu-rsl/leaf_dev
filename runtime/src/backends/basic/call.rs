@@ -30,6 +30,13 @@ pub(super) struct CallStackFrame {
      * but the function that is about to be / was just called by this function.
      */
     is_callee_external: Option<bool>,
+    /// The return value forced by a call to `override_return_value`.
+    /// If it is set in an internal call, it will be consumed as the returned
+    /// value of the current function when popping the frame.
+    /// If it is set in an external call, it will be consumed as the returned
+    /// value from the external call when storing the returned value in the
+    /// destination variable.
+    overridden_return_val: Option<ValueRef>,
     arg_locals: Vec<ArgLocal>,
     #[cfg(place_addr)]
     return_value_metadata: Option<PlaceMetadata>,
@@ -165,6 +172,15 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
         self.latest_returned_val = ret_local
             .map(Place::from)
             .and_then(|p| self.top().try_take_place(&p));
+        if let Some(overridden) = popped_frame.overridden_return_val {
+            if self.latest_returned_val.is_some() {
+                log::warn!(concat!(
+                    "The return value is overridden while an actual value was available. ",
+                    "This may not be intended."
+                ))
+            }
+            self.latest_returned_val = Some(overridden);
+        }
 
         self.vars_state = self.vars_state.take().unwrap().drop_layer();
     }
@@ -172,14 +188,27 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
     fn finalize_call(&mut self, result_dest: Place) {
         let is_external = self.top_frame().is_callee_external.take().unwrap_or(true);
         if is_external {
-            // NOTE: The return value of an external function must be an untracked constant,
-            //       because it's not possible to track it.
-            todo!("handle the case when an external function is called")
+            if let Some(overridden) = self.top_frame().overridden_return_val.take() {
+                log::info!(concat!(
+                    "Consuming the overridden return value as the returned value ",
+                    "from the external function."
+                ));
+                self.top().set_place(&result_dest, overridden);
+            } else {
+                // NOTE: The return value of an external function must be an untracked constant,
+                //       because it's not possible to track it.
+                todo!("handle the case when an external function is called")
+            }
         } else if let Some(returned_val) = self.latest_returned_val.take() {
             self.top().set_place(&result_dest, returned_val)
         } else {
             // The unit return type
         }
+    }
+
+    fn override_return_value(&mut self, value: ValueRef) {
+        log::info!("Overriding the return value with {:?}", value);
+        self.top_frame().overridden_return_val = Some(value);
     }
 
     fn top(&mut self) -> &mut dyn VariablesState {

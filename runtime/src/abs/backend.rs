@@ -219,6 +219,8 @@ pub(crate) trait FunctionHandler {
     /// known, instrumented functions.
     fn internal_enter(self);
 
+    fn override_return_value(self, value: Self::Operand);
+
     fn ret(self);
 
     fn after_call(self, result_dest: Self::Place);

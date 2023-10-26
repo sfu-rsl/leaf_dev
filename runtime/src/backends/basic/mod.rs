@@ -607,6 +607,11 @@ impl<'a> FunctionHandler for BasicFunctionHandler<'a> {
             .notify_enter(EntranceKind::ForcedInternal);
     }
 
+    fn override_return_value(self, value: Self::Operand) {
+        let value = get_operand_value(self.call_stack_manager.top(), value);
+        self.call_stack_manager.override_return_value(value)
+    }
+
     fn ret(self) {
         self.call_stack_manager.pop_stack_frame();
     }
@@ -701,12 +706,15 @@ enum EntranceKind {
 }
 
 trait CallStackManager {
+    fn prepare_for_call(&mut self, func: ValueRef, args: Vec<ValueRef>);
+
     fn notify_enter(&mut self, kind: EntranceKind);
 
-    fn prepare_for_call(&mut self, func: ValueRef, args: Vec<ValueRef>);
+    fn pop_stack_frame(&mut self);
+
     fn finalize_call(&mut self, result_dest: Place);
 
-    fn pop_stack_frame(&mut self);
+    fn override_return_value(&mut self, value: ValueRef);
 
     fn top(&mut self) -> &mut dyn VariablesState;
 

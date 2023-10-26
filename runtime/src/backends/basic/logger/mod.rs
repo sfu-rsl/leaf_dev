@@ -316,6 +316,10 @@ impl FunctionHandler for LoggerFunctionHandler<'_> {
         log::info!("Entered explicitly internal function {}", info.func);
     }
 
+    fn override_return_value(self, value: Self::Operand) {
+        log::info!("Overriding return value to {}", value);
+    }
+
     fn ret(self) {
         let info = self.call_manager.notify_return();
         log_info!("Returning from {}", info.func);

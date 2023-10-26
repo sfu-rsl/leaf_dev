@@ -21,7 +21,7 @@ macro_rules! impl_symbolizable_direct {
                     paste! {
                         let operand_ref = pri::[<new_sym_value_ $ty>]();
                     }
-                    return_sym_operand(operand_ref);
+                    pri::override_return_value(operand_ref);
                 }
             }
         )*
@@ -35,7 +35,7 @@ macro_rules! impl_symbolizable_int {
             impl Symbolizable for $ty {
                 fn symbolize() {
                     let operand_ref = pri::new_sym_value_int(size_of::<$ty>() as u64 * 8, $signed);
-                    return_sym_operand(operand_ref);
+                    pri::override_return_value(operand_ref);
                 }
             }
         )*
@@ -53,7 +53,7 @@ macro_rules! impl_symbolizable_float {
                     let sbits = <$ty>::MANTISSA_DIGITS as u64;
                     let ebits = (<$ty>::MAX_EXP - <$ty>::MIN_EXP + 1) as u64;
                     let operand_ref = pri::new_sym_value_float(ebits, sbits);
-                    return_sym_operand(operand_ref);
+                    pri::override_return_value(operand_ref);
                 }
             }
         )*
@@ -61,12 +61,3 @@ macro_rules! impl_symbolizable_float {
 }
 
 impl_symbolizable_float!(f32, f64);
-
-fn return_sym_operand(operand_ref: OperandRef) {
-    /* FIXME: Add a better support. This looks like a workaround. */
-
-    pri::internal_enter_func();
-    let local_ref = pri::ref_place_return_value();
-    pri::assign_use(local_ref, operand_ref);
-    pri::return_from_func();
-}

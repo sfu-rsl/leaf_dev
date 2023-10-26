@@ -373,6 +373,13 @@ pub fn return_from_func() {
     func_control(|h| h.ret())
 }
 
+/// Overrides (forces) the return value of a function.
+/// In an external call chain, the value will be kept as the return value
+/// until it is consumed at the point of return to an internal caller.
+pub fn override_return_value(operand: OperandRef) {
+    func_control(|h| h.override_return_value(take_back_operand_ref(operand)))
+}
+
 pub fn after_call_func(destination: PlaceRef) {
     func_control(|h| h.after_call(take_back_place_ref(destination)))
 }
