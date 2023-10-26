@@ -9,6 +9,13 @@ pub(crate) enum Local {
     Normal(LocalIndex),   // > n
 }
 
+impl Local {
+    #[inline(always)]
+    pub(crate) fn is_func_local(&self) -> bool {
+        matches!(self, Local::ReturnValue | Local::Argument(_))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct Place<L = Local, P = Projection<L>> {
     local: L,

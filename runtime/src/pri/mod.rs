@@ -378,12 +378,8 @@ pub fn after_call_func(destination: PlaceRef) {
 }
 
 #[cfg(place_addr)]
-pub fn set_arg_address(local_index: LocalIndex, raw_ptr: RawPointer) {
-    func_control(|h| h.metadata().set_arg_address(local_index, raw_ptr))
-}
-#[cfg(place_addr)]
-pub fn set_return_value_address(raw_ptr: RawPointer) {
-    func_control(|h| h.metadata().set_return_value_address(raw_ptr))
+pub fn preserve_special_local_metadata(place: PlaceRef) {
+    func_control(|h| h.metadata().preserve_metadata(take_back_place_ref(place)))
 }
 
 pub fn check_assert_bounds_check(

@@ -628,15 +628,18 @@ pub(crate) struct BasicFunctionMetadataHandler<'a> {
 
 impl BasicFunctionMetadataHandler<'_> {
     #[cfg(place_addr)]
-    pub(crate) fn set_return_value_address(&mut self, addr: RawPointer) {
-        self.call_stack_manager
-            .set_local_address(Local::ReturnValue, addr)
-    }
+    pub(crate) fn preserve_metadata(&mut self, place: Place) {
+        use crate::abs::place::HasMetadata;
 
-    #[cfg(place_addr)]
-    pub(crate) fn set_arg_address(&mut self, index: LocalIndex, addr: RawPointer) {
+        let local = place.local();
+        let metadata = local.metadata();
+        let local: &abs::Local = local.as_ref();
+        debug_assert!(
+            local.is_func_local() && !place.has_projection(),
+            "This method is meant for function locals not arbitrary places."
+        );
         self.call_stack_manager
-            .set_local_address(Local::Argument(index), addr)
+            .set_local_metadata(local, metadata.clone())
     }
 }
 
@@ -708,5 +711,5 @@ trait CallStackManager {
     fn top(&mut self) -> &mut dyn VariablesState;
 
     #[cfg(place_addr)]
-    fn set_local_address(&mut self, local: Local, addr: RawPointer);
+    fn set_local_metadata(&mut self, local: &Local, metadata: place::PlaceMetadata);
 }

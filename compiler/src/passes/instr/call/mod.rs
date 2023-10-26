@@ -1711,7 +1711,7 @@ mod implementation {
             let mut blocks = vec![];
 
             if cfg!(place_addr) {
-                blocks.extend(self.make_bb_for_func_set_addresses());
+                blocks.extend(self.make_bb_for_func_preserve_metadata());
             }
 
             let func = self.current_func();
@@ -1751,38 +1751,29 @@ mod implementation {
         Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
         C: ForFunctionCalling<'tcx>,
     {
-        fn make_bb_for_func_set_addresses(&mut self) -> Vec<BasicBlockData<'tcx>> {
-            let tcx = self.tcx();
-
+        fn make_bb_for_func_preserve_metadata(&mut self) -> Vec<BasicBlockData<'tcx>> {
             let mut blocks = vec![];
 
-            let make_bb = |this: &mut Self, place, func_name, additional_args| {
-                let (stmts, addr_local) =
-                    this.make_ptr_to_place(&place, place.ty(this.body(), tcx).ty);
-                let args = [additional_args, vec![operand::move_for_local(addr_local)]].concat();
-                let mut block = this.make_bb_for_call(func_name, args);
-                block.statements.extend(stmts);
-                block
+            let make_bb = |this: &mut Self, place| {
+                let BlocksAndResult(mut ref_blocks, place_ref) =
+                    this.internal_reference_place(&place);
+                let call_block = this.make_bb_for_call(
+                    stringify!(pri::preserve_special_local_metadata),
+                    vec![operand::move_for_local(place_ref.into())],
+                );
+                ref_blocks.push(call_block);
+                ref_blocks
             };
 
-            blocks.extend(self.body().args_iter().map(|local| {
-                make_bb(
-                    self,
-                    Place::from(local),
-                    stringify!(pri::set_arg_address),
-                    vec![operand::const_from_uint(tcx, local.as_u32())],
-                )
-            }));
+            blocks.extend(
+                self.body()
+                    .args_iter()
+                    .flat_map(|local| make_bb(self, Place::from(local))),
+            );
 
             let ret_ty = self.body().return_ty();
             if !ret_ty.is_unit() {
-                let block = make_bb(
-                    self,
-                    Place::return_place(),
-                    stringify!(pri::set_return_value_address),
-                    vec![],
-                );
-                blocks.push(block);
+                blocks.extend(make_bb(self, Place::return_place()));
             }
 
             blocks

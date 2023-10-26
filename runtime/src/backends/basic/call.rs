@@ -1,5 +1,5 @@
 use crate::{
-    abs::{Local, LocalIndex, RawPointer},
+    abs::{Local, LocalIndex},
     utils::SelfHierarchical,
 };
 
@@ -32,7 +32,7 @@ pub(super) struct CallStackFrame {
     is_callee_external: Option<bool>,
     arg_locals: Vec<ArgLocal>,
     #[cfg(place_addr)]
-    return_value_addr: Option<RawPointer>,
+    return_value_metadata: Option<PlaceMetadata>,
 }
 
 #[cfg(not(place_addr))]
@@ -43,7 +43,7 @@ pub(super) struct CallInfo {
     expected_func: ValueRef,
     args: Vec<(ArgLocal, ValueRef)>,
     #[cfg(place_addr)]
-    return_value_addr: Option<RawPointer>,
+    return_value_metadata: Option<PlaceMetadata>,
 }
 
 impl<VS: VariablesState> BasicCallStackManager<VS> {
@@ -102,7 +102,7 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
                 })
                 .collect(),
             #[cfg(place_addr)]
-            return_value_addr: None,
+            return_value_metadata: None,
         });
     }
 
@@ -123,19 +123,26 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
             });
         }
 
-        #[cfg(place_addr)]
-        let return_value_addr = call_info.as_ref().and_then(|call| call.return_value_addr);
-        let args = call_info.map(|call| call.args).unwrap_or_default();
-        let arg_locals = args.iter().map(|(local, _)| local.clone()).collect();
-        self.push_new_stack_frame(
-            args.into_iter(),
-            CallStackFrame {
-                arg_locals,
-                #[cfg(place_addr)]
-                return_value_addr,
-                ..Default::default()
-            },
-        );
+        if let Some(call_info) = call_info {
+            #[cfg(place_addr)]
+            let return_value_metadata = call_info.return_value_metadata;
+            let arg_locals = call_info
+                .args
+                .iter()
+                .map(|(local, _)| local.clone())
+                .collect();
+            self.push_new_stack_frame(
+                call_info.args.into_iter(),
+                CallStackFrame {
+                    arg_locals,
+                    #[cfg(place_addr)]
+                    return_value_metadata,
+                    ..Default::default()
+                },
+            );
+        } else {
+            self.push_new_stack_frame(core::iter::empty(), Default::default());
+        }
     }
 
     fn pop_stack_frame(&mut self) {
@@ -148,13 +155,16 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
             self.top().take_place(&Place::from(local));
         });
 
-        let ret_local = Local::ReturnValue;
+        #[cfg(not(place_addr))]
+        let ret_local = Some(Local::ReturnValue);
         #[cfg(place_addr)]
-        let ret_local = LocalWithMetadata::new(
-            ret_local,
-            PlaceMetadata::new(popped_frame.return_value_addr, None /* TODO */),
-        );
-        self.latest_returned_val = self.top().try_take_place(&Place::from(ret_local));
+        let ret_local = popped_frame
+            .return_value_metadata
+            // When return type is unit, metadata may be removed.
+            .map(|m| LocalWithMetadata::new(Local::ReturnValue, m));
+        self.latest_returned_val = ret_local
+            .map(Place::from)
+            .and_then(|p| self.top().try_take_place(&p));
 
         self.vars_state = self.vars_state.take().unwrap().drop_layer();
     }
@@ -177,18 +187,23 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
     }
 
     #[cfg(place_addr)]
-    fn set_local_address(&mut self, local: Local, addr: RawPointer) {
+    fn set_local_metadata(&mut self, local: &Local, metadata: super::place::PlaceMetadata) {
+        use crate::abs::place::HasMetadata;
+
         match local {
-            Local::ReturnValue => self.latest_call.as_mut().unwrap().return_value_addr = Some(addr),
+            Local::ReturnValue => {
+                self.latest_call.as_mut().unwrap().return_value_metadata = Some(metadata)
+            }
             Local::Argument(..) => {
                 let args = &mut self.latest_call.as_mut().unwrap().args;
-                args.iter_mut()
+                *args
+                    .iter_mut()
                     .find(|(arg, _)| arg.as_ref().eq(&local))
                     .unwrap()
                     .0
-                    .set_address(addr);
+                    .metadata_mut() = metadata;
             }
-            Local::Normal(_) => (),
+            _ => (),
         }
     }
 }
