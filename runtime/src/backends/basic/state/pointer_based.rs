@@ -253,8 +253,6 @@ where
             /* FIXME: (*) */
             type_id_or_unknown(place.metadata()),
         );
-
-        log::debug!("Current memory state: {:?}", self.memory);
     }
 }
 
@@ -406,8 +404,7 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
                         self.set_addr(
                             addr + field.offset,
                             value.clone(),
-                            // FIXME: (*)
-                            unknown_type(),
+                            todo!("#265: Field type information is not available yet."),
                         );
                     }
                 }
