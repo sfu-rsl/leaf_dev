@@ -4,8 +4,8 @@ use rustc_ast::Mutability;
 use rustc_index::IndexVec;
 use rustc_middle::{
     mir::{
-        BasicBlock, BasicBlockData, Body, ClearCrossCrate, Local, LocalDecl, LocalDecls,
-        SourceInfo, UnwindAction,
+        BasicBlock, BasicBlockData, Body, ClearCrossCrate, HasLocalDecls, Local, LocalDecl,
+        LocalDecls, SourceInfo, UnwindAction,
     },
     ty::Ty,
 };
@@ -85,12 +85,6 @@ impl<'tcx> BodyInstrumentationUnit<'tcx> {
                 })
                 .map(|nbb| nbb.pseudo_index),
         )
-    }
-}
-
-impl<'tcx> From<LocalDecl<'tcx>> for NewLocalDecl<'tcx> {
-    fn from(value: LocalDecl<'tcx>) -> Self {
-        NewLocalDecl(value)
     }
 }
 

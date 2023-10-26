@@ -38,16 +38,6 @@ impl Default for PlaceMetadata {
 
 impl PlaceMetadata {
     #[inline]
-    pub(crate) fn new(addr: Option<RawPointer>, type_id: Option<TypeId>) -> Self {
-        Self {
-            address: addr.unwrap_or(NONE_ADDRESS),
-            type_id: type_id,
-            ty: None,
-            size: None,
-        }
-    }
-
-    #[inline]
     pub(crate) fn address(&self) -> Option<RawPointer> {
         if self.address != NONE_ADDRESS {
             Some(self.address)
@@ -56,6 +46,7 @@ impl PlaceMetadata {
         }
     }
 
+    #[inline]
     pub(crate) fn set_address(&mut self, address: RawPointer) {
         self.address = address;
     }
@@ -70,10 +61,12 @@ impl PlaceMetadata {
         self.type_id = Some(type_id);
     }
 
+    #[inline]
     pub(crate) fn ty(&self) -> Option<&ValueType> {
         self.ty.as_ref()
     }
 
+    #[inline]
     pub(crate) fn size(&self) -> Option<TypeSize> {
         self.size.as_ref().copied()
     }

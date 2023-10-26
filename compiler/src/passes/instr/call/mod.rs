@@ -186,9 +186,7 @@ pub(crate) struct RuntimeCallAdder<C> {
 mod implementation {
     use std::assert_matches::debug_assert_matches;
 
-    use rustc_middle::mir::{
-        self, BasicBlock, BasicBlockData, HasLocalDecls, Terminator, UnevaluatedConst,
-    };
+    use rustc_middle::mir::{self, BasicBlock, BasicBlockData, HasLocalDecls, UnevaluatedConst};
     use rustc_middle::ty::{TyKind, TypeVisitableExt};
     use rustc_span::def_id::DefId;
 
@@ -674,6 +672,7 @@ mod implementation {
             let mut blocks = vec![];
 
             let tcx = self.context.tcx();
+            // FIXME: To be removed when type information passing is complete.
             if let Some((func_name, additional_args)) = if ty.is_bool() {
                 Some((stringify!(pri::set_place_type_bool), vec![]))
             } else if ty.is_char() {
@@ -1754,7 +1753,7 @@ mod implementation {
         fn make_bb_for_func_preserve_metadata(&mut self) -> Vec<BasicBlockData<'tcx>> {
             let mut blocks = vec![];
 
-            let make_bb = |this: &mut Self, place| {
+            let ref_and_preserve = |this: &mut Self, place| {
                 let BlocksAndResult(mut ref_blocks, place_ref) =
                     this.internal_reference_place(&place);
                 let call_block = this.make_bb_for_call(
@@ -1768,12 +1767,12 @@ mod implementation {
             blocks.extend(
                 self.body()
                     .args_iter()
-                    .flat_map(|local| make_bb(self, Place::from(local))),
+                    .flat_map(|local| ref_and_preserve(self, Place::from(local))),
             );
 
             let ret_ty = self.body().return_ty();
             if !ret_ty.is_unit() {
-                blocks.extend(make_bb(self, Place::return_place()));
+                blocks.extend(ref_and_preserve(self, Place::return_place()));
             }
 
             blocks

@@ -3,13 +3,14 @@ mod instr;
 mod jump;
 mod split;
 
-use rustc_middle::mir::{BasicBlock, BasicBlockData, HasLocalDecls, Local, LocalDecl};
+use rustc_middle::mir::{BasicBlock, BasicBlockData, Local, LocalDecl};
 
 pub(crate) use self::instr::BodyInstrumentationUnit;
 use self::jump::JumpTargetAttribute;
 pub(crate) use self::split::split_blocks_with;
 pub(crate) const NEXT_BLOCK: BasicBlock = BasicBlock::MAX;
 
+#[derive(derive_more::From)]
 pub(crate) struct NewLocalDecl<'tcx>(LocalDecl<'tcx>);
 
 pub(crate) trait BodyLocalManager<'tcx> {

@@ -39,7 +39,7 @@ pub(super) struct CallStackFrame {
     overridden_return_val: Option<ValueRef>,
     arg_locals: Vec<ArgLocal>,
     #[cfg(place_addr)]
-    return_value_metadata: Option<PlaceMetadata>,
+    return_val_metadata: Option<PlaceMetadata>,
 }
 
 #[cfg(not(place_addr))]
@@ -50,7 +50,7 @@ pub(super) struct CallInfo {
     expected_func: ValueRef,
     args: Vec<(ArgLocal, ValueRef)>,
     #[cfg(place_addr)]
-    return_value_metadata: Option<PlaceMetadata>,
+    return_val_metadata: Option<PlaceMetadata>,
 }
 
 impl<VS: VariablesState> BasicCallStackManager<VS> {
@@ -109,7 +109,7 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
                 })
                 .collect(),
             #[cfg(place_addr)]
-            return_value_metadata: None,
+            return_val_metadata: None,
         });
     }
 
@@ -132,7 +132,7 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
 
         if let Some(call_info) = call_info {
             #[cfg(place_addr)]
-            let return_value_metadata = call_info.return_value_metadata;
+            let return_value_metadata = call_info.return_val_metadata;
             let arg_locals = call_info
                 .args
                 .iter()
@@ -143,11 +143,18 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
                 CallStackFrame {
                     arg_locals,
                     #[cfg(place_addr)]
-                    return_value_metadata,
+                    return_val_metadata: return_value_metadata,
                     ..Default::default()
                 },
             );
         } else {
+            if !self.stack.is_empty() {
+                log::warn!(concat!(
+                    "No call info was found for this entrance. ",
+                    "This means a mixture of external and internal call has happened."
+                ));
+            }
+
             self.push_new_stack_frame(core::iter::empty(), Default::default());
         }
     }
@@ -166,7 +173,7 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
         let ret_local = Some(Local::ReturnValue);
         #[cfg(place_addr)]
         let ret_local = popped_frame
-            .return_value_metadata
+            .return_val_metadata
             // When return type is unit, metadata may be removed.
             .map(|m| LocalWithMetadata::new(Local::ReturnValue, m));
         self.latest_returned_val = ret_local
@@ -221,7 +228,7 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
 
         match local {
             Local::ReturnValue => {
-                self.latest_call.as_mut().unwrap().return_value_metadata = Some(metadata)
+                self.latest_call.as_mut().unwrap().return_val_metadata = Some(metadata)
             }
             Local::Argument(..) => {
                 let args = &mut self.latest_call.as_mut().unwrap().args;

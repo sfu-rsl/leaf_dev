@@ -481,9 +481,10 @@ pub mod compiler_helpers {
 
     /* NOTE:
      * This is a workaround to prevent the compiler from removing the function
-     * as it is unused. */
+     * from the exported symbols as it is unused. */
     #[used]
-    static TYPE_ID_OF_USER: fn() -> TypeId = type_id_of::<u32>;
+    #[cfg(place_addr)]
+    static _TYPE_ID_OF_REFERENCER: fn() -> TypeId = type_id_of::<u32>;
 
     #[cfg(place_addr)]
     pub fn type_id_of<T: ?Sized + 'static>() -> TypeId {
