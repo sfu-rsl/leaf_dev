@@ -247,12 +247,7 @@ where
             }
         }
 
-        self.set_addr(
-            addr,
-            value,
-            /* FIXME: (*) */
-            type_id_or_unknown(place.metadata()),
-        );
+        self.set_addr(addr, value, place.metadata().unwrap_type_id());
     }
 }
 
@@ -285,7 +280,7 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
     {
         if let Some(sym_val) = self.get(
             local_metadata.address().as_ref()?,
-            type_id_or_unknown(local_metadata),
+            local_metadata.unwrap_type_id(),
         ) {
             Some((sym_val, projs))
         } else {
@@ -309,7 +304,7 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
                     // Or any symbolic value residing in a location in the chain.
                     metadata
                         .address()
-                        .and_then(|addr| self.get(&addr, type_id_or_unknown(metadata)))
+                        .and_then(|addr| self.get(&addr, metadata.unwrap_type_id()))
                         .map(|sym_val| (i, sym_val))
                 })
                 // Returning the remaining projections.
@@ -467,15 +462,4 @@ where
             ..self
         })
     }
-}
-
-fn type_id_or_unknown(metadata: &PlaceMetadata) -> TypeId {
-    metadata.type_id().unwrap_or_else(|| {
-        log::warn!("Type id information was not available. Using a stub type id.");
-        unknown_type()
-    })
-}
-
-fn unknown_type() -> TypeId {
-    TypeId::of::<!>()
 }

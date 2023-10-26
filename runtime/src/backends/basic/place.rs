@@ -57,6 +57,11 @@ impl PlaceMetadata {
     }
 
     #[inline]
+    pub(crate) fn unwrap_type_id(&self) -> TypeId {
+        self.type_id.expect("Type id is not available.")
+    }
+
+    #[inline]
     pub(crate) fn set_type_id(&mut self, type_id: TypeId) {
         self.type_id = Some(type_id);
     }
