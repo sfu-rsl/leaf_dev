@@ -1,7 +1,10 @@
 binop
 ctxt
 defaultness
+deinit
 discr
 rustc
+Rvalue
 Subslice
 TyCtx
+unsize
