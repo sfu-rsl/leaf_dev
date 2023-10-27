@@ -40,13 +40,10 @@ pub fn ref_place_field(place: PlaceRef, field: FieldIndex /*, type */) {
     mut_place_ref(place, |p, place| p.project_on(place).for_field(field))
 }
 pub fn ref_place_index(place: PlaceRef, index_place: PlaceRef) {
-    mut_place_ref(place, |p, place| {
-        p.project_on(place).at_index(
-            take_back_place_ref(index_place)
-                .try_into()
-                .unwrap_or_else(|_| panic!("The place used as an index should be just a local.")),
-        )
-    })
+    let index = take_back_place_ref(index_place)
+        .try_into()
+        .unwrap_or_else(|p| panic!("The place used as an index should be just a local. {:?}", p));
+    mut_place_ref(place, |p, place| p.project_on(place).at_index(index))
 }
 pub fn ref_place_constant_index(place: PlaceRef, offset: u64, min_length: u64, from_end: bool) {
     mut_place_ref(place, |p, place| {
