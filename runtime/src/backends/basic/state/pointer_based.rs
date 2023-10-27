@@ -133,12 +133,13 @@ impl<VS, SP: SymbolicProjector> RawPointerVariableState<VS, SP> {
         &'a self,
         addr: RawPointer,
     ) -> Option<(&'a RawPointer, &'a MemoryObject)> {
-        let cursor = self.memory.upper_bound(Bound::Included(&addr));
+        let mut cursor = self.memory.upper_bound(Bound::Included(&addr));
         while let Some(start) = cursor.key().copied() {
             // FIXME: (*) no type information is available so we just check for the exact start.
             let size = 1;
             let region = start..(start + size);
             if addr < region.start {
+                cursor.move_next();
                 continue;
             } else if addr >= region.end {
                 return None;
@@ -278,6 +279,7 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
     where
         Self: IndexResolver<Local>,
     {
+        /* NOTE: We probably can reverse the iteration order for faster hits. */
         if let Some(sym_val) = self.get(
             local_metadata.address().as_ref()?,
             local_metadata.unwrap_type_id(),
@@ -343,6 +345,7 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
         while let Some((sym_addr, (sym_value, sym_type_id))) = key_value(&cursor) {
             if *sym_addr < range.start {
                 // TODO: Check for symbolic value size.
+                move_next(&mut cursor);
                 continue;
             }
 
