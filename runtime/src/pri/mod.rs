@@ -19,6 +19,7 @@ pub type OperandRef = Ref;
 pub static MODULE_MARKER: u8 = 0;
 
 pub fn init_runtime_lib() {
+    log::info!("Initializing the runtime library.");
     init_backend();
 }
 
@@ -65,6 +66,10 @@ pub fn ref_place_downcast(place: PlaceRef, variant_index: u32 /*, type */) {
 }
 pub fn ref_place_opaque_cast(place: PlaceRef /*, type */) {
     mut_place_ref(place, |p, place| p.project_on(place).opaque_cast())
+}
+#[cfg(place_addr)]
+pub fn set_place_address_typed<T>(place: PlaceRef, ptr: *const T) {
+    set_place_address(place, ptr.expose_addr() as RawPointer)
 }
 #[cfg(place_addr)]
 pub fn set_place_address(place: PlaceRef, raw_ptr: RawPointer) {
@@ -480,8 +485,15 @@ pub mod compiler_helpers {
     pub const fn mark_as_nctfe() {}
 
     /* NOTE:
-     * This is a workaround to prevent the compiler from removing the function
-     * from the exported symbols as it is unused. */
+     * This is a workaround to prevent the compiler from removing the generic
+     * functions from the exported symbols as they are unused.
+     */
+
+    #[used]
+    #[cfg(place_addr)]
+    static _SET_PLACE_ADDR_TYPED_REFERENCER: fn(PlaceRef, *const u32) -> () =
+        set_place_address_typed::<u32>;
+
     #[used]
     #[cfg(place_addr)]
     static _TYPE_ID_OF_REFERENCER: fn() -> TypeId = type_id_of::<u32>;

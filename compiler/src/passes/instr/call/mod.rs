@@ -465,19 +465,6 @@ mod implementation {
             )))
         }
     }
-    impl<'tcx, C> RuntimeCallAdder<C>
-    where
-        C: BodyLocalManager<'tcx> + TyContextProvider<'tcx> + PriItemsProvider<'tcx>,
-    {
-        fn make_ptr_to_place(
-            &mut self,
-            place: &Place<'tcx>,
-            place_ty: Ty<'tcx>,
-        ) -> ([Statement<'tcx>; 2], Local) {
-            let ptr_ty = self.context.pri_types().raw_ptr;
-            ptr_to_place(self.tcx(), &mut self.context, place, place_ty, ptr_ty)
-        }
-    }
 
     impl<'tcx, C> BlockInserter<'tcx> for RuntimeCallAdder<C>
     where
@@ -649,17 +636,17 @@ mod implementation {
             place: &Place<'tcx>,
             place_ty: Ty<'tcx>,
         ) -> BasicBlockData<'tcx> {
-            let (stmts, addr_local) = self.make_ptr_to_place(place, place_ty);
-
-            let mut block = self.make_bb_for_call(
-                stringify!(pri::set_place_address),
+            let (stmt, ptr_local) = ptr_to_place(self.tcx(), &mut self.context, place, place_ty);
+            let (mut block, _) = self.make_bb_for_call_with_all(
+                stringify!(pri::set_place_address_typed),
+                vec![place_ty.into()],
                 vec![
                     operand::copy_for_local(place_ref),
-                    operand::move_for_local(addr_local),
+                    operand::move_for_local(ptr_local),
                 ],
+                None,
             );
-
-            block.statements.extend(stmts);
+            block.statements.push(stmt);
             block
         }
 
@@ -2325,21 +2312,14 @@ mod implementation {
             local_manager: &mut impl BodyLocalManager<'tcx>,
             place: &Place<'tcx>,
             place_ty: Ty<'tcx>,
-            ptr_ty: Ty<'tcx>,
-        ) -> ([Statement<'tcx>; 2], Local) {
+        ) -> (Statement<'tcx>, Local) {
             let ptr_local = local_manager.add_local(tcx.mk_imm_ptr(place_ty));
-            let ptr_place = Place::from(ptr_local);
             let ptr_assignment = assignment::create(
-                ptr_place,
+                Place::from(ptr_local),
                 mir::Rvalue::AddressOf(rustc_ast::Mutability::Not, place.clone()),
             );
-            let cast_local = local_manager.add_local(ptr_ty);
-            let cast_assignment = assignment::create(
-                cast_local.into(),
-                rvalue::cast_expose_addr(Operand::Move(ptr_place), ptr_ty),
-            );
 
-            ([ptr_assignment, cast_assignment], cast_local)
+            (ptr_assignment, ptr_local)
         }
 
         pub(super) fn convert_mir_binop_to_pri(op: &mir::BinOp) -> runtime::abs::BinaryOp {
