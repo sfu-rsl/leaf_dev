@@ -2,9 +2,9 @@ mod instance;
 mod utils;
 
 use crate::abs::{
-    backend::*, AssertKind, BasicBlockIndex, BinaryOp, BranchingMetadata, CastKind, FieldIndex,
-    FloatType, IntType, Local, LocalIndex, PointerOffset, RawPointer, TypeId, TypeSize, UnaryOp,
-    ValueType, VariantIndex,
+    backend::*, Alignment, AssertKind, BasicBlockIndex, BinaryOp, BranchingMetadata, CastKind,
+    FieldIndex, FloatType, IntType, Local, LocalIndex, PointerOffset, RawPointer, TypeId, TypeSize,
+    UnaryOp, ValueType, VariantIndex,
 };
 
 use self::instance::*;
@@ -242,7 +242,7 @@ pub fn assign_discriminant(dest: PlaceRef, place: PlaceRef) {
 pub fn assign_aggregate_array(
     dest: PlaceRef,
     items: &[OperandRef],
-    #[cfg(place_addr)] align: PointerOffset,
+    #[cfg(place_addr)] align: Alignment,
 ) {
     #[cfg(place_addr)]
     log::warn!(

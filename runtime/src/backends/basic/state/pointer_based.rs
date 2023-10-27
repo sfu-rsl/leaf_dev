@@ -9,7 +9,7 @@ use delegate::delegate;
 
 use crate::{
     abs::{
-        self, place::HasMetadata, PointerOffset, RawPointer, TypeId, TypeSize, ValueType,
+        place::HasMetadata, Alignment, PointerOffset, RawPointer, TypeId, TypeSize, ValueType,
         USIZE_TYPE,
     },
     backends::basic::{
@@ -408,10 +408,18 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
                 }
             }
             Value::Concrete(ConcreteValue::Array(array)) => {
-                for element in array.elements.iter() {
-                    if element.is_symbolic() {
-                        todo!("#265: Alignment information is not available yet.");
+                for (i, element) in array.elements.iter().enumerate() {
+                    if !element.is_symbolic() {
+                        continue;
                     }
+
+                    let alignment: Alignment =
+                        todo!("#265: Alignment information is not available yet.");
+                    self.set_addr(
+                        addr + alignment * i as Alignment,
+                        element.clone(),
+                        todo!("#265: Element type information is not available yet."),
+                    );
                 }
             }
             Value::Concrete(ConcreteValue::Unevaluated(UnevalValue::Porter(porter))) => {
