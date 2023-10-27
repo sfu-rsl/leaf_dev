@@ -520,10 +520,6 @@ mod implementation {
             // For setting addresses we have to remake a cumulative place up to each projection.
             let mut cum_place = Place::from(place.local);
             let mut cum_ty = cum_place.ty(&self.context, tcx);
-            if cfg!(place_addr) {
-                blocks.push(self.make_bb_for_set_addr_call(place_ref, &cum_place, cum_ty.ty));
-                blocks.extend(self.set_place_type(place_ref, cum_ty.ty));
-            }
 
             for (_, proj) in place.iter_projections() {
                 let added_blocks = self.reference_place_projection(place_ref, proj);
@@ -533,7 +529,7 @@ mod implementation {
                     cum_place = cum_place.project_deeper(&[proj], tcx);
                     cum_ty = cum_ty.projection_ty(tcx, proj);
 
-                    blocks.push(self.make_bb_for_set_addr_call(place_ref, &cum_place, cum_ty.ty));
+                    blocks.push(self.set_place_addr(place_ref, &cum_place, cum_ty.ty));
                     blocks.extend(self.set_place_type(place_ref, cum_ty.ty));
                 }
             }
@@ -554,7 +550,16 @@ mod implementation {
                 _ => vec![operand::const_from_uint(self.context.tcx(), local.as_u32())],
             };
 
-            self.make_bb_for_place_ref_call(func_name, args).into()
+            let (block, place_ref) = self.make_bb_for_place_ref_call(func_name, args);
+            let mut blocks = vec![block];
+
+            if cfg!(place_addr) {
+                let ty = self.local_decls()[local].ty;
+                blocks.push(self.set_place_addr(place_ref, &local.into(), ty));
+                blocks.extend(self.set_place_type(place_ref, ty));
+            }
+
+            BlocksAndResult(blocks, place_ref)
         }
 
         fn reference_place_projection<T>(
@@ -630,7 +635,7 @@ mod implementation {
             self.make_bb_for_call_with_ret(func_name, args)
         }
 
-        fn make_bb_for_set_addr_call(
+        fn set_place_addr(
             &mut self,
             place_ref: Local,
             place: &Place<'tcx>,
@@ -650,8 +655,16 @@ mod implementation {
             block
         }
 
-        /// Makes a basic block for setting the type of a place if it is from
-        /// primitive types.
+        fn set_place_size(&mut self, place_ref: Local, place_ty: Ty<'tcx>) -> BasicBlockData<'tcx> {
+            self.make_bb_for_call(
+                stringify!(pri::set_place_size),
+                vec![
+                    operand::copy_for_local(place_ref),
+                    operand::const_from_uint(self.tcx(), ty::size_of(self.tcx(), place_ty).bytes()),
+                ],
+            )
+        }
+
         fn set_place_type(&mut self, place_ref: Local, ty: Ty<'tcx>) -> Vec<BasicBlockData<'tcx>> {
             let mut blocks = vec![];
 
@@ -758,13 +771,7 @@ mod implementation {
                 let tcx = self.tcx();
                 let ty = place.ty(&self.context, tcx).ty;
                 if ty.is_adt() || ty.is_array() {
-                    additional_blocks.push(self.make_bb_for_call(
-                        stringify!(pri::set_place_size),
-                        vec![
-                            operand::copy_for_local(place_ref),
-                            operand::const_from_uint(tcx, ty::size_of(tcx, ty).bytes()),
-                        ],
-                    ));
+                    additional_blocks.push(self.set_place_size(place_ref, ty));
                 }
             }
 
@@ -1739,26 +1746,27 @@ mod implementation {
         fn make_bb_for_func_preserve_metadata(&mut self) -> Vec<BasicBlockData<'tcx>> {
             let mut blocks = vec![];
 
-            let ref_and_preserve = |this: &mut Self, place| {
-                let BlocksAndResult(mut ref_blocks, place_ref) =
-                    this.internal_reference_place(&place);
-                let call_block = this.make_bb_for_call(
+            let preserve = |this: &mut Self, place_ref: Local| {
+                this.make_bb_for_call(
                     stringify!(pri::preserve_special_local_metadata),
-                    vec![operand::move_for_local(place_ref.into())],
-                );
-                ref_blocks.push(call_block);
-                ref_blocks
+                    vec![operand::move_for_local(place_ref)],
+                )
             };
 
-            blocks.extend(
-                self.body()
-                    .args_iter()
-                    .flat_map(|local| ref_and_preserve(self, Place::from(local))),
-            );
+            blocks.extend(self.body().args_iter().flat_map(|local| {
+                let BlocksAndResult(mut ref_blocks, place_ref) =
+                    self.internal_reference_place(&Place::from(local));
+                ref_blocks.push(preserve(self, place_ref));
+                ref_blocks
+            }));
 
             let ret_ty = self.body().return_ty();
             if !ret_ty.is_unit() {
-                blocks.extend(ref_and_preserve(self, Place::return_place()));
+                let BlocksAndResult(mut ref_blocks, place_ref) =
+                    self.internal_reference_place(&Place::return_place());
+                ref_blocks.push(self.set_place_size(place_ref, ret_ty));
+                ref_blocks.push(preserve(self, place_ref));
+                blocks.extend(ref_blocks);
             }
 
             blocks
