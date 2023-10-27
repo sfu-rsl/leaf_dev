@@ -195,10 +195,10 @@ mod implementation {
     use self::ctxtreqs::*;
     use super::context::*;
     use super::*;
-    use crate::mir_transform::*;
     use crate::passes::ctfe::CtfeId;
     use crate::passes::instr;
     use crate::passes::Storage;
+    use crate::{mir_transform::*, pri_utils};
 
     use utils::*;
     use InsertionLocation::*;
@@ -535,9 +535,7 @@ mod implementation {
             let mut cum_ty = cum_place.ty(&self.context, tcx);
             if cfg!(place_addr) {
                 blocks.push(self.make_bb_for_set_addr_call(place_ref, &cum_place, cum_ty.ty));
-                if cfg!(place_addr) {
-                    blocks.extend(self.set_place_type(place_ref, cum_ty.ty));
-                }
+                blocks.extend(self.set_place_type(place_ref, cum_ty.ty));
             }
 
             for (_, proj) in place.iter_projections() {
@@ -547,9 +545,8 @@ mod implementation {
                 if cfg!(place_addr) {
                     cum_place = cum_place.project_deeper(&[proj], tcx);
                     cum_ty = cum_ty.projection_ty(tcx, proj);
+
                     blocks.push(self.make_bb_for_set_addr_call(place_ref, &cum_place, cum_ty.ty));
-                }
-                if cfg!(place_addr) {
                     blocks.extend(self.set_place_type(place_ref, cum_ty.ty));
                 }
             }
@@ -703,6 +700,7 @@ mod implementation {
                 ));
             }
 
+            #[cfg(place_addr)]
             let id_local = {
                 /* NOTE: As `TypeId::of` requires static lifetime, do we need to clear lifetimes?
                  * No. As we are code generation phase, all regions should be erased. */
@@ -723,6 +721,7 @@ mod implementation {
                 id_local
             };
 
+            #[cfg(place_addr)]
             blocks.push(self.make_bb_for_call(
                 stringify!(pri::set_place_type_id),
                 vec![

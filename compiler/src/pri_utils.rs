@@ -20,7 +20,9 @@ pub(crate) struct PriTypes<'tcx> {
 pub(crate) struct PriHelperFunctions<'tcx> {
     pub f32_to_bits: DefId,
     pub f64_to_bits: DefId,
+    #[cfg(place_addr)]
     pub type_id_of: FunctionInfo<'tcx>,
+    _phantom: std::marker::PhantomData<&'tcx ()>,
 }
 
 pub(crate) fn find_pri_exported_symbols(tcx: TyCtxt) -> Vec<DefId> {
@@ -130,12 +132,14 @@ pub(crate) fn find_helper_funcs<'tcx>(
     PriHelperFunctions {
         f32_to_bits: *def_ids.get(helper_item_name!(f32_to_bits)).unwrap(),
         f64_to_bits: *def_ids.get(helper_item_name!(f64_to_bits)).unwrap(),
+        #[cfg(place_addr)]
         type_id_of: func_info_from(
             tcx,
             *def_ids
                 .get(helper_item_name!(type_id_of))
                 .expect("`type_id_of` is not exported (probably erased by compiler)."),
         ),
+        _phantom: std::marker::PhantomData,
     }
 }
 
