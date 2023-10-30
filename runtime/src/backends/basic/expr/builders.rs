@@ -1088,15 +1088,42 @@ mod simp {
         }
 
         fn and<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
-            Err(operands)
+            let (a, b) = (operands.a(), operands.b());
+
+            match operands.expr().operator {
+                // (x & a) & b = x & (a & b)
+                BinaryOp::BitAnd => {
+                    let folded_value = ConstValue::binary_op_arithmetic(a, b, BinaryOp::BitAnd);
+                    Ok(operands.fold_expr(folded_value))
+                }
+                _ => Err(operands),
+            }
         }
 
         fn or<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
-            Err(operands)
+            let (a, b) = (operands.a(), operands.b());
+
+            match operands.expr().operator {
+                // (x | a) | b = x | (a | b)
+                BinaryOp::BitOr => {
+                    let folded_value = ConstValue::binary_op_arithmetic(a, b, BinaryOp::BitOr);
+                    Ok(operands.fold_expr(folded_value))
+                }
+                _ => Err(operands),
+            }
         }
 
         fn xor<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
-            Err(operands)
+            let (a, b) = (operands.a(), operands.b());
+
+            match operands.expr().operator {
+                // (x ^ a) ^ b = x ^ (a ^ b)
+                BinaryOp::BitXor => {
+                    let folded_value = ConstValue::binary_op_arithmetic(a, b, BinaryOp::BitXor);
+                    Ok(operands.fold_expr(folded_value))
+                }
+                _ => Err(operands),
+            }
         }
 
         fn shl<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
