@@ -1100,11 +1100,29 @@ mod simp {
         }
 
         fn shl<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
-            Err(operands)
+            let (a, b) = (operands.a(), operands.b());
+
+            match operands.expr().operator {
+                // (x << a) << b = x << (a + b)
+                BinaryOp::Shl => {
+                    let folded_value = ConstValue::binary_op_arithmetic(a, b, BinaryOp::Add);
+                    Ok(operands.fold_expr(folded_value))
+                }
+                _ => Err(operands),
+            }
         }
 
         fn shr<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
-            Err(operands)
+            let (a, b) = (operands.a(), operands.b());
+
+            match operands.expr().operator {
+                // (x >> a) >> b = x >> (a + b)
+                BinaryOp::Shr => {
+                    let folded_value = ConstValue::binary_op_arithmetic(a, b, BinaryOp::Add);
+                    Ok(operands.fold_expr(folded_value))
+                }
+                _ => Err(operands),
+            }
         }
 
         fn eq<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
