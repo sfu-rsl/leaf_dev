@@ -213,7 +213,7 @@ mod implementation {
          */
         #[allow(clippy::type_complexity)]
         static ORIGINAL_OVERRIDE: Cell<
-            Option<fn(&rustc_session::Session, &mut query::Providers, &mut query::ExternProviders)>,
+            Option<fn(&rustc_session::Session, &mut rustc_middle::util::Providers)>,
         > = Cell::new(None);
         static ORIGINAL_OPTIMIZED_MIR: Cell<
             for<'tcx> fn(TyCtxt<'tcx>, LocalDefId) -> &mir::Body<'tcx>
@@ -237,9 +237,9 @@ mod implementation {
         fn config(&mut self, config: &mut interface::Config) {
             ORIGINAL_OVERRIDE.set(config.override_queries.take());
 
-            config.override_queries = Some(move |session, providers, e_providers| {
+            config.override_queries = Some(move |session, providers| {
                 if let Some(existing_override) = ORIGINAL_OVERRIDE.get() {
-                    existing_override(session, providers, e_providers);
+                    existing_override(session, providers);
                 }
 
                 ORIGINAL_OPTIMIZED_MIR.set(providers.optimized_mir);
@@ -249,7 +249,7 @@ mod implementation {
             global::clear_ctxt_id_and_storage();
         }
 
-        fn after_parsing<'tcx>(
+        fn after_crate_root_parsing<'tcx>(
             &mut self,
             _compiler: &interface::Compiler,
             queries: &'tcx Queries<'tcx>,
@@ -273,7 +273,6 @@ mod implementation {
 
         fn after_analysis<'tcx>(
             &mut self,
-            _handler: &rustc_session::EarlyErrorHandler,
             _compiler: &interface::Compiler,
             queries: &'tcx Queries<'tcx>,
         ) -> Compilation {

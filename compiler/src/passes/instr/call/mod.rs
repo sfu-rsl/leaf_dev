@@ -2,14 +2,14 @@
 /// PRI in MIR bodies.
 pub(super) mod context;
 
-use rustc_abi::FieldIdx;
 use rustc_middle::{
     mir::{
-        BasicBlock, BinOp, Body, Constant, Local, Operand, Place, ProjectionElem, Statement, UnOp,
+        BasicBlock, BinOp, Body, ConstOperand, Local, Operand, Place, ProjectionElem, Statement,
+        UnOp,
     },
     ty::{Const, GenericArg, Ty, TyCtxt},
 };
-use rustc_target::abi::VariantIdx;
+use rustc_target::abi::{FieldIdx, VariantIdx};
 
 use core::iter;
 use std::vec;
@@ -187,7 +187,7 @@ mod implementation {
     use std::assert_matches::debug_assert_matches;
 
     use rustc_middle::mir::{self, BasicBlock, BasicBlockData, HasLocalDecls, UnevaluatedConst};
-    use rustc_middle::ty::{TyKind, TypeVisitableExt};
+    use rustc_middle::ty::TyKind;
     use rustc_span::def_id::DefId;
 
     use delegate::delegate;
@@ -195,10 +195,10 @@ mod implementation {
     use self::ctxtreqs::*;
     use super::context::*;
     use super::*;
+    use crate::mir_transform::*;
     use crate::passes::ctfe::CtfeId;
     use crate::passes::instr;
     use crate::passes::Storage;
-    use crate::{mir_transform::*, pri_utils};
 
     use utils::*;
     use InsertionLocation::*;
@@ -615,6 +615,7 @@ mod implementation {
                     )],
                 ),
                 ProjectionElem::OpaqueCast(_) => (stringify!(pri::ref_place_opaque_cast), vec![]),
+                ProjectionElem::Subtype(_) => todo!(),
             };
 
             new_blocks.push(
@@ -792,7 +793,7 @@ mod implementation {
 
         fn internal_reference_const_operand(
             &mut self,
-            constant: &Box<Constant<'tcx>>,
+            constant: &Box<ConstOperand<'tcx>>,
         ) -> BlocksAndResult<'tcx> {
             /* NOTE: Although there might be some ways to obtain/evaluate the values, we prefer to use
              * the constant as it is, and rely on high-level conversions to support all types of
@@ -848,7 +849,7 @@ mod implementation {
             } else {
                 unimplemented!(
                     "Unsupported constant: {:?} with type: {:?}",
-                    constant.literal,
+                    constant.const_,
                     ty
                 )
             }
@@ -857,7 +858,7 @@ mod implementation {
         fn internal_reference_const_operand_directly(
             &mut self,
             func_name: &str,
-            constant: &Box<Constant<'tcx>>,
+            constant: &Box<ConstOperand<'tcx>>,
         ) -> BlocksAndResult<'tcx> {
             self.make_bb_for_operand_ref_call(
                 func_name,
@@ -868,7 +869,7 @@ mod implementation {
 
         fn internal_reference_int_const_operand(
             &mut self,
-            constant: &Box<Constant<'tcx>>,
+            constant: &Box<ConstOperand<'tcx>>,
         ) -> BlocksAndResult<'tcx> {
             let ty = constant.ty();
             debug_assert!(ty.is_integral());
@@ -892,7 +893,7 @@ mod implementation {
 
         fn internal_reference_float_const_operand(
             &mut self,
-            constant: &Box<Constant<'tcx>>,
+            constant: &Box<ConstOperand<'tcx>>,
         ) -> BlocksAndResult<'tcx> {
             let ty = constant.ty();
             debug_assert!(ty.is_floating_point());
@@ -914,7 +915,7 @@ mod implementation {
 
         fn internal_reference_byte_str_const_operand(
             &mut self,
-            constant: &Box<Constant<'tcx>>,
+            constant: &Box<ConstOperand<'tcx>>,
         ) -> BlocksAndResult<'tcx> {
             let tcx = self.tcx();
             let ty = constant.ty();
@@ -1081,7 +1082,10 @@ mod implementation {
         }
 
         #[inline]
-        fn try_as_immut_static(tcx: TyCtxt<'tcx>, constant: &Box<Constant<'tcx>>) -> Option<DefId> {
+        fn try_as_immut_static(
+            tcx: TyCtxt<'tcx>,
+            constant: &Box<ConstOperand<'tcx>>,
+        ) -> Option<DefId> {
             /* Immutable statics are accessed by a constant reference which points to a statically
              * allocated program memory block. If the static item's type is T then the constant is
              * of type &T. */
@@ -1089,12 +1093,8 @@ mod implementation {
                 .ty()
                 .ref_mutability()
                 .is_some_and(|m| m.is_not())
-                .then(|| operand::const_try_as_ptr(constant))
+                .then(|| constant.check_static_ptr(tcx))
                 .flatten()
-                .and_then(|alloc_id| match tcx.global_alloc(alloc_id) {
-                    rustc_middle::mir::interpret::GlobalAlloc::Static(id) => Some(id),
-                    _ => None,
-                })
         }
     }
 
@@ -1867,11 +1867,11 @@ mod implementation {
                         vec![],
                     )
                 }
-                AssertKind::ResumedAfterReturn(_generator_kind) => {
+                AssertKind::ResumedAfterReturn(..) => {
                     // NOTE: check if these exist in HIR only
                     todo!("research if this is unreachable or not; likely it's not reachable")
                 }
-                AssertKind::ResumedAfterPanic(_generator_kind) => {
+                AssertKind::ResumedAfterPanic(..) => {
                     todo!("research if this is unreachable or not; likely it's not reachable")
                 }
                 AssertKind::MisalignedPointerDereference { .. } => {
@@ -1909,8 +1909,8 @@ mod implementation {
     mod utils {
         use rustc_middle::{
             mir::{
-                self, BasicBlock, BasicBlockData, Constant, HasLocalDecls, Local, Operand, Place,
-                Rvalue, SourceInfo, Statement,
+                self, BasicBlock, BasicBlockData, HasLocalDecls, Local, Operand, Place, Rvalue,
+                SourceInfo, Statement,
             },
             ty::{Ty, TyCtxt, TyKind},
         };
@@ -1927,7 +1927,7 @@ mod implementation {
 
             use rustc_const_eval::interpret::Scalar;
             use rustc_middle::{
-                mir::ConstantKind,
+                mir::Const,
                 ty::{self, ScalarInt},
             };
             use rustc_type_ir::UintTy;
@@ -1948,15 +1948,15 @@ mod implementation {
             }
 
             pub fn const_from_existing_ty_const(constant: ty::Const) -> Operand {
-                const_from_existing(&Box::new(Constant {
+                const_from_existing(&Box::new(ConstOperand {
                     span: DUMMY_SP,
                     user_ty: None,
-                    literal: ConstantKind::Ty(constant),
+                    const_: Const::Ty(constant),
                 }))
             }
 
             #[allow(clippy::borrowed_box)]
-            pub fn const_from_existing<'tcx>(constant: &Box<Constant<'tcx>>) -> Operand<'tcx> {
+            pub fn const_from_existing<'tcx>(constant: &Box<ConstOperand<'tcx>>) -> Operand<'tcx> {
                 Operand::Constant(constant.clone())
             }
 
@@ -1968,7 +1968,7 @@ mod implementation {
                     tcx,
                     ScalarInt::try_from_uint(value, rustc_abi::Size::from_bytes(size_of::<T>()))
                         .unwrap(),
-                    tcx.mk_mach_uint(uint_ty_from_bytes(size_of::<T>())),
+                    Ty::new_uint(tcx, uint_ty_from_bytes(size_of::<T>())),
                 )
             }
 
@@ -1989,15 +1989,15 @@ mod implementation {
             }
 
             pub fn const_try_as_unevaluated<'tcx>(
-                constant: &Constant<'tcx>,
+                constant: &ConstOperand<'tcx>,
             ) -> Option<mir::UnevaluatedConst<'tcx>> {
-                match constant.literal {
-                    ConstantKind::Unevaluated(c, _) => Some(c),
-                    ConstantKind::Ty(c) => match c.kind() {
-                        ty::ConstKind::Unevaluated(ty::UnevaluatedConst { def, substs }) => {
+                match constant.const_ {
+                    Const::Unevaluated(c, _) => Some(c),
+                    Const::Ty(c) => match c.kind() {
+                        ty::ConstKind::Unevaluated(ty::UnevaluatedConst { def, args }) => {
                             Some(mir::UnevaluatedConst {
                                 def,
-                                substs,
+                                args,
                                 promoted: None,
                             })
                         }
@@ -2005,18 +2005,6 @@ mod implementation {
                     },
                     _ => None,
                 }
-            }
-
-            pub fn const_try_as_ptr<'tcx>(
-                constant: &Constant<'tcx>,
-            ) -> Option<mir::interpret::AllocId> {
-                if let ConstantKind::Val(value, _) = constant.literal {
-                    if let Some(Scalar::Ptr(ptr, _)) = value.try_to_scalar() {
-                        return Some(ptr.provenance);
-                    }
-                }
-
-                None
             }
 
             pub fn copy_for_local<'tcx>(value: Local) -> Operand<'tcx> {
@@ -2099,9 +2087,11 @@ mod implementation {
             pub mod rvalue {
                 use rustc_index::IndexVec;
                 use rustc_middle::{
-                    mir::{AggregateKind, BorrowKind, CastKind, NullOp, Operand, Place, Rvalue},
-                    ty::{adjustment::PointerCast, Ty, TyCtxt},
+                    mir::{AggregateKind, BorrowKind, CastKind, NullOp},
+                    ty::adjustment::PointerCoercion,
                 };
+
+                use super::*;
 
                 pub fn ref_of<'tcx>(target: Place<'tcx>, tcx: TyCtxt<'tcx>) -> Rvalue<'tcx> {
                     Rvalue::Ref(tcx.lifetimes.re_erased, BorrowKind::Shared, target)
@@ -2111,7 +2101,11 @@ mod implementation {
                     operand: Operand<'tcx>,
                     to_ty: Ty<'tcx>,
                 ) -> Rvalue<'tcx> {
-                    Rvalue::Cast(CastKind::Pointer(PointerCast::Unsize), operand, to_ty)
+                    Rvalue::Cast(
+                        CastKind::PointerCoercion(PointerCoercion::Unsize),
+                        operand,
+                        to_ty,
+                    )
                 }
 
                 pub fn cast_expose_addr<'tcx>(
@@ -2131,7 +2125,7 @@ mod implementation {
                 pub fn offset_of<'tcx>(
                     tcx: TyCtxt<'tcx>,
                     ty: Ty<'tcx>,
-                    field: rustc_abi::FieldIdx,
+                    field: FieldIdx,
                 ) -> Rvalue<'tcx> {
                     Rvalue::NullaryOp(NullOp::OffsetOf(tcx.mk_fields(&[field])), ty)
                 }
@@ -2152,7 +2146,7 @@ mod implementation {
             use super::*;
 
             pub fn mk_imm_ref<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>) -> Ty<'tcx> {
-                tcx.mk_imm_ref(tcx.lifetimes.re_erased, ty)
+                Ty::new_imm_ref(tcx, tcx.lifetimes.re_erased, ty)
             }
 
             pub fn size_of<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>) -> Size {
@@ -2224,7 +2218,7 @@ mod implementation {
             item_ty: Ty<'tcx>,
             items: Vec<Operand<'tcx>>,
         ) -> (Local, [Statement<'tcx>; 3]) {
-            let array_ty = tcx.mk_array(item_ty, items.len() as u64);
+            let array_ty = Ty::new_array(tcx, item_ty, items.len() as u64);
             let array_local = local_manager.add_local(array_ty);
             let array_assign =
                 assignment::create(Place::from(array_local), rvalue::array(item_ty, items));
@@ -2260,8 +2254,11 @@ mod implementation {
             };
             debug_assert!(array_ty.is_array());
             let item_ty = array_ty.sequence_element_type(tcx);
-            let slice_ty =
-                tcx.mk_ty_from_kind(TyKind::Ref(*region, tcx.mk_slice(item_ty), *mutability));
+            let slice_ty = tcx.mk_ty_from_kind(TyKind::Ref(
+                *region,
+                Ty::new_slice(tcx, item_ty),
+                *mutability,
+            ));
 
             let local: Local = local_manager.add_local(slice_ty);
             let assignment = assignment::create(
@@ -2275,9 +2272,9 @@ mod implementation {
         pub(super) fn cast_int_to_bit_rep<'tcx>(
             tcx: TyCtxt<'tcx>,
             context: &mut impl BodyLocalManager<'tcx>,
-            constant: &Box<Constant<'tcx>>,
+            constant: &Box<ConstOperand<'tcx>>,
         ) -> (Local, [Statement<'tcx>; 1]) {
-            debug_assert!(constant.literal.ty().is_integral());
+            debug_assert!(constant.ty().is_integral());
             let bit_rep_local = context.add_local(tcx.types.u128);
             let bit_rep_assign = assignment::create(
                 Place::from(bit_rep_local),
@@ -2294,7 +2291,7 @@ mod implementation {
         pub(super) fn cast_float_to_bit_rep<'tcx>(
             tcx: TyCtxt<'tcx>,
             context: &mut (impl BodyLocalManager<'tcx> + PriItemsProvider<'tcx>),
-            constant: &Box<Constant<'tcx>>,
+            constant: &Box<ConstOperand<'tcx>>,
         ) -> (Local, BasicBlockData<'tcx>) {
             use rustc_middle::ty::FloatTy;
             debug_assert!(constant.ty().is_floating_point());
@@ -2321,7 +2318,7 @@ mod implementation {
             place: &Place<'tcx>,
             place_ty: Ty<'tcx>,
         ) -> (Statement<'tcx>, Local) {
-            let ptr_local = local_manager.add_local(tcx.mk_imm_ptr(place_ty));
+            let ptr_local = local_manager.add_local(Ty::new_imm_ptr(tcx, place_ty));
             let ptr_assignment = assignment::create(
                 Place::from(ptr_local),
                 mir::Rvalue::AddressOf(rustc_ast::Mutability::Not, place.clone()),

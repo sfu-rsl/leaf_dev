@@ -93,7 +93,6 @@ impl<'tcx> From<(Mutability, Ty<'tcx>, SourceInfo)> for NewLocalDecl<'tcx> {
         LocalDecl {
             mutability: value.0,
             local_info: ClearCrossCrate::Clear,
-            internal: true,
             ty: value.1,
             user_ty: None,
             source_info: value.2,

@@ -1,12 +1,12 @@
 use super::{CompilationPass, Storage, StorageExt};
 
 use runtime::tyexp::{TypeExport, TypeInformation, TypeVariant};
-use rustc_abi::VariantIdx;
 use rustc_index::IndexSlice;
 use rustc_middle::{
     mir::{self, visit::Visitor, HasLocalDecls, LocalDecls, Location, Place},
     ty::{GenericArg, List, Ty, TyCtxt, VariantDef},
 };
+use rustc_target::abi::VariantIdx;
 use std::collections::HashMap;
 
 /*

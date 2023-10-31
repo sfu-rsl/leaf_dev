@@ -23,7 +23,7 @@ use rustc_ast::ptr::P;
 use rustc_hir as hir;
 use rustc_middle::mir::{self};
 use rustc_middle::ty::{Ty, TyCtxt};
-use rustc_span::def_id::{DefId, LocalDefId};
+use rustc_span::def_id::{DefId, LocalDefId, LocalModDefId};
 
 use std::collections::HashSet;
 
@@ -242,7 +242,7 @@ fn find_nctfes(tcx: TyCtxt) -> Vec<LocalDefId> {
 }
 
 /// Finds the id given to the augmentation module (if it is added).
-fn find_aug_module(tcx: TyCtxt) -> Option<LocalDefId> {
+fn find_aug_module(tcx: TyCtxt) -> Option<LocalModDefId> {
     modules(tcx).find(|id| {
         tcx.def_path(id.to_def_id()).data.last().is_some_and(|d| {
             d.data
@@ -268,6 +268,7 @@ fn is_nctfe(tcx: TyCtxt, def_id: LocalDefId) -> bool {
 
 mod utils {
     use rustc_ast::{ptr::P, *};
+    use rustc_span::def_id::LocalModDefId;
     use rustc_span::symbol::{Ident, Symbol};
     use rustc_span::DUMMY_SP;
 
@@ -399,10 +400,9 @@ mod utils {
         }
     }
 
-    pub(super) fn modules(tcx: TyCtxt) -> impl Iterator<Item = LocalDefId> + '_ {
-        tcx.hir_crate_items(())
-            .items()
-            .filter(move |id| matches!(tcx.hir().item(*id).kind, hir::ItemKind::Mod(_)))
-            .map(|id| id.owner_id.def_id)
+    pub(super) fn modules(tcx: TyCtxt) -> impl Iterator<Item = LocalModDefId> + '_ {
+        let mut ids = Vec::new();
+        tcx.hir().for_each_module(|id| ids.push(id));
+        ids.into_iter()
     }
 }

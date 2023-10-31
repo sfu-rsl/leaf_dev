@@ -1,6 +1,5 @@
 mod call;
 
-use rustc_abi::{FieldIdx, VariantIdx};
 use rustc_index::IndexVec;
 use rustc_middle::{
     mir::{
@@ -9,6 +8,7 @@ use rustc_middle::{
     },
     ty::TyCtxt,
 };
+use rustc_target::abi::{FieldIdx, VariantIdx};
 
 use crate::{
     mir_transform::{split_blocks_with, BodyInstrumentationUnit, JumpTargetModifier},
@@ -314,7 +314,7 @@ where
         Default::default()
     }
 
-    fn visit_generator_drop(&mut self) {
+    fn visit_coroutine_drop(&mut self) {
         Default::default()
     }
 
@@ -415,8 +415,8 @@ where
         match kind {
             IntToInt | FloatToInt => call_adder.to_int(*ty),
             IntToFloat | FloatToFloat => call_adder.to_float(*ty),
-            Pointer(kind) => {
-                use rustc_middle::ty::adjustment::PointerCast::*;
+            PointerCoercion(kind) => {
+                use rustc_middle::ty::adjustment::PointerCoercion::*;
                 match kind {
                     Unsize => call_adder.through_unsizing(),
                     ReifyFnPointer | UnsafeFnPointer | ClosureFnPointer(_) => {
@@ -503,7 +503,7 @@ where
                 self.call_adder.by_aggregate_union(*active_field, fields[0])
             }),
             Closure(_, _) => todo!("Closures are not supported yet."),
-            Generator(_, _, _) => todo!("Generators are not supported yet."),
+            Coroutine(..) => todo!("Coroutines are not supported yet."),
         };
 
         add_call(operands.as_slice())

@@ -1,4 +1,3 @@
-use rustc_abi::FieldIdx;
 use rustc_ast::{InlineAsmOptions, InlineAsmTemplatePiece, Mutability};
 use rustc_index::IndexVec;
 use rustc_middle::{
@@ -6,11 +5,12 @@ use rustc_middle::{
         AggregateKind, AssertMessage, BasicBlock, BinOp, BorrowKind, CallSource, CastKind,
         Coverage, FakeReadCause, InlineAsmOperand, Local, NonDivergingIntrinsic, NullOp, Operand,
         Place, RetagKind, Rvalue, StatementKind, SwitchTargets, TerminatorKind, UnOp, UnwindAction,
-        UserTypeProjection,
+        UnwindTerminateReason, UserTypeProjection,
     },
     ty::{Const, Region, Ty, Variance},
 };
 use rustc_span::Span;
+use rustc_target::abi::FieldIdx;
 use rustc_target::abi::VariantIdx;
 
 macro_rules! make_statement_kind_visitor {
@@ -125,15 +125,22 @@ macro_rules! make_terminator_kind_visitor {
                 Default::default()
             }
 
-            fn visit_switch_int(&mut self, discr: & $($mutability)? Operand<'tcx>, targets: & $($mutability)? SwitchTargets) -> T {
+            fn visit_switch_int(
+                &mut self,
+                discr: & $($mutability)? Operand<'tcx>,
+                targets: & $($mutability)? SwitchTargets
+            ) -> T {
                 Default::default()
             }
 
-            fn visit_resume(&mut self) -> T {
+            fn visit_unwind_resume(&mut self) -> T {
                 Default::default()
             }
 
-            fn visit_terminate(&mut self) -> T {
+            fn visit_unwind_terminate(
+                &mut self,
+                reason: & $($mutability)? UnwindTerminateReason
+            ) -> T {
                 Default::default()
             }
 
@@ -200,7 +207,7 @@ macro_rules! make_terminator_kind_visitor {
                 Default::default()
             }
 
-            fn visit_generator_drop(&mut self) -> T {
+            fn visit_coroutine_drop(&mut self) -> T {
                 Default::default()
             }
 
@@ -239,8 +246,8 @@ macro_rules! make_terminator_kind_visitor {
                         discr,
                         ref $($mutability)? targets,
                     } => self.visit_switch_int(discr, targets),
-                    TerminatorKind::Resume => self.visit_resume(),
-                    TerminatorKind::Terminate => self.visit_terminate(),
+                    TerminatorKind::UnwindResume => self.visit_unwind_resume(),
+                    TerminatorKind::UnwindTerminate(ref $($mutability)? reason) => self.visit_unwind_terminate(reason),
                     TerminatorKind::Return => self.visit_return(),
                     TerminatorKind::Unreachable => self.visit_unreachable(),
                     TerminatorKind::Drop {
@@ -279,7 +286,7 @@ macro_rules! make_terminator_kind_visitor {
                         ref $($mutability)? resume_arg,
                         ref $($mutability)? drop,
                     } => self.visit_yield(value, resume, resume_arg, drop),
-                    TerminatorKind::GeneratorDrop => self.visit_generator_drop(),
+                    TerminatorKind::CoroutineDrop => self.visit_coroutine_drop(),
                     TerminatorKind::FalseEdge {
                         ref $($mutability)? real_target,
                         ref $($mutability)? imaginary_target,
