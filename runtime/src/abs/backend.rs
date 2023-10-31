@@ -95,6 +95,11 @@ pub(crate) trait PlaceProjectionHandler: Sized {
     fn opaque_cast(self) -> Self::Result {
         self.by(Projection::OpaqueCast)
     }
+
+    #[inline]
+    fn subtype(self) -> Self::Result {
+        self.by(Projection::Subtype)
+    }
 }
 
 pub(crate) trait OperandHandler {

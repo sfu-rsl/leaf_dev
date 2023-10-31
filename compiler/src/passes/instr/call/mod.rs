@@ -615,7 +615,7 @@ mod implementation {
                     )],
                 ),
                 ProjectionElem::OpaqueCast(_) => (stringify!(pri::ref_place_opaque_cast), vec![]),
-                ProjectionElem::Subtype(_) => todo!(),
+                ProjectionElem::Subtype(_) => (stringify!(pri::ref_place_subtype), vec![]),
             };
 
             new_blocks.push(

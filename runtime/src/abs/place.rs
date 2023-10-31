@@ -98,6 +98,7 @@ pub(crate) enum Projection<L = Local> {
     },
     Downcast(VariantIndex),
     OpaqueCast,
+    Subtype,
 }
 
 pub(crate) trait HasMetadata {

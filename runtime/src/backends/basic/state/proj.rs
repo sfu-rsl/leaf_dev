@@ -179,6 +179,7 @@ where
         Subslice { from, to, from_end } => projector.subslice(host.into(), *from, *to, *from_end),
         Downcast(variant) => projector.downcast(host.into(), *variant),
         OpaqueCast => todo!(),
+        Subtype => todo!("#285"),
     }
     .into()
 }
@@ -213,6 +214,7 @@ impl<L> ProjectionResolutionExt<L> for crate::abs::Projection<L> {
             },
             Downcast(variant) => Downcast(*variant),
             OpaqueCast => OpaqueCast,
+            Subtype => Subtype,
         }
     }
 }
