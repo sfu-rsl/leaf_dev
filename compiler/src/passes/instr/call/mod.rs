@@ -188,6 +188,8 @@ mod implementation {
 
     use rustc_middle::mir::{self, BasicBlock, BasicBlockData, HasLocalDecls, UnevaluatedConst};
     use rustc_middle::ty::TyKind;
+    #[cfg(place_addr)]
+    use rustc_middle::ty::TypeVisitableExt;
     use rustc_span::def_id::DefId;
 
     use delegate::delegate;
