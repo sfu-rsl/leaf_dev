@@ -2,7 +2,7 @@ use std::{fmt::Display, borrow::BorrowMut, collections::HashMap};
 
 use crate::{abs::{
     backend::*, AssertKind, BinaryOp, BranchingMetadata, CastKind, UnaryOp, ValueType, VariantIndex, TypeId,
-}, tyexp::{BasicTypeManager, TypeInformation}};
+}, tyexp::TypeInformation};
 
 use super::{Field, OperandHandler, Place, PlaceHandler};
 
@@ -21,7 +21,7 @@ impl LoggerBackend {
     pub fn new() -> Self {
         Self {
             call_manager: CallManager::new(),
-            type_manager: Box::new(BasicTypeManager::new()),
+            type_manager: Box::new(LoggerTypeManager::new()),
         }
     }
 }
@@ -346,6 +346,12 @@ impl FunctionHandler for LoggerFunctionHandler<'_> {
 
 pub(crate) struct LoggerTypeManager {
     type_map: HashMap<TypeId, TypeInformation>,
+}
+
+impl LoggerTypeManager {
+    fn new() -> Self {
+        LoggerTypeManager { type_map: HashMap::new() }
+    }
 }
 
 impl TypeManager for LoggerTypeManager {
