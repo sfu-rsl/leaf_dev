@@ -22,6 +22,7 @@ pub(crate) trait RuntimeBackend: Sized {
     where
         Self: 'a;
 
+    type TypeManager;
     type Place;
     type Operand;
 
@@ -37,6 +38,8 @@ pub(crate) trait RuntimeBackend: Sized {
     fn branch(&mut self) -> Self::BranchingHandler<'_>;
 
     fn func_control(&mut self) -> Self::FunctionHandler<'_>;
+
+    fn type_control(&mut self) -> &mut Self::TypeManager;
 }
 
 pub(crate) trait PlaceHandler {
@@ -267,7 +270,9 @@ pub(crate) trait TypeManager {
     type Key;
     type Value;
 
-    fn get_type(&self, type_id: Self::Key) -> Self::Value;
+    fn get_type(&self, key: Self::Key) -> Self::Value;
+
+    fn set_type(&mut self, key: Self::Key, value: Self::Value);
 }
 
 pub(crate) mod implementation {

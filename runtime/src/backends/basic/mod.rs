@@ -6,16 +6,16 @@ pub(crate) mod operand;
 mod place;
 mod state;
 
-use std::{cell::RefCell, ops::DerefMut, rc::Rc};
+use std::{cell::RefCell, ops::DerefMut, rc::Rc, borrow::BorrowMut};
 
 use crate::{
     abs::{
         self, backend::*, AssertKind, BasicBlockIndex, BranchingMetadata, CastKind, IntType, Local,
-        LocalIndex, PlaceUsage, PointerOffset, RawPointer, UnaryOp, VariantIndex,
+        PlaceUsage, PointerOffset, UnaryOp, VariantIndex, TypeId,
     },
     solvers::z3::Z3Solver,
     trace::ImmediateTraceManager,
-    tyexp::{DefaultTypeManager, TypeInformation},
+    tyexp::{TypeInformation, BasicTypeManager},
 };
 
 use self::{
@@ -41,8 +41,8 @@ type BasicVariablesState = StackedLocalIndexVariablesState<SymProjector>;
 
 type BasicCallStackManager = call::BasicCallStackManager<BasicVariablesState>;
 
-type TypeManager =
-    Box<dyn abs::backend::TypeManager<Key = String, Value = Option<TypeInformation>>>;
+type TypeManager = 
+    Box<dyn abs::backend::TypeManager<Key = TypeId, Value = Option<TypeInformation>>>;
 
 #[cfg(place_addr)]
 type Place = place::PlaceWithMetadata;
@@ -100,8 +100,7 @@ impl BasicBackend {
             current_constraints: Vec::new(),
             expr_builder,
             sym_id_counter: 0,
-            // FIXME: file IO operation is expensive and should not be done directly here
-            type_manager: Box::new(DefaultTypeManager::new()),
+            type_manager: Box::new(BasicTypeManager::new()),
         }
     }
 }
@@ -126,6 +125,8 @@ impl RuntimeBackend for BasicBackend {
     type FunctionHandler<'a> = BasicFunctionHandler<'a>
     where
         Self: 'a;
+
+    type TypeManager = TypeManager;
 
     type Place = Place;
 
@@ -161,6 +162,10 @@ impl RuntimeBackend for BasicBackend {
 
     fn func_control(&mut self) -> Self::FunctionHandler<'_> {
         BasicFunctionHandler::new(&mut self.call_stack_manager)
+    }
+
+    fn type_control(&mut self) -> &mut Self::TypeManager {
+        self.type_manager.borrow_mut()
     }
 }
 

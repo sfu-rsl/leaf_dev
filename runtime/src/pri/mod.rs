@@ -6,6 +6,7 @@ use crate::abs::{
     FieldIndex, FloatType, IntType, Local, LocalIndex, PointerOffset, RawPointer, TypeId, TypeSize,
     UnaryOp, ValueType, VariantIndex,
 };
+use crate::tyexp::TypeInformation;
 
 use self::instance::*;
 
@@ -102,6 +103,10 @@ fn set_place_type(place: PlaceRef, ty: ValueType) {
 #[cfg(place_addr)]
 pub fn set_place_size(place: PlaceRef, byte_size: TypeSize) {
     mut_place_ref(place, |h, p| h.metadata(p).set_size(byte_size))
+}
+
+pub fn declare_type_adt(type_id: TypeId, type_info: TypeInformation) {
+    type_ref(|t| t.set_type(type_id, Some(type_info)))
 }
 
 pub fn ref_operand_copy(place: PlaceRef) -> OperandRef {

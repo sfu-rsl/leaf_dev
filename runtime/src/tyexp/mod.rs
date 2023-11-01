@@ -6,7 +6,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::abs::backend::TypeManager;
+use crate::abs::{backend::TypeManager, TypeId};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TypeInformation {
@@ -75,24 +75,27 @@ impl TypeExport {
     }
 }
 
-pub(crate) struct DefaultTypeManager {
-    type_map: HashMap<String, TypeInformation>,
+pub(crate) struct BasicTypeManager {
+    type_map: HashMap<TypeId, TypeInformation>,
 }
 
-impl DefaultTypeManager {
+impl BasicTypeManager {
     pub fn new() -> Self {
-        DefaultTypeManager {
-            // read type information from json file and fill the type map
-            type_map: TypeExport::read(),
+        BasicTypeManager {
+            type_map: HashMap::new()
         }
     }
 }
 
-impl TypeManager for DefaultTypeManager {
-    type Key = String;
+impl TypeManager for BasicTypeManager {
+    type Key = TypeId;
     type Value = Option<TypeInformation>;
 
-    fn get_type(&self, type_id: Self::Key) -> Self::Value {
-        self.type_map.get(&type_id).cloned()
+    fn get_type(&self, key: Self::Key) -> Self::Value {
+        self.type_map.get(&key).cloned()
+    }
+
+    fn set_type(&mut self, key: Self::Key, value: Self::Value) {
+        self.type_map.insert(key, value.expect("Invalid TypeInformation value"));
     }
 }

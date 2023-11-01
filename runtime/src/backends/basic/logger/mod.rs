@@ -1,8 +1,8 @@
-use std::fmt::Display;
+use std::{fmt::Display, borrow::BorrowMut, collections::HashMap};
 
-use crate::abs::{
-    backend::*, AssertKind, BinaryOp, BranchingMetadata, CastKind, UnaryOp, ValueType, VariantIndex,
-};
+use crate::{abs::{
+    backend::*, AssertKind, BinaryOp, BranchingMetadata, CastKind, UnaryOp, ValueType, VariantIndex, TypeId,
+}, tyexp::{BasicTypeManager, TypeInformation}};
 
 use super::{Field, OperandHandler, Place, PlaceHandler};
 
@@ -13,6 +13,7 @@ type Operand = super::operand::Operand<Place, ValueType>;
 
 pub(crate) struct LoggerBackend {
     call_manager: CallManager,
+    type_manager: super::TypeManager,
 }
 
 impl LoggerBackend {
@@ -20,6 +21,7 @@ impl LoggerBackend {
     pub fn new() -> Self {
         Self {
             call_manager: CallManager::new(),
+            type_manager: Box::new(BasicTypeManager::new()),
         }
     }
 }
@@ -31,6 +33,7 @@ impl RuntimeBackend for LoggerBackend {
     type BranchingHandler<'a> = LoggerBranchingHandler where Self: 'a;
     type FunctionHandler<'a> = LoggerFunctionHandler<'a> where Self: 'a;
 
+    type TypeManager = super::TypeManager;
     type Place = Place;
     type Operand = Operand;
 
@@ -54,6 +57,10 @@ impl RuntimeBackend for LoggerBackend {
         LoggerFunctionHandler {
             call_manager: &mut self.call_manager,
         }
+    }
+
+    fn type_control(&mut self) -> &mut Self::TypeManager {
+        self.type_manager.borrow_mut()
     }
 }
 
@@ -335,6 +342,25 @@ impl FunctionHandler for LoggerFunctionHandler<'_> {
     }
 
     fn metadata(self) -> Self::MetadataHandler {}
+}
+
+pub(crate) struct LoggerTypeManager {
+    type_map: HashMap<TypeId, TypeInformation>,
+}
+
+impl TypeManager for LoggerTypeManager {
+    type Key = TypeId;
+    type Value = Option<TypeInformation>;
+
+    fn get_type(&self, key: Self::Key) -> Self::Value {
+        log::info!("Getting value for key: [{:#?}]", key);
+        self.type_map.get(&key).cloned()
+    }
+
+    fn set_type(&mut self, key: Self::Key, value: Self::Value) {
+        log::info!("Setting value: [{:#?}] for key: [{:#?}]", value, key);
+        self.type_map.insert(key, value.expect("Invalid value"));
+    }
 }
 
 struct CallInfo {
