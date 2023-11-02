@@ -148,6 +148,7 @@ pub trait FunctionHandler<'tcx> {
 
 pub(crate) trait EntryFunctionHandler {
     fn init_runtime_lib(&mut self);
+    fn init_type_info(&mut self);
 }
 
 pub(crate) trait AssertionHandler<'tcx> {
@@ -186,11 +187,12 @@ pub(crate) struct RuntimeCallAdder<C> {
 mod implementation {
     use std::assert_matches::debug_assert_matches;
 
+    use runtime::tyexp::TypeInformation;
     use rustc_middle::mir::{self, BasicBlock, BasicBlockData, HasLocalDecls, UnevaluatedConst};
     use rustc_middle::ty::TyKind;
     #[cfg(place_addr)]
     use rustc_middle::ty::TypeVisitableExt;
-    use rustc_span::def_id::DefId;
+    use rustc_span::def_id::{CrateNum, DefId, DefIndex};
 
     use delegate::delegate;
 
@@ -200,6 +202,7 @@ mod implementation {
     use crate::mir_transform::*;
     use crate::passes::ctfe::CtfeId;
     use crate::passes::instr;
+    use crate::passes::tyexp::get_type_map;
     use crate::passes::Storage;
 
     use utils::*;
@@ -1891,6 +1894,43 @@ mod implementation {
         fn init_runtime_lib(&mut self) {
             let block = self.make_bb_for_call(stringify!(pri::init_runtime_lib), vec![]);
             self.insert_blocks([block]);
+        }
+
+        fn init_type_info(&mut self) {
+            let mut blocks = vec![];
+            let tcx = self.context.tcx();
+
+            for (def_id, _) in get_type_map(self.context.storage()).clone().into_iter() {
+                let (krate_id, index_id) = TypeInformation::revert_def_id(def_id);
+                let def = DefId {
+                    krate: CrateNum::from_u32(krate_id),
+                    index: DefIndex::from_u32(index_id),
+                };
+                let ty = tcx
+                    .type_of(def)
+                    .no_bound_vars()
+                    .expect("Bound types are not supported.");
+
+                let type_id_of = &self.context.pri_helper_funcs().type_id_of;
+                let (block, id_local) = self.make_bb_for_call_raw(
+                    type_id_of.def_id,
+                    type_id_of.ret_ty,
+                    vec![ty.into()],
+                    Vec::default(),
+                    None,
+                );
+                blocks.push(block);
+
+                let block = self.make_bb_for_call(
+                    stringify!(pri::declare_type_adt),
+                    vec![
+                        operand::move_for_local(id_local),
+                        operand::const_from_uint(tcx, def_id),
+                    ],
+                );
+                blocks.push(block);
+            }
+            self.insert_blocks(blocks);
         }
     }
 

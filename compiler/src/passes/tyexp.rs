@@ -33,8 +33,8 @@ impl CompilationPass for TypeExporter {
 
 const KEY_TYPE_MAP: &str = "type_ids";
 
-fn get_type_map(storage: &mut dyn Storage) -> &mut HashMap<String, TypeInformation> {
-    storage.get_or_default::<HashMap<String, TypeInformation>>(KEY_TYPE_MAP.to_owned())
+pub(crate) fn get_type_map(storage: &mut dyn Storage) -> &mut HashMap<u64, TypeInformation> {
+    storage.get_or_default::<HashMap<u64, TypeInformation>>(KEY_TYPE_MAP.to_owned())
 }
 
 struct PlaceVisitor<'tcx, 'b, 's> {
@@ -62,14 +62,21 @@ impl<'tcx, 'b, 's> PlaceVisitor<'tcx, 'b, 's> {
         // we are only interested in exporting ADT Ty information as of now
         if let rustc_middle::ty::TyKind::Adt(def, subst) = ty.kind() {
             let map = get_type_map(self.storage);
-            let def_id = format!("{}_{}", def.did().krate.as_u32(), def.did().index.as_u32());
+            let def_id =
+                TypeInformation::compute_def_id(def.did().krate.as_u32(), def.did().index.as_u32());
+            log::debug!(
+                "krate id: [{}], index id: [{}], def id: [{}]",
+                def.did().krate.as_u32(),
+                def.did().index.as_u32(),
+                def_id
+            );
             // skip current ADT Ty if it has been explored
             if !map.contains_key(&def_id) {
                 let (variants, variants_tys) =
                     get_variants_and_tys(self.tcx, def.variants(), subst);
                 map.insert(
                     def_id.clone(),
-                    TypeInformation::new(def_id.clone(), ty.to_string(), variants),
+                    TypeInformation::new(def_id, ty.to_string(), variants),
                 );
 
                 // recursively explore other ADT Tys found from variants

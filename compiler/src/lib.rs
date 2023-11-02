@@ -54,9 +54,6 @@ pub fn run_compiler(args: impl Iterator<Item = String>, input_path: Option<PathB
         rustc_driver::catch_with_exit_code(|| RunCompiler::new(&args, pass.as_mut()).run())
     };
 
-    let mut pass = chain!(<PrerequisitePass>, <TypeExporter>,);
-    run_pass(pass.to_callbacks());
-
     let ctfe_block_ids = {
         let mut pass = chain!(<PrerequisitePass>, <CtfeScanner>,);
         run_pass(pass.to_callbacks());
@@ -64,7 +61,7 @@ pub fn run_compiler(args: impl Iterator<Item = String>, input_path: Option<PathB
     };
 
     let mut pass =
-        chain!(<PrerequisitePass>, NctfeFunctionAdder::new(ctfe_block_ids.len()), <Instrumentor>,)
+        chain!(<PrerequisitePass>, <TypeExporter>, NctfeFunctionAdder::new(ctfe_block_ids.len()), <Instrumentor>,)
             .into_logged();
     run_pass(pass.to_callbacks())
 }
