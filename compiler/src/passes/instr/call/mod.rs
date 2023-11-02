@@ -1900,6 +1900,7 @@ mod implementation {
             let mut blocks = vec![];
             let tcx = self.context.tcx();
 
+            #[cfg(place_addr)]
             for (def_id, _) in get_type_map(self.context.storage()).clone().into_iter() {
                 let (krate_id, index_id) = TypeInformation::revert_def_id(def_id);
                 let def = DefId {
