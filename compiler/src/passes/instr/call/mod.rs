@@ -187,12 +187,11 @@ pub(crate) struct RuntimeCallAdder<C> {
 mod implementation {
     use std::assert_matches::debug_assert_matches;
 
-    use runtime::tyexp::TypeInformation;
     use rustc_middle::mir::{self, BasicBlock, BasicBlockData, HasLocalDecls, UnevaluatedConst};
     use rustc_middle::ty::TyKind;
     #[cfg(place_addr)]
     use rustc_middle::ty::TypeVisitableExt;
-    use rustc_span::def_id::{CrateNum, DefId, DefIndex};
+    use rustc_span::def_id::DefId;
 
     use delegate::delegate;
 
@@ -254,6 +253,7 @@ mod implementation {
             target: Option<BasicBlock>,
         ) -> (BasicBlockData<'tcx>, Local);
 
+        #[cfg(place_addr)]
         fn make_bb_for_type_id_of(&mut self, ty: Ty<'tcx>) -> (BasicBlockData<'tcx>, Local);
     }
 
@@ -452,6 +452,7 @@ mod implementation {
             )
         }
 
+        #[cfg(place_addr)]
         fn make_bb_for_type_id_of(&mut self, ty: Ty<'tcx>) -> (BasicBlockData<'tcx>, Local) {
             let type_id_of: &FunctionInfo<'_> = &self.context.pri_helper_funcs().type_id_of;
             self.make_bb_for_call_raw(
