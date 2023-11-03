@@ -70,7 +70,7 @@ impl<'tcx, 'b, 's> PlaceVisitor<'tcx, 'b, 's> {
                 let (variants, variants_tys) =
                     get_variants_and_tys(self.tcx, def.variants(), subst);
                 map.insert(
-                    def_id.clone(),
+                    def_id,
                     TypeInformation::new(def_id, ty.to_string(), variants),
                 );
 
@@ -101,12 +101,8 @@ fn get_variants_and_tys<'tcx>(
         for field in variant.fields.iter() {
             let field_ty = field.ty(tcx, subst);
             if let rustc_middle::ty::TyKind::Adt(field_def, _) = field_ty.kind() {
-                let def_id = format!(
-                    "{}_{}",
-                    field_def.did().krate.as_u32(),
-                    field_def.did().index.as_u32()
-                );
-                fields.push(def_id);
+                let def_id = compute_def_id(field_def.did());
+                fields.push(def_id.to_string());
                 tys.push(field_ty);
             } else {
                 fields.push(field_ty.to_string());
