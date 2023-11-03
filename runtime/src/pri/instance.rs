@@ -159,7 +159,9 @@ pub(super) fn func_control<T>(
     })
 }
 
-pub(super) fn type_ref(type_action: impl FnOnce(&mut <BackendImpl as RuntimeBackend>::TypeManager)) {
+pub(super) fn type_control(
+    type_action: impl FnOnce(&mut <BackendImpl as RuntimeBackend>::TypeManager),
+) {
     perform_on_backend(|r| {
         let mut type_control = r.type_control();
         type_action(&mut type_control)

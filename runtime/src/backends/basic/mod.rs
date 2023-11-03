@@ -6,16 +6,16 @@ pub(crate) mod operand;
 mod place;
 mod state;
 
-use std::{cell::RefCell, ops::DerefMut, rc::Rc, borrow::BorrowMut};
+use std::{borrow::BorrowMut, cell::RefCell, ops::DerefMut, rc::Rc};
 
 use crate::{
     abs::{
         self, backend::*, AssertKind, BasicBlockIndex, BranchingMetadata, CastKind, IntType, Local,
-        PlaceUsage, PointerOffset, UnaryOp, VariantIndex, TypeId,
+        PlaceUsage, PointerOffset, TypeId, UnaryOp, VariantIndex,
     },
     solvers::z3::Z3Solver,
     trace::ImmediateTraceManager,
-    tyexp::{TypeInformation, BasicTypeManager},
+    tyexp::TypeInformation,
 };
 
 use self::{
@@ -41,7 +41,7 @@ type BasicVariablesState = StackedLocalIndexVariablesState<SymProjector>;
 
 type BasicCallStackManager = call::BasicCallStackManager<BasicVariablesState>;
 
-type TypeManager = 
+type TypeManager =
     Box<dyn abs::backend::TypeManager<Key = TypeId, Value = Option<TypeInformation>>>;
 
 #[cfg(place_addr)]
@@ -100,7 +100,7 @@ impl BasicBackend {
             current_constraints: Vec::new(),
             expr_builder,
             sym_id_counter: 0,
-            type_manager: Box::new(BasicTypeManager::new()),
+            type_manager: Box::new(abs::backend::implementation::DefaultTypeManager::new()),
         }
     }
 }

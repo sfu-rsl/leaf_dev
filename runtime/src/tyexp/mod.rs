@@ -27,25 +27,13 @@ impl TypeInformation {
             variants,
         }
     }
-
-    pub fn compute_def_id(krate_id: u32, index_id: u32) -> u64 {
-        return ((krate_id as u64) << 32) + index_id as u64;
-    }
-
-    pub fn revert_def_id(def_id: u64) -> (u32, u32) {
-        let krate_id = (def_id >> 32) as u32;
-        let index_id = def_id as u32;
-        (krate_id, index_id)
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TypeVariant {
     // Variant name
     name: String,
-    /// Array of types of variant's fields.
-    /// For AdtTy type field, its DefId (e.g. 123) will be put in the array.
-    /// For other type fields, its type name (e.g. char) will be put in the array.
+    /// Array of types of variant's fields (either def id for AdtTy or name for other Tys).
     ///
     /// TODO: add a well-defined information structure for other type fields
     fields: Vec<String>,
@@ -67,8 +55,13 @@ impl TypeExport {
             .open("types.json")
             .expect("Unable to open file for type export");
         file.read_to_string(&mut content).unwrap();
-        let map = serde_json::from_str(&content).unwrap_or(HashMap::new());
-        log::debug!("Reading {:#?} from types.json", map);
+        let type_infos: Vec<TypeInformation> = serde_json::from_str(&content).unwrap_or(Vec::new());
+        log::debug!("Reading {:#?} from types.json", type_infos);
+
+        let mut map = HashMap::new();
+        for type_info in type_infos.into_iter() {
+            map.insert(type_info.def_id, type_info);
+        }
         map
     }
 
@@ -81,8 +74,12 @@ impl TypeExport {
             .open("types.json")
             .expect("Unable to open file for type export");
 
-        file.write_all(serde_json::to_string_pretty(&map).unwrap().as_bytes())
-            .unwrap();
+        file.write_all(
+            serde_json::to_string_pretty(&map.values().cloned().collect::<Vec<_>>())
+                .unwrap()
+                .as_bytes(),
+        )
+        .unwrap();
     }
 }
 
@@ -92,30 +89,4 @@ lazy_static! {
 
 pub(crate) fn get_type_info(def_id: u64) -> Option<TypeInformation> {
     TYPE_INFO_MAP.lock().unwrap().get(&def_id).cloned()
-}
-
-pub(crate) struct BasicTypeManager {
-    type_map: HashMap<TypeId, TypeInformation>,
-}
-
-impl BasicTypeManager {
-    pub fn new() -> Self {
-        BasicTypeManager {
-            type_map: HashMap::new(),
-        }
-    }
-}
-
-impl TypeManager for BasicTypeManager {
-    type Key = TypeId;
-    type Value = Option<TypeInformation>;
-
-    fn get_type(&self, key: Self::Key) -> Self::Value {
-        self.type_map.get(&key).cloned()
-    }
-
-    fn set_type(&mut self, key: Self::Key, value: Self::Value) {
-        self.type_map
-            .insert(key, value.expect("Invalid TypeInformation value"));
-    }
 }

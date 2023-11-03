@@ -1,3 +1,5 @@
+use crate::utils::compute_def_id;
+
 use super::{CompilationPass, Storage, StorageExt};
 
 use runtime::tyexp::{TypeExport, TypeInformation, TypeVariant};
@@ -62,14 +64,7 @@ impl<'tcx, 'b, 's> PlaceVisitor<'tcx, 'b, 's> {
         // we are only interested in exporting ADT Ty information as of now
         if let rustc_middle::ty::TyKind::Adt(def, subst) = ty.kind() {
             let map = get_type_map(self.storage);
-            let def_id =
-                TypeInformation::compute_def_id(def.did().krate.as_u32(), def.did().index.as_u32());
-            log::debug!(
-                "krate id: [{}], index id: [{}], def id: [{}]",
-                def.did().krate.as_u32(),
-                def.did().index.as_u32(),
-                def_id
-            );
+            let def_id = compute_def_id(def.did());
             // skip current ADT Ty if it has been explored
             if !map.contains_key(&def_id) {
                 let (variants, variants_tys) =

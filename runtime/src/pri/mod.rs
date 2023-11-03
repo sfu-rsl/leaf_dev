@@ -105,8 +105,8 @@ pub fn set_place_size(place: PlaceRef, byte_size: TypeSize) {
     mut_place_ref(place, |h, p| h.metadata(p).set_size(byte_size))
 }
 
-pub fn declare_type_adt(type_id: TypeId, def_id: u64) {
-    type_ref(|t| t.set_type(type_id, get_type_info(def_id)))
+pub fn map_type_id_to_def(type_id: TypeId, def_id: u64) {
+    type_control(|t| t.set_type(type_id, get_type_info(def_id)))
 }
 
 pub fn ref_operand_copy(place: PlaceRef) -> OperandRef {

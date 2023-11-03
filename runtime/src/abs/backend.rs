@@ -276,6 +276,8 @@ pub(crate) trait TypeManager {
 }
 
 pub(crate) mod implementation {
+    use crate::tyexp::TypeInformation;
+
     use super::super::*;
     use super::*;
 
@@ -410,6 +412,32 @@ pub(crate) mod implementation {
 
         fn zst(self) -> Self::Operand {
             Constant::Zst.into()
+        }
+    }
+
+    pub(crate) struct DefaultTypeManager {
+        type_map: HashMap<TypeId, TypeInformation>,
+    }
+
+    impl DefaultTypeManager {
+        pub fn new() -> Self {
+            DefaultTypeManager {
+                type_map: HashMap::new(),
+            }
+        }
+    }
+
+    impl TypeManager for DefaultTypeManager {
+        type Key = TypeId;
+        type Value = Option<TypeInformation>;
+
+        fn get_type(&self, key: Self::Key) -> Self::Value {
+            self.type_map.get(&key).cloned()
+        }
+
+        fn set_type(&mut self, key: Self::Key, value: Self::Value) {
+            self.type_map
+                .insert(key, value.expect("Invalid TypeInformation value"));
         }
     }
 }

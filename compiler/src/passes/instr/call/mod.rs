@@ -204,6 +204,8 @@ mod implementation {
     use crate::passes::instr;
     use crate::passes::tyexp::get_type_map;
     use crate::passes::Storage;
+    use crate::pri_utils::FunctionInfo;
+    use crate::utils::revert_def_id;
 
     use utils::*;
     use InsertionLocation::*;
@@ -251,6 +253,8 @@ mod implementation {
             args: Vec<Operand<'tcx>>,
             target: Option<BasicBlock>,
         ) -> (BasicBlockData<'tcx>, Local);
+
+        fn make_bb_for_type_id_of(&mut self, ty: Ty<'tcx>) -> (BasicBlockData<'tcx>, Local);
     }
 
     pub(crate) trait BlockInserter<'tcx> {
@@ -445,6 +449,17 @@ mod implementation {
                     target,
                 ),
                 result_local,
+            )
+        }
+
+        fn make_bb_for_type_id_of(&mut self, ty: Ty<'tcx>) -> (BasicBlockData<'tcx>, Local) {
+            let type_id_of: &FunctionInfo<'_> = &self.context.pri_helper_funcs().type_id_of;
+            self.make_bb_for_call_raw(
+                type_id_of.def_id,
+                type_id_of.ret_ty,
+                vec![ty.into()],
+                Vec::default(),
+                None,
             )
         }
     }
@@ -715,14 +730,7 @@ mod implementation {
                     "Region erasure assumption does not hold for TypeId call."
                 );
 
-                let type_id_of = &self.context.pri_helper_funcs().type_id_of;
-                let (block, id_local) = self.make_bb_for_call_raw(
-                    type_id_of.def_id,
-                    type_id_of.ret_ty,
-                    vec![ty.into()],
-                    Vec::default(),
-                    None,
-                );
+                let (block, id_local) = self.make_bb_for_type_id_of(ty);
                 blocks.push(block);
                 id_local
             };
@@ -1901,29 +1909,19 @@ mod implementation {
             let tcx = self.context.tcx();
 
             #[cfg(place_addr)]
-            for (def_id, _) in get_type_map(self.context.storage()).clone().into_iter() {
-                let (krate_id, index_id) = TypeInformation::revert_def_id(def_id);
-                let def = DefId {
-                    krate: CrateNum::from_u32(krate_id),
-                    index: DefIndex::from_u32(index_id),
-                };
+            for &def_id in get_type_map(self.context.storage()).clone().keys() {
+                let def = revert_def_id(def_id);
+                // FIXME: add support for generics
                 let ty = tcx
                     .type_of(def)
                     .no_bound_vars()
                     .expect("Bound types are not supported.");
 
-                let type_id_of = &self.context.pri_helper_funcs().type_id_of;
-                let (block, id_local) = self.make_bb_for_call_raw(
-                    type_id_of.def_id,
-                    type_id_of.ret_ty,
-                    vec![ty.into()],
-                    Vec::default(),
-                    None,
-                );
+                let (block, id_local) = self.make_bb_for_type_id_of(ty);
                 blocks.push(block);
 
                 let block = self.make_bb_for_call(
-                    stringify!(pri::declare_type_adt),
+                    stringify!(pri::map_type_id_to_def),
                     vec![
                         operand::move_for_local(id_local),
                         operand::const_from_uint(tcx, def_id),
