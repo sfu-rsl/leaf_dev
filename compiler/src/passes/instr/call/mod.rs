@@ -1921,24 +1921,18 @@ mod implementation {
 
     impl<'tcx, C> RuntimeCallAdder<C>
     where
-        C: BodyLocalManager<'tcx> + TyContextProvider<'tcx> + PriItemsProvider<'tcx>,
+        Self: MirCallAdder<'tcx>,
+        C: PriItemsProvider<'tcx>,
     {
         #[cfg(place_addr)]
         fn make_type_id_of_bb(&mut self, ty: Ty<'tcx>) -> (BasicBlockData<'tcx>, Local) {
             let type_id_of: &FunctionInfo<'_> = &self.context.pri_helper_funcs().type_id_of;
-            let func_id = type_id_of.def_id;
-            let ret_ty = type_id_of.ret_ty;
-
-            let result_local = self.context.add_local(ret_ty);
-            (
-                self.make_call_bb(
-                    func_id,
-                    vec![ty.into()],
-                    Vec::default(),
-                    Place::from(result_local),
-                    None,
-                ),
-                result_local,
+            self.make_bb_for_call_raw(
+                type_id_of.def_id,
+                type_id_of.ret_ty,
+                vec![ty.into()],
+                Vec::default(),
+                None,
             )
         }
     }
