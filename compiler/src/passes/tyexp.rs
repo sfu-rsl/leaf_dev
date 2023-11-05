@@ -1,4 +1,4 @@
-use crate::utils::compute_def_id;
+use crate::utils::encode_def_id;
 
 use super::{CompilationPass, Storage, StorageExt};
 
@@ -64,7 +64,7 @@ impl<'tcx, 'b, 's> PlaceVisitor<'tcx, 'b, 's> {
         // we are only interested in exporting ADT Ty information as of now
         if let rustc_middle::ty::TyKind::Adt(def, subst) = ty.kind() {
             let map = get_type_map(self.storage);
-            let def_id = compute_def_id(def.did());
+            let def_id = encode_def_id(def.did());
             // skip current ADT Ty if it has been explored
             if !map.contains_key(&def_id) {
                 let (variants, variants_tys) =
@@ -101,7 +101,7 @@ fn get_variants_and_tys<'tcx>(
         for field in variant.fields.iter() {
             let field_ty = field.ty(tcx, subst);
             if let rustc_middle::ty::TyKind::Adt(field_def, _) = field_ty.kind() {
-                let def_id = compute_def_id(field_def.did());
+                let def_id = encode_def_id(field_def.did());
                 fields.push(def_id.to_string());
                 tys.push(field_ty);
             } else {

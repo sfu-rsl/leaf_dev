@@ -7,8 +7,6 @@ use std::{
     sync::Mutex,
 };
 
-use crate::abs::{backend::TypeManager, TypeId};
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TypeInformation {
     // A DefId identifies a particular definition, by combining a crate index and a def index.

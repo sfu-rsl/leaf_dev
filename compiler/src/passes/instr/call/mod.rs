@@ -204,7 +204,7 @@ mod implementation {
     use crate::passes::tyexp::get_type_map;
     use crate::passes::Storage;
     use crate::pri_utils::FunctionInfo;
-    use crate::utils::revert_def_id;
+    use crate::utils::decode_def_id;
 
     use utils::*;
     use InsertionLocation::*;
@@ -252,9 +252,6 @@ mod implementation {
             args: Vec<Operand<'tcx>>,
             target: Option<BasicBlock>,
         ) -> (BasicBlockData<'tcx>, Local);
-
-        #[cfg(place_addr)]
-        fn make_bb_for_type_id_of(&mut self, ty: Ty<'tcx>) -> (BasicBlockData<'tcx>, Local);
     }
 
     pub(crate) trait BlockInserter<'tcx> {
@@ -449,18 +446,6 @@ mod implementation {
                     target,
                 ),
                 result_local,
-            )
-        }
-
-        #[cfg(place_addr)]
-        fn make_bb_for_type_id_of(&mut self, ty: Ty<'tcx>) -> (BasicBlockData<'tcx>, Local) {
-            let type_id_of: &FunctionInfo<'_> = &self.context.pri_helper_funcs().type_id_of;
-            self.make_bb_for_call_raw(
-                type_id_of.def_id,
-                type_id_of.ret_ty,
-                vec![ty.into()],
-                Vec::default(),
-                None,
             )
         }
     }
@@ -731,7 +716,7 @@ mod implementation {
                     "Region erasure assumption does not hold for TypeId call."
                 );
 
-                let (block, id_local) = self.make_bb_for_type_id_of(ty);
+                let (block, id_local) = self.make_type_id_of_bb(ty);
                 blocks.push(block);
                 id_local
             };
@@ -1911,14 +1896,14 @@ mod implementation {
 
             #[cfg(place_addr)]
             for &def_id in get_type_map(self.context.storage()).clone().keys() {
-                let def = revert_def_id(def_id);
+                let def = decode_def_id(def_id);
                 // FIXME: add support for generics
                 let ty = tcx
                     .type_of(def)
                     .no_bound_vars()
                     .expect("Bound types are not supported.");
 
-                let (block, id_local) = self.make_bb_for_type_id_of(ty);
+                let (block, id_local) = self.make_type_id_of_bb(ty);
                 blocks.push(block);
 
                 let block = self.make_bb_for_call(
@@ -1931,6 +1916,30 @@ mod implementation {
                 blocks.push(block);
             }
             self.insert_blocks(blocks);
+        }
+    }
+
+    impl<'tcx, C> RuntimeCallAdder<C>
+    where
+        C: BodyLocalManager<'tcx> + TyContextProvider<'tcx> + PriItemsProvider<'tcx>,
+    {
+        #[cfg(place_addr)]
+        fn make_type_id_of_bb(&mut self, ty: Ty<'tcx>) -> (BasicBlockData<'tcx>, Local) {
+            let type_id_of: &FunctionInfo<'_> = &self.context.pri_helper_funcs().type_id_of;
+            let func_id = type_id_of.def_id;
+            let ret_ty = type_id_of.ret_ty;
+
+            let result_local = self.context.add_local(ret_ty);
+            (
+                self.make_call_bb(
+                    func_id,
+                    vec![ty.into()],
+                    Vec::default(),
+                    Place::from(result_local),
+                    None,
+                ),
+                result_local,
+            )
         }
     }
 

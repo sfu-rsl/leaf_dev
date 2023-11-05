@@ -26,11 +26,11 @@ macro_rules! chain {
 }
 pub(crate) use chain;
 
-pub(crate) fn compute_def_id(def: DefId) -> u64 {
+pub(crate) fn encode_def_id(def: DefId) -> u64 {
     return ((def.krate.as_u32() as u64) << 32) + def.index.as_u32() as u64;
 }
 
-pub(crate) fn revert_def_id(def_id: u64) -> DefId {
+pub(crate) fn decode_def_id(def_id: u64) -> DefId {
     let krate_id = (def_id >> 32) as u32;
     let index_id = def_id as u32;
     DefId {
