@@ -9,6 +9,7 @@ edition = "2021"
 log = "0.4.17"
 env_logger = "0.10.0"
 runtime = { path = "../runtime", version = "0.1.0" }
+macros = { path = "../macros", version = "0.1.0" }
 delegate = "0.10.0"
 paste = "1.0"
 bimap = "0.6.3"
