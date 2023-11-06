@@ -16,6 +16,9 @@ target
 
 # You can use playground folder for your experiments.
 samples/playground
+samples/**/*ice*.txt
+samples/**/mir_dump/**
+samples/**/main
 
 *.pdb
 *.exe
