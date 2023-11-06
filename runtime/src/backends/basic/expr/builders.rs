@@ -827,13 +827,13 @@ mod simp {
 
     impl<'a> FoldableOperands<'a> {
         #[inline]
-        /// Return the constant of the inner expression
+        /// Returns the constant of the inner expression
         fn a(&self) -> &ConstValue {
             self.as_flat().0.operands.as_flat().1
         }
 
         #[inline]
-        /// Return the constant of the outer expression
+        /// Returns the constant of the outer expression
         fn b(&self) -> &ConstValue {
             self.as_flat().1
         }
@@ -843,7 +843,7 @@ mod simp {
             self.as_flat().0
         }
 
-        /// Create a new SymBinaryOperands from the symbolic variable and the folded value.
+        /// Creates a new SymBinaryOperands from the symbolic variable and the folded value.
         /// Useful when the operator of the inner expression needs to be changed. As you can create
         /// the BinaryExpr wrapper manually.
         fn fold(self, folded_value: ConstValue) -> SymBinaryOperands {
@@ -852,7 +852,7 @@ mod simp {
             SymBinaryOperands::from((x.clone(), folded_value.to_value_ref(), is_reversed))
         }
 
-        /// Create a new BinaryExpr from the inner expression and the folded value.
+        /// Creates a new BinaryExpr from the inner expression and the folded value.
         /// Uses the original operator of the inner expression and uses the folded value
         /// for the constant.
         fn fold_expr(self, folded_value: ConstValue) -> BinaryExpr {
@@ -869,7 +869,7 @@ mod simp {
             }
         }
 
-        /// Create a new binary expression from the existing symbolic value and the newly folded
+        /// Creates a new binary expression from the existing symbolic value and the newly folded
         /// constant. Accepts a new operator and the `is_reversed` flag (true means x on the
         /// right).
         fn new_expr(self, folded_value: ConstValue, op: BinaryOp, is_reversed: bool) -> BinaryExpr {
