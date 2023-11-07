@@ -794,7 +794,7 @@ mod implementation {
             if cfg!(place_addr) {
                 let tcx = self.tcx();
                 let ty = place.ty(&self.context, tcx).ty;
-                if ty.is_adt() || ty.is_array() {
+                if ty.is_adt() || ty.is_array() || !ty.is_known_rigid() {
                     additional_blocks.extend(self.set_place_size(place_ref, ty));
                 }
             }

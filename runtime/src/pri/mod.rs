@@ -507,7 +507,6 @@ pub mod compiler_helpers {
     static _TYPE_ID_OF_REFERENCER: fn() -> TypeId = type_id_of::<u32>;
 
     #[used]
-    #[cfg(place_addr)]
     static _SIZE_OF_REFERENCER: fn() -> TypeSize = size_of::<u32>;
 
     #[cfg(place_addr)]
@@ -522,7 +521,6 @@ pub mod compiler_helpers {
         TypeId::of::<T>()
     }
 
-    #[cfg(place_addr)]
     pub fn size_of<T>() -> TypeSize {
         core::mem::size_of::<T>() as TypeSize
     }

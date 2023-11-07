@@ -22,7 +22,6 @@ pub(crate) struct PriHelperFunctions<'tcx> {
     pub f64_to_bits: DefId,
     #[cfg(place_addr)]
     pub type_id_of: FunctionInfo<'tcx>,
-    #[cfg(place_addr)]
     pub size_of: FunctionInfo<'tcx>,
     _phantom: std::marker::PhantomData<&'tcx ()>,
 }
@@ -145,7 +144,6 @@ pub(crate) fn find_helper_funcs<'tcx>(
         f64_to_bits: *def_ids.get(helper_item_name!(f64_to_bits)).unwrap(),
         #[cfg(place_addr)]
         type_id_of: get_func_info(helper_item_name!(type_id_of)),
-        #[cfg(place_addr)]
         size_of: get_func_info(helper_item_name!(size_of)),
         _phantom: std::marker::PhantomData,
     }
