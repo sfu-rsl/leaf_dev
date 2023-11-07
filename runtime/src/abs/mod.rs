@@ -40,6 +40,7 @@ pub(crate) enum Constant {
     ByteStr(&'static [u8]),
     Func(u64),
     Zst,
+    Unevaluated,
 }
 
 impl<P, C, S> From<Constant> for Operand<P, C, S>

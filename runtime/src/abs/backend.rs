@@ -140,6 +140,8 @@ pub(crate) trait ConstantHandler {
     fn func(self, id: u64) -> Self::Operand;
 
     fn zst(self) -> Self::Operand;
+
+    fn unevaluated(self) -> Self::Operand;
 }
 
 pub(crate) trait AssignmentHandler {
@@ -374,7 +376,7 @@ pub(crate) mod implementation {
             Operand::Symbolic((self.create_symbolic)(ty))
         }
 
-        fn metadata<'a>(self, operand: &'a mut Self::Operand) -> Self::MetadataHandler<'a> {}
+        fn metadata<'a>(self, _operand: &'a mut Self::Operand) -> Self::MetadataHandler<'a> {}
     }
 
     pub(crate) struct DefaultConstantHandler<O>(PhantomData<O>);
@@ -412,6 +414,10 @@ pub(crate) mod implementation {
 
         fn zst(self) -> Self::Operand {
             Constant::Zst.into()
+        }
+
+        fn unevaluated(self) -> Self::Operand {
+            Constant::Unevaluated.into()
         }
     }
 

@@ -876,6 +876,7 @@ mod convert {
                     })
                     .to_value_ref(),
                 )),
+                Unevaluated => UnevalValue::Some.into(),
                 _ => Self::Const(match val {
                     Bool(value) => value.into(),
                     Char(value) => value.into(),
@@ -885,11 +886,11 @@ mod convert {
                     },
                     Float { bit_rep, ty } => ConstValue::Float { bit_rep, ty },
                     Str(value) => ConstValue::Str(value),
-                    ByteStr(_) => {
-                        unreachable!()
-                    }
                     Func(value) => ConstValue::Func(value),
                     Zst => ConstValue::Zst,
+                    ByteStr(_) | Unevaluated => {
+                        unreachable!()
+                    }
                 }),
             }
         }
