@@ -1,5 +1,4 @@
 #![feature(rustc_private)]
-#![feature(custom_mir)]
 #![feature(let_chains)]
 #![feature(extend_one)]
 #![feature(box_patterns)]
@@ -7,7 +6,6 @@
 #![deny(rustc::internal)]
 #![feature(iter_order_by)]
 #![feature(macro_metavar_expr)]
-#![feature(local_key_cell_methods)]
 #![feature(box_into_inner)]
 #![feature(result_option_inspect)]
 #![feature(assert_matches)]
@@ -54,15 +52,25 @@ pub fn run_compiler(args: impl Iterator<Item = String>, input_path: Option<PathB
         rustc_driver::catch_with_exit_code(|| RunCompiler::new(&args, pass.as_mut()).run())
     };
 
-    let ctfe_block_ids = {
-        let mut pass = chain!(<PrerequisitePass>, <CtfeScanner>,);
-        run_pass(pass.to_callbacks());
-        pass.second.into_result()
+    #[cfg(nctfe)]
+    let nctfe_pass = {
+        let ctfe_block_ids = {
+            let mut pass = chain!(<PrerequisitePass>, <CtfeScanner>,);
+            run_pass(pass.to_callbacks());
+            pass.second.into_result()
+        };
+        NctfeFunctionAdder::new(ctfe_block_ids.len())
     };
+    #[cfg(not(nctfe))]
+    let nctfe_pass = NullPass;
 
-    let mut pass =
-        chain!(<PrerequisitePass>, <TypeExporter>, NctfeFunctionAdder::new(ctfe_block_ids.len()), <Instrumentor>,)
-            .into_logged();
+    let mut pass = chain!(
+        <PrerequisitePass>,
+        <TypeExporter>,
+        nctfe_pass,
+        <Instrumentor>,
+    )
+    .into_logged();
     run_pass(pass.to_callbacks())
 }
 

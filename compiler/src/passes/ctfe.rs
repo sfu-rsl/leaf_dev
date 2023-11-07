@@ -163,6 +163,9 @@ impl CompilationPass for NctfeFunctionAdder {
         body.local_decls.truncate(0);
         body.local_decls
             .extend(ctfe_body.local_decls.iter().cloned());
+        body.local_decls
+            .iter_mut()
+            .for_each(|l| l.ty = tcx.erase_regions(l.ty));
         body.basic_blocks_mut().truncate(0);
         body.basic_blocks_mut()
             .extend(ctfe_body.basic_blocks.iter().cloned());

@@ -188,9 +188,9 @@ mod implementation {
     use std::assert_matches::debug_assert_matches;
 
     use rustc_middle::mir::{self, BasicBlock, BasicBlockData, HasLocalDecls, UnevaluatedConst};
-    use rustc_middle::ty::TyKind;
     #[cfg(place_addr)]
     use rustc_middle::ty::TypeVisitableExt;
+    use rustc_middle::ty::{ParamEnv, TyKind};
     use rustc_span::def_id::DefId;
 
     use delegate::delegate;
@@ -736,7 +736,8 @@ mod implementation {
                  * No. As we are code generation phase, all regions should be erased. */
                 debug_assert!(
                     !ty.has_erasable_regions() && !ty.has_late_bound_regions(),
-                    "Region erasure assumption does not hold for TypeId call."
+                    "Region erasure assumption does not hold for TypeId call. {}",
+                    ty
                 );
 
                 let (block, id_local) = self.make_type_id_of_bb(ty);
@@ -869,11 +870,16 @@ mod implementation {
             } else if let Some(def_id) = Self::try_as_immut_static(tcx, constant) {
                 self.internal_reference_static_ref_const_operand(def_id, ty)
             } else {
-                unimplemented!(
-                    "Unsupported constant: {:?} with type: {:?}",
-                    constant.const_,
-                    ty
-                )
+                let msg = format!(
+                    "Encountered unknown constant {:?} with type {:?}",
+                    constant.const_, ty
+                );
+                if cfg!(place_addr) {
+                    log::warn!("{msg}");
+                    self.make_bb_for_unevaluated_const_ref_call().into()
+                } else {
+                    unimplemented!("{msg}")
+                }
             }
         }
 
@@ -998,15 +1004,21 @@ mod implementation {
             &mut self,
             constant: &UnevaluatedConst,
         ) -> BlocksAndResult<'tcx> {
-            let def_id = constant.def.expect_local();
-            let ctfe_id = if let Some(index) = constant.promoted {
-                CtfeId::Promoted(def_id, index)
-            } else {
-                CtfeId::Const(def_id)
-            };
+            if cfg!(nctfe) {
+                let def_id = constant.def.expect_local();
+                let ctfe_id = if let Some(index) = constant.promoted {
+                    CtfeId::Promoted(def_id, index)
+                } else {
+                    CtfeId::Const(def_id)
+                };
 
-            let nctfe_result_local = self.call_nctfe(ctfe_id);
-            self.internal_reference_operand(&operand::move_for_local(nctfe_result_local))
+                let nctfe_result_local = self.call_nctfe(ctfe_id);
+                self.internal_reference_operand(&operand::move_for_local(nctfe_result_local))
+            } else if cfg!(place_addr) {
+                self.make_bb_for_unevaluated_const_ref_call().into()
+            } else {
+                panic!("Unevaluated constant is not supported by this configuration.")
+            }
         }
 
         fn internal_reference_static_ref_const_operand(
@@ -1014,46 +1026,52 @@ mod implementation {
             def_id: DefId,
             ty: Ty<'tcx>,
         ) -> BlocksAndResult<'tcx> {
-            let item_ty = match ty.kind() {
-                TyKind::Ref(_, ty, rustc_ast::Mutability::Not) => ty.clone(),
-                _ => unreachable!("Constant type should be an immutable reference."),
-            };
+            if cfg!(nctfe) {
+                let item_ty = match ty.kind() {
+                    TyKind::Ref(_, ty, rustc_ast::Mutability::Not) => ty.clone(),
+                    _ => unreachable!("Constant type should be an immutable reference."),
+                };
 
-            let tcx = self.tcx();
-            let ctfe_id = CtfeId::Const(def_id.expect_local());
+                let tcx = self.tcx();
+                let ctfe_id = CtfeId::Const(def_id.expect_local());
 
-            assert!(
-                ty::is_ref_assignable(&item_ty, &ctfe_id.ty(tcx)),
-                concat!(
-                    "Constant type should be the reference of the init block's return type.",
-                    "Constant type: {:?}, init block return type: {:?}",
-                ),
-                ty,
-                ctfe_id.ty(tcx)
-            );
-
-            let nctfe_result_local = self.call_nctfe(ctfe_id);
-
-            // Simulate referencing the result of the NCTFE call.
-            let ref_local = self.context.add_local(ty);
-            {
-                // FIXME: Duplicate code with `LeafStatementVisitor::visit_assign`.
-                let ref_local_ref = self.reference_place(&ref_local.into());
-                instr::LeafAssignmentVisitor::instrument_ref(
-                    &mut self.assign(ref_local_ref, ty),
-                    &rustc_middle::mir::BorrowKind::Shared,
-                    &nctfe_result_local.into(),
+                assert!(
+                    ty::is_ref_assignable(&item_ty, &ctfe_id.ty(tcx)),
+                    concat!(
+                        "Constant type should be the reference of the init block's return type.",
+                        "Constant type: {:?}, init block return type: {:?}",
+                    ),
+                    ty,
+                    ctfe_id.ty(tcx)
                 );
-            }
 
-            self.internal_reference_operand(&operand::move_for_local(ref_local))
+                let nctfe_result_local = self.call_nctfe(ctfe_id);
+
+                // Simulate referencing the result of the NCTFE call.
+                let ref_local = self.context.add_local(ty);
+                {
+                    // FIXME: Duplicate code with `LeafStatementVisitor::visit_assign`.
+                    let ref_local_ref = self.reference_place(&ref_local.into());
+                    instr::LeafAssignmentVisitor::instrument_ref(
+                        &mut self.assign(ref_local_ref, ty),
+                        &rustc_middle::mir::BorrowKind::Shared,
+                        &nctfe_result_local.into(),
+                    );
+                }
+
+                self.internal_reference_operand(&operand::move_for_local(ref_local))
+            } else if cfg!(place_addr) {
+                self.make_bb_for_unevaluated_const_ref_call().into()
+            } else {
+                panic!("Static reference constant is not supported by this configuration.")
+            }
         }
 
         fn call_nctfe(&mut self, id: CtfeId) -> Local {
             use crate::passes::ctfe::get_nctfe_func;
 
             let tcx = self.tcx();
-            let result_local = self.context.add_local(id.ty(tcx));
+            let result_local = self.context.add_local(tcx.erase_regions(id.ty(tcx)));
 
             let nctfe_id = get_nctfe_func(id, self.context.storage());
             let call_block = BasicBlockData::new(Some(terminator::call(
@@ -1081,6 +1099,13 @@ mod implementation {
             );
 
             result_local
+        }
+
+        fn make_bb_for_unevaluated_const_ref_call(&mut self) -> (BasicBlockData<'tcx>, Local) {
+            self.make_bb_for_operand_ref_call(
+                stringify!(pri::ref_operand_const_unevaluated),
+                Vec::default(),
+            )
         }
 
         fn make_bb_for_operand_ref_call(
@@ -2209,7 +2234,7 @@ mod implementation {
 
         pub(super) mod ty {
             use rustc_abi::Size;
-            use rustc_middle::ty::{ParamEnv, ParamEnvAnd};
+            use rustc_middle::ty::ParamEnvAnd;
 
             use super::*;
 
