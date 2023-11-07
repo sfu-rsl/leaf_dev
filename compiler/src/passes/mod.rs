@@ -1,6 +1,7 @@
 pub(crate) mod ctfe;
 mod instr;
 pub(crate) mod logger;
+mod null;
 mod runtime_adder;
 pub(crate) mod tyexp;
 
@@ -23,6 +24,7 @@ use crate::utils::Chain;
 pub(crate) use ctfe::{CtfeScanner, NctfeFunctionAdder};
 pub(crate) use instr::Instrumentor;
 pub(crate) use logger::CompilationPassLogExt;
+pub(crate) use null::NullPass;
 pub(crate) use runtime_adder::RuntimeAdder;
 pub(crate) use tyexp::TypeExporter;
 
