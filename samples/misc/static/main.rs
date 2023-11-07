@@ -12,6 +12,7 @@ static ADT_REF: &TestStruct = &ADT;
 fn main() {
     foo(PRIMITIVE);
     foo(PRIMITIVE_REF);
+    foo(ADT);
     foo(&ADT);
     foo(ADT_REF);
 
@@ -19,6 +20,7 @@ fn main() {
     // foo(FN_PTR);
 }
 
+#[derive(Clone, Copy)]
 struct TestStruct {
     a: i32,
     b: i32,
