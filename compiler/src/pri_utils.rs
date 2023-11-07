@@ -22,6 +22,8 @@ pub(crate) struct PriHelperFunctions<'tcx> {
     pub f64_to_bits: DefId,
     #[cfg(place_addr)]
     pub type_id_of: FunctionInfo<'tcx>,
+    #[cfg(place_addr)]
+    pub size_of: FunctionInfo<'tcx>,
     _phantom: std::marker::PhantomData<&'tcx ()>,
 }
 
@@ -129,16 +131,22 @@ pub(crate) fn find_helper_funcs<'tcx>(
         .map(|def_id| (tcx.def_path_str(def_id), def_id))
         .collect();
 
+    let get_func_info = |name: &str| {
+        func_info_from(
+            tcx,
+            *def_ids.get(name).unwrap_or_else(|| {
+                panic!("`{}` is not exported (probably erased by compiler).", name);
+            }),
+        )
+    };
+
     PriHelperFunctions {
         f32_to_bits: *def_ids.get(helper_item_name!(f32_to_bits)).unwrap(),
         f64_to_bits: *def_ids.get(helper_item_name!(f64_to_bits)).unwrap(),
         #[cfg(place_addr)]
-        type_id_of: func_info_from(
-            tcx,
-            *def_ids
-                .get(helper_item_name!(type_id_of))
-                .expect("`type_id_of` is not exported (probably erased by compiler)."),
-        ),
+        type_id_of: get_func_info(helper_item_name!(type_id_of)),
+        #[cfg(place_addr)]
+        size_of: get_func_info(helper_item_name!(size_of)),
         _phantom: std::marker::PhantomData,
     }
 }

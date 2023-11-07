@@ -662,14 +662,37 @@ mod implementation {
             block
         }
 
-        fn set_place_size(&mut self, place_ref: Local, place_ty: Ty<'tcx>) -> BasicBlockData<'tcx> {
-            self.make_bb_for_call(
+        fn set_place_size(
+            &mut self,
+            place_ref: Local,
+            place_ty: Ty<'tcx>,
+        ) -> Vec<BasicBlockData<'tcx>> {
+            // FIXME: Provide a real ParamEnv.
+            if !place_ty.is_sized(self.tcx(), ParamEnv::empty()) {
+                log::warn!("Encountered unsized type. Skipping size setting.");
+                return vec![BasicBlockData::new(Some(terminator::goto(None)))];
+            }
+
+            let (get_call_block, size_local) = {
+                let size_of_info = &self.context.pri_helper_funcs().size_of;
+                self.make_bb_for_call_raw(
+                    size_of_info.def_id,
+                    size_of_info.ret_ty,
+                    vec![place_ty.into()],
+                    Vec::default(),
+                    None,
+                )
+            };
+
+            let set_call_block = self.make_bb_for_call(
                 stringify!(pri::set_place_size),
                 vec![
                     operand::copy_for_local(place_ref),
-                    operand::const_from_uint(self.tcx(), ty::size_of(self.tcx(), place_ty).bytes()),
+                    operand::move_for_local(size_local),
                 ],
-            )
+            );
+
+            vec![get_call_block, set_call_block]
         }
 
         fn set_place_type(&mut self, place_ref: Local, ty: Ty<'tcx>) -> Vec<BasicBlockData<'tcx>> {
@@ -771,7 +794,7 @@ mod implementation {
                 let tcx = self.tcx();
                 let ty = place.ty(&self.context, tcx).ty;
                 if ty.is_adt() || ty.is_array() {
-                    additional_blocks.push(self.set_place_size(place_ref, ty));
+                    additional_blocks.extend(self.set_place_size(place_ref, ty));
                 }
             }
 
@@ -1763,7 +1786,7 @@ mod implementation {
             if !ret_ty.is_unit() {
                 let BlocksAndResult(mut ref_blocks, place_ref) =
                     self.internal_reference_place(&Place::return_place());
-                ref_blocks.push(self.set_place_size(place_ref, ret_ty));
+                ref_blocks.extend(self.set_place_size(place_ref, ret_ty));
                 ref_blocks.push(preserve(self, place_ref));
                 blocks.extend(ref_blocks);
             }
@@ -2252,6 +2275,15 @@ mod implementation {
                         unwind: UnwindAction::Continue,
                         call_source: mir::CallSource::Normal,
                         fn_span: DUMMY_SP,
+                    },
+                }
+            }
+
+            pub fn goto<'tcx>(target: Option<BasicBlock>) -> Terminator<'tcx> {
+                Terminator {
+                    source_info: SourceInfo::outermost(DUMMY_SP),
+                    kind: TerminatorKind::Goto {
+                        target: target.unwrap_or(NEXT_BLOCK),
                     },
                 }
             }

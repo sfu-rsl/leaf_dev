@@ -503,6 +503,10 @@ pub mod compiler_helpers {
     #[cfg(place_addr)]
     static _TYPE_ID_OF_REFERENCER: fn() -> TypeId = type_id_of::<u32>;
 
+    #[used]
+    #[cfg(place_addr)]
+    static _SIZE_OF_REFERENCER: fn() -> TypeSize = size_of::<u32>;
+
     #[cfg(place_addr)]
     pub fn type_id_of<T: ?Sized + 'static>() -> TypeId {
         /* NOTE: Once this function is const in stable build, we can mark this
@@ -513,5 +517,10 @@ pub mod compiler_helpers {
          * Also, giving this function the `inline` attribute will cause it to
          * not be exported. */
         TypeId::of::<T>()
+    }
+
+    #[cfg(place_addr)]
+    pub fn size_of<T>() -> TypeSize {
+        core::mem::size_of::<T>() as TypeSize
     }
 }
