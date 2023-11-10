@@ -998,89 +998,12 @@ mod simp {
                     let folded_value = ConstValue::binary_op_arithmetic(a, b, BinaryOp::Mul);
                     Ok(operands.fold_expr(folded_value))
                 }
-                BinaryOp::Div => {
-                    match operands.expr().operands {
-                        // (x / a) * b = x * (b / a)
-                        BinaryOperands::Orig { .. } => {
-                            let folded_value =
-                                ConstValue::binary_op_arithmetic(b, a, BinaryOp::Div);
-                            Ok(BinaryExpr {
-                                operands: operands.fold(folded_value),
-                                operator: BinaryOp::Mul,
-                                checked,
-                            })
-                        }
-                        // (a / x) * b = (a * b) / x
-                        BinaryOperands::Rev { .. } => {
-                            let folded_value =
-                                ConstValue::binary_op_arithmetic(a, b, BinaryOp::Mul);
-                            Ok(operands.fold_expr(folded_value))
-                        }
-                    }
-                }
                 _ => Err(operands),
             }
         }
 
         fn div<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
-            let (a, b) = (operands.a(), operands.b());
-
-            match operands {
-                BinaryOperands::Orig { .. } => {
-                    match operands.expr().operator {
-                        // (x * a) / b = x * (a / b)
-                        BinaryOp::Mul => {
-                            let folded_value =
-                                ConstValue::binary_op_arithmetic(a, b, BinaryOp::Div);
-                            Ok(operands.fold_expr(folded_value))
-                        }
-                        BinaryOp::Div => {
-                            // (x / a) / b = x / (a * b)
-                            match operands.expr().operands {
-                                BinaryOperands::Orig { .. } => {
-                                    let folded_value =
-                                        ConstValue::binary_op_arithmetic(a, b, BinaryOp::Mul);
-                                    Ok(operands.fold_expr(folded_value))
-                                }
-                                BinaryOperands::Rev { .. } => {
-                                    // (a / x) / b = (a / b) / x
-                                    let folded_value =
-                                        ConstValue::binary_op_arithmetic(a, b, BinaryOp::Div);
-                                    Ok(operands.fold_expr(folded_value))
-                                }
-                            }
-                        }
-                        _ => Err(operands),
-                    }
-                }
-                BinaryOperands::Rev { .. } => {
-                    match operands.expr().operator {
-                        // b / (x * a) = (b / a) / x
-                        BinaryOp::Mul => {
-                            let folded_value =
-                                ConstValue::binary_op_arithmetic(b, a, BinaryOp::Div);
-                            Ok(operands.new_expr(folded_value, BinaryOp::Div, true))
-                        }
-                        BinaryOp::Div => {
-                            match operands.expr().operands {
-                                // b / (x / a) = (b * a) / x
-                                BinaryOperands::Orig { .. } => {
-                                    let folded_value =
-                                        ConstValue::binary_op_arithmetic(b, a, BinaryOp::Mul);
-                                    Ok(operands.new_expr(folded_value, BinaryOp::Div, true))
-                                }
-                                // b / (a / x) = (b / a) * x
-                                BinaryOperands::Rev { .. } => {
-                                    let folded_value =
-                                        ConstValue::binary_op_arithmetic(b, a, BinaryOp::Div);
-                                    Ok(operands.new_expr(folded_value, BinaryOp::Mul, true))
-                                }
-                            }
-                        }
-                        _ => Err(operands),
-                    }
-                }
-            }
+            Err(operands)
         }
 
         fn rem<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
