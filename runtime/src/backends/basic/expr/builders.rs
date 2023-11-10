@@ -860,7 +860,7 @@ mod simp {
             }
         }
 
-        /// Creates a new binary expression from the existing symbolic value and the newly folded
+        /// Creates a new BinaryExpr from the existing symbolic value and the newly folded
         /// constant. Accepts a new operator and the `is_reversed` flag (true means x on the
         /// right).
         fn new_expr(self, folded_value: ConstValue, op: BinaryOp, is_reversed: bool) -> BinaryExpr {
@@ -879,6 +879,12 @@ mod simp {
     }
 
     impl BinaryExprBuilder for ConstFolder {
+        // In general, we don't need to worry about if the constants are signed. Since the value
+        // is stored in a u128, the result will be correct once the value is converted back to
+        // the original type. The same goes for overflow and underflow since this code is only
+        // reached when the source is compiled with optimizations in which case overflow and
+        // underflow are performed anyway.
+
         type ExprRefPair<'a> = FoldableOperands<'a>;
         type Expr<'a> = Result<BinaryExpr, Self::ExprRefPair<'a>>;
 
@@ -887,11 +893,6 @@ mod simp {
         fn add<'a>(&mut self, operands: Self::ExprRefPair<'a>, _checked: bool) -> Self::Expr<'a> {
             let (a, b) = (operands.a(), operands.b());
 
-            // No need to worry about if the constants are signed. Since we are storing
-            // the value in a u128, the result will be correct once the value is converted back to
-            // the original type. The same goes for overflow and underflow since this code is only
-            // reached when the source is compiled with optimizations in which case overflow and
-            // underflow are performed anyway.
             match operands.expr().operator {
                 // (x + a) + b = x + (a + b)
                 BinaryOp::Add => {
