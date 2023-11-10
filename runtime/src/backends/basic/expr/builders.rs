@@ -913,18 +913,6 @@ mod simp {
                 }
                 BinaryOp::Sub => {
                     match &operands.expr().operands {
-                        // (x - a) + b = x + (b - a)
-                        BinaryOperands::Orig { .. }
-                            if ConstValue::binary_op_cmp(a, b, BinaryOp::Lt) =>
-                        {
-                            let folded_value =
-                                ConstValue::binary_op_arithmetic(b, a, BinaryOp::Sub);
-                            Ok(BinaryExpr {
-                                operands: operands.fold(folded_value),
-                                operator: BinaryOp::Add,
-                                checked,
-                            })
-                        }
                         // (x - a) + b = x - (a - b)
                         BinaryOperands::Orig { .. } => {
                             let folded_value =
