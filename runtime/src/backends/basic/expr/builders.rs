@@ -894,12 +894,13 @@ mod simp {
         impl_general_binary_op_through_singulars!();
 
         fn add<'a>(&mut self, operands: Self::ExprRefPair<'a>, checked: bool) -> Self::Expr<'a> {
-            // TODO: Avoid folding if constants overflow
-
             let (a, b) = (operands.a(), operands.b());
-            // TODO: Check if the operands are signed or unsigned
-            let is_signed = false;
 
+            // No need to worry about if the constants are signed. Since we are storing
+            // the value in a u128, the result will be correct once the value is converted back to
+            // the original type. The same goes for overflow and underflow since this code is only
+            // reached when the source is compiled with optimizations in which case overflow and
+            // underflow are performed anyway.
             match operands.expr().operator {
                 // (x + a) + b = x + (a + b)
                 BinaryOp::Add => {
@@ -913,11 +914,8 @@ mod simp {
                 BinaryOp::Sub => {
                     match &operands.expr().operands {
                         // (x - a) + b = x + (b - a)
-                        // Take the following example to understand why is_signed is needed: (x - 5) + (-2)
-                        // If we don't check for is_signed, we will end up with (x + 7) instead of (x - 7).
-                        // On the other hand, we need to be careful of unsigned values overflowing.
                         BinaryOperands::Orig { .. }
-                            if is_signed || ConstValue::binary_op_cmp(a, b, BinaryOp::Lt) =>
+                            if ConstValue::binary_op_cmp(a, b, BinaryOp::Lt) =>
                         {
                             let folded_value =
                                 ConstValue::binary_op_arithmetic(b, a, BinaryOp::Sub);
