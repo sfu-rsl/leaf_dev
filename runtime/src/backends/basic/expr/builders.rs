@@ -921,29 +921,58 @@ mod simp {
         fn sub<'a>(&mut self, operands: Self::ExprRefPair<'a>, _checked: bool) -> Self::Expr<'a> {
             let (a, b) = (operands.a(), operands.b());
 
-            match operands.expr().operator {
-                // (x + a) - b = x + (a - b)
-                BinaryOp::Add => {
-                    let folded_value = ConstValue::binary_op_arithmetic(a, b, BinaryOp::Sub);
-                    Ok(operands.fold_expr(folded_value))
-                }
-                BinaryOp::Sub => {
-                    match operands.expr().operands {
-                        // (x - a) - b = x - (a + b)
-                        BinaryOperands::Orig { .. } => {
-                            let folded_value =
-                                ConstValue::binary_op_arithmetic(a, b, BinaryOp::Add);
-                            Ok(operands.fold_expr(folded_value))
-                        }
-                        // (a - x) - b = (a - b) - x
-                        BinaryOperands::Rev { .. } => {
+            match operands {
+                BinaryOperands::Orig { .. } => {
+                    match operands.expr().operator {
+                        // (x + a) - b = x + (a - b)
+                        BinaryOp::Add => {
                             let folded_value =
                                 ConstValue::binary_op_arithmetic(a, b, BinaryOp::Sub);
                             Ok(operands.fold_expr(folded_value))
                         }
+                        BinaryOp::Sub => {
+                            match operands.expr().operands {
+                                // (x - a) - b = x - (a + b)
+                                BinaryOperands::Orig { .. } => {
+                                    let folded_value =
+                                        ConstValue::binary_op_arithmetic(a, b, BinaryOp::Add);
+                                    Ok(operands.fold_expr(folded_value))
+                                }
+                                // (a - x) - b = (a - b) - x
+                                BinaryOperands::Rev { .. } => {
+                                    let folded_value =
+                                        ConstValue::binary_op_arithmetic(a, b, BinaryOp::Sub);
+                                    Ok(operands.fold_expr(folded_value))
+                                }
+                            }
+                        }
+                        _ => Err(operands),
                     }
                 }
-                _ => Err(operands),
+                BinaryOperands::Rev { .. } => match operands.expr().operator {
+                    // b - (x + a) = (b - a) - x
+                    BinaryOp::Add => {
+                        let folded_value = ConstValue::binary_op_arithmetic(b, a, BinaryOp::Sub);
+                        Ok(operands.new_expr(folded_value, BinaryOp::Sub, true))
+                    }
+                    BinaryOp::Sub => {
+                        match operands.expr().operands {
+                            // b - (x - a) = (b + a) - x
+                            BinaryOperands::Orig { .. } => {
+                                let folded_value =
+                                    ConstValue::binary_op_arithmetic(b, a, BinaryOp::Add);
+                                Ok(operands.new_expr(folded_value, BinaryOp::Sub, true))
+                            }
+                            // b - (a - x) = x + (b - a)
+                            BinaryOperands::Rev { .. } => {
+                                let folded_value =
+                                    ConstValue::binary_op_arithmetic(b, a, BinaryOp::Sub);
+                                Ok(operands.new_expr(folded_value, BinaryOp::Add, false))
+                            }
+                        }
+                    }
+                    _ => Err(operands),
+                },
             }
         }
 
