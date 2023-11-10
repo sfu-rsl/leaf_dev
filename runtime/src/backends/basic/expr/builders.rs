@@ -859,6 +859,23 @@ mod simp {
                 checked: expr.checked,
             }
         }
+
+        /// Creates a new binary expression from the existing symbolic value and the newly folded
+        /// constant. Accepts a new operator and the `is_reversed` flag (true means x on the
+        /// right).
+        fn new_expr(self, folded_value: ConstValue, op: BinaryOp, is_reversed: bool) -> BinaryExpr {
+            let expr = self.flatten().0;
+            let x = expr.operands.flatten().0;
+            BinaryExpr {
+                operands: SymBinaryOperands::from((
+                    x.clone(),
+                    folded_value.to_value_ref(),
+                    is_reversed,
+                )),
+                operator: op,
+                checked: expr.checked,
+            }
+        }
     }
 
     impl BinaryExprBuilder for ConstFolder {
