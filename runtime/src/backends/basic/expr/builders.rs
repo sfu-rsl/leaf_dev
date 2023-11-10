@@ -843,15 +843,6 @@ mod simp {
             self.as_flat().0
         }
 
-        /// Creates a new SymBinaryOperands from the symbolic variable and the folded value.
-        /// Useful when the operator of the inner expression needs to be changed. As you can create
-        /// the BinaryExpr wrapper manually.
-        fn fold(self, folded_value: ConstValue) -> SymBinaryOperands {
-            let (expr, _, is_reversed) = self.flatten();
-            let x = expr.operands.flatten().0;
-            SymBinaryOperands::from((x.clone(), folded_value.to_value_ref(), is_reversed))
-        }
-
         /// Creates a new BinaryExpr from the inner expression and the folded value.
         /// Uses the original operator of the inner expression and uses the folded value
         /// for the constant.
@@ -876,7 +867,7 @@ mod simp {
 
         impl_general_binary_op_through_singulars!();
 
-        fn add<'a>(&mut self, operands: Self::ExprRefPair<'a>, checked: bool) -> Self::Expr<'a> {
+        fn add<'a>(&mut self, operands: Self::ExprRefPair<'a>, _checked: bool) -> Self::Expr<'a> {
             let (a, b) = (operands.a(), operands.b());
 
             // No need to worry about if the constants are signed. Since we are storing
@@ -888,11 +879,7 @@ mod simp {
                 // (x + a) + b = x + (a + b)
                 BinaryOp::Add => {
                     let folded_value = ConstValue::binary_op_arithmetic(a, b, BinaryOp::Add);
-                    Ok(BinaryExpr {
-                        operands: operands.fold(folded_value),
-                        operator: BinaryOp::Add,
-                        checked,
-                    })
+                    Ok(operands.fold_expr(folded_value))
                 }
                 BinaryOp::Sub => {
                     match &operands.expr().operands {
@@ -914,40 +901,25 @@ mod simp {
             }
         }
 
-        fn sub<'a>(&mut self, operands: Self::ExprRefPair<'a>, checked: bool) -> Self::Expr<'a> {
+        fn sub<'a>(&mut self, operands: Self::ExprRefPair<'a>, _checked: bool) -> Self::Expr<'a> {
             let (a, b) = (operands.a(), operands.b());
 
             match operands.expr().operator {
+                // (x + a) - b = x + (a - b)
                 BinaryOp::Add => {
-                    // (x + a) - b = x + (a - b)
-                    if ConstValue::binary_op_cmp(b, a, BinaryOp::Lt) {
-                        let folded_value = ConstValue::binary_op_arithmetic(a, b, BinaryOp::Sub);
-
-                        Ok(BinaryExpr {
-                            operands: operands.fold(folded_value),
-                            operator: BinaryOp::Add,
-                            checked,
-                        })
-                    // (x + a) - b = x - (b - a)
-                    } else {
-                        let folded_value = ConstValue::binary_op_arithmetic(b, a, BinaryOp::Sub);
-                        Ok(BinaryExpr {
-                            operands: operands.fold(folded_value),
-                            operator: BinaryOp::Sub,
-                            checked,
-                        })
-                    }
+                    let folded_value = ConstValue::binary_op_arithmetic(a, b, BinaryOp::Sub);
+                    Ok(operands.fold_expr(folded_value))
                 }
                 BinaryOp::Sub => {
                     match operands.expr().operands {
+                        // (x - a) - b = x - (a + b)
                         BinaryOperands::Orig { .. } => {
-                            // (x - a) - b = x - (a + b)
                             let folded_value =
                                 ConstValue::binary_op_arithmetic(a, b, BinaryOp::Add);
                             Ok(operands.fold_expr(folded_value))
                         }
+                        // (a - x) - b = (a - b) - x
                         BinaryOperands::Rev { .. } => {
-                            // (a - x) - b = (a - b) - x
                             let folded_value =
                                 ConstValue::binary_op_arithmetic(a, b, BinaryOp::Sub);
                             Ok(operands.fold_expr(folded_value))
@@ -958,7 +930,7 @@ mod simp {
             }
         }
 
-        fn mul<'a>(&mut self, operands: Self::ExprRefPair<'a>, checked: bool) -> Self::Expr<'a> {
+        fn mul<'a>(&mut self, operands: Self::ExprRefPair<'a>, _checked: bool) -> Self::Expr<'a> {
             let (a, b) = (operands.a(), operands.b());
 
             match operands.expr().operator {
