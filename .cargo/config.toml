@@ -6,4 +6,6 @@ rustflags = [
     # "place_addr",
     "--cfg",
     "nctfe",
+    "--cfg",
+    "abs_concrete",
 ]

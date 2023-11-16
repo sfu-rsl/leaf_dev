@@ -876,7 +876,8 @@ mod convert {
                     })
                     .to_value_ref(),
                 )),
-                Unevaluated => UnevalValue::Some.into(),
+                #[cfg(abs_concrete)]
+                Some => UnevalValue::Some.into(),
                 _ => Self::Const(match val {
                     Bool(value) => value.into(),
                     Char(value) => value.into(),
@@ -888,9 +889,9 @@ mod convert {
                     Str(value) => ConstValue::Str(value),
                     Func(value) => ConstValue::Func(value),
                     Zst => ConstValue::Zst,
-                    ByteStr(_) | Unevaluated => {
-                        unreachable!()
-                    }
+                    ByteStr(_) => unreachable!(),
+                    #[cfg(abs_concrete)]
+                    Some => unreachable!(),
                 }),
             }
         }

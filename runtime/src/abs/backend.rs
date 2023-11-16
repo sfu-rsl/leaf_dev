@@ -141,7 +141,8 @@ pub(crate) trait ConstantHandler {
 
     fn zst(self) -> Self::Operand;
 
-    fn unevaluated(self) -> Self::Operand;
+    #[cfg(abs_concrete)]
+    fn some(self) -> Self::Operand;
 }
 
 pub(crate) trait AssignmentHandler {
@@ -416,8 +417,9 @@ pub(crate) mod implementation {
             Constant::Zst.into()
         }
 
-        fn unevaluated(self) -> Self::Operand {
-            Constant::Unevaluated.into()
+        #[cfg(abs_concrete)]
+        fn some(self) -> Self::Operand {
+            Constant::Some.into()
         }
     }
 

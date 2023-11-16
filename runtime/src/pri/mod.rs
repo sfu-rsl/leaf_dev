@@ -148,8 +148,9 @@ pub fn ref_operand_const_byte_str(value: &'static [u8]) -> OperandRef {
 pub fn ref_operand_const_zst() -> OperandRef {
     push_operand_ref(|o| o.const_from().zst())
 }
-pub fn ref_operand_const_unevaluated() -> OperandRef {
-    push_operand_ref(|o| o.const_from().unevaluated())
+#[cfg(abs_concrete)]
+pub fn ref_operand_const_some() -> OperandRef {
+    push_operand_ref(|o| o.const_from().some())
 }
 
 pub fn new_sym_value_bool() -> OperandRef {

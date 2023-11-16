@@ -826,21 +826,13 @@ mod implementation {
              * constants in an abstract fashion. */
             let ty = constant.ty();
             let tcx = self.tcx();
-            if ty.is_bool() {
-                self.internal_reference_const_operand_directly(
-                    stringify!(pri::ref_operand_const_bool),
-                    constant,
-                )
-            } else if ty.is_integral() {
-                self.internal_reference_int_const_operand(constant)
-            } else if ty.is_floating_point() {
-                self.internal_reference_float_const_operand(constant)
-            } else if ty.is_char() {
-                self.internal_reference_const_operand_directly(
-                    stringify!(pri::ref_operand_const_char),
-                    constant,
-                )
-            } else if ty.peel_refs().is_str() {
+            if ty.is_primitive() {
+                self.internal_reference_const_primitive(constant)
+            } else if cfg!(abs_concrete) {
+                self.internal_reference_const_some()
+            }
+            // &str
+            else if ty.peel_refs().is_str() {
                 self.internal_reference_const_operand_directly(
                     stringify!(pri::ref_operand_const_str),
                     constant,
@@ -873,17 +865,42 @@ mod implementation {
             } else if let Some(def_id) = Self::try_as_immut_static(tcx, constant) {
                 self.internal_reference_static_ref_const_operand(def_id, ty)
             } else {
-                let msg = format!(
+                unimplemented!(
                     "Encountered unknown constant {:?} with type {:?}",
-                    constant.const_, ty
-                );
-                if cfg!(place_addr) {
-                    log::warn!("{msg}");
-                    self.make_bb_for_unevaluated_const_ref_call().into()
-                } else {
-                    unimplemented!("{msg}")
-                }
+                    constant.const_,
+                    ty
+                )
             }
+        }
+
+        fn internal_reference_const_primitive(
+            &mut self,
+            constant: &Box<ConstOperand<'tcx>>,
+        ) -> BlocksAndResult<'tcx> {
+            let ty = constant.ty();
+            debug_assert!(ty.is_primitive(), "Expected primitive type, found {:?}", ty);
+
+            if ty.is_bool() {
+                self.internal_reference_const_operand_directly(
+                    stringify!(pri::ref_operand_const_bool),
+                    constant,
+                )
+            } else if ty.is_char() {
+                self.internal_reference_const_operand_directly(
+                    stringify!(pri::ref_operand_const_char),
+                    constant,
+                )
+            } else if ty.is_integral() {
+                self.internal_reference_int_const_operand(constant)
+            } else if ty.is_floating_point() {
+                self.internal_reference_float_const_operand(constant)
+            } else {
+                unreachable!()
+            }
+        }
+
+        fn internal_reference_const_some(&mut self) -> BlocksAndResult<'tcx> {
+            self.make_bb_for_some_const_ref_call().into()
         }
 
         fn internal_reference_const_operand_directly(
@@ -1005,8 +1022,8 @@ mod implementation {
 
                 let nctfe_result_local = self.call_nctfe(ctfe_id);
                 self.internal_reference_operand(&operand::move_for_local(nctfe_result_local))
-            } else if cfg!(place_addr) {
-                self.make_bb_for_unevaluated_const_ref_call().into()
+            } else if cfg!(abs_concrete) {
+                self.make_bb_for_some_const_ref_call().into()
             } else {
                 panic!("Unevaluated constant is not supported by this configuration.")
             }
@@ -1052,7 +1069,7 @@ mod implementation {
 
                 self.internal_reference_operand(&operand::move_for_local(ref_local))
             } else if cfg!(place_addr) {
-                self.make_bb_for_unevaluated_const_ref_call().into()
+                self.make_bb_for_some_const_ref_call().into()
             } else {
                 panic!("Static reference constant is not supported by this configuration.")
             }
@@ -1092,9 +1109,9 @@ mod implementation {
             result_local
         }
 
-        fn make_bb_for_unevaluated_const_ref_call(&mut self) -> (BasicBlockData<'tcx>, Local) {
+        fn make_bb_for_some_const_ref_call(&mut self) -> (BasicBlockData<'tcx>, Local) {
             self.make_bb_for_operand_ref_call(
-                stringify!(pri::ref_operand_const_unevaluated),
+                stringify!(pri::ref_operand_const_some),
                 Vec::default(),
             )
         }
