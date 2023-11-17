@@ -15,6 +15,7 @@ pub(crate) struct PriTypes<'tcx> {
     pub binary_op: Ty<'tcx>,
     pub unary_op: Ty<'tcx>,
     pub raw_ptr: Ty<'tcx>,
+    pub func_id: Ty<'tcx>,
 }
 
 pub(crate) struct PriHelperFunctions<'tcx> {
@@ -116,6 +117,7 @@ pub(crate) fn find_pri_types<'tcx>(pri_symbols: &[DefId], tcx: TyCtxt<'tcx>) -> 
         binary_op: get_ty(helper_item_name!(BINARY_OP_TYPE_HOLDER)),
         unary_op: get_ty(helper_item_name!(UNARY_OP_TYPE_HOLDER)),
         raw_ptr: get_ty(helper_item_name!(RAW_PTR_TYPE_HOLDER)),
+        func_id: get_ty(helper_item_name!(FUNC_ID_TYPE_HOLDER)),
     }
 }
 

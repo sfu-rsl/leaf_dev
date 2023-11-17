@@ -137,6 +137,8 @@ pub(crate) trait BranchingHandler {
 }
 
 pub trait FunctionHandler<'tcx> {
+    fn reference_func(&mut self, func: &Operand<'tcx>) -> OperandRef;
+
     fn before_call_func(&mut self, func: OperandRef, arguments: impl Iterator<Item = OperandRef>);
 
     fn enter_func(&mut self);
@@ -371,13 +373,16 @@ mod implementation {
     where
         C: context::BodyProvider<'tcx> + context::TyContextProvider<'tcx>,
     {
-        pub fn current_func(&self) -> rustc_middle::mir::Operand<'tcx> {
-            rustc_middle::mir::Operand::function_handle(
-                self.context.tcx(),
-                self.context.body().source.def_id(),
-                iter::empty(),
-                self.context.body().span,
-            )
+        pub fn current_func(&self) -> Operand<'tcx> {
+            let tcx = self.tcx();
+            let def_id = self.context.body().source.def_id();
+            let generics = tcx.generics_of(def_id);
+            let args = generics
+                .params
+                .iter()
+                .map(|param| tcx.mk_param_from_def(param))
+                .collect::<Vec<_>>();
+            Operand::function_handle(tcx, def_id, args, self.context.body().span)
         }
     }
 
@@ -855,8 +860,8 @@ mod implementation {
                 && ty.peel_refs().sequence_element_type(tcx) == tcx.types.u8
             {
                 self.internal_reference_byte_str_const_operand(constant)
-            } else if let TyKind::FnDef(def_id, substs) = ty.kind() {
-                self.internal_reference_func_def_const_operand(def_id, substs)
+            } else if let TyKind::FnDef(..) = ty.kind() {
+                self.internal_reference_func_def_const_operand(constant)
             }
             // NOTE: Check this after all other ZSTs that you want to distinguish.
             else if ty.is_trivially_sized(tcx) && ty::size_of(tcx, ty) == rustc_abi::Size::ZERO {
@@ -965,21 +970,9 @@ mod implementation {
 
         fn internal_reference_func_def_const_operand(
             &mut self,
-            def_id: &DefId,
-            substs: &[GenericArg],
+            constant: &Box<ConstOperand<'tcx>>,
         ) -> BlocksAndResult<'tcx> {
-            if !substs.is_empty() {
-                log::warn!("Referencing a function with substitution variables (generic).");
-            }
-
-            /* NOTE: Until we find a better way to represent a function we use  the def id. */
-            let func_id: u64 =
-                ((u32::from(def_id.krate) as u64) << 32) + (u32::from(def_id.index) as u64);
-            self.make_bb_for_operand_ref_call(
-                stringify!(pri::ref_operand_const_func),
-                vec![operand::const_from_uint(self.context.tcx(), func_id)],
-            )
-            .into()
+            self.internal_reference_func(&Operand::Constant(constant.clone()))
         }
 
         /// ## Remarks
@@ -1088,8 +1081,8 @@ mod implementation {
                 &mut self.at(Before(call_block_index)),
                 |call_adder| {
                     // NOTE: You cannot call reference operand here because of the infinite loop in types.
-                    let BlocksAndResult(blocks, func_ref) =
-                        call_adder.internal_reference_func_def_const_operand(&nctfe_id, &[]);
+                    let BlocksAndResult(blocks, func_ref) = call_adder
+                        .internal_reference_func(&operand::func(tcx, nctfe_id, iter::empty()));
                     call_adder.insert_blocks(blocks);
                     func_ref.into()
                 },
@@ -1716,6 +1709,12 @@ mod implementation {
         Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
         C: ForFunctionCalling<'tcx>,
     {
+        fn reference_func(&mut self, func: &Operand<'tcx>) -> OperandRef {
+            let BlocksAndResult(new_blocks, ref_local) = self.internal_reference_func(func);
+            self.insert_blocks(new_blocks);
+            ref_local.into()
+        }
+
         fn before_call_func(
             &mut self,
             func: OperandRef,
@@ -1753,8 +1752,7 @@ mod implementation {
                 blocks.extend(self.make_bb_for_func_preserve_metadata());
             }
 
-            let func = self.current_func();
-            let func_ref = self.reference_operand(&func);
+            let func_ref = self.reference_func(&self.current_func());
 
             blocks.push(self.make_bb_for_call(
                 stringify!(pri::enter_func),
@@ -1817,6 +1815,17 @@ mod implementation {
             }
 
             blocks
+        }
+
+        fn internal_reference_func(&mut self, func: &Operand<'tcx>) -> BlocksAndResult<'tcx> {
+            let id_ty = self.context.pri_types().func_id;
+            let (stmts, id_local) = id_of_func(self.tcx(), &mut self.context, func, id_ty);
+            let (mut new_block, ref_local) = self.make_bb_for_operand_ref_call(
+                stringify!(pri::ref_operand_const_func),
+                vec![operand::move_for_local(id_local)],
+            );
+            new_block.statements.extend(stmts);
+            (new_block, ref_local).into()
         }
     }
 
@@ -2005,7 +2014,7 @@ mod implementation {
                 self, BasicBlock, BasicBlockData, HasLocalDecls, Local, Operand, Place, Rvalue,
                 SourceInfo, Statement,
             },
-            ty::{Ty, TyCtxt, TyKind},
+            ty::{adjustment::PointerCoercion, Ty, TyCtxt, TyKind},
         };
         use rustc_span::DUMMY_SP;
 
@@ -2179,10 +2188,7 @@ mod implementation {
 
             pub mod rvalue {
                 use rustc_index::IndexVec;
-                use rustc_middle::{
-                    mir::{AggregateKind, BorrowKind, CastKind, NullOp},
-                    ty::adjustment::PointerCoercion,
-                };
+                use rustc_middle::mir::{AggregateKind, BorrowKind, CastKind, NullOp};
 
                 use super::*;
 
@@ -2194,18 +2200,15 @@ mod implementation {
                     operand: Operand<'tcx>,
                     to_ty: Ty<'tcx>,
                 ) -> Rvalue<'tcx> {
-                    Rvalue::Cast(
-                        CastKind::PointerCoercion(PointerCoercion::Unsize),
-                        operand,
-                        to_ty,
-                    )
+                    cast_to_coerced(PointerCoercion::Unsize, operand, to_ty)
                 }
 
-                pub fn cast_expose_addr<'tcx>(
+                pub fn cast_to_coerced<'tcx>(
+                    coercion: PointerCoercion,
                     operand: Operand<'tcx>,
                     to_ty: Ty<'tcx>,
                 ) -> Rvalue<'tcx> {
-                    Rvalue::Cast(CastKind::PointerExposeAddress, operand, to_ty)
+                    Rvalue::Cast(CastKind::PointerCoercion(coercion), operand, to_ty)
                 }
 
                 pub fn array<'tcx>(ty: Ty<'tcx>, items: Vec<Operand<'tcx>>) -> Rvalue<'tcx> {
@@ -2427,6 +2430,60 @@ mod implementation {
             );
 
             (ptr_assignment, ptr_local)
+        }
+
+        /// Returns a local having a value equal to the function address.
+        /// Effectively, it should be a unique value for each function.
+        ///
+        /// Three assignment statements are returned:
+        /// 1. Function operand to function pointer.
+        /// 2. Function pointer to raw pointer.
+        /// 3. Raw pointer to id.
+        pub(super) fn id_of_func<'tcx>(
+            tcx: TyCtxt<'tcx>,
+            local_manager: &mut (impl BodyLocalManager<'tcx> + HasLocalDecls<'tcx>),
+            func: &Operand<'tcx>,
+            id_ty: Ty<'tcx>,
+        ) -> ([Statement<'tcx>; 3], Local) {
+            let fn_ty = func.ty(local_manager, tcx);
+            debug_assert!(
+                fn_ty.is_fn(),
+                "Expected function type but received {}.",
+                fn_ty
+            );
+            let ptr_ty = Ty::new_fn_ptr(tcx, func.ty(local_manager, tcx).fn_sig(tcx));
+            let ptr_local = local_manager.add_local(ptr_ty);
+            let ptr_assignment = assignment::create(
+                Place::from(ptr_local),
+                rvalue::cast_to_coerced(PointerCoercion::ReifyFnPointer, func.clone(), ptr_ty),
+            );
+
+            /* This is an additional step just for the sake of semantics.
+             * (FnPtr -> RawPointer -> FuncId)
+             */
+            let raw_ptr_local = local_manager.add_local(tcx.types.usize);
+            let raw_ptr_assignment = assignment::create(
+                Place::from(raw_ptr_local),
+                Rvalue::Cast(
+                    mir::CastKind::PointerExposeAddress,
+                    operand::move_for_local(ptr_local),
+                    tcx.types.usize,
+                ),
+            );
+
+            let id_local = local_manager.add_local(id_ty);
+            let id_assignment = assignment::create(
+                Place::from(id_local),
+                Rvalue::Cast(
+                    mir::CastKind::IntToInt,
+                    operand::move_for_local(raw_ptr_local),
+                    id_ty,
+                ),
+            );
+            (
+                [ptr_assignment, raw_ptr_assignment, id_assignment],
+                id_local,
+            )
         }
 
         pub(super) fn convert_mir_binop_to_pri(op: &mir::BinOp) -> runtime::abs::BinaryOp {

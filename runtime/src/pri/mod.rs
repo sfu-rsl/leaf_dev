@@ -3,8 +3,8 @@ mod utils;
 
 use crate::abs::{
     backend::*, Alignment, AssertKind, BasicBlockIndex, BinaryOp, BranchingMetadata, CastKind,
-    FieldIndex, FloatType, IntType, Local, LocalIndex, PointerOffset, RawPointer, TypeId, TypeSize,
-    UnaryOp, ValueType, VariantIndex,
+    FieldIndex, FloatType, FuncId, IntType, Local, LocalIndex, PointerOffset, RawPointer, TypeId,
+    TypeSize, UnaryOp, ValueType, VariantIndex,
 };
 use crate::tyexp::get_type_info;
 
@@ -136,7 +136,7 @@ pub fn ref_operand_const_float(bit_rep: u128, e_bits: u64, s_bits: u64) -> Opera
 pub fn ref_operand_const_char(value: char) -> OperandRef {
     push_operand_ref(|o| o.const_from().char(value))
 }
-pub fn ref_operand_const_func(id: u64) -> OperandRef {
+pub fn ref_operand_const_func(id: FuncId) -> OperandRef {
     push_operand_ref(|o| o.const_from().func(id))
 }
 pub fn ref_operand_const_str(value: &'static str) -> OperandRef {
@@ -477,10 +477,11 @@ pub mod compiler_helpers {
     /* These fields serve as exported symbols to get the types of the desired
      * arguments easier in the compiler. */
     pub static PLACE_REF_TYPE_HOLDER: PlaceRef = 0;
-    pub static RAW_PTR_TYPE_HOLDER: RawPointer = 0;
     pub static OPERAND_REF_TYPE_HOLDER: OperandRef = 0;
     pub static BINARY_OP_TYPE_HOLDER: BinaryOp = BinaryOp::Add;
     pub static UNARY_OP_TYPE_HOLDER: UnaryOp = UnaryOp::Neg;
+    pub static RAW_PTR_TYPE_HOLDER: RawPointer = 0;
+    pub static FUNC_ID_TYPE_HOLDER: FuncId = 0;
 
     pub const fn f32_to_bits(value: f32) -> u128 {
         value.to_bits() as u128

@@ -7,11 +7,14 @@ pub(crate) type LocalIndex = u32;
 pub type BasicBlockIndex = u32;
 pub type VariantIndex = u32;
 pub type FieldIndex = u32;
+
 pub type RawPointer = u64;
 pub type PointerOffset = u64;
 pub type TypeSize = PointerOffset;
 pub type Alignment = TypeSize;
 pub type TypeId = core::any::TypeId;
+
+pub type FuncId = RawPointer;
 
 pub(crate) type Local = place::Local;
 pub(crate) type Place<L = Local, P = Projection<L>> = place::Place<L, P>;

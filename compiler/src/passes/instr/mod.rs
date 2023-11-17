@@ -280,7 +280,7 @@ where
     ) {
         Self::instrument_call(
             &mut self.call_adder,
-            |call_adder| call_adder.reference_operand(func),
+            |call_adder| call_adder.reference_func(func),
             |call_adder| {
                 args.iter()
                     .map(|arg| call_adder.reference_operand(arg))
