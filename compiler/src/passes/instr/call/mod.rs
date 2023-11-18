@@ -376,13 +376,11 @@ mod implementation {
         pub fn current_func(&self) -> Operand<'tcx> {
             let tcx = self.tcx();
             let def_id = self.context.body().source.def_id();
-            let generics = tcx.generics_of(def_id);
-            let args = generics
-                .params
-                .iter()
-                .map(|param| tcx.mk_param_from_def(param))
-                .collect::<Vec<_>>();
-            Operand::function_handle(tcx, def_id, args, self.context.body().span)
+            Operand::Constant(Box::new(mir::ConstOperand {
+                span: rustc_span::DUMMY_SP,
+                user_ty: None,
+                const_: mir::Const::zero_sized(tcx.type_of(def_id).instantiate_identity()),
+            }))
         }
     }
 
@@ -2445,13 +2443,15 @@ mod implementation {
             func: &Operand<'tcx>,
             id_ty: Ty<'tcx>,
         ) -> ([Statement<'tcx>; 3], Local) {
+            log::debug!("Getting id (pointer) of function {:?}.", func);
+
             let fn_ty = func.ty(local_manager, tcx);
             debug_assert!(
                 fn_ty.is_fn(),
                 "Expected function type but received {}.",
                 fn_ty
             );
-            let ptr_ty = Ty::new_fn_ptr(tcx, func.ty(local_manager, tcx).fn_sig(tcx));
+            let ptr_ty = Ty::new_fn_ptr(tcx, fn_ty.fn_sig(tcx));
             let ptr_local = local_manager.add_local(ptr_ty);
             let ptr_assignment = assignment::create(
                 Place::from(ptr_local),
