@@ -10,7 +10,7 @@ use std::{assert_matches::assert_matches, num::Wrapping, ops::Deref, rc::Rc};
 use derive_more as dm;
 
 use crate::abs::{
-    BinaryOp, FieldIndex, FloatType, IntType, PointerOffset, RawPointer, TypeId, UnaryOp,
+    BinaryOp, FieldIndex, FloatType, FuncId, IntType, PointerOffset, RawPointer, TypeId, UnaryOp,
     ValueType, VariantIndex,
 };
 
@@ -70,7 +70,7 @@ pub(crate) enum ConstValue {
     },
     Str(&'static str),
     #[from(ignore)]
-    Func(u64),
+    Func(FuncId),
     Zst,
 }
 

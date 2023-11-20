@@ -133,7 +133,10 @@ pub(crate) mod z3 {
                 }
                 ConstValue::Float { .. } => todo!(),
                 ConstValue::Str(_) => todo!(),
-                ConstValue::Func(_) => todo!(),
+                ConstValue::Func(_) => unreachable!(concat!(
+                    "Function values are not supposed to appear in symbolic expressions.",
+                    "Symbolic function pointers are not expected to appear as function constants."
+                )),
                 ConstValue::Zst => unreachable!(
                     "Zero-sized-typed values are not supposed to appear in symbolic expressions."
                 ),

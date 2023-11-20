@@ -1,8 +1,12 @@
-use std::{fmt::Display, borrow::BorrowMut, collections::HashMap};
+use std::{borrow::BorrowMut, collections::HashMap, fmt::Display};
 
-use crate::{abs::{
-    backend::*, AssertKind, BinaryOp, BranchingMetadata, CastKind, UnaryOp, ValueType, VariantIndex, TypeId,
-}, tyexp::TypeInformation};
+use crate::{
+    abs::{
+        backend::*, AssertKind, BinaryOp, BranchingMetadata, CastKind, FuncId, TypeId, UnaryOp,
+        ValueType, VariantIndex,
+    },
+    tyexp::TypeInformation,
+};
 
 use super::{Field, OperandHandler, Place, PlaceHandler};
 
@@ -350,7 +354,9 @@ pub(crate) struct LoggerTypeManager {
 
 impl LoggerTypeManager {
     fn new() -> Self {
-        LoggerTypeManager { type_map: HashMap::new() }
+        LoggerTypeManager {
+            type_map: HashMap::new(),
+        }
     }
 }
 
@@ -394,7 +400,7 @@ impl CallManager {
         let last_called = self
             .last_called
             .take()
-            .unwrap_or(Operand::Const(crate::abs::Constant::Func(u64::MAX)));
+            .unwrap_or(Operand::Const(crate::abs::Constant::Func(FuncId::MAX)));
         self.stack.push(CallInfo { func: last_called });
         self.stack.last().unwrap()
     }

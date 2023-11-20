@@ -377,7 +377,7 @@ mod implementation {
             let tcx = self.tcx();
             let def_id = self.context.body().source.def_id();
             Operand::Constant(Box::new(mir::ConstOperand {
-                span: rustc_span::DUMMY_SP,
+                span: self.context.body().span,
                 user_ty: None,
                 const_: mir::Const::zero_sized(tcx.type_of(def_id).instantiate_identity()),
             }))

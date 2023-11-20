@@ -43,7 +43,7 @@ impl Display for ConstValue {
             }
             ConstValue::Float { .. } => write!(f, "{self:?}"),
             ConstValue::Str(value) => write!(f, "\"{value}\""),
-            ConstValue::Func(_) => write!(f, "{self:?}"),
+            ConstValue::Func(id) => write!(f, "_f@{id:p}"),
             ConstValue::Zst => write!(f, "_ZST_"),
         }
     }
