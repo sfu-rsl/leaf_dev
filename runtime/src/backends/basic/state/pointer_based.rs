@@ -1,7 +1,10 @@
 use std::{
     cell::RefCell,
-    collections::{btree_map::Entry, BTreeMap},
-    ops::{Bound, RangeBounds},
+    collections::{
+        btree_map::{Cursor, CursorMut, Entry},
+        BTreeMap,
+    },
+    ops::Bound,
     rc::Rc,
 };
 
@@ -87,7 +90,36 @@ type RRef<T> = Rc<RefCell<T>>;
  */
 
 type MemoryObject = (SymValueRef, TypeId);
-type Memory = BTreeMap<RawPointer, MemoryObject>;
+
+#[derive(Debug, Default)]
+struct Memory(BTreeMap<RawPointer, MemoryObject>);
+
+impl Memory {
+    fn before_or_at(&self, addr: &RawPointer) -> Cursor<'_, u64, MemoryObject> {
+        log::debug!("Checking memory before or at address: {}", addr);
+        self.0.upper_bound(Bound::Included(addr))
+    }
+
+    fn after_or_at(&self, addr: &RawPointer) -> Cursor<'_, u64, MemoryObject> {
+        log::debug!("Checking memory after or at address: {}", addr);
+        self.0.lower_bound(Bound::Included(addr))
+    }
+
+    fn after_or_at_mut(&mut self, addr: &RawPointer) -> CursorMut<'_, u64, MemoryObject> {
+        log::debug!("Checking memory after or at address: {}", addr);
+        self.0.lower_bound_mut(Bound::Included(addr))
+    }
+
+    fn entry_at(&mut self, addr: RawPointer) -> Entry<'_, u64, MemoryObject> {
+        log::debug!("Getting memory entry at address: {}", addr);
+        self.0.entry(addr)
+    }
+
+    fn remove_at(&mut self, addr: &RawPointer) {
+        log::debug!("Erasing memory at address: {}", addr);
+        self.0.remove(addr);
+    }
+}
 
 /// Provides a mapping for raw pointers to symbolic values.
 /// All places that have a valid address are handled by this state, otherwise
@@ -111,6 +143,12 @@ impl<VS, SP: SymbolicProjector> RawPointerVariableState<VS, SP> {
     }
 
     fn get<'a, 'b>(&'a self, addr: &'b RawPointer, type_id: TypeId) -> Option<&'a SymValueRef> {
+        log::debug!(
+            "Querying memory for address: {} with type: {:?}",
+            addr,
+            type_id
+        );
+
         let (obj_address, (obj_value, obj_type_id)) = self.get_object(*addr)?;
 
         // FIXME: (*)
@@ -129,11 +167,12 @@ impl<VS, SP: SymbolicProjector> RawPointerVariableState<VS, SP> {
         }
     }
 
+    /// Returns the object that contains the given address.
     fn get_object<'a, 'b>(
         &'a self,
         addr: RawPointer,
     ) -> Option<(&'a RawPointer, &'a MemoryObject)> {
-        let mut cursor = self.memory.upper_bound(Bound::Included(&addr));
+        let mut cursor = self.memory.before_or_at(&addr);
         while let Some(start) = cursor.key().copied() {
             // FIXME: (*) no type information is available so we just check for the exact start.
             let size = 1;
@@ -156,7 +195,7 @@ impl<VS, SP: SymbolicProjector> RawPointerVariableState<VS, SP> {
             .get_object(addr)
             .map(|(start, _)| *start)
             .unwrap_or(addr);
-        self.memory.entry(key)
+        self.memory.entry_at(key)
     }
 }
 
@@ -183,10 +222,13 @@ where
 
         // Or it is pointing to an object embracing symbolic values.
         if let Some(size) = place.metadata().size() {
+            // FIXME: Double querying memory.
             if let Some(porter) = Self::try_create_porter(
                 addr,
                 size,
-                |start| self.memory.upper_bound(start),
+                /* At this point, we are looking for inner values, effectively
+                 * located at the same address or after it. */
+                |start| self.memory.after_or_at(start),
                 |c| c.key_value(),
                 |c| c.move_next(),
             ) {
@@ -211,7 +253,7 @@ where
             return Some(if sym_projs.is_empty() {
                 let value = sym_val.clone_to();
                 // FIXME: (*)
-                self.memory.remove(&addr);
+                self.memory.remove_at(&addr);
                 value
             } else {
                 self.handle_sym_value(sym_val, sym_projs).into()
@@ -220,10 +262,11 @@ where
 
         // Or it is pointing to an object embracing symbolic values.
         if let Some(size) = place.metadata().size() {
+            // FIXME: Double querying memory.
             if let Some(porter) = Self::try_create_porter(
                 addr,
                 size,
-                |start| self.memory.upper_bound_mut(start),
+                |start| self.memory.after_or_at_mut(start),
                 |c| c.key_value(),
                 |c| {
                     // FIXME: (*)
@@ -335,12 +378,12 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
     fn try_create_porter<'a, C: 'a>(
         addr: RawPointer,
         size: TypeSize,
-        lower_bound: impl FnOnce(Bound<&RawPointer>) -> C,
+        after_or_at: impl FnOnce(&RawPointer) -> C,
         key_value: impl Fn(&C) -> Option<(&RawPointer, &MemoryObject)>,
         move_next: impl Fn(&mut C),
     ) -> Option<PorterValue> {
         let range = addr..addr + size;
-        let mut cursor = lower_bound(range.start_bound());
+        let mut cursor = after_or_at(&range.start);
         let mut sym_values = Vec::new();
         while let Some((sym_addr, (sym_value, sym_type_id))) = key_value(&cursor) {
             if *sym_addr < range.start {
@@ -399,6 +442,10 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
             Value::Concrete(ConcreteValue::Adt(adt)) => {
                 for field in adt.fields.iter() {
                     if let Some(value) = &field.value {
+                        if !value.is_symbolic() {
+                            continue;
+                        }
+
                         self.set_addr(
                             addr + field.offset,
                             value.clone(),
