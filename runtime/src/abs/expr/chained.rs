@@ -50,12 +50,32 @@ macro_rules! try_on_current_then_next {
 
 macro_rules_method_with_optional_args!(impl_binary_expr_method {
     ($method: ident + $($arg: ident : $arg_type: ty),* $(,)?) => {
+        impl_binary_expr_method!($method + ($($arg : $arg_type { $arg }),*));
+    };
+    /* Gives the ability to give a custom expression passed to the builders. */
+    ($method: ident + ($($arg: ident : $arg_type: ty { $arg_expr:expr }),*) $(,)?) => {
         fn $method<'a>(
             &mut self,
             operands: Self::ExprRefPair<'a>,
             $($arg: $arg_type),*
         ) -> Self::Expr<'a> {
-            try_on_current_then_next!(self, $method, (operands$(, $arg)*), |operands|)
+            try_on_current_then_next!(self, $method, (operands$(, $arg_expr)*), |operands|)
+        }
+    };
+});
+
+macro_rules_method_with_optional_args!(impl_unary_expr_method {
+    ($method: ident + $($arg: ident : $arg_type: ty),* $(,)?) => {
+        impl_unary_expr_method!($method + ($($arg : $arg_type { $arg }),*));
+    };
+    /* Gives the ability to give a custom expression passed to the builders. */
+    ($method: ident + ($($arg: ident : $arg_type: ty { $arg_expr:expr }),*) $(,)?) => {
+        fn $method<'a>(
+            &mut self,
+            operand: Self::ExprRef<'a>,
+            $($arg: $arg_type),*
+        ) -> Self::Expr<'a> {
+            try_on_current_then_next!(self, $method, (operand$(, $arg_expr)*), |operand|)
         }
     };
 });
@@ -102,27 +122,9 @@ where
     type ExprRef<'a> = N::ExprRef<'a>;
     type Expr<'a> = E;
 
-    fn unary_op<'a>(&mut self, operand: Self::ExprRef<'a>, op: UnaryOp) -> Self::Expr<'a> {
-        try_on_current_then_next!(self, unary_op, (operand, op), |operand|)
-    }
+    impl_unary_expr_method!(unary_op + op: UnaryOp);
 
-    fn not<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
-        try_on_current_then_next!(self, not, operand)
-    }
+    impl_unary_expr_method!(not neg address_of len discriminant);
 
-    fn neg<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
-        try_on_current_then_next!(self, neg, operand)
-    }
-
-    fn address_of<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
-        try_on_current_then_next!(self, address_of, operand)
-    }
-
-    fn len<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
-        try_on_current_then_next!(self, len, operand)
-    }
-
-    fn cast<'a>(&mut self, operand: Self::ExprRef<'a>, target: CastKind) -> Self::Expr<'a> {
-        try_on_current_then_next!(self, cast, (operand, target.clone()), |operand|)
-    }
+    impl_unary_expr_method!(cast + target: CastKind);
 }

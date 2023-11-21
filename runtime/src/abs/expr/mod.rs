@@ -53,6 +53,8 @@ pub(crate) trait UnaryExprBuilder {
 
     fn len<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a>;
 
+    fn discriminant<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a>;
+
     fn cast<'a>(&mut self, operand: Self::ExprRef<'a>, target: CastKind) -> Self::Expr<'a>;
 }
 

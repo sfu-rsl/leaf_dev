@@ -176,7 +176,7 @@ pub(crate) static USIZE_TYPE: IntType = IntType {
     is_signed: false,
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub(crate) enum CastKind {
     ToChar,
     ToInt(IntType),

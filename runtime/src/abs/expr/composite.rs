@@ -78,7 +78,7 @@ where
 
     impl_unary_expr_method!(unary_op + op: UnaryOp);
 
-    impl_unary_expr_method!(not neg address_of len);
+    impl_unary_expr_method!(not neg address_of len discriminant);
 
     impl_unary_expr_method!(cast + target: CastKind);
 }

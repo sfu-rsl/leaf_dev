@@ -119,6 +119,10 @@ mod toplevel {
             call_unary_method!(self, len, operand)
         }
 
+        fn discriminant<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
+            call_unary_method!(self, discriminant, operand)
+        }
+
         fn cast<'a>(&mut self, operand: Self::ExprRef<'a>, target: CastKind) -> Self::Expr<'a> {
             call_unary_method!(self, cast, operand, target)
         }
@@ -334,6 +338,10 @@ mod core {
             Expr::Len(ProjExprRef::new(operand.into()))
         }
 
+        fn discriminant<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
+            todo!("#233: Add support for discriminant operator {:?}", operand)
+        }
+
         fn cast<'a>(&mut self, operand: Self::ExprRef<'a>, target: CastKind) -> Self::Expr<'a> {
             match ValueType::try_from(target) {
                 Ok(value_type) => Expr::Cast {
@@ -433,6 +441,19 @@ mod concrete {
             }
         }
 
+        fn discriminant<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
+            match operand {
+                /* FIXME: #87 */
+                Adt(AdtValue {
+                    kind: AdtKind::Enum { variant },
+                    ..
+                }) => ConstValue::from(*variant).into(),
+                _ => {
+                    unreachable!("Discriminant is only supposed to be called on (concrete) enums.",)
+                }
+            }
+        }
+
         fn cast<'a>(
             &mut self,
             operand: Self::ExprRef<'a>,
@@ -513,6 +534,10 @@ mod concrete {
         }
 
         fn len<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
+            Self::some_if_uneval(operand)
+        }
+
+        fn discriminant<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
             Self::some_if_uneval(operand)
         }
 
