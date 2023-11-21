@@ -4,6 +4,7 @@ use std::{
         btree_map::{Cursor, CursorMut, Entry},
         BTreeMap,
     },
+    fmt::Display,
     ops::Bound,
     rc::Rc,
 };
@@ -118,6 +119,17 @@ impl Memory {
     fn remove_at(&mut self, addr: &RawPointer) {
         log::debug!("Erasing memory at address: {}", addr);
         self.0.remove(addr);
+    }
+}
+
+impl Display for Memory {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{{")?;
+        for (addr, (value, type_id)) in self.0.iter() {
+            writeln!(f, "{} ->\t{} ({:?})", addr, value, type_id)?;
+        }
+        writeln!(f, "}}")?;
+        Ok(())
     }
 }
 
