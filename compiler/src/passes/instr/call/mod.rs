@@ -1503,7 +1503,6 @@ mod implementation {
         Self: Assigner<'tcx>,
         C: ForInsertion<'tcx>,
     {
-        #[cfg(abs_concrete)]
         fn to_some_concrete(&mut self) {
             let BlocksAndResult(blocks, operand_ref) = self.internal_reference_const_some();
             self.insert_blocks(blocks);
