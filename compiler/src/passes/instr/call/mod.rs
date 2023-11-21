@@ -115,6 +115,8 @@ pub(crate) trait CastAssigner<'tcx> {
     fn to_float(&mut self, ty: Ty<'tcx>);
 
     fn through_unsizing(&mut self);
+
+    fn through_fn_ptr_coercion(&mut self);
 }
 
 #[derive(Clone, Copy)]
@@ -776,9 +778,12 @@ mod implementation {
     impl<'tcx, C> RuntimeCallAdder<C>
     where
         Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
-        C: ForOperandRef<'tcx>,
+        C: Basic<'tcx>,
     {
-        fn internal_reference_operand(&mut self, operand: &Operand<'tcx>) -> BlocksAndResult<'tcx> {
+        fn internal_reference_operand(&mut self, operand: &Operand<'tcx>) -> BlocksAndResult<'tcx>
+        where
+            C: ForOperandRef<'tcx>,
+        {
             match operand {
                 Operand::Copy(place) => self.internal_reference_place_operand(place, true),
                 Operand::Move(place) => self.internal_reference_place_operand(place, false),
@@ -790,7 +795,10 @@ mod implementation {
             &mut self,
             place: &Place<'tcx>,
             is_copy: bool,
-        ) -> BlocksAndResult<'tcx> {
+        ) -> BlocksAndResult<'tcx>
+        where
+            C: ForPlaceRef<'tcx>,
+        {
             let BlocksAndResult(mut additional_blocks, place_ref) =
                 self.internal_reference_place(place);
 
@@ -820,7 +828,10 @@ mod implementation {
         fn internal_reference_const_operand(
             &mut self,
             constant: &Box<ConstOperand<'tcx>>,
-        ) -> BlocksAndResult<'tcx> {
+        ) -> BlocksAndResult<'tcx>
+        where
+            C: ForOperandRef<'tcx>,
+        {
             /* NOTE: Although there might be some ways to obtain/evaluate the values, we prefer to use
              * the constant as it is, and rely on high-level conversions to support all types of
              * constants in an abstract fashion. */
@@ -1011,8 +1022,12 @@ mod implementation {
         fn internal_reference_unevaluated_const_operand(
             &mut self,
             constant: &UnevaluatedConst,
-        ) -> BlocksAndResult<'tcx> {
-            if cfg!(nctfe) {
+        ) -> BlocksAndResult<'tcx>
+        where
+            C: ForOperandRef<'tcx>,
+        {
+            #[cfg(nctfe)]
+            {
                 let def_id = constant.def.expect_local();
                 let ctfe_id = if let Some(index) = constant.promoted {
                     CtfeId::Promoted(def_id, index)
@@ -1022,9 +1037,9 @@ mod implementation {
 
                 let nctfe_result_local = self.call_nctfe(ctfe_id);
                 self.internal_reference_operand(&operand::move_for_local(nctfe_result_local))
-            } else if cfg!(abs_concrete) {
-                self.make_bb_for_some_const_ref_call().into()
-            } else {
+            }
+            #[cfg(not(nctfe))]
+            {
                 panic!("Unevaluated constant is not supported by this configuration.")
             }
         }
@@ -1033,8 +1048,12 @@ mod implementation {
             &mut self,
             def_id: DefId,
             ty: Ty<'tcx>,
-        ) -> BlocksAndResult<'tcx> {
-            if cfg!(nctfe) {
+        ) -> BlocksAndResult<'tcx>
+        where
+            C: ForOperandRef<'tcx>,
+        {
+            #[cfg(nctfe)]
+            {
                 let item_ty = match ty.kind() {
                     TyKind::Ref(_, ty, rustc_ast::Mutability::Not) => ty.clone(),
                     _ => unreachable!("Constant type should be an immutable reference."),
@@ -1068,14 +1087,18 @@ mod implementation {
                 }
 
                 self.internal_reference_operand(&operand::move_for_local(ref_local))
-            } else if cfg!(place_addr) {
-                self.make_bb_for_some_const_ref_call().into()
-            } else {
+            }
+            #[cfg(not(nctfe))]
+            {
                 panic!("Static reference constant is not supported by this configuration.")
             }
         }
 
-        fn call_nctfe(&mut self, id: CtfeId) -> Local {
+        #[cfg(nctfe)]
+        fn call_nctfe(&mut self, id: CtfeId) -> Local
+        where
+            C: ForFunctionCalling<'tcx>,
+        {
             use crate::passes::ctfe::get_nctfe_func;
 
             let tcx = self.tcx();
@@ -1158,7 +1181,8 @@ mod implementation {
         Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
         C: ForAssignment<'tcx>,
     {
-        type Cast<'b> = RuntimeCallAdder<CastAssignmentContext<'b, C>> where C: 'b;
+        type Cast<'b> = RuntimeCallAdder<CastAssignmentContext<'b, C>> 
+            where CastAssignmentContext<'b, C>: ForCasting<'tcx> + 'b;
 
         fn by_use(&mut self, operand: OperandRef) {
             self.add_bb_for_assign_call(
@@ -1474,10 +1498,23 @@ mod implementation {
         }
     }
 
+    impl<'tcx, C> RuntimeCallAdder<C>
+    where
+        Self: Assigner<'tcx>,
+        C: ForInsertion<'tcx>,
+    {
+        #[cfg(abs_concrete)]
+        fn to_some_concrete(&mut self) {
+            let BlocksAndResult(blocks, operand_ref) = self.internal_reference_const_some();
+            self.insert_blocks(blocks);
+            self.by_use(operand_ref.into());
+        }
+    }
+
     impl<'tcx, C> CastAssigner<'tcx> for RuntimeCallAdder<C>
     where
         Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
-        C: CastOperandProvider + ForAssignment<'tcx>,
+        C: ForCasting<'tcx>,
     {
         fn to_int(&mut self, ty: Ty<'tcx>) {
             if ty.is_char() {
@@ -1512,6 +1549,14 @@ mod implementation {
 
         fn through_unsizing(&mut self) {
             self.add_bb_for_cast_assign_call(stringify!(pri::assign_cast_unsize))
+        }
+
+        fn through_fn_ptr_coercion(&mut self) {
+            if cfg!(abs_concrete) {
+                self.to_some_concrete()
+            } else {
+                unimplemented!("Function pointer coercion is not supported in this configuration.")
+            }
         }
     }
 
@@ -1801,9 +1846,12 @@ mod implementation {
     impl<'tcx, C> RuntimeCallAdder<C>
     where
         Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
-        C: ForFunctionCalling<'tcx>,
+        C: Basic<'tcx>,
     {
-        fn make_bb_for_func_preserve_metadata(&mut self) -> Vec<BasicBlockData<'tcx>> {
+        fn make_bb_for_func_preserve_metadata(&mut self) -> Vec<BasicBlockData<'tcx>>
+        where
+            C: ForPlaceRef<'tcx>,
+        {
             let mut blocks = vec![];
 
             let preserve = |this: &mut Self, place_ref: Local| {
@@ -2562,10 +2610,16 @@ mod implementation {
         pub(crate) trait ForPlaceRef<'tcx>: ForInsertion<'tcx> {}
         impl<'tcx, C> ForPlaceRef<'tcx> for C where C: ForInsertion<'tcx> {}
 
+        #[cfg(not(nctfe))]
+        pub(crate) trait ForOperandRef<'tcx>: ForPlaceRef<'tcx> {}
+        #[cfg(not(nctfe))]
+        impl<'tcx, C> ForOperandRef<'tcx> for C where C: ForPlaceRef<'tcx> {}
+        #[cfg(nctfe)]
         pub(crate) trait ForOperandRef<'tcx>:
             ForPlaceRef<'tcx> + ForFunctionCalling<'tcx>
         {
         }
+        #[cfg(nctfe)]
         impl<'tcx, C> ForOperandRef<'tcx> for C where C: ForPlaceRef<'tcx> + ForFunctionCalling<'tcx> {}
 
         pub(crate) trait ForAssignment<'tcx>:
@@ -2573,6 +2627,12 @@ mod implementation {
         {
         }
         impl<'tcx, C> ForAssignment<'tcx> for C where C: ForInsertion<'tcx> + DestinationProvider<'tcx> {}
+
+        pub(crate) trait ForCasting<'tcx>:
+            CastOperandProvider + ForAssignment<'tcx>
+        {
+        }
+        impl<'tcx, C> ForCasting<'tcx> for C where C: CastOperandProvider + ForAssignment<'tcx> {}
 
         pub(crate) trait ForBranching<'tcx>:
             ForInsertion<'tcx> + JumpTargetModifier
@@ -2584,10 +2644,10 @@ mod implementation {
         impl<'tcx, C> ForAssertion<'tcx> for C where C: ForOperandRef<'tcx> {}
 
         pub(crate) trait ForFunctionCalling<'tcx>:
-            ForPlaceRef<'tcx> + JumpTargetModifier
+            ForInsertion<'tcx> + JumpTargetModifier
         {
         }
-        impl<'tcx, C> ForFunctionCalling<'tcx> for C where C: ForPlaceRef<'tcx> + JumpTargetModifier {}
+        impl<'tcx, C> ForFunctionCalling<'tcx> for C where C: ForInsertion<'tcx> + JumpTargetModifier {}
 
         pub(crate) trait ForReturning<'tcx>: ForInsertion<'tcx> {}
         impl<'tcx, C> ForReturning<'tcx> for C where C: ForInsertion<'tcx> {}

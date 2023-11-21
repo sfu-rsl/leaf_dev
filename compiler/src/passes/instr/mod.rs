@@ -421,7 +421,7 @@ where
                 match kind {
                     Unsize => call_adder.through_unsizing(),
                     ReifyFnPointer | UnsafeFnPointer | ClosureFnPointer(_) => {
-                        todo!("Support FnPointer casts")
+                        call_adder.through_fn_ptr_coercion()
                     }
                     MutToConstPointer | ArrayToPointer => todo!("Support raw pointer casts"),
                 }
