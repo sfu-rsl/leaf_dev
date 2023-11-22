@@ -1,21 +1,9 @@
-use std::{
-    cell::RefCell,
-    collections::{
-        btree_map::{Cursor, CursorMut, Entry},
-        BTreeMap,
-    },
-    fmt::Display,
-    ops::Bound,
-    rc::Rc,
-};
+use std::{cell::RefCell, collections::btree_map::Entry, ops::Bound, rc::Rc};
 
 use delegate::delegate;
 
 use crate::{
-    abs::{
-        place::HasMetadata, Alignment, PointerOffset, RawPointer, TypeId, TypeSize, ValueType,
-        USIZE_TYPE,
-    },
+    abs::{place::HasMetadata, Alignment, PointerOffset, RawPointer, TypeId, TypeSize, USIZE_TYPE},
     backends::basic::{
         expr::{PorterValue, RawConcreteValue},
         place::{LocalWithMetadata, PlaceMetadata},
@@ -31,6 +19,11 @@ use super::{
     },
     proj::{apply_projs_sym, IndexResolver, ProjectionResolutionExt},
 };
+
+mod memory;
+mod utils;
+
+use utils::*;
 
 type Local = LocalWithMetadata;
 type Place = PlaceWithMetadata;
@@ -92,52 +85,11 @@ type RRef<T> = Rc<RefCell<T>>;
 
 type MemoryObject = (SymValueRef, TypeId);
 
-#[derive(Debug, Default)]
-struct Memory(BTreeMap<RawPointer, MemoryObject>);
-
-impl Memory {
-    fn before_or_at(&self, addr: &RawPointer) -> Cursor<'_, u64, MemoryObject> {
-        log::debug!("Checking memory before or at address: {}", addr);
-        self.0.upper_bound(Bound::Included(addr))
-    }
-
-    fn after_or_at(&self, addr: &RawPointer) -> Cursor<'_, u64, MemoryObject> {
-        log::debug!("Checking memory after or at address: {}", addr);
-        self.0.lower_bound(Bound::Included(addr))
-    }
-
-    fn after_or_at_mut(&mut self, addr: &RawPointer) -> CursorMut<'_, u64, MemoryObject> {
-        log::debug!("Checking memory after or at address: {}", addr);
-        self.0.lower_bound_mut(Bound::Included(addr))
-    }
-
-    fn entry_at(&mut self, addr: RawPointer) -> Entry<'_, u64, MemoryObject> {
-        log::debug!("Getting memory entry at address: {}", addr);
-        self.0.entry(addr)
-    }
-
-    fn remove_at(&mut self, addr: &RawPointer) {
-        log::debug!("Erasing memory at address: {}", addr);
-        self.0.remove(addr);
-    }
-}
-
-impl Display for Memory {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "{{")?;
-        for (addr, (value, type_id)) in self.0.iter() {
-            writeln!(f, "{} ->\t{} ({:?})", addr, value, type_id)?;
-        }
-        writeln!(f, "}}")?;
-        Ok(())
-    }
-}
-
 /// Provides a mapping for raw pointers to symbolic values.
 /// All places that have a valid address are handled by this state, otherwise
 /// they will be sent to the `fallback` state to be handled.
 pub(in super::super) struct RawPointerVariableState<VS, SP: SymbolicProjector> {
-    memory: Memory,
+    memory: memory::Memory,
     fallback: VS,
     sym_projector: RRef<SP>,
 }
@@ -248,7 +200,7 @@ where
             }
         }
 
-        Self::create_lazy(addr, place.metadata().ty()).to_value_ref()
+        create_lazy(addr, place.metadata().ty())
     }
 
     fn try_take_place(&mut self, place: &Place) -> Option<ValueRef> {
@@ -289,7 +241,7 @@ where
             }
         }
 
-        Some(Self::create_lazy(addr, place.metadata().ty()).to_value_ref())
+        Some(create_lazy(addr, place.metadata().ty()))
     }
 
     fn set_place(&mut self, place: &Place, value: ValueRef) {
@@ -418,11 +370,6 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
         } else {
             None
         }
-    }
-
-    #[inline]
-    fn create_lazy(addr: RawPointer, ty: Option<&ValueType>) -> RawConcreteValue {
-        RawConcreteValue(addr, ty.cloned())
     }
 
     fn set_addr(&mut self, addr: RawPointer, value: ValueRef, type_id: TypeId) {
