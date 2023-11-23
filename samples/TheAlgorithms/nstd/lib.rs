@@ -256,6 +256,11 @@ impl PartialEq<NSByteString> for NSByteString {
 
         result
     }
+
+    fn ne(&self, other: &Self) -> bool {
+        // We have to add this to not rely on the uninstrumented default implementation.
+        !self.eq(other)
+    }
 }
 
 impl From<&[u8]> for NSByteString {
