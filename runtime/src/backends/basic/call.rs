@@ -1,9 +1,10 @@
 use crate::{
-    abs::{Local, LocalIndex},
+    abs::{self, Local, LocalIndex},
     utils::SelfHierarchical,
 };
 
 use super::{
+    expr::{ConcreteValue, UnevalValue},
     place::{LocalWithMetadata, PlaceMetadata},
     CallStackManager, EntranceKind, Place, ValueRef, VariablesState,
 };
@@ -93,6 +94,66 @@ impl<VS: VariablesState + SelfHierarchical> BasicCallStackManager<VS> {
         self.stack
             .last_mut()
             .expect("Call stack should not be empty")
+    }
+
+    fn finalize_external_call(&mut self, result_dest: &Place) {
+        if let Some(overridden) = self.top_frame().overridden_return_val.take() {
+            log::info!(concat!(
+                "Consuming the overridden return value as the returned value ",
+                "from the external function."
+            ));
+            self.top().set_place(result_dest, overridden);
+            return;
+        }
+
+        if cfg!(external_call = "panic") {
+            panic!("External function call detected.");
+        }
+
+        // FIXME: The configuration should be set dynamically.
+        enum Strategy {
+            Concretization,
+            OverApproximation,
+        }
+        use Strategy::*;
+
+        let strategy = if cfg!(external_call = "concretize") {
+            Concretization
+        } else if cfg!(external_call = "overapprox") {
+            OverApproximation
+        } else if cfg!(external_call = "optim_conc") {
+            /* NOTE: What is optimistic here?
+             * It correspond to the optimistic assumption that the callee has been a
+             * pure function and no symbolic input results in no symbolic output. */
+            /* FIXME: With the current implementation, references to symbolic values
+             * skip this check. */
+            let all_concrete = self
+                .latest_call
+                .take()
+                .is_some_and(|c| c.args.iter().all(|v| !v.1.is_symbolic()));
+            if all_concrete {
+                Concretization
+            } else {
+                OverApproximation
+            }
+        } else {
+            unreachable!("Invalid external call configuration.");
+        };
+
+        match strategy {
+            Concretization => {
+                #[cfg(abs_concrete)]
+                let value = ConcreteValue::from(abs::Constant::Some).to_value_ref();
+                #[cfg(not(abs_concrete))]
+                let value = unimplemented!(
+                    "Abstract concrete values are not supported in this configuration."
+                );
+                self.top().set_place(&result_dest, value)
+            }
+            OverApproximation => {
+                todo!("#306: Over-approximated symbolic values are not supported.")
+            }
+        }
     }
 }
 
@@ -195,17 +256,7 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
     fn finalize_call(&mut self, result_dest: Place) {
         let is_external = self.top_frame().is_callee_external.take().unwrap_or(true);
         if is_external {
-            if let Some(overridden) = self.top_frame().overridden_return_val.take() {
-                log::info!(concat!(
-                    "Consuming the overridden return value as the returned value ",
-                    "from the external function."
-                ));
-                self.top().set_place(&result_dest, overridden);
-            } else {
-                // NOTE: The return value of an external function must be an untracked constant,
-                //       because it's not possible to track it.
-                todo!("handle the case when an external function is called")
-            }
+            self.finalize_external_call(&result_dest)
         } else if let Some(returned_val) = self.latest_returned_val.take() {
             self.top().set_place(&result_dest, returned_val)
         } else {
