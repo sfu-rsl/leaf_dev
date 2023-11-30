@@ -5,7 +5,7 @@ use super::{
     Local, Projection, UnaryOp, ValueType, VariantIndex,
 };
 
-pub(crate) trait RuntimeBackend: Sized {
+pub(crate) trait RuntimeBackend {
     type PlaceHandler<'a>: PlaceHandler<Place = Self::Place>
     where
         Self: 'a;
@@ -21,8 +21,10 @@ pub(crate) trait RuntimeBackend: Sized {
     type FunctionHandler<'a>: FunctionHandler<Place = Self::Place, Operand = Self::Operand>
     where
         Self: 'a;
+    type TypeHandler<'a>
+    where
+        Self: 'a;
 
-    type TypeManager;
     type Place;
     type Operand;
 
@@ -39,7 +41,7 @@ pub(crate) trait RuntimeBackend: Sized {
 
     fn func_control(&mut self) -> Self::FunctionHandler<'_>;
 
-    fn type_control(&mut self) -> &mut Self::TypeManager;
+    fn type_control(&mut self) -> Self::TypeHandler<'_>;
 }
 
 pub(crate) trait PlaceHandler {
@@ -279,7 +281,7 @@ pub(crate) trait TypeManager {
 }
 
 pub(crate) mod implementation {
-    use crate::tyexp::TypeInformation;
+    use crate::tyexp::{TypeExport, TypeInfo};
 
     use super::super::*;
     use super::*;
@@ -424,20 +426,20 @@ pub(crate) mod implementation {
     }
 
     pub(crate) struct DefaultTypeManager {
-        type_map: HashMap<TypeId, TypeInformation>,
+        type_map: HashMap<TypeId, TypeInfo>,
     }
 
     impl DefaultTypeManager {
         pub fn new() -> Self {
-            DefaultTypeManager {
-                type_map: HashMap::new(),
+            Self {
+                type_map: TypeExport::read(),
             }
         }
     }
 
     impl TypeManager for DefaultTypeManager {
         type Key = TypeId;
-        type Value = Option<TypeInformation>;
+        type Value = Option<TypeInfo>;
 
         fn get_type(&self, key: Self::Key) -> Self::Value {
             self.type_map.get(&key).cloned()
@@ -445,7 +447,7 @@ pub(crate) mod implementation {
 
         fn set_type(&mut self, key: Self::Key, value: Self::Value) {
             self.type_map
-                .insert(key, value.expect("Invalid TypeInformation value"));
+                .insert(key, value.expect("Invalid TypeInfo value"));
         }
     }
 }

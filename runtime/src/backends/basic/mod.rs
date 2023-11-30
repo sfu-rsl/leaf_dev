@@ -6,21 +6,22 @@ pub(crate) mod operand;
 mod place;
 mod state;
 
-use std::{borrow::BorrowMut, cell::RefCell, ops::DerefMut, rc::Rc};
+use std::{cell::RefCell, ops::DerefMut, rc::Rc};
 
 use crate::{
     abs::{
-        self, backend::*, AssertKind, BasicBlockIndex, BranchingMetadata, CastKind, IntType, Local,
-        PlaceUsage, PointerOffset, TypeId, UnaryOp, VariantIndex,
+        self, backend::implementation::DefaultTypeManager, backend::*, AssertKind, BasicBlockIndex,
+        BranchingMetadata, CastKind, IntType, Local, PlaceUsage, PointerOffset, TypeId, UnaryOp,
+        VariantIndex,
     },
     solvers::z3::Z3Solver,
     trace::ImmediateTraceManager,
-    tyexp::TypeInformation,
+    tyexp::{TypeExport, TypeInfo},
 };
 
 use self::{
     alias::{
-        ValueRefBinaryExprBuilder as BinaryExprBuilder,
+        TypeManager, ValueRefBinaryExprBuilder as BinaryExprBuilder,
         ValueRefExprBuilder as OperationalExprBuilder,
     },
     expr::{
@@ -41,9 +42,6 @@ type BasicVariablesState = StackedLocalIndexVariablesState<SymProjector>;
 
 type BasicCallStackManager = call::BasicCallStackManager<BasicVariablesState>;
 
-type TypeManager =
-    Box<dyn abs::backend::TypeManager<Key = TypeId, Value = Option<TypeInformation>>>;
-
 #[cfg(place_addr)]
 type Place = place::PlaceWithMetadata;
 #[cfg(not(place_addr))]
@@ -60,11 +58,6 @@ type OperandHandler<'a, SymValue> = operand::BasicOperandHandler<'a, Place, SymV
 #[cfg(not(place_addr))]
 type OperandHandler<'a, SymValue> =
     crate::abs::backend::implementation::DefaultOperandHandler<'a, Place, SymValue>;
-#[derive(Debug, derive_more::Into, derive_more::From)]
-pub(crate) struct FieldValue<S>(#[into] Operand<S>, PointerOffset);
-#[cfg(place_addr)]
-pub(crate) type Field<S = SymValueRef> = FieldValue<S>;
-#[cfg(not(place_addr))]
 pub(crate) type Field<S = SymValueRef> = Operand<S>;
 
 pub struct BasicBackend {
@@ -73,19 +66,22 @@ pub struct BasicBackend {
     current_constraints: Vec<Constraint>,
     expr_builder: Rc<RefCell<ExprBuilder>>,
     sym_id_counter: u32,
-    type_manager: TypeManager,
+    type_manager: Rc<RefCell<dyn TypeManager>>,
 }
 
 impl BasicBackend {
     pub fn new() -> Self {
         let expr_builder = Rc::new(RefCell::new(expr::builders::new_expr_builder()));
         let sym_projector = Rc::new(RefCell::new(expr::proj::new_sym_projector()));
+        let type_manager_ref = Rc::new(RefCell::new(DefaultTypeManager::new()));
+        let type_manager = type_manager_ref.clone();
         Self {
             call_stack_manager: BasicCallStackManager::new(Box::new(move |id| {
                 #[cfg(place_addr)]
                 let vars_state = RawPointerVariableState::new(
                     StackedLocalIndexVariablesState::new(id, sym_projector.clone()),
                     sym_projector.clone(),
+                    type_manager_ref.clone(),
                 );
                 #[cfg(not(place_addr))]
                 let vars_state = StackedLocalIndexVariablesState::new(id, sym_projector.clone());
@@ -100,7 +96,7 @@ impl BasicBackend {
             current_constraints: Vec::new(),
             expr_builder,
             sym_id_counter: 0,
-            type_manager: Box::new(abs::backend::implementation::DefaultTypeManager::new()),
+            type_manager,
         }
     }
 }
@@ -126,7 +122,7 @@ impl RuntimeBackend for BasicBackend {
     where
         Self: 'a;
 
-    type TypeManager = TypeManager;
+    type TypeHandler<'a> = BasicTypeManager;
 
     type Place = Place;
 
@@ -164,8 +160,8 @@ impl RuntimeBackend for BasicBackend {
         BasicFunctionHandler::new(&mut self.call_stack_manager)
     }
 
-    fn type_control(&mut self) -> &mut Self::TypeManager {
-        self.type_manager.borrow_mut()
+    fn type_control(&mut self) -> Self::TypeHandler<'_> {
+        BasicTypeManager(self.type_manager.clone())
     }
 }
 
@@ -199,7 +195,6 @@ impl<'s, EB: OperationalExprBuilder> BasicAssignmentHandler<'s, EB> {
 impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_, EB> {
     type Place = Place;
     type Operand = Operand;
-    #[cfg(place_addr)]
     type Field = Field;
 
     fn use_of(mut self, operand: Self::Operand) {
@@ -342,8 +337,6 @@ impl<EB: OperationalExprBuilder> BasicAssignmentHandler<'_, EB> {
             kind,
             fields: fields
                 .map(|f| AdtField {
-                    #[cfg(place_addr)]
-                    offset: f.1,
                     value: Some(self.get_operand_value(f.into())),
                 })
                 .collect(),
@@ -644,6 +637,20 @@ impl BasicFunctionMetadataHandler<'_> {
         );
         self.call_stack_manager
             .set_local_metadata(local, metadata.clone())
+    }
+}
+
+pub(crate) struct BasicTypeManager(Rc<RefCell<dyn TypeManager>>);
+impl abs::backend::TypeManager for BasicTypeManager {
+    type Key = TypeId;
+    type Value = Option<TypeInfo>;
+
+    fn get_type(&self, key: Self::Key) -> Self::Value {
+        self.0.as_ref().borrow().get_type(key)
+    }
+
+    fn set_type(&mut self, key: Self::Key, value: Self::Value) {
+        self.0.as_ref().borrow_mut().set_type(key, value)
     }
 }
 

@@ -6,7 +6,6 @@ use crate::abs::{
     FieldIndex, FloatType, FuncId, IntType, Local, LocalIndex, PointerOffset, RawPointer, TypeId,
     TypeSize, UnaryOp, ValueType, VariantIndex,
 };
-use crate::tyexp::get_type_info;
 
 use self::instance::*;
 
@@ -103,10 +102,6 @@ fn set_place_type(place: PlaceRef, ty: ValueType) {
 #[cfg(place_addr)]
 pub fn set_place_size(place: PlaceRef, byte_size: TypeSize) {
     mut_place_ref(place, |h, p| h.metadata(p).set_size(byte_size))
-}
-
-pub fn map_type_id_to_def(type_id: TypeId, def_id: u64) {
-    type_control(|t| t.set_type(type_id, get_type_info(def_id)))
 }
 
 pub fn ref_operand_copy(place: PlaceRef) -> OperandRef {
@@ -266,76 +261,32 @@ pub fn assign_aggregate_array(
         h.array_from(items.iter().map(|o| take_back_operand_ref(*o)))
     })
 }
-pub fn assign_aggregate_tuple(
-    dest: PlaceRef,
-    fields: &[OperandRef],
-    #[cfg(place_addr)] offsets: &[PointerOffset],
-) {
+pub fn assign_aggregate_tuple(dest: PlaceRef, fields: &[OperandRef]) {
     assign_to(dest, |h| {
-        let fields = take_fields(
-            fields,
-            #[cfg(place_addr)]
-            offsets,
-        );
+        let fields = take_fields(fields);
         h.tuple_from(fields.into_iter())
     })
 }
-pub fn assign_aggregate_struct(
-    dest: PlaceRef,
-    fields: &[OperandRef],
-    #[cfg(place_addr)] offsets: &[PointerOffset],
-) {
+pub fn assign_aggregate_struct(dest: PlaceRef, fields: &[OperandRef]) {
     assign_to(dest, |h| {
-        let fields = take_fields(
-            fields,
-            #[cfg(place_addr)]
-            offsets,
-        );
+        let fields = take_fields(fields);
         h.adt_from(fields.into_iter(), None)
     })
 }
-pub fn assign_aggregate_enum(
-    dest: PlaceRef,
-    fields: &[OperandRef],
-    #[cfg(place_addr)] offsets: &[PointerOffset],
-    variant: VariantIndex,
-) {
+pub fn assign_aggregate_enum(dest: PlaceRef, fields: &[OperandRef], variant: VariantIndex) {
     assign_to(dest, |h| {
-        let fields = take_fields(
-            fields,
-            #[cfg(place_addr)]
-            offsets,
-        );
+        let fields = take_fields(fields);
         h.adt_from(fields.into_iter(), Some(variant))
     })
 }
-pub fn assign_aggregate_union(
-    dest: PlaceRef,
-    active_field: FieldIndex,
-    value: OperandRef,
-    #[cfg(place_addr)] offset: PointerOffset,
-) {
+pub fn assign_aggregate_union(dest: PlaceRef, active_field: FieldIndex, value: OperandRef) {
     assign_to(dest, |h| {
-        let field = take_fields(
-            &[value],
-            #[cfg(place_addr)]
-            &[offset],
-        )
-        .pop()
-        .unwrap();
+        let field = take_fields(&[value]).pop().unwrap();
         h.union_from(active_field, field)
     })
 }
-fn take_fields(
-    fields: &[OperandRef],
-    #[cfg(place_addr)] offsets: &[PointerOffset],
-) -> Vec<FieldImpl> {
+fn take_fields(fields: &[OperandRef]) -> Vec<FieldImpl> {
     let fields = fields.iter().map(|o| take_back_operand_ref(*o));
-    #[cfg(place_addr)]
-    let fields = {
-        debug_assert_eq!(fields.len(), offsets.len());
-        fields.zip(offsets.iter().cloned())
-    };
     fields.map(Into::<FieldImpl>::into).collect()
 }
 
@@ -520,7 +471,7 @@ pub mod compiler_helpers {
          * automatically and even replace everything with u128.
          * Also, giving this function the `inline` attribute will cause it to
          * not be exported. */
-        TypeId::of::<T>()
+        crate::utils::type_id_of::<T>()
     }
 
     pub fn size_of<T>() -> TypeSize {

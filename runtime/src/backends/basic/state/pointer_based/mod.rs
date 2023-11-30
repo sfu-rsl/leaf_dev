@@ -3,13 +3,15 @@ use std::{cell::RefCell, collections::btree_map::Entry, ops::Bound, rc::Rc};
 use delegate::delegate;
 
 use crate::{
-    abs::{place::HasMetadata, Alignment, PointerOffset, RawPointer, TypeId, TypeSize, USIZE_TYPE},
+    abs::{place::HasMetadata, PointerOffset, RawPointer, TypeId, TypeSize, USIZE_TYPE},
     backends::basic::{
+        alias::TypeManager,
         expr::{PorterValue, RawConcreteValue},
         place::{LocalWithMetadata, PlaceMetadata},
         VariablesState,
     },
-    utils::SelfHierarchical,
+    tyexp::{ArrayShape, FieldsShapeInfo, StructShape, TypeInfo},
+    utils::{type_id_of, SelfHierarchical},
 };
 
 use super::{
@@ -92,10 +94,11 @@ pub(in super::super) struct RawPointerVariableState<VS, SP: SymbolicProjector> {
     memory: memory::Memory,
     fallback: VS,
     sym_projector: RRef<SP>,
+    type_manager: RRef<dyn TypeManager>,
 }
 
 impl<VS, SP: SymbolicProjector> RawPointerVariableState<VS, SP> {
-    pub fn new(fallback: VS, sym_projector: RRef<SP>) -> Self
+    pub fn new(fallback: VS, sym_projector: RRef<SP>, type_manager: RRef<dyn TypeManager>) -> Self
     where
         VS: VariablesState<Place>,
     {
@@ -103,6 +106,7 @@ impl<VS, SP: SymbolicProjector> RawPointerVariableState<VS, SP> {
             memory: Default::default(),
             fallback,
             sym_projector,
+            type_manager,
         }
     }
 
@@ -399,34 +403,10 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
             }
             #[cfg(place_addr)]
             Value::Concrete(ConcreteValue::Adt(adt)) => {
-                for field in adt.fields.iter() {
-                    if let Some(value) = &field.value {
-                        if !value.is_symbolic() {
-                            continue;
-                        }
-
-                        self.set_addr(
-                            addr + field.offset,
-                            value.clone(),
-                            todo!("#265: Field type information is not available yet."),
-                        );
-                    }
-                }
+                self.set_addr_adt(type_id, adt, addr);
             }
             Value::Concrete(ConcreteValue::Array(array)) => {
-                for (i, element) in array.elements.iter().enumerate() {
-                    if !element.is_symbolic() {
-                        continue;
-                    }
-
-                    let alignment: Alignment =
-                        todo!("#265: Alignment information is not available yet.");
-                    self.set_addr(
-                        addr + alignment * i as Alignment,
-                        element.clone(),
-                        todo!("#265: Element type information is not available yet."),
-                    );
-                }
+                self.set_addr_array(addr, array, type_id)
             }
             Value::Concrete(ConcreteValue::Unevaluated(UnevalValue::Porter(porter))) => {
                 for (offset, type_id, sym_value) in porter.sym_values.iter() {
@@ -441,6 +421,65 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
             }
         }
     }
+
+    fn set_addr_adt(&mut self, type_id: u128, adt: &AdtValue, addr: u64) {
+        let ty = self.get_type(type_id);
+        let variant = match adt.kind {
+            AdtKind::Enum { variant } => &ty.variants[variant as usize],
+            _ => ty.expect_single_variant(),
+        };
+        let FieldsShapeInfo::Struct(StructShape { fields }) = &variant.fields else {
+            panic!(
+                "Expected the fields to be in shape of a struct, found: {:?}",
+                variant.fields
+            )
+        };
+        for (field, info) in adt.fields.iter().zip(fields) {
+            if let Some(value) = &field.value {
+                if !value.is_symbolic() {
+                    continue;
+                }
+
+                self.set_addr(addr + info.offset, value.clone(), info.ty);
+            }
+        }
+    }
+
+    fn set_addr_array(&mut self, addr: RawPointer, array: &ArrayValue, type_id: TypeId) {
+        let item_ty = {
+            let array_ty = &self.get_type(type_id);
+            let fields = &array_ty.expect_single_variant().fields;
+            let FieldsShapeInfo::Array(ArrayShape {
+                item_ty: item_ty_id,
+                ..
+            }) = fields
+            else {
+                panic!("Expected the variant to be an array, found: {:?}", fields)
+            };
+            self.get_type(*item_ty_id)
+        };
+
+        for (i, element) in array.elements.iter().enumerate() {
+            if !element.is_symbolic() {
+                continue;
+            }
+
+            let item_addr = addr + item_ty.size * i as TypeSize;
+            self.set_addr(item_addr, element.clone(), item_ty.id);
+        }
+    }
+
+    fn get_type(&self, type_id: TypeId) -> TypeInfo {
+        self.type_manager
+            .borrow()
+            .get_type(type_id)
+            .unwrap_or_else(|| {
+                panic!(
+                    "Type information for type id: {:?} is not available.",
+                    type_id
+                )
+            })
+    }
 }
 
 impl<VS, SP: SymbolicProjector> IndexResolver<Local> for RawPointerVariableState<VS, SP>
@@ -453,7 +492,7 @@ where
         };
 
         Some(
-            if let Some(sym_val) = self.get(&addr, TypeId::of::<usize>()) {
+            if let Some(sym_val) = self.get(&addr, type_id_of::<usize>()) {
                 sym_val.clone_to()
             } else {
                 UnevalValue::Lazy(RawConcreteValue(addr, Some(USIZE_TYPE.into()))).to_value_ref()

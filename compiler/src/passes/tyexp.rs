@@ -1,15 +1,16 @@
-use crate::utils::encode_def_id;
-
 use super::{CompilationPass, Storage, StorageExt};
 
-use runtime::tyexp::{TypeExport, TypeInformation, TypeVariant};
-use rustc_index::IndexSlice;
-use rustc_middle::{
-    mir::{self, visit::Visitor, HasLocalDecls, LocalDecls, Location, Place},
-    ty::{GenericArg, List, Ty, TyCtxt, VariantDef},
-};
-use rustc_target::abi::VariantIdx;
+use rustc_abi::{FieldsShape, LayoutS, Variants};
+use rustc_index::IndexVec;
+use rustc_middle::mir::{self, visit::Visitor};
+use rustc_middle::ty::{layout::TyAndLayout, ParamEnv, Ty, TyCtxt, TyKind, TypeVisitableExt};
+use rustc_target::abi::{FieldIdx, Layout, VariantIdx};
+
 use std::collections::HashMap;
+
+use runtime::tyexp::*;
+
+const KEY_TYPE_MAP: &str = "type_ids";
 
 /*
  * TypeExporter pass to export type information
@@ -19,104 +20,146 @@ pub(crate) struct TypeExporter;
 
 impl CompilationPass for TypeExporter {
     fn visit_mir_body_before<'tcx>(
-        tcx: rustc_middle::ty::TyCtxt<'tcx>,
+        tcx: TyCtxt<'tcx>,
         body: &mir::Body<'tcx>,
         storage: &mut dyn Storage,
     ) {
+        let type_map = storage.get_or_default::<HashMap<u128, TypeInfo>>(KEY_TYPE_MAP.to_owned());
         let mut place_visitor = PlaceVisitor {
-            local_decls: body.local_decls(),
             tcx,
-            storage,
+            type_map,
+            param_env: tcx.param_env_reveal_all_normalized(body.source.def_id()),
         };
         place_visitor.visit_body(body);
-        TypeExport::write(get_type_map(storage).clone());
+        TypeExport::write(type_map);
     }
 }
 
-const KEY_TYPE_MAP: &str = "type_ids";
-
-pub(crate) fn get_type_map(storage: &mut dyn Storage) -> &mut HashMap<u64, TypeInformation> {
-    storage.get_or_default::<HashMap<u64, TypeInformation>>(KEY_TYPE_MAP.to_owned())
-}
-
-struct PlaceVisitor<'tcx, 'b, 's> {
-    local_decls: &'b LocalDecls<'tcx>,
+struct PlaceVisitor<'tcx, 's> {
     tcx: TyCtxt<'tcx>,
-    storage: &'s mut dyn Storage,
+    type_map: &'s mut HashMap<u128, TypeInfo>,
+    param_env: ParamEnv<'tcx>,
 }
 
-impl<'tcx, 'b, 's> Visitor<'tcx> for PlaceVisitor<'tcx, 'b, 's> {
-    fn visit_place(
-        &mut self,
-        place: &Place<'tcx>,
-        _context: mir::visit::PlaceContext,
-        _location: Location,
-    ) {
-        let place_ty = place.ty(self.local_decls, self.tcx);
-        log::debug!("Visiting Place: {:?} with Ty: {:?}", place, place_ty);
+impl<'tcx, 's> Visitor<'tcx> for PlaceVisitor<'tcx, 's> {
+    fn visit_ty(&mut self, ty: Ty<'tcx>, _: mir::visit::TyContext) {
+        if ty.has_param() {
+            return;
+        }
 
-        self.add_type_information_to_map(place_ty.ty);
+        self.add_type_information_to_map(ty);
     }
 }
 
-impl<'tcx, 'b, 's> PlaceVisitor<'tcx, 'b, 's> {
+impl<'tcx, 's> PlaceVisitor<'tcx, 's> {
     fn add_type_information_to_map(&mut self, ty: Ty<'tcx>) {
-        // we are only interested in exporting ADT Ty information as of now
-        if let rustc_middle::ty::TyKind::Adt(def, subst) = ty.kind() {
-            let map = get_type_map(self.storage);
-            let def_id = encode_def_id(def.did());
-            // skip current ADT Ty if it has been explored
-            if !map.contains_key(&def_id) {
-                let (variants, variants_tys) =
-                    get_variants_and_tys(self.tcx, def.variants(), subst);
-                map.insert(
-                    def_id,
-                    TypeInformation::new(def_id, ty.to_string(), variants),
-                );
+        let layout = match self.tcx.layout_of(self.param_env.and(ty)) {
+            Ok(TyAndLayout { layout, .. }) => layout,
+            Err(err) => {
+                log::warn!("Failed to get layout of type {:?}: {:?}", ty, err);
+                return;
+            }
+        };
 
-                // recursively explore other ADT Tys found from variants
-                for ty in variants_tys {
-                    self.add_type_information_to_map(ty);
+        let type_info: TypeInfo = layout.to_runtime(self.tcx, ty);
+        self.type_map.insert(type_info.id, type_info);
+    }
+}
+
+trait ToRuntimeInfo<T> {
+    type Def<'tcx>;
+
+    fn to_runtime<'tcx>(self, tcx: TyCtxt<'tcx>, definition: Self::Def<'tcx>) -> T;
+}
+
+impl ToRuntimeInfo<TypeInfo> for Layout<'_> {
+    type Def<'tcx> = Ty<'tcx>;
+
+    fn to_runtime<'tcx>(self, tcx: TyCtxt<'tcx>, ty: Self::Def<'tcx>) -> TypeInfo {
+        let variants = match &self.variants {
+            Variants::Single { .. } => vec![self.0.to_runtime(tcx, ty)],
+            Variants::Multiple { variants, .. } => {
+                variants.iter().map(|v| v.to_runtime(tcx, ty)).collect()
+            }
+        };
+
+        TypeInfo {
+            id: tcx.type_id_hash(ty).as_u128(),
+            name: ty.to_string(),
+            size: self.size().bytes(),
+            align: self.align().abi.bytes(),
+            variants,
+        }
+    }
+}
+
+impl ToRuntimeInfo<VariantInfo> for &LayoutS<FieldIdx, VariantIdx> {
+    type Def<'tcx> = Ty<'tcx>;
+
+    fn to_runtime<'tcx>(self, tcx: TyCtxt<'tcx>, ty: Self::Def<'tcx>) -> VariantInfo {
+        let index = match self.variants {
+            Variants::Single { index } => index,
+            Variants::Multiple { .. } => panic!("Recursive variants are not expected"),
+        };
+
+        let mut field_types = IndexVec::<FieldIdx, Ty<'tcx>>::new();
+        match ty.kind() {
+            TyKind::Adt(def, subst) => {
+                let target_variant = def.variant(index);
+                for field in target_variant.fields.iter() {
+                    let field_ty = field.ty(tcx, subst);
+                    field_types.push(field_ty);
                 }
             }
+            TyKind::Array(ty, ..) => {
+                field_types.push(*ty);
+            }
+            TyKind::Tuple(tys) => {
+                for ty in tys.into_iter() {
+                    field_types.push(ty);
+                }
+            }
+            TyKind::Ref(..) => {
+                // NOTE: Ref is not an ADT but has an arbitrary fields shape, which may cause panic during type exportation,
+                // so we return no field information for simplicity
+                return VariantInfo {
+                    index: index.as_u32(),
+                    fields: FieldsShapeInfo::NoFields,
+                };
+            }
+            _ => ()
+        };
+
+        VariantInfo {
+            index: index.as_u32(),
+            fields: self.fields.to_runtime(tcx, field_types),
         }
     }
 }
 
-// get variants information and ADT Tys found from each variant's fields
-fn get_variants_and_tys<'tcx>(
-    tcx: TyCtxt<'tcx>,
-    vars: &'tcx IndexSlice<VariantIdx, VariantDef>,
-    subst: &'tcx List<GenericArg<'tcx>>,
-) -> (Vec<TypeVariant>, Vec<Ty<'tcx>>) {
-    let mut tys: Vec<Ty<'tcx>> = vec![];
-    let mut variants: Vec<TypeVariant> = vec![];
-    for variant in vars {
-        log::debug!(
-            "Variant {:#?} with DefId {:#?}",
-            variant.name,
-            variant.def_id
-        );
-        let mut fields: Vec<String> = vec![];
-        for field in variant.fields.iter() {
-            let field_ty = field.ty(tcx, subst);
-            if let rustc_middle::ty::TyKind::Adt(field_def, _) = field_ty.kind() {
-                let def_id = encode_def_id(field_def.did());
-                fields.push(def_id.to_string());
-                tys.push(field_ty);
-            } else {
-                fields.push(field_ty.to_string());
+impl ToRuntimeInfo<FieldsShapeInfo> for &FieldsShape<FieldIdx> {
+    type Def<'tcx> = IndexVec<FieldIdx, Ty<'tcx>>;
+
+    fn to_runtime<'tcx>(self, tcx: TyCtxt<'tcx>, field_tys: Self::Def<'tcx>) -> FieldsShapeInfo {
+        match self {
+            FieldsShape::Primitive => FieldsShapeInfo::NoFields,
+            FieldsShape::Union(..) => FieldsShapeInfo::Union,
+            FieldsShape::Array { count, .. } => FieldsShapeInfo::Array(ArrayShape {
+                len: *count,
+                item_ty: tcx
+                    .type_id_hash(field_tys[FieldIdx::from_usize(0)])
+                    .as_u128(),
+            }),
+            FieldsShape::Arbitrary { offsets, .. } => {
+                let mut fields = vec![];
+                for (idx, size) in offsets.clone().into_iter_enumerated() {
+                    fields.push(FieldInfo {
+                        ty: tcx.type_id_hash(field_tys[idx]).as_u128(),
+                        offset: size.bytes(),
+                    })
+                }
+                FieldsShapeInfo::Struct(StructShape { fields })
             }
-            log::debug!(
-                "Field {:#?} with DefId {:#?} and Ty {:#?}",
-                field.name,
-                field.did.index.as_u32(),
-                field_ty
-            );
         }
-
-        variants.push(TypeVariant::new(variant.name.to_string(), fields));
     }
-
-    (variants, tys)
 }

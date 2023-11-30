@@ -36,3 +36,8 @@ pub(crate) trait SelfHierarchical {
     where
         Self: Sized;
 }
+
+#[inline(always)]
+pub(crate) fn type_id_of<T: ?Sized + 'static>() -> u128 {
+    core::intrinsics::type_id::<T>()
+}

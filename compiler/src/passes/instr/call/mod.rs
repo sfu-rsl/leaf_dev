@@ -152,7 +152,6 @@ pub trait FunctionHandler<'tcx> {
 
 pub(crate) trait EntryFunctionHandler {
     fn init_runtime_lib(&mut self);
-    fn init_type_info(&mut self);
 }
 
 pub(crate) trait AssertionHandler<'tcx> {
@@ -205,10 +204,8 @@ mod implementation {
     use crate::mir_transform::*;
     use crate::passes::ctfe::CtfeId;
     use crate::passes::instr;
-    use crate::passes::tyexp::get_type_map;
     use crate::passes::Storage;
     use crate::pri_utils::FunctionInfo;
-    use crate::utils::decode_def_id;
 
     use utils::*;
     use InsertionLocation::*;
@@ -1327,23 +1324,13 @@ mod implementation {
         }
 
         fn by_aggregate_union(&mut self, active_field: FieldIdx, value: OperandRef) {
-            let mut args = vec![
-                operand::const_from_uint(self.context.tcx(), active_field.as_u32()),
-                operand::copy_for_local(value.into()),
-            ];
-            let mut additional_stmts = Vec::new();
-
-            if cfg!(place_addr) {
-                let (offset_local, offset_assign) =
-                    self.add_and_set_local_for_field_offset(self.context.dest_ty(), active_field);
-                args.push(operand::move_for_local(offset_local));
-                additional_stmts.push(offset_assign);
-            }
-
             self.add_bb_for_assign_call_with_statements(
                 stringify!(pri::assign_aggregate_union),
-                args,
-                additional_stmts,
+                vec![
+                    operand::const_from_uint(self.context.tcx(), active_field.as_u32()),
+                    operand::copy_for_local(value.into()),
+                ],
+                vec![],
             )
         }
 
@@ -1395,13 +1382,6 @@ mod implementation {
             args.push(operand::move_for_local(fields_local));
             additional_stmts.extend(fields_stmts);
 
-            if cfg!(place_addr) {
-                let (offsets_local, offsets_stmts) =
-                    self.make_slice_for_adt_field_offsets(self.context.dest_ty(), fields.len());
-                args.push(operand::move_for_local(offsets_local));
-                additional_stmts.extend(offsets_stmts);
-            }
-
             args.extend(additional_args);
 
             self.add_bb_for_assign_call_with_statements(func_name, args, additional_stmts)
@@ -1422,39 +1402,6 @@ mod implementation {
                     .collect(),
             );
             (items_local, additional_stmts)
-        }
-
-        fn make_slice_for_adt_field_offsets(
-            &mut self,
-            adt_ty: Ty<'tcx>,
-            field_count: usize,
-        ) -> (Local, Vec<Statement<'tcx>>) {
-            let mut stmts = Vec::with_capacity(field_count);
-            let mut items = Vec::with_capacity(field_count);
-            for i in 0..field_count {
-                let (offset_local, offset_assign) =
-                    self.add_and_set_local_for_field_offset(adt_ty, i.into());
-                stmts.push(offset_assign);
-                items.push(operand::move_for_local(offset_local));
-            }
-            let item_ty = self.context.tcx().types.usize;
-            let (items_local, additional_stmts) =
-                prepare_operand_for_slice(self.context.tcx(), &mut self.context, item_ty, items);
-            stmts.extend(additional_stmts);
-            (items_local, stmts)
-        }
-
-        fn add_and_set_local_for_field_offset(
-            &mut self,
-            adt_ty: Ty<'tcx>,
-            field: FieldIdx,
-        ) -> (Local, Statement<'tcx>) {
-            let local = self.context.add_local(self.tcx().types.usize);
-            let offset_assign = assignment::create(
-                Place::from(local),
-                rvalue::offset_of(self.tcx(), adt_ty, field),
-            );
-            (local, offset_assign)
         }
 
         fn add_bb_for_assign_call(&mut self, func_name: &str, args: Vec<Operand<'tcx>>) {
@@ -2008,34 +1955,6 @@ mod implementation {
             let block = self.make_bb_for_call(stringify!(pri::init_runtime_lib), vec![]);
             self.insert_blocks([block]);
         }
-
-        fn init_type_info(&mut self) {
-            let mut blocks = vec![];
-            let tcx = self.context.tcx();
-
-            #[cfg(place_addr)]
-            for &def_id in get_type_map(self.context.storage()).clone().keys() {
-                let def = decode_def_id(def_id);
-                // FIXME: add support for generics
-                let ty = tcx
-                    .type_of(def)
-                    .no_bound_vars()
-                    .expect("Bound types are not supported.");
-
-                let (block, id_local) = self.make_type_id_of_bb(ty);
-                blocks.push(block);
-
-                let block = self.make_bb_for_call(
-                    stringify!(pri::map_type_id_to_def),
-                    vec![
-                        operand::move_for_local(id_local),
-                        operand::const_from_uint(tcx, def_id),
-                    ],
-                );
-                blocks.push(block);
-            }
-            self.insert_blocks(blocks);
-        }
     }
 
     impl<'tcx, C> RuntimeCallAdder<C>
@@ -2278,14 +2197,6 @@ mod implementation {
                         Box::new(AggregateKind::Array(ty)),
                         IndexVec::from_raw(items),
                     )
-                }
-
-                pub fn offset_of<'tcx>(
-                    tcx: TyCtxt<'tcx>,
-                    ty: Ty<'tcx>,
-                    field: FieldIdx,
-                ) -> Rvalue<'tcx> {
-                    Rvalue::NullaryOp(NullOp::OffsetOf(tcx.mk_fields(&[field])), ty)
                 }
             }
 

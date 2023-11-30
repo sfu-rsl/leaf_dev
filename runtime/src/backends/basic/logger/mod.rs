@@ -1,11 +1,11 @@
-use std::{borrow::BorrowMut, collections::HashMap, fmt::Display};
+use std::{collections::HashMap, fmt::Display};
 
 use crate::{
     abs::{
         backend::*, AssertKind, BinaryOp, BranchingMetadata, CastKind, FuncId, TypeId, UnaryOp,
         ValueType, VariantIndex,
     },
-    tyexp::TypeInformation,
+    tyexp::TypeInfo,
 };
 
 use super::{Field, OperandHandler, Place, PlaceHandler};
@@ -17,7 +17,7 @@ type Operand = super::operand::Operand<Place, ValueType>;
 
 pub(crate) struct LoggerBackend {
     call_manager: CallManager,
-    type_manager: super::TypeManager,
+    type_manager: LoggerTypeManager,
 }
 
 impl LoggerBackend {
@@ -25,7 +25,7 @@ impl LoggerBackend {
     pub fn new() -> Self {
         Self {
             call_manager: CallManager::new(),
-            type_manager: Box::new(LoggerTypeManager::new()),
+            type_manager: LoggerTypeManager::new(),
         }
     }
 }
@@ -36,8 +36,8 @@ impl RuntimeBackend for LoggerBackend {
     type AssignmentHandler<'a> = LoggerAssignmentHandler where Self: 'a;
     type BranchingHandler<'a> = LoggerBranchingHandler where Self: 'a;
     type FunctionHandler<'a> = LoggerFunctionHandler<'a> where Self: 'a;
+    type TypeHandler<'a> = &'a mut LoggerTypeManager;
 
-    type TypeManager = super::TypeManager;
     type Place = Place;
     type Operand = Operand;
 
@@ -63,8 +63,8 @@ impl RuntimeBackend for LoggerBackend {
         }
     }
 
-    fn type_control(&mut self) -> &mut Self::TypeManager {
-        self.type_manager.borrow_mut()
+    fn type_control(&mut self) -> Self::TypeHandler<'_> {
+        &mut self.type_manager
     }
 }
 
@@ -349,7 +349,7 @@ impl FunctionHandler for LoggerFunctionHandler<'_> {
 }
 
 pub(crate) struct LoggerTypeManager {
-    type_map: HashMap<TypeId, TypeInformation>,
+    type_map: HashMap<TypeId, TypeInfo>,
 }
 
 impl LoggerTypeManager {
@@ -362,7 +362,7 @@ impl LoggerTypeManager {
 
 impl TypeManager for LoggerTypeManager {
     type Key = TypeId;
-    type Value = Option<TypeInformation>;
+    type Value = Option<TypeInfo>;
 
     fn get_type(&self, key: Self::Key) -> Self::Value {
         log::info!("Getting value for key: [{:#?}]", key);
@@ -427,12 +427,6 @@ impl Display for Operand {
             Operand::Const(constant) => write!(f, "Const::{constant:?}"),
             Operand::Symbolic(symbolic) => write!(f, "Symbolic::{symbolic:?}"),
         }
-    }
-}
-
-impl Display for super::FieldValue<ValueType> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}@+{}", &self.0, self.1)
     }
 }
 

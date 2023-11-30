@@ -1,5 +1,11 @@
 use super::expr::{ProjExpr, SymIndexPair, SymValueRef, ValueRef};
-use crate::abs::expr::{proj::Projector, BinaryExprBuilder, ExprBuilder};
+use crate::{
+    abs::{
+        self,
+        expr::{proj::Projector, BinaryExprBuilder, ExprBuilder},
+    },
+    tyexp::TypeInfo,
+};
 
 pub(crate) trait ValueRefExprBuilder: ExprBuilder<ValueRef> {}
 impl<T> ValueRefExprBuilder for T where T: ExprBuilder<ValueRef> {}
@@ -31,4 +37,13 @@ where
     type HostRef<'a>: From<SymValueRef> = SymValueRef;
     type HIRefPair<'a>: From<SymIndexPair> = SymIndexPair;
     type Proj<'a>: Into<ProjExpr> = ProjExpr;
+}
+
+pub(crate) trait TypeManager:
+    abs::backend::TypeManager<Key = abs::TypeId, Value = Option<TypeInfo>>
+{
+}
+impl<T> TypeManager for T where
+    T: abs::backend::TypeManager<Key = abs::TypeId, Value = Option<TypeInfo>>
+{
 }

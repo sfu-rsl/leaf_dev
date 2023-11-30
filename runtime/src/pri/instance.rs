@@ -160,12 +160,9 @@ pub(super) fn func_control<T>(
 }
 
 pub(super) fn type_control(
-    type_action: impl FnOnce(&mut <BackendImpl as RuntimeBackend>::TypeManager),
+    type_action: impl FnOnce(<BackendImpl as RuntimeBackend>::TypeHandler<'_>),
 ) {
-    perform_on_backend(|r| {
-        let mut type_control = r.type_control();
-        type_action(&mut type_control)
-    });
+    perform_on_backend(|r| type_action(r.type_control()));
 }
 
 #[cfg(runtime_access = "safe_mt")]

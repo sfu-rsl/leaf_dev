@@ -75,7 +75,6 @@ where
     C: ctxtreqs::ForEntryFunction<'tcx> + ctxtreqs::ForFunctionCalling<'tcx>,
 {
     call_adder.init_runtime_lib();
-    call_adder.init_type_info();
 }
 
 fn requires_immediate_instr_after(stmt: &Statement) -> bool {

@@ -514,10 +514,6 @@ impl AdtValue {
     fn field_for_checked(value: Option<ConstValue>) -> AdtField {
         AdtField {
             value: value.map(ConstValue::to_value_ref),
-            #[cfg(place_addr)]
-            /* NOTE: As these methods are only used for concrete calculations,
-             * we currently skip setting the offset. */
-            offset: PointerOffset::MAX,
         }
     }
 }
@@ -525,8 +521,6 @@ impl AdtValue {
 #[derive(Clone, Debug)]
 pub(crate) struct AdtField {
     pub value: Option<ValueRef>,
-    #[cfg(place_addr)]
-    pub offset: PointerOffset,
 }
 
 #[derive(Clone, Debug)]
