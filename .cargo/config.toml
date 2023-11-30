@@ -2,10 +2,10 @@
 rustflags = [
     "--cfg",
     "runtime_access=\"safe_brt\"",
-    # "--cfg",
-    # "place_addr",
-    # "--cfg",
-    # "abs_concrete",
     "--cfg",
-    "nctfe",
+    "place_addr",
+    "--cfg",
+    "abs_concrete",
+    # "--cfg",
+    # "nctfe",
 ]
