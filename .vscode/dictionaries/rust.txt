@@ -1,3 +1,4 @@
 bitvector
 peekable
 rposition
+serde

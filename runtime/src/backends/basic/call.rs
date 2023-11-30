@@ -1,10 +1,12 @@
 use crate::{
     abs::{self, Local, LocalIndex},
+    backends::basic::config::ExternalCallStrategy,
     utils::SelfHierarchical,
 };
 
 use super::{
-    expr::{ConcreteValue, UnevalValue},
+    config::CallConfig,
+    expr::ConcreteValue,
     place::{LocalWithMetadata, PlaceMetadata},
     CallStackManager, EntranceKind, Place, ValueRef, VariablesState,
 };
@@ -23,6 +25,7 @@ pub(super) struct BasicCallStackManager<VS: VariablesState> {
     /// to the return point (in the caller).
     latest_returned_val: Option<ValueRef>,
     vars_state: Option<VS>,
+    config: CallConfig,
 }
 
 #[derive(Default)]
@@ -55,13 +58,14 @@ pub(super) struct CallInfo {
 }
 
 impl<VS: VariablesState> BasicCallStackManager<VS> {
-    pub(super) fn new(vars_state_factory: VariablesStateFactory<VS>) -> Self {
+    pub(super) fn new(vars_state_factory: VariablesStateFactory<VS>, config: &CallConfig) -> Self {
         Self {
             stack: vec![],
             vars_state_factory,
             latest_call: None,
             latest_returned_val: None,
             vars_state: None,
+            config: config.clone(),
         }
     }
 }
@@ -106,42 +110,36 @@ impl<VS: VariablesState + SelfHierarchical> BasicCallStackManager<VS> {
             return;
         }
 
-        if cfg!(external_call = "panic") {
-            panic!("External function call detected.");
-        }
-
         // FIXME: The configuration should be set dynamically.
-        enum Strategy {
-            Concretization,
-            OverApproximation,
+        enum Action {
+            Concretize,
+            OverApproximate,
         }
-        use Strategy::*;
+        use Action::*;
 
-        let strategy = if cfg!(external_call = "concretize") {
-            Concretization
-        } else if cfg!(external_call = "overapprox") {
-            OverApproximation
-        } else if cfg!(external_call = "optim_conc") {
-            /* NOTE: What is optimistic here?
-             * It correspond to the optimistic assumption that the callee has been a
-             * pure function and no symbolic input results in no symbolic output. */
-            /* FIXME: With the current implementation, references to symbolic values
-             * skip this check. */
-            let all_concrete = self
-                .latest_call
-                .take()
-                .is_some_and(|c| c.args.iter().all(|v| !v.1.is_symbolic()));
-            if all_concrete {
-                Concretization
-            } else {
-                OverApproximation
+        let action = match self.config.external_call {
+            ExternalCallStrategy::Panic => panic!("External function call detected."),
+            ExternalCallStrategy::Concretization => Concretize,
+            ExternalCallStrategy::OverApproximation => OverApproximate,
+            ExternalCallStrategy::OptimisticConcretization => {
+                /* NOTE: What is optimistic here?
+                 * It correspond to the optimistic assumption that the callee has been a
+                 * pure function and no symbolic input results in no symbolic output. */
+                /* FIXME: With the current implementation, references to symbolic values
+                 * skip this check. */
+                let all_concrete = self
+                    .latest_call
+                    .take()
+                    .is_some_and(|c| c.args.iter().all(|v| !v.1.is_symbolic()));
+                if all_concrete {
+                    Concretize
+                } else {
+                    OverApproximate
+                }
             }
-        } else {
-            unreachable!("Invalid external call configuration.");
         };
-
-        match strategy {
-            Concretization => {
+        match action {
+            Concretize => {
                 #[cfg(abs_concrete)]
                 let value = ConcreteValue::from(abs::Constant::Some).to_value_ref();
                 #[cfg(not(abs_concrete))]
@@ -150,7 +148,7 @@ impl<VS: VariablesState + SelfHierarchical> BasicCallStackManager<VS> {
                 );
                 self.top().set_place(&result_dest, value)
             }
-            OverApproximation => {
+            OverApproximate => {
                 todo!("#306: Over-approximated symbolic values are not supported.")
             }
         }

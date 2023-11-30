@@ -7,5 +7,5 @@ rustflags = [
     # "--cfg",
     # "abs_concrete",
     "--cfg",
-    "external_call=\"optim_conc\"", # Possible values: concretize, overapprox, optim_conc, panic
+    "nctfe",
 ]

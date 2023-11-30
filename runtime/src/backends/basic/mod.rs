@@ -1,5 +1,6 @@
 mod alias;
 mod call;
+mod config;
 pub(crate) mod expr;
 pub(crate) mod logger;
 pub(crate) mod operand;
@@ -24,6 +25,7 @@ use self::{
         TypeManager, ValueRefBinaryExprBuilder as BinaryExprBuilder,
         ValueRefExprBuilder as OperationalExprBuilder,
     },
+    config::BasicBackendConfig,
     expr::{
         builders::DefaultExprBuilder as ExprBuilder, prelude::*,
         proj::DefaultSymProjector as SymProjector,
@@ -67,27 +69,32 @@ pub struct BasicBackend {
     expr_builder: Rc<RefCell<ExprBuilder>>,
     sym_id_counter: u32,
     type_manager: Rc<RefCell<dyn TypeManager>>,
+    config: BasicBackendConfig,
 }
 
 impl BasicBackend {
-    pub fn new() -> Self {
+    pub fn new(config: BasicBackendConfig) -> Self {
         let expr_builder = Rc::new(RefCell::new(expr::builders::new_expr_builder()));
         let sym_projector = Rc::new(RefCell::new(expr::proj::new_sym_projector()));
         let type_manager_ref = Rc::new(RefCell::new(DefaultTypeManager::new()));
         let type_manager = type_manager_ref.clone();
         Self {
-            call_stack_manager: BasicCallStackManager::new(Box::new(move |id| {
-                #[cfg(place_addr)]
-                let vars_state = RawPointerVariableState::new(
-                    StackedLocalIndexVariablesState::new(id, sym_projector.clone()),
-                    sym_projector.clone(),
-                    type_manager_ref.clone(),
-                );
-                #[cfg(not(place_addr))]
-                let vars_state = StackedLocalIndexVariablesState::new(id, sym_projector.clone());
+            call_stack_manager: BasicCallStackManager::new(
+                Box::new(move |id| {
+                    #[cfg(place_addr)]
+                    let vars_state = RawPointerVariableState::new(
+                        StackedLocalIndexVariablesState::new(id, sym_projector.clone()),
+                        sym_projector.clone(),
+                        type_manager_ref.clone(),
+                    );
+                    #[cfg(not(place_addr))]
+                    let vars_state =
+                        StackedLocalIndexVariablesState::new(id, sym_projector.clone());
 
-                vars_state
-            })),
+                    vars_state
+                }),
+                &config.call,
+            ),
             trace_manager: Box::new(
                 ImmediateTraceManager::<BasicBlockIndex, u32, ValueRef>::new_basic(Box::new(
                     Z3Solver::new_in_global_context(),
@@ -97,6 +104,7 @@ impl BasicBackend {
             expr_builder,
             sym_id_counter: 0,
             type_manager,
+            config,
         }
     }
 }
