@@ -50,23 +50,51 @@ static mut OPERAND_REF_MANAGER: DefaultRefManager<OperandImpl> = DefaultRefManag
 pub(super) fn init_backend() {
     INIT.call_once(|| {
         crate::init();
+
+        let config = load_config();
+        let backend =
+            BackendImpl::try_from(config).expect("Failed to initialize backend through the config");
         #[cfg(runtime_access = "safe_mt")]
         {
             let mut guard = BACKEND.lock().unwrap();
-            *guard = Some(BackendImpl::new());
+            *guard = Some(backend);
         }
         #[cfg(runtime_access = "safe_brt")]
         {
             let mut binding = BACKEND.borrow_mut();
-            *binding = Some(BackendImpl::new());
+            *binding = Some(backend);
         }
         #[cfg(runtime_access = "unsafe")]
         {
             unsafe {
-                BACKEND = Some(BackendImpl::new());
+                BACKEND = Some(backend);
             }
         }
     });
+}
+
+fn load_config() -> ::config::Config {
+    use config::{Environment, File};
+    fn search_parent_dirs(name: &str) -> String {
+        std::env::current_dir()
+            .unwrap()
+            .ancestors()
+            .find(|p| {
+                p.read_dir().is_ok_and(|entries| {
+                    entries
+                        .filter_map(|e| e.ok())
+                        .any(|e| e.file_name().to_str().is_some_and(|n| n.starts_with(name)))
+                })
+            })
+            .map(|p| p.join(name).to_string_lossy().to_string())
+            .unwrap_or(name.to_string())
+    }
+
+    config::Config::builder()
+        .add_source(File::with_name(&search_parent_dirs("leaf_config_default")))
+        .add_source(Environment::with_prefix("LEAF"))
+        .build()
+        .expect("Failed to read configurations")
 }
 
 /* FIXME: Make these functions rely on abstract traits rather than concrete types.
