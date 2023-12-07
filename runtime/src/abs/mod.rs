@@ -188,6 +188,7 @@ pub(crate) enum CastKind {
     PointerUnsize,
     ExposeAddress,
     ToPointer(TypeId),
+    Transmute(TypeId),
 }
 
 impl TryFrom<CastKind> for ValueType {

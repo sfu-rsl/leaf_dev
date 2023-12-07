@@ -502,6 +502,12 @@ mod concrete {
                 ExposeAddress | ToPointer(_) => {
                     todo!("#313: Add support for raw pointers in concrete values domain")
                 }
+                CastKind::Transmute(_) => {
+                    unimplemented!(concat!(
+                        "Add support for transmutation of concrete values if necessary.",
+                        "Presumably, this case does not happen with abstract value concretization."
+                    ))
+                }
             }
         }
     }

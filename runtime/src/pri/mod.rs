@@ -247,6 +247,15 @@ pub fn assign_cast_unsize(dest: PlaceRef, operand: OperandRef) {
     })
 }
 
+pub fn assign_cast_transmute(dest: PlaceRef, operand: OperandRef, dst_type_id: TypeId) {
+    assign_to(dest, |h| {
+        h.cast_of(
+            take_back_operand_ref(operand),
+            CastKind::Transmute(dst_type_id),
+        )
+    })
+}
+
 pub fn assign_binary_op(
     dest: PlaceRef,
     operator: BinaryOp,

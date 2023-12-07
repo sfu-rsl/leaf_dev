@@ -265,6 +265,13 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
 
     fn cast_of(mut self, operand: Self::Operand, target: CastKind) {
         let value = self.get_operand_value(operand);
+
+        #[cfg(abs_concrete)]
+        if !value.is_symbolic() {
+            let value = self.get_operand_value(abs::Constant::Some.into());
+            return self.set(value);
+        }
+
         let cast_value = self.expr_builder().cast(value.into(), target);
         self.set(cast_value.into())
     }
