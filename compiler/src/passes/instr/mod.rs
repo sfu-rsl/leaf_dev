@@ -430,7 +430,7 @@ where
             PtrToPtr => call_adder.to_another_ptr(*ty),
             FnPtrToPtr => call_adder.from_fn_ptr_to_another_ptr(*ty),
             DynStar => todo!("Support DynStar casts"),
-            Transmute => todo!("Support transmute casts"),
+            Transmute => call_adder.transmuted(*ty),
         }
     }
 

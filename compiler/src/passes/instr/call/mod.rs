@@ -125,6 +125,8 @@ pub(crate) trait CastAssigner<'tcx> {
     fn to_another_ptr(&mut self, ty: Ty<'tcx>);
 
     fn from_fn_ptr_to_another_ptr(&mut self, ty: Ty<'tcx>);
+
+    fn transmuted(&mut self, ty: Ty<'tcx>);
 }
 
 #[derive(Clone, Copy)]
@@ -742,14 +744,6 @@ mod implementation {
 
             #[cfg(place_addr)]
             let id_local = {
-                /* NOTE: As `TypeId::of` requires static lifetime, do we need to clear lifetimes?
-                 * No. As we are code generation phase, all regions should be erased. */
-                debug_assert!(
-                    !ty.has_erasable_regions() && !ty.has_late_bound_regions(),
-                    "Region erasure assumption does not hold for TypeId call. {}",
-                    ty
-                );
-
                 let (block, id_local) = self.make_type_id_of_bb(ty);
                 blocks.push(block);
                 id_local
@@ -1528,6 +1522,19 @@ mod implementation {
         fn from_fn_ptr_to_another_ptr(&mut self, ty: Ty<'tcx>) {
             self.add_bb_for_pointer_cast_assign_call(ty, stringify!(pri::assign_cast_from_fn_ptr_to_another_ptr));
         }
+
+        fn transmuted(&mut self, ty: Ty<'tcx>) {
+            #[cfg(place_addr)]
+            let id_local = {
+                let (block, id_local) = self.make_type_id_of_bb(ty);
+                self.insert_blocks([block]);
+                id_local
+            };
+            self.add_bb_for_cast_assign_call_with_args(
+                stringify!(pri::assign_cast_transmute),
+                vec![operand::move_for_local(id_local)],
+            )
+        }
     }
 
     impl<'tcx, C> RuntimeCallAdder<C>
@@ -2001,6 +2008,14 @@ mod implementation {
     {
         #[cfg(place_addr)]
         fn make_type_id_of_bb(&mut self, ty: Ty<'tcx>) -> (BasicBlockData<'tcx>, Local) {
+            /* NOTE: As `TypeId::of` requires static lifetime, do we need to clear lifetimes?
+             * No. As we are code generation phase, all regions should be erased. */
+            debug_assert!(
+                !ty.has_erasable_regions() && !ty.has_late_bound_regions(),
+                "Region erasure assumption does not hold for TypeId call. {}",
+                ty
+            );
+
             let type_id_of: &FunctionInfo<'_> = &self.context.pri_helper_funcs().type_id_of;
             self.make_bb_for_call_raw(
                 type_id_of.def_id,
