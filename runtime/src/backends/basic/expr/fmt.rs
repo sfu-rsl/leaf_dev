@@ -217,7 +217,7 @@ impl ProjKind {
             ProjKind::Subslice { from, to, from_end } => {
                 write!(f, "[{from}..{to}{}]", end_symbol(from_end))
             }
-            ProjKind::Downcast(kind) => write!(f, "as {}", kind),
+            ProjKind::Downcast(kind) => write!(f, " as {}", kind),
         }
     }
 }
@@ -226,7 +226,7 @@ impl Display for DowncastKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
             DowncastKind::Variant(variant) => write!(f, "V#{}", variant),
-            DowncastKind::Transmutation(ty_id) => write!(f, "T#{}", ty_id),
+            DowncastKind::Transmutation(ty_id) => write!(f, "T#{:p}", ty_id),
         }
     }
 }
