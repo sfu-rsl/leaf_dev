@@ -18,7 +18,9 @@ pub(crate) mod z3 {
         },
         backends::basic::expr::{
             prelude::*,
-            sym_place::{apply_len, DefaultProjExprReadResolver, Select, SymReadResult},
+            sym_place::{
+                apply_address_of, apply_len, DefaultProjExprReadResolver, Select, SymReadResult,
+            },
             SymBinaryOperands, SymVarId,
         },
         solvers::z3::{ArrayNode, ArraySort, BVNode, BVSort},
@@ -198,7 +200,10 @@ pub(crate) mod z3 {
                     let from = self.translate_symbolic(from);
                     self.translate_cast_expr(from, to)
                 }
-                Expr::AddrOf() => todo!(),
+                Expr::AddrOf(operand) => {
+                    let operand = self.resolve_proj_expression(operand);
+                    self.translate_address_of_expr(operand)
+                }
                 Expr::Len(of) => {
                     let of = self.resolve_proj_expression(of);
                     self.translate_len_expr(of)
@@ -385,6 +390,12 @@ pub(crate) mod z3 {
                 ValueType::Float { .. } => todo!(),
                 _ => unreachable!("Casting from int to {to:#?} is not supported."),
             }
+        }
+
+        fn translate_address_of_expr(&mut self, operand: Select) -> AstNode<'ctx> {
+            let select = apply_address_of(operand, &mut DefaultProjExprReadResolver);
+            const ADDRESS_OF_VALUES_PREFIX: &str = "address_of";
+            self.translate_select(&select, Some(ADDRESS_OF_VALUES_PREFIX))
         }
 
         fn translate_len_expr(&mut self, of: Select) -> AstNode<'ctx> {

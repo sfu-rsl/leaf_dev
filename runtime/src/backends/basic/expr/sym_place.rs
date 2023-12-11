@@ -82,6 +82,21 @@ impl SymbolicReadResolver<SymIndex> for DefaultProjExprReadResolver {
     }
 }
 
+pub(super) fn apply_address_of(
+    mut host: Select,
+    resolver: &mut impl ProjExprReadResolver,
+) -> Select {
+    SymReadResult::apply_on_leaf_nodes(
+        &mut host,
+        &mut |value| {
+            use crate::abs::expr::UnaryExprBuilder;
+            ConcreteBuilder::default().address_of(value)
+        },
+        resolver,
+    );
+    host
+}
+
 /// Applies the length operator on the given `Select` value, i.e. the result `Select` leaf values
 /// correspond to the lengths of the host leaf values.
 pub(super) fn apply_len(mut host: Select, resolver: &mut impl ProjExprReadResolver) -> Select {

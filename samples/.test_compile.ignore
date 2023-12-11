@@ -1,3 +1,6 @@
+assignment/addr_of/comapre_with_sym.rs
 assignment/shallow_init_box/main.rs
+casting/pointer/expose/ptr_to_usize.rs
 projection/subtype/main.rs
+sym_place/read/addr_of.rs
 TheAlgorithms/nstd/lib.rs

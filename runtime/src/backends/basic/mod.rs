@@ -236,8 +236,25 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
         todo!()
     }
 
-    fn address_of(self, _place: Self::Place, _is_mutable: bool) {
-        todo!()
+    fn address_of(mut self, place: Self::Place, _is_mutable: bool) {
+        let value = self.vars_state.copy_place(&place);
+        if let Value::Symbolic(SymValue::Expression(Expr::Projection(_))) = value.as_ref() {
+            let address_of_value = self.expr_builder().address_of(value.into());
+            self.set(address_of_value.into())
+        } else {
+            #[cfg(abs_concrete)]
+            let value = get_operand_value(self.vars_state, Operand::Const(abs::Constant::Some));
+            #[cfg(not(abs_concrete))]
+            let value = {
+                #[cfg(place_addr)]
+                let value = ConstValue::from(place.address().expect("Address is not available!"))
+                    .to_value_ref();
+                #[cfg(not(place_addr))]
+                let value = unimplemented!("Addresses are not supported!");
+                value
+            };
+            self.set(value);
+        }
     }
 
     fn len_of(mut self, place: Self::Place) {

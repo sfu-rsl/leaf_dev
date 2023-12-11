@@ -673,7 +673,7 @@ pub(crate) enum Expr {
         to: ValueType,
     },
 
-    AddrOf(/* TODO */),
+    AddrOf(ProjExprRef),
 
     #[from(ignore)]
     Len(ProjExprRef),

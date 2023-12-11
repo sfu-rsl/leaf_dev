@@ -331,7 +331,7 @@ mod core {
         impl_singular_unary_ops_through_general!();
 
         fn address_of<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
-            todo!("Add support for address of operator {:?}", operand)
+            Expr::AddrOf(ProjExprRef::new(operand.into()))
         }
 
         fn len<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
@@ -419,7 +419,17 @@ mod concrete {
         impl_singular_unary_ops_through_general!();
 
         fn address_of<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
-            todo!("Add support for address of operator {:?}", operand)
+            match operand {
+                Unevaluated(UnevalValue::Lazy(RawConcreteValue(addr, _))) => ConstValue::new_int(
+                    *addr as u128,
+                    IntType {
+                        bit_size: std::mem::size_of_val(&addr) as u64 * 8,
+                        is_signed: false,
+                    },
+                )
+                .into(),
+                _ => unreachable!("Address information is not available."),
+            }
         }
 
         fn len<'a>(&mut self, of: Self::ExprRef<'a>) -> Self::Expr<'a> {

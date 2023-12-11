@@ -160,7 +160,7 @@ impl Expr {
                 ..
             }) => write!(f, "{operator}ꟲ"),
             Expr::Cast { .. } => write!(f, "Cast"),
-            Expr::AddrOf() => write!(f, "AddrOf"),
+            Expr::AddrOf(_) => write!(f, "AddrOf"),
             Expr::Len(_) => write!(f, "Len"),
             Expr::Projection(_) => write!(f, "Proj"),
         }
@@ -174,7 +174,7 @@ impl Expr {
                 BinaryOperands::Rev { first, second } => write!(f, "{first}, {second}"),
             },
             Expr::Cast { from, to } => write!(f, "{from} -> {to}"),
-            Expr::AddrOf() => todo!(),
+            Expr::AddrOf(operand) => write!(f, "{operand}"),
             Expr::Len(of) => write!(f, "{of}"),
             Expr::Projection(proj) => write!(f, "{proj}"),
         }
