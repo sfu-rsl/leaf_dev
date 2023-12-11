@@ -201,9 +201,7 @@ mod implementation {
     use std::assert_matches::debug_assert_matches;
 
     use rustc_middle::mir::{self, BasicBlock, BasicBlockData, HasLocalDecls, UnevaluatedConst};
-    #[cfg(place_addr)]
-    use rustc_middle::ty::TypeVisitableExt;
-    use rustc_middle::ty::{ParamEnv, TyKind};
+    use rustc_middle::ty::{ParamEnv, TyKind, TypeVisitableExt};
     use rustc_span::def_id::DefId;
 
     use delegate::delegate;
@@ -1524,7 +1522,6 @@ mod implementation {
         }
 
         fn transmuted(&mut self, ty: Ty<'tcx>) {
-            #[cfg(place_addr)]
             let id_local = {
                 let (block, id_local) = self.make_type_id_of_bb(ty);
                 self.insert_blocks([block]);
@@ -2006,7 +2003,6 @@ mod implementation {
         Self: MirCallAdder<'tcx>,
         C: PriItemsProvider<'tcx>,
     {
-        #[cfg(place_addr)]
         fn make_type_id_of_bb(&mut self, ty: Ty<'tcx>) -> (BasicBlockData<'tcx>, Local) {
             /* NOTE: As `TypeId::of` requires static lifetime, do we need to clear lifetimes?
              * No. As we are code generation phase, all regions should be erased. */

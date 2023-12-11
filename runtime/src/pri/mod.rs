@@ -496,13 +496,11 @@ pub mod compiler_helpers {
         set_place_address_typed::<u32>;
 
     #[used]
-    #[cfg(place_addr)]
     static _TYPE_ID_OF_REFERENCER: fn() -> TypeId = type_id_of::<u32>;
 
     #[used]
     static _SIZE_OF_REFERENCER: fn() -> TypeSize = size_of::<u32>;
 
-    #[cfg(place_addr)]
     pub fn type_id_of<T: ?Sized + 'static>() -> TypeId {
         /* NOTE: Once this function is const in stable build, we can mark this
          * function as constant as well. */
