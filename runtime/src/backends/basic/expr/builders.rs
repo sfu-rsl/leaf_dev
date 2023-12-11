@@ -347,7 +347,8 @@ mod core {
                 Ok(value_type) => Expr::Cast {
                     from: operand,
                     to: value_type,
-                },
+                }
+                .into(),
                 Err(target) => {
                     use CastKind::*;
                     match target {
@@ -364,6 +365,16 @@ mod core {
                         }
                         ExposeAddress | ToPointer(_) => {
                             todo!("#314: Replace Cast expression with lower-level expression types")
+                        }
+                        Transmute(dst_ty_id) => {
+                            /* NOTE: Should we check for primitive types?
+                             * Probably not. Numeric types are converted to their actual cast type
+                             * by the compiler. */
+                            ProjExpr::SymHost(SymHostProj {
+                                host: operand.into(),
+                                kind: ProjKind::Downcast(DowncastKind::Transmutation(dst_ty_id)),
+                            })
+                            .into()
                         }
                         _ => unreachable!(),
                     }
@@ -490,7 +501,7 @@ mod concrete {
                     },
                     _ => unreachable!("Numeric casts are supposed to happen on a constant."),
                 },
-                CastKind::PointerUnsize => match operand {
+                PointerUnsize => match operand {
                     Ref(_) => {
                         /* Currently, the effect of this operation is at a lower level than our
                          * symbolic state. So we don't need to do anything special.
@@ -502,7 +513,7 @@ mod concrete {
                 ExposeAddress | ToPointer(_) => {
                     todo!("#313: Add support for raw pointers in concrete values domain")
                 }
-                CastKind::Transmute(_) => {
+                Transmute(_) => {
                     unimplemented!(concat!(
                         "Add support for transmutation of concrete values if necessary.",
                         "Presumably, this case does not happen with abstract value concretization."

@@ -28,6 +28,7 @@ where
 {
     type HostRef<'a> = ConcreteValueMutRef<'a>;
     type HIRefPair<'a> = (ConcreteValueMutRef<'a>, ValueRef);
+    type DowncastTarget = VariantIndex;
     type Proj<'a> = Result<MutPlaceValue<'a>, &'a mut ConcreteValue>;
 
     impl_general_proj_through_singulars!();

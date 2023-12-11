@@ -718,13 +718,19 @@ pub(crate) enum ProjKind {
     Field(FieldIndex),
     Index(SliceIndex<ValueRef>),
     Subslice { from: u64, to: u64, from_end: bool },
-    Downcast(VariantIndex),
+    Downcast(DowncastKind),
 }
 
 #[derive(Clone, Debug)]
 pub(crate) struct SliceIndex<I> {
     pub index: I,
     pub from_end: bool,
+}
+
+#[derive(Clone, Copy, Debug, dm::From)]
+pub(crate) enum DowncastKind {
+    Variant(VariantIndex),
+    Transmutation(TypeId),
 }
 
 macro_rules! define_value_guard {

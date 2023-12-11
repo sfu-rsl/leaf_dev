@@ -1,6 +1,6 @@
 use crate::abs::{
     expr::proj::{macros::impl_general_proj_through_singulars, Projector},
-    FieldIndex, VariantIndex,
+    FieldIndex,
 };
 
 use super::super::alias::SymValueRefProjector;
@@ -18,6 +18,8 @@ pub(crate) fn new_sym_projector() -> DefaultSymProjector {
 impl SymValueRefProjector for DefaultSymProjector {}
 
 mod core {
+    use crate::backends::basic::expr::DowncastKind;
+
     use super::*;
 
     #[derive(Default)]
@@ -26,6 +28,7 @@ mod core {
     impl Projector for CoreProjector {
         type HostRef<'a> = SymValueRef;
         type HIRefPair<'a> = SymIndexPair;
+        type DowncastTarget = DowncastKind;
         type Proj<'a> = ProjExpr;
 
         impl_general_proj_through_singulars!();
@@ -83,11 +86,11 @@ mod core {
         fn downcast<'a>(
             &mut self,
             host: Self::HostRef<'a>,
-            to_variant: VariantIndex,
+            target: Self::DowncastTarget,
         ) -> Self::Proj<'a> {
             ProjExpr::SymHost(SymHostProj {
                 host,
-                kind: ProjKind::Downcast(to_variant),
+                kind: ProjKind::Downcast(target),
             })
         }
     }

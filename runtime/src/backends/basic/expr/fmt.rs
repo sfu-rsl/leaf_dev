@@ -2,7 +2,7 @@ use std::fmt::{Display, Formatter, Result};
 
 use crate::backends::basic::logger::comma_separated;
 
-use super::{sym_place::SymReadResult, PorterValue, RawConcreteValue, *};
+use super::{sym_place::SymProjectionResult, PorterValue, RawConcreteValue, *};
 
 impl Display for Value {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
@@ -217,7 +217,16 @@ impl ProjKind {
             ProjKind::Subslice { from, to, from_end } => {
                 write!(f, "[{from}..{to}{}]", end_symbol(from_end))
             }
-            ProjKind::Downcast(variant) => write!(f, "as V#{}", variant),
+            ProjKind::Downcast(kind) => write!(f, "as {}", kind),
+        }
+    }
+}
+
+impl Display for DowncastKind {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        match self {
+            DowncastKind::Variant(variant) => write!(f, "V#{}", variant),
+            DowncastKind::Transmutation(ty_id) => write!(f, "T#{}", ty_id),
         }
     }
 }
@@ -233,12 +242,17 @@ impl Display for SliceIndex<SymValueRef> {
     }
 }
 
-impl Display for SymReadResult {
+impl Display for SymProjectionResult {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SymReadResult::Value(value) => write!(f, "{}", value),
-            SymReadResult::Array(values) => write!(f, "{}", comma_separated(values.iter())),
-            SymReadResult::SymRead(select) => write!(f, "{}", select),
+            SymProjectionResult::SymRead(select) => write!(f, "{}", select),
+            SymProjectionResult::Array(values) => write!(f, "{}", comma_separated(values.iter())),
+            SymProjectionResult::Single(value) => match value {
+                sym_place::SingleResult::Transmuted(trans) => {
+                    write!(f, "{} as T#{}", trans.value, trans.dst_ty_id)
+                }
+                sym_place::SingleResult::Value(value) => write!(f, "{}", value),
+            },
         }
     }
 }

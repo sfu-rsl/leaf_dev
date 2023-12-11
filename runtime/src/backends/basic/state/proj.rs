@@ -25,6 +25,7 @@ where
 {
     type HostRef<'a> = ConcreteValueRef;
     type HIRefPair<'a> = (ConcreteValueRef, ValueRef);
+    type DowncastTarget = VariantIndex;
     type Proj<'a> = Result<ValueRef, ConcreteValueRef>;
 
     impl_general_proj_through_singulars!();
@@ -161,6 +162,7 @@ where
     P::HostRef<'h>: From<Host>,
     IndexPair: From<(Host, ValueRef)>,
     P::HIRefPair<'h>: From<IndexPair>,
+    P::DowncastTarget: From<VariantIndex>,
     P::Proj<'h>: Into<Result>,
 {
     use crate::abs::place::Projection::*;
@@ -177,7 +179,7 @@ where
             projector.index(Into::<IndexPair>::into((host, index)).into(), *from_end)
         }
         Subslice { from, to, from_end } => projector.subslice(host.into(), *from, *to, *from_end),
-        Downcast(variant) => projector.downcast(host.into(), *variant),
+        Downcast(variant) => projector.downcast(host.into(), (*variant).into()),
         OpaqueCast => todo!(),
         Subtype => todo!("#285"),
     }

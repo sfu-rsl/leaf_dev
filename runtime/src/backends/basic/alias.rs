@@ -1,4 +1,4 @@
-use super::expr::{ProjExpr, SymIndexPair, SymValueRef, ValueRef};
+use super::expr::{DowncastKind, ProjExpr, SymIndexPair, SymValueRef, ValueRef};
 use crate::{
     abs::{
         self,
@@ -31,11 +31,13 @@ where
     Self: for<'a> Projector<
             HostRef<'a> = <Self as SVP>::HostRef<'a>,
             HIRefPair<'a> = <Self as SVP>::HIRefPair<'a>,
+            DowncastTarget = <Self as SVP>::DowncastTarget,
             Proj<'a> = <Self as SVP>::Proj<'a>,
         >,
 {
     type HostRef<'a>: From<SymValueRef> = SymValueRef;
     type HIRefPair<'a>: From<SymIndexPair> = SymIndexPair;
+    type DowncastTarget: From<abs::VariantIndex> = DowncastKind;
     type Proj<'a>: Into<ProjExpr> = ProjExpr;
 }
 
