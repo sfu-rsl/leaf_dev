@@ -12,14 +12,12 @@ pub(crate) mod z3 {
     };
 
     use crate::{
-        abs::{
-            expr::sym_place::{SelectTarget, SymbolicReadResolver},
-            BinaryOp, FieldIndex, IntType, UnaryOp, ValueType,
-        },
+        abs::{expr::sym_place::SelectTarget, BinaryOp, FieldIndex, IntType, UnaryOp, ValueType},
         backends::basic::expr::{
             prelude::*,
             sym_place::{
-                apply_address_of, apply_len, DefaultProjExprReadResolver, Select, SymReadResult,
+                apply_address_of, apply_len, DefaultProjExprReadResolver, ProjExprResolver, Select,
+                SingleProjResult, SymbolicProjResult, TransmutedValue,
             },
             SymBinaryOperands, SymVarId,
         },
@@ -392,16 +390,16 @@ pub(crate) mod z3 {
             }
         }
 
-        fn translate_address_of_expr(&mut self, operand: Select) -> AstNode<'ctx> {
-            let select = apply_address_of(operand, &mut DefaultProjExprReadResolver);
+        fn translate_address_of_expr(&mut self, operand: SymbolicProjResult) -> AstNode<'ctx> {
+            let result = apply_address_of(operand, &mut DefaultProjExprReadResolver);
             const ADDRESS_OF_VALUES_PREFIX: &str = "address_of";
-            self.translate_select(&select, Some(ADDRESS_OF_VALUES_PREFIX))
+            self.translate_symbolic_proj_result(&result, Some(ADDRESS_OF_VALUES_PREFIX))
         }
 
-        fn translate_len_expr(&mut self, of: Select) -> AstNode<'ctx> {
-            let select = apply_len(of, &mut DefaultProjExprReadResolver);
+        fn translate_len_expr(&mut self, of: SymbolicProjResult) -> AstNode<'ctx> {
+            let result = apply_len(of, &mut DefaultProjExprReadResolver);
             const LEN_VALUES_PREFIX: &str = "len";
-            self.translate_select(&select, Some(LEN_VALUES_PREFIX))
+            self.translate_symbolic_proj_result(&result, Some(LEN_VALUES_PREFIX))
         }
 
         fn translate_projection_expr(&mut self, proj_expr: &ProjExpr) -> AstNode<'ctx> {
@@ -424,8 +422,8 @@ pub(crate) mod z3 {
                 }
             }
 
-            let select = self.resolve_proj_expression(proj_expr);
-            self.translate_select(&select, None)
+            let proj_result = self.resolve_proj_expression(proj_expr);
+            self.translate_symbolic_proj_result(&proj_result, None)
         }
 
         fn translate_select(
@@ -440,7 +438,10 @@ pub(crate) mod z3 {
                         self.translate_const(&possible_values.len().into())
                     }
                     SelectTarget::Nested(box select) => {
-                        self.translate_len_expr(/* FIXME: May be expensive */ select.clone())
+                        self.translate_len_expr(
+                            /* FIXME: May be expensive */
+                            select.clone().into(),
+                        )
                     }
                 };
                 self.translate_binary_expr(&BinaryOp::Sub, len, index)
@@ -467,7 +468,7 @@ pub(crate) mod z3 {
                     ) = self.translate_array_of_values(
                         const_prefix.unwrap_or(POSSIBLE_VALUES_PREFIX),
                         possible_values.iter(),
-                        |this, r| this.translate_symbolic_read_result(r, const_prefix),
+                        |this, r| this.translate_symbolic_proj_result(r, const_prefix),
                     );
 
                     let result =
@@ -525,21 +526,31 @@ pub(crate) mod z3 {
             )
         }
 
-        fn translate_symbolic_read_result(
+        fn translate_single_proj_result(&mut self, single: &SingleProjResult) -> AstNode<'ctx> {
+            match single {
+                SingleProjResult::Transmuted(TransmutedValue { value, .. }) => {
+                    // NOTE: As transmutation doesn't change the value, we can just translate the value.
+                    self.translate_value(value)
+                }
+                SingleProjResult::Value(value) => self.translate_value(value),
+            }
+        }
+
+        fn translate_symbolic_proj_result(
             &mut self,
-            read_result: &SymReadResult,
+            read_result: &SymbolicProjResult,
             const_prefix: Option<&str>,
         ) -> AstNode<'ctx> {
             match read_result {
-                SymReadResult::Value(value) => self.translate_value(value),
-                SymReadResult::Array(values) => {
+                SymbolicProjResult::Single(single) => self.translate_single_proj_result(single),
+                SymbolicProjResult::Array(values) => {
                     let const_prefix = const_prefix.unwrap_or(POSSIBLE_VALUES_PREFIX);
                     self.translate_array_of_values(const_prefix, values.iter(), |this, v| {
-                        this.translate_symbolic_read_result(v, Some(const_prefix))
+                        this.translate_symbolic_proj_result(v, Some(const_prefix))
                     })
                     .into()
                 }
-                SymReadResult::SymRead(select) => self.translate_select(select, const_prefix),
+                SymbolicProjResult::SymRead(select) => self.translate_select(select, const_prefix),
             }
         }
 
@@ -622,8 +633,8 @@ pub(crate) mod z3 {
             ast::Bool::not(&no_overflow).into()
         }
 
-        fn resolve_proj_expression(&mut self, proj_expr: &ProjExpr) -> Select {
-            DefaultProjExprReadResolver.resolve(proj_expr)
+        fn resolve_proj_expression(&mut self, proj: &ProjExpr) -> SymbolicProjResult {
+            ProjExprResolver::resolve(&mut DefaultProjExprReadResolver, proj)
         }
     }
 

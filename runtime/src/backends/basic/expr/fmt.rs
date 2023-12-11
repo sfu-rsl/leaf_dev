@@ -2,7 +2,7 @@ use std::fmt::{Display, Formatter, Result};
 
 use crate::backends::basic::logger::comma_separated;
 
-use super::{sym_place::SymProjectionResult, PorterValue, RawConcreteValue, *};
+use super::{sym_place::SymbolicProjResult, PorterValue, RawConcreteValue, *};
 
 impl Display for Value {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
@@ -242,16 +242,16 @@ impl Display for SliceIndex<SymValueRef> {
     }
 }
 
-impl Display for SymProjectionResult {
+impl Display for SymbolicProjResult {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SymProjectionResult::SymRead(select) => write!(f, "{}", select),
-            SymProjectionResult::Array(values) => write!(f, "{}", comma_separated(values.iter())),
-            SymProjectionResult::Single(value) => match value {
-                sym_place::SingleResult::Transmuted(trans) => {
+            SymbolicProjResult::SymRead(select) => write!(f, "{}", select),
+            SymbolicProjResult::Array(values) => write!(f, "{}", comma_separated(values.iter())),
+            SymbolicProjResult::Single(value) => match value {
+                sym_place::SingleProjResult::Transmuted(trans) => {
                     write!(f, "{} as T#{}", trans.value, trans.dst_ty_id)
                 }
-                sym_place::SingleResult::Value(value) => write!(f, "{}", value),
+                sym_place::SingleProjResult::Value(value) => write!(f, "{}", value),
             },
         }
     }
