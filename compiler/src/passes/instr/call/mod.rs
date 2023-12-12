@@ -117,6 +117,12 @@ pub(crate) trait CastAssigner<'tcx> {
     fn through_unsizing(&mut self);
 
     fn through_fn_ptr_coercion(&mut self);
+
+    fn expose_address(&mut self, ty: Ty<'tcx>);
+
+    fn from_address(&mut self, ty: Ty<'tcx>);
+
+    fn to_ptr(&mut self, ty: Ty<'tcx>);
 }
 
 #[derive(Clone, Copy)]
@@ -1503,6 +1509,42 @@ mod implementation {
             } else {
                 unimplemented!("Function pointer coercion is not supported in this configuration.")
             }
+        }
+
+        fn expose_address(&mut self, ty: Ty<'tcx>) {
+            let id_local = {
+                let (block, id_local) = self.make_type_id_of_bb(ty);
+                self.insert_blocks([block]);
+                id_local
+            };
+            self.add_bb_for_cast_assign_call_with_args(
+                stringify!(pri::assign_cast_expose_addr),
+                vec![operand::move_for_local(id_local)],
+            );
+        }
+
+        fn from_address(&mut self, ty: Ty<'tcx>) {
+            let id_local = {
+                let (block, id_local) = self.make_type_id_of_bb(ty);
+                self.insert_blocks([block]);
+                id_local
+            };
+            self.add_bb_for_cast_assign_call_with_args(
+                stringify!(pri::assign_cast_from_addr),
+                vec![operand::move_for_local(id_local)],
+            );
+        }
+
+        fn to_ptr(&mut self, ty: Ty<'tcx>) {
+            let id_local = {
+                let (block, id_local) = self.make_type_id_of_bb(ty);
+                self.insert_blocks([block]);
+                id_local
+            };
+            self.add_bb_for_cast_assign_call_with_args(
+                stringify!(pri::assign_cast_to_ptr),
+                vec![operand::move_for_local(id_local)],
+            );
         }
     }
 

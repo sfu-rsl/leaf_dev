@@ -425,9 +425,9 @@ where
                     MutToConstPointer | ArrayToPointer => todo!("Support raw pointer casts"),
                 }
             }
-            PointerExposeAddress => todo!("Support PointerExposeAddress casts"),
-            PointerFromExposedAddress => todo!("Support PointerFromExposedAddress casts"),
-            PtrToPtr => todo!("Support PtrToPtr casts"),
+            PointerExposeAddress => call_adder.expose_address(*ty),
+            PointerFromExposedAddress => call_adder.from_address(*ty),
+            PtrToPtr => call_adder.to_ptr(*ty),
             FnPtrToPtr => todo!("Support FnPtrToPtr casts"),
             DynStar => todo!("Support DynStar casts"),
             Transmute => todo!("Support transmute casts"),

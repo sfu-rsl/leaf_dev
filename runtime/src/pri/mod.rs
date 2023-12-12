@@ -210,6 +210,32 @@ pub fn assign_cast_float(dest: PlaceRef, operand: OperandRef, e_bits: u64, s_bit
     })
 }
 
+pub fn assign_cast_expose_addr(dest: PlaceRef, operand: OperandRef, dst_type_id: TypeId) {
+    assign_to(dest, |h| {
+        h.cast_of(
+            take_back_operand_ref(operand),
+            CastKind::ExposeAddress(dst_type_id),
+        )
+    })
+}
+pub fn assign_cast_from_addr(dest: PlaceRef, operand: OperandRef, dst_type_id: TypeId) {
+    assign_to(dest, |h| {
+        h.cast_of(
+            take_back_operand_ref(operand),
+            CastKind::FromAddress(dst_type_id),
+        )
+    })
+}
+
+pub fn assign_cast_to_ptr(dest: PlaceRef, operand: OperandRef, dst_type_id: TypeId) {
+    assign_to(dest, |h| {
+        h.cast_of(
+            take_back_operand_ref(operand),
+            CastKind::ToPointer(dst_type_id),
+        )
+    })
+}
+
 pub fn assign_cast_unsize(dest: PlaceRef, operand: OperandRef) {
     assign_to(dest, |h| {
         h.cast_of(take_back_operand_ref(operand), CastKind::PointerUnsize)
