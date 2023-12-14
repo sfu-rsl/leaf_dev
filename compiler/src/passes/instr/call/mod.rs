@@ -1518,15 +1518,15 @@ mod implementation {
         }
 
         fn from_exposed_address(&mut self, ty: Ty<'tcx>) {
-            self.add_bb_for_pointer_cast_assign_call(ty, stringify!(pri::assign_cast_to_ptr));
+            self.add_bb_for_pointer_cast_assign_call(ty, stringify!(pri::assign_cast_from_exposed_addr));
         }
 
         fn to_another_ptr(&mut self, ty: Ty<'tcx>) {
-            self.add_bb_for_pointer_cast_assign_call(ty, stringify!(pri::assign_cast_to_ptr));
+            self.add_bb_for_pointer_cast_assign_call(ty, stringify!(pri::assign_cast_to_another_ptr));
         }
 
         fn from_fn_ptr_to_another_ptr(&mut self, ty: Ty<'tcx>) {
-            self.add_bb_for_pointer_cast_assign_call(ty, stringify!(pri::assign_cast_to_ptr));
+            self.add_bb_for_pointer_cast_assign_call(ty, stringify!(pri::assign_cast_from_fn_ptr_to_another_ptr));
         }
     }
 
