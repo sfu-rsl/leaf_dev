@@ -118,11 +118,13 @@ pub(crate) trait CastAssigner<'tcx> {
 
     fn through_fn_ptr_coercion(&mut self);
 
-    fn expose_address(&mut self, ty: Ty<'tcx>);
+    fn expose_address(&mut self);
 
-    fn from_address(&mut self, ty: Ty<'tcx>);
+    fn from_exposed_address(&mut self, ty: Ty<'tcx>);
 
-    fn to_ptr(&mut self, ty: Ty<'tcx>);
+    fn to_another_ptr(&mut self, ty: Ty<'tcx>);
+
+    fn from_fn_ptr_to_another_ptr(&mut self, ty: Ty<'tcx>);
 }
 
 #[derive(Clone, Copy)]
@@ -1511,40 +1513,20 @@ mod implementation {
             }
         }
 
-        fn expose_address(&mut self, ty: Ty<'tcx>) {
-            let id_local = {
-                let (block, id_local) = self.make_type_id_of_bb(ty);
-                self.insert_blocks([block]);
-                id_local
-            };
-            self.add_bb_for_cast_assign_call_with_args(
-                stringify!(pri::assign_cast_expose_addr),
-                vec![operand::move_for_local(id_local)],
-            );
+        fn expose_address(&mut self) {
+            self.add_bb_for_cast_assign_call(stringify!(pri::assign_cast_expose_addr));
         }
 
-        fn from_address(&mut self, ty: Ty<'tcx>) {
-            let id_local = {
-                let (block, id_local) = self.make_type_id_of_bb(ty);
-                self.insert_blocks([block]);
-                id_local
-            };
-            self.add_bb_for_cast_assign_call_with_args(
-                stringify!(pri::assign_cast_from_addr),
-                vec![operand::move_for_local(id_local)],
-            );
+        fn from_exposed_address(&mut self, ty: Ty<'tcx>) {
+            self.add_bb_for_pointer_cast_assign_call(ty, stringify!(pri::assign_cast_to_ptr));
         }
 
-        fn to_ptr(&mut self, ty: Ty<'tcx>) {
-            let id_local = {
-                let (block, id_local) = self.make_type_id_of_bb(ty);
-                self.insert_blocks([block]);
-                id_local
-            };
-            self.add_bb_for_cast_assign_call_with_args(
-                stringify!(pri::assign_cast_to_ptr),
-                vec![operand::move_for_local(id_local)],
-            );
+        fn to_another_ptr(&mut self, ty: Ty<'tcx>) {
+            self.add_bb_for_pointer_cast_assign_call(ty, stringify!(pri::assign_cast_to_ptr));
+        }
+
+        fn from_fn_ptr_to_another_ptr(&mut self, ty: Ty<'tcx>) {
+            self.add_bb_for_pointer_cast_assign_call(ty, stringify!(pri::assign_cast_to_ptr));
         }
     }
 
@@ -1570,6 +1552,19 @@ mod implementation {
                 ]
                 .concat(),
             )
+        }
+
+        #[cfg(place_addr)]
+        fn add_bb_for_pointer_cast_assign_call(&mut self, ty: Ty<'tcx>, func_name: &str) {
+            let id_local: Local = {
+                let (block, id_local) = self.make_type_id_of_bb(ty);
+                self.insert_blocks([block]);
+                id_local
+            };
+            self.add_bb_for_cast_assign_call_with_args(
+                func_name,
+                vec![operand::move_for_local(id_local)],
+            );
         }
     }
 

@@ -496,7 +496,7 @@ mod concrete {
                     }
                     _ => unreachable!("Unsize cast is supposed to happen on a reference."),
                 },
-                ExposeAddress(_) | FromAddress(_) | ToPointer(_) => {
+                ExposeAddress | ToPointer(_) => {
                     todo!("Add support for concrete values.")
                 }
             }

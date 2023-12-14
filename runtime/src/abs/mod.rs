@@ -186,8 +186,7 @@ pub(crate) enum CastKind {
     ToInt(IntType),
     ToFloat(FloatType),
     PointerUnsize,
-    ExposeAddress(TypeId),
-    FromAddress(TypeId),
+    ExposeAddress,
     ToPointer(TypeId),
 }
 
