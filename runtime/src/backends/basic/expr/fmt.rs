@@ -225,7 +225,7 @@ impl ProjKind {
 impl Display for DowncastKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
-            DowncastKind::Variant(variant) => write!(f, "V#{}", variant),
+            DowncastKind::EnumVariant(variant) => write!(f, "V#{}", variant),
             DowncastKind::Transmutation(ty_id) => write!(f, "T#{:p}", ty_id),
         }
     }

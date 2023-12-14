@@ -727,9 +727,30 @@ pub(crate) struct SliceIndex<I> {
     pub from_end: bool,
 }
 
+/* NOTE: Why is transmutation modeled as a projection?
+ * There is a set of options for modeling transmutation.
+ * 1. A variant of `Expr` or `CastExpr`:
+ * This is probably the most natural way. However, it requires loosening the
+ * constraints based on the fact that only `ProjExpr` can be from any type and
+ * the rest are from primitive types.
+ * 2. A variant of `ProjKind`:
+ * This is the current approach. As it does not change the underlying data, but
+ * what parts of it will be read (like `u64` to [u8; 8]), it looks like a
+ * projection. Additionally, it can be viewed as a similar projection like
+ * `Downcast` in the same sense that no data is changed but the layout is
+ * reinterpreted. It keeps the fact about `ProjExpr` types.
+ * However, it does not follow MIR modeling. More importantly, it breaks
+ * the assumption that projection expressions only start with a symbolic index
+ * and the result of symbolic projections are multiple possible values.
+ * 3. Resolving at the builder level:
+ * This could make the translation easier. However, in addition to changing the
+ * facts like 1, it would be inefficient as it requires eager calculation.
+ * For example, a cast between a large array to another can be easily skipped by
+ * the others, but here it should be represented eagerly.
+ */
 #[derive(Clone, Copy, Debug, dm::From)]
 pub(crate) enum DowncastKind {
-    Variant(VariantIndex),
+    EnumVariant(VariantIndex),
     Transmutation(TypeId),
 }
 

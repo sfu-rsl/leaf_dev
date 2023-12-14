@@ -507,7 +507,7 @@ mod implementation {
                             |h| h,
                             |(h, i)| (h, i.into()),
                             |dc| {
-                                if let DowncastKind::Variant(variant_index) = dc {
+                                if let DowncastKind::EnumVariant(variant_index) = dc {
                                     variant_index
                                 } else {
                                     unreachable!()
@@ -543,7 +543,7 @@ mod implementation {
                     }
                     .into()
                 }
-                DowncastKind::Variant(_) => self.project(ProjectionOn::Downcast(host, target)),
+                DowncastKind::EnumVariant(_) => self.project(ProjectionOn::Downcast(host, target)),
             }
         }
     }
