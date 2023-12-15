@@ -362,6 +362,9 @@ mod core {
                                 ),
                             }
                         }
+                        ExposeAddress | ToPointer(_) => {
+                            todo!("#314: Replace Cast expression with lower-level expression types")
+                        }
                         _ => unreachable!(),
                     }
                 }
@@ -497,7 +500,7 @@ mod concrete {
                     _ => unreachable!("Unsize cast is supposed to happen on a reference."),
                 },
                 ExposeAddress | ToPointer(_) => {
-                    todo!("Add support for concrete values.")
+                    todo!("#313: Add support for raw pointers in concrete values domain")
                 }
             }
         }
