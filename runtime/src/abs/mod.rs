@@ -188,6 +188,7 @@ pub(crate) enum CastKind {
     PointerUnsize,
     ExposeAddress,
     ToPointer(TypeId),
+    SizedDynamize, // dyn*
     Transmute(TypeId),
 }
 

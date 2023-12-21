@@ -4,8 +4,8 @@ pub(super) mod context;
 
 use rustc_middle::{
     mir::{
-        BasicBlock, BinOp, Body, ConstOperand, Local, Operand, Place, ProjectionElem, Statement,
-        UnOp,
+        BasicBlock, BinOp, Body, CastKind, ConstOperand, Local, Operand, Place, ProjectionElem,
+        Statement, UnOp,
     },
     ty::{Const, GenericArg, Ty, TyCtxt},
 };
@@ -118,13 +118,13 @@ pub(crate) trait CastAssigner<'tcx> {
 
     fn through_fn_ptr_coercion(&mut self);
 
+    fn through_sized_dynamization(&mut self, ty: Ty<'tcx>);
+
     fn expose_address(&mut self);
 
     fn from_exposed_address(&mut self, ty: Ty<'tcx>);
 
-    fn to_another_ptr(&mut self, ty: Ty<'tcx>);
-
-    fn from_fn_ptr_to_another_ptr(&mut self, ty: Ty<'tcx>);
+    fn to_another_ptr(&mut self, ty: Ty<'tcx>, kind: CastKind);
 
     fn transmuted(&mut self, ty: Ty<'tcx>);
 }
@@ -1505,20 +1505,35 @@ mod implementation {
             }
         }
 
+        fn through_sized_dynamization(&mut self, _ty: Ty<'tcx>) {
+            self.add_bb_for_cast_assign_call(stringify!(pri::assign_cast_sized_dyn));
+        }
+
         fn expose_address(&mut self) {
             self.add_bb_for_cast_assign_call(stringify!(pri::assign_cast_expose_addr));
         }
 
         fn from_exposed_address(&mut self, ty: Ty<'tcx>) {
-            self.add_bb_for_pointer_cast_assign_call(ty, stringify!(pri::assign_cast_from_exposed_addr));
+            self.add_bb_for_pointer_cast_assign_call(
+                ty,
+                stringify!(pri::assign_cast_from_exposed_addr),
+            );
         }
 
-        fn to_another_ptr(&mut self, ty: Ty<'tcx>) {
-            self.add_bb_for_pointer_cast_assign_call(ty, stringify!(pri::assign_cast_to_another_ptr));
-        }
-
-        fn from_fn_ptr_to_another_ptr(&mut self, ty: Ty<'tcx>) {
-            self.add_bb_for_pointer_cast_assign_call(ty, stringify!(pri::assign_cast_from_fn_ptr_to_another_ptr));
+        fn to_another_ptr(&mut self, ty: Ty<'tcx>, kind: CastKind) {
+            use rustc_middle::ty::adjustment::PointerCoercion::*;
+            use CastKind::*;
+            debug_assert_matches!(
+                kind,
+                PtrToPtr | FnPtrToPtr | PointerCoercion(MutToConstPointer | ArrayToPointer)
+            );
+            /* NOTE: Currently, we do not distinguish between different pointer casts.
+             * This is because they all keep the data untouched and are just about
+             * semantics. We can add support for them later if interested. */
+            self.add_bb_for_pointer_cast_assign_call(
+                ty,
+                stringify!(pri::assign_cast_to_another_ptr),
+            );
         }
 
         fn transmuted(&mut self, ty: Ty<'tcx>) {
@@ -1558,7 +1573,6 @@ mod implementation {
             )
         }
 
-        #[cfg(place_addr)]
         fn add_bb_for_pointer_cast_assign_call(&mut self, ty: Ty<'tcx>, func_name: &str) {
             let id_local: Local = {
                 let (block, id_local) = self.make_type_id_of_bb(ty);

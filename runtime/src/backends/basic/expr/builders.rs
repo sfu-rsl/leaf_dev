@@ -366,6 +366,9 @@ mod core {
                         ExposeAddress | ToPointer(_) => {
                             todo!("#314: Replace Cast expression with lower-level expression types")
                         }
+                        SizedDynamize => {
+                            todo!("#317: Add support for dyn* cast of symbolic values")
+                        }
                         Transmute(dst_ty_id) => {
                             /* NOTE: Should we check for primitive types?
                              * Probably not. Numeric types are converted to their actual cast type
@@ -513,10 +516,11 @@ mod concrete {
                 ExposeAddress | ToPointer(_) => {
                     todo!("#313: Add support for raw pointers in concrete values domain")
                 }
-                Transmute(_) => {
+                SizedDynamize | Transmute(_) => {
                     unimplemented!(concat!(
-                        "Add support for transmutation of concrete values if necessary.",
-                        "Presumably, this case does not happen with abstract value concretization."
+                        "Add support for these types of casts of concrete values if necessary.",
+                        "Presumably, this case does not happen with abstract value concretization, ",
+                        "unless it is an item in an array which is accessed by a symbolic index."
                     ))
                 }
             }

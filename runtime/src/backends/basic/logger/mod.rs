@@ -117,8 +117,9 @@ impl AssignmentHandler for LoggerAssignmentHandler {
             CastKind::ToInt(to) => format!("{operand} as {to:#?}"),
             CastKind::ToFloat(to) => format!("{operand} as {to:#?}"),
             CastKind::PointerUnsize => format!("{operand} as DST pointer"),
-            CastKind::ExposeAddress => format!("{operand} as address (usize)"),
+            CastKind::ExposeAddress => format!("{operand} as usizeᵖ"),
             CastKind::ToPointer(type_id) => format!("{operand} from {type_id:#?}"),
+            CastKind::SizedDynamize => format!("{operand} as dyn*"),
             CastKind::Transmute(dst) => format!("{operand} as Ty({dst})"),
         });
     }

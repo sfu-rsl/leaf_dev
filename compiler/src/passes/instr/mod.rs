@@ -415,21 +415,27 @@ where
         match kind {
             IntToInt | FloatToInt => call_adder.to_int(*ty),
             IntToFloat | FloatToFloat => call_adder.to_float(*ty),
-            PointerCoercion(kind) => {
+            PointerCoercion(coercion) => {
                 use rustc_middle::ty::adjustment::PointerCoercion::*;
-                match kind {
+                match coercion {
                     Unsize => call_adder.through_unsizing(),
                     ReifyFnPointer | UnsafeFnPointer | ClosureFnPointer(_) => {
                         call_adder.through_fn_ptr_coercion()
                     }
-                    MutToConstPointer | ArrayToPointer => todo!("Support raw pointer casts"),
+                    MutToConstPointer => call_adder.to_another_ptr(*ty, *kind),
+                    ArrayToPointer => {
+                        log::warn!(concat!(
+                            "ArrayToPointer casts are expected to be optimized away by at this point.",
+                            "Sending it to runtime as a regular pointer cast."
+                        ));
+                        call_adder.to_another_ptr(*ty, *kind)
+                    }
                 }
             }
             PointerExposeAddress => call_adder.expose_address(),
             PointerFromExposedAddress => call_adder.from_exposed_address(*ty),
-            PtrToPtr => call_adder.to_another_ptr(*ty),
-            FnPtrToPtr => call_adder.from_fn_ptr_to_another_ptr(*ty),
-            DynStar => todo!("Support DynStar casts"),
+            PtrToPtr | FnPtrToPtr => call_adder.to_another_ptr(*ty, *kind),
+            DynStar => call_adder.through_sized_dynamization(*ty),
             Transmute => call_adder.transmuted(*ty),
         }
     }

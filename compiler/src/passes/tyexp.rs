@@ -3,7 +3,9 @@ use super::{CompilationPass, Storage, StorageExt};
 use rustc_abi::{FieldsShape, LayoutS, Variants};
 use rustc_index::IndexVec;
 use rustc_middle::mir::{self, visit::Visitor};
-use rustc_middle::ty::{layout::TyAndLayout, ParamEnv, Ty, TyCtxt, TyKind, TypeVisitableExt};
+use rustc_middle::ty::{
+    layout::TyAndLayout, DynKind, ParamEnv, Ty, TyCtxt, TyKind, TypeVisitableExt,
+};
 use rustc_target::abi::{FieldIdx, Layout, VariantIdx};
 
 use std::collections::HashMap;
@@ -119,6 +121,10 @@ impl ToRuntimeInfo<VariantInfo> for &LayoutS<FieldIdx, VariantIdx> {
                     field_types.push(ty);
                 }
             }
+            TyKind::Dynamic(_, _, DynKind::DynStar) => {
+                let ptr_ty = Ty::new_imm_ptr(tcx, Ty::new_unit(tcx));
+                field_types.extend([ptr_ty, ptr_ty]);
+            }
             TyKind::Ref(..) => {
                 // NOTE: Ref is not an ADT but has an arbitrary fields shape, which may cause panic during type exportation,
                 // so we return no field information for simplicity
@@ -153,8 +159,9 @@ impl ToRuntimeInfo<FieldsShapeInfo> for &FieldsShape<FieldIdx> {
             FieldsShape::Arbitrary { offsets, .. } => {
                 let mut fields = vec![];
                 for (idx, size) in offsets.clone().into_iter_enumerated() {
+                    let ty = field_tys.get(idx).expect("Insufficient field types");
                     fields.push(FieldInfo {
-                        ty: tcx.type_id_hash(field_tys[idx]).as_u128(),
+                        ty: tcx.type_id_hash(*ty).as_u128(),
                         offset: size.bytes(),
                     })
                 }

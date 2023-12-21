@@ -209,29 +209,17 @@ pub fn assign_cast_float(dest: PlaceRef, operand: OperandRef, e_bits: u64, s_bit
         )
     })
 }
-
 pub fn assign_cast_expose_addr(dest: PlaceRef, operand: OperandRef) {
     assign_to(dest, |h| {
         h.cast_of(take_back_operand_ref(operand), CastKind::ExposeAddress)
     })
 }
-
 pub fn assign_cast_from_exposed_addr(dest: PlaceRef, operand: OperandRef, dst_type_id: TypeId) {
     assign_cast_pointer(dest, operand, dst_type_id);
 }
-
 pub fn assign_cast_to_another_ptr(dest: PlaceRef, operand: OperandRef, dst_type_id: TypeId) {
     assign_cast_pointer(dest, operand, dst_type_id);
 }
-
-pub fn assign_cast_from_fn_ptr_to_another_ptr(
-    dest: PlaceRef,
-    operand: OperandRef,
-    dst_type_id: TypeId,
-) {
-    assign_cast_pointer(dest, operand, dst_type_id);
-}
-
 fn assign_cast_pointer(dest: PlaceRef, operand: OperandRef, dst_type_id: TypeId) {
     assign_to(dest, |h| {
         h.cast_of(
@@ -240,13 +228,16 @@ fn assign_cast_pointer(dest: PlaceRef, operand: OperandRef, dst_type_id: TypeId)
         )
     })
 }
-
 pub fn assign_cast_unsize(dest: PlaceRef, operand: OperandRef) {
     assign_to(dest, |h| {
         h.cast_of(take_back_operand_ref(operand), CastKind::PointerUnsize)
     })
 }
-
+pub fn assign_cast_sized_dyn(dest: PlaceRef, operand: OperandRef) {
+    assign_to(dest, |h| {
+        h.cast_of(take_back_operand_ref(operand), CastKind::SizedDynamize)
+    })
+}
 pub fn assign_cast_transmute(dest: PlaceRef, operand: OperandRef, dst_type_id: TypeId) {
     assign_to(dest, |h| {
         h.cast_of(
