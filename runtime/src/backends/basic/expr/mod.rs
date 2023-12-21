@@ -673,6 +673,25 @@ pub(crate) enum Expr {
         to: ValueType,
     },
 
+    Extension {
+        source: SymValueRef,
+        bits_to_add: u32,
+        is_signed: bool,
+    },
+
+    Extraction {
+        source: SymValueRef,
+        high: u32,
+        low: u32,
+        is_signed: bool,
+    },
+
+    #[from(ignore)]
+    Ite {
+        source: SymValueRef,
+        target: ValueType,
+    },
+
     AddrOf(ProjExprRef),
 
     #[from(ignore)]
