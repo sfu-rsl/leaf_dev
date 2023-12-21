@@ -675,6 +675,7 @@ pub(crate) enum Expr {
 
     Extension {
         source: SymValueRef,
+        is_zero_ext: bool,
         bits_to_add: u32,
         is_signed: bool,
     },
@@ -686,10 +687,11 @@ pub(crate) enum Expr {
         is_signed: bool,
     },
 
-    #[from(ignore)]
     Ite {
         source: SymValueRef,
-        target: ValueType,
+        first_target: SymValueRef,
+        second_target: SymValueRef,
+        is_signed: bool,
     },
 
     AddrOf(ProjExprRef),

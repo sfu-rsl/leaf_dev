@@ -162,7 +162,12 @@ impl Expr {
             Expr::Cast { .. } => write!(f, "Cast"),
             Expr::Extension { .. } => write!(f, "Extend"),
             Expr::Extraction { .. } => write!(f, "Extract"),
-            Expr::Ite { .. } => write!(f, "If-Then-Else"),
+            Expr::Ite {
+                source,
+                first_target,
+                second_target,
+                ..
+            } => write!(f, "Ite {source} {first_target} {second_target}"),
             Expr::AddrOf(_) => write!(f, "AddrOf"),
             Expr::Len(_) => write!(f, "Len"),
             Expr::Projection(_) => write!(f, "Proj"),
@@ -179,16 +184,22 @@ impl Expr {
             Expr::Cast { from, to } => write!(f, "{from} -> {to}"),
             Expr::Extension {
                 source,
+                is_zero_ext,
                 bits_to_add,
                 is_signed,
-            } => write!(f, "{source}, {bits_to_add}, {is_signed}"),
+            } => write!(f, "{source}, {is_zero_ext}, {bits_to_add}, {is_signed}"),
             Expr::Extraction {
                 source,
                 high,
                 low,
                 is_signed,
             } => write!(f, "{source}, {high}, {low}, {is_signed}"),
-            Expr::Ite { source, target } => write!(f, "{source}, {target}"),
+            Expr::Ite {
+                source,
+                first_target,
+                second_target,
+                is_signed,
+            } => write!(f, "{source}, {first_target}, {second_target}, {is_signed}"),
             Expr::AddrOf(operand) => write!(f, "{operand}"),
             Expr::Len(of) => write!(f, "{of}"),
             Expr::Projection(proj) => write!(f, "{proj}"),

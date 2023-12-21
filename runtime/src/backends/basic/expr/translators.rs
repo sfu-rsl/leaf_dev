@@ -200,26 +200,12 @@ pub(crate) mod z3 {
                 }
                 Expr::Extension {
                     source,
+                    is_zero_ext,
                     bits_to_add,
                     is_signed,
                 } => {
                     let source = self.translate_symbolic(source);
-                    match source {
-                        AstNode::BitVector(BVNode(
-                            ast,
-                            BVSort {
-                                is_signed: is_source_signed,
-                            },
-                        )) => {
-                            let ast = if is_source_signed {
-                                ast.sign_ext(*bits_to_add)
-                            } else {
-                                ast.zero_ext(*bits_to_add)
-                            };
-                            BVNode::new(ast, *is_signed).into()
-                        }
-                        _ => unreachable!("Invalid extension expression for {:?}.", source),
-                    }
+                    self.translate_extension_expr(source, is_zero_ext, bits_to_add, is_signed)
                 }
                 Expr::Extraction {
                     source,
@@ -228,41 +214,18 @@ pub(crate) mod z3 {
                     is_signed,
                 } => {
                     let source = self.translate_symbolic(source);
-                    match source {
-                        AstNode::BitVector(BVNode(ast, _)) => {
-                            BVNode::new(ast.extract(*high, *low), *is_signed).into()
-                        }
-                        _ => unreachable!("Invalid extraction expression for {:?}.", source),
-                    }
+                    self.translate_extraction_expr(source, high, low, is_signed)
                 }
-                Expr::Ite { source, target } => {
+                Expr::Ite {
+                    source,
+                    first_target,
+                    second_target,
+                    is_signed,
+                } => {
                     let source = self.translate_symbolic(source);
-                    match target {
-                        ValueType::Int(IntType {
-                            bit_size,
-                            is_signed,
-                        }) => {
-                            let source = source.as_bool();
-                            let size = *bit_size as u32;
-                            let ast = if *is_signed {
-                                source.ite(
-                                    &ast::BV::from_i64(source.get_ctx(), 1, size),
-                                    &ast::BV::from_i64(source.get_ctx(), 0, size),
-                                )
-                            } else {
-                                source.ite(
-                                    &ast::BV::from_u64(source.get_ctx(), 1, size),
-                                    &ast::BV::from_u64(source.get_ctx(), 0, size),
-                                )
-                            };
-                            BVNode::new(ast, *is_signed).into()
-                        }
-                        _ => unimplemented!(
-                            "No ITE support for casting from {:?} to {:?}.",
-                            source,
-                            target
-                        ),
-                    }
+                    let first_target = self.translate_symbolic(first_target);
+                    let second_target = self.translate_symbolic(second_target);
+                    self.translate_ite_expr(source, first_target, second_target, is_signed)
                 }
                 Expr::AddrOf(operand) => {
                     let operand = self.resolve_proj_expression(operand);
@@ -453,6 +416,61 @@ pub(crate) mod z3 {
                 }
                 ValueType::Float { .. } => todo!(),
                 _ => unreachable!("Casting from int to {to:#?} is not supported."),
+            }
+        }
+
+        fn translate_extension_expr(
+            &mut self,
+            source: AstNode<'ctx>,
+            is_zero_ext: &bool,
+            bits_to_add: &u32,
+            is_signed: &bool,
+        ) -> AstNode<'ctx> {
+            match source {
+                AstNode::BitVector(BVNode(ast, _)) => {
+                    let ast = if *is_zero_ext {
+                        ast.zero_ext(*bits_to_add)
+                    } else {
+                        ast.sign_ext(*bits_to_add)
+                    };
+                    BVNode::new(ast, *is_signed).into()
+                }
+                _ => unreachable!("Invalid extension expression for {:?}.", source),
+            }
+        }
+
+        fn translate_extraction_expr(
+            &mut self,
+            source: AstNode<'ctx>,
+            high: &u32,
+            low: &u32,
+            is_signed: &bool,
+        ) -> AstNode<'ctx> {
+            match source {
+                AstNode::BitVector(BVNode(ast, _)) => {
+                    BVNode::new(ast.extract(*high, *low), *is_signed).into()
+                }
+                _ => unreachable!("Invalid extraction expression for {:?}.", source),
+            }
+        }
+
+        fn translate_ite_expr(
+            &mut self,
+            source: AstNode<'ctx>,
+            first_target: AstNode<'ctx>,
+            second_target: AstNode<'ctx>,
+            is_signed: &bool,
+        ) -> AstNode<'ctx> {
+            if let (
+                AstNode::Bool(source_ast),
+                AstNode::BitVector(BVNode(first_ast, _)),
+                AstNode::BitVector(BVNode(second_ast, _)),
+            ) = (source, first_target, second_target)
+            {
+                let ast = source_ast.ite(&first_ast, &second_ast);
+                return BVNode::new(ast, *is_signed).into();
+            } else {
+                unimplemented!("Invalid ITE expression");
             }
         }
 
