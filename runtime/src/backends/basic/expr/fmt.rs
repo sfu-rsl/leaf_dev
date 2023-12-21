@@ -162,12 +162,7 @@ impl Expr {
             Expr::Cast { .. } => write!(f, "Cast"),
             Expr::Extension { .. } => write!(f, "Extend"),
             Expr::Extraction { .. } => write!(f, "Extract"),
-            Expr::Ite {
-                source,
-                first_target,
-                second_target,
-                ..
-            } => write!(f, "Ite {source} {first_target} {second_target}"),
+            Expr::Ite { .. } => write!(f, "Ite"),
             Expr::AddrOf(_) => write!(f, "AddrOf"),
             Expr::Len(_) => write!(f, "Len"),
             Expr::Projection(_) => write!(f, "Proj"),
