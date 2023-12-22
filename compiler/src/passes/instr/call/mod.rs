@@ -1178,7 +1178,7 @@ mod implementation {
         Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
         C: ForAssignment<'tcx>,
     {
-        type Cast<'b> = RuntimeCallAdder<CastAssignmentContext<'b, C>> 
+        type Cast<'b> = RuntimeCallAdder<CastAssignmentContext<'b, C>>
             where CastAssignmentContext<'b, C>: ForCasting<'tcx> + 'b;
 
         fn by_use(&mut self, operand: OperandRef) {
@@ -2311,6 +2311,15 @@ mod implementation {
                     _ => ty == from,
                 }
             }
+
+            pub fn fn_ptr<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>) -> Ty<'tcx> {
+                match ty.kind() {
+                    TyKind::FnDef(..) => Ty::new_fn_ptr(tcx, ty.fn_sig(tcx)),
+                    TyKind::FnPtr(_) => ty,
+                    TyKind::Closure(_, args) => args.as_closure().sig_as_fn_ptr_ty(),
+                    _ => unreachable!("Unexpected type to get function pointer from: {}", ty),
+                }
+            }
         }
 
         pub(super) mod terminator {
@@ -2483,16 +2492,21 @@ mod implementation {
             log::debug!("Getting id (pointer) of function {:?}.", func);
 
             let fn_ty = func.ty(local_manager, tcx);
-            debug_assert!(
-                fn_ty.is_fn(),
-                "Expected function type but received {}.",
-                fn_ty
-            );
-            let ptr_ty = Ty::new_fn_ptr(tcx, fn_ty.fn_sig(tcx));
+            let ptr_ty = ty::fn_ptr(tcx, fn_ty);
             let ptr_local = local_manager.add_local(ptr_ty);
             let ptr_assignment = assignment::create(
                 Place::from(ptr_local),
-                rvalue::cast_to_coerced(PointerCoercion::ReifyFnPointer, func.clone(), ptr_ty),
+                if fn_ty.is_fn_ptr() {
+                    Rvalue::Use(func.clone())
+                } else {
+                    let coercion = if fn_ty.is_closure() {
+                        // TODO: Check if this unsafety is correct.
+                        PointerCoercion::ClosureFnPointer(rustc_hir::Unsafety::Normal)
+                    } else {
+                        PointerCoercion::ReifyFnPointer
+                    };
+                    rvalue::cast_to_coerced(coercion, func.clone(), ptr_ty)
+                },
             );
 
             /* This is an additional step just for the sake of semantics.
