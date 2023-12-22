@@ -463,11 +463,8 @@ pub(crate) mod z3 {
                 AstNode::Bool(_) => {
                     let condition = condition.as_bool();
                     let ast = condition.ite(&if_target.ast(), &else_target.ast());
-                    if ast == if_target.ast() {
-                        AstNode::from_ast(ast, &if_target.sort())
-                    } else {
-                        AstNode::from_ast(ast, &else_target.sort())
-                    }
+                    // NOTE: the sort of operands must be the same for ITE, so either sort can be picked for the sort of the result
+                    AstNode::from_ast(ast, &if_target.sort())
                 }
                 _ => unimplemented!("Invalid ITE expression for {:?}", condition),
             }
