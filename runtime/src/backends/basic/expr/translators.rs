@@ -21,7 +21,7 @@ pub(crate) mod z3 {
             },
             SymBinaryOperands, SymVarId,
         },
-        solvers::z3::{ArrayNode, ArraySort, AstNodeSort, BVNode, BVSort},
+        solvers::z3::{ArrayNode, ArraySort, BVNode, BVSort},
     };
 
     use crate::solvers::z3::{AstNode, TranslatedConstraint};
@@ -463,7 +463,11 @@ pub(crate) mod z3 {
                 AstNode::Bool(_) => {
                     let condition = condition.as_bool();
                     let ast = condition.ite(&if_target.ast(), &else_target.ast());
-                    AstNode::from_ast(ast, &AstNodeSort::Bool)
+                    if ast == if_target.ast() {
+                        AstNode::from_ast(ast, &if_target.sort())
+                    } else {
+                        AstNode::from_ast(ast, &else_target.sort())
+                    }
                 }
                 _ => unimplemented!("Invalid ITE expression for {:?}", condition),
             }
