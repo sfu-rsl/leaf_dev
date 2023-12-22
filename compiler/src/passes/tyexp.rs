@@ -1,11 +1,9 @@
 use super::{CompilationPass, Storage, StorageExt};
 
 use rustc_abi::{FieldsShape, LayoutS, Variants};
-use rustc_index::IndexVec;
 use rustc_middle::mir::{self, visit::Visitor};
-use rustc_middle::ty::{
-    layout::TyAndLayout, DynKind, ParamEnv, Ty, TyCtxt, TyKind, TypeVisitableExt,
-};
+use rustc_middle::ty::layout::{HasParamEnv, HasTyCtxt, LayoutCx};
+use rustc_middle::ty::{layout::TyAndLayout, ParamEnv, Ty, TyCtxt, TypeVisitableExt};
 use rustc_target::abi::{FieldIdx, Layout, VariantIdx};
 
 use std::collections::HashMap;
@@ -37,6 +35,10 @@ impl CompilationPass for TypeExporter {
     }
 }
 
+fn type_id<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>) -> u128 {
+    tcx.type_id_hash(ty).as_u128()
+}
+
 struct PlaceVisitor<'tcx, 's> {
     tcx: TyCtxt<'tcx>,
     type_map: &'s mut HashMap<u128, TypeInfo>,
@@ -46,6 +48,10 @@ struct PlaceVisitor<'tcx, 's> {
 impl<'tcx, 's> Visitor<'tcx> for PlaceVisitor<'tcx, 's> {
     fn visit_ty(&mut self, ty: Ty<'tcx>, _: mir::visit::TyContext) {
         if ty.has_param() {
+            return;
+        }
+
+        if self.type_map.contains_key(&type_id(self.tcx, ty)) {
             return;
         }
 
@@ -63,30 +69,43 @@ impl<'tcx, 's> PlaceVisitor<'tcx, 's> {
             }
         };
 
-        let type_info: TypeInfo = layout.to_runtime(self.tcx, ty);
+        log::debug!(target: "TestTarget", "Generating type information for {:?}", ty);
+        let cx = LayoutCx {
+            tcx: self.tcx,
+            param_env: self.param_env,
+        };
+        let type_info: TypeInfo = layout.to_runtime(&cx, ty);
         self.type_map.insert(type_info.id, type_info);
     }
 }
 
-trait ToRuntimeInfo<T> {
-    type Def<'tcx>;
+trait ToRuntimeInfo<'tcx, Cx, T> {
+    type Def;
 
-    fn to_runtime<'tcx>(self, tcx: TyCtxt<'tcx>, definition: Self::Def<'tcx>) -> T;
+    fn to_runtime(self, cx: &Cx, ty: Self::Def) -> T
+    where
+        Cx: 'tcx;
 }
 
-impl ToRuntimeInfo<TypeInfo> for Layout<'_> {
-    type Def<'tcx> = Ty<'tcx>;
+impl<'tcx, Cx> ToRuntimeInfo<'tcx, Cx, TypeInfo> for Layout<'tcx>
+where
+    Cx: HasTyCtxt<'tcx> + HasParamEnv<'tcx>,
+{
+    type Def = Ty<'tcx>;
 
-    fn to_runtime<'tcx>(self, tcx: TyCtxt<'tcx>, ty: Self::Def<'tcx>) -> TypeInfo {
+    fn to_runtime(self, cx: &Cx, ty: Self::Def) -> TypeInfo
+    where
+        Cx: 'tcx,
+    {
         let variants = match &self.variants {
-            Variants::Single { .. } => vec![self.0.to_runtime(tcx, ty)],
+            Variants::Single { .. } => vec![self.0.to_runtime(cx, ty)],
             Variants::Multiple { variants, .. } => {
-                variants.iter().map(|v| v.to_runtime(tcx, ty)).collect()
+                variants.iter().map(|v| v.to_runtime(cx, ty)).collect()
             }
         };
 
         TypeInfo {
-            id: tcx.type_id_hash(ty).as_u128(),
+            id: type_id(cx.tcx(), ty),
             name: ty.to_string(),
             size: self.size().bytes(),
             align: self.align().abi.bytes(),
@@ -95,73 +114,52 @@ impl ToRuntimeInfo<TypeInfo> for Layout<'_> {
     }
 }
 
-impl ToRuntimeInfo<VariantInfo> for &LayoutS<FieldIdx, VariantIdx> {
-    type Def<'tcx> = Ty<'tcx>;
+impl<'tcx, Cx> ToRuntimeInfo<'tcx, Cx, VariantInfo> for &LayoutS<FieldIdx, VariantIdx>
+where
+    Cx: HasTyCtxt<'tcx> + HasParamEnv<'tcx>,
+{
+    type Def = Ty<'tcx>;
 
-    fn to_runtime<'tcx>(self, tcx: TyCtxt<'tcx>, ty: Self::Def<'tcx>) -> VariantInfo {
+    fn to_runtime(self, cx: &Cx, ty: Self::Def) -> VariantInfo
+    where
+        Cx: 'tcx,
+    {
         let index = match self.variants {
             Variants::Single { index } => index,
             Variants::Multiple { .. } => panic!("Recursive variants are not expected"),
         };
 
-        let mut field_types = IndexVec::<FieldIdx, Ty<'tcx>>::new();
-        match ty.kind() {
-            TyKind::Adt(def, subst) => {
-                let target_variant = def.variant(index);
-                for field in target_variant.fields.iter() {
-                    let field_ty = field.ty(tcx, subst);
-                    field_types.push(field_ty);
-                }
-            }
-            TyKind::Array(ty, ..) => {
-                field_types.push(*ty);
-            }
-            TyKind::Tuple(tys) => {
-                for ty in tys.into_iter() {
-                    field_types.push(ty);
-                }
-            }
-            TyKind::Dynamic(_, _, DynKind::DynStar) => {
-                let ptr_ty = Ty::new_imm_ptr(tcx, Ty::new_unit(tcx));
-                field_types.extend([ptr_ty, ptr_ty]);
-            }
-            TyKind::Ref(..) => {
-                // NOTE: Ref is not an ADT but has an arbitrary fields shape, which may cause panic during type exportation,
-                // so we return no field information for simplicity
-                return VariantInfo {
-                    index: index.as_u32(),
-                    fields: FieldsShapeInfo::NoFields,
-                };
-            }
-            _ => ()
-        };
-
         VariantInfo {
             index: index.as_u32(),
-            fields: self.fields.to_runtime(tcx, field_types),
+            fields: self.fields.to_runtime(cx, ty),
         }
     }
 }
 
-impl ToRuntimeInfo<FieldsShapeInfo> for &FieldsShape<FieldIdx> {
-    type Def<'tcx> = IndexVec<FieldIdx, Ty<'tcx>>;
+impl<'tcx, Cx> ToRuntimeInfo<'tcx, Cx, FieldsShapeInfo> for &FieldsShape<FieldIdx>
+where
+    Cx: HasTyCtxt<'tcx> + HasParamEnv<'tcx>,
+{
+    type Def = Ty<'tcx>;
 
-    fn to_runtime<'tcx>(self, tcx: TyCtxt<'tcx>, field_tys: Self::Def<'tcx>) -> FieldsShapeInfo {
+    fn to_runtime(self, cx: &Cx, ty: Self::Def) -> FieldsShapeInfo
+    where
+        Cx: 'tcx,
+    {
+        let tcx = cx.tcx();
         match self {
             FieldsShape::Primitive => FieldsShapeInfo::NoFields,
             FieldsShape::Union(..) => FieldsShapeInfo::Union,
             FieldsShape::Array { count, .. } => FieldsShapeInfo::Array(ArrayShape {
                 len: *count,
-                item_ty: tcx
-                    .type_id_hash(field_tys[FieldIdx::from_usize(0)])
-                    .as_u128(),
+                item_ty: type_id(tcx, field_ty(ty, cx, FieldIdx::from_usize(0))),
             }),
             FieldsShape::Arbitrary { offsets, .. } => {
                 let mut fields = vec![];
                 for (idx, size) in offsets.clone().into_iter_enumerated() {
-                    let ty = field_tys.get(idx).expect("Insufficient field types");
+                    let ty = field_ty(ty, cx, idx);
                     fields.push(FieldInfo {
-                        ty: tcx.type_id_hash(*ty).as_u128(),
+                        ty: type_id(tcx, ty),
                         offset: size.bytes(),
                     })
                 }
@@ -169,4 +167,29 @@ impl ToRuntimeInfo<FieldsShapeInfo> for &FieldsShape<FieldIdx> {
             }
         }
     }
+}
+
+fn field_ty<'tcx, Cx>(ty: Ty<'tcx>, cx: &Cx, index: FieldIdx) -> Ty<'tcx>
+where
+    Cx: HasTyCtxt<'tcx> + HasParamEnv<'tcx>,
+{
+    /* NOTE: Guarantee on functionality correctness.
+     * This method is obtained by checking the compiler's source code.
+     * There are two places found so far that we can rely on to map the index
+     * available in the layout to the type.
+     * 1. `layout_of_uncached` in `rustc_ty_utils::layout`: The main function
+     * that computes the layout of a type. It is called by `layout_of` in `TyCtxt`.
+     * 2. `ty_and_layout_field` provided by `TyAbiInterface` trait.
+     * The latter returns what we want directly and it takes shorter paths in
+     * some cases. The former provides no direct method, and we probably can only
+     * use the source to implement it.
+     * The sources are checked manually and match for what we want.
+     */
+    use rustc_target::abi::TyAbiInterface;
+    Ty::ty_and_layout_field(
+        cx.tcx().layout_of(cx.param_env().and(ty)).unwrap(),
+        cx,
+        index.as_usize(),
+    )
+    .ty
 }

@@ -87,7 +87,6 @@ impl TypeExport {
             .expect("Unable to open file for type export");
         file.read_to_string(&mut content).unwrap();
         let type_infos: Vec<TypeInfo> = serde_json::from_str(&content).unwrap_or(Vec::new());
-        log::debug!("Reading {:#?} from types.json", type_infos);
 
         let mut map = HashMap::new();
         for type_info in type_infos.into_iter() {
@@ -97,7 +96,6 @@ impl TypeExport {
     }
 
     pub fn write(map: &HashMap<TypeId, TypeInfo>) {
-        log::debug!("Writing {:#?} to types.json", map);
         let mut file = OpenOptions::new()
             .create(true)
             .write(true)
