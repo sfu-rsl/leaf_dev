@@ -21,7 +21,7 @@ pub(crate) mod z3 {
             },
             SymBinaryOperands, SymVarId,
         },
-        solvers::z3::{ArrayNode, ArraySort, BVNode, BVSort},
+        solvers::z3::{ArrayNode, ArraySort, AstNodeSort, BVNode, BVSort},
     };
 
     use crate::solvers::z3::{AstNode, TranslatedConstraint};
@@ -217,15 +217,14 @@ pub(crate) mod z3 {
                     self.translate_extraction_expr(source, high, low, is_signed)
                 }
                 Expr::Ite {
-                    source,
-                    first_target,
-                    second_target,
-                    is_signed,
+                    condition,
+                    if_target,
+                    else_target,
                 } => {
-                    let source = self.translate_symbolic(source);
-                    let first_target = self.translate_symbolic(first_target);
-                    let second_target = self.translate_symbolic(second_target);
-                    self.translate_ite_expr(source, first_target, second_target, is_signed)
+                    let condition = self.translate_symbolic(condition);
+                    let if_target = self.translate_value(if_target);
+                    let else_target = self.translate_value(else_target);
+                    self.translate_ite_expr(condition, if_target, else_target)
                 }
                 Expr::AddrOf(operand) => {
                     let operand = self.resolve_proj_expression(operand);
@@ -456,21 +455,17 @@ pub(crate) mod z3 {
 
         fn translate_ite_expr(
             &mut self,
-            source: AstNode<'ctx>,
-            first_target: AstNode<'ctx>,
-            second_target: AstNode<'ctx>,
-            is_signed: &bool,
+            condition: AstNode<'ctx>,
+            if_target: AstNode<'ctx>,
+            else_target: AstNode<'ctx>,
         ) -> AstNode<'ctx> {
-            if let (
-                AstNode::Bool(source_ast),
-                AstNode::BitVector(BVNode(first_ast, _)),
-                AstNode::BitVector(BVNode(second_ast, _)),
-            ) = (source, first_target, second_target)
-            {
-                let ast = source_ast.ite(&first_ast, &second_ast);
-                return BVNode::new(ast, *is_signed).into();
-            } else {
-                unimplemented!("Invalid ITE expression");
+            match condition {
+                AstNode::Bool(_) => {
+                    let condition = condition.as_bool();
+                    let ast = condition.ite(&if_target.ast(), &else_target.ast());
+                    AstNode::from_ast(ast, &AstNodeSort::Bool)
+                }
+                _ => unimplemented!("Invalid ITE expression for {:?}", condition),
             }
         }
 

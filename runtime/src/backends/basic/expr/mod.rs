@@ -688,10 +688,9 @@ pub(crate) enum Expr {
     },
 
     Ite {
-        source: SymValueRef,
-        first_target: SymValueRef,
-        second_target: SymValueRef,
-        is_signed: bool,
+        condition: SymValueRef,
+        if_target: ValueRef,
+        else_target: ValueRef,
     },
 
     AddrOf(ProjExprRef),
