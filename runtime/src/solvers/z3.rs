@@ -61,19 +61,19 @@ impl<'ctx> BVNode<'ctx> {
 #[derive(Debug, Clone)]
 pub(crate) struct ArrayNode<'ctx>(pub ast::Array<'ctx>, pub ArraySort);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) enum AstNodeSort {
     Bool,
     BitVector(BVSort),
     Array(ArraySort),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct BVSort {
     pub is_signed: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ArraySort {
     pub range: Box<AstNodeSort>,
 }
