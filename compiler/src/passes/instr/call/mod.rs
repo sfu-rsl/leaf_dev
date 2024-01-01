@@ -105,6 +105,8 @@ pub(crate) trait Assigner<'tcx> {
 
     fn by_aggregate_union(&mut self, active_field: FieldIdx, value: OperandRef);
 
+    fn by_aggregate_closure(&mut self, upvars: &[OperandRef]);
+
     // Special case for SetDiscriminant StatementType since it is similar to a regular assignment
     fn its_discriminant_to(&mut self, variant_index: &VariantIdx);
 }
@@ -1334,6 +1336,14 @@ mod implementation {
             )
         }
 
+        fn by_aggregate_closure(&mut self, upvars: &[OperandRef]) {
+            self.add_bb_for_aggregate_assign_call(
+                stringify!(pri::assign_aggregate_closure),
+                upvars,
+                vec![],
+            )
+        }
+
         fn its_discriminant_to(&mut self, variant_index: &VariantIdx) {
             self.add_bb_for_assign_call(
                 stringify!(pri::set_discriminant),
@@ -2021,7 +2031,7 @@ mod implementation {
             /* NOTE: As `TypeId::of` requires static lifetime, do we need to clear lifetimes?
              * No. As we are code generation phase, all regions should be erased. */
             debug_assert!(
-                !ty.has_erasable_regions() && !ty.has_late_bound_regions(),
+                !ty.has_erasable_regions(),
                 "Region erasure assumption does not hold for TypeId call. {}",
                 ty
             );

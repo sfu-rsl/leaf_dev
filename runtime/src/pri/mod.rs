@@ -316,6 +316,12 @@ pub fn assign_aggregate_union(dest: PlaceRef, active_field: FieldIndex, value: O
         h.union_from(active_field, field)
     })
 }
+pub fn assign_aggregate_closure(dest: PlaceRef, upvars: &[OperandRef]) {
+    assign_to(dest, |h| {
+        let upvars = take_fields(upvars);
+        h.closure_from(upvars.into_iter())
+    })
+}
 fn take_fields(fields: &[OperandRef]) -> Vec<FieldImpl> {
     let fields = fields.iter().map(|o| take_back_operand_ref(*o));
     fields.map(Into::<FieldImpl>::into).collect()

@@ -188,6 +188,10 @@ pub(crate) trait AssignmentHandler: Sized {
 
     fn union_from(self, active_field: FieldIndex, value: Self::Field);
 
+    fn closure_from(self, upvars: impl Iterator<Item = Self::Field>) {
+        self.adt_from(upvars, None)
+    }
+
     fn variant_index(self, variant_index: VariantIndex);
 }
 

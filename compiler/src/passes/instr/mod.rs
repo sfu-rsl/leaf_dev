@@ -508,7 +508,9 @@ where
                 );
                 self.call_adder.by_aggregate_union(*active_field, fields[0])
             }),
-            Closure(_, _) => todo!("Closures are not supported yet."),
+            Closure(..) => Box::new(|fields| {
+                self.call_adder.by_aggregate_closure(fields)
+            }),
             Coroutine(..) => todo!("Coroutines are not supported yet."),
         };
 
