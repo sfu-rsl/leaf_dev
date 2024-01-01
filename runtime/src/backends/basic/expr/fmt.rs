@@ -52,13 +52,11 @@ impl Display for ConstValue {
 impl Display for AdtValue {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self.kind {
-            AdtKind::Tuple => write!(f, "("),
             AdtKind::Struct => write!(f, "{{"),
             AdtKind::Enum { variant } => write!(f, "V#{}{{", variant),
         }?;
         self.fmt_fields(f)?;
         match self.kind {
-            AdtKind::Tuple => write!(f, ")"),
             AdtKind::Struct | AdtKind::Enum { .. } => write!(f, "}}"),
         }?;
         Ok(())

@@ -310,10 +310,6 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
         self.set_value(value.into())
     }
 
-    fn tuple_from(mut self, fields: impl Iterator<Item = Self::Field>) {
-        self.set_adt_value(AdtKind::Tuple, fields)
-    }
-
     fn adt_from(
         mut self,
         fields: impl Iterator<Item = Self::Field>,

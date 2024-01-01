@@ -147,7 +147,7 @@ pub(crate) trait ConstantHandler {
     fn some(self) -> Self::Operand;
 }
 
-pub(crate) trait AssignmentHandler {
+pub(crate) trait AssignmentHandler: Sized {
     type Place;
     type Operand;
     type Field = Self::Operand;
@@ -180,7 +180,9 @@ pub(crate) trait AssignmentHandler {
 
     fn array_from(self, items: impl Iterator<Item = Self::Operand>);
 
-    fn tuple_from(self, fields: impl Iterator<Item = Self::Field>);
+    fn tuple_from(self, fields: impl Iterator<Item = Self::Field>) {
+        self.adt_from(fields, None)
+    }
 
     fn adt_from(self, fields: impl Iterator<Item = Self::Field>, variant: Option<VariantIndex>);
 
