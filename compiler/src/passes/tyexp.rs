@@ -97,11 +97,17 @@ where
     where
         Cx: 'tcx,
     {
+        // FIXME: Reconstruction of deconstructed layout.
+        /* FIXME: As all conversions now get TyAndLayout as definition,
+         * we can move it inside `cx`. */
+        let ty_layout = TyAndLayout { ty, layout: self };
+
         let variants = match &self.variants {
-            Variants::Single { .. } => vec![self.0.to_runtime(cx, ty)],
-            Variants::Multiple { variants, .. } => {
-                variants.iter().map(|v| v.to_runtime(cx, ty)).collect()
-            }
+            Variants::Single { .. } => vec![self.0.to_runtime(cx, ty_layout)],
+            Variants::Multiple { variants, .. } => variants
+                .iter_enumerated()
+                .map(|(i, v)| v.to_runtime(cx, ty_layout.for_variant(cx, i)))
+                .collect(),
         };
 
         TypeInfo {
@@ -118,9 +124,9 @@ impl<'tcx, Cx> ToRuntimeInfo<'tcx, Cx, VariantInfo> for &LayoutS<FieldIdx, Varia
 where
     Cx: HasTyCtxt<'tcx> + HasParamEnv<'tcx>,
 {
-    type Def = Ty<'tcx>;
+    type Def = TyAndLayout<'tcx>;
 
-    fn to_runtime(self, cx: &Cx, ty: Self::Def) -> VariantInfo
+    fn to_runtime(self, cx: &Cx, ty_layout: Self::Def) -> VariantInfo
     where
         Cx: 'tcx,
     {
@@ -131,7 +137,7 @@ where
 
         VariantInfo {
             index: index.as_u32(),
-            fields: self.fields.to_runtime(cx, ty),
+            fields: self.fields.to_runtime(cx, ty_layout),
         }
     }
 }
@@ -140,9 +146,9 @@ impl<'tcx, Cx> ToRuntimeInfo<'tcx, Cx, FieldsShapeInfo> for &FieldsShape<FieldId
 where
     Cx: HasTyCtxt<'tcx> + HasParamEnv<'tcx>,
 {
-    type Def = Ty<'tcx>;
+    type Def = TyAndLayout<'tcx>;
 
-    fn to_runtime(self, cx: &Cx, ty: Self::Def) -> FieldsShapeInfo
+    fn to_runtime(self, cx: &Cx, ty_layout: Self::Def) -> FieldsShapeInfo
     where
         Cx: 'tcx,
     {
@@ -152,12 +158,12 @@ where
             FieldsShape::Union(..) => FieldsShapeInfo::Union,
             FieldsShape::Array { count, .. } => FieldsShapeInfo::Array(ArrayShape {
                 len: *count,
-                item_ty: type_id(tcx, field_ty(ty, cx, FieldIdx::from_usize(0))),
+                item_ty: type_id(tcx, field_ty(ty_layout, cx, FieldIdx::from_usize(0))),
             }),
             FieldsShape::Arbitrary { offsets, .. } => {
                 let mut fields = vec![];
                 for (idx, size) in offsets.clone().into_iter_enumerated() {
-                    let ty = field_ty(ty, cx, idx);
+                    let ty = field_ty(ty_layout, cx, idx);
                     fields.push(FieldInfo {
                         ty: type_id(tcx, ty),
                         offset: size.bytes(),
@@ -169,7 +175,7 @@ where
     }
 }
 
-fn field_ty<'tcx, Cx>(ty: Ty<'tcx>, cx: &Cx, index: FieldIdx) -> Ty<'tcx>
+fn field_ty<'tcx, Cx>(ty_layout: TyAndLayout<'tcx>, cx: &Cx, index: FieldIdx) -> Ty<'tcx>
 where
     Cx: HasTyCtxt<'tcx> + HasParamEnv<'tcx>,
 {
@@ -186,10 +192,5 @@ where
      * The sources are checked manually and match for what we want.
      */
     use rustc_target::abi::TyAbiInterface;
-    Ty::ty_and_layout_field(
-        cx.tcx().layout_of(cx.param_env().and(ty)).unwrap(),
-        cx,
-        index.as_usize(),
-    )
-    .ty
+    Ty::ty_and_layout_field(ty_layout, cx, index.as_usize()).ty
 }
