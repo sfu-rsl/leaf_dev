@@ -1,5 +1,5 @@
 tags
-target
+**/target/
 
 # A folder to put your notes in.
 .notes
@@ -14,9 +14,11 @@ target
 
 .devcontainer/devcontainer.json
 
+# Compiler error logs
+*ice*.txt
+
 # You can use playground folder for your experiments.
 samples/playground
-samples/**/*ice*.txt
 samples/**/mir_dump/**
 samples/**/main
 

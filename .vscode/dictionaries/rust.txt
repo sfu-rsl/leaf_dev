@@ -1,4 +1,5 @@
 bitvector
+clippy
 peekable
 rposition
 serde

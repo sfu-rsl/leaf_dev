@@ -3,9 +3,12 @@ ctxt
 defaultness
 deinit
 discr
+nullary
 rustc
 Rvalue
 Subslice
 TyCtx
 unsize
 unsizing
+upvar
+upvars
