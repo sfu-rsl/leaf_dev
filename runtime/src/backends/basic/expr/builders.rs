@@ -289,7 +289,7 @@ mod adapters {
 }
 
 mod core {
-    use std::{assert_matches::debug_assert_matches, mem::size_of};
+    use std::mem::size_of;
 
     use crate::abs::USIZE_TYPE;
 
@@ -370,7 +370,7 @@ mod core {
                             to_low_level_cast_expr(operand, ValueType::Int(USIZE_TYPE))
                         }
                         ToPointer(_) => {
-                            todo!("#314: Replace Cast expression with lower-level expression types")
+                            todo!("Add support for pointer casts")
                         }
                         SizedDynamize => {
                             todo!("#317: Add support for dyn* cast of symbolic values")
@@ -396,7 +396,7 @@ mod core {
         let from_type = ValueType::try_from(from.as_ref()).unwrap();
         match to {
             ValueType::Char => {
-                debug_assert_matches!(
+                debug_assert_eq!(
                     from_type,
                     ValueType::Int(IntType {
                         bit_size: 8,
@@ -434,12 +434,23 @@ mod core {
                     )))
                     .to_value_ref(),
                 },
-                ValueType::Char => Expr::Extension {
-                    source: from,
-                    is_zero_ext: true,
-                    bits_to_add: bit_size as u32 - CHAR_BIT_SIZE,
-                    is_signed,
-                },
+                ValueType::Char => {
+                    if bit_size as u32 > CHAR_BIT_SIZE {
+                        return Expr::Extension {
+                            source: from,
+                            is_zero_ext: true,
+                            bits_to_add: bit_size as u32 - CHAR_BIT_SIZE,
+                            is_signed,
+                        };
+                    } else {
+                        return Expr::Extraction {
+                            source: from,
+                            high: bit_size as u32 - 1,
+                            low: 0,
+                            is_signed,
+                        };
+                    }
+                }
                 ValueType::Int(IntType {
                     bit_size: from_bit_size,
                     is_signed: is_from_signed,
