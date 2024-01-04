@@ -351,7 +351,7 @@ mod core {
 
         fn cast<'a>(&mut self, operand: Self::ExprRef<'a>, target: CastKind) -> Self::Expr<'a> {
             match ValueType::try_from(target) {
-                Ok(value_type) => to_low_level_cast_expr(operand, value_type),
+                Ok(value_type) => to_cast_expr(operand, value_type),
                 Err(target) => {
                     use CastKind::*;
                     match target {
@@ -366,9 +366,7 @@ mod core {
                                 ),
                             }
                         }
-                        ExposeAddress => {
-                            to_low_level_cast_expr(operand, ValueType::Int(USIZE_TYPE))
-                        }
+                        ExposeAddress => to_cast_expr(operand, ValueType::Int(USIZE_TYPE)),
                         ToPointer(_) => {
                             todo!("Add support for pointer casts")
                         }
@@ -392,7 +390,7 @@ mod core {
         }
     }
 
-    fn to_low_level_cast_expr(from: SymValueRef, to: ValueType) -> Expr {
+    fn to_cast_expr(from: SymValueRef, to: ValueType) -> Expr {
         let from_type = ValueType::try_from(from.as_ref()).unwrap();
         match to {
             ValueType::Char => {
@@ -417,21 +415,21 @@ mod core {
             }) => match from_type {
                 ValueType::Bool => Expr::Ite {
                     condition: from,
-                    if_target: Value::Concrete(ConcreteValue::Const(ConstValue::new_int(
+                    if_target: ConstValue::new_int(
                         1 as u128,
                         IntType {
                             bit_size,
                             is_signed,
                         },
-                    )))
+                    )
                     .to_value_ref(),
-                    else_target: Value::Concrete(ConcreteValue::Const(ConstValue::new_int(
+                    else_target: ConstValue::new_int(
                         0 as u128,
                         IntType {
                             bit_size,
                             is_signed,
                         },
-                    )))
+                    )
                     .to_value_ref(),
                 },
                 ValueType::Char => {

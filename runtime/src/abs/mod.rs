@@ -1,7 +1,3 @@
-use crate::backends::basic::expr::{
-    ConcreteValue, ConstValue, Expr, SymValue, SymbolicVar, UnevalValue, Value,
-};
-
 pub(crate) mod backend;
 pub(crate) mod expr;
 pub(crate) mod fmt;
@@ -205,70 +201,6 @@ impl TryFrom<CastKind> for ValueType {
             CastKind::ToInt(to) => Ok(ValueType::Int(to)),
             CastKind::ToFloat(to) => Ok(ValueType::Float(to)),
             _ => Err(value),
-        }
-    }
-}
-
-impl TryFrom<&SymValue> for ValueType {
-    type Error = SymValue;
-
-    fn try_from(value: &SymValue) -> Result<Self, Self::Error> {
-        match value {
-            SymValue::Variable(SymbolicVar { id: _, ty }) => Ok(ty.clone()),
-            SymValue::Expression(expr) => match expr {
-                Expr::Unary {
-                    operator: _,
-                    operand,
-                } => Self::try_from(operand.as_ref()),
-                Expr::Binary(bin_expr) => Self::try_from(bin_expr.clone().to_value_ref().as_ref()),
-                Expr::Extension { source, .. } | Expr::Extraction { source, .. } => {
-                    Self::try_from(source.as_ref())
-                }
-                Expr::Ite {
-                    condition: _,
-                    if_target,
-                    else_target,
-                } => {
-                    let if_value = match if_target.as_ref() {
-                        Value::Symbolic(value) => Self::try_from(value).unwrap(),
-                        Value::Concrete(value) => ValueType::try_from(value).unwrap(),
-                    };
-                    let else_value = match else_target.as_ref() {
-                        Value::Symbolic(value) => Self::try_from(value).unwrap(),
-                        Value::Concrete(value) => ValueType::try_from(value).unwrap(),
-                    };
-
-                    debug_assert_eq!(if_value, else_value);
-                    Ok(if_value)
-                }
-                _ => unimplemented!("ProjExpr is not yet supported."),
-            },
-        }
-    }
-}
-
-impl TryFrom<&ConcreteValue> for ValueType {
-    type Error = ConcreteValue;
-
-    fn try_from(value: &ConcreteValue) -> Result<Self, Self::Error> {
-        match value {
-            ConcreteValue::Const(const_value) => match const_value {
-                ConstValue::Bool(_) => Ok(ValueType::Bool),
-                ConstValue::Char(_) => Ok(ValueType::Char),
-                ConstValue::Int { bit_rep: _, ty } => Ok(ValueType::Int(IntType {
-                    bit_size: ty.bit_size,
-                    is_signed: ty.is_signed,
-                })),
-                ConstValue::Float { bit_rep: _, ty } => Ok(ValueType::Float(FloatType {
-                    e_bits: ty.e_bits,
-                    s_bits: ty.s_bits,
-                })),
-                _ => unimplemented!("Unsupported const value: {const_value}"),
-            },
-            ConcreteValue::Unevaluated(UnevalValue::Lazy(value)) if value.1.is_some() => {
-                Ok(value.1.clone().unwrap())
-            }
-            _ => unimplemented!("Only selected primitive concrete values are supported."),
         }
     }
 }

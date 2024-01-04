@@ -199,7 +199,7 @@ pub(crate) mod z3 {
                     is_signed,
                 } => {
                     let source = self.translate_symbolic(source);
-                    self.translate_extension_expr(source, is_zero_ext, bits_to_add, is_signed)
+                    self.translate_extension_expr(source, *is_zero_ext, *bits_to_add, *is_signed)
                 }
                 Expr::Extraction {
                     source,
@@ -208,7 +208,7 @@ pub(crate) mod z3 {
                     is_signed,
                 } => {
                     let source = self.translate_symbolic(source);
-                    self.translate_extraction_expr(source, high, low, is_signed)
+                    self.translate_extraction_expr(source, *high, *low, *is_signed)
                 }
                 Expr::Ite {
                     condition,
@@ -297,13 +297,13 @@ pub(crate) mod z3 {
                             let left_size = left_node.size();
                             let right_size = right.as_bit_vector().get_size();
                             if right_size > left_size {
-                                self.translate_extraction_expr(right, &(left_size - 1), &0, &false)
+                                self.translate_extraction_expr(right, left_size - 1, 0, false)
                             } else {
                                 self.translate_extension_expr(
                                     right,
-                                    &true,
-                                    &(left_size - right_size),
-                                    &false,
+                                    true,
+                                    left_size - right_size,
+                                    false,
                                 )
                             }
                         }
@@ -361,18 +361,18 @@ pub(crate) mod z3 {
         fn translate_extension_expr(
             &mut self,
             source: AstNode<'ctx>,
-            is_zero_ext: &bool,
-            bits_to_add: &u32,
-            is_signed: &bool,
+            is_zero_ext: bool,
+            bits_to_add: u32,
+            is_signed: bool,
         ) -> AstNode<'ctx> {
             match source {
                 AstNode::BitVector(BVNode(ast, _)) => {
-                    let ast = if *is_zero_ext {
-                        ast.zero_ext(*bits_to_add)
+                    let ast = if is_zero_ext {
+                        ast.zero_ext(bits_to_add)
                     } else {
-                        ast.sign_ext(*bits_to_add)
+                        ast.sign_ext(bits_to_add)
                     };
-                    BVNode::new(ast, *is_signed).into()
+                    BVNode::new(ast, is_signed).into()
                 }
                 _ => unreachable!("Invalid extension expression for {:?}.", source),
             }
@@ -381,13 +381,13 @@ pub(crate) mod z3 {
         fn translate_extraction_expr(
             &mut self,
             source: AstNode<'ctx>,
-            high: &u32,
-            low: &u32,
-            is_signed: &bool,
+            high: u32,
+            low: u32,
+            is_signed: bool,
         ) -> AstNode<'ctx> {
             match source {
                 AstNode::BitVector(BVNode(ast, _)) => {
-                    BVNode::new(ast.extract(*high, *low), *is_signed).into()
+                    BVNode::new(ast.extract(high, low), is_signed).into()
                 }
                 _ => unreachable!("Invalid extraction expression for {:?}.", source),
             }

@@ -464,6 +464,69 @@ impl ConstValue {
     }
 }
 
+impl From<&Value> for ValueType {
+    fn from(value: &Value) -> Self {
+        match value {
+            Value::Concrete(con_val) => ValueType::from(con_val),
+            Value::Symbolic(sym_val) => ValueType::from(sym_val),
+        }
+    }
+}
+
+impl From<&SymValue> for ValueType {
+    fn from(value: &SymValue) -> Self {
+        match value {
+            SymValue::Variable(SymbolicVar { id: _, ty }) => ty.clone(),
+            SymValue::Expression(expr) => match expr {
+                Expr::Unary {
+                    operator: _,
+                    operand,
+                } => ValueType::from(operand.as_ref()),
+                Expr::Binary(bin_expr) => Self::from(bin_expr.clone().to_value_ref().as_ref()),
+                Expr::Extension { source, .. } | Expr::Extraction { source, .. } => {
+                    ValueType::from(source.as_ref())
+                }
+                Expr::Ite {
+                    condition: _,
+                    if_target,
+                    else_target,
+                } => {
+                    let if_value = match if_target.as_ref() {
+                        Value::Symbolic(value) => ValueType::from(value),
+                        Value::Concrete(value) => ValueType::from(value),
+                    };
+                    let else_value = match else_target.as_ref() {
+                        Value::Symbolic(value) => ValueType::from(value),
+                        Value::Concrete(value) => ValueType::from(value),
+                    };
+
+                    debug_assert_eq!(if_value, else_value);
+                    if_value
+                }
+                _ => unimplemented!("ProjExpr is not yet supported."),
+            },
+        }
+    }
+}
+
+impl From<&ConcreteValue> for ValueType {
+    fn from(value: &ConcreteValue) -> Self {
+        match value {
+            ConcreteValue::Const(const_value) => match const_value {
+                ConstValue::Bool(_) => ValueType::Bool,
+                ConstValue::Char(_) => ValueType::Char,
+                ConstValue::Int { bit_rep: _, ty } => (*ty).into(),
+                ConstValue::Float { bit_rep: _, ty } => (*ty).into(),
+                _ => unimplemented!("Unsupported const value: {const_value}"),
+            },
+            ConcreteValue::Unevaluated(UnevalValue::Lazy(value)) if value.1.is_some() => {
+                value.1.clone().unwrap()
+            }
+            _ => unimplemented!("Only selected primitive concrete values are supported."),
+        }
+    }
+}
+
 // ----------------------------------------------- //
 
 // FIXME: Remove this error suppression after adding support for more variants
