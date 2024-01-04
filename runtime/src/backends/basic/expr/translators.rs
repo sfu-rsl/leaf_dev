@@ -291,9 +291,9 @@ pub(crate) mod z3 {
                 AstNode::BitVector(ref left_node) => {
                     let right = match operator {
                         BinaryOp::Shl | BinaryOp::Shr if left.z3_sort() != right.z3_sort() => {
-                            // This cast may truncate `right`, but since the smallest sort is 8 bits, the largest value
-                            // is 127, which is equal to the largest valid left or right shift of 127 for 128 bit values,
-                            // so everything works out!
+                            // Z3 requires that the operands in a left or right shift operation are the same size.
+                            // Thus, if two operands are of different sizes, we cast the right operand to the same type of left operand.
+                            // Casting from a larger type to a smaller one will truncate, whereas the reverse will zero-extend
                             let left_size = left_node.size();
                             let right_size = right.as_bit_vector().get_size();
                             if right_size > left_size {
