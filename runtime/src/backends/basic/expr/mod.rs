@@ -668,11 +668,6 @@ pub(crate) enum Expr {
 
     Binary(BinaryExpr),
 
-    Cast {
-        from: SymValueRef,
-        to: ValueType,
-    },
-
     Extension {
         source: SymValueRef,
         is_zero_ext: bool,

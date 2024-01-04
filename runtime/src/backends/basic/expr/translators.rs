@@ -28,8 +28,6 @@ pub(crate) mod z3 {
 
     const CHAR_BIT_SIZE: u32 = size_of::<char>() as u32 * 8;
     const USIZE_BIT_SIZE: u32 = size_of::<usize>() as u32 * 8;
-    const TO_CHAR_BIT_SIZE: u32 = 8; // Can only cast to a char from a u8
-
     const POSSIBLE_VALUES_PREFIX: &str = "pvs";
 
     impl<'ctx> From<(&ValueRef, &'ctx Context)> for TranslatedConstraint<'ctx, SymVarId> {
@@ -194,10 +192,6 @@ pub(crate) mod z3 {
                     let (left, right) = self.translate_binary_operands(operands);
                     self.translate_binary_expr(operator, left, right)
                 }
-                Expr::Cast { from, to } => {
-                    let from = self.translate_symbolic(from);
-                    self.translate_cast_expr(from, to)
-                }
                 Expr::Extension {
                     source,
                     is_zero_ext,
@@ -300,11 +294,18 @@ pub(crate) mod z3 {
                             // This cast may truncate `right`, but since the smallest sort is 8 bits, the largest value
                             // is 127, which is equal to the largest valid left or right shift of 127 for 128 bit values,
                             // so everything works out!
-                            self.translate_cast_expr(
-                                right,
-                                // right must always be positive, so we can do an unsigned cast
-                                &ValueType::new_int(left_node.size() as u64, false),
-                            )
+                            let left_size = left_node.size();
+                            let right_size = right.as_bit_vector().get_size();
+                            if right_size > left_size {
+                                self.translate_extraction_expr(right, &(left_size - 1), &0, &false)
+                            } else {
+                                self.translate_extension_expr(
+                                    right,
+                                    &true,
+                                    &(left_size - right_size),
+                                    &false,
+                                )
+                            }
                         }
                         _ => right,
                     };
@@ -357,67 +358,6 @@ pub(crate) mod z3 {
             }
         }
 
-        fn translate_cast_expr(&mut self, from: AstNode<'ctx>, to: &ValueType) -> AstNode<'ctx> {
-            match to {
-                ValueType::Char => {
-                    let from = from.as_bit_vector();
-                    let size = from.get_size();
-                    debug_assert!(
-                        size == TO_CHAR_BIT_SIZE,
-                        "Cast from {size} to char is not supported."
-                    );
-                    BVNode::new(from.zero_ext(CHAR_BIT_SIZE - TO_CHAR_BIT_SIZE), false).into()
-                }
-                ValueType::Int(IntType {
-                    bit_size,
-                    is_signed,
-                }) => {
-                    let size = *bit_size as u32;
-                    match from {
-                        AstNode::Bool(_) => {
-                            let from = from.as_bool();
-                            let ast = if *is_signed {
-                                from.ite(
-                                    &ast::BV::from_i64(from.get_ctx(), 1, size),
-                                    &ast::BV::from_i64(from.get_ctx(), 0, size),
-                                )
-                            } else {
-                                from.ite(
-                                    &ast::BV::from_u64(from.get_ctx(), 1, size),
-                                    &ast::BV::from_u64(from.get_ctx(), 0, size),
-                                )
-                            };
-                            BVNode::new(ast, *is_signed).into()
-                        }
-                        AstNode::BitVector(BVNode(
-                            ast,
-                            BVSort {
-                                is_signed: is_from_signed,
-                            },
-                        )) => {
-                            let old_size = ast.get_size();
-                            if size > old_size {
-                                let bits_to_add = size - old_size;
-                                let ast = if is_from_signed {
-                                    ast.sign_ext(bits_to_add)
-                                } else {
-                                    ast.zero_ext(bits_to_add)
-                                };
-                                BVNode::new(ast, *is_signed).into()
-                            } else {
-                                // This also handles the case where size == old_size since all bits will be extracted
-                                // and the sign will be updated.
-                                BVNode::new(ast.extract(size - 1, 0), *is_signed).into()
-                            }
-                        }
-                        _ => unreachable!("Casting from {from:#?} to int is not supported."),
-                    }
-                }
-                ValueType::Float { .. } => todo!(),
-                _ => unreachable!("Casting from int to {to:#?} is not supported."),
-            }
-        }
-
         fn translate_extension_expr(
             &mut self,
             source: AstNode<'ctx>,
@@ -467,7 +407,7 @@ pub(crate) mod z3 {
                     debug_assert_eq!(if_target.sort(), else_target.sort());
                     AstNode::from_ast(ast, &if_target.sort())
                 }
-                _ => unimplemented!("Invalid ITE expression for {:?}", condition),
+                _ => unreachable!("Invalid ITE expression for {:?}", condition),
             }
         }
 

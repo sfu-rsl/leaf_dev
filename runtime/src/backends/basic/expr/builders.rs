@@ -289,7 +289,14 @@ mod adapters {
 }
 
 mod core {
+    use std::{assert_matches::debug_assert_matches, mem::size_of};
+
+    use crate::abs::USIZE_TYPE;
+
     use super::*;
+
+    const CHAR_BIT_SIZE: u32 = size_of::<char>() as u32 * 8;
+    const TO_CHAR_BIT_SIZE: u32 = 8; // Can only cast to a char from a u8
 
     /// This is the base expression builder. It implements the lowest level for
     /// all the binary and unary functions. At this point all optimizations are
@@ -344,11 +351,7 @@ mod core {
 
         fn cast<'a>(&mut self, operand: Self::ExprRef<'a>, target: CastKind) -> Self::Expr<'a> {
             match ValueType::try_from(target) {
-                Ok(value_type) => Expr::Cast {
-                    from: operand,
-                    to: value_type,
-                }
-                .into(),
+                Ok(value_type) => to_low_level_cast_expr(operand, value_type),
                 Err(target) => {
                     use CastKind::*;
                     match target {
@@ -363,7 +366,10 @@ mod core {
                                 ),
                             }
                         }
-                        ExposeAddress | ToPointer(_) => {
+                        ExposeAddress => {
+                            to_low_level_cast_expr(operand, ValueType::Int(USIZE_TYPE))
+                        }
+                        ToPointer(_) => {
                             todo!("#314: Replace Cast expression with lower-level expression types")
                         }
                         SizedDynamize => {
@@ -383,6 +389,82 @@ mod core {
                     }
                 }
             }
+        }
+    }
+
+    fn to_low_level_cast_expr(from: SymValueRef, to: ValueType) -> Expr {
+        let from_type = ValueType::try_from(from.as_ref()).unwrap();
+        match to {
+            ValueType::Char => {
+                debug_assert_matches!(
+                    from_type,
+                    ValueType::Int(IntType {
+                        bit_size: 8,
+                        is_signed: false
+                    }),
+                    "Casting from {from_type} to char is not supported."
+                );
+                Expr::Extension {
+                    source: from,
+                    is_zero_ext: true,
+                    bits_to_add: CHAR_BIT_SIZE - TO_CHAR_BIT_SIZE,
+                    is_signed: false,
+                }
+            }
+            ValueType::Int(IntType {
+                bit_size,
+                is_signed,
+            }) => match from_type {
+                ValueType::Bool => Expr::Ite {
+                    condition: from,
+                    if_target: Value::Concrete(ConcreteValue::Const(ConstValue::new_int(
+                        1 as u128,
+                        IntType {
+                            bit_size,
+                            is_signed,
+                        },
+                    )))
+                    .to_value_ref(),
+                    else_target: Value::Concrete(ConcreteValue::Const(ConstValue::new_int(
+                        0 as u128,
+                        IntType {
+                            bit_size,
+                            is_signed,
+                        },
+                    )))
+                    .to_value_ref(),
+                },
+                ValueType::Char => Expr::Extension {
+                    source: from,
+                    is_zero_ext: true,
+                    bits_to_add: bit_size as u32 - CHAR_BIT_SIZE,
+                    is_signed,
+                },
+                ValueType::Int(IntType {
+                    bit_size: from_bit_size,
+                    is_signed: is_from_signed,
+                }) => {
+                    if bit_size > from_bit_size {
+                        let bits_to_add = bit_size - from_bit_size;
+                        return Expr::Extension {
+                            source: from,
+                            is_zero_ext: !is_from_signed,
+                            bits_to_add: bits_to_add as u32,
+                            is_signed,
+                        };
+                    } else {
+                        return Expr::Extraction {
+                            source: from,
+                            high: bit_size as u32 - 1,
+                            low: 0,
+                            is_signed,
+                        };
+                    }
+                }
+                ValueType::Float { .. } => todo!(),
+            },
+            ValueType::Float { .. } => todo!(),
+            _ => unreachable!("Casting from {from_type} to {to} is not supported."),
         }
     }
 }

@@ -159,7 +159,6 @@ impl Expr {
                 checked: true,
                 ..
             }) => write!(f, "{operator}ꟲ"),
-            Expr::Cast { .. } => write!(f, "Cast"),
             Expr::Extension { .. } => write!(f, "Extend"),
             Expr::Extraction { .. } => write!(f, "Extract"),
             Expr::Ite { .. } => write!(f, "Ite"),
@@ -176,7 +175,6 @@ impl Expr {
                 BinaryOperands::Orig { first, second } => write!(f, "{first}, {second}"),
                 BinaryOperands::Rev { first, second } => write!(f, "{first}, {second}"),
             },
-            Expr::Cast { from, to } => write!(f, "{from} -> {to}"),
             Expr::Extension {
                 source,
                 is_zero_ext,
