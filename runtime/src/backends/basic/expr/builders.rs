@@ -289,14 +289,8 @@ mod adapters {
 }
 
 mod core {
-    use std::mem::size_of;
-
-    use crate::abs::USIZE_TYPE;
-
     use super::*;
-
-    const CHAR_BIT_SIZE: u32 = size_of::<char>() as u32 * 8;
-    const TO_CHAR_BIT_SIZE: u32 = 8; // Can only cast to a char from a u8
+    use std::mem::size_of;
 
     /// This is the base expression builder. It implements the lowest level for
     /// all the binary and unary functions. At this point all optimizations are
@@ -367,7 +361,7 @@ mod core {
                             }
                         }
                         ExposeAddress | ToPointer(_) => {
-                            todo!("Add support for pointer casts")
+                            todo!("#331: Add support for casting symbolic pointers")
                         }
                         SizedDynamize => {
                             todo!("#317: Add support for dyn* cast of symbolic values")
@@ -392,17 +386,15 @@ mod core {
         }
     }
 
-    fn to_cast_expr(from: SymValueRef, to: ValueType) -> Expr {
-        let result = ValueType::try_from(from.as_ref());
-        if result.is_err() {
-            unimplemented!(
-                "Casting from {} to {} is not supported.",
-                result.unwrap_err(),
-                to
-            );
-        }
+    const CHAR_BIT_SIZE: u32 = size_of::<char>() as u32 * 8;
+    const TO_CHAR_BIT_SIZE: u32 = 8; // Can only cast to a char from a u8
 
-        let from_type = result.unwrap();
+    fn to_cast_expr(from: SymValueRef, to: ValueType) -> Expr {
+        let from_type = match ValueType::try_from(from.as_ref()) {
+            Ok(value_type) => value_type,
+            Err(value) => unimplemented!("Casting from {} to {} is not supported.", value, to),
+        };
+
         match to {
             ValueType::Char => {
                 debug_assert_eq!(

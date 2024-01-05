@@ -1029,17 +1029,19 @@ mod convert {
                         if_target,
                         else_target,
                     } => {
-                        let if_value = ValueType::try_from(if_target.as_ref());
-                        let else_value = ValueType::try_from(else_target.as_ref());
-
-                        if if_value.is_ok() && else_value.is_ok() {
-                            let if_type = if_value.unwrap();
-                            let else_type = else_value.unwrap();
-                            debug_assert_eq!(if_type, else_type);
-                            Ok(if_type)
-                        } else {
-                            Err(value.clone())
-                        }
+                        let if_type = match ValueType::try_from(if_target.as_ref()) {
+                            Ok(value_type) => value_type,
+                            Err(_) => return Err(value.clone()),
+                        };
+                        let else_type = match ValueType::try_from(else_target.as_ref()) {
+                            Ok(value_type) => value_type,
+                            Err(_) => return Err(value.clone()),
+                        };
+                        debug_assert_eq!(
+                            if_type, else_type,
+                            "The types of ITE operands must be the same."
+                        );
+                        Ok(if_type)
                     }
                     _ => Err(value.clone()),
                 },
