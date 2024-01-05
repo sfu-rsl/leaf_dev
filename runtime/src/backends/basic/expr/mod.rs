@@ -1001,8 +1001,8 @@ mod convert {
 
         fn try_from(value: &Value) -> Result<Self, Self::Error> {
             match value {
-                Value::Concrete(con_val) => Ok(ValueType::try_from(con_val)?),
-                Value::Symbolic(sym_val) => Ok(ValueType::try_from(sym_val)?),
+                Value::Concrete(con_val) => ValueType::try_from(con_val).or(Err(value.clone())),
+                Value::Symbolic(sym_val) => ValueType::try_from(sym_val).or(Err(value.clone())),
             }
         }
     }

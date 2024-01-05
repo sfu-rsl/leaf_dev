@@ -393,7 +393,16 @@ mod core {
     }
 
     fn to_cast_expr(from: SymValueRef, to: ValueType) -> Expr {
-        let from_type = ValueType::try_from(from.as_ref()).unwrap();
+        let result = ValueType::try_from(from.as_ref());
+        if result.is_err() {
+            unimplemented!(
+                "Casting from {} to {} is not supported.",
+                result.unwrap_err(),
+                to
+            );
+        }
+
+        let from_type = result.unwrap();
         match to {
             ValueType::Char => {
                 debug_assert_eq!(
