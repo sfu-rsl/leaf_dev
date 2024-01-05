@@ -176,6 +176,7 @@ pub(crate) mod z3 {
         }
 
         fn translate_symbolic_expr(&mut self, expr: &Expr) -> AstNode<'ctx> {
+            log::debug!("Translating symbolic expression: {:?}", expr);
             match expr {
                 Expr::Unary { operator, operand } => {
                     let operand = self.translate_symbolic(operand);

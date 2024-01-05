@@ -350,7 +350,7 @@ mod core {
         }
 
         fn cast<'a>(&mut self, operand: Self::ExprRef<'a>, target: CastKind) -> Self::Expr<'a> {
-            match ValueType::try_from(target) {
+            let expr = match ValueType::try_from(target) {
                 Ok(value_type) => to_cast_expr(operand, value_type),
                 Err(target) => {
                     use CastKind::*;
@@ -366,8 +366,7 @@ mod core {
                                 ),
                             }
                         }
-                        ExposeAddress => to_cast_expr(operand, ValueType::Int(USIZE_TYPE)),
-                        ToPointer(_) => {
+                        ExposeAddress | ToPointer(_) => {
                             todo!("Add support for pointer casts")
                         }
                         SizedDynamize => {
@@ -386,7 +385,10 @@ mod core {
                         _ => unreachable!(),
                     }
                 }
-            }
+            };
+            log::debug!("Cast expression for {:?}: {}", target, expr);
+
+            expr
         }
     }
 

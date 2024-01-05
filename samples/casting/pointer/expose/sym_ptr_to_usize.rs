@@ -1,8 +1,11 @@
 use runtime::annotations::Symbolizable;
 
 fn main() {
-    let x = 24_u32.mark_symbolic();
-    let y = &x as *const u32;
+    let x = 1.mark_symbolic();
+    let a = 20;
+    let b = 30;
+    let arr = [&a as *const i32, &b as *const i32];
+    let y = arr[x];
     let z = y as usize;
     foo(z);
 }
