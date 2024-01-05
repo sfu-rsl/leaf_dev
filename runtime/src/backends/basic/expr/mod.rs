@@ -880,7 +880,7 @@ mod convert {
             ValueRef::new(self)
         }
 
-        pub(crate) fn unwrap_func_id(&self) -> u64 {
+        pub(crate) fn unwrap_func_id(&self) -> FuncId {
             if let Value::Concrete(ConcreteValue::Const(ConstValue::Func(f))) = *self {
                 f
             } else {

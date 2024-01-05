@@ -200,7 +200,7 @@ pub(crate) struct RuntimeCallAdder<C> {
 }
 
 mod implementation {
-    use std::assert_matches::debug_assert_matches;
+    use std::assert_matches::{assert_matches, debug_assert_matches};
 
     use rustc_middle::mir::{self, BasicBlock, BasicBlockData, HasLocalDecls, UnevaluatedConst};
     use rustc_middle::ty::{ParamEnv, TyKind, TypeVisitableExt};
@@ -212,9 +212,9 @@ mod implementation {
     use super::context::*;
     use super::*;
     use crate::mir_transform::*;
-    use crate::passes::ctfe::CtfeId;
-    use crate::passes::instr;
     use crate::passes::Storage;
+    #[cfg(nctfe)]
+    use crate::passes::{ctfe::CtfeId, instr};
     use crate::pri_utils::FunctionInfo;
 
     use utils::*;
@@ -383,12 +383,31 @@ mod implementation {
         C: context::BodyProvider<'tcx> + context::TyContextProvider<'tcx>,
     {
         pub fn current_func(&self) -> Operand<'tcx> {
+            let instance = self.context.body().source.instance;
+            let def_id = instance.def_id();
+            log::debug!("Creating operand of current function: {:?}", def_id);
+
+            assert_matches!(
+                instance,
+                rustc_middle::ty::InstanceDef::Item(..),
+                "Only user-defined items are expected."
+            );
+
             let tcx = self.tcx();
-            let def_id = self.context.body().source.def_id();
+
+            let ty = tcx.type_of(def_id).instantiate_identity();
+            let fn_def_ty = match ty.kind() {
+                TyKind::FnDef(..) => ty,
+                TyKind::Closure(..) => ty::fn_def_of_closure_call(tcx, ty),
+                TyKind::Coroutine(..) => todo!("#333"),
+                _ => unreachable!("Unexpected type for body instance: {:?}", ty),
+            };
+            debug_assert_matches!(fn_def_ty.kind(), TyKind::FnDef(..));
+
             Operand::Constant(Box::new(mir::ConstOperand {
                 span: self.context.body().span,
                 user_ty: None,
-                const_: mir::Const::zero_sized(tcx.type_of(def_id).instantiate_identity()),
+                const_: mir::Const::zero_sized(fn_def_ty),
             }))
         }
     }
@@ -2322,10 +2341,33 @@ mod implementation {
                 }
             }
 
+            /// Returns the corresponding FnDef type of a closure when called,
+            /// i.e. `<closure as Fn*<I>>::call*()`
+            ///
+            /// [`ty`]: closure type
+            pub fn fn_def_of_closure_call<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>) -> Ty<'tcx> {
+                let TyKind::Closure(_, args) = ty.kind() else {
+                    panic!("Expected closure type but received: {}", ty)
+                };
+                let args = args.as_closure();
+
+                // Finding the call method in the Fn trait.
+                let fn_trait_fn_id = tcx
+                    .associated_items(args.kind().to_def_id(tcx))
+                    .in_definition_order()
+                    .find(|x| matches!(x.kind, rustc_middle::ty::AssocKind::Fn))
+                    .unwrap()
+                    .def_id;
+
+                // Inputs types are collated into a tuple and are the only generic argument of the Fn trait.
+                let inputs = args.sig().skip_binder().inputs()[0];
+                Ty::new_fn_def(tcx, fn_trait_fn_id, [ty, inputs])
+            }
+
             pub fn fn_ptr<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>) -> Ty<'tcx> {
                 match ty.kind() {
                     TyKind::FnDef(..) => Ty::new_fn_ptr(tcx, ty.fn_sig(tcx)),
-                    TyKind::FnPtr(_) => ty,
+                    TyKind::FnPtr(..) => ty,
                     TyKind::Closure(_, args) => args.as_closure().sig_as_fn_ptr_ty(),
                     _ => unreachable!("Unexpected type to get function pointer from: {}", ty),
                 }
@@ -2502,6 +2544,7 @@ mod implementation {
             log::debug!("Getting id (pointer) of function {:?}.", func);
 
             let fn_ty = func.ty(local_manager, tcx);
+            debug_assert_matches!(fn_ty.kind(), TyKind::FnDef(..) | TyKind::FnPtr(..));
             let ptr_ty = ty::fn_ptr(tcx, fn_ty);
             let ptr_local = local_manager.add_local(ptr_ty);
             let ptr_assignment = assignment::create(
@@ -2509,13 +2552,7 @@ mod implementation {
                 if fn_ty.is_fn_ptr() {
                     Rvalue::Use(func.clone())
                 } else {
-                    let coercion = if fn_ty.is_closure() {
-                        // TODO: Check if this unsafety is correct.
-                        PointerCoercion::ClosureFnPointer(rustc_hir::Unsafety::Normal)
-                    } else {
-                        PointerCoercion::ReifyFnPointer
-                    };
-                    rvalue::cast_to_coerced(coercion, func.clone(), ptr_ty)
+                    rvalue::cast_to_coerced(PointerCoercion::ReifyFnPointer, func.clone(), ptr_ty)
                 },
             );
 
