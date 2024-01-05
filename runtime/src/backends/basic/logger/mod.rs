@@ -322,13 +322,9 @@ impl FunctionHandler for LoggerFunctionHandler<'_> {
         self.call_manager.notify_before_call(func);
     }
 
-    fn enter(self, func: Self::Operand) {
+    fn enter(self, current_func: Self::Operand) {
         let _info = self.call_manager.notify_enter_call();
-        log::info!("Entered function {}", func);
-    }
-    fn internal_enter(self) {
-        let info = self.call_manager.notify_enter_call();
-        log::info!("Entered explicitly internal function {}", info.func);
+        log::info!("Entered function {}", current_func);
     }
 
     fn override_return_value(self, value: Self::Operand) {

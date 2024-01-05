@@ -8,7 +8,7 @@ use super::{
     config::CallConfig,
     expr::ConcreteValue,
     place::{LocalWithMetadata, PlaceMetadata},
-    CallStackManager, EntranceKind, Place, ValueRef, VariablesState,
+    CallStackManager, Place, ValueRef, VariablesState,
 };
 
 type VariablesStateFactory<VS> = Box<dyn Fn(usize) -> VS>;
@@ -174,19 +174,14 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
 
     /// This function is called when a function is entered. `kind` tells us whether the entered function is
     /// instrumented (internal) or not.
-    fn notify_enter(&mut self, kind: EntranceKind) {
+    fn notify_enter(&mut self, current_func: ValueRef) {
         let call_info = self.latest_call.take();
 
         // if parent_frame doesn't exist, we can assume we're in an instrumented function
         if let Some(parent_frame) = self.stack.last_mut() {
-            parent_frame.is_callee_external = Some(match kind {
-                EntranceKind::ForcedInternal => false,
-                EntranceKind::ByFuncId(curr) => {
-                    // If the entered func's id matches what was expected in the parent, it's an internal function
-                    let expected_func = &call_info.as_ref().unwrap().expected_func;
-                    curr.unwrap_func_id() != expected_func.unwrap_func_id()
-                }
-            });
+            let expected_func = &call_info.as_ref().unwrap().expected_func;
+            let is_external = current_func.unwrap_func_id() != expected_func.unwrap_func_id();
+            parent_frame.is_callee_external = Some(is_external);
         }
 
         if let Some(call_info) = call_info {

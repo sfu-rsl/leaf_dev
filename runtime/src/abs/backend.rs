@@ -234,9 +234,6 @@ pub(crate) trait FunctionHandler {
     fn before_call(self, func: Self::Operand, args: impl Iterator<Item = Self::Operand>);
 
     fn enter(self, func: Self::Operand);
-    /// Use this function only when you're constructing a function that just calls
-    /// known, instrumented functions.
-    fn internal_enter(self);
 
     fn override_return_value(self, value: Self::Operand);
 

@@ -367,9 +367,6 @@ pub fn before_call_func(func: OperandRef, args: &[OperandRef]) {
 pub fn enter_func(func: OperandRef) {
     func_control(|h| h.enter(take_back_operand_ref(func)))
 }
-pub fn internal_enter_func() {
-    func_control(|h| h.internal_enter())
-}
 
 pub fn return_from_func() {
     func_control(|h| h.ret())

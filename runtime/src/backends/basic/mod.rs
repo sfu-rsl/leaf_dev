@@ -618,13 +618,7 @@ impl<'a> FunctionHandler for BasicFunctionHandler<'a> {
             Some(func) => func,
             None => unimplemented!("handle when func may be a non-const function pointer"),
         };
-        self.call_stack_manager
-            .notify_enter(EntranceKind::ByFuncId(func_val));
-    }
-
-    fn internal_enter(self) {
-        self.call_stack_manager
-            .notify_enter(EntranceKind::ForcedInternal);
+        self.call_stack_manager.notify_enter(func_val);
     }
 
     fn override_return_value(self, value: Self::Operand) {
@@ -734,15 +728,10 @@ trait VariablesState<P = Place, V = ValueRef> {
     fn set_place(&mut self, place: &P, value: V);
 }
 
-enum EntranceKind {
-    ForcedInternal,
-    ByFuncId(ValueRef),
-}
-
 trait CallStackManager {
     fn prepare_for_call(&mut self, func: ValueRef, args: Vec<ValueRef>);
 
-    fn notify_enter(&mut self, kind: EntranceKind);
+    fn notify_enter(&mut self, current_func: ValueRef);
 
     fn pop_stack_frame(&mut self);
 
