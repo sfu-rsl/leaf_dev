@@ -52,7 +52,9 @@ type ArgLocal = Local;
 type ArgLocal = LocalWithMetadata;
 pub(super) struct CallInfo {
     expected_func: ValueRef,
-    args: Vec<(ArgLocal, ValueRef)>,
+    args: Vec<ValueRef>,
+    #[cfg(place_addr)]
+    args_metadata: Vec<Option<PlaceMetadata>>,
     #[cfg(place_addr)]
     return_val_metadata: Option<PlaceMetadata>,
 }
@@ -76,13 +78,10 @@ impl<VS: VariablesState + SelfHierarchical> BasicCallStackManager<VS> {
         args: impl Iterator<Item = (ArgLocal, ValueRef)>,
         frame: CallStackFrame,
     ) {
-        let mut arg_locals = Vec::new();
-
         self.vars_state = Some(if let Some(current_vars) = self.vars_state.take() {
             let mut vars_state = current_vars.add_layer();
             for (local, value) in args {
                 vars_state.set_place(&Place::from(local.clone()), value);
-                arg_locals.push(local);
             }
 
             vars_state
@@ -130,7 +129,7 @@ impl<VS: VariablesState + SelfHierarchical> BasicCallStackManager<VS> {
                 let all_concrete = self
                     .latest_call
                     .take()
-                    .is_some_and(|c| c.args.iter().all(|v| !v.1.is_symbolic()));
+                    .is_some_and(|c| c.args.iter().all(|v| !v.is_symbolic()));
                 if all_concrete {
                     Concretize
                 } else {
@@ -157,47 +156,63 @@ impl<VS: VariablesState + SelfHierarchical> BasicCallStackManager<VS> {
 
 impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackManager<VS> {
     fn prepare_for_call(&mut self, func: ValueRef, args: Vec<ValueRef>) {
+        let args_len = args.len();
         self.latest_call = Some(CallInfo {
             expected_func: func,
-            args: args
-                .into_iter()
-                .enumerate()
-                .map(|(i, arg)| {
-                    let local = Local::Argument((i + 1) as LocalIndex);
-                    (ArgLocal::from(local), arg)
-                })
-                .collect(),
+            args,
+            #[cfg(place_addr)]
+            args_metadata: Vec::with_capacity(args_len),
             #[cfg(place_addr)]
             return_val_metadata: None,
         });
     }
 
-    /// This function is called when a function is entered. `kind` tells us whether the entered function is
-    /// instrumented (internal) or not.
     fn notify_enter(&mut self, current_func: ValueRef) {
-        let call_info = self.latest_call.take();
-
-        // if parent_frame doesn't exist, we can assume we're in an instrumented function
-        if let Some(parent_frame) = self.stack.last_mut() {
-            let expected_func = &call_info.as_ref().unwrap().expected_func;
-            let is_external = current_func.unwrap_func_id() != expected_func.unwrap_func_id();
-            parent_frame.is_callee_external = Some(is_external);
-        }
-
-        if let Some(call_info) = call_info {
+        if let Some(CallInfo {
+            expected_func,
+            mut args,
             #[cfg(place_addr)]
-            let return_value_metadata = call_info.return_val_metadata;
-            let arg_locals = call_info
-                .args
-                .iter()
-                .map(|(local, _)| local.clone())
-                .collect();
+            args_metadata,
+            #[cfg(place_addr)]
+            return_val_metadata,
+        }) = self.latest_call.take()
+        {
+            let expected_func = &expected_func;
+            let broken_stack = current_func.unwrap_func_id() != expected_func.unwrap_func_id();
+
+            if let Some(parent_frame) = self.stack.last_mut() {
+                parent_frame.is_callee_external = Some(broken_stack);
+            }
+
+            #[cfg(place_addr)]
+            let arg_locals = args_metadata
+                .into_iter()
+                .map(|m| m.expect("Missing argument metadata."))
+                .enumerate()
+                .map(|(i, metadata)| {
+                    ArgLocal::new(Local::Argument((i + 1) as LocalIndex), metadata)
+                })
+                .collect::<Vec<_>>();
+            #[cfg(not(place_addr))]
+            let arg_locals = (1..=args.len())
+                .map(|i| Local::Argument(i as LocalIndex))
+                .collect::<Vec<_>>();
+
+            if broken_stack {
+                args.clear()
+            } else {
+                assert_eq!(
+                    args.len(),
+                    arg_locals.len(),
+                    "Inconsistent number of passed arguments."
+                );
+            }
             self.push_new_stack_frame(
-                call_info.args.into_iter(),
+                arg_locals.clone().into_iter().zip(args.into_iter()),
                 CallStackFrame {
                     arg_locals,
                     #[cfg(place_addr)]
-                    return_val_metadata: return_value_metadata,
+                    return_val_metadata,
                     ..Default::default()
                 },
             );
@@ -268,20 +283,18 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
 
     #[cfg(place_addr)]
     fn set_local_metadata(&mut self, local: &Local, metadata: super::place::PlaceMetadata) {
-        use crate::abs::place::HasMetadata;
-
         match local {
             Local::ReturnValue => {
                 self.latest_call.as_mut().unwrap().return_val_metadata = Some(metadata)
             }
-            Local::Argument(..) => {
-                let args = &mut self.latest_call.as_mut().unwrap().args;
-                *args
-                    .iter_mut()
-                    .find(|(arg, _)| arg.as_ref().eq(&local))
-                    .unwrap()
-                    .0
-                    .metadata_mut() = metadata;
+            Local::Argument(local_index) => {
+                log::info!("Setting metadata for argument {:?}.", local);
+                let args_metadata = &mut self.latest_call.as_mut().unwrap().args_metadata;
+                let index = *local_index as usize - 1;
+                if args_metadata.len() <= index {
+                    args_metadata.resize(index + 1, None);
+                }
+                args_metadata[index] = Some(metadata);
             }
             _ => (),
         }
