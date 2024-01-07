@@ -21,9 +21,6 @@ pub(crate) trait RuntimeBackend {
     type FunctionHandler<'a>: FunctionHandler<Place = Self::Place, Operand = Self::Operand>
     where
         Self: 'a;
-    type TypeHandler<'a>
-    where
-        Self: 'a;
 
     type Place;
     type Operand;
@@ -40,8 +37,6 @@ pub(crate) trait RuntimeBackend {
     fn branch(&mut self) -> Self::BranchingHandler<'_>;
 
     fn func_control(&mut self) -> Self::FunctionHandler<'_>;
-
-    fn type_control(&mut self) -> Self::TypeHandler<'_>;
 }
 
 pub(crate) trait PlaceHandler {
@@ -279,8 +274,6 @@ pub(crate) trait TypeManager {
     type Value;
 
     fn get_type(&self, key: Self::Key) -> Self::Value;
-
-    fn set_type(&mut self, key: Self::Key, value: Self::Value);
 }
 
 pub(crate) mod implementation {
@@ -425,32 +418,6 @@ pub(crate) mod implementation {
         #[cfg(abs_concrete)]
         fn some(self) -> Self::Operand {
             Constant::Some.into()
-        }
-    }
-
-    pub(crate) struct DefaultTypeManager {
-        type_map: HashMap<TypeId, TypeInfo>,
-    }
-
-    impl DefaultTypeManager {
-        pub fn new() -> Self {
-            Self {
-                type_map: TypeExport::read(),
-            }
-        }
-    }
-
-    impl TypeManager for DefaultTypeManager {
-        type Key = TypeId;
-        type Value = Option<TypeInfo>;
-
-        fn get_type(&self, key: Self::Key) -> Self::Value {
-            self.type_map.get(&key).cloned()
-        }
-
-        fn set_type(&mut self, key: Self::Key, value: Self::Value) {
-            self.type_map
-                .insert(key, value.expect("Invalid TypeInfo value"));
         }
     }
 }

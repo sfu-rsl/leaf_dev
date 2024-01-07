@@ -1,11 +1,8 @@
-use std::{collections::HashMap, fmt::Display};
+use std::fmt::Display;
 
-use crate::{
-    abs::{
-        backend::*, AssertKind, BinaryOp, BranchingMetadata, CastKind, FuncId, TypeId, UnaryOp,
-        ValueType, VariantIndex,
-    },
-    tyexp::TypeInfo,
+use crate::abs::{
+    backend::*, AssertKind, BinaryOp, BranchingMetadata, CastKind, FuncId, UnaryOp, ValueType,
+    VariantIndex,
 };
 
 use super::{Field, OperandHandler, Place, PlaceHandler};
@@ -17,7 +14,6 @@ type Operand = super::operand::Operand<Place, ValueType>;
 
 pub(crate) struct LoggerBackend {
     call_manager: CallManager,
-    type_manager: LoggerTypeManager,
 }
 
 impl LoggerBackend {
@@ -25,7 +21,6 @@ impl LoggerBackend {
     pub fn new() -> Self {
         Self {
             call_manager: CallManager::new(),
-            type_manager: LoggerTypeManager::new(),
         }
     }
 }
@@ -36,7 +31,6 @@ impl RuntimeBackend for LoggerBackend {
     type AssignmentHandler<'a> = LoggerAssignmentHandler where Self: 'a;
     type BranchingHandler<'a> = LoggerBranchingHandler where Self: 'a;
     type FunctionHandler<'a> = LoggerFunctionHandler<'a> where Self: 'a;
-    type TypeHandler<'a> = &'a mut LoggerTypeManager;
 
     type Place = Place;
     type Operand = Operand;
@@ -61,10 +55,6 @@ impl RuntimeBackend for LoggerBackend {
         LoggerFunctionHandler {
             call_manager: &mut self.call_manager,
         }
-    }
-
-    fn type_control(&mut self) -> Self::TypeHandler<'_> {
-        &mut self.type_manager
     }
 }
 
@@ -346,33 +336,6 @@ impl FunctionHandler for LoggerFunctionHandler<'_> {
     }
 
     fn metadata(self) -> Self::MetadataHandler {}
-}
-
-pub(crate) struct LoggerTypeManager {
-    type_map: HashMap<TypeId, TypeInfo>,
-}
-
-impl LoggerTypeManager {
-    fn new() -> Self {
-        LoggerTypeManager {
-            type_map: HashMap::new(),
-        }
-    }
-}
-
-impl TypeManager for LoggerTypeManager {
-    type Key = TypeId;
-    type Value = Option<TypeInfo>;
-
-    fn get_type(&self, key: Self::Key) -> Self::Value {
-        log::info!("Getting value for key: [{:#?}]", key);
-        self.type_map.get(&key).cloned()
-    }
-
-    fn set_type(&mut self, key: Self::Key, value: Self::Value) {
-        log::info!("Setting value: [{:#?}] for key: [{:#?}]", value, key);
-        self.type_map.insert(key, value.expect("Invalid value"));
-    }
 }
 
 struct CallInfo {

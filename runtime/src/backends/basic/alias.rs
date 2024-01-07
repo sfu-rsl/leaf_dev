@@ -7,6 +7,8 @@ use crate::{
     tyexp::TypeInfo,
 };
 
+pub(crate) use crate::utils::alias::*;
+
 pub(crate) trait ValueRefExprBuilder: ExprBuilder<ValueRef> {}
 impl<T> ValueRefExprBuilder for T where T: ExprBuilder<ValueRef> {}
 
@@ -42,10 +44,10 @@ where
 }
 
 pub(crate) trait TypeManager:
-    abs::backend::TypeManager<Key = abs::TypeId, Value = Option<TypeInfo>>
+    abs::backend::TypeManager<Key = abs::TypeId, Value = Option<&'static TypeInfo>>
 {
 }
-impl<T> TypeManager for T where
-    T: abs::backend::TypeManager<Key = abs::TypeId, Value = Option<TypeInfo>>
+impl<'t, T> TypeManager for T where
+    T: abs::backend::TypeManager<Key = abs::TypeId, Value = Option<&'static TypeInfo>>
 {
 }

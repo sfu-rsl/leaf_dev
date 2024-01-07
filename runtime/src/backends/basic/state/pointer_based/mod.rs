@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::btree_map::Entry, ops::Bound, rc::Rc};
+use std::{collections::btree_map::Entry, ops::Bound, rc::Rc};
 
 use delegate::delegate;
 
@@ -16,7 +16,7 @@ use crate::{
 
 use super::{
     super::{
-        alias::SymValueRefProjector as SymbolicProjector, expr::prelude::*,
+        alias::RRef, alias::SymValueRefProjector as SymbolicProjector, expr::prelude::*,
         place::PlaceWithMetadata, ValueRef,
     },
     proj::{apply_projs_sym, IndexResolver, ProjectionResolutionExt},
@@ -30,8 +30,6 @@ use utils::*;
 type Local = LocalWithMetadata;
 type Place = PlaceWithMetadata;
 type Projection = crate::abs::Projection<Local>;
-
-type RRef<T> = Rc<RefCell<T>>;
 
 /* NOTE: Memory structure
  * How does this state tries to store (symbolic) objects?
@@ -94,11 +92,11 @@ pub(in super::super) struct RawPointerVariableState<VS, SP: SymbolicProjector> {
     memory: memory::Memory,
     fallback: VS,
     sym_projector: RRef<SP>,
-    type_manager: RRef<dyn TypeManager>,
+    type_manager: Rc<dyn TypeManager>,
 }
 
 impl<VS, SP: SymbolicProjector> RawPointerVariableState<VS, SP> {
-    pub fn new(fallback: VS, sym_projector: RRef<SP>, type_manager: RRef<dyn TypeManager>) -> Self
+    pub fn new(fallback: VS, sym_projector: RRef<SP>, type_manager: Rc<dyn TypeManager>) -> Self
     where
         VS: VariablesState<Place>,
     {
@@ -447,7 +445,7 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
 
     fn set_addr_array(&mut self, addr: RawPointer, array: &ArrayValue, type_id: TypeId) {
         let item_ty = {
-            let array_ty = &self.get_type(type_id);
+            let array_ty = self.get_type(type_id);
             let fields = &array_ty.expect_single_variant().fields;
             let FieldsShapeInfo::Array(ArrayShape {
                 item_ty: item_ty_id,
@@ -469,16 +467,13 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
         }
     }
 
-    fn get_type(&self, type_id: TypeId) -> TypeInfo {
-        self.type_manager
-            .borrow()
-            .get_type(type_id)
-            .unwrap_or_else(|| {
-                panic!(
-                    "Type information for type id: {:?} is not available.",
-                    type_id
-                )
-            })
+    fn get_type(&self, type_id: TypeId) -> &'static TypeInfo {
+        self.type_manager.get_type(type_id).unwrap_or_else(|| {
+            panic!(
+                "Type information for type id: {:?} is not available.",
+                type_id
+            )
+        })
     }
 }
 

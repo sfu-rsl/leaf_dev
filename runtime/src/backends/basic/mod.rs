@@ -7,7 +7,7 @@ pub(crate) mod operand;
 mod place;
 mod state;
 
-use std::{cell::RefCell, ops::DerefMut, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, ops::DerefMut, rc::Rc};
 
 use crate::{
     abs::{
@@ -68,7 +68,7 @@ pub struct BasicBackend {
     current_constraints: Vec<Constraint>,
     expr_builder: Rc<RefCell<ExprBuilder>>,
     sym_id_counter: u32,
-    type_manager: Rc<RefCell<dyn TypeManager>>,
+    type_manager: Rc<dyn TypeManager>,
     config: BasicBackendConfig,
 }
 
@@ -76,7 +76,7 @@ impl BasicBackend {
     pub fn new(config: BasicBackendConfig) -> Self {
         let expr_builder = Rc::new(RefCell::new(expr::builders::new_expr_builder()));
         let sym_projector = Rc::new(RefCell::new(expr::proj::new_sym_projector()));
-        let type_manager_ref = Rc::new(RefCell::new(DefaultTypeManager::new()));
+        let type_manager_ref = Rc::new(BasicTypeManager::default());
         let type_manager = type_manager_ref.clone();
         Self {
             call_stack_manager: BasicCallStackManager::new(
@@ -130,8 +130,6 @@ impl RuntimeBackend for BasicBackend {
     where
         Self: 'a;
 
-    type TypeHandler<'a> = BasicTypeManager;
-
     type Place = Place;
 
     type Operand = Operand;
@@ -165,11 +163,7 @@ impl RuntimeBackend for BasicBackend {
     }
 
     fn func_control(&mut self) -> Self::FunctionHandler<'_> {
-        BasicFunctionHandler::new(&mut self.call_stack_manager)
-    }
-
-    fn type_control(&mut self) -> Self::TypeHandler<'_> {
-        BasicTypeManager(self.type_manager.clone())
+        BasicFunctionHandler::new(&mut self.call_stack_manager, self.type_manager.as_ref())
     }
 }
 
@@ -660,19 +654,29 @@ impl BasicFunctionMetadataHandler<'_> {
         self.call_stack_manager
             .set_local_metadata(local, metadata.clone())
     }
+
+pub(crate) struct BasicTypeManager<'t> {
+    type_map: &'t HashMap<TypeId, TypeInfo>,
 }
 
-pub(crate) struct BasicTypeManager(Rc<RefCell<dyn TypeManager>>);
-impl abs::backend::TypeManager for BasicTypeManager {
+impl<'t> BasicTypeManager<'t> {
+    fn new(type_map: &'t HashMap<TypeId, TypeInfo>) -> Self {
+        Self { type_map }
+    }
+}
+
+impl Default for BasicTypeManager<'static> {
+    fn default() -> Self {
+        Self::new(tyexp::instance::PROGRAM_TYPES.get_or_init(|| TypeExport::read()))
+    }
+}
+
+impl<'t> crate::abs::backend::TypeManager for BasicTypeManager<'t> {
     type Key = TypeId;
-    type Value = Option<TypeInfo>;
+    type Value = Option<&'t TypeInfo>;
 
     fn get_type(&self, key: Self::Key) -> Self::Value {
-        self.0.as_ref().borrow().get_type(key)
-    }
-
-    fn set_type(&mut self, key: Self::Key, value: Self::Value) {
-        self.0.as_ref().borrow_mut().set_type(key, value)
+        self.type_map.get(&key)
     }
 }
 

@@ -1,10 +1,10 @@
-use lazy_static::lazy_static;
+pub(crate) mod instance;
+
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     fs::OpenOptions,
     io::{Read, Write},
-    sync::Mutex,
 };
 
 use crate::abs::{Alignment, TypeSize, VariantIndex};
