@@ -75,6 +75,11 @@ impl PlaceMetadata {
     pub(crate) fn size(&self) -> Option<TypeSize> {
         self.size.as_ref().copied()
     }
+
+    #[inline]
+    pub(crate) fn set_size(&mut self, size: TypeSize) {
+        self.size = Some(size);
+    }
 }
 
 pub(crate) type LocalWithMetadata = crate::abs::place::LocalWithMetadata<PlaceMetadata>;

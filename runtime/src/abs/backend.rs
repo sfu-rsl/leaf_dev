@@ -224,9 +224,15 @@ pub(crate) trait BranchTakingHandler<T> {
 pub(crate) trait FunctionHandler {
     type Place;
     type Operand;
+    type Arg = Self::Operand;
     type MetadataHandler;
 
-    fn before_call(self, func: Self::Operand, args: impl Iterator<Item = Self::Operand>);
+    fn before_call(
+        self,
+        func: Self::Operand,
+        args: impl Iterator<Item = Self::Arg>,
+        are_args_tupled: bool,
+    );
 
     fn enter(self, func: Self::Operand);
 

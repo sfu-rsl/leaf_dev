@@ -11,13 +11,13 @@ use std::{cell::RefCell, collections::HashMap, ops::DerefMut, rc::Rc};
 
 use crate::{
     abs::{
-        self, backend::implementation::DefaultTypeManager, backend::*, AssertKind, BasicBlockIndex,
-        BranchingMetadata, CastKind, IntType, Local, PlaceUsage, PointerOffset, TypeId, UnaryOp,
+        self, backend::*, place::HasMetadata, AssertKind, BasicBlockIndex, BranchingMetadata,
+        CastKind, FieldIndex, IntType, Local, LocalIndex, PlaceUsage, RawPointer, TypeId, UnaryOp,
         VariantIndex,
     },
     solvers::z3::Z3Solver,
     trace::ImmediateTraceManager,
-    tyexp::{TypeExport, TypeInfo},
+    tyexp::{self, FieldsShapeInfo, StructShape, TypeExport, TypeInfo},
 };
 
 use self::{
@@ -31,6 +31,7 @@ use self::{
         proj::DefaultSymProjector as SymProjector,
     },
     operand::BasicOperandHandler,
+    place::{BasicPlaceHandler, PlaceMetadata},
     state::{RawPointerVariableState, StackedLocalIndexVariablesState},
 };
 
@@ -582,11 +583,18 @@ impl_int_branch_case_value!(u128, VariantIndex);
 
 pub(crate) struct BasicFunctionHandler<'a> {
     call_stack_manager: &'a mut dyn CallStackManager,
+    type_manager: &'a dyn TypeManager,
 }
 
 impl<'a> BasicFunctionHandler<'a> {
-    fn new(call_stack_manager: &'a mut impl CallStackManager) -> Self {
-        Self { call_stack_manager }
+    fn new(
+        call_stack_manager: &'a mut impl CallStackManager,
+        type_manager: &'a dyn TypeManager,
+    ) -> Self {
+        Self {
+            call_stack_manager,
+            type_manager,
+        }
     }
 }
 
@@ -595,7 +603,12 @@ impl<'a> FunctionHandler for BasicFunctionHandler<'a> {
     type Operand = Operand;
     type MetadataHandler = BasicFunctionMetadataHandler<'a>;
 
-    fn before_call(self, func: Self::Operand, args: impl Iterator<Item = Self::Operand>) {
+    fn before_call(
+        self,
+        func: Self::Operand,
+        args: impl Iterator<Item = Self::Arg>,
+        are_args_tupled: bool,
+    ) {
         // we don't know whether func will be internal or external
         let func_val = match try_const_operand_value(func) {
             Some(func) => func,
@@ -604,7 +617,8 @@ impl<'a> FunctionHandler for BasicFunctionHandler<'a> {
         let args = args
             .map(|a| get_operand_value(self.call_stack_manager.top(), a))
             .collect();
-        self.call_stack_manager.prepare_for_call(func_val, args);
+        self.call_stack_manager
+            .prepare_for_call(func_val, args, are_args_tupled);
     }
 
     fn enter(self, func: Self::Operand) {
@@ -631,19 +645,19 @@ impl<'a> FunctionHandler for BasicFunctionHandler<'a> {
     fn metadata(self) -> Self::MetadataHandler {
         BasicFunctionMetadataHandler {
             call_stack_manager: self.call_stack_manager,
+            type_manager: self.type_manager,
         }
     }
 }
 
 pub(crate) struct BasicFunctionMetadataHandler<'a> {
     call_stack_manager: &'a mut dyn CallStackManager,
+    type_manager: &'a dyn TypeManager,
 }
 
 impl BasicFunctionMetadataHandler<'_> {
     #[cfg(place_addr)]
     pub(crate) fn preserve_metadata(&mut self, place: Place) {
-        use crate::abs::place::HasMetadata;
-
         let local = place.local();
         let metadata = local.metadata();
         let local: &abs::Local = local.as_ref();
@@ -654,6 +668,110 @@ impl BasicFunctionMetadataHandler<'_> {
         self.call_stack_manager
             .set_local_metadata(local, metadata.clone())
     }
+
+    pub(crate) fn try_untuple_argument(&mut self, arg_index: LocalIndex, tuple_type_id: TypeId) {
+        self.call_stack_manager
+            .try_untuple_argument(arg_index, &|| {
+                Box::new(BasicUntupleHelper::new(self.type_manager, tuple_type_id))
+            })
+    }
+}
+
+struct BasicUntupleHelper<'a> {
+    type_manager: &'a dyn TypeManager,
+    type_id: TypeId,
+    type_info: Option<&'static TypeInfo>,
+    fields_info: Option<&'static StructShape>,
+}
+
+impl UntupleHelper for BasicUntupleHelper<'_> {
+    #[cfg(place_addr)]
+    fn make_tupled_arg_pseudo_place_meta(&mut self, addr: RawPointer) -> PlaceMetadata {
+        let mut metadata = PlaceMetadata::default();
+        metadata.set_address(addr);
+        Self::set_metadata_from_type_info(&mut metadata, self.type_info());
+        metadata
+    }
+
+    fn num_fields(&self, tupled_value: &ValueRef) -> FieldIndex {
+        if let Some(ref type_info) = self.type_info {
+            let Some(FieldsShapeInfo::Struct(s)) = type_info.variants.first().map(|t| &t.fields)
+            else {
+                panic!("Expected tuple type info, got: {:?}", type_info)
+            };
+            s.fields.len() as FieldIndex
+        } else if let Value::Concrete(ConcreteValue::Adt(AdtValue {
+            kind: AdtKind::Struct,
+            fields,
+        })) = tupled_value.as_ref()
+        {
+            fields.len() as FieldIndex
+        } else {
+            panic!("Could not find the number of fields for the tupled arg.")
+        }
+    }
+
+    fn field_place(&mut self, mut base: Place, field: FieldIndex) -> Place {
+        use abs::backend::PlaceHandler;
+
+        #[cfg(place_addr)]
+        let base_addr = base.address();
+
+        BasicPlaceHandler::default()
+            .project_on(&mut base)
+            .for_field(field);
+
+        #[cfg(place_addr)]
+        if self.type_info.is_some() {
+            // FIXME: Repeated checks
+            let field_info = &self.fields_info().fields[field as usize];
+            let field_type = self.get_type(field_info.ty);
+            Self::set_metadata_from_type_info(base.metadata_mut(), &field_type);
+            base.metadata_mut()
+                .set_address(base_addr.unwrap() + field_info.offset);
+        }
+        base
+    }
+}
+
+impl<'a> BasicUntupleHelper<'a> {
+    fn new(type_manager: &'a dyn TypeManager, type_id: TypeId) -> Self {
+        Self {
+            type_manager,
+            type_id,
+            type_info: None,
+            fields_info: None,
+        }
+    }
+
+    fn get_type(&self, type_id: TypeId) -> &'static TypeInfo {
+        self.type_manager
+            .get_type(type_id)
+            .expect("Could not find type info for the tupled argument.")
+    }
+
+    fn type_info(&mut self) -> &'static TypeInfo {
+        if self.type_info.is_none() {
+            self.type_info = Some(self.get_type(self.type_id));
+        }
+        self.type_info.unwrap()
+    }
+
+    fn fields_info(&mut self) -> &'static StructShape {
+        let type_info = self.type_info();
+        self.fields_info
+            .get_or_insert_with(|| match type_info.expect_single_variant().fields {
+                FieldsShapeInfo::Struct(ref shape) => shape,
+                _ => panic!("Expected tuple type info, got: {:?}", type_info),
+            })
+    }
+
+    #[cfg(place_addr)]
+    fn set_metadata_from_type_info(metadata: &mut PlaceMetadata, type_info: &TypeInfo) {
+        metadata.set_type_id(type_info.id);
+        metadata.set_size(type_info.size);
+    }
+}
 
 pub(crate) struct BasicTypeManager<'t> {
     type_map: &'t HashMap<TypeId, TypeInfo>,
@@ -733,7 +851,16 @@ trait VariablesState<P = Place, V = ValueRef> {
 }
 
 trait CallStackManager {
-    fn prepare_for_call(&mut self, func: ValueRef, args: Vec<ValueRef>);
+    fn prepare_for_call(&mut self, func: ValueRef, args: Vec<ValueRef>, are_args_tupled: bool);
+
+    #[cfg(place_addr)]
+    fn set_local_metadata(&mut self, local: &Local, metadata: PlaceMetadata);
+
+    fn try_untuple_argument<'a, 'b>(
+        &'a mut self,
+        arg_index: LocalIndex,
+        untuple_helper: &dyn Fn() -> Box<dyn UntupleHelper + 'b>,
+    );
 
     fn notify_enter(&mut self, current_func: ValueRef);
 
@@ -744,7 +871,13 @@ trait CallStackManager {
     fn override_return_value(&mut self, value: ValueRef);
 
     fn top(&mut self) -> &mut dyn VariablesState;
+}
 
+trait UntupleHelper {
     #[cfg(place_addr)]
-    fn set_local_metadata(&mut self, local: &Local, metadata: place::PlaceMetadata);
+    fn make_tupled_arg_pseudo_place_meta(&mut self, addr: RawPointer) -> PlaceMetadata;
+
+    fn num_fields(&self, tupled_value: &ValueRef) -> FieldIndex;
+
+    fn field_place(&mut self, base: Place, field: FieldIndex) -> Place;
 }

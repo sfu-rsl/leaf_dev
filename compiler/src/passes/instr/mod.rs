@@ -277,6 +277,8 @@ where
         _call_source: &mir::CallSource,
         _fn_span: rustc_span::Span,
     ) {
+        let are_args_tupled =
+            call::utils::are_args_tupled(self.call_adder.tcx(), &self.call_adder, func, args);
         Self::instrument_call(
             &mut self.call_adder,
             |call_adder| call_adder.reference_func(func),
@@ -285,6 +287,7 @@ where
                     .map(|arg| call_adder.reference_operand(arg))
                     .collect::<Vec<_>>()
             },
+            are_args_tupled,
             destination,
             target,
         );
@@ -339,13 +342,14 @@ where
         call_adder: &mut RuntimeCallAdder<C>,
         ref_func: impl FnOnce(&mut RuntimeCallAdder<context::AtLocationContext<C>>) -> OperandRef,
         ref_args: impl FnOnce(&mut RuntimeCallAdder<context::AtLocationContext<C>>) -> Vec<OperandRef>,
+        are_args_tupled: bool,
         destination: &Place<'tcx>,
         target: &Option<BasicBlock>,
     ) {
         let mut call_adder = call_adder.before();
         let func = ref_func(&mut call_adder);
         let args = ref_args(&mut call_adder);
-        call_adder.before_call_func(func, args.into_iter());
+        call_adder.before_call_func(func, args.into_iter(), are_args_tupled);
 
         if target.is_some() {
             call_adder.after().after_call_func(destination);

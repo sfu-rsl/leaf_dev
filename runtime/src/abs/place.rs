@@ -109,7 +109,7 @@ pub(crate) trait HasMetadata {
     fn metadata_mut(&mut self) -> &mut Self::Metadata;
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, dm::Deref, dm::DerefMut)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, dm::Deref, dm::DerefMut, dm::From)]
 pub(crate) struct LocalWithMetadata<M> {
     pub local: Local,
     #[deref]

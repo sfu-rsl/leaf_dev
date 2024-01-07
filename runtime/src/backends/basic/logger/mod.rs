@@ -307,8 +307,18 @@ impl FunctionHandler for LoggerFunctionHandler<'_> {
     type Operand = Operand;
     type MetadataHandler = ();
 
-    fn before_call(self, func: Self::Operand, args: impl Iterator<Item = Self::Operand>) {
-        log_info!("Just before call {}({})", func, comma_separated(args));
+    fn before_call(
+        self,
+        func: Self::Operand,
+        args: impl Iterator<Item = Self::Arg>,
+        are_args_tupled: bool,
+    ) {
+        log_info!(
+            "Just before call {}({}{})",
+            func,
+            comma_separated(args),
+            if are_args_tupled { ": tupled" } else { "" }
+        );
         self.call_manager.notify_before_call(func);
     }
 

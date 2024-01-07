@@ -355,13 +355,23 @@ pub fn take_branch_ow_enum_discriminant(info: BranchingInfo, non_indices: &[Vari
     conditional(info, |h| h.on_enum().take_otherwise(non_indices))
 }
 
-pub fn before_call_func(func: OperandRef, args: &[OperandRef]) {
+pub fn before_call_func(func: OperandRef, args: &[OperandRef], are_args_tupled: bool) {
     func_control(|h| {
         h.before_call(
             take_back_operand_ref(func),
             args.iter().map(|o| take_back_operand_ref(*o)),
+            are_args_tupled,
         )
     });
+}
+
+#[cfg(place_addr)]
+pub fn preserve_special_local_metadata(place: PlaceRef) {
+    func_control(|h| h.metadata().preserve_metadata(take_back_place_ref(place)))
+}
+
+pub fn try_untuple_argument(arg_index: LocalIndex, tuple_type_id: TypeId) {
+    func_control(|h| h.metadata().try_untuple_argument(arg_index, tuple_type_id))
 }
 
 pub fn enter_func(func: OperandRef) {
@@ -381,11 +391,6 @@ pub fn override_return_value(operand: OperandRef) {
 
 pub fn after_call_func(destination: PlaceRef) {
     func_control(|h| h.after_call(take_back_place_ref(destination)))
-}
-
-#[cfg(place_addr)]
-pub fn preserve_special_local_metadata(place: PlaceRef) {
-    func_control(|h| h.metadata().preserve_metadata(take_back_place_ref(place)))
 }
 
 pub fn check_assert_bounds_check(

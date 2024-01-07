@@ -153,7 +153,12 @@ pub(crate) trait BranchingHandler {
 pub trait FunctionHandler<'tcx> {
     fn reference_func(&mut self, func: &Operand<'tcx>) -> OperandRef;
 
-    fn before_call_func(&mut self, func: OperandRef, arguments: impl Iterator<Item = OperandRef>);
+    fn before_call_func(
+        &mut self,
+        func: OperandRef,
+        arguments: impl Iterator<Item = OperandRef>,
+        are_args_tupled: bool,
+    );
 
     fn enter_func(&mut self);
 
@@ -202,6 +207,7 @@ pub(crate) struct RuntimeCallAdder<C> {
 mod implementation {
     use std::assert_matches::{assert_matches, debug_assert_matches};
 
+    use runtime::abs::LocalIndex;
     use rustc_middle::mir::{self, BasicBlock, BasicBlockData, HasLocalDecls, UnevaluatedConst};
     use rustc_middle::ty::{ParamEnv, TyKind, TypeVisitableExt};
     use rustc_span::def_id::DefId;
@@ -209,6 +215,7 @@ mod implementation {
     use delegate::delegate;
 
     use self::ctxtreqs::*;
+    use self::utils::ty::TyExt;
     use super::context::*;
     use super::*;
     use crate::mir_transform::*;
@@ -823,7 +830,7 @@ mod implementation {
             if cfg!(place_addr) {
                 let tcx = self.tcx();
                 let ty = place.ty(&self.context, tcx).ty;
-                if ty.is_adt() || ty.is_array() || !ty.is_known_rigid() {
+                if ty.is_adt() || ty.is_tuple() || ty.is_array() || !ty.is_known_rigid() {
                     additional_blocks.extend(self.set_place_size(place_ref, ty));
                 }
             }
@@ -1143,6 +1150,7 @@ mod implementation {
                     func_ref.into()
                 },
                 |_| Vec::default(),
+                false,
                 &result_local.into(),
                 &Some(NEXT_BLOCK),
             );
@@ -1809,6 +1817,7 @@ mod implementation {
             &mut self,
             func: OperandRef,
             arguments: impl Iterator<Item = OperandRef>,
+            are_args_tupled: bool,
         ) {
             let operand_ref_ty = self.context.pri_types().operand_ref;
             let (arguments_local, additional_stmts) = prepare_operand_for_slice(
@@ -1824,6 +1833,7 @@ mod implementation {
                 vec![
                     operand::copy_for_local(func.into()),
                     operand::move_for_local(arguments_local),
+                    operand::const_from_bool(self.tcx(), are_args_tupled),
                 ],
             );
             block.statements.extend(additional_stmts);
@@ -1840,6 +1850,30 @@ mod implementation {
 
             if cfg!(place_addr) {
                 blocks.extend(self.make_bb_for_func_preserve_metadata());
+            }
+
+            let tcx = self.tcx();
+
+            let body_def_id = self.body().source.def_id();
+            if tcx.is_closure(body_def_id) {
+                let TyKind::Closure(_, args) =
+                    tcx.type_of(body_def_id).instantiate_identity().kind()
+                else {
+                    unreachable!()
+                };
+                let id_local = {
+                    let (block, id_local) =
+                        self.make_type_id_of_bb(args.as_closure().sig().skip_binder().inputs()[0]);
+                    blocks.push(block);
+                    id_local
+                };
+                blocks.push(self.make_bb_for_call(
+                    stringify!(pri::try_untuple_argument),
+                    vec![
+                        operand::const_from_uint(tcx, 2 as LocalIndex),
+                        operand::move_for_local(id_local),
+                    ],
+                ));
             }
 
             let func_ref = self.reference_func(&self.current_func());
@@ -2080,7 +2114,7 @@ mod implementation {
         }
     }
 
-    mod utils {
+    pub(super) mod utils {
         use rustc_middle::{
             mir::{
                 self, BasicBlock, BasicBlockData, HasLocalDecls, Local, Operand, Place, Rvalue,
@@ -2304,6 +2338,16 @@ mod implementation {
             use rustc_middle::ty::ParamEnvAnd;
 
             use super::*;
+
+            pub trait TyExt {
+                fn is_tuple(self) -> bool;
+            }
+
+            impl TyExt for Ty<'_> {
+                fn is_tuple(self) -> bool {
+                    matches!(self.kind(), TyKind::Tuple(..))
+                }
+            }
 
             pub fn mk_imm_ref<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>) -> Ty<'tcx> {
                 Ty::new_imm_ref(tcx, tcx.lifetimes.re_erased, ty)
@@ -2618,6 +2662,31 @@ mod implementation {
                 mir::UnOp::Neg => runtime::abs::UnaryOp::Neg,
             }
         }
+
+        pub(super) fn is_fn_trait_method_call(tcx: TyCtxt, func_ty: Ty) -> bool {
+            let TyKind::FnDef(def_id, ..) = func_ty.kind() else {
+                return false;
+            };
+            tcx.trait_of_item(*def_id)
+                .is_some_and(|id| tcx.is_fn_trait(id))
+        }
+
+        pub fn are_args_tupled<'tcx>(
+            tcx: TyCtxt<'tcx>,
+            local_manager: &impl HasLocalDecls<'tcx>,
+            func: &Operand<'tcx>,
+            args: &[Operand<'tcx>],
+        ) -> bool {
+            let result = is_fn_trait_method_call(tcx, func.ty(local_manager, tcx));
+            if !result {
+                return false;
+            }
+
+            // Ensure assumptions
+            assert_eq!(args.len(), 2);
+            assert!(args.last().unwrap().ty(local_manager, tcx).is_tuple());
+            true
+        }
     }
 
     /*
@@ -2694,3 +2763,7 @@ mod implementation {
 }
 
 pub(super) use implementation::context_requirements as ctxtreqs;
+
+pub(super) mod utils {
+    pub use super::implementation::utils::are_args_tupled;
+}

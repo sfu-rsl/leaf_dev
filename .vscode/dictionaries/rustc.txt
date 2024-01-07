@@ -7,8 +7,12 @@ nullary
 rustc
 Rvalue
 Subslice
+tupled
 TyCtx
 unsize
 unsizing
+untuple
+untupled
+untupling
 upvar
 upvars

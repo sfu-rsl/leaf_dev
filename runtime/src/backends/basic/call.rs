@@ -8,7 +8,7 @@ use super::{
     config::CallConfig,
     expr::ConcreteValue,
     place::{LocalWithMetadata, PlaceMetadata},
-    CallStackManager, Place, ValueRef, VariablesState,
+    CallStackManager, Place, UntupleHelper, ValueRef, VariablesState,
 };
 
 type VariablesStateFactory<VS> = Box<dyn Fn(usize) -> VS>;
@@ -53,6 +53,7 @@ type ArgLocal = LocalWithMetadata;
 pub(super) struct CallInfo {
     expected_func: ValueRef,
     args: Vec<ValueRef>,
+    are_args_tupled: bool,
     #[cfg(place_addr)]
     args_metadata: Vec<Option<PlaceMetadata>>,
     #[cfg(place_addr)]
@@ -152,25 +153,114 @@ impl<VS: VariablesState + SelfHierarchical> BasicCallStackManager<VS> {
             }
         }
     }
+
+    fn untuple(
+        tupled_value: ValueRef,
+        #[cfg(place_addr)] tupled_arg_metadata: Option<&PlaceMetadata>,
+        untuple_helper: &mut dyn UntupleHelper,
+        isolated_vars_state: VS,
+    ) -> Vec<ValueRef> {
+        // Make a pseudo place for the tupled argument
+        let tupled_local = Local::Argument(1);
+        #[cfg(place_addr)]
+        let tupled_local = {
+            let metadata = untuple_helper.make_tupled_arg_pseudo_place_meta(
+                /* NOTE: The address should not really matter, but let's keep it realistic. */
+                tupled_arg_metadata.and_then(|m| m.address()).unwrap_or(1),
+            );
+            ArgLocal::from((tupled_local, metadata))
+        };
+        #[cfg(not(place_addr))]
+        let tupled_local = ArgLocal::from(tupled_local);
+        let tupled_pseudo_place = Place::from(tupled_local);
+
+        // Write the value to the pseudo place in an isolated state, then read the fields
+        let mut vars_state = isolated_vars_state;
+        let num_fields = untuple_helper.num_fields(&tupled_value);
+        vars_state.set_place(&tupled_pseudo_place, tupled_value);
+        // Read the fields (values inside the tuple) one by one.
+        (0..num_fields)
+            .into_iter()
+            .map(|i| untuple_helper.field_place(tupled_pseudo_place.clone(), i))
+            .map(|arg_place| {
+                vars_state.try_take_place(&arg_place).unwrap_or_else(|| {
+                    panic!("Could not untuple the argument at field {}.", arg_place)
+                })
+            })
+            .collect()
+    }
 }
 
 impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackManager<VS> {
-    fn prepare_for_call(&mut self, func: ValueRef, args: Vec<ValueRef>) {
+    fn prepare_for_call(&mut self, func: ValueRef, args: Vec<ValueRef>, are_args_tupled: bool) {
         let args_len = args.len();
         self.latest_call = Some(CallInfo {
             expected_func: func,
             args,
+            are_args_tupled,
             #[cfg(place_addr)]
             args_metadata: Vec::with_capacity(args_len),
             #[cfg(place_addr)]
             return_val_metadata: None,
         });
     }
+    #[cfg(place_addr)]
+    fn set_local_metadata(&mut self, local: &Local, metadata: super::place::PlaceMetadata) {
+        match local {
+            Local::ReturnValue => {
+                self.latest_call.as_mut().unwrap().return_val_metadata = Some(metadata)
+            }
+            Local::Argument(local_index) => {
+                log::info!("Setting metadata for argument {:?}.", local);
+                let args_metadata = &mut self.latest_call.as_mut().unwrap().args_metadata;
+                let index = *local_index as usize - 1;
+                if args_metadata.len() <= index {
+                    args_metadata.resize(index + 1, None);
+                }
+                args_metadata[index] = Some(metadata);
+            }
+            _ => (),
+        }
+    }
+
+    fn try_untuple_argument<'a, 'b>(
+        &'a mut self,
+        arg_index: LocalIndex,
+        untuple_helper: &dyn Fn() -> Box<dyn UntupleHelper + 'b>,
+    ) {
+        let Some(CallInfo {
+            args,
+            are_args_tupled,
+            args_metadata,
+            ..
+        }) = self.latest_call.as_mut()
+        else {
+            return;
+        };
+
+        if !*are_args_tupled {
+            return;
+        }
+
+        let arg_index = arg_index as usize - 1;
+        log::debug!("Untupling argument at index {}.", arg_index);
+        let tupled_value = args.remove(arg_index);
+        let untupled_args = Self::untuple(
+            tupled_value,
+            #[cfg(place_addr)]
+            args_metadata.get(arg_index).and_then(|m| m.as_ref()),
+            untuple_helper().as_mut(),
+            (self.vars_state_factory)(usize::MAX),
+        );
+        // Replace the tupled argument with separate ones.
+        args.splice(arg_index..arg_index, untupled_args);
+    }
 
     fn notify_enter(&mut self, current_func: ValueRef) {
         if let Some(CallInfo {
             expected_func,
             mut args,
+            are_args_tupled: _,
             #[cfg(place_addr)]
             args_metadata,
             #[cfg(place_addr)]
@@ -279,24 +369,5 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
 
     fn top(&mut self) -> &mut dyn VariablesState {
         self.vars_state.as_mut().expect("Call stack is empty")
-    }
-
-    #[cfg(place_addr)]
-    fn set_local_metadata(&mut self, local: &Local, metadata: super::place::PlaceMetadata) {
-        match local {
-            Local::ReturnValue => {
-                self.latest_call.as_mut().unwrap().return_val_metadata = Some(metadata)
-            }
-            Local::Argument(local_index) => {
-                log::info!("Setting metadata for argument {:?}.", local);
-                let args_metadata = &mut self.latest_call.as_mut().unwrap().args_metadata;
-                let index = *local_index as usize - 1;
-                if args_metadata.len() <= index {
-                    args_metadata.resize(index + 1, None);
-                }
-                args_metadata[index] = Some(metadata);
-            }
-            _ => (),
-        }
     }
 }

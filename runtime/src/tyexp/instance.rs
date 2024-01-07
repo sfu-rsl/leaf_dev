@@ -1,5 +1,5 @@
-use std::{sync::OnceLock, collections::HashMap};
+use std::{collections::HashMap, sync::OnceLock};
 
-use super::{TypeInfo, TypeId};
+use super::{TypeId, TypeInfo};
 
-pub(crate) static PROGRAM_TYPES : OnceLock<HashMap<TypeId, TypeInfo>> = OnceLock::new();
+pub(crate) static PROGRAM_TYPES: OnceLock<HashMap<TypeId, TypeInfo>> = OnceLock::new();

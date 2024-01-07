@@ -129,6 +129,10 @@ impl<VS, SP: SymbolicProjector> RawPointerVariableState<VS, SP> {
         if obj_type_id.eq(&type_id) {
             Some(obj_value)
         } else {
+            log::debug!(
+                "Faced an (nested) object with different type: {:?}",
+                obj_type_id
+            );
             None
         }
     }
@@ -349,6 +353,8 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
         move_next: impl Fn(&mut C),
     ) -> Option<PorterValue> {
         let range = addr..addr + size;
+        log::debug!("Checking to create a porter for range: {:?}", range);
+
         let mut cursor = after_or_at(&range.start);
         let mut sym_values = Vec::new();
         while let Some((sym_addr, (sym_value, sym_type_id))) = key_value(&cursor) {
@@ -376,6 +382,7 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
 
     fn set_addr(&mut self, addr: RawPointer, value: ValueRef, type_id: TypeId) {
         fn insert(entry: Entry<RawPointer, MemoryObject>, value: MemoryObject) {
+            log::debug!("Storing value: {:?} at address: {}", value, entry.key());
             match entry {
                 Entry::Occupied(mut entry) => {
                     entry.insert(value);

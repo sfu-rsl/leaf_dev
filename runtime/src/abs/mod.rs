@@ -3,7 +3,7 @@ pub(crate) mod expr;
 pub(crate) mod fmt;
 pub(crate) mod place;
 
-pub(crate) type LocalIndex = u32;
+pub type LocalIndex = u32;
 pub type BasicBlockIndex = u32;
 pub type VariantIndex = u32;
 pub type FieldIndex = u32;
