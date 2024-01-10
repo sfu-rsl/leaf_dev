@@ -209,7 +209,7 @@ mod implementation {
 
     use runtime::abs::LocalIndex;
     use rustc_middle::mir::{self, BasicBlock, BasicBlockData, HasLocalDecls, UnevaluatedConst};
-    use rustc_middle::ty::{ParamEnv, TyKind, TypeVisitableExt};
+    use rustc_middle::ty::{self as mir_ty, TyKind, TypeVisitableExt};
     use rustc_span::def_id::DefId;
 
     use delegate::delegate;
@@ -389,7 +389,7 @@ mod implementation {
     where
         C: context::BodyProvider<'tcx> + context::TyContextProvider<'tcx>,
     {
-        pub fn current_func(&self) -> Operand<'tcx> {
+        fn current_func(&self) -> Operand<'tcx> {
             let instance = self.context.body().source.instance;
             let def_id = instance.def_id();
             log::debug!("Creating operand of current function: {:?}", def_id);
@@ -706,7 +706,7 @@ mod implementation {
             place_ty: Ty<'tcx>,
         ) -> Vec<BasicBlockData<'tcx>> {
             // FIXME: Provide a real ParamEnv.
-            if !place_ty.is_sized(self.tcx(), ParamEnv::empty()) {
+            if !place_ty.is_sized(self.tcx(), mir_ty::ParamEnv::empty()) {
                 log::warn!("Encountered unsized type. Skipping size setting.");
                 return vec![BasicBlockData::new(Some(terminator::goto(None)))];
             }
@@ -1855,25 +1855,9 @@ mod implementation {
             let tcx = self.tcx();
 
             let body_def_id = self.body().source.def_id();
-            if tcx.is_closure(body_def_id) {
-                let TyKind::Closure(_, args) =
-                    tcx.type_of(body_def_id).instantiate_identity().kind()
-                else {
-                    unreachable!()
-                };
-                let id_local = {
-                    let (block, id_local) =
-                        self.make_type_id_of_bb(args.as_closure().sig().skip_binder().inputs()[0]);
-                    blocks.push(block);
-                    id_local
-                };
-                blocks.push(self.make_bb_for_call(
-                    stringify!(pri::try_untuple_argument),
-                    vec![
-                        operand::const_from_uint(tcx, 2 as LocalIndex),
-                        operand::move_for_local(id_local),
-                    ],
-                ));
+            if let TyKind::Closure(_, args) = tcx.type_of(body_def_id).instantiate_identity().kind()
+            {
+                self.make_bb_for_try_untuple_args_in_closure(args.as_closure());
             }
 
             let func_ref = self.reference_func(&self.current_func());
@@ -1940,6 +1924,31 @@ mod implementation {
                 ref_blocks.push(preserve(self, place_ref));
                 blocks.extend(ref_blocks);
             }
+
+            blocks
+        }
+
+        fn make_bb_for_try_untuple_args_in_closure(
+            &mut self,
+            args: mir_ty::ClosureArgs<'tcx>,
+        ) -> Vec<BasicBlockData<'tcx>> {
+            let mut blocks = vec![];
+
+            let tuple_id_local = {
+                let (block, id_local) =
+                    self.make_type_id_of_bb(args.sig().skip_binder().inputs()[0]);
+                blocks.push(block);
+                id_local
+            };
+
+            let call_block = self.make_bb_for_call(
+                stringify!(pri::try_untuple_argument),
+                vec![
+                    operand::const_from_uint(self.tcx(), 2 as LocalIndex),
+                    operand::move_for_local(tuple_id_local),
+                ],
+            );
+            blocks.push(call_block);
 
             blocks
         }
@@ -2335,7 +2344,6 @@ mod implementation {
 
         pub(super) mod ty {
             use rustc_abi::Size;
-            use rustc_middle::ty::ParamEnvAnd;
 
             use super::*;
 
@@ -2354,8 +2362,8 @@ mod implementation {
             }
 
             pub fn size_of<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>) -> Size {
-                tcx.layout_of(ParamEnvAnd {
-                    param_env: ParamEnv::empty(),
+                tcx.layout_of(mir_ty::ParamEnvAnd {
+                    param_env: mir_ty::ParamEnv::empty(),
                     value: ty,
                 })
                 .unwrap()
@@ -2677,8 +2685,7 @@ mod implementation {
             func: &Operand<'tcx>,
             args: &[Operand<'tcx>],
         ) -> bool {
-            let result = is_fn_trait_method_call(tcx, func.ty(local_manager, tcx));
-            if !result {
+            if !is_fn_trait_method_call(tcx, func.ty(local_manager, tcx)) {
                 return false;
             }
 

@@ -851,6 +851,11 @@ trait VariablesState<P = Place, V = ValueRef> {
 }
 
 trait CallStackManager {
+    /* NOTE: Why `are_args_tupled` are passed? Isn't `try_untuple_argument` enough?
+     * First, arguments are tupled at the call site, which also calls this function.
+     * Second, when untupling, we should make sure that the arguments were tupled.
+     * If closures are converted to a function pointer, then the arguments are not tupled.
+     */
     fn prepare_for_call(&mut self, func: ValueRef, args: Vec<ValueRef>, are_args_tupled: bool);
 
     #[cfg(place_addr)]
@@ -879,5 +884,7 @@ trait UntupleHelper {
 
     fn num_fields(&self, tupled_value: &ValueRef) -> FieldIndex;
 
+    /// Takes a place and returns a place with projection to the field.
+    /// It should make a valid place with full information needed for the state.
     fn field_place(&mut self, base: Place, field: FieldIndex) -> Place;
 }
