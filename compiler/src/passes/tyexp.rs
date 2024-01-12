@@ -2,8 +2,10 @@ use super::{CompilationPass, Storage, StorageExt};
 
 use rustc_abi::{FieldsShape, LayoutS, Variants};
 use rustc_middle::mir::{self, visit::Visitor};
-use rustc_middle::ty::layout::{HasParamEnv, HasTyCtxt, LayoutCx};
-use rustc_middle::ty::{layout::TyAndLayout, ParamEnv, Ty, TyCtxt, TypeVisitableExt};
+use rustc_middle::ty::{
+    layout::{HasParamEnv, HasTyCtxt, LayoutCx, TyAndLayout},
+    ParamEnv, Ty, TyCtxt, TypeVisitableExt,
+};
 use rustc_target::abi::{FieldIdx, Layout, VariantIdx};
 
 use std::collections::HashMap;
@@ -51,6 +53,7 @@ impl<'tcx, 's> Visitor<'tcx> for PlaceVisitor<'tcx, 's> {
             return;
         }
 
+        let ty = self.tcx.normalize_erasing_regions(self.param_env, ty);
         if self.type_map.contains_key(&type_id(self.tcx, ty)) {
             return;
         }
@@ -69,7 +72,7 @@ impl<'tcx, 's> PlaceVisitor<'tcx, 's> {
             }
         };
 
-        log::debug!(target: "TestTarget", "Generating type information for {:?}", ty);
+        log::debug!(target: "TypeExport", "Generating type information for {:?}", ty);
         let cx = LayoutCx {
             tcx: self.tcx,
             param_env: self.param_env,
