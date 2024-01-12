@@ -20,7 +20,7 @@ fn test_compile(fic: &str) {
     };
     fs::create_dir_all(&output_dir).unwrap();
 
-    let status = Command::new(env!("CARGO_BIN_EXE_compiler"))
+    let status = Command::new(env!("CARGO_BIN_EXE_leafc"))
         .arg(
             Path::new(env!("CARGO_MANIFEST_DIR"))
                 .parent()

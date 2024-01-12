@@ -5,6 +5,7 @@ deinit
 discr
 nullary
 rustc
+rustup
 Rvalue
 Subslice
 tupled

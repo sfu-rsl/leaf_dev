@@ -32,3 +32,8 @@ samples/**/main
 *.json
 ./main
 .z3-trace
+
+# Performance test results
+*.bench
+*.data
+*.svg

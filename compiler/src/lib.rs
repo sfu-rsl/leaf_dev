@@ -91,6 +91,7 @@ mod driver_args {
     use std::path::{Path, PathBuf};
 
     const CMD_RUSTC: &str = "rustc";
+    const CMD_RUSTUP: &str = "rustup";
 
     const DIR_DEPS: &str = "deps";
 
@@ -105,6 +106,8 @@ mod driver_args {
     const OPT_SYSROOT: &str = "--sysroot";
     const OPT_SEARCH_PATH: &str = "-L";
     const OPT_UNSTABLE: &str = "-Zunstable-options";
+
+    const SUFFIX_OVERRIDE: &str = "(override)";
 
     macro_rules! read_var {
         ($name:expr) => {{ env::var($name).ok() }};
@@ -165,10 +168,48 @@ mod driver_args {
 
     fn find_sysroot() -> String {
         let try_rustc = || {
-            std::process::Command::new(CMD_RUSTC)
+            use std::process::Command;
+            // Find a nightly toolchain if available.
+            // NOTE: It is possible to prioritize the overridden toolchain even if not nightly.
+            let toolchain_arg = Command::new(CMD_RUSTUP)
+                .args(&["toolchain", "list"])
+                .output()
+                .ok()
+                .filter(|out| out.status.success())
+                .and_then(|out| {
+                    let lines = std::str::from_utf8(&out.stdout)
+                        .ok()?
+                        .lines()
+                        .filter(|l| l.starts_with("nightly"))
+                        .map(str::to_owned)
+                        .collect::<Vec<_>>();
+                    Some(lines)
+                })
+                .and_then(|toolchains| {
+                    toolchains
+                        .iter()
+                        .find_map(|t| t.rfind(SUFFIX_OVERRIDE).map(|i| t[..i].to_owned()))
+                        .or(toolchains.first().cloned())
+                })
+                .map(|t| format!("+{}", t.trim()))
+                .unwrap_or_else(|| {
+                    log::warn!("Unable to find a nightly toolchain. Using the default one.");
+                    Default::default()
+                });
+
+            Command::new(CMD_RUSTC)
+                .arg(toolchain_arg)
                 .arg(OPT_PRINT_SYSROOT)
                 .output()
                 .ok()
+                .filter(|out| {
+                    if out.status.success() {
+                        true
+                    } else {
+                        log::debug!("Rustc print sysroot was not successful: {:?}", out);
+                        false
+                    }
+                })
                 .map(|out| std::str::from_utf8(&out.stdout).unwrap().trim().to_owned())
         };
 

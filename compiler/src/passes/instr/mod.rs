@@ -52,7 +52,10 @@ fn transform<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>, storage: &mut dyn S
     let mut modification = BodyInstrumentationUnit::new(body.local_decls());
     let mut call_adder = RuntimeCallAdder::new(tcx, &mut modification, storage);
     let mut call_adder = call_adder.in_body(body);
-    if tcx.entry_fn(()).expect("No entry function was found").0 == body.source.def_id() {
+    if tcx
+        .entry_fn(())
+        .is_some_and(|(id, _)| id == body.source.def_id())
+    {
         handle_entry_function(
             &mut call_adder
                 .in_entry_fn()

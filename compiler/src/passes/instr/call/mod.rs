@@ -1857,7 +1857,7 @@ mod implementation {
             let body_def_id = self.body().source.def_id();
             if let TyKind::Closure(_, args) = tcx.type_of(body_def_id).instantiate_identity().kind()
             {
-                self.make_bb_for_try_untuple_args_in_closure(args.as_closure());
+                blocks.extend(self.make_bb_for_try_untuple_args_in_closure(args.as_closure()));
             }
 
             let func_ref = self.reference_func(&self.current_func());
@@ -1936,7 +1936,7 @@ mod implementation {
 
             let tuple_id_local = {
                 let (block, id_local) =
-                    self.make_type_id_of_bb(args.sig().skip_binder().inputs()[0]);
+                    self.make_type_id_of_bb(ty::erased_tupled_closure_inputs(self.tcx(), args));
                 blocks.push(block);
                 id_local
             };
@@ -1954,6 +1954,10 @@ mod implementation {
         }
 
         fn internal_reference_func(&mut self, func: &Operand<'tcx>) -> BlocksAndResult<'tcx> {
+            log::debug!(
+                "Referencing function: {:?}",
+                func.ty(self, self.tcx()).kind()
+            );
             let id_ty = self.context.pri_types().func_id;
             let (stmts, id_local) = id_of_func(self.tcx(), &mut self.context, func, id_ty);
             let (mut new_block, ref_local) = self.make_bb_for_operand_ref_call(
@@ -2398,6 +2402,7 @@ mod implementation {
             ///
             /// [`ty`]: closure type
             pub fn fn_def_of_closure_call<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>) -> Ty<'tcx> {
+                log::debug!("Getting FnDef type of closure: {:?}", ty);
                 let TyKind::Closure(_, args) = ty.kind() else {
                     panic!("Expected closure type but received: {}", ty)
                 };
@@ -2411,16 +2416,24 @@ mod implementation {
                     .unwrap()
                     .def_id;
 
-                // Inputs types are collated into a tuple and are the only generic argument of the Fn trait.
-                let inputs = args.sig().skip_binder().inputs()[0];
+                let inputs = erased_tupled_closure_inputs(tcx, args);
                 Ty::new_fn_def(tcx, fn_trait_fn_id, [ty, inputs])
             }
 
-            pub fn fn_ptr<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>) -> Ty<'tcx> {
+            pub fn erased_tupled_closure_inputs<'tcx>(
+                tcx: TyCtxt<'tcx>,
+                args: mir_ty::ClosureArgs<'tcx>,
+            ) -> Ty<'tcx> {
+                // Inputs types are collated into a tuple and are the only generic argument of the Fn trait.
+                let inputs = args.sig().inputs().map_bound(|inputs| inputs[0]);
+                tcx.erase_late_bound_regions(inputs)
+            }
+
+            pub fn fn_ptr_sig<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>) -> mir_ty::PolyFnSig<'tcx> {
                 match ty.kind() {
-                    TyKind::FnDef(..) => Ty::new_fn_ptr(tcx, ty.fn_sig(tcx)),
-                    TyKind::FnPtr(..) => ty,
-                    TyKind::Closure(_, args) => args.as_closure().sig_as_fn_ptr_ty(),
+                    TyKind::FnDef(..) => ty.fn_sig(tcx),
+                    TyKind::FnPtr(sig) => *sig,
+                    TyKind::Closure(_, args) => args.as_closure().sig(),
                     _ => unreachable!("Unexpected type to get function pointer from: {}", ty),
                 }
             }
@@ -2597,7 +2610,7 @@ mod implementation {
 
             let fn_ty = func.ty(local_manager, tcx);
             debug_assert_matches!(fn_ty.kind(), TyKind::FnDef(..) | TyKind::FnPtr(..));
-            let ptr_ty = ty::fn_ptr(tcx, fn_ty);
+            let ptr_ty = Ty::new_fn_ptr(tcx, ty::fn_ptr_sig(tcx, fn_ty));
             let ptr_local = local_manager.add_local(ptr_ty);
             let ptr_assignment = assignment::create(
                 Place::from(ptr_local),

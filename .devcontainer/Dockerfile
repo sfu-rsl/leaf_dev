@@ -19,5 +19,5 @@ RUN wget -qO- $CMAKE_BIN_URL \
 COPY --from=ghcr.io/sfu-rsl/z3_dist:4.11.2 /home/dist /usr
 
 RUN useradd -m -s /bin/bash vscode \
-    && echo 'ubuntu ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/ubuntu
+    && echo 'vscode ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/vscode
 USER vscode
