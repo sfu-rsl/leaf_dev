@@ -10,9 +10,9 @@ config = "0.13.4"
 log = "0.4.17"
 env_logger = "0.10.0"
 paste = "1.0"
-z3 = { version = "0.11.2" }
+z3 = { version = "0.12.1" }
 lazy_static = "1.4.0"
-delegate = "0.10.0"
+delegate = "0.12.0"
 deref-derive = "0.1.0"
 derive_more = "0.99.11"
 serde = { version = "1.0.188", features = ["derive"] }

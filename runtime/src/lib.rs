@@ -1,4 +1,3 @@
-#![feature(local_key_cell_methods)]
 #![feature(associated_type_defaults)]
 #![feature(box_patterns)]
 #![feature(assert_matches)]
@@ -7,11 +6,11 @@
 #![feature(result_flattening)]
 #![feature(unboxed_closures)]
 #![feature(fn_traits)]
-#![feature(result_option_inspect)]
 #![feature(const_float_bits_conv)]
 #![feature(btree_cursors)]
 #![feature(strict_provenance)]
 #![feature(core_intrinsics)]
+#![feature(exposed_provenance)]
 
 pub mod abs;
 pub mod annotations;

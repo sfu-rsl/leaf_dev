@@ -2410,7 +2410,10 @@ mod implementation {
 
                 // Finding the call method in the Fn trait.
                 let fn_trait_fn_id = tcx
-                    .associated_items(args.kind().to_def_id(tcx))
+                    .associated_items(
+                        tcx.fn_trait_kind_to_def_id(args.kind())
+                            .expect("Could not get the Fn trait id."),
+                    )
                     .in_definition_order()
                     .find(|x| matches!(x.kind, rustc_middle::ty::AssocKind::Fn))
                     .unwrap()
@@ -2426,7 +2429,7 @@ mod implementation {
             ) -> Ty<'tcx> {
                 // Inputs types are collated into a tuple and are the only generic argument of the Fn trait.
                 let inputs = args.sig().inputs().map_bound(|inputs| inputs[0]);
-                tcx.erase_late_bound_regions(inputs)
+                tcx.instantiate_bound_regions_with_erased(inputs)
             }
 
             pub fn fn_ptr_sig<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>) -> mir_ty::PolyFnSig<'tcx> {
