@@ -167,7 +167,7 @@ mod symbolic {
 }
 
 mod adapters {
-    use deref_derive::{Deref, DerefMut};
+    use derive_more::{Deref, DerefMut};
 
     use crate::abs::expr::variance::*;
 
