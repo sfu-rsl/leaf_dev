@@ -8,19 +8,19 @@ pub(crate) mod tyexp;
 use std::any::Any;
 use std::collections::HashMap;
 use std::ops::DerefMut;
+use std::sync::{Arc, Mutex};
 
 use rustc_ast as ast;
-use rustc_driver as driver;
-use rustc_driver::Compilation;
+use rustc_driver::{self as driver, Compilation};
 use rustc_interface::{interface, Queries};
-use rustc_middle::mir;
-use rustc_middle::ty as mir_ty;
+use rustc_middle::{mir, ty as mir_ty};
 
 use paste::paste;
 
 use self::implementation::CompilationPassAdapter;
 use crate::utils::Chain;
 
+#[cfg(nctfe)]
 pub(crate) use ctfe::{CtfeScanner, NctfeFunctionAdder};
 pub(crate) use instr::Instrumentor;
 pub(crate) use logger::CompilationPassLogExt;
@@ -28,7 +28,7 @@ pub(crate) use null::NullPass;
 pub(crate) use runtime_adder::RuntimeAdder;
 pub(crate) use tyexp::TypeExporter;
 
-pub(super) type Callbacks<'a> = Box<dyn driver::Callbacks + Send + 'a>;
+pub(super) type Callbacks = Box<dyn driver::Callbacks + Send>;
 pub(super) type PrerequisitePass = Chain<RuntimeAdder, NoOpPass>;
 
 pub(crate) trait HasResult<R> {
@@ -53,8 +53,26 @@ pub(crate) trait CompilationPass {
         }
     }
 
-    fn visit_ctxt(&mut self, tcx: mir_ty::TyCtxt, storage: &mut dyn Storage) -> Compilation {
+    fn transform_ast(&mut self, krate: &mut ast::Crate) {
+        Default::default()
+    }
+
+    fn visit_tcx_after_analysis(
+        &mut self,
+        tcx: mir_ty::TyCtxt,
+        storage: &mut dyn Storage,
+    ) -> Compilation {
         Compilation::Continue
+    }
+
+    visit_before_after! {
+        fn tcx_at_codegen(
+            &mut self,
+            tcx: mir_ty::TyCtxt,
+            storage: &mut dyn Storage,
+        ) {
+            Default::default()
+        }
     }
 
     visit_before_after! {
@@ -62,11 +80,9 @@ pub(crate) trait CompilationPass {
             tcx: mir_ty::TyCtxt<'tcx>,
             body: &mir::Body<'tcx>,
             storage: &mut dyn Storage,
-        ) {}
-    }
-
-    fn transform_ast(&mut self, krate: &mut ast::Crate) {
-        Default::default()
+        ) {
+            Default::default()
+        }
     }
 
     /* As we need function pointers in the query structures, this function cannot
@@ -96,11 +112,11 @@ pub(crate) trait CompilationPassExt {
         }
     }
 
-    fn to_callbacks(&mut self) -> Callbacks;
+    fn to_callbacks(self) -> Callbacks;
 }
-impl<T: CompilationPass + Send + ?Sized> CompilationPassExt for T {
-    fn to_callbacks(&mut self) -> Callbacks {
-        Box::new(CompilationPassAdapter(self))
+impl<T: CompilationPass + Send + Sync + 'static> CompilationPassExt for T {
+    fn to_callbacks(self) -> Callbacks {
+        Box::new(CompilationPassAdapter(Arc::new(Mutex::new(self))))
     }
 }
 
@@ -150,7 +166,6 @@ mod implementation {
 
     use mir_ty::TyCtxt;
     use rustc_driver::Compilation;
-    use rustc_middle::query;
     use rustc_span::def_id::LocalDefId;
 
     use std::cell::Cell;
@@ -222,7 +237,7 @@ mod implementation {
         > = Cell::new(|_, _| unreachable!());
     }
 
-    pub(super) struct CompilationPassAdapter<'a, T: CompilationPass + Send + ?Sized>(pub &'a mut T);
+    pub(super) struct CompilationPassAdapter<T: CompilationPass + Send + ?Sized>(pub Arc<Mutex<T>>);
 
     macro_rules! stop_if_stop {
         ($result:expr) => {
@@ -232,9 +247,9 @@ mod implementation {
         };
     }
 
-    impl<T> driver::Callbacks for CompilationPassAdapter<'_, T>
+    impl<T> driver::Callbacks for CompilationPassAdapter<T>
     where
-        T: CompilationPass + Send + ?Sized,
+        T: CompilationPass + Send + Sync + ?Sized + 'static,
     {
         fn config(&mut self, config: &mut interface::Config) {
             ORIGINAL_OVERRIDE.set(config.override_queries.take());
@@ -248,6 +263,8 @@ mod implementation {
                 providers.optimized_mir = Self::optimized_mir;
             });
 
+            config.make_codegen_backend = Some(codegen::get_backend_maker(self.0.clone()));
+
             global::clear_ctxt_id_and_storage();
         }
 
@@ -258,9 +275,10 @@ mod implementation {
         ) -> Compilation {
             let mut ast_steal = queries.parse().unwrap();
 
-            stop_if_stop!(self.0.visit_ast_before(&ast_steal.borrow()));
-            self.0.transform_ast(ast_steal.get_mut());
-            stop_if_stop!(self.0.visit_ast_after(&ast_steal.borrow()));
+            let mut pass = self.0.lock().unwrap();
+            stop_if_stop!(pass.visit_ast_before(&ast_steal.borrow()));
+            pass.transform_ast(ast_steal.get_mut());
+            stop_if_stop!(pass.visit_ast_after(&ast_steal.borrow()));
 
             Compilation::Continue
         }
@@ -279,14 +297,16 @@ mod implementation {
             queries: &'tcx Queries<'tcx>,
         ) -> Compilation {
             queries.global_ctxt().unwrap().enter(global::set_ctxt_id);
-            queries
-                .global_ctxt()
-                .unwrap()
-                .enter(|tcx| global::with_storage(tcx, |storage| self.0.visit_ctxt(tcx, storage)))
+            queries.global_ctxt().unwrap().enter(|tcx| {
+                global::with_storage(tcx, |storage| {
+                    let mut pass = self.0.lock().unwrap();
+                    pass.visit_tcx_after_analysis(tcx, storage)
+                })
+            })
         }
     }
 
-    impl<T: CompilationPass + Send + ?Sized> CompilationPassAdapter<'_, T> {
+    impl<T: CompilationPass + Send + ?Sized> CompilationPassAdapter<T> {
         fn optimized_mir(tcx: TyCtxt, id: LocalDefId) -> &mir::Body {
             /* NOTE: Currently, it seems that there is no way to deallocate
              * something from arena. So, we have to clone the body. */
@@ -320,11 +340,25 @@ mod implementation {
             Compilation::Continue
         }
 
-        fn visit_ctxt(&mut self, tcx: mir_ty::TyCtxt, storage: &mut dyn Storage) -> Compilation {
-            stop_if_stop!(self.first.visit_ctxt(tcx, storage));
-            stop_if_stop!(self.second.visit_ctxt(tcx, storage));
+        fn visit_tcx_after_analysis(
+            &mut self,
+            tcx: mir_ty::TyCtxt,
+            storage: &mut dyn Storage,
+        ) -> Compilation {
+            stop_if_stop!(self.first.visit_tcx_after_analysis(tcx, storage));
+            stop_if_stop!(self.second.visit_tcx_after_analysis(tcx, storage));
 
             Compilation::Continue
+        }
+
+        fn visit_tcx_at_codegen_before(&mut self, tcx: mir_ty::TyCtxt, storage: &mut dyn Storage) {
+            self.first.visit_tcx_at_codegen_before(tcx, storage);
+            self.second.visit_tcx_at_codegen_before(tcx, storage);
+        }
+
+        fn visit_tcx_at_codegen_after(&mut self, tcx: mir_ty::TyCtxt, storage: &mut dyn Storage) {
+            self.first.visit_tcx_at_codegen_after(tcx, storage);
+            self.second.visit_tcx_at_codegen_after(tcx, storage);
         }
 
         fn visit_mir_body_before<'tcx>(
@@ -357,6 +391,112 @@ mod implementation {
         ) {
             A::transform_mir_body(tcx, body, storage);
             B::transform_mir_body(tcx, body, storage);
+        }
+    }
+
+    mod codegen {
+        /* NOTE: Currently we do not do any modification during code generation.
+         * This wrapper is only supposed to provide callbacks
+         */
+        use super::*;
+
+        use rustc_codegen_ssa::{
+            traits::{CodegenBackend, PrintBackendInfo},
+            CodegenResults,
+        };
+        use rustc_data_structures::fx::FxIndexMap;
+        use rustc_metadata::{creader::MetadataLoaderDyn, EncodedMetadata};
+        use rustc_middle::util::Providers;
+        use rustc_query_system::dep_graph::{WorkProduct, WorkProductId};
+        use rustc_session::{
+            config::{self, OutputFilenames, PrintRequest},
+            Session,
+        };
+        use rustc_span::{ErrorGuaranteed, Symbol};
+        use rustc_target::spec::Target;
+
+        use delegate::delegate;
+
+        pub(super) struct CodegenBackendWrapper<T: ?Sized> {
+            backend: Box<dyn CodegenBackend>,
+            pass: Arc<Mutex<T>>,
+        }
+
+        impl<T: CompilationPass + ?Sized> CodegenBackend for CodegenBackendWrapper<T> {
+            delegate! {
+                to self.backend {
+                    fn locale_resource(&self) -> &'static str;
+
+                    fn init(&self, sess: &Session);
+                    fn print(
+                        &self,
+                        req: &PrintRequest,
+                        out: &mut dyn PrintBackendInfo,
+                        sess: &Session
+                    );
+                    fn target_features(&self, sess: &Session, allow_unstable: bool) -> Vec<Symbol>;
+                    fn print_passes(&self);
+                    fn print_version(&self);
+
+                    fn target_override(
+                        &self,
+                        opts: &config::Options
+                    ) -> Option<Target>;
+                    fn metadata_loader(&self) -> Box<MetadataLoaderDyn>;
+                    fn provide(&self, providers: &mut Providers);
+
+                    fn join_codegen(
+                        &self,
+                        ongoing_codegen: Box<dyn Any>,
+                        sess: &Session,
+                        outputs: &OutputFilenames,
+                    ) -> Result<
+                        (CodegenResults, FxIndexMap<WorkProductId, WorkProduct>),
+                        ErrorGuaranteed,
+                    >;
+
+                    fn link(
+                        &self,
+                        sess: &Session,
+                        codegen_results: CodegenResults,
+                        outputs: &OutputFilenames,
+                    ) -> Result<(), ErrorGuaranteed>;
+                }
+            }
+
+            fn codegen_crate<'tcx>(
+                &self,
+                tcx: TyCtxt<'tcx>,
+                metadata: EncodedMetadata,
+                need_metadata_module: bool,
+            ) -> Box<dyn Any> {
+                global::with_storage(tcx, |storage| {
+                    let mut pass = self.pass.lock().unwrap();
+                    pass.visit_tcx_at_codegen_before(tcx, storage)
+                });
+                let result = self
+                    .backend
+                    .codegen_crate(tcx, metadata, need_metadata_module);
+                global::with_storage(tcx, |storage| {
+                    let mut pass = self.pass.lock().unwrap();
+                    pass.visit_tcx_at_codegen_after(tcx, storage)
+                });
+                result
+            }
+        }
+
+        pub(super) fn get_backend_maker<T: CompilationPass + Send + Sync + ?Sized + 'static>(
+            pass: Arc<Mutex<T>>,
+        ) -> Box<dyn FnOnce(&config::Options) -> Box<dyn CodegenBackend> + Send> {
+            Box::new(|opts| {
+                // This is the default implementation taken from `interface::run_compiler`.
+                let backend = rustc_interface::util::get_codegen_backend(
+                    &rustc_session::EarlyDiagCtxt::new(opts.error_format),
+                    &opts.maybe_sysroot,
+                    opts.unstable_opts.codegen_backend.as_deref(),
+                );
+                Box::new(CodegenBackendWrapper { backend, pass })
+            })
         }
     }
 

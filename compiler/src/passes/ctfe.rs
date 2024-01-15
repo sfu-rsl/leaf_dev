@@ -61,7 +61,7 @@ pub(crate) struct CtfeScanner {
 }
 
 impl CompilationPass for CtfeScanner {
-    fn visit_ctxt(&mut self, tcx: TyCtxt, _storage: &mut dyn Storage) -> Compilation {
+    fn visit_tcx_after_analysis(&mut self, tcx: TyCtxt, _storage: &mut dyn Storage) -> Compilation {
         for id in find_ctfes(tcx) {
             log::debug!("Found CTFE: {:?}", &id);
             self.block_ids.insert(id);
@@ -115,7 +115,7 @@ impl CompilationPass for NctfeFunctionAdder {
         krate.items.push(P(make_module(LEAF_AUG_MOD_NAME, items)));
     }
 
-    fn visit_ctxt(&mut self, tcx: TyCtxt, storage: &mut dyn Storage) -> Compilation {
+    fn visit_tcx_after_analysis(&mut self, tcx: TyCtxt, storage: &mut dyn Storage) -> Compilation {
         // We have to scan again because DefIds may have changed after the AST transformation.
         get_free_ctfe_ids(storage).extend(find_ctfes(tcx));
         get_free_nctfe_func_ids(storage).extend({

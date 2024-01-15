@@ -7,7 +7,6 @@
 #![feature(iter_order_by)]
 #![feature(macro_metavar_expr)]
 #![feature(box_into_inner)]
-#![feature(result_option_inspect)]
 #![feature(assert_matches)]
 
 mod mir_transform;
@@ -19,15 +18,18 @@ mod visit;
 extern crate rustc_abi;
 extern crate rustc_apfloat;
 extern crate rustc_ast;
+extern crate rustc_codegen_ssa;
 extern crate rustc_const_eval;
 extern crate rustc_data_structures;
 extern crate rustc_driver;
 extern crate rustc_hir;
 extern crate rustc_index;
 extern crate rustc_interface;
+extern crate rustc_metadata;
 extern crate rustc_middle;
 extern crate rustc_mir_build;
 extern crate rustc_mir_transform;
+extern crate rustc_query_system;
 extern crate rustc_session;
 extern crate rustc_span;
 extern crate rustc_target;
@@ -64,7 +66,7 @@ pub fn run_compiler(args: impl Iterator<Item = String>, input_path: Option<PathB
     #[cfg(not(nctfe))]
     let nctfe_pass = NullPass;
 
-    let mut pass = chain!(
+    let pass = chain!(
         <PrerequisitePass>,
         <TypeExporter>,
         nctfe_pass,

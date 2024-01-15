@@ -34,9 +34,23 @@ where
         self.pass.visit_ast_after(krate)
     }
 
-    fn visit_ctxt(&mut self, tcx: TyCtxt, storage: &mut dyn super::Storage) -> Compilation {
-        log::info!(target: target!(), "Visiting TyCtxt");
-        self.pass.visit_ctxt(tcx, storage)
+    fn visit_tcx_after_analysis(
+        &mut self,
+        tcx: TyCtxt,
+        storage: &mut dyn super::Storage,
+    ) -> Compilation {
+        log::info!(target: target!(), "Visiting TyCtxt after analysis");
+        self.pass.visit_tcx_after_analysis(tcx, storage)
+    }
+
+    fn visit_tcx_at_codegen_before(&mut self, tcx: TyCtxt, storage: &mut dyn super::Storage) {
+        log::info!(target: target!(), "Visiting TyCtxt before codegen");
+        self.pass.visit_tcx_at_codegen_before(tcx, storage)
+    }
+
+    fn visit_tcx_at_codegen_after(&mut self, tcx: TyCtxt, storage: &mut dyn super::Storage) {
+        log::info!(target: target!(), "Visiting TyCtxt after codegen");
+        self.pass.visit_tcx_at_codegen_after(tcx, storage)
     }
 
     fn visit_mir_body_before<'tcx>(
