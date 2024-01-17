@@ -129,10 +129,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "common"
+version = "0.1.0"
+
+[[package]]
 name = "compiler"
 version = "0.1.0"
 dependencies = [
  "bimap",
+ "common",
  "delegate",
  "derive_more",
  "env_logger",
@@ -608,6 +613,7 @@ dependencies = [
 name = "runtime"
 version = "0.1.0"
 dependencies = [
+ "common",
  "config",
  "delegate",
  "derive_more",

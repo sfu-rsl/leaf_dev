@@ -1,6 +1,6 @@
 use std::mem::size_of;
 
-use crate::pri::{self, OperandRef};
+use crate::pri;
 
 use paste::paste;
 

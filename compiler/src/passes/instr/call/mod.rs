@@ -209,7 +209,6 @@ pub(crate) struct RuntimeCallAdder<C> {
 mod implementation {
     use std::assert_matches::{assert_matches, debug_assert_matches};
 
-    use runtime::abs::LocalIndex;
     use rustc_middle::mir::{self, BasicBlock, BasicBlockData, HasLocalDecls, UnevaluatedConst};
     use rustc_middle::ty::{self as mir_ty, TyKind, TypeVisitableExt};
     use rustc_span::def_id::DefId;
@@ -1961,7 +1960,7 @@ mod implementation {
             let call_block = self.make_bb_for_call(
                 stringify!(pri::try_untuple_argument),
                 vec![
-                    operand::const_from_uint(self.tcx(), 2 as LocalIndex),
+                    operand::const_from_uint(self.tcx(), 2 as common::LocalIndex),
                     operand::move_for_local(tuple_id_local),
                 ],
             );

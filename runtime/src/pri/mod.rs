@@ -1,17 +1,13 @@
 mod instance;
 mod utils;
 
+pub use common::{pri::*, *};
+
 use crate::abs::{
-    backend::*, Alignment, AssertKind, BasicBlockIndex, BinaryOp, BranchingMetadata, CastKind,
-    FieldIndex, FloatType, FuncId, IntType, Local, LocalIndex, PointerOffset, RawPointer, TypeId,
-    TypeSize, UnaryOp, ValueType, VariantIndex,
+    self, backend::*, AssertKind, BranchingMetadata, CastKind, FloatType, IntType, Local, ValueType,
 };
 
 use self::instance::*;
-
-pub type Ref = u64;
-pub type PlaceRef = Ref;
-pub type OperandRef = Ref;
 
 /*
  * This field serves as a marker to find the module in the compiler easier.
@@ -249,7 +245,7 @@ pub fn assign_cast_transmute(dest: PlaceRef, operand: OperandRef, dst_type_id: T
 
 pub fn assign_binary_op(
     dest: PlaceRef,
-    operator: BinaryOp,
+    operator: abs::BinaryOp,
     first: OperandRef,
     second: OperandRef,
     checked: bool,
@@ -263,7 +259,7 @@ pub fn assign_binary_op(
         )
     })
 }
-pub fn assign_unary_op(dest: PlaceRef, operator: UnaryOp, operand: OperandRef) {
+pub fn assign_unary_op(dest: PlaceRef, operator: abs::UnaryOp, operand: OperandRef) {
     assign_to(dest, |h| {
         h.unary_op_on(operator, take_back_operand_ref(operand))
     })
@@ -411,7 +407,7 @@ pub fn check_assert_bounds_check(
 pub fn check_assert_overflow(
     cond: OperandRef,
     expected: bool,
-    operator: BinaryOp,
+    operator: abs::BinaryOp,
     first: OperandRef,
     second: OperandRef,
 ) {
@@ -484,8 +480,8 @@ pub mod compiler_helpers {
      * arguments easier in the compiler. */
     pub static PLACE_REF_TYPE_HOLDER: PlaceRef = 0;
     pub static OPERAND_REF_TYPE_HOLDER: OperandRef = 0;
-    pub static BINARY_OP_TYPE_HOLDER: BinaryOp = BinaryOp::Add;
-    pub static UNARY_OP_TYPE_HOLDER: UnaryOp = UnaryOp::Neg;
+    pub static BINARY_OP_TYPE_HOLDER: abs::BinaryOp = abs::BinaryOp::Add;
+    pub static UNARY_OP_TYPE_HOLDER: abs::UnaryOp = abs::UnaryOp::Neg;
     pub static RAW_PTR_TYPE_HOLDER: RawPointer = 0;
     pub static FUNC_ID_TYPE_HOLDER: FuncId = 0;
 

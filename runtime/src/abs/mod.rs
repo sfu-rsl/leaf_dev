@@ -3,22 +3,39 @@ pub(crate) mod expr;
 pub(crate) mod fmt;
 pub(crate) mod place;
 
-pub type LocalIndex = u32;
-pub type BasicBlockIndex = u32;
-pub type VariantIndex = u32;
-pub type FieldIndex = u32;
+pub(crate) use common::*;
 
-pub type RawPointer = u64;
-pub type PointerOffset = u64;
-pub type TypeSize = PointerOffset;
-pub type Alignment = TypeSize;
-/* NOTE: Why not using `core::any::TypeId`?
- * Compiler has an easier job when using the raw u128 value.
- * Here we can use both, so we choose the raw value instead to avoid unnecessary
- * unsafe casts. */
-pub type TypeId = u128;
+#[derive(Clone, Copy, Debug)]
+#[repr(u8)]
+pub enum BinaryOp {
+    Add = common::pri::BinaryOp::ADD,
+    Sub = common::pri::BinaryOp::SUB,
+    Mul = common::pri::BinaryOp::MUL,
+    Div = common::pri::BinaryOp::DIV,
+    Rem = common::pri::BinaryOp::REM,
 
-pub type FuncId = RawPointer;
+    BitXor = common::pri::BinaryOp::BIT_XOR,
+    BitAnd = common::pri::BinaryOp::BIT_AND,
+    BitOr = common::pri::BinaryOp::BIT_OR,
+    Shl = common::pri::BinaryOp::SHL,
+    Shr = common::pri::BinaryOp::SHR,
+
+    Eq = common::pri::BinaryOp::EQ,
+    Lt = common::pri::BinaryOp::LT,
+    Le = common::pri::BinaryOp::LE,
+    Ne = common::pri::BinaryOp::NE,
+    Ge = common::pri::BinaryOp::GE,
+    Gt = common::pri::BinaryOp::GT,
+
+    Offset = common::pri::BinaryOp::OFFSET,
+}
+
+#[derive(Clone, Copy, Debug)]
+#[repr(u8)]
+pub enum UnaryOp {
+    Not = common::pri::UnaryOp::NOT,
+    Neg = common::pri::UnaryOp::NEG,
+}
 
 pub(crate) type Local = place::Local;
 pub(crate) type Place<L = Local, P = Projection<L>> = place::Place<L, P>;
@@ -64,33 +81,6 @@ where
     fn from(value: Constant) -> Self {
         Self::Const(value.into())
     }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum BinaryOp {
-    Add,
-    Sub,
-    Mul,
-    Div,
-    Rem,
-    BitXor,
-    BitAnd,
-    BitOr,
-    Shl,
-    Shr,
-    Eq,
-    Lt,
-    Le,
-    Ne,
-    Ge,
-    Gt,
-    Offset,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum UnaryOp {
-    Not,
-    Neg,
 }
 
 #[derive(Debug)]
