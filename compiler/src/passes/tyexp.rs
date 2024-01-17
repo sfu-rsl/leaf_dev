@@ -21,20 +21,6 @@ const KEY_TYPE_MAP: &str = "type_ids";
 pub(crate) struct TypeExporter;
 
 impl CompilationPass for TypeExporter {
-    fn visit_mir_body_before<'tcx>(
-        tcx: TyCtxt<'tcx>,
-        body: &mir::Body<'tcx>,
-        storage: &mut dyn Storage,
-    ) {
-        let type_map = storage.get_or_default::<HashMap<u128, TypeInfo>>(KEY_TYPE_MAP.to_owned());
-        let mut place_visitor = PlaceVisitor {
-            tcx,
-            type_map,
-            param_env: tcx.param_env_reveal_all_normalized(body.source.def_id()),
-        };
-        place_visitor.visit_body(body);
-    }
-
     fn visit_tcx_at_codegen_after(
         &mut self,
         tcx: rustc_middle::ty::TyCtxt,
@@ -61,6 +47,14 @@ impl CompilationPass for TypeExporter {
                             tcx.type_of(item.def_id()),
                         );
                         add_type_information_to_map(tcx, ParamEnv::reveal_all(), type_map, ty);
+
+                        let body = tcx.instance_mir(instance.def);
+                        let mut place_visitor = PlaceVisitor {
+                            tcx,
+                            type_map,
+                            param_env: tcx.param_env_reveal_all_normalized(body.source.def_id()),
+                        };
+                        place_visitor.visit_body(body);
                     }
                     _ => {}
                 })
