@@ -326,6 +326,14 @@ fn take_fields(fields: &[OperandRef]) -> Vec<FieldImpl> {
     fields.map(Into::<FieldImpl>::into).collect()
 }
 
+pub fn new_branching_info(
+    node_location: BasicBlockIndex,
+    discriminant: OperandRef,
+    discr_bit_size: u64,
+    discr_is_signed: bool,
+) -> BranchingInfo {
+    BranchingInfo::new(node_location, discriminant, discr_bit_size, discr_is_signed)
+}
 pub fn take_branch_true(info: BranchingInfo) {
     conditional(info, |h| h.on_bool().take(true))
 }
@@ -446,6 +454,7 @@ fn check_assert(cond: OperandRef, expected: bool, assert_kind: AssertKind<Operan
     branch(|h| h.assert(take_back_operand_ref(cond), expected, assert_kind))
 }
 
+#[repr(C)]
 pub struct BranchingInfo {
     pub discriminant: OperandRef,
     metadata: BranchingMetadata,

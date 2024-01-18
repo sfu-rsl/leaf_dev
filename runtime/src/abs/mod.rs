@@ -8,33 +8,33 @@ pub(crate) use common::*;
 #[derive(Clone, Copy, Debug)]
 #[repr(u8)]
 pub enum BinaryOp {
-    Add = common::pri::BinaryOp::ADD,
-    Sub = common::pri::BinaryOp::SUB,
-    Mul = common::pri::BinaryOp::MUL,
-    Div = common::pri::BinaryOp::DIV,
-    Rem = common::pri::BinaryOp::REM,
+    Add = common::pri::BinaryOp::ADD.as_u8(),
+    Sub = common::pri::BinaryOp::SUB.as_u8(),
+    Mul = common::pri::BinaryOp::MUL.as_u8(),
+    Div = common::pri::BinaryOp::DIV.as_u8(),
+    Rem = common::pri::BinaryOp::REM.as_u8(),
 
-    BitXor = common::pri::BinaryOp::BIT_XOR,
-    BitAnd = common::pri::BinaryOp::BIT_AND,
-    BitOr = common::pri::BinaryOp::BIT_OR,
-    Shl = common::pri::BinaryOp::SHL,
-    Shr = common::pri::BinaryOp::SHR,
+    BitXor = common::pri::BinaryOp::BIT_XOR.as_u8(),
+    BitAnd = common::pri::BinaryOp::BIT_AND.as_u8(),
+    BitOr = common::pri::BinaryOp::BIT_OR.as_u8(),
+    Shl = common::pri::BinaryOp::SHL.as_u8(),
+    Shr = common::pri::BinaryOp::SHR.as_u8(),
 
-    Eq = common::pri::BinaryOp::EQ,
-    Lt = common::pri::BinaryOp::LT,
-    Le = common::pri::BinaryOp::LE,
-    Ne = common::pri::BinaryOp::NE,
-    Ge = common::pri::BinaryOp::GE,
-    Gt = common::pri::BinaryOp::GT,
+    Eq = common::pri::BinaryOp::EQ.as_u8(),
+    Lt = common::pri::BinaryOp::LT.as_u8(),
+    Le = common::pri::BinaryOp::LE.as_u8(),
+    Ne = common::pri::BinaryOp::NE.as_u8(),
+    Ge = common::pri::BinaryOp::GE.as_u8(),
+    Gt = common::pri::BinaryOp::GT.as_u8(),
 
-    Offset = common::pri::BinaryOp::OFFSET,
+    Offset = common::pri::BinaryOp::OFFSET.as_u8(),
 }
 
 #[derive(Clone, Copy, Debug)]
 #[repr(u8)]
 pub enum UnaryOp {
-    Not = common::pri::UnaryOp::NOT,
-    Neg = common::pri::UnaryOp::NEG,
+    Not = common::pri::UnaryOp::NOT.as_u8(),
+    Neg = common::pri::UnaryOp::NEG.as_u8(),
 }
 
 pub(crate) type Local = place::Local;
@@ -95,6 +95,7 @@ pub enum AssertKind<Operand> {
     MisalignedPointerDereference { required: Operand, found: Operand },
 }
 
+#[repr(C)]
 pub(crate) struct BranchingMetadata {
     pub node_location: BasicBlockIndex,
     /* NOTE: If more type information was passed (such as reporting type for all local variables),
@@ -155,6 +156,7 @@ impl ValueType {
  * representation of integers and floats in the engine.
  */
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[repr(C)]
 pub(crate) struct IntType {
     pub bit_size: u64,
     pub is_signed: bool,

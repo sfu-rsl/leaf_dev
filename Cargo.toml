@@ -3,6 +3,7 @@ members = [
     "common",
     "compiler",
     "runtime",
+    "runtime_shim",
     "macros",
 ]
 exclude = [

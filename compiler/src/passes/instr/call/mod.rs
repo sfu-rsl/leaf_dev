@@ -262,10 +262,20 @@ mod implementation {
             target: Option<BasicBlock>,
         ) -> (BasicBlockData<'tcx>, Local);
 
+        // Just a bit more semantics.
+        fn make_bb_for_helper_call_with_all(
+            &mut self,
+            func_info: FunctionInfo<'tcx>,
+            generic_args: impl IntoIterator<Item = GenericArg<'tcx>>,
+            args: Vec<Operand<'tcx>>,
+            target: Option<BasicBlock>,
+        ) -> (BasicBlockData<'tcx>, Local) {
+            self.make_bb_for_call_raw(func_info, generic_args, args, target)
+        }
+
         fn make_bb_for_call_raw(
             &mut self,
-            func_id: DefId,
-            ret_ty: Ty<'tcx>,
+            func_info: FunctionInfo<'tcx>,
             generic_args: impl IntoIterator<Item = GenericArg<'tcx>>,
             args: Vec<Operand<'tcx>>,
             target: Option<BasicBlock>,
@@ -461,23 +471,25 @@ mod implementation {
             args: Vec<Operand<'tcx>>,
             target: Option<BasicBlock>,
         ) -> (BasicBlockData<'tcx>, Local) {
-            let func_info = self.context.get_pri_func_info(func_name);
-            let (def_id, ret_ty) = (func_info.def_id, func_info.ret_ty);
-            self.make_bb_for_call_raw(def_id, ret_ty, generic_args, args, target)
+            self.make_bb_for_call_raw(
+                *self.context.get_pri_func_info(func_name),
+                generic_args,
+                args,
+                target,
+            )
         }
 
         fn make_bb_for_call_raw(
             &mut self,
-            func_id: DefId,
-            ret_ty: Ty<'tcx>,
+            func_info: FunctionInfo<'tcx>,
             generic_args: impl IntoIterator<Item = GenericArg<'tcx>>,
             args: Vec<Operand<'tcx>>,
             target: Option<BasicBlock>,
         ) -> (BasicBlockData<'tcx>, Local) {
-            let result_local = self.context.add_local(ret_ty);
+            let result_local = self.context.add_local(func_info.ret_ty);
             (
                 self.make_call_bb(
-                    func_id,
+                    func_info.def_id,
                     generic_args,
                     args,
                     Place::from(result_local),
@@ -687,15 +699,17 @@ mod implementation {
             place_ty: Ty<'tcx>,
         ) -> BasicBlockData<'tcx> {
             let (stmt, ptr_local) = ptr_to_place(self.tcx(), &mut self.context, place, place_ty);
-            let (mut block, _) = self.make_bb_for_call_with_all(
-                sym::set_place_address_typed,
-                vec![place_ty.into()],
-                vec![
-                    operand::copy_for_local(place_ref),
-                    operand::move_for_local(ptr_local),
-                ],
-                None,
-            );
+            let (mut block, _) = {
+                self.make_bb_for_helper_call_with_all(
+                    self.context.pri_helper_funcs().set_place_address_typed,
+                    vec![place_ty.into()],
+                    vec![
+                        operand::copy_for_local(place_ref),
+                        operand::move_for_local(ptr_local),
+                    ],
+                    None,
+                )
+            };
             block.statements.push(stmt);
             block
         }
@@ -711,16 +725,12 @@ mod implementation {
                 return vec![BasicBlockData::new(Some(terminator::goto(None)))];
             }
 
-            let (get_call_block, size_local) = {
-                let size_of_info = &self.context.pri_helper_funcs().size_of;
-                self.make_bb_for_call_raw(
-                    size_of_info.def_id,
-                    size_of_info.ret_ty,
-                    vec![place_ty.into()],
-                    Vec::default(),
-                    None,
-                )
-            };
+            let (get_call_block, size_local) = self.make_bb_for_helper_call_with_all(
+                self.context.pri_helper_funcs().size_of,
+                vec![place_ty.into()],
+                Vec::default(),
+                None,
+            );
 
             let set_call_block = self.make_bb_for_call(
                 sym::set_place_size,
@@ -1267,34 +1277,50 @@ mod implementation {
             second: OperandRef,
             checked: bool,
         ) {
+            let tcx = self.tcx();
             let operator = convert_mir_binop_to_pri(operator);
-            let (operator_local, additional_stmts) = self
-                .add_and_set_local_for_enum(self.context.pri_types().binary_op, operator as u128);
+            let operator_local = {
+                let (block, local) = self.make_bb_for_helper_call_with_all(
+                    self.context.pri_helper_funcs().const_binary_op_of,
+                    vec![],
+                    vec![operand::const_from_uint(tcx, operator.as_u8())],
+                    Default::default(),
+                );
+                self.insert_blocks([block]);
+                local
+            };
 
-            self.add_bb_for_assign_call_with_statements(
+            self.add_bb_for_assign_call(
                 sym::assign_binary_op,
                 vec![
                     operand::move_for_local(operator_local),
                     operand::copy_for_local(first.into()),
                     operand::copy_for_local(second.into()),
-                    operand::const_from_bool(self.context.tcx(), checked),
+                    operand::const_from_bool(tcx, checked),
                 ],
-                additional_stmts,
             )
         }
 
         fn by_unary_op(&mut self, operator: &UnOp, operand: OperandRef) {
+            let tcx = self.tcx();
             let operator = convert_mir_unop_to_pri(operator);
-            let (operator_local, additional_stmts) = self
-                .add_and_set_local_for_enum(self.context.pri_types().unary_op, operator as u128);
+            let operator_local = {
+                let (block, local) = self.make_bb_for_helper_call_with_all(
+                    self.context.pri_helper_funcs().const_unary_op_of,
+                    vec![],
+                    vec![operand::const_from_uint(tcx, operator.as_u8())],
+                    Default::default(),
+                );
+                self.insert_blocks([block]);
+                local
+            };
 
-            self.add_bb_for_assign_call_with_statements(
+            self.add_bb_for_assign_call(
                 sym::assign_unary_op,
                 vec![
                     operand::move_for_local(operator_local),
                     operand::copy_for_local(operand.into()),
                 ],
-                additional_stmts,
             )
         }
 
@@ -2011,16 +2037,20 @@ mod implementation {
                         vec![],
                     )
                 }
-                AssertKind::Overflow(bin_op, op1, op2) => {
-                    let binary_op_ty = self.context.pri_types().binary_op;
-                    let operator = convert_mir_binop_to_pri(bin_op);
-                    let operator_local = self.context.add_local(binary_op_ty);
-                    let additional_stmts = enums::set_variant_to_local(
-                        self.tcx(),
-                        binary_op_ty,
-                        operator as u128,
-                        operator_local,
-                    );
+                AssertKind::Overflow(operator, op1, op2) => {
+                    let tcx = self.tcx();
+
+                    let operator = convert_mir_binop_to_pri(operator);
+                    let operator_local = {
+                        let (block, local) = self.make_bb_for_helper_call_with_all(
+                            self.context.pri_helper_funcs().const_binary_op_of,
+                            vec![],
+                            vec![operand::const_from_uint(tcx, operator.as_u8())],
+                            Default::default(),
+                        );
+                        self.insert_blocks([block]);
+                        local
+                    };
 
                     let op1_ref = self.reference_operand(op1);
                     let op2_ref = self.reference_operand(op2);
@@ -2032,7 +2062,7 @@ mod implementation {
                             operand::copy_for_local(op1_ref.into()),
                             operand::copy_for_local(op2_ref.into()),
                         ],
-                        additional_stmts,
+                        vec![],
                     )
                 }
                 AssertKind::OverflowNeg(op) => {
@@ -2107,10 +2137,8 @@ mod implementation {
                 ty
             );
 
-            let type_id_of: &FunctionInfo<'_> = &self.context.pri_helper_funcs().type_id_of;
-            self.make_bb_for_call_raw(
-                type_id_of.def_id,
-                type_id_of.ret_ty,
+            self.make_bb_for_helper_call_with_all(
+                self.context.pri_helper_funcs().type_id_of,
                 vec![ty.into()],
                 Vec::default(),
                 None,
@@ -2657,38 +2685,38 @@ mod implementation {
             )
         }
 
-        pub(super) fn convert_mir_binop_to_pri(op: &mir::BinOp) -> runtime::abs::BinaryOp {
+        pub(super) fn convert_mir_binop_to_pri(op: &mir::BinOp) -> common::pri::BinaryOp {
             // FIXME: #197: Add support for unchecked operations.
             match op {
-                mir::BinOp::Add => runtime::abs::BinaryOp::Add,
-                mir::BinOp::AddUnchecked => runtime::abs::BinaryOp::Add,
-                mir::BinOp::Sub => runtime::abs::BinaryOp::Sub,
-                mir::BinOp::SubUnchecked => runtime::abs::BinaryOp::Sub,
-                mir::BinOp::Mul => runtime::abs::BinaryOp::Mul,
-                mir::BinOp::MulUnchecked => runtime::abs::BinaryOp::Mul,
-                mir::BinOp::Div => runtime::abs::BinaryOp::Div,
-                mir::BinOp::Rem => runtime::abs::BinaryOp::Rem,
-                mir::BinOp::BitXor => runtime::abs::BinaryOp::BitXor,
-                mir::BinOp::BitAnd => runtime::abs::BinaryOp::BitAnd,
-                mir::BinOp::BitOr => runtime::abs::BinaryOp::BitOr,
-                mir::BinOp::Shl => runtime::abs::BinaryOp::Shl,
-                mir::BinOp::ShlUnchecked => runtime::abs::BinaryOp::Shl,
-                mir::BinOp::Shr => runtime::abs::BinaryOp::Shr,
-                mir::BinOp::ShrUnchecked => runtime::abs::BinaryOp::Shr,
-                mir::BinOp::Eq => runtime::abs::BinaryOp::Eq,
-                mir::BinOp::Lt => runtime::abs::BinaryOp::Lt,
-                mir::BinOp::Le => runtime::abs::BinaryOp::Le,
-                mir::BinOp::Ne => runtime::abs::BinaryOp::Ne,
-                mir::BinOp::Ge => runtime::abs::BinaryOp::Ge,
-                mir::BinOp::Gt => runtime::abs::BinaryOp::Gt,
-                mir::BinOp::Offset => runtime::abs::BinaryOp::Offset,
+                mir::BinOp::Add => common::pri::BinaryOp::ADD,
+                mir::BinOp::AddUnchecked => common::pri::BinaryOp::ADD,
+                mir::BinOp::Sub => common::pri::BinaryOp::SUB,
+                mir::BinOp::SubUnchecked => common::pri::BinaryOp::SUB,
+                mir::BinOp::Mul => common::pri::BinaryOp::MUL,
+                mir::BinOp::MulUnchecked => common::pri::BinaryOp::MUL,
+                mir::BinOp::Div => common::pri::BinaryOp::MUL,
+                mir::BinOp::Rem => common::pri::BinaryOp::MUL,
+                mir::BinOp::BitXor => common::pri::BinaryOp::MUL,
+                mir::BinOp::BitAnd => common::pri::BinaryOp::MUL,
+                mir::BinOp::BitOr => common::pri::BinaryOp::MUL,
+                mir::BinOp::Shl => common::pri::BinaryOp::SHL,
+                mir::BinOp::ShlUnchecked => common::pri::BinaryOp::SHL,
+                mir::BinOp::Shr => common::pri::BinaryOp::SHR,
+                mir::BinOp::ShrUnchecked => common::pri::BinaryOp::SHR,
+                mir::BinOp::Eq => common::pri::BinaryOp::EQ,
+                mir::BinOp::Lt => common::pri::BinaryOp::LT,
+                mir::BinOp::Le => common::pri::BinaryOp::LE,
+                mir::BinOp::Ne => common::pri::BinaryOp::NE,
+                mir::BinOp::Ge => common::pri::BinaryOp::GE,
+                mir::BinOp::Gt => common::pri::BinaryOp::GT,
+                mir::BinOp::Offset => common::pri::BinaryOp::OFFSET,
             }
         }
 
-        pub(super) fn convert_mir_unop_to_pri(op: &mir::UnOp) -> runtime::abs::UnaryOp {
+        pub(super) fn convert_mir_unop_to_pri(op: &mir::UnOp) -> common::pri::UnaryOp {
             match op {
-                mir::UnOp::Not => runtime::abs::UnaryOp::Not,
-                mir::UnOp::Neg => runtime::abs::UnaryOp::Neg,
+                mir::UnOp::Not => common::pri::UnaryOp::NOT,
+                mir::UnOp::Neg => common::pri::UnaryOp::NEG,
             }
         }
 

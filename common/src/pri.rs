@@ -27,11 +27,69 @@ impl BinaryOp {
     pub const GE: Self = Self(15);
     pub const GT: Self = Self(16);
     pub const OFFSET: Self = Self(17);
+
+    pub const fn from_raw(raw: u8) -> Self {
+        if raw == BinaryOp::ADD.as_u8() {
+            BinaryOp::ADD
+        } else if raw == BinaryOp::SUB.as_u8() {
+            BinaryOp::SUB
+        } else if raw == BinaryOp::MUL.as_u8() {
+            BinaryOp::MUL
+        } else if raw == BinaryOp::DIV.as_u8() {
+            BinaryOp::DIV
+        } else if raw == BinaryOp::REM.as_u8() {
+            BinaryOp::REM
+        } else if raw == BinaryOp::BIT_XOR.as_u8() {
+            BinaryOp::BIT_XOR
+        } else if raw == BinaryOp::BIT_AND.as_u8() {
+            BinaryOp::BIT_AND
+        } else if raw == BinaryOp::BIT_OR.as_u8() {
+            BinaryOp::BIT_OR
+        } else if raw == BinaryOp::SHL.as_u8() {
+            BinaryOp::SHL
+        } else if raw == BinaryOp::SHR.as_u8() {
+            BinaryOp::SHR
+        } else if raw == BinaryOp::EQ.as_u8() {
+            BinaryOp::EQ
+        } else if raw == BinaryOp::LT.as_u8() {
+            BinaryOp::LT
+        } else if raw == BinaryOp::LE.as_u8() {
+            BinaryOp::LE
+        } else if raw == BinaryOp::NE.as_u8() {
+            BinaryOp::NE
+        } else if raw == BinaryOp::GE.as_u8() {
+            BinaryOp::GE
+        } else if raw == BinaryOp::GT.as_u8() {
+            BinaryOp::GT
+        } else if raw == BinaryOp::OFFSET.as_u8() {
+            BinaryOp::OFFSET
+        } else {
+            unreachable!()
+        }
+    }
+
+    pub const fn as_u8(self) -> u8 {
+        self.0
+    }
 }
 
 impl UnaryOp {
     pub const NOT: Self = Self(31);
     pub const NEG: Self = Self(32);
+
+    pub const fn from_raw(raw: u8) -> Self {
+        if raw == UnaryOp::NOT.as_u8() {
+            UnaryOp::NOT
+        } else if raw == UnaryOp::NEG.as_u8() {
+            UnaryOp::NEG
+        } else {
+            unreachable!()
+        }
+    }
+
+    pub const fn as_u8(self) -> u8 {
+        self.0
+    }
 }
 
 #[repr(C)]
@@ -171,10 +229,10 @@ make_list_func_decls_macro! {
     { fn take_branch_false(info: ($branching_info_ty)) }
 
     { fn take_branch_int(info: ($branching_info_ty), value_bit_rep: ($u128_ty)) }
-    { fn take_branch_ow_int(info: ($branching_info_ty), non_values: ($slice_ty!(u128))) }
+    { fn take_branch_ow_int(info: ($branching_info_ty), non_values: ($slice_ty!($u128_ty))) }
 
     { fn take_branch_char(info: ($branching_info_ty), value: (($char_ty))) }
-    { fn take_branch_ow_char(info: ($branching_info_ty), non_values: ($slice_ty!(char))) }
+    { fn take_branch_ow_char(info: ($branching_info_ty), non_values: ($slice_ty!($char_ty))) }
 
     { fn take_branch_enum_discriminant(info: ($branching_info_ty), index: VariantIndex) }
     { fn take_branch_ow_enum_discriminant(
@@ -248,7 +306,7 @@ macro_rules! list_func_decls {
     }$modifier!{
       #[cfg(place_addr)]fn set_place_address(place:PlaceRef,raw_ptr:RawPointer);
     }$modifier!{
-      #[cfg(place_addr)]fn set_place_type_id(place:PlaceRef,type_id:TypeId);
+      #[cfg(place_addr)]fn set_place_type_id(place:PlaceRef,type_id:$type_id_ty);
     }$modifier!{
       #[cfg(place_addr)]fn set_place_type_bool(place:PlaceRef);
     }$modifier!{
@@ -310,15 +368,15 @@ macro_rules! list_func_decls {
     }$modifier!{
       fn assign_cast_expose_addr(dest:PlaceRef,operand:OperandRef);
     }$modifier!{
-      fn assign_cast_from_exposed_addr(dest:PlaceRef,operand:OperandRef,dst_type_id:TypeId);
+      fn assign_cast_from_exposed_addr(dest:PlaceRef,operand:OperandRef,dst_type_id:$type_id_ty);
     }$modifier!{
-      fn assign_cast_to_another_ptr(dest:PlaceRef,operand:OperandRef,dst_type_id:TypeId);
+      fn assign_cast_to_another_ptr(dest:PlaceRef,operand:OperandRef,dst_type_id:$type_id_ty);
     }$modifier!{
       fn assign_cast_unsize(dest:PlaceRef,operand:OperandRef);
     }$modifier!{
       fn assign_cast_sized_dyn(dest:PlaceRef,operand:OperandRef);
     }$modifier!{
-      fn assign_cast_transmute(dest:PlaceRef,operand:OperandRef,dst_type_id:TypeId);
+      fn assign_cast_transmute(dest:PlaceRef,operand:OperandRef,dst_type_id:$type_id_ty);
     }$modifier!{
       fn assign_binary_op(dest:PlaceRef,operator:BinaryOp,first:OperandRef,second:OperandRef,checked:bool,);
     }$modifier!{
@@ -348,11 +406,11 @@ macro_rules! list_func_decls {
     }$modifier!{
       fn take_branch_int(info:($branching_info_ty),value_bit_rep:($u128_ty));
     }$modifier!{
-      fn take_branch_ow_int(info:($branching_info_ty),non_values:($slice_ty!(u128)));
+      fn take_branch_ow_int(info:($branching_info_ty),non_values:($slice_ty!($u128_ty)));
     }$modifier!{
       fn take_branch_char(info:($branching_info_ty),value:(($char_ty)));
     }$modifier!{
-      fn take_branch_ow_char(info:($branching_info_ty),non_values:($slice_ty!(char)));
+      fn take_branch_ow_char(info:($branching_info_ty),non_values:($slice_ty!($char_ty)));
     }$modifier!{
       fn take_branch_enum_discriminant(info:($branching_info_ty),index:VariantIndex);
     }$modifier!{
@@ -362,7 +420,7 @@ macro_rules! list_func_decls {
     }$modifier!{
       #[cfg(place_addr)]fn preserve_special_local_metadata(place:PlaceRef);
     }$modifier!{
-      fn try_untuple_argument(arg_index:LocalIndex,tuple_type_id:TypeId);
+      fn try_untuple_argument(arg_index:LocalIndex,tuple_type_id:$type_id_ty);
     }$modifier!{
       fn enter_func(func:OperandRef);
     }$modifier!{

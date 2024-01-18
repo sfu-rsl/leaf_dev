@@ -77,7 +77,7 @@ pub fn run_compiler(args: impl Iterator<Item = String>, input_path: Option<PathB
 }
 
 pub mod constants {
-    pub(super) const CRATE_RUNTIME: &str = "runtime";
+    pub(super) const CRATE_RUNTIME: &str = "leafrtsh";
 
     pub(super) const URL_BUG_REPORT: &str = "https://github.com/sfu-rsl/leaf/issues/new";
 
@@ -101,7 +101,7 @@ mod driver_args {
     const ENV_SYSROOT: &str = "RUST_SYSROOT";
     const ENV_TOOLCHAIN: &str = "RUSTUP_TOOLCHAIN";
 
-    const FILE_RUNTIME_LIB: &str = "libruntime.rlib";
+    const FILE_RUNTIME_LIB: &str = "libleafrtsh.rlib";
 
     const OPT_EXTERN: &str = "--extern";
     const OPT_PRINT_SYSROOT: &str = "--print=sysroot";

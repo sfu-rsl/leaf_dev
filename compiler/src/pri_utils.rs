@@ -13,24 +13,31 @@ pub mod sym {
     use const_format::concatcp;
     use LeafSymbol as LS;
 
-    pub const RUNTIME_LIB_CRATE: LS = LS("runtime_shim");
+    pub const RUNTIME_LIB_CRATE: LS = LS(crate::constants::CRATE_RUNTIME);
 
     macro_rules! in_lib {
-        ($name: literal) => {
+        ($name: ident) => {
             concatcp!(RUNTIME_LIB_CRATE.0, "::", stringify!($name))
         };
     }
+    macro_rules! symbols_in_lib {
+        ($($name: ident),* $(,)?) => {
+            $(pub const $name: LS = LS(in_lib!($name));)*
+        };
+    }
 
-    pub const pri: LS = LS(in_lib!("pri"));
+    symbols_in_lib! {
+        pri,
+    }
 
     macro_rules! in_pri {
         ($name: ident) => {
             concatcp!(pri.0, "::", stringify!($name))
         };
     }
-
     macro_rules! symbols_in_pri {
         ($($name: ident),* $(,)?) => {
+            #[allow(dead_code)]
             $(pub const $name: LS = LS(in_pri!($name));)*
         };
     }
@@ -38,8 +45,6 @@ pub mod sym {
     symbols_in_pri! {
         MODULE_MARKER,
         compiler_helpers,
-
-
     }
 
     macro_rules! fn_name {
@@ -72,14 +77,19 @@ pub mod sym {
 
         f32_to_bits,
         f64_to_bits,
-        type_id_of,
-        size_of,
-        set_place_address_typed,
 
         mark_as_nctfe,
+
+        set_place_address_typed,
+        type_id_of,
+        size_of,
+
+        const_binary_op_of,
+        const_unary_op_of,
     }
 }
 
+#[derive(Clone, Copy, Debug)]
 pub(crate) struct FunctionInfo<'tcx> {
     pub def_id: DefId,
     pub ret_ty: Ty<'tcx>,
@@ -98,8 +108,11 @@ pub(crate) struct PriTypes<'tcx> {
 pub(crate) struct PriHelperFunctions<'tcx> {
     pub f32_to_bits: DefId,
     pub f64_to_bits: DefId,
+    pub set_place_address_typed: FunctionInfo<'tcx>,
     pub type_id_of: FunctionInfo<'tcx>,
     pub size_of: FunctionInfo<'tcx>,
+    pub const_binary_op_of: FunctionInfo<'tcx>,
+    pub const_unary_op_of: FunctionInfo<'tcx>,
     _phantom: std::marker::PhantomData<&'tcx ()>,
 }
 
@@ -209,8 +222,11 @@ pub(crate) fn find_helper_funcs<'tcx>(
     PriHelperFunctions {
         f32_to_bits: *def_ids.get(*sym::f32_to_bits).unwrap(),
         f64_to_bits: *def_ids.get(*sym::f64_to_bits).unwrap(),
+        set_place_address_typed: get_func_info(*sym::set_place_address_typed),
         type_id_of: get_func_info(*sym::type_id_of),
         size_of: get_func_info(*sym::size_of),
+        const_binary_op_of: get_func_info(*sym::const_binary_op_of),
+        const_unary_op_of: get_func_info(*sym::const_unary_op_of),
         _phantom: std::marker::PhantomData,
     }
 }
