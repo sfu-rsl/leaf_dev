@@ -37,9 +37,9 @@ impl CompilationPass for TypeExporter {
                         let body = tcx.instance_mir(instance.def);
                         let mut place_visitor = PlaceVisitor {
                             tcx,
+                            type_map,
                             args: instance.args,
                             param_env: tcx.param_env_reveal_all_normalized(body.source.def_id()),
-                            type_map,
                         };
                         place_visitor.visit_body(body);
                     }
@@ -57,9 +57,9 @@ fn type_id<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>) -> u128 {
 
 struct PlaceVisitor<'tcx, 's> {
     tcx: TyCtxt<'tcx>,
+    type_map: &'s mut HashMap<u128, TypeInfo>,
     args: GenericArgsRef<'tcx>,
     param_env: ParamEnv<'tcx>,
-    type_map: &'s mut HashMap<u128, TypeInfo>,
 }
 
 impl<'tcx, 's> Visitor<'tcx> for PlaceVisitor<'tcx, 's> {
