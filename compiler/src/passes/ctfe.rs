@@ -337,19 +337,13 @@ mod utils {
         }
     }
 
-    macro_rules! marker_fn_name {
-        () => {
-            pri_utils::helper_item_name!(mark_as_nctfe)
-        };
-    }
-
     pub(super) fn make_marker_statement() -> Stmt {
         Stmt {
             id: DUMMY_NODE_ID,
             kind: StmtKind::Semi(P(make_dummy_expr(ExprKind::Call(
                 P(make_dummy_expr(ExprKind::Path(
                     None,
-                    make_pri_helper_item_path(marker_fn_name!()),
+                    make_pri_helper_item_path(*pri_utils::sym::mark_as_nctfe),
                 ))),
                 Default::default(),
             )))),
@@ -370,10 +364,9 @@ mod utils {
                         _,
                     ),
                 ..
-            }) => path
-                .res
-                .opt_def_id()
-                .is_some_and(|id| pri_utils::eq_def_path_str(tcx, &id, marker_fn_name!())),
+            }) => path.res.opt_def_id().is_some_and(|id| {
+                pri_utils::eq_def_path_str(tcx, &id, *pri_utils::sym::mark_as_nctfe)
+            }),
             _ => false,
         }
     }

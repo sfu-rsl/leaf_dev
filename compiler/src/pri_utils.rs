@@ -3,6 +3,83 @@ use std::collections::HashMap;
 use rustc_hir::{def::DefKind, def_id::DefId, definitions::DisambiguatedDefPathData};
 use rustc_middle::ty::{Ty, TyCtxt};
 
+pub mod sym {
+    #![allow(non_upper_case_globals)]
+
+    #[derive(Clone, Copy, derive_more::Deref, Debug)]
+    #[repr(transparent)]
+    pub struct LeafSymbol(&'static str);
+
+    use const_format::concatcp;
+    use LeafSymbol as LS;
+
+    pub const RUNTIME_LIB_CRATE: LS = LS("runtime_shim");
+
+    macro_rules! in_lib {
+        ($name: literal) => {
+            concatcp!(RUNTIME_LIB_CRATE.0, "::", stringify!($name))
+        };
+    }
+
+    pub const pri: LS = LS(in_lib!("pri"));
+
+    macro_rules! in_pri {
+        ($name: ident) => {
+            concatcp!(pri.0, "::", stringify!($name))
+        };
+    }
+
+    macro_rules! symbols_in_pri {
+        ($($name: ident),* $(,)?) => {
+            $(pub const $name: LS = LS(in_pri!($name));)*
+        };
+    }
+
+    symbols_in_pri! {
+        MODULE_MARKER,
+        compiler_helpers,
+
+
+    }
+
+    macro_rules! fn_name {
+        ($(#[$($attr: meta)*])* fn $name:ident ($($(#[$($arg_attr: meta)*])* $arg:ident : $arg_type:ty),* $(,)?) $(-> $ret_ty:ty)?;) => {
+            symbols_in_pri!($name);
+        };
+    }
+    common::pri::list_func_decls!(modifier: fn_name);
+
+    macro_rules! in_compiler_helpers {
+        ($name: ident) => {
+            concatcp!(compiler_helpers.0, "::", stringify!($name))
+        };
+    }
+    macro_rules! symbols_in_compiler_helpers {
+        ($($name: ident),* $(,)?) => {
+            $(pub const $name: LS = LS(in_compiler_helpers!($name));)*
+        };
+    }
+
+    symbols_in_compiler_helpers! {
+        CH_MODULE_MARKER,
+
+        PLACE_REF_TYPE_HOLDER,
+        OPERAND_REF_TYPE_HOLDER,
+        BINARY_OP_TYPE_HOLDER,
+        UNARY_OP_TYPE_HOLDER,
+        RAW_PTR_TYPE_HOLDER,
+        FUNC_ID_TYPE_HOLDER,
+
+        f32_to_bits,
+        f64_to_bits,
+        type_id_of,
+        size_of,
+        set_place_address_typed,
+
+        mark_as_nctfe,
+    }
+}
+
 pub(crate) struct FunctionInfo<'tcx> {
     pub def_id: DefId,
     pub ret_ty: Ty<'tcx>,
@@ -40,11 +117,11 @@ pub(crate) fn find_pri_exported_symbols(tcx: TyCtxt) -> Vec<DefId> {
     let crate_num = *tcx
         .crates(())
         .iter()
-        .find(|cnum| tcx.crate_name(**cnum).as_str() == stringify!(runtime))
+        .find(|cnum| tcx.crate_name(**cnum).as_str() == *sym::RUNTIME_LIB_CRATE)
         .unwrap_or_else(|| {
             panic!(
                 "{} crate is not added as a dependency.",
-                stringify!(runtime)
+                *sym::RUNTIME_LIB_CRATE
             )
         });
 
@@ -56,7 +133,7 @@ pub(crate) fn find_pri_exported_symbols(tcx: TyCtxt) -> Vec<DefId> {
         .filter(|def_id| def_id.krate == crate_num)
         .collect::<Vec<_>>();
 
-    runtime_symbols.filter_by_marker(tcx, stringify!(runtime::pri::MODULE_MARKER), true)
+    runtime_symbols.filter_by_marker(tcx, *sym::MODULE_MARKER, true)
 }
 
 pub(crate) fn find_pri_funcs<'tcx>(
@@ -64,19 +141,12 @@ pub(crate) fn find_pri_funcs<'tcx>(
     tcx: TyCtxt<'tcx>,
 ) -> HashMap<String, FunctionInfo<'tcx>> {
     pri_symbols
-        .filter_by_marker(tcx, stringify!(runtime::pri::MODULE_MARKER), false)
+        .filter_by_marker(tcx, *sym::MODULE_MARKER, false)
         .into_iter()
         .filter(|def_id| matches!(tcx.def_kind(def_id), DefKind::Fn | DefKind::AssocFn))
         .map(|def_id| (tcx.def_path_str(def_id), func_info_from(tcx, def_id)))
         .collect()
 }
-
-macro_rules! helper_item_name {
-    ($name:ident) => {
-        &crate::pri_utils::normalize_str_path(&stringify!(runtime::pri::compiler_helpers::$name))
-    };
-}
-pub(crate) use helper_item_name;
 
 #[inline]
 pub(crate) fn normalize_str_path(name: &str) -> String {
@@ -94,11 +164,7 @@ pub(crate) fn find_pri_types<'tcx>(pri_symbols: &[DefId], tcx: TyCtxt<'tcx>) -> 
      * However, there should be some functions in TyCtxt that will list these items for us.
      */
     let def_ids: HashMap<String, DefId> = pri_symbols
-        .filter_by_marker(
-            tcx,
-            stringify!(runtime::pri::compiler_helpers::MODULE_MARKER),
-            false,
-        )
+        .filter_by_marker(tcx, *sym::CH_MODULE_MARKER, false)
         .into_iter()
         .filter(|def_id| matches!(tcx.def_kind(def_id), DefKind::Static(_)))
         .map(|def_id| (tcx.def_path_str(def_id), def_id))
@@ -111,12 +177,12 @@ pub(crate) fn find_pri_types<'tcx>(pri_symbols: &[DefId], tcx: TyCtxt<'tcx>) -> 
     };
 
     PriTypes {
-        place_ref: get_ty(helper_item_name!(PLACE_REF_TYPE_HOLDER)),
-        operand_ref: get_ty(helper_item_name!(OPERAND_REF_TYPE_HOLDER)),
-        binary_op: get_ty(helper_item_name!(BINARY_OP_TYPE_HOLDER)),
-        unary_op: get_ty(helper_item_name!(UNARY_OP_TYPE_HOLDER)),
-        raw_ptr: get_ty(helper_item_name!(RAW_PTR_TYPE_HOLDER)),
-        func_id: get_ty(helper_item_name!(FUNC_ID_TYPE_HOLDER)),
+        place_ref: get_ty(*sym::PLACE_REF_TYPE_HOLDER),
+        operand_ref: get_ty(*sym::OPERAND_REF_TYPE_HOLDER),
+        binary_op: get_ty(*sym::BINARY_OP_TYPE_HOLDER),
+        unary_op: get_ty(*sym::UNARY_OP_TYPE_HOLDER),
+        raw_ptr: get_ty(*sym::RAW_PTR_TYPE_HOLDER),
+        func_id: get_ty(*sym::FUNC_ID_TYPE_HOLDER),
     }
 }
 
@@ -125,7 +191,7 @@ pub(crate) fn find_helper_funcs<'tcx>(
     tcx: TyCtxt<'tcx>,
 ) -> PriHelperFunctions<'tcx> {
     let def_ids: HashMap<String, DefId> = pri_symbols
-        .filter_by_marker(tcx, helper_item_name!(MODULE_MARKER), false)
+        .filter_by_marker(tcx, *sym::CH_MODULE_MARKER, false)
         .into_iter()
         .filter(|def_id| matches!(tcx.def_kind(def_id), DefKind::Fn | DefKind::AssocFn))
         .map(|def_id| (tcx.def_path_str(def_id), def_id))
@@ -141,10 +207,10 @@ pub(crate) fn find_helper_funcs<'tcx>(
     };
 
     PriHelperFunctions {
-        f32_to_bits: *def_ids.get(helper_item_name!(f32_to_bits)).unwrap(),
-        f64_to_bits: *def_ids.get(helper_item_name!(f64_to_bits)).unwrap(),
-        type_id_of: get_func_info(helper_item_name!(type_id_of)),
-        size_of: get_func_info(helper_item_name!(size_of)),
+        f32_to_bits: *def_ids.get(*sym::f32_to_bits).unwrap(),
+        f64_to_bits: *def_ids.get(*sym::f64_to_bits).unwrap(),
+        type_id_of: get_func_info(*sym::type_id_of),
+        size_of: get_func_info(*sym::size_of),
         _phantom: std::marker::PhantomData,
     }
 }

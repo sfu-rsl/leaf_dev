@@ -13,7 +13,7 @@ use crate::{
         JumpTargetModifier, NewLocalDecl,
     },
     passes::Storage,
-    pri_utils,
+    pri_utils::sym::LeafSymbol,
 };
 
 use super::{InsertionLocation, OperandRef, PlaceRef, SwitchInfo};
@@ -30,7 +30,7 @@ pub(crate) trait BodyProvider<'tcx> {
 pub(crate) trait InEntryFunction {}
 
 pub(crate) trait PriItemsProvider<'tcx> {
-    fn get_pri_func_info(&self, func_name: &str) -> &FunctionInfo<'tcx>;
+    fn get_pri_func_info(&self, func_name: LeafSymbol) -> &FunctionInfo<'tcx>;
     fn pri_types(&self) -> &PriTypes<'tcx>;
     fn pri_helper_funcs(&self) -> &PriHelperFunctions<'tcx>;
 }
@@ -187,12 +187,10 @@ impl JumpTargetModifier for DefaultContext<'_, '_, '_> {
 }
 
 impl<'tcx> PriItemsProvider<'tcx> for PriItems<'tcx> {
-    fn get_pri_func_info(&self, func_name: &str) -> &FunctionInfo<'tcx> {
+    fn get_pri_func_info(&self, func_name: LeafSymbol) -> &FunctionInfo<'tcx> {
         self.funcs
-            .get(&pri_utils::normalize_str_path(
-                &("runtime::".to_owned() + func_name),
-            )) // FIXME
-            .unwrap_or_else(|| panic!("Invalid pri function name: `{func_name}`."))
+            .get(&(*func_name).to_owned())
+            .unwrap_or_else(|| panic!("Invalid pri function name: `{:?}`.", func_name))
     }
 
     fn pri_types(&self) -> &PriTypes<'tcx> {
@@ -207,7 +205,7 @@ impl<'tcx> PriItemsProvider<'tcx> for PriItems<'tcx> {
 impl<'tcx> PriItemsProvider<'tcx> for DefaultContext<'tcx, '_, '_> {
     delegate! {
         to self.pri {
-            fn get_pri_func_info(&self, func_name: &str) -> &FunctionInfo<'tcx>;
+            fn get_pri_func_info(&self, func_name: LeafSymbol) -> &FunctionInfo<'tcx>;
             fn pri_types(&self) -> &PriTypes<'tcx>;
             fn pri_helper_funcs(&self) -> &PriHelperFunctions<'tcx>;
         }
@@ -345,7 +343,7 @@ make_impl_macro! {
     impl_pri_items_provider,
     PriItemsProvider<'tcx>,
     self,
-    fn get_pri_func_info(&self, func_name: &str) -> &FunctionInfo<'tcx>;
+    fn get_pri_func_info(&self, func_name: LeafSymbol) -> &FunctionInfo<'tcx>;
     fn pri_types(&self) -> &PriTypes<'tcx>;
     fn pri_helper_funcs(&self) -> &PriHelperFunctions<'tcx>;
 }

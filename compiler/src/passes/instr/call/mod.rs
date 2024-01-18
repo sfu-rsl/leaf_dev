@@ -180,11 +180,6 @@ pub(crate) trait AssertionHandler<'tcx> {
         expected: bool,
         msg: &rustc_middle::mir::AssertMessage<'tcx>,
     );
-
-    fn reference_assert_kind(
-        &mut self,
-        msg: &rustc_middle::mir::AssertMessage<'tcx>,
-    ) -> (&'static str, Vec<Operand<'tcx>>, Vec<Statement<'tcx>>);
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -215,15 +210,19 @@ mod implementation {
 
     use delegate::delegate;
 
-    use self::ctxtreqs::*;
-    use self::utils::ty::TyExt;
-    use super::context::*;
-    use super::*;
     use crate::mir_transform::*;
     use crate::passes::Storage;
     #[cfg(nctfe)]
     use crate::passes::{ctfe::CtfeId, instr};
-    use crate::pri_utils::FunctionInfo;
+    use crate::pri_utils::{
+        sym::{self, LeafSymbol},
+        FunctionInfo,
+    };
+
+    use self::ctxtreqs::*;
+    use self::utils::ty::TyExt;
+    use super::context::*;
+    use super::*;
 
     use utils::*;
     use InsertionLocation::*;
@@ -231,7 +230,7 @@ mod implementation {
     pub(crate) trait MirCallAdder<'tcx> {
         fn make_bb_for_call(
             &mut self,
-            func_name: &str,
+            func_name: LeafSymbol,
             args: Vec<Operand<'tcx>>,
         ) -> BasicBlockData<'tcx> {
             self.make_bb_for_call_with_ret(func_name, args).0
@@ -239,7 +238,7 @@ mod implementation {
 
         fn make_bb_for_call_with_target(
             &mut self,
-            func_name: &str,
+            func_name: LeafSymbol,
             args: Vec<Operand<'tcx>>,
             target: Option<BasicBlock>,
         ) -> BasicBlockData<'tcx> {
@@ -249,7 +248,7 @@ mod implementation {
 
         fn make_bb_for_call_with_ret(
             &mut self,
-            func_name: &str,
+            func_name: LeafSymbol,
             args: Vec<Operand<'tcx>>,
         ) -> (BasicBlockData<'tcx>, Local) {
             self.make_bb_for_call_with_all(func_name, iter::empty(), args, None)
@@ -257,7 +256,7 @@ mod implementation {
 
         fn make_bb_for_call_with_all(
             &mut self,
-            func_name: &str,
+            func_name: LeafSymbol,
             generic_args: impl IntoIterator<Item = GenericArg<'tcx>>,
             args: Vec<Operand<'tcx>>,
             target: Option<BasicBlock>,
@@ -457,7 +456,7 @@ mod implementation {
     {
         fn make_bb_for_call_with_all(
             &mut self,
-            func_name: &str,
+            func_name: LeafSymbol,
             generic_args: impl IntoIterator<Item = GenericArg<'tcx>>,
             args: Vec<Operand<'tcx>>,
             target: Option<BasicBlock>,
@@ -586,9 +585,9 @@ mod implementation {
             let kind = self.body().local_kind(local);
             use mir::LocalKind::*;
             let func_name = match kind {
-                Temp => stringify!(pri::ref_place_local),
-                Arg => stringify!(pri::ref_place_argument),
-                ReturnPointer => stringify!(pri::ref_place_return_value),
+                Temp => sym::ref_place_local,
+                Arg => sym::ref_place_argument,
+                ReturnPointer => sym::ref_place_return_value,
             };
             let args = match kind {
                 ReturnPointer => vec![],
@@ -615,9 +614,9 @@ mod implementation {
             let mut new_blocks = Vec::new();
 
             let (func_name, additional_args) = match proj {
-                ProjectionElem::Deref => (stringify!(pri::ref_place_deref), vec![]),
+                ProjectionElem::Deref => (sym::ref_place_deref, vec![]),
                 ProjectionElem::Field(index, _) => (
-                    stringify!(pri::ref_place_field),
+                    sym::ref_place_field,
                     vec![operand::const_from_uint(
                         self.context.tcx(),
                         u32::from(index),
@@ -628,7 +627,7 @@ mod implementation {
                         self.internal_reference_place(&Place::from(index));
                     new_blocks.extend(additional_blocks);
                     (
-                        stringify!(pri::ref_place_index),
+                        sym::ref_place_index,
                         vec![operand::copy_for_local(index_ref)],
                     )
                 }
@@ -637,7 +636,7 @@ mod implementation {
                     min_length,
                     from_end,
                 } => (
-                    stringify!(pri::ref_place_constant_index),
+                    sym::ref_place_constant_index,
                     vec![
                         operand::const_from_uint(self.context.tcx(), offset),
                         operand::const_from_uint(self.context.tcx(), min_length),
@@ -645,7 +644,7 @@ mod implementation {
                     ],
                 ),
                 ProjectionElem::Subslice { from, to, from_end } => (
-                    stringify!(pri::ref_place_subslice),
+                    sym::ref_place_subslice,
                     vec![
                         operand::const_from_uint(self.context.tcx(), from),
                         operand::const_from_uint(self.context.tcx(), to),
@@ -653,14 +652,14 @@ mod implementation {
                     ],
                 ),
                 ProjectionElem::Downcast(_, index) => (
-                    stringify!(pri::ref_place_downcast),
+                    sym::ref_place_downcast,
                     vec![operand::const_from_uint(
                         self.context.tcx(),
                         u32::from(index),
                     )],
                 ),
-                ProjectionElem::OpaqueCast(_) => (stringify!(pri::ref_place_opaque_cast), vec![]),
-                ProjectionElem::Subtype(_) => (stringify!(pri::ref_place_subtype), vec![]),
+                ProjectionElem::OpaqueCast(_) => (sym::ref_place_opaque_cast, vec![]),
+                ProjectionElem::Subtype(_) => (sym::ref_place_subtype, vec![]),
             };
 
             new_blocks.push(
@@ -675,7 +674,7 @@ mod implementation {
 
         fn make_bb_for_place_ref_call(
             &mut self,
-            func_name: &str,
+            func_name: LeafSymbol,
             args: Vec<Operand<'tcx>>,
         ) -> (BasicBlockData<'tcx>, Local) {
             self.make_bb_for_call_with_ret(func_name, args)
@@ -689,7 +688,7 @@ mod implementation {
         ) -> BasicBlockData<'tcx> {
             let (stmt, ptr_local) = ptr_to_place(self.tcx(), &mut self.context, place, place_ty);
             let (mut block, _) = self.make_bb_for_call_with_all(
-                stringify!(pri::set_place_address_typed),
+                sym::set_place_address_typed,
                 vec![place_ty.into()],
                 vec![
                     operand::copy_for_local(place_ref),
@@ -724,7 +723,7 @@ mod implementation {
             };
 
             let set_call_block = self.make_bb_for_call(
-                stringify!(pri::set_place_size),
+                sym::set_place_size,
                 vec![
                     operand::copy_for_local(place_ref),
                     operand::move_for_local(size_local),
@@ -740,12 +739,12 @@ mod implementation {
             let tcx = self.context.tcx();
             // FIXME: To be removed when type information passing is complete.
             if let Some((func_name, additional_args)) = if ty.is_bool() {
-                Some((stringify!(pri::set_place_type_bool), vec![]))
+                Some((sym::set_place_type_bool, vec![]))
             } else if ty.is_char() {
-                Some((stringify!(pri::set_place_type_char), vec![]))
+                Some((sym::set_place_type_char, vec![]))
             } else if ty.is_integral() {
                 Some((
-                    stringify!(pri::set_place_type_int),
+                    sym::set_place_type_int,
                     vec![
                         operand::const_from_uint(tcx, ty::size_of(self.tcx(), ty).bits()),
                         operand::const_from_bool(tcx, ty.is_signed()),
@@ -754,7 +753,7 @@ mod implementation {
             } else if ty.is_floating_point() {
                 let (e_bits, s_bits) = ty::ebit_sbit_size(tcx, ty);
                 Some((
-                    stringify!(pri::set_place_type_float),
+                    sym::set_place_type_float,
                     vec![
                         operand::const_from_uint(tcx, e_bits),
                         operand::const_from_uint(tcx, s_bits),
@@ -778,7 +777,7 @@ mod implementation {
 
             #[cfg(place_addr)]
             blocks.push(self.make_bb_for_call(
-                stringify!(pri::set_place_type_id),
+                sym::set_place_type_id,
                 vec![
                     operand::copy_for_local(place_ref),
                     operand::move_for_local(id_local),
@@ -837,9 +836,9 @@ mod implementation {
             }
 
             let func_name = if is_copy {
-                stringify!(pri::ref_operand_copy)
+                sym::ref_operand_copy
             } else {
-                stringify!(pri::ref_operand_move)
+                sym::ref_operand_move
             };
 
             BlocksAndResult::from(
@@ -870,15 +869,12 @@ mod implementation {
             }
             // &str
             else if ty.peel_refs().is_str() {
-                self.internal_reference_const_operand_directly(
-                    stringify!(pri::ref_operand_const_str),
-                    constant,
-                )
+                self.internal_reference_const_operand_directly(sym::ref_operand_const_str, constant)
             }
             // &[u8]
             else if Self::is_u8_slice_ref(tcx, ty) {
                 self.internal_reference_const_operand_directly(
-                    stringify!(pri::ref_operand_const_byte_str),
+                    sym::ref_operand_const_byte_str,
                     constant,
                 )
             }
@@ -892,11 +888,8 @@ mod implementation {
             }
             // NOTE: Check this after all other ZSTs that you want to distinguish.
             else if ty.is_trivially_sized(tcx) && ty::size_of(tcx, ty) == rustc_abi::Size::ZERO {
-                self.make_bb_for_operand_ref_call(
-                    stringify!(pri::ref_operand_const_zst),
-                    Default::default(),
-                )
-                .into()
+                self.make_bb_for_operand_ref_call(sym::ref_operand_const_zst, Default::default())
+                    .into()
             } else if let Some(c) = operand::const_try_as_unevaluated(constant) {
                 self.internal_reference_unevaluated_const_operand(&c)
             } else if let Some(def_id) = Self::try_as_immut_static(tcx, constant) {
@@ -919,12 +912,12 @@ mod implementation {
 
             if ty.is_bool() {
                 self.internal_reference_const_operand_directly(
-                    stringify!(pri::ref_operand_const_bool),
+                    sym::ref_operand_const_bool,
                     constant,
                 )
             } else if ty.is_char() {
                 self.internal_reference_const_operand_directly(
-                    stringify!(pri::ref_operand_const_char),
+                    sym::ref_operand_const_char,
                     constant,
                 )
             } else if ty.is_integral() {
@@ -942,7 +935,7 @@ mod implementation {
 
         fn internal_reference_const_operand_directly(
             &mut self,
-            func_name: &str,
+            func_name: LeafSymbol,
             constant: &Box<ConstOperand<'tcx>>,
         ) -> BlocksAndResult<'tcx> {
             self.make_bb_for_operand_ref_call(
@@ -962,7 +955,7 @@ mod implementation {
             let (bit_rep_local, additional_stmts) =
                 utils::cast_int_to_bit_rep(self.tcx(), &mut self.context, constant);
             let (mut block, result) = self.make_bb_for_operand_ref_call(
-                stringify!(pri::ref_operand_const_int),
+                sym::ref_operand_const_int,
                 vec![
                     operand::move_for_local(bit_rep_local),
                     operand::const_from_uint(
@@ -988,7 +981,7 @@ mod implementation {
                 utils::cast_float_to_bit_rep(tcx, &mut self.context, constant);
             let (e_bits, s_bits) = ty::ebit_sbit_size(tcx, ty);
             let block_pair = self.make_bb_for_operand_ref_call(
-                stringify!(pri::ref_operand_const_float),
+                sym::ref_operand_const_float,
                 vec![
                     operand::move_for_local(bit_rep_local),
                     operand::const_from_uint(tcx, e_bits),
@@ -1013,7 +1006,7 @@ mod implementation {
                 None,
             );
             let mut block_pair = self.make_bb_for_operand_ref_call(
-                stringify!(pri::ref_operand_const_byte_str),
+                sym::ref_operand_const_byte_str,
                 vec![operand::move_for_local(slice_local)],
             );
             block_pair.0.statements.insert(0, slice_assignment);
@@ -1160,15 +1153,12 @@ mod implementation {
         }
 
         fn make_bb_for_some_const_ref_call(&mut self) -> (BasicBlockData<'tcx>, Local) {
-            self.make_bb_for_operand_ref_call(
-                stringify!(pri::ref_operand_const_some),
-                Vec::default(),
-            )
+            self.make_bb_for_operand_ref_call(sym::ref_operand_const_some, Vec::default())
         }
 
         fn make_bb_for_operand_ref_call(
             &mut self,
-            func_name: &str,
+            func_name: LeafSymbol,
             args: Vec<Operand<'tcx>>,
         ) -> (BasicBlockData<'tcx>, Local) {
             self.make_bb_for_call_with_ret(func_name, args)
@@ -1213,7 +1203,7 @@ mod implementation {
 
         fn by_use(&mut self, operand: OperandRef) {
             self.add_bb_for_assign_call(
-                stringify!(pri::assign_use),
+                sym::assign_use,
                 vec![operand::copy_for_local(operand.into())],
             )
         }
@@ -1221,7 +1211,7 @@ mod implementation {
         fn by_repeat(&mut self, operand: OperandRef, count: &Const<'tcx>) {
             debug_assert_eq!(count.ty(), self.tcx().types.usize);
             self.add_bb_for_assign_call(
-                stringify!(pri::assign_repeat),
+                sym::assign_repeat,
                 vec![
                     operand::copy_for_local(operand.into()),
                     #[allow(clippy::clone_on_copy)]
@@ -1232,7 +1222,7 @@ mod implementation {
 
         fn by_ref(&mut self, place: PlaceRef, is_mutable: bool) {
             self.add_bb_for_assign_call(
-                stringify!(pri::assign_ref),
+                sym::assign_ref,
                 vec![
                     operand::copy_for_local(place.into()),
                     operand::const_from_bool(self.context.tcx(), is_mutable),
@@ -1246,7 +1236,7 @@ mod implementation {
 
         fn by_address_of(&mut self, place: PlaceRef, is_mutable: bool) {
             self.add_bb_for_assign_call(
-                stringify!(pri::assign_address_of),
+                sym::assign_address_of,
                 vec![
                     operand::copy_for_local(place.into()),
                     operand::const_from_bool(self.context.tcx(), is_mutable),
@@ -1256,7 +1246,7 @@ mod implementation {
 
         fn by_len(&mut self, place: PlaceRef) {
             self.add_bb_for_assign_call(
-                stringify!(pri::assign_len),
+                sym::assign_len,
                 vec![operand::copy_for_local(place.into())],
             )
         }
@@ -1282,7 +1272,7 @@ mod implementation {
                 .add_and_set_local_for_enum(self.context.pri_types().binary_op, operator as u128);
 
             self.add_bb_for_assign_call_with_statements(
-                stringify!(pri::assign_binary_op),
+                sym::assign_binary_op,
                 vec![
                     operand::move_for_local(operator_local),
                     operand::copy_for_local(first.into()),
@@ -1299,7 +1289,7 @@ mod implementation {
                 .add_and_set_local_for_enum(self.context.pri_types().unary_op, operator as u128);
 
             self.add_bb_for_assign_call_with_statements(
-                stringify!(pri::assign_unary_op),
+                sym::assign_unary_op,
                 vec![
                     operand::move_for_local(operator_local),
                     operand::copy_for_local(operand.into()),
@@ -1310,7 +1300,7 @@ mod implementation {
 
         fn by_discriminant(&mut self, place: PlaceRef) {
             self.add_bb_for_assign_call(
-                stringify!(pri::assign_discriminant),
+                sym::assign_discriminant,
                 vec![operand::copy_for_local(place.into())],
             )
         }
@@ -1324,27 +1314,23 @@ mod implementation {
             }
 
             self.add_bb_for_aggregate_assign_call(
-                stringify!(pri::assign_aggregate_array),
+                sym::assign_aggregate_array,
                 items,
                 additional_args,
             )
         }
 
         fn by_aggregate_tuple(&mut self, fields: &[OperandRef]) {
-            self.add_bb_for_adt_assign_call(stringify!(pri::assign_aggregate_tuple), fields, vec![])
+            self.add_bb_for_adt_assign_call(sym::assign_aggregate_tuple, fields, vec![])
         }
 
         fn by_aggregate_struct(&mut self, fields: &[OperandRef]) {
-            self.add_bb_for_adt_assign_call(
-                stringify!(pri::assign_aggregate_struct),
-                fields,
-                vec![],
-            )
+            self.add_bb_for_adt_assign_call(sym::assign_aggregate_struct, fields, vec![])
         }
 
         fn by_aggregate_enum(&mut self, fields: &[OperandRef], variant: VariantIdx) {
             self.add_bb_for_adt_assign_call(
-                stringify!(pri::assign_aggregate_enum),
+                sym::assign_aggregate_enum,
                 fields,
                 vec![operand::const_from_uint(
                     self.context.tcx(),
@@ -1355,7 +1341,7 @@ mod implementation {
 
         fn by_aggregate_union(&mut self, active_field: FieldIdx, value: OperandRef) {
             self.add_bb_for_assign_call_with_statements(
-                stringify!(pri::assign_aggregate_union),
+                sym::assign_aggregate_union,
                 vec![
                     operand::const_from_uint(self.context.tcx(), active_field.as_u32()),
                     operand::copy_for_local(value.into()),
@@ -1365,11 +1351,7 @@ mod implementation {
         }
 
         fn by_aggregate_closure(&mut self, upvars: &[OperandRef]) {
-            self.add_bb_for_aggregate_assign_call(
-                stringify!(pri::assign_aggregate_closure),
-                upvars,
-                vec![],
-            )
+            self.add_bb_for_aggregate_assign_call(sym::assign_aggregate_closure, upvars, vec![])
         }
 
         fn by_shallow_init_box(&mut self, operand: OperandRef, ty: &Ty<'tcx>) {
@@ -1389,7 +1371,7 @@ mod implementation {
 
         fn its_discriminant_to(&mut self, variant_index: &VariantIdx) {
             self.add_bb_for_assign_call(
-                stringify!(pri::set_discriminant),
+                sym::set_discriminant,
                 vec![operand::const_from_uint(
                     self.context.tcx(),
                     variant_index.as_u32(),
@@ -1405,7 +1387,7 @@ mod implementation {
     {
         fn add_bb_for_aggregate_assign_call(
             &mut self,
-            func_name: &str,
+            func_name: LeafSymbol,
             elements: &[OperandRef],
             additional_args: Vec<Operand<'tcx>>,
         ) {
@@ -1424,7 +1406,7 @@ mod implementation {
 
         fn add_bb_for_adt_assign_call(
             &mut self,
-            func_name: &str,
+            func_name: LeafSymbol,
             fields: &[OperandRef],
             additional_args: Vec<Operand<'tcx>>,
         ) {
@@ -1457,13 +1439,13 @@ mod implementation {
             (items_local, additional_stmts)
         }
 
-        fn add_bb_for_assign_call(&mut self, func_name: &str, args: Vec<Operand<'tcx>>) {
+        fn add_bb_for_assign_call(&mut self, func_name: LeafSymbol, args: Vec<Operand<'tcx>>) {
             self.add_bb_for_assign_call_with_statements(func_name, args, vec![])
         }
 
         fn add_bb_for_assign_call_with_statements(
             &mut self,
-            func_name: &str,
+            func_name: LeafSymbol,
             args: Vec<Operand<'tcx>>,
             statements: Vec<Statement<'tcx>>,
         ) {
@@ -1474,7 +1456,7 @@ mod implementation {
 
         fn make_bb_for_assign_call(
             &mut self,
-            func_name: &str,
+            func_name: LeafSymbol,
             args: Vec<Operand<'tcx>>,
         ) -> BasicBlockData<'tcx> {
             self.make_bb_for_call(
@@ -1517,7 +1499,7 @@ mod implementation {
     {
         fn to_int(&mut self, ty: Ty<'tcx>) {
             if ty.is_char() {
-                self.add_bb_for_cast_assign_call(stringify!(pri::assign_cast_char))
+                self.add_bb_for_cast_assign_call(sym::assign_cast_char)
             } else {
                 assert!(ty.is_integral());
 
@@ -1526,7 +1508,7 @@ mod implementation {
                 let bits = ty::size_of(tcx, ty).bits();
 
                 self.add_bb_for_cast_assign_call_with_args(
-                    stringify!(pri::assign_cast_integer),
+                    sym::assign_cast_integer,
                     vec![
                         operand::const_from_uint(tcx, bits),
                         operand::const_from_bool(tcx, is_signed),
@@ -1538,7 +1520,7 @@ mod implementation {
         fn to_float(&mut self, ty: Ty<'tcx>) {
             let (e_bits, s_bits) = ty::ebit_sbit_size(self.context.tcx(), ty);
             self.add_bb_for_cast_assign_call_with_args(
-                stringify!(pri::assign_cast_float),
+                sym::assign_cast_float,
                 vec![
                     operand::const_from_uint(self.context.tcx(), e_bits),
                     operand::const_from_uint(self.context.tcx(), s_bits),
@@ -1547,7 +1529,7 @@ mod implementation {
         }
 
         fn through_unsizing(&mut self) {
-            self.add_bb_for_cast_assign_call(stringify!(pri::assign_cast_unsize))
+            self.add_bb_for_cast_assign_call(sym::assign_cast_unsize)
         }
 
         fn through_fn_ptr_coercion(&mut self) {
@@ -1559,18 +1541,15 @@ mod implementation {
         }
 
         fn through_sized_dynamization(&mut self, _ty: Ty<'tcx>) {
-            self.add_bb_for_cast_assign_call(stringify!(pri::assign_cast_sized_dyn));
+            self.add_bb_for_cast_assign_call(sym::assign_cast_sized_dyn);
         }
 
         fn expose_address(&mut self) {
-            self.add_bb_for_cast_assign_call(stringify!(pri::assign_cast_expose_addr));
+            self.add_bb_for_cast_assign_call(sym::assign_cast_expose_addr);
         }
 
         fn from_exposed_address(&mut self, ty: Ty<'tcx>) {
-            self.add_bb_for_pointer_cast_assign_call(
-                ty,
-                stringify!(pri::assign_cast_from_exposed_addr),
-            );
+            self.add_bb_for_pointer_cast_assign_call(ty, sym::assign_cast_from_exposed_addr);
         }
 
         fn to_another_ptr(&mut self, ty: Ty<'tcx>, kind: CastKind) {
@@ -1583,10 +1562,7 @@ mod implementation {
             /* NOTE: Currently, we do not distinguish between different pointer casts.
              * This is because they all keep the data untouched and are just about
              * semantics. We can add support for them later if interested. */
-            self.add_bb_for_pointer_cast_assign_call(
-                ty,
-                stringify!(pri::assign_cast_to_another_ptr),
-            );
+            self.add_bb_for_pointer_cast_assign_call(ty, sym::assign_cast_to_another_ptr);
         }
 
         fn transmuted(&mut self, ty: Ty<'tcx>) {
@@ -1596,7 +1572,7 @@ mod implementation {
                 id_local
             };
             self.add_bb_for_cast_assign_call_with_args(
-                stringify!(pri::assign_cast_transmute),
+                sym::assign_cast_transmute,
                 vec![operand::move_for_local(id_local)],
             )
         }
@@ -1607,13 +1583,13 @@ mod implementation {
         Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
         C: CastOperandProvider + ForAssignment<'tcx>,
     {
-        fn add_bb_for_cast_assign_call(&mut self, func_name: &str) {
+        fn add_bb_for_cast_assign_call(&mut self, func_name: LeafSymbol) {
             self.add_bb_for_cast_assign_call_with_args(func_name, vec![])
         }
 
         fn add_bb_for_cast_assign_call_with_args(
             &mut self,
-            func_name: &str,
+            func_name: LeafSymbol,
             args: Vec<Operand<'tcx>>,
         ) {
             self.add_bb_for_assign_call(
@@ -1626,7 +1602,7 @@ mod implementation {
             )
         }
 
-        fn add_bb_for_pointer_cast_assign_call(&mut self, ty: Ty<'tcx>, func_name: &str) {
+        fn add_bb_for_pointer_cast_assign_call(&mut self, ty: Ty<'tcx>, func_name: LeafSymbol) {
             let id_local: Local = {
                 let (block, id_local) = self.make_type_id_of_bb(ty);
                 self.insert_blocks([block]);
@@ -1651,7 +1627,7 @@ mod implementation {
             let discr_size = ty::size_of(tcx, ty).bits();
             let node_index = self.context.block_index();
             let (block, info_store_var) = self.make_bb_for_call_with_ret(
-                stringify!(pri::BranchingInfo::new),
+                sym::new_branching_info,
                 vec![
                     operand::const_from_uint(tcx, u32::from(node_index)),
                     operand::copy_for_local(operand_ref.into()),
@@ -1679,7 +1655,7 @@ mod implementation {
             let (func_name, additional_args) = if discr_ty.is_bool() {
                 const FALSE_SWITCH_VALUE: u128 = 0;
                 if value == FALSE_SWITCH_VALUE {
-                    (stringify!(pri::take_branch_false), vec![])
+                    (sym::take_branch_false, vec![])
                 } else {
                     unreachable!(
                         "SwitchInts for booleans are expected to provide only the value 0 (false)."
@@ -1688,12 +1664,12 @@ mod implementation {
             } else if discr_ty.is_integral() {
                 // TODO: Distinguish enum discriminant
                 (
-                    stringify!(pri::take_branch_int),
+                    sym::take_branch_int,
                     vec![operand::const_from_uint(self.context.tcx(), value)],
                 )
             } else if discr_ty.is_char() {
                 (
-                    stringify!(pri::take_branch_char),
+                    sym::take_branch_char,
                     vec![operand::const_from_char(
                         self.context.tcx(),
                         char::from_u32(value.try_into().unwrap()).unwrap(),
@@ -1735,24 +1711,24 @@ mod implementation {
                 debug_assert!(non_values.len() == 1);
                 debug_assert!(non_values.next().unwrap() == 0);
 
-                (vec![], stringify!(pri::take_branch_true), vec![])
+                (vec![], sym::take_branch_true, vec![])
             } else {
                 let tcx = self.context.tcx();
 
                 let (func_name, value_type, value_to_operand): (
-                    &str,
+                    LeafSymbol,
                     Ty<'tcx>,
                     Box<dyn Fn(u128) -> Operand<'tcx>>,
                 ) = if discr_ty.is_integral() {
                     // TODO: Distinguish enum discriminant
                     (
-                        stringify!(pri::take_branch_ow_int),
+                        sym::take_branch_ow_int,
                         tcx.types.u128,
                         Box::new(|nv: u128| operand::const_from_uint(tcx, nv)),
                     )
                 } else if discr_ty.is_char() {
                     (
-                        stringify!(pri::take_branch_ow_char),
+                        sym::take_branch_ow_char,
                         tcx.types.char,
                         Box::new(|nv: u128| {
                             operand::const_from_char(
@@ -1845,7 +1821,7 @@ mod implementation {
                     .collect(),
             );
             let mut block = self.make_bb_for_call(
-                stringify!(pri::before_call_func),
+                sym::before_call_func,
                 vec![
                     operand::copy_for_local(func.into()),
                     operand::move_for_local(arguments_local),
@@ -1879,14 +1855,14 @@ mod implementation {
             let func_ref = self.reference_func(&self.current_func());
 
             blocks.push(self.make_bb_for_call(
-                stringify!(pri::enter_func),
+                sym::enter_func,
                 vec![operand::copy_for_local(func_ref.into())],
             ));
             self.insert_blocks(blocks);
         }
 
         fn return_from_func(&mut self) {
-            let block = self.make_bb_for_call(stringify!(pri::return_from_func), vec![]);
+            let block = self.make_bb_for_call(sym::return_from_func, vec![]);
             self.insert_blocks([block]);
         }
 
@@ -1894,7 +1870,7 @@ mod implementation {
             // we want the place reference to be after the function call as well
             let BlocksAndResult(mut blocks, dest_ref) = self.internal_reference_place(destination);
             let after_call_block = self.make_bb_for_call(
-                stringify!(pri::after_call_func),
+                sym::after_call_func,
                 vec![operand::copy_for_local(dest_ref)],
             );
             blocks.push(after_call_block);
@@ -1920,7 +1896,7 @@ mod implementation {
 
             let preserve = |this: &mut Self, place_ref: Local| {
                 this.make_bb_for_call(
-                    stringify!(pri::preserve_special_local_metadata),
+                    sym::preserve_special_local_metadata,
                     vec![operand::move_for_local(place_ref)],
                 )
             };
@@ -1958,7 +1934,7 @@ mod implementation {
             };
 
             let call_block = self.make_bb_for_call(
-                stringify!(pri::try_untuple_argument),
+                sym::try_untuple_argument,
                 vec![
                     operand::const_from_uint(self.tcx(), 2 as common::LocalIndex),
                     operand::move_for_local(tuple_id_local),
@@ -1977,7 +1953,7 @@ mod implementation {
             let id_ty = self.context.pri_types().func_id;
             let (stmts, id_local) = id_of_func(self.tcx(), &mut self.context, func, id_ty);
             let (mut new_block, ref_local) = self.make_bb_for_operand_ref_call(
-                stringify!(pri::ref_operand_const_func),
+                sym::ref_operand_const_func,
                 vec![operand::move_for_local(id_local)],
             );
             new_block.statements.extend(stmts);
@@ -2012,18 +1988,22 @@ mod implementation {
             block.statements.extend(additional_stmts);
             self.insert_blocks([block]);
         }
-
+    }
+    impl<'tcx, C> RuntimeCallAdder<C>
+    where
+        C: ForAssertion<'tcx>,
+    {
         fn reference_assert_kind(
             &mut self,
             msg: &rustc_middle::mir::AssertMessage<'tcx>,
-        ) -> (&'static str, Vec<Operand<'tcx>>, Vec<Statement<'tcx>>) {
+        ) -> (LeafSymbol, Vec<Operand<'tcx>>, Vec<Statement<'tcx>>) {
             use rustc_middle::mir::AssertKind;
             match msg {
                 AssertKind::BoundsCheck { len, index } => {
                     let len_ref = self.reference_operand(len);
                     let index_ref = self.reference_operand(index);
                     (
-                        stringify!(pri::check_assert_bounds_check),
+                        sym::check_assert_bounds_check,
                         vec![
                             operand::copy_for_local(len_ref.into()),
                             operand::copy_for_local(index_ref.into()),
@@ -2045,7 +2025,7 @@ mod implementation {
                     let op1_ref = self.reference_operand(op1);
                     let op2_ref = self.reference_operand(op2);
                     (
-                        stringify!(pri::check_assert_overflow),
+                        sym::check_assert_overflow,
                         vec![
                             // TODO: double check that moves and copies here are correct
                             operand::move_for_local(operator_local),
@@ -2058,7 +2038,7 @@ mod implementation {
                 AssertKind::OverflowNeg(op) => {
                     let op_ref = self.reference_operand(op);
                     (
-                        stringify!(pri::check_assert_overflow_neg),
+                        sym::check_assert_overflow_neg,
                         vec![operand::copy_for_local(op_ref.into())],
                         vec![],
                     )
@@ -2066,7 +2046,7 @@ mod implementation {
                 AssertKind::DivisionByZero(op) => {
                     let op_ref = self.reference_operand(op);
                     (
-                        stringify!(pri::check_assert_div_by_zero),
+                        sym::check_assert_div_by_zero,
                         vec![operand::copy_for_local(op_ref.into())],
                         vec![],
                     )
@@ -2074,7 +2054,7 @@ mod implementation {
                 AssertKind::RemainderByZero(op) => {
                     let op_ref = self.reference_operand(op);
                     (
-                        stringify!(pri::check_assert_rem_by_zero),
+                        sym::check_assert_rem_by_zero,
                         vec![operand::copy_for_local(op_ref.into())],
                         vec![],
                     )
@@ -2108,7 +2088,7 @@ mod implementation {
         C: ForEntryFunction<'tcx>,
     {
         fn init_runtime_lib(&mut self) {
-            let block = self.make_bb_for_call(stringify!(pri::init_runtime_lib), vec![]);
+            let block = self.make_bb_for_call(sym::init_runtime_lib, vec![]);
             self.insert_blocks([block]);
         }
     }
