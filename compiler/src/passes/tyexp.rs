@@ -64,19 +64,17 @@ struct PlaceVisitor<'tcx, 's> {
 
 impl<'tcx, 's> Visitor<'tcx> for PlaceVisitor<'tcx, 's> {
     fn visit_ty(&mut self, ty: Ty<'tcx>, _: mir::visit::TyContext) {
-        let ty = if ty.has_param() {
-            let normalized_ty = self.tcx.instantiate_and_normalize_erasing_regions(
-                self.args,
-                self.param_env,
-                EarlyBinder::bind(ty),
-            );
-            log::debug!("Normalized ty with param: {} -> {}", ty, normalized_ty);
-            normalized_ty
-        } else {
-            self.tcx.normalize_erasing_regions(self.param_env, ty)
-        };
+        let normalized_ty = self.tcx.instantiate_and_normalize_erasing_regions(
+            self.args,
+            self.param_env,
+            EarlyBinder::bind(ty),
+        );
+        log::debug!(target: "TypeExport", "Normalized ty with param: {} -> {}", ty, normalized_ty);
 
-        if self.type_map.contains_key(&type_id(self.tcx, ty)) {
+        if self
+            .type_map
+            .contains_key(&type_id(self.tcx, normalized_ty))
+        {
             return;
         }
 
