@@ -2,9 +2,10 @@ use super::{CompilationPass, Storage, StorageExt};
 
 use rustc_abi::{FieldsShape, LayoutS, Variants};
 use rustc_middle::mir::{self, visit::Visitor};
+use rustc_middle::ty::EarlyBinder;
 use rustc_middle::ty::{
     layout::{HasParamEnv, HasTyCtxt, LayoutCx, TyAndLayout},
-    ParamEnv, Ty, TyCtxt, TypeVisitableExt,
+    GenericArgsRef, ParamEnv, Ty, TyCtxt, TypeVisitableExt,
 };
 use rustc_target::abi::{FieldIdx, Layout, VariantIdx};
 
@@ -36,8 +37,9 @@ impl CompilationPass for TypeExporter {
                         let body = tcx.instance_mir(instance.def);
                         let mut place_visitor = PlaceVisitor {
                             tcx,
-                            type_map,
+                            args: instance.args,
                             param_env: tcx.param_env_reveal_all_normalized(body.source.def_id()),
+                            type_map,
                         };
                         place_visitor.visit_body(body);
                     }
@@ -55,17 +57,25 @@ fn type_id<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>) -> u128 {
 
 struct PlaceVisitor<'tcx, 's> {
     tcx: TyCtxt<'tcx>,
-    type_map: &'s mut HashMap<u128, TypeInfo>,
+    args: GenericArgsRef<'tcx>,
     param_env: ParamEnv<'tcx>,
+    type_map: &'s mut HashMap<u128, TypeInfo>,
 }
 
 impl<'tcx, 's> Visitor<'tcx> for PlaceVisitor<'tcx, 's> {
     fn visit_ty(&mut self, ty: Ty<'tcx>, _: mir::visit::TyContext) {
-        if ty.has_param() {
-            return;
-        }
+        let ty = if ty.has_param() {
+            let normalized_ty = self.tcx.instantiate_and_normalize_erasing_regions(
+                self.args,
+                self.param_env,
+                EarlyBinder::bind(ty),
+            );
+            log::debug!("Normalized ty with param: {} -> {}", ty, normalized_ty);
+            normalized_ty
+        } else {
+            self.tcx.normalize_erasing_regions(self.param_env, ty)
+        };
 
-        let ty = self.tcx.normalize_erasing_regions(self.param_env, ty);
         if self.type_map.contains_key(&type_id(self.tcx, ty)) {
             return;
         }
