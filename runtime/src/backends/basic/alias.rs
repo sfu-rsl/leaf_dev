@@ -1,11 +1,9 @@
 use super::expr::{DowncastKind, ProjExpr, SymIndexPair, SymValueRef, ValueRef};
-use crate::{
-    abs::{
-        self,
-        expr::{proj::Projector, BinaryExprBuilder, ExprBuilder},
-    },
-    tyexp::TypeInfo,
+use crate::abs::{
+    self,
+    expr::{proj::Projector, BinaryExprBuilder, ExprBuilder},
 };
+use common::tyexp::TypeInfo;
 
 pub(crate) use crate::utils::alias::*;
 

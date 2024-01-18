@@ -17,8 +17,9 @@ use crate::{
     },
     solvers::z3::Z3Solver,
     trace::ImmediateTraceManager,
-    tyexp::{self, FieldsShapeInfo, StructShape, TypeExport, TypeInfo},
+    tyexp::{self, TypeInfoExt},
 };
+use common::tyexp::{FieldsShapeInfo, StructShape, TypeExport, TypeInfo};
 
 use self::{
     alias::{

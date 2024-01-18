@@ -7,10 +7,13 @@ edition = "2021"
 name = "leafc"
 path = "src/main.rs"
 
+[lib]
+crate-types = ["rlib", "dylib", "bin"]
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-common = { path = "../common" }
+common = { path = "../common", features = ["tyexp"] }
 macros = { path = "../macros", version = "0.1.0" }
 runtime = { path = "../runtime", version = "0.1.0" }
 

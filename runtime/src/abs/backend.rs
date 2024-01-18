@@ -283,8 +283,6 @@ pub(crate) trait TypeManager {
 }
 
 pub(crate) mod implementation {
-    use crate::tyexp::{TypeExport, TypeInfo};
-
     use super::super::*;
     use super::*;
 

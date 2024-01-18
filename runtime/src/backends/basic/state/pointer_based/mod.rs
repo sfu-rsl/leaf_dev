@@ -10,9 +10,10 @@ use crate::{
         place::{LocalWithMetadata, PlaceMetadata},
         VariablesState,
     },
-    tyexp::{ArrayShape, FieldsShapeInfo, StructShape, TypeInfo},
+    tyexp::TypeInfoExt,
     utils::{type_id_of, SelfHierarchical},
 };
+use common::tyexp::{ArrayShape, FieldsShapeInfo, StructShape, TypeInfo};
 
 use super::{
     super::{

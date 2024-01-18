@@ -1,4 +1,16 @@
+#![feature(macro_metavar_expr)]
 #![no_std]
+
+#[cfg(feature = "std")]
+extern crate std;
+#[cfg(feature = "std")]
+use std::prelude::rust_2021::*;
+
+pub mod ffi;
+pub mod pri;
+#[cfg(feature = "tyexp")]
+pub mod tyexp;
+pub mod utils;
 
 pub type LocalIndex = u32;
 pub type BasicBlockIndex = u32;

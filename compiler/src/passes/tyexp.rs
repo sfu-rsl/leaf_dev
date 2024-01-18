@@ -11,7 +11,7 @@ use rustc_target::abi::{FieldIdx, Layout, VariantIdx};
 
 use std::collections::HashMap;
 
-use runtime::tyexp::*;
+use common::tyexp::*;
 
 const KEY_TYPE_MAP: &str = "type_ids";
 
