@@ -33,21 +33,6 @@ impl CompilationPass for TypeExporter {
             .for_each(|unit| {
                 unit.items().iter().for_each(|(item, _)| match item {
                     mir::mono::MonoItem::Fn(instance) => {
-                        log::debug!(
-                            "Monomorphized item: {:?} {} {} {:?}",
-                            item.def_id(),
-                            item.is_generic_fn(tcx),
-                            tcx.symbol_name(*instance).name,
-                            instance.args,
-                        );
-
-                        let ty = tcx.instantiate_and_normalize_erasing_regions(
-                            instance.args,
-                            ParamEnv::reveal_all(),
-                            tcx.type_of(item.def_id()),
-                        );
-                        add_type_information_to_map(tcx, ParamEnv::reveal_all(), type_map, ty);
-
                         let body = tcx.instance_mir(instance.def);
                         let mut place_visitor = PlaceVisitor {
                             tcx,
@@ -81,32 +66,32 @@ impl<'tcx, 's> Visitor<'tcx> for PlaceVisitor<'tcx, 's> {
         }
 
         let ty = self.tcx.normalize_erasing_regions(self.param_env, ty);
-        add_type_information_to_map(self.tcx, self.param_env, self.type_map, ty);
+        if self.type_map.contains_key(&type_id(self.tcx, ty)) {
+            return;
+        }
+
+        self.add_type_information_to_map(ty);
     }
 }
 
-fn add_type_information_to_map<'tcx>(
-    tcx: TyCtxt<'tcx>,
-    param_env: ParamEnv<'tcx>,
-    type_map: &mut HashMap<u128, TypeInfo>,
-    ty: Ty<'tcx>,
-) {
-    if type_map.contains_key(&type_id(tcx, ty)) {
-        return;
+impl<'tcx, 's> PlaceVisitor<'tcx, 's> {
+    fn add_type_information_to_map(&mut self, ty: Ty<'tcx>) {
+        let layout = match self.tcx.layout_of(self.param_env.and(ty)) {
+            Ok(TyAndLayout { layout, .. }) => layout,
+            Err(err) => {
+                log::warn!("Failed to get layout of type {:?}: {:?}", ty, err);
+                return;
+            }
+        };
+
+        log::debug!(target: "TypeExport", "Generating type information for {:?}", ty);
+        let cx = LayoutCx {
+            tcx: self.tcx,
+            param_env: self.param_env,
+        };
+        let type_info: TypeInfo = layout.to_runtime(&cx, ty);
+        self.type_map.insert(type_info.id, type_info);
     }
-
-    let layout = match tcx.layout_of(param_env.and(ty)) {
-        Ok(TyAndLayout { layout, .. }) => layout,
-        Err(err) => {
-            log::warn!("Failed to get layout of type {:?}: {:?}", ty, err);
-            return;
-        }
-    };
-
-    log::debug!(target: "TypeExport", "Generating type information for {:?}", ty);
-    let cx = LayoutCx { tcx, param_env };
-    let type_info: TypeInfo = layout.to_runtime(&cx, ty);
-    type_map.insert(type_info.id, type_info);
 }
 
 trait ToRuntimeInfo<'tcx, Cx, T> {
