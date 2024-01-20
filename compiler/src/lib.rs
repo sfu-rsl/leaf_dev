@@ -77,6 +77,7 @@ pub fn run_compiler(args: impl Iterator<Item = String>, input_path: Option<PathB
 }
 
 pub mod constants {
+    // The instrumented is going to call the shim.
     pub(super) const CRATE_RUNTIME: &str = "leafrtsh";
 
     pub(super) const URL_BUG_REPORT: &str = "https://github.com/sfu-rsl/leaf/issues/new";
@@ -95,15 +96,20 @@ mod driver_args {
     const CMD_RUSTC: &str = "rustc";
     const CMD_RUSTUP: &str = "rustup";
 
+    const CODEGEN_LINK_ARG: &str = "link-arg";
+
     const DIR_DEPS: &str = "deps";
 
     const ENV_RUSTUP_HOME: &str = "RUSTUP_HOME";
     const ENV_SYSROOT: &str = "RUST_SYSROOT";
     const ENV_TOOLCHAIN: &str = "RUSTUP_TOOLCHAIN";
 
-    const FILE_RUNTIME_LIB: &str = "libleafrtsh.rlib";
+    const FILE_RUNTIME_SHIM_LIB: &str = "libleafrtsh.rlib";
+    const FILE_RUNTIME_DYLIB: &str = "libleafrt.so";
 
     const OPT_EXTERN: &str = "--extern";
+    const OPT_CODEGEN: &str = "-C";
+    const OPT_LINK_NATIVE: &str = "-l";
     const OPT_PRINT_SYSROOT: &str = "--print=sysroot";
     const OPT_SYSROOT: &str = "--sysroot";
     const OPT_SEARCH_PATH: &str = "-L";
@@ -152,14 +158,33 @@ mod driver_args {
 
         args.push(OPT_UNSTABLE.to_owned());
 
-        // Add runtime library as a direct dependency.
+        // Add the runtime library as a direct dependency.
         args.add_pair(
             OPT_EXTERN,
-            format!("force:{}={}", CRATE_RUNTIME, find_runtime_lib_path()),
+            format!("{}={}", CRATE_RUNTIME, find_runtime_shim_lib_path()),
         );
 
         // Add runtime project's dependencies into the search path.
+        // FIXME: This includes the dependencies of the whole project.
         args.add_pair(OPT_SEARCH_PATH, find_deps_path());
+
+        // Add the runtime dynamic library as a dynamic dependency.
+        /* NOTE: As long as the shim is getting compiled along with the program,
+         * adding it explicitly should not be necessary (is expected to be
+         * realized by the compiler). */
+        args.add_pair(
+            OPT_LINK_NATIVE,
+            format!("dylib={}", "leafrt"), //find_runtime_dylib_path()),
+        );
+        /* Add the RPATH header to the binary, so we don't need to include it
+         * in the LD_LIBRARY_PATH. */
+        args.add_pair(
+            OPT_CODEGEN,
+            format!(
+                "{CODEGEN_LINK_ARG}=-Wl,-rpath={}",
+                find_runtime_dylib_dir_path()
+            ),
+        );
 
         if let Some(input_path) = input_path {
             args.push(input_path.to_string_lossy().into_owned());
@@ -230,31 +255,30 @@ mod driver_args {
             .expect("Unable to find sysroot.")
     }
 
-    fn find_runtime_lib_path() -> String {
-        // FIXME: Do not depend on the project's structure and adjacency of runtime.
+    fn find_runtime_shim_lib_path() -> String {
+        find_dependency_path(FILE_RUNTIME_SHIM_LIB)
+    }
 
-        fn try_dir(path: &Path) -> Option<PathBuf> {
-            log::debug!("Trying dir for runtime lib: {:?}", path);
-            try_join(path, FILE_RUNTIME_LIB)
-        }
-
-        let try_cwd = || try_cwd(try_dir);
-
-        let try_exe_path = || try_exe_ancestors(try_dir);
-
-        try_cwd()
-            .or_else(try_exe_path)
-            .map(|path| path.to_string_lossy().to_string())
-            .expect("Unable to find runtime lib file.")
+    fn find_runtime_dylib_dir_path() -> String {
+        let file_path = find_dependency_path(FILE_RUNTIME_DYLIB);
+        Path::new(&file_path)
+            .parent()
+            .unwrap()
+            .to_string_lossy()
+            .to_string()
     }
 
     fn find_deps_path() -> String {
+        find_dependency_path(DIR_DEPS)
+    }
+
+    fn find_dependency_path(name: &'static str) -> String {
         // FIXME: Don't depend on the project structure and adjacency of runtime.
 
-        fn try_dir(path: &Path) -> Option<PathBuf> {
-            log::debug!("Trying dir for deps dir: {:?}", path);
-            try_join(path, DIR_DEPS)
-        }
+        let try_dir = |path: &Path| {
+            log::debug!("Trying dir in search of `{}`: {:?}", name, path);
+            try_join(path, name)
+        };
 
         let try_cwd = || try_cwd(try_dir);
         let try_exe_path = || try_exe_ancestors(try_dir);
@@ -262,7 +286,7 @@ mod driver_args {
         try_cwd()
             .or_else(try_exe_path)
             .map(|path| path.to_string_lossy().to_string())
-            .expect("Unable to find runtime lib file.")
+            .unwrap_or_else(|| panic!("Unable to find the dependency with name: {}", name))
     }
 
     fn try_cwd(f: impl Fn(&Path) -> Option<PathBuf>) -> Option<PathBuf> {

@@ -1,6 +1,7 @@
 alloc
 bitvector
 clippy
+dylib
 peekable
 rposition
 serde
