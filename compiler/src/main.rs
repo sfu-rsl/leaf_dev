@@ -6,6 +6,14 @@ fn main() {
             compiler::constants::LOG_PASS_OBJECTS_TAG,
             log::LevelFilter::Off,
         )
+        .filter_module(
+            compiler::constants::LOG_PRI_DISCOVERY_TAG,
+            log::LevelFilter::Off,
+        )
+        .filter_module(
+            &stringify!(compiler::mir_transform::jump).replace(" ", ""),
+            log::LevelFilter::Off,
+        )
         .parse_default_env()
         .init();
 

@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use rustc_hir::{def::DefKind, def_id::DefId, definitions::DisambiguatedDefPathData};
 use rustc_middle::ty::{Ty, TyCtxt};
 
+pub(super) const TAG_DISCOVERY: &str = "pri_discovery";
+
 pub mod sym {
     #![allow(non_upper_case_globals)]
 
@@ -130,6 +132,13 @@ pub(crate) fn find_pri_exported_symbols(tcx: TyCtxt) -> Vec<DefId> {
     let crate_num = *tcx
         .crates(())
         .iter()
+        .inspect(|cnum| {
+            log::debug!(
+                target: TAG_DISCOVERY,
+                "Found crate in the program: {}",
+                tcx.crate_name(**cnum).as_str().to_string()
+            );
+        })
         .find(|cnum| tcx.crate_name(**cnum).as_str() == *sym::RUNTIME_LIB_CRATE)
         .unwrap_or_else(|| {
             panic!(
@@ -157,6 +166,13 @@ pub(crate) fn find_pri_funcs<'tcx>(
         .filter_by_marker(tcx, *sym::MODULE_MARKER, false)
         .into_iter()
         .filter(|def_id| matches!(tcx.def_kind(def_id), DefKind::Fn | DefKind::AssocFn))
+        .inspect(|def_id| {
+            log::debug!(
+                target: TAG_DISCOVERY,
+                "Found PRI function: {:?}",
+                def_id,
+            );
+        })
         .map(|def_id| (tcx.def_path_str(def_id), func_info_from(tcx, def_id)))
         .collect()
 }
@@ -180,6 +196,13 @@ pub(crate) fn find_pri_types<'tcx>(pri_symbols: &[DefId], tcx: TyCtxt<'tcx>) -> 
         .filter_by_marker(tcx, *sym::CH_MODULE_MARKER, false)
         .into_iter()
         .filter(|def_id| matches!(tcx.def_kind(def_id), DefKind::Static(_)))
+        .inspect(|def_id| {
+            log::debug!(
+                target: TAG_DISCOVERY,
+                "Found PRI helper static item: {:?}",
+                def_id,
+            );
+        })
         .map(|def_id| (tcx.def_path_str(def_id), def_id))
         .collect();
 
@@ -207,6 +230,13 @@ pub(crate) fn find_helper_funcs<'tcx>(
         .filter_by_marker(tcx, *sym::CH_MODULE_MARKER, false)
         .into_iter()
         .filter(|def_id| matches!(tcx.def_kind(def_id), DefKind::Fn | DefKind::AssocFn))
+        .inspect(|def_id| {
+            log::debug!(
+                target: TAG_DISCOVERY,
+                "Found PRI helper function: {:?}",
+                def_id,
+            );
+        })
         .map(|def_id| (tcx.def_path_str(def_id), def_id))
         .collect();
 

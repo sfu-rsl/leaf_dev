@@ -108,11 +108,6 @@ impl<'tcx, 'm, 's> DefaultContext<'tcx, 'm, 's> {
     ) -> Self {
         use crate::pri_utils::*;
         let pri_symbols = find_pri_exported_symbols(tcx);
-        if cfg!(debug_assertions) {
-            for def_id in &pri_symbols {
-                log::debug!("Found PRI symbol: {:?}", tcx.def_path_str(*def_id));
-            }
-        }
 
         Self {
             tcx,
