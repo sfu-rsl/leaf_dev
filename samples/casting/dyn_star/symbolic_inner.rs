@@ -1,6 +1,6 @@
 #![feature(dyn_star)]
 
-use runtime::annotations::Symbolizable;
+use leaf::annotations::Symbolizable;
 
 trait Bar {
     fn bar(&self) -> usize;

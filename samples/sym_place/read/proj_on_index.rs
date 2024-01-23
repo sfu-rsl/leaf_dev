@@ -1,4 +1,4 @@
-use runtime::annotations::Symbolizable;
+use leaf::annotations::Symbolizable;
 
 fn main() {
     let array = [Point { x: 1, y: 2 }, Point { x: 3, y: 4 }];

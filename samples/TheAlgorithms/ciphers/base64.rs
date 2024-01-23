@@ -232,7 +232,7 @@ mod tests {
     }
 
     pub(super) fn encode_symbolic() {
-        use runtime::annotations::Symbolizable;
+        use leaf::annotations::Symbolizable;
 
         let data = b"\xd31\xc9\x87D\xfe\xaa\xb3\xff\xef\x8c\x0eoD";
         let mut data_sym = NSByteString::new();
@@ -248,7 +248,7 @@ mod tests {
     }
 
     pub(super) fn decode_symbolic() {
-        use runtime::annotations::Symbolizable;
+        use leaf::annotations::Symbolizable;
 
         let encoded = b"0zHJh0T+qrP/74wOb0Q=";
         let mut encoded_sym = NSByteString::new();
@@ -264,7 +264,7 @@ mod tests {
     }
 
     pub(super) fn encode_decode_symbolic() {
-        use runtime::annotations::Symbolizable;
+        use leaf::annotations::Symbolizable;
 
         let data = b"Lorem Ipsum";
         let mut data_sym = NSByteString::new();

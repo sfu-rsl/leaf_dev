@@ -167,7 +167,7 @@ $ cargo run -- --emit=mir main.rs
 ### Example reasoning
 - Let's look at the example located at `leaf/samples/function/sym_arg/main.rs`.
 ```rust
-use runtime::annotations::Symbolizable;
+use leaf::annotations::Symbolizable;
 
 fn main() {
     let x = 10.mark_symbolic();

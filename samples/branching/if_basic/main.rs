@@ -1,4 +1,4 @@
-use runtime::annotations::Symbolizable;
+use leaf::annotations::Symbolizable;
 
 fn main() {
     let x = get_num().mark_symbolic();

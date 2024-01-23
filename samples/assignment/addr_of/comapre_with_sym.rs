@@ -1,4 +1,4 @@
-use runtime::annotations::Symbolizable;
+use leaf::annotations::Symbolizable;
 
 fn main() {
     let a = 20;

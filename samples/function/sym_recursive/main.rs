@@ -2,7 +2,7 @@
  * Ideally in a way that can be directly solved by the solver.
  */
 
-use runtime::annotations::Symbolizable;
+use leaf::annotations::Symbolizable;
 
 fn main() {
     let x = (-4).mark_symbolic();

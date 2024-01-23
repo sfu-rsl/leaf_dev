@@ -1,6 +1,6 @@
 use std::mem::transmute;
 
-use runtime::annotations::Symbolizable;
+use leaf::annotations::Symbolizable;
 
 fn main() {
     let x = 10u32.mark_symbolic();

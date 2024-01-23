@@ -1,4 +1,4 @@
-use runtime::annotations::Symbolizable;
+use leaf::annotations::Symbolizable;
 
 mod child;
 

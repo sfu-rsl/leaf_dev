@@ -1,4 +1,4 @@
-use runtime::annotations::Symbolizable;
+use leaf::annotations::Symbolizable;
 
 fn main() {
     let a1 = 0b1u8.mark_symbolic() << 7u8; // == 2^15

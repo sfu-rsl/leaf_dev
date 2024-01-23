@@ -1,6 +1,6 @@
 /* Adapted from: https://github.com/TheAlgorithms/Rust */
 
-use runtime::annotations::Symbolizable;
+use leaf::annotations::Symbolizable;
 
 fn main() {
     all_symbolic();
