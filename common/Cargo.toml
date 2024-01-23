@@ -10,5 +10,7 @@ std = []
 tyexp = ["std", "dep:serde", "dep:serde_json"]
 
 [dependencies]
+# No dependencies are supposed to be used by this crate in the mode that is used by the shim library.
+
 serde = { version = "1.0.188", features = ["derive"], optional = true }
 serde_json = { version = "1.0.107", optional = true }

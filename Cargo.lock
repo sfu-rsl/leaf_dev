@@ -149,7 +149,6 @@ dependencies = [
  "log",
  "macros",
  "paste",
- "runtime_shim",
 ]
 
 [[package]]

@@ -1,8 +1,10 @@
 [workspace]
+resolver = "2"
 members = [
     "common",
     "compiler",
     "runtime",
+    # We keep the shim project here to make the project management easier.
     "runtime_shim",
     "macros",
 ]

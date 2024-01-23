@@ -77,7 +77,7 @@ pub fn run_compiler(args: impl Iterator<Item = String>, input_path: Option<PathB
 }
 
 pub mod constants {
-    // The instrumented is going to call the shim.
+    // The instrumented code is going to call the shim.
     pub(super) const CRATE_RUNTIME: &str = "leafrtsh";
 
     pub(super) const URL_BUG_REPORT: &str = "https://github.com/sfu-rsl/leaf/issues/new";
@@ -85,13 +85,14 @@ pub mod constants {
     pub(super) const LEAF_AUG_MOD_NAME: &str = "__leaf_augmentation";
 
     pub const LOG_PASS_OBJECTS_TAG: &str = super::passes::logger::OBJECTS_TAG;
+    pub const LOG_PRI_DISCOVERY_TAG: &str = super::pri_utils::TAG_DISCOVERY;
 }
 
 mod driver_args {
     use super::*;
 
-    use std::env;
     use std::path::{Path, PathBuf};
+    use std::{env, iter};
 
     const CMD_RUSTC: &str = "rustc";
     const CMD_RUSTUP: &str = "rustup";
@@ -107,6 +108,8 @@ mod driver_args {
     const FILE_RUNTIME_SHIM_LIB: &str = "libleafrtsh.rlib";
     const FILE_RUNTIME_DYLIB: &str = "libleafrt.so";
 
+    const LIB_RUNTIME: &str = "leafrt";
+
     const OPT_EXTERN: &str = "--extern";
     const OPT_CODEGEN: &str = "-C";
     const OPT_LINK_NATIVE: &str = "-l";
@@ -114,6 +117,11 @@ mod driver_args {
     const OPT_SYSROOT: &str = "--sysroot";
     const OPT_SEARCH_PATH: &str = "-L";
     const OPT_UNSTABLE: &str = "-Zunstable-options";
+
+    const PATH_SHIM_LIB_LOCATION: &str = env!("SHIM_LIB_LOCATION"); // Set by the build script.
+
+    const SEARCH_KIND_TRANS_DEP: &str = "dependency";
+    const SEARCH_KIND_NATIVE: &str = "native";
 
     const SUFFIX_OVERRIDE: &str = "(override)";
 
@@ -158,32 +166,35 @@ mod driver_args {
 
         args.push(OPT_UNSTABLE.to_owned());
 
-        // Add the runtime library as a direct dependency.
+        // Add the runtime shim library as a direct external dependency.
         args.add_pair(
             OPT_EXTERN,
-            format!("{}={}", CRATE_RUNTIME, find_runtime_shim_lib_path()),
+            format!("{}={}", CRATE_RUNTIME, find_shim_lib_path()),
         );
-
-        // Add runtime project's dependencies into the search path.
-        // FIXME: This includes the dependencies of the whole project.
-        args.add_pair(OPT_SEARCH_PATH, find_deps_path());
+        // Add the runtime shim library dependencies into the search path.
+        args.add_pair(
+            OPT_SEARCH_PATH,
+            format!("{SEARCH_KIND_TRANS_DEP}={}", find_shim_lib_deps_path()),
+        );
 
         // Add the runtime dynamic library as a dynamic dependency.
         /* NOTE: As long as the shim is getting compiled along with the program,
          * adding it explicitly should not be necessary (is expected to be
          * realized by the compiler). */
-        args.add_pair(
-            OPT_LINK_NATIVE,
-            format!("dylib={}", "leafrt"), //find_runtime_dylib_path()),
-        );
-        /* Add the RPATH header to the binary, so we don't need to include it
-         * in the LD_LIBRARY_PATH. */
+        args.add_pair(OPT_LINK_NATIVE, format!("dylib={}", LIB_RUNTIME));
+        /* Add the RPATH header to the binary,
+         * so we don't need to include it in the LD_LIBRARY_PATH. */
         args.add_pair(
             OPT_CODEGEN,
             format!(
                 "{CODEGEN_LINK_ARG}=-Wl,-rpath={}",
                 find_runtime_dylib_dir_path()
             ),
+        );
+        // Also include it in the search path for Rust.
+        args.add_pair(
+            OPT_SEARCH_PATH,
+            format!("{SEARCH_KIND_NATIVE}={}", find_runtime_dylib_dir_path()),
         );
 
         if let Some(input_path) = input_path {
@@ -255,12 +266,19 @@ mod driver_args {
             .expect("Unable to find sysroot.")
     }
 
-    fn find_runtime_shim_lib_path() -> String {
-        find_dependency_path(FILE_RUNTIME_SHIM_LIB)
+    fn find_shim_lib_path() -> String {
+        find_dependency_path(
+            FILE_RUNTIME_SHIM_LIB,
+            iter::once(Path::new(PATH_SHIM_LIB_LOCATION)),
+        )
+    }
+
+    fn find_shim_lib_deps_path() -> String {
+        find_dependency_path(DIR_DEPS, iter::once(Path::new(PATH_SHIM_LIB_LOCATION)))
     }
 
     fn find_runtime_dylib_dir_path() -> String {
-        let file_path = find_dependency_path(FILE_RUNTIME_DYLIB);
+        let file_path = find_dependency_path(FILE_RUNTIME_DYLIB, iter::empty());
         Path::new(&file_path)
             .parent()
             .unwrap()
@@ -268,35 +286,28 @@ mod driver_args {
             .to_string()
     }
 
-    fn find_deps_path() -> String {
-        find_dependency_path(DIR_DEPS)
-    }
-
-    fn find_dependency_path(name: &'static str) -> String {
-        // FIXME: Don't depend on the project structure and adjacency of runtime.
-
+    fn find_dependency_path<'a>(
+        name: &'static str,
+        mut top_dirs: impl Iterator<Item = &'a Path>,
+    ) -> String {
         let try_dir = |path: &Path| {
             log::debug!("Trying dir in search of `{}`: {:?}", name, path);
             try_join(path, name)
         };
 
-        let try_cwd = || try_cwd(try_dir);
-        let try_exe_path = || try_exe_ancestors(try_dir);
+        let try_top_dirs = || top_dirs.find_map(try_dir);
+        let try_cwd = || env::current_dir().ok().and_then(|p| try_dir(&p));
+        let try_exe_path = || {
+            env::current_exe()
+                .ok()
+                .and_then(|p| p.ancestors().skip(1).find_map(try_dir))
+        };
 
-        try_cwd()
+        None.or_else(try_top_dirs)
+            .or_else(try_cwd)
             .or_else(try_exe_path)
             .map(|path| path.to_string_lossy().to_string())
             .unwrap_or_else(|| panic!("Unable to find the dependency with name: {}", name))
-    }
-
-    fn try_cwd(f: impl Fn(&Path) -> Option<PathBuf>) -> Option<PathBuf> {
-        env::current_dir().ok().and_then(|p| f(p.as_path()))
-    }
-
-    fn try_exe_ancestors(f: impl Fn(&Path) -> Option<PathBuf>) -> Option<PathBuf> {
-        env::current_exe()
-            .ok()
-            .and_then(|p| p.ancestors().skip(1).find_map(f))
     }
 
     fn try_join(path: impl AsRef<Path>, child: impl AsRef<Path>) -> Option<PathBuf> {
