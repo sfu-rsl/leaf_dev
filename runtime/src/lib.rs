@@ -13,7 +13,6 @@
 #![feature(exposed_provenance)]
 
 pub mod abs;
-pub mod annotations;
 mod backends;
 pub mod ffi;
 pub(crate) mod outgen;

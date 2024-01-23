@@ -1,8 +1,7 @@
-use std::mem::size_of;
+use core::concat_idents;
+use core::mem::size_of;
 
-use crate::pri;
-
-use paste::paste;
+use crate::pri::*;
 
 pub trait Symbolizable: Sized {
     fn symbolize();
@@ -14,14 +13,12 @@ pub trait Symbolizable: Sized {
 }
 
 macro_rules! impl_symbolizable_direct {
-    ($($ty:ty),*) => {
+    ($($ty:ident),*) => {
         $(
             impl Symbolizable for $ty {
                 fn symbolize() {
-                    paste! {
-                        let operand_ref = pri::[<new_sym_value_ $ty>]();
-                    }
-                    pri::override_return_value(operand_ref);
+                    let operand_ref = concat_idents!(new_sym_value_, $ty)();
+                    override_return_value(operand_ref);
                 }
             }
         )*
@@ -34,8 +31,8 @@ macro_rules! impl_symbolizable_int {
         $(
             impl Symbolizable for $ty {
                 fn symbolize() {
-                    let operand_ref = pri::new_sym_value_int(size_of::<$ty>() as u64 * 8, $signed);
-                    pri::override_return_value(operand_ref);
+                    let operand_ref = new_sym_value_int(size_of::<$ty>() as u64 * 8, $signed);
+                    override_return_value(operand_ref);
                 }
             }
         )*
@@ -52,8 +49,8 @@ macro_rules! impl_symbolizable_float {
                 fn symbolize() {
                     let sbits = <$ty>::MANTISSA_DIGITS as u64;
                     let ebits = (<$ty>::MAX_EXP - <$ty>::MIN_EXP + 1) as u64;
-                    let operand_ref = pri::new_sym_value_float(ebits, sbits);
-                    pri::override_return_value(operand_ref);
+                    let operand_ref = new_sym_value_float(ebits, sbits);
+                    override_return_value(operand_ref);
                 }
             }
         )*
