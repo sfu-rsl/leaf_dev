@@ -102,6 +102,7 @@ pub enum AssertKind<Operand> {
     RemainderByZero(Operand),
     ResumedAfterReturn(Operand), // NOTE: TODO: check if these exist in HIR only
     ResumedAfterPanic(Operand),  // NOTE: TODO: check if these exist in HIR only
+    MisalignedPointerDereference { required: Operand, found: Operand },
 }
 
 pub(crate) struct BranchingMetadata {

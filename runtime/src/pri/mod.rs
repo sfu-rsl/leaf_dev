@@ -431,6 +431,18 @@ pub fn check_assert_rem_by_zero(cond: OperandRef, expected: bool, operand: Opera
     let assert_kind = AssertKind::RemainderByZero(take_back_operand_ref(operand));
     check_assert(cond, expected, assert_kind)
 }
+pub fn check_assert_misaligned_ptr_deref(
+    cond: OperandRef,
+    expected: bool,
+    required: OperandRef,
+    found: OperandRef,
+) {
+    let assert_kind = AssertKind::MisalignedPointerDereference {
+        required: take_back_operand_ref(required),
+        found: take_back_operand_ref(found),
+    };
+    check_assert(cond, expected, assert_kind)
+}
 fn check_assert(cond: OperandRef, expected: bool, assert_kind: AssertKind<OperandImpl>) {
     branch(|h| h.assert(take_back_operand_ref(cond), expected, assert_kind))
 }

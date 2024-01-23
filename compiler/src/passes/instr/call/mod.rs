@@ -2070,8 +2070,17 @@ mod implementation {
                 AssertKind::ResumedAfterPanic(..) => {
                     todo!("research if this is unreachable or not; likely it's not reachable")
                 }
-                AssertKind::MisalignedPointerDereference { .. } => {
-                    todo!("investigate when pointers are supported")
+                AssertKind::MisalignedPointerDereference { required, found } => {
+                    let required_ref = self.reference_operand(required);
+                    let found_ref = self.reference_operand(found);
+                    (
+                        stringify!(pri::check_assert_misaligned_ptr_deref),
+                        vec![
+                            operand::copy_for_local(required_ref.into()),
+                            operand::copy_for_local(found_ref.into()),
+                        ],
+                        vec![],
+                    )
                 }
             }
         }
