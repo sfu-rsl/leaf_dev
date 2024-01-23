@@ -4,8 +4,6 @@ use rustc_span::{
     DUMMY_SP,
 };
 
-use crate::pri_utils::sym::RUNTIME_LIB_CRATE;
-
 use super::CompilationPass;
 
 /// A pass that adds the runtime library as an extern crate to the program.
@@ -24,8 +22,13 @@ impl CompilationPass for RuntimeAdder {
                 span: DUMMY_SP,
                 tokens: None,
             },
-            ident: Ident::with_dummy_span(Symbol::intern(*RUNTIME_LIB_CRATE)),
-            kind: ItemKind::ExternCrate(None),
+            ident: Ident::with_dummy_span(Symbol::intern(
+                // FIXME: Make it configurable.
+                crate::constants::NAME_RUNTIME_LIB_DEFAULT,
+            )),
+            kind: ItemKind::ExternCrate(Some(Symbol::intern(
+                *crate::pri_utils::sym::RUNTIME_LIB_CRATE,
+            ))),
             tokens: None,
         };
         krate.items.insert(0, P(item));

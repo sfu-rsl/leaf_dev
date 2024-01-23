@@ -80,6 +80,12 @@ pub mod constants {
     // The instrumented code is going to call the shim.
     pub(super) const CRATE_RUNTIME: &str = "leafrtsh";
 
+    // The name of the runtime shim library to be in the extern prelude.
+    pub(super) const NAME_RUNTIME_LIB_DEFAULT: &str = env!(
+        "CFG_RUNTIME_CRATE_NAME",
+        "Could not find runtime crate name in the environment. Have you removed it from `config.toml`?"
+    );
+
     pub(super) const URL_BUG_REPORT: &str = "https://github.com/sfu-rsl/leaf/issues/new";
 
     pub(super) const LEAF_AUG_MOD_NAME: &str = "__leaf_augmentation";
