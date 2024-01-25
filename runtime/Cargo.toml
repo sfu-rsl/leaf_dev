@@ -7,7 +7,7 @@ edition = "2021"
 
 [lib]
 name = "leafrt"
-crate-type = ["rlib", "cdylib"]
+crate-type = ["cdylib"]
 
 [dependencies]
 common = { path = "../common" }
