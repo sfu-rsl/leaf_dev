@@ -3,5 +3,6 @@ bitvector
 clippy
 dylib
 peekable
+repr
 rposition
 serde

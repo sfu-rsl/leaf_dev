@@ -19,19 +19,11 @@ mod ffi {
         };
     }
 
-    macro_rules! slice_of {
-        ($t:ty) => {
-            SlicePack<$t>
-        };
-    }
-
     #[link(name = "leafrt")]
     extern "C" {
-        common::pri::list_func_decls! {
-            modifier: declare_fn,
-            (u128: U128Pack, char: CharPack, &str: ConstStrPack, [u8]: ConstByteStrPack, slice: slice_of, branching_info: BranchingInfo, type_id: U128Pack<TypeId>)
-        }
+        common::pri::list_func_decls!(modifier: declare_fn, (from common::ffi));
     }
+
 }
 
 macro_rules! intern_fn {

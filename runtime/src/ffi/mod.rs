@@ -11,12 +11,7 @@ macro_rules! extern_fn {
     };
 }
 
-macro_rules! slice_of { ($t:ty) => { SlicePack<$t> }; }
-
-common::pri::list_func_decls! {
-    modifier: extern_fn,
-    (u128: U128Pack, char: CharPack, &str: ConstStrPack, [u8]: ConstByteStrPack, slice: slice_of, branching_info: BranchingInfo, type_id: U128Pack<TypeId>)
-}
+common::pri::list_func_decls!(modifier: export_to_c_abi, (from common::ffi));
 
 impl From<common::pri::BinaryOp> for abs::BinaryOp {
     fn from(value: common::pri::BinaryOp) -> Self {
