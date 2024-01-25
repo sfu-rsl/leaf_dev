@@ -3,7 +3,7 @@ pub(crate) mod expr;
 pub(crate) mod fmt;
 pub(crate) mod place;
 
-pub(crate) use common::*;
+pub(crate) use common::types::*;
 
 #[derive(Clone, Copy, Debug)]
 #[repr(u8)]

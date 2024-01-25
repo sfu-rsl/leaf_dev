@@ -2,7 +2,9 @@ use std::{collections::HashMap, fs::OpenOptions};
 
 use serde::{Deserialize, Serialize};
 
-use super::*;
+use crate::{types::*, *};
+
+pub use crate::types::TypeId;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TypeInfo {

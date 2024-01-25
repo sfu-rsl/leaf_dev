@@ -1962,7 +1962,7 @@ mod implementation {
             let call_block = self.make_bb_for_call(
                 sym::try_untuple_argument,
                 vec![
-                    operand::const_from_uint(self.tcx(), 2 as common::LocalIndex),
+                    operand::const_from_uint(self.tcx(), 2 as common::types::LocalIndex),
                     operand::move_for_local(tuple_id_local),
                 ],
             );

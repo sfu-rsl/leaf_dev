@@ -1,8 +1,7 @@
 mod instance;
 mod utils;
 
-use common::pri::{OperandRef, PlaceRef, ProgramRuntimeInterface};
-pub use common::*;
+use common::pri::*;
 
 use crate::abs::{
     self, backend::*, AssertKind, BranchingMetadata, CastKind, FloatType, IntType, Local, ValueType,

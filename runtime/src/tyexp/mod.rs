@@ -1,4 +1,4 @@
-use common::{tyexp::*, TypeId};
+use common::tyexp::*;
 
 pub(crate) trait TypeInfoExt {
     fn expect_single_variant(&self) -> &VariantInfo;

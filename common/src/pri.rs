@@ -1,5 +1,9 @@
-use super::*;
+use crate::{ffi, utils};
 
+pub use crate::types::{
+    Alignment, BasicBlockIndex, FieldIndex, FuncId, LocalIndex, RawPointer, TypeId, TypeSize,
+    VariantIndex,
+};
 pub type Ref = u64;
 pub type PlaceRef = Ref;
 pub type OperandRef = Ref;
