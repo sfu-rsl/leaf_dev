@@ -2100,7 +2100,7 @@ mod implementation {
                     let required_ref = self.reference_operand(required);
                     let found_ref = self.reference_operand(found);
                     (
-                        stringify!(pri::check_assert_misaligned_ptr_deref),
+                        sym::check_assert_misaligned_ptr_deref,
                         vec![
                             operand::copy_for_local(required_ref.into()),
                             operand::copy_for_local(found_ref.into()),

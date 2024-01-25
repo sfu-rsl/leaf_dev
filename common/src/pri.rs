@@ -140,7 +140,7 @@ make_list_func_decls_macro! {
     #[cfg(place_addr)]
     { fn set_place_address(place: PlaceRef, raw_ptr: RawPointer) }
     #[cfg(place_addr)]
-    { fn set_place_type_id(place: PlaceRef, type_id: TypeId) }
+    { fn set_place_type_id(place: PlaceRef, type_id: $type_id_ty) }
     #[cfg(place_addr)]
     { fn set_place_type_bool(place: PlaceRef) }
     #[cfg(place_addr)]
@@ -183,12 +183,12 @@ make_list_func_decls_macro! {
     { fn assign_cast_integer(dest: PlaceRef, operand: OperandRef, bit_size: u64, is_signed: bool) }
     { fn assign_cast_float(dest: PlaceRef, operand: OperandRef, e_bits: u64, s_bits: u64) }
     { fn assign_cast_expose_addr(dest: PlaceRef, operand: OperandRef) }
-    { fn assign_cast_from_exposed_addr(dest: PlaceRef, operand: OperandRef, dst_type_id: TypeId) }
-    { fn assign_cast_to_another_ptr(dest: PlaceRef, operand: OperandRef, dst_type_id: TypeId) }
+    { fn assign_cast_from_exposed_addr(dest: PlaceRef, operand: OperandRef, dst_type_id: $type_id_ty) }
+    { fn assign_cast_to_another_ptr(dest: PlaceRef, operand: OperandRef, dst_type_id: $type_id_ty) }
 
     { fn assign_cast_unsize(dest: PlaceRef, operand: OperandRef) }
     { fn assign_cast_sized_dyn(dest: PlaceRef, operand: OperandRef) }
-    { fn assign_cast_transmute(dest: PlaceRef, operand: OperandRef, dst_type_id: TypeId) }
+    { fn assign_cast_transmute(dest: PlaceRef, operand: OperandRef, dst_type_id: $type_id_ty) }
 
     { fn assign_binary_op(
         dest: PlaceRef,
@@ -245,7 +245,7 @@ make_list_func_decls_macro! {
     #[cfg(place_addr)]
     { fn preserve_special_local_metadata(place: PlaceRef) }
 
-    { fn try_untuple_argument(arg_index: LocalIndex, tuple_type_id: TypeId) }
+    { fn try_untuple_argument(arg_index: LocalIndex, tuple_type_id: $type_id_ty) }
 
     { fn enter_func(func: OperandRef) }
 
@@ -271,6 +271,12 @@ make_list_func_decls_macro! {
     { fn check_assert_overflow_neg(cond: OperandRef, expected: bool, operand: OperandRef) }
     { fn check_assert_div_by_zero(cond: OperandRef, expected: bool, operand: OperandRef) }
     { fn check_assert_rem_by_zero(cond: OperandRef, expected: bool, operand: OperandRef) }
+    { fn check_assert_misaligned_ptr_deref(
+        cond: OperandRef,
+        expected: bool,
+        required: OperandRef,
+        found: OperandRef,
+    ) }
 }
 */
 // Recursive expansion of make_list_func_decls_macro! macro
@@ -306,7 +312,7 @@ macro_rules! list_func_decls {
     }$modifier!{
       #[cfg(place_addr)]fn set_place_address(place:PlaceRef,raw_ptr:RawPointer);
     }$modifier!{
-      #[cfg(place_addr)]fn set_place_type_id(place:PlaceRef,type_id:$type_id_ty);
+      #[cfg(place_addr)]fn set_place_type_id(place:PlaceRef,type_id: $type_id_ty);
     }$modifier!{
       #[cfg(place_addr)]fn set_place_type_bool(place:PlaceRef);
     }$modifier!{
@@ -368,15 +374,15 @@ macro_rules! list_func_decls {
     }$modifier!{
       fn assign_cast_expose_addr(dest:PlaceRef,operand:OperandRef);
     }$modifier!{
-      fn assign_cast_from_exposed_addr(dest:PlaceRef,operand:OperandRef,dst_type_id:$type_id_ty);
+      fn assign_cast_from_exposed_addr(dest:PlaceRef,operand:OperandRef,dst_type_id: $type_id_ty);
     }$modifier!{
-      fn assign_cast_to_another_ptr(dest:PlaceRef,operand:OperandRef,dst_type_id:$type_id_ty);
+      fn assign_cast_to_another_ptr(dest:PlaceRef,operand:OperandRef,dst_type_id: $type_id_ty);
     }$modifier!{
       fn assign_cast_unsize(dest:PlaceRef,operand:OperandRef);
     }$modifier!{
       fn assign_cast_sized_dyn(dest:PlaceRef,operand:OperandRef);
     }$modifier!{
-      fn assign_cast_transmute(dest:PlaceRef,operand:OperandRef,dst_type_id:$type_id_ty);
+      fn assign_cast_transmute(dest:PlaceRef,operand:OperandRef,dst_type_id: $type_id_ty);
     }$modifier!{
       fn assign_binary_op(dest:PlaceRef,operator:BinaryOp,first:OperandRef,second:OperandRef,checked:bool,);
     }$modifier!{
@@ -420,7 +426,7 @@ macro_rules! list_func_decls {
     }$modifier!{
       #[cfg(place_addr)]fn preserve_special_local_metadata(place:PlaceRef);
     }$modifier!{
-      fn try_untuple_argument(arg_index:LocalIndex,tuple_type_id:$type_id_ty);
+      fn try_untuple_argument(arg_index:LocalIndex,tuple_type_id: $type_id_ty);
     }$modifier!{
       fn enter_func(func:OperandRef);
     }$modifier!{
@@ -439,6 +445,8 @@ macro_rules! list_func_decls {
       fn check_assert_div_by_zero(cond:OperandRef,expected:bool,operand:OperandRef);
     }$modifier!{
       fn check_assert_rem_by_zero(cond:OperandRef,expected:bool,operand:OperandRef);
+    }$modifier!{
+      fn check_assert_misaligned_ptr_deref(cond:OperandRef,expected:bool,required:OperandRef,found:OperandRef,);
     }
   };
   (modifier: $modifier:ident) => {
