@@ -101,8 +101,49 @@ pub struct BranchingInfo {
 }
 
 #[macro_export]
+macro_rules! self_slice_of { ($t:ty) => { Self::Slice<'_, $t> }; }
+
+#[macro_export]
 macro_rules! slice_pack_of { ($t:ty) => { common::ffi::SlicePack<$t> }; }
 
+/// The definition of the interface between the program and the runtime library.
+///
+/// This trait provides a compile-time guarantee that the list of functions
+/// is kept consistent between the runtime library, its exported C ABI, and the
+/// shim. User is required to implement this trait wherever the list of functions
+/// is used.
+pub trait ProgramRuntimeInterface {
+    type U128;
+    type Char;
+    type ConstStr;
+    type ConstByteStr;
+    type Slice<'a, T: 'a>;
+    type BranchingInfo;
+    type TypeId;
+    type BinaryOp;
+    type UnaryOp;
+
+    list_func_decls! { modifier: utils::identity, (from Self) }
+}
+
+/// A marker trait to make sure that the FFI/ABI is the same between
+/// the runtime library and the shim.
+pub trait FfiPri:
+    // This is currently not supported by the compiler.
+    // for<'a, T>
+    ProgramRuntimeInterface<
+        U128 = ffi::U128Pack,
+        Char = ffi::CharPack,
+        ConstStr = ffi::ConstStrPack,
+        ConstByteStr = ffi::ConstByteStrPack,
+        // Slice<'a, T> = ffi::SlicePack<T>,
+        BranchingInfo = BranchingInfo,
+        TypeId = ffi::U128Pack<TypeId>,
+        BinaryOp = BinaryOp,
+        UnaryOp = UnaryOp,
+    >
+{
+}
 
 mod macros {
     /* NOTE: What are these macros for?
@@ -324,6 +365,8 @@ mod macros {
         #[allow(unused_parens)]
         { fn assign_aggregate_closure(dest: PlaceRef, upvars: ($slice_ty!(OperandRef))) }
 
+        { fn assign_shallow_init_box(_dest: PlaceRef, _operand: OperandRef, _dst_type_id: ($type_id_ty)) }
+
         #[allow(unused_parens)]
         { fn new_branching_info(
             node_location: BasicBlockIndex,
@@ -520,6 +563,8 @@ mod macros {
         fn assign_aggregate_union(dest:PlaceRef,active_field:FieldIndex,value:OperandRef);
       }$modifier!{
         #[allow(unused_parens)]fn assign_aggregate_closure(dest:PlaceRef,upvars:($slice_ty!(OperandRef)));
+      }$modifier!{
+        fn assign_shallow_init_box(_dest:PlaceRef,_operand:OperandRef,_dst_type_id:($type_id_ty));
       }$modifier!{
         #[allow(unused_parens)]fn new_branching_info(node_location:BasicBlockIndex,discriminant:OperandRef,discr_bit_size:u64,discr_is_signed:bool,)->($branching_info_ty);
       }$modifier!{

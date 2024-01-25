@@ -1387,7 +1387,7 @@ mod implementation {
                 id_local
             };
             self.add_bb_for_assign_call(
-                stringify!(pri::assign_shallow_init_box),
+                sym::assign_shallow_init_box,
                 vec![
                     operand::copy_for_local(operand.into()),
                     operand::move_for_local(id_local),
