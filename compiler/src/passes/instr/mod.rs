@@ -524,12 +524,9 @@ where
         add_call(operands.as_slice())
     }
 
-    fn visit_shallow_init_box(
-        &mut self,
-        _operand: &Operand<'tcx>,
-        _ty: &rustc_middle::ty::Ty<'tcx>,
-    ) {
-        todo!("Not sure yet.")
+    fn visit_shallow_init_box(&mut self, operand: &Operand<'tcx>, ty: &rustc_middle::ty::Ty<'tcx>) {
+        let operand_ref = self.call_adder.reference_operand(operand);
+        self.call_adder.by_shallow_init_box(operand_ref, ty);
     }
 
     fn visit_copy_for_deref(&mut self, place: &Place<'tcx>) {

@@ -322,6 +322,9 @@ pub fn assign_aggregate_closure(dest: PlaceRef, upvars: &[OperandRef]) {
         h.closure_from(upvars.into_iter())
     })
 }
+pub fn assign_shallow_init_box(_dest: PlaceRef, _operand: OperandRef, _dst_type_id: TypeId) {
+    todo!("#351: Add support for ShallowInitBox in runtime")
+}
 fn take_fields(fields: &[OperandRef]) -> Vec<FieldImpl> {
     let fields = fields.iter().map(|o| take_back_operand_ref(*o));
     fields.map(Into::<FieldImpl>::into).collect()
