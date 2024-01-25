@@ -84,7 +84,7 @@ mod runtime_shim {
             .unwrap()
             .join(DIR_DEPS);
         let shim_lib_copy_dir = deps_dir.join("runtime_shim");
-        recreate_dir(&deps_dir);
+        recreate_dir(&shim_lib_copy_dir);
         copy_built_files(lib_output_dir, &deps_dir);
         shim_lib_copy_dir
     }
@@ -120,7 +120,7 @@ mod runtime_shim {
 
 fn recreate_dir(dir: &Path) {
     if dir.exists() {
-        fs::remove_dir_all(dir).unwrap();
+        fs::remove_dir_all(dir).unwrap_or_else(|_| panic!("Failed to remove {:?}", dir));
     }
-    fs::create_dir_all(dir).unwrap();
+    fs::create_dir_all(dir).unwrap_or_else(|_| panic!("Failed to create {:?}", dir));
 }
