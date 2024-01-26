@@ -95,7 +95,6 @@ pub enum AssertKind<Operand> {
     MisalignedPointerDereference { required: Operand, found: Operand },
 }
 
-#[repr(C)]
 pub(crate) struct BranchingMetadata {
     pub node_location: BasicBlockIndex,
     /* NOTE: If more type information was passed (such as reporting type for all local variables),
@@ -156,7 +155,6 @@ impl ValueType {
  * representation of integers and floats in the engine.
  */
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
-#[repr(C)]
 pub(crate) struct IntType {
     pub bit_size: u64,
     pub is_signed: bool,

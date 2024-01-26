@@ -1,4 +1,4 @@
-use common::{ffi::*, list_func_decls, pri::*};
+use common::{ffi::*, pri::*};
 
 use crate::abs;
 
@@ -32,35 +32,26 @@ impl ProgramRuntimeInterface for ForeignPri {
     type BinaryOp = common::pri::BinaryOp;
     type UnaryOp = common::pri::UnaryOp;
 
-    list_func_decls!(modifier: delegate_to_default, (from Self));
+    common::pri::list_func_decls!(modifier: delegate_to_default, (from Self));
 }
 impl FfiPri for ForeignPri {}
 
-macro_rules! export_to_c_abi {
-    ($(#[$($attr: meta)*])* fn $name:ident ($($(#[$($arg_attr: meta)*])* $arg:ident : $arg_type:ty),* $(,)?) $(-> $ret_ty:ty)?;) => {
-        $(#[$($attr)*])*
-        #[no_mangle]
-        pub extern "C" fn $name ($($(#[$($arg_attr)*])* $arg : $arg_type),*) $(-> $ret_ty)? {
-            ForeignPri::$name($($arg.into()),*)
-        }
-    };
-}
-
-common::pri::list_func_decls!(modifier: export_to_c_abi, (from common::ffi));
-
 impl From<common::pri::BinaryOp> for abs::BinaryOp {
+    #[inline(always)]
     fn from(value: common::pri::BinaryOp) -> Self {
         unsafe { core::mem::transmute(value) }
     }
 }
 
 impl From<common::pri::UnaryOp> for abs::UnaryOp {
+    #[inline(always)]
     fn from(value: common::pri::UnaryOp) -> Self {
         unsafe { core::mem::transmute(value) }
     }
 }
 
 impl From<common::pri::BranchingInfo> for crate::pri::BranchingInfo {
+    #[inline(always)]
     fn from(value: common::pri::BranchingInfo) -> Self {
         Self::new(
             value.node_location,
@@ -71,6 +62,7 @@ impl From<common::pri::BranchingInfo> for crate::pri::BranchingInfo {
     }
 }
 impl From<crate::pri::BranchingInfo> for common::pri::BranchingInfo {
+    #[inline(always)]
     fn from(value: crate::pri::BranchingInfo) -> Self {
         Self {
             node_location: value.metadata.node_location,
@@ -80,3 +72,15 @@ impl From<crate::pri::BranchingInfo> for common::pri::BranchingInfo {
         }
     }
 }
+
+macro_rules! export_to_c_abi {
+    ($(#[$($attr: meta)*])* fn $name:ident ($($(#[$($arg_attr: meta)*])* $arg:ident : $arg_type:ty),* $(,)?) $(-> $ret_ty:ty)?;) => {
+        $(#[$($attr)*])*
+        #[no_mangle]
+        pub extern "C" fn $name ($($(#[$($arg_attr)*])* $arg : $arg_type),*) $(-> $ret_ty)? {
+            ForeignPri::$name($($arg),*)
+        }
+    };
+}
+
+common::pri::list_func_decls!(modifier: export_to_c_abi, (from common::ffi));

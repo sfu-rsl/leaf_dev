@@ -31,7 +31,7 @@ mod ffi {
             $(#[$($attr)*])*
             #[inline(always)]
             fn $name ($($(#[$($arg_attr)*])* $arg : $arg_type),*) $(-> $ret_ty)? {
-                unsafe { self::$name($($arg.into()),*).into() }
+                unsafe { self::$name($($arg),*) }
             }
         };
     }
@@ -59,7 +59,7 @@ macro_rules! export_to_rust_abi {
     ($(#[$($attr: meta)*])* fn $name:ident ($($(#[$($arg_attr: meta)*])* $arg:ident : $arg_type:ty),* $(,)?) $(-> $ret_ty:ty)?;) => {
         $(#[$($attr)*])*
         pub fn $name ($($(#[$($arg_attr)*])* $arg : $arg_type),*) $(-> $ret_ty)? {
-            ffi::ForeignPri::$name($($arg.into()),*)
+            ffi::ForeignPri::$name($($arg.into()),*).into()
         }
     };
 }

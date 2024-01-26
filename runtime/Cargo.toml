@@ -10,7 +10,7 @@ name = "leafrt"
 crate-type = ["cdylib"]
 
 [dependencies]
-common = { path = "../common" }
+common = { path = "../common", features = ["tyexp"] }
 
 config = "0.13.4"
 log = "0.4.17"

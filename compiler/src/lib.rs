@@ -189,7 +189,8 @@ mod driver_args {
          * realized by the compiler). */
         args.add_pair(OPT_LINK_NATIVE, format!("dylib={}", LIB_RUNTIME));
         /* Add the RPATH header to the binary,
-         * so we don't need to include it in the LD_LIBRARY_PATH. */
+         * so there will be a default path to look for the library and including
+         * it in `LD_LIBRARY_PATH` won't be necessary. */
         args.add_pair(
             OPT_CODEGEN,
             format!(

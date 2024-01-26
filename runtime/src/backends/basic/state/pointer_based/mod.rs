@@ -495,7 +495,12 @@ where
         };
 
         Some(
-            if let Some(sym_val) = self.get(&addr, type_id_of::<usize>()) {
+            if let Some(sym_val) = self.get(
+                &addr,
+                // FIXME: As runtime library is compiled independently,
+                // this id is not guaranteed to be the same as the id used in the program.
+                type_id_of::<usize>(),
+            ) {
                 sym_val.clone_to()
             } else {
                 UnevalValue::Lazy(RawConcreteValue(addr, Some(USIZE_TYPE.into()))).to_value_ref()

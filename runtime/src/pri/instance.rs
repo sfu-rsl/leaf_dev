@@ -200,7 +200,7 @@ fn perform_on_backend<T>(action: impl FnOnce(&mut BackendImpl) -> T) -> T {
 }
 
 #[cfg(runtime_access = "unsafe")]
-fn perform_on_backend<T>(action: impl FnOnce(&'static mut BackendImpl) -> T) -> T {
+fn perform_on_backend<T>(action: impl FnOnce(&mut BackendImpl) -> T) -> T {
     check_and_perform_on_backend(unsafe { &mut BACKEND }, action)
 }
 
