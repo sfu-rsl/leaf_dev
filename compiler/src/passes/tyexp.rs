@@ -47,7 +47,7 @@ impl CompilationPass for TypeExporter {
                 })
             });
 
-        TypeExport::write(type_map);
+        TypeExport::write(type_map.values());
     }
 }
 

@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fs::OpenOptions};
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
 
 use crate::{types::*, *};
 
@@ -52,13 +52,17 @@ pub struct FieldInfo {
 pub struct TypeExport;
 
 // FIXME: Move these functions to a more appropriate place.
+// FIXME: Make this configurable and injectable.
 impl TypeExport {
     pub fn read() -> HashMap<TypeId, TypeInfo> {
         let file = OpenOptions::new()
             .read(true)
             .open("types.json")
-            .expect("Unable to open file for type export");
-        let type_infos: Vec<TypeInfo> = serde_json::from_reader(file).unwrap_or_default();
+            .expect("Failed to open file for type export");
+
+        let type_infos: Vec<TypeInfo> =
+            serde_json::from_reader(file).expect("Failed to parse types from file.");
+        log::debug!("Retrieved {} types from file.", type_infos.len());
 
         type_infos
             .into_iter()
@@ -66,7 +70,7 @@ impl TypeExport {
             .collect()
     }
 
-    pub fn write(map: &HashMap<TypeId, TypeInfo>) {
+    pub fn write<'a>(types: impl Iterator<Item = &'a TypeInfo>) {
         let file = OpenOptions::new()
             .create(true)
             .write(true)
@@ -74,6 +78,9 @@ impl TypeExport {
             .open("types.json")
             .expect("Unable to open file for type export");
 
-        serde_json::to_writer_pretty(file, map).expect("Failed to write types to file.");
+        let mut serializer = serde_json::Serializer::pretty(file);
+        serializer
+            .collect_seq(types)
+            .expect("Failed to write types to file.");
     }
 }
