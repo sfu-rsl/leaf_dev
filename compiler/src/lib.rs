@@ -295,14 +295,14 @@ mod driver_args {
 
     fn find_dependency_path<'a>(
         name: &'static str,
-        mut top_dirs: impl Iterator<Item = &'a Path>,
+        mut priority_dirs: impl Iterator<Item = &'a Path>,
     ) -> String {
         let try_dir = |path: &Path| {
             log::debug!("Trying dir in search of `{}`: {:?}", name, path);
             try_join(path, name)
         };
 
-        let try_top_dirs = || top_dirs.find_map(try_dir);
+        let try_priority_dirs = || priority_dirs.find_map(try_dir);
         let try_cwd = || env::current_dir().ok().and_then(|p| try_dir(&p));
         let try_exe_path = || {
             env::current_exe()
@@ -310,7 +310,7 @@ mod driver_args {
                 .and_then(|p| p.ancestors().skip(1).find_map(try_dir))
         };
 
-        None.or_else(try_top_dirs)
+        None.or_else(try_priority_dirs)
             .or_else(try_cwd)
             .or_else(try_exe_path)
             .map(|path| path.to_string_lossy().to_string())

@@ -23,7 +23,7 @@ impl CompilationPass for RuntimeAdder {
                 tokens: None,
             },
             ident: Ident::with_dummy_span(Symbol::intern(
-                // FIXME: Make it configurable.
+                // FIXME: Make it configurable. #358
                 crate::constants::NAME_RUNTIME_LIB_DEFAULT,
             )),
             kind: ItemKind::ExternCrate(Some(Symbol::intern(
