@@ -1,6 +1,4 @@
-// use super::*;
-
-use common::{pri::*, *};
+use common::pri::*;
 
 pub static CH_MODULE_MARKER: u8 = 0;
 
