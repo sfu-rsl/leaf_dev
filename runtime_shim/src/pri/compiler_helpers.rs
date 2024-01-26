@@ -46,7 +46,7 @@ static _CONST_BINARY_OP_OF_REFERENCER: fn(u8) -> BinaryOp = const_binary_op_of;
 static _CONST_UNARY_OP_OF_REFERENCER: fn(u8) -> UnaryOp = const_unary_op_of;
 
 pub fn set_place_address_typed<T>(place: PlaceRef, address: *const T) {
-    super::set_place_address(place, address as RawPointer)
+    super::set_place_address(place, address.cast::<()>() as RawPointer)
 }
 
 pub fn type_id_of<T: ?Sized + 'static>() -> TypeId {
