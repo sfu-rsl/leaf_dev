@@ -90,6 +90,9 @@ pub mod constants {
 
     pub(super) const LEAF_AUG_MOD_NAME: &str = "__leaf_augmentation";
 
+    pub const LOG_ENV: &str = "LEAFC_LOG";
+    pub const LOG_WRITE_STYLE_ENV: &str = "LEAFC_LOG_STYLE";
+
     pub const LOG_PASS_OBJECTS_TAG: &str = super::passes::logger::OBJECTS_TAG;
     pub const LOG_PRI_DISCOVERY_TAG: &str = super::pri_utils::TAG_DISCOVERY;
 }

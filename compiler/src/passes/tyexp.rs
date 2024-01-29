@@ -15,7 +15,7 @@ use common::tyexp::*;
 
 const KEY_TYPE_MAP: &str = "type_ids";
 
-const TAG_TYPE_EXPORT: &str = "TypeExport";
+const TAG_TYPE_EXPORT: &str = "type_export";
 
 /*
  * TypeExporter pass to export type information

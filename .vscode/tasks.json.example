@@ -108,7 +108,7 @@
                 "cwd": "${fileDirname}",
                 "env": {
                     // Your desired logging settings.
-                    "RUST_LOG": "info,'compiler::utils::Chain<compiler::utils::Chain<compiler::passes::runtime_adder::RuntimeAdder, compiler::passes::NoOpPass>, compiler::utils::Chain<compiler::passes::ctfe::CtfeFunctionAdder, compiler::passes::instr::Instrumentator>>::objects'=off",
+                    "LEAFC_LOG": "info,pri_discovery=off,type_export=off,pass_objects=off",
                 },
             },
             "args": [
@@ -131,7 +131,7 @@
             "options": {
                 "cwd": "${fileDirname}",
                 "env": {
-                    "RUST_LOG": "trace"
+                    "LEAFC_LOG": "trace"
                 },
             },
             "args": [

@@ -41,7 +41,7 @@ impl CompilationPass for Instrumentor {
 }
 
 fn transform<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>, storage: &mut dyn Storage) {
-    log::info!(
+    log::debug!(
         "Running instrumentation pass on body of {:#?} at {:?}",
         body.source.def_id(),
         body.span,
