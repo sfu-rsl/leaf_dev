@@ -37,6 +37,7 @@ fn provide_runtime_shim_lib() -> PathBuf {
     let target_output_dir = build_lib(&shim_lib_proj_path);
 
     let shim_as_dep_path = copy_lib_to_deps(&target_output_dir);
+    println!("cargo:rerun-if-changed={}", shim_as_dep_path.display());
 
     shim_as_dep_path
 }
@@ -79,13 +80,13 @@ mod runtime_shim {
          * This is based on the default structure: target/profile/build/<crate>/out */
         let deps_dir = PathBuf::from(env::var("OUT_DIR").unwrap())
             .ancestors()
-            .skip(3)
+            .skip(3) // profile/build/<crate>/out -> profile
             .next()
             .unwrap()
             .join(DIR_DEPS);
         let shim_lib_copy_dir = deps_dir.join("runtime_shim");
         recreate_dir(&shim_lib_copy_dir);
-        copy_built_files(lib_output_dir, &deps_dir);
+        copy_built_files(lib_output_dir, &shim_lib_copy_dir);
         shim_lib_copy_dir
     }
 

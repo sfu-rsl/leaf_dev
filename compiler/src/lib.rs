@@ -173,14 +173,15 @@ mod driver_args {
         args.push(OPT_UNSTABLE.to_owned());
 
         // Add the runtime shim library as a direct external dependency.
-        args.add_pair(
-            OPT_EXTERN,
-            format!("{}={}", CRATE_RUNTIME, find_shim_lib_path()),
-        );
+        let shim_lib_path = find_shim_lib_path();
+        args.add_pair(OPT_EXTERN, format!("{}={}", CRATE_RUNTIME, shim_lib_path));
         // Add the runtime shim library dependencies into the search path.
         args.add_pair(
             OPT_SEARCH_PATH,
-            format!("{SEARCH_KIND_TRANS_DEP}={}", find_shim_lib_deps_path()),
+            format!(
+                "{SEARCH_KIND_TRANS_DEP}={}",
+                find_shim_lib_deps_path(&shim_lib_path)
+            ),
         );
 
         // Add the runtime dynamic library as a dynamic dependency.
@@ -280,8 +281,12 @@ mod driver_args {
         )
     }
 
-    fn find_shim_lib_deps_path() -> String {
-        find_dependency_path(DIR_DEPS, iter::once(Path::new(PATH_SHIM_LIB_LOCATION)))
+    fn find_shim_lib_deps_path(lib_file_path: &str) -> String {
+        // Select the `deps` folder next to the lib file.
+        find_dependency_path(
+            DIR_DEPS,
+            iter::once(Path::new(lib_file_path).parent().unwrap()),
+        )
     }
 
     fn find_runtime_dylib_dir_path() -> String {
