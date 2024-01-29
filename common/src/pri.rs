@@ -174,9 +174,9 @@ mod macros {
      */
 
     /* How to add/modify functions to the PRI?
-     * Start with `runtime::pri` where the actual functionality is implemented.
-     * Then add the signature to the list below. Ideally, all other lists inside
-     * the project will be updated.
+     * - Add or modify the function's signature in the list below.
+     * - Implement the actual functionality in `runtime::pri`.
+     * - Ideally, all other use cases of these functions should be updated automatically.
      */
 
     #[allow(unused_macros)]
