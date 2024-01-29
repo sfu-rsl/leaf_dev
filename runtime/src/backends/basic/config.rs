@@ -11,20 +11,22 @@ impl TryFrom<::config::Config> for super::BasicBackend {
 
 #[derive(Debug, Default, Clone, Deserialize)]
 pub(crate) struct BasicBackendConfig {
+    #[serde(default)]
     pub call: CallConfig,
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
 pub(crate) struct CallConfig {
+    #[serde(default)]
     pub external_call: ExternalCallStrategy,
 }
 
 /* NOTE: Aliases don't work at the moment. */
 #[derive(Debug, Default, Clone, Deserialize, serde::Serialize)]
 pub(crate) enum ExternalCallStrategy {
-    #[default]
     #[serde(alias = "panic")]
     Panic,
+    #[default]
     #[serde(alias = "conc", alias = "concretize", alias = "underapprox")]
     Concretization,
     #[serde(alias = "overapprox", alias = "overapproximate")]

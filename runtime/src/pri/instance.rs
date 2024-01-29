@@ -91,8 +91,12 @@ fn load_config() -> ::config::Config {
     }
 
     config::Config::builder()
-        .add_source(File::with_name(&search_parent_dirs("leaf_config_default")))
-        .add_source(Environment::with_prefix("LEAF"))
+        .add_source(File::with_name(&search_parent_dirs("leaf_config_default")).required(false))
+        .add_source(
+            Environment::with_prefix("LEAF")
+                .prefix_separator("_")
+                .separator("."),
+        )
         .build()
         .expect("Failed to read configurations")
 }
