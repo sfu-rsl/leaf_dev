@@ -290,6 +290,9 @@ mod driver_args {
     }
 
     fn find_runtime_dylib_dir_path() -> String {
+        /* NOTE: Alternative strategy:
+         * We can put the library in the shim's lib deps folder to keep deps
+         * less scattered around. */
         let file_path = find_dependency_path(FILE_RUNTIME_DYLIB, iter::empty());
         Path::new(&file_path)
             .parent()

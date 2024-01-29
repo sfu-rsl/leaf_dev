@@ -5,7 +5,7 @@ use rustc_middle::mir::{self, visit::Visitor};
 use rustc_middle::ty::EarlyBinder;
 use rustc_middle::ty::{
     layout::{HasParamEnv, HasTyCtxt, LayoutCx, TyAndLayout},
-    GenericArgsRef, ParamEnv, Ty, TyCtxt, TypeVisitableExt,
+    GenericArgsRef, ParamEnv, Ty, TyCtxt,
 };
 use rustc_target::abi::{FieldIdx, Layout, VariantIdx};
 
@@ -14,6 +14,8 @@ use std::collections::HashMap;
 use common::tyexp::*;
 
 const KEY_TYPE_MAP: &str = "type_ids";
+
+const TAG_TYPE_EXPORT: &str = "TypeExport";
 
 /*
  * TypeExporter pass to export type information
@@ -35,6 +37,7 @@ impl CompilationPass for TypeExporter {
                 unit.items().iter().for_each(|(item, _)| match item {
                     mir::mono::MonoItem::Fn(instance) => {
                         let body = tcx.instance_mir(instance.def);
+                        log::debug!(target: TAG_TYPE_EXPORT, "Exporting types in {:?}", instance);
                         let mut place_visitor = PlaceVisitor {
                             tcx,
                             type_map,
@@ -69,7 +72,7 @@ impl<'tcx, 's> Visitor<'tcx> for PlaceVisitor<'tcx, 's> {
             self.param_env,
             EarlyBinder::bind(ty),
         );
-        log::debug!(target: "TypeExport", "Normalized ty with param: {} -> {}", ty, normalized_ty);
+        log::debug!(target: TAG_TYPE_EXPORT, "Normalized ty with param: {} -> {}", ty, normalized_ty);
 
         if self
             .type_map
@@ -78,7 +81,7 @@ impl<'tcx, 's> Visitor<'tcx> for PlaceVisitor<'tcx, 's> {
             return;
         }
 
-        self.add_type_information_to_map(ty);
+        self.add_type_information_to_map(normalized_ty);
     }
 }
 
@@ -92,7 +95,7 @@ impl<'tcx, 's> PlaceVisitor<'tcx, 's> {
             }
         };
 
-        log::debug!(target: "TypeExport", "Generating type information for {:?}", ty);
+        log::debug!(target: TAG_TYPE_EXPORT, "Generating type information for {:?}", ty);
         let cx = LayoutCx {
             tcx: self.tcx,
             param_env: self.param_env,
