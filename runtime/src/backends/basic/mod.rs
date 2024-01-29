@@ -786,7 +786,7 @@ impl<'t> BasicTypeManager<'t> {
 
 impl Default for BasicTypeManager<'static> {
     fn default() -> Self {
-        Self::new(tyexp::instance::PROGRAM_TYPES.get_or_init(|| TypeExport::read()))
+        Self::new(tyexp::instance::PROGRAM_TYPES.get_or_init(|| TypeExport::read().unwrap()))
     }
 }
 

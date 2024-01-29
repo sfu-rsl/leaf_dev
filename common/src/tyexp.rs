@@ -1,4 +1,5 @@
-use std::{collections::HashMap, fs::OpenOptions};
+use core::fmt::Display;
+use std::{collections::HashMap, error::Error, fs::OpenOptions};
 
 use serde::{Deserialize, Serialize, Serializer};
 
@@ -51,23 +52,51 @@ pub struct FieldInfo {
 
 pub struct TypeExport;
 
+#[derive(Debug)]
+pub struct ReadError {
+    pub message: &'static str,
+    pub cause: Option<Box<dyn Error>>,
+}
+
+impl Error for ReadError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        self.cause.as_ref().and_then(|cause| cause.source())
+    }
+}
+
+impl Display for ReadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.message)?;
+        if let Some(cause) = &self.cause {
+            write!(f, " Cause: {}", cause)?;
+        }
+        Ok(())
+    }
+}
+
 // FIXME: Move these functions to a more appropriate place.
 // FIXME: Make this configurable and injectable.
 impl TypeExport {
-    pub fn read() -> HashMap<TypeId, TypeInfo> {
+    pub fn read() -> Result<HashMap<TypeId, TypeInfo>, ReadError> {
         let file = OpenOptions::new()
             .read(true)
             .open("types.json")
-            .expect("Failed to open file for type export");
+            .map_err(|err| ReadError {
+                message: "Failed to open file for type export",
+                cause: Some(Box::new(err)),
+            })?;
 
-        let type_infos: Vec<TypeInfo> =
-            serde_json::from_reader(file).expect("Failed to parse types from file.");
+        let type_infos: Vec<TypeInfo> = serde_json::from_reader(file).map_err(|err| ReadError {
+            message: "Failed to parse types from file.",
+            cause: Some(Box::new(err)),
+        })?;
         log::debug!("Retrieved {} types from file.", type_infos.len());
 
-        type_infos
+        let type_infos = type_infos
             .into_iter()
             .map(|type_info| (type_info.id, type_info))
-            .collect()
+            .collect();
+        Ok(type_infos)
     }
 
     pub fn write<'a>(types: impl Iterator<Item = &'a TypeInfo>) {
