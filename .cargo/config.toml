@@ -8,6 +8,8 @@ rustflags = [
     "abs_concrete",
     # "--cfg",
     # "nctfe",
+    # "--cfg",
+    # "runtime_impl=\"noop\""
 ]
 
 [env]

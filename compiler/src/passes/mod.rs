@@ -308,6 +308,9 @@ mod implementation {
 
     impl<T: CompilationPass + Send + ?Sized> CompilationPassAdapter<T> {
         fn optimized_mir(tcx: TyCtxt, id: LocalDefId) -> &mir::Body {
+            // NOTE: It is possible that this function is called before the callbacks.
+            global::set_ctxt_id(tcx);
+
             /* NOTE: Currently, it seems that there is no way to deallocate
              * something from arena. So, we have to clone the body. */
             let mut body = ORIGINAL_OPTIMIZED_MIR.get()(tcx, id).clone();

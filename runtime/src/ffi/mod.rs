@@ -11,7 +11,7 @@ macro_rules! delegate_to_default {
         $(#[$($attr)*])*
         #[inline(always)]
         fn $name ($($(#[$($arg_attr)*])* $arg : $arg_type),*) $(-> $ret_ty)? {
-            crate::pri::DefaultPri::$name($($arg.into()),*).into()
+            crate::pri::PriImpl::$name($($arg.into()),*).into()
         }
     };
 }
@@ -50,7 +50,7 @@ impl From<common::pri::UnaryOp> for abs::UnaryOp {
     }
 }
 
-impl From<common::pri::BranchingInfo> for crate::pri::BranchingInfo {
+impl From<common::pri::BranchingInfo> for crate::pri::DefaultBranchingInfo {
     #[inline(always)]
     fn from(value: common::pri::BranchingInfo) -> Self {
         Self::new(
@@ -61,9 +61,9 @@ impl From<common::pri::BranchingInfo> for crate::pri::BranchingInfo {
         )
     }
 }
-impl From<crate::pri::BranchingInfo> for common::pri::BranchingInfo {
+impl From<crate::pri::DefaultBranchingInfo> for common::pri::BranchingInfo {
     #[inline(always)]
-    fn from(value: crate::pri::BranchingInfo) -> Self {
+    fn from(value: crate::pri::DefaultBranchingInfo) -> Self {
         Self {
             node_location: value.metadata.node_location,
             discriminant: value.discriminant,
