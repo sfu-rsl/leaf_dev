@@ -169,9 +169,7 @@ impl ProgramRuntimeInterface for DefaultPri {
     fn assign_ref(dest: PlaceRef, place: PlaceRef, is_mutable: bool) {
         assign_to(dest, |h| h.ref_to(take_back_place_ref(place), is_mutable))
     }
-    fn assign_thread_local_ref(
-        dest: PlaceRef, /* TODO: Complicated. MIRAI has some works on it. */
-    ) {
+    fn assign_thread_local_ref(dest: PlaceRef /* TODO: #365 */) {
         assign_to(dest, |h| h.thread_local_ref_to())
     }
     fn assign_address_of(dest: PlaceRef, place: PlaceRef, is_mutable: bool) {

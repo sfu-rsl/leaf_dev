@@ -9,6 +9,7 @@ use rustc_middle::{
     },
     ty::{Const, GenericArg, Ty, TyCtxt},
 };
+use rustc_span::def_id::DefId;
 use rustc_target::abi::{FieldIdx, VariantIdx};
 
 use core::iter;
@@ -75,7 +76,7 @@ pub(crate) trait Assigner<'tcx> {
 
     fn by_ref(&mut self, place: PlaceRef, is_mutable: bool);
 
-    fn by_thread_local_ref(&mut self);
+    fn by_thread_local_ref(&mut self, def_id: &DefId);
 
     fn by_address_of(&mut self, place: PlaceRef, is_mutable: bool);
 
@@ -206,7 +207,6 @@ mod implementation {
 
     use rustc_middle::mir::{self, BasicBlock, BasicBlockData, HasLocalDecls, UnevaluatedConst};
     use rustc_middle::ty::{self as mir_ty, TyKind, TypeVisitableExt};
-    use rustc_span::def_id::DefId;
 
     use delegate::delegate;
 
@@ -1240,8 +1240,9 @@ mod implementation {
             )
         }
 
-        fn by_thread_local_ref(&mut self) {
-            todo!()
+        fn by_thread_local_ref(&mut self, _def_id: &DefId) {
+            // FIXME: #365
+            self.add_bb_for_assign_call(sym::assign_thread_local_ref, vec![])
         }
 
         fn by_address_of(&mut self, place: PlaceRef, is_mutable: bool) {

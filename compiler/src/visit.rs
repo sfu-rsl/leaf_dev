@@ -346,9 +346,7 @@ macro_rules! make_rvalue_visitor {
 
             fn visit_thread_local_ref(
                 &mut self,
-                /* DefId is weirdly private at the current time of development.
-                def_id: & $($mutability)? DefId,
-                */
+                def_id: & $($mutability)? rustc_span::def_id::DefId,
             ) -> T {
                 Default::default()
             }
@@ -429,7 +427,7 @@ macro_rules! make_rvalue_visitor {
                     Rvalue::Ref(region, borrow_kind, place) => {
                         self.visit_ref(region, borrow_kind, place)
                     }
-                    Rvalue::ThreadLocalRef(_) => self.visit_thread_local_ref(),
+                    Rvalue::ThreadLocalRef(def_id) => self.visit_thread_local_ref(def_id),
                     Rvalue::AddressOf(mutability, place) => {
                         self.visit_address_of(mutability, place)
                     }

@@ -395,8 +395,8 @@ where
         Self::instrument_ref(&mut self.call_adder, borrow_kind, place)
     }
 
-    fn visit_thread_local_ref(&mut self) {
-        self.call_adder.by_thread_local_ref();
+    fn visit_thread_local_ref(&mut self, def_id: &rustc_span::def_id::DefId) {
+        self.call_adder.by_thread_local_ref(def_id);
     }
 
     fn visit_address_of(&mut self, mutability: &rustc_ast::Mutability, place: &Place<'tcx>) {
