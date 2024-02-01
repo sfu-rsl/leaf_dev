@@ -368,7 +368,10 @@ mod macros {
         { fn assign_aggregate_union(dest: PlaceRef, active_field: FieldIndex, value: OperandRef) }
         #[allow(unused_parens)]
         { fn assign_aggregate_closure(dest: PlaceRef, upvars: ($slice_ty!(OperandRef))) }
+        #[allow(unused_parens)]
+        { fn assign_aggregate_coroutine(dest: PlaceRef, upvars: ($slice_ty!(OperandRef))) }
 
+        #[allow(unused_parens)]
         { fn assign_shallow_init_box(_dest: PlaceRef, _operand: OperandRef, _dst_type_id: ($type_id_ty)) }
 
         #[allow(unused_parens)]
@@ -567,7 +570,9 @@ mod macros {
         }$modifier!{
           #[allow(unused_parens)]fn assign_aggregate_closure(dest:PlaceRef,upvars:($slice_ty!(OperandRef)));
         }$modifier!{
-          fn assign_shallow_init_box(_dest:PlaceRef,_operand:OperandRef,_dst_type_id:($type_id_ty));
+          #[allow(unused_parens)]fn assign_aggregate_coroutine(dest:PlaceRef,upvars:($slice_ty!(OperandRef)));
+        }$modifier!{
+          #[allow(unused_parens)]fn assign_shallow_init_box(_dest:PlaceRef,_operand:OperandRef,_dst_type_id:($type_id_ty));
         }$modifier!{
           #[allow(unused_parens)]fn new_branching_info(node_location:BasicBlockIndex,discriminant:OperandRef,discr_bit_size:u64,discr_is_signed:bool,)->($branching_info_ty);
         }$modifier!{

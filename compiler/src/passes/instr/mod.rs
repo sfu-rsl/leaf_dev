@@ -518,7 +518,9 @@ where
             Closure(..) => Box::new(|fields| {
                 self.call_adder.by_aggregate_closure(fields)
             }),
-            Coroutine(..) => todo!("Coroutines are not supported yet."),
+            Coroutine(..) => Box::new(|fields| {
+                self.call_adder.by_aggregate_coroutine(fields)
+            }),
         };
 
         add_call(operands.as_slice())

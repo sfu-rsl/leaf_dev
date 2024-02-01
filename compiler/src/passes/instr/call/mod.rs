@@ -108,6 +108,8 @@ pub(crate) trait Assigner<'tcx> {
 
     fn by_aggregate_closure(&mut self, upvars: &[OperandRef]);
 
+    fn by_aggregate_coroutine(&mut self, upvars: &[OperandRef]);
+
     fn by_shallow_init_box(&mut self, operand: OperandRef, ty: &Ty<'tcx>);
 
     // Special case for SetDiscriminant StatementType since it is similar to a regular assignment
@@ -416,7 +418,7 @@ mod implementation {
             let fn_def_ty = match ty.kind() {
                 TyKind::FnDef(..) => ty,
                 TyKind::Closure(..) => ty::fn_def_of_closure_call(tcx, ty),
-                TyKind::Coroutine(..) => todo!("#333"),
+                TyKind::Coroutine(..) => ty::fn_def_of_coroutine_resume(tcx, ty),
                 _ => unreachable!("Unexpected type for body instance: {:?}", ty),
             };
             debug_assert_matches!(fn_def_ty.kind(), TyKind::FnDef(..));
@@ -1381,6 +1383,10 @@ mod implementation {
             self.add_bb_for_aggregate_assign_call(sym::assign_aggregate_closure, upvars, vec![])
         }
 
+        fn by_aggregate_coroutine(&mut self, upvars: &[OperandRef]) {
+            self.add_bb_for_aggregate_assign_call(sym::assign_aggregate_coroutine, upvars, vec![])
+        }
+
         fn by_shallow_init_box(&mut self, operand: OperandRef, ty: &Ty<'tcx>) {
             let id_local = {
                 let (block, id_local) = self.make_type_id_of_bb(*ty);
@@ -1999,8 +2005,11 @@ mod implementation {
             expected: bool,
             msg: &rustc_middle::mir::AssertMessage<'tcx>,
         ) {
-            let (func_name, mut additional_operands, additional_stmts) =
-                self.reference_assert_kind(msg);
+            let Some((func_name, mut additional_operands, additional_stmts)) =
+                self.reference_assert_kind(msg)
+            else {
+                return;
+            };
 
             let mut operands = vec![
                 operand::move_for_local(cond.into()),
@@ -2023,20 +2032,20 @@ mod implementation {
         fn reference_assert_kind(
             &mut self,
             msg: &rustc_middle::mir::AssertMessage<'tcx>,
-        ) -> (LeafSymbol, Vec<Operand<'tcx>>, Vec<Statement<'tcx>>) {
+        ) -> Option<(LeafSymbol, Vec<Operand<'tcx>>, Vec<Statement<'tcx>>)> {
             use rustc_middle::mir::AssertKind;
             match msg {
                 AssertKind::BoundsCheck { len, index } => {
                     let len_ref = self.reference_operand(len);
                     let index_ref = self.reference_operand(index);
-                    (
+                    Some((
                         sym::check_assert_bounds_check,
                         vec![
                             operand::copy_for_local(len_ref.into()),
                             operand::copy_for_local(index_ref.into()),
                         ],
                         vec![],
-                    )
+                    ))
                 }
                 AssertKind::Overflow(operator, op1, op2) => {
                     let tcx = self.tcx();
@@ -2055,7 +2064,7 @@ mod implementation {
 
                     let op1_ref = self.reference_operand(op1);
                     let op2_ref = self.reference_operand(op2);
-                    (
+                    Some((
                         sym::check_assert_overflow,
                         vec![
                             // TODO: double check that moves and copies here are correct
@@ -2064,50 +2073,51 @@ mod implementation {
                             operand::copy_for_local(op2_ref.into()),
                         ],
                         vec![],
-                    )
+                    ))
                 }
                 AssertKind::OverflowNeg(op) => {
                     let op_ref = self.reference_operand(op);
-                    (
+                    Some((
                         sym::check_assert_overflow_neg,
                         vec![operand::copy_for_local(op_ref.into())],
                         vec![],
-                    )
+                    ))
                 }
                 AssertKind::DivisionByZero(op) => {
                     let op_ref = self.reference_operand(op);
-                    (
+                    Some((
                         sym::check_assert_div_by_zero,
                         vec![operand::copy_for_local(op_ref.into())],
                         vec![],
-                    )
+                    ))
                 }
                 AssertKind::RemainderByZero(op) => {
                     let op_ref = self.reference_operand(op);
-                    (
+                    Some((
                         sym::check_assert_rem_by_zero,
                         vec![operand::copy_for_local(op_ref.into())],
                         vec![],
-                    )
+                    ))
                 }
-                AssertKind::ResumedAfterReturn(..) => {
-                    // NOTE: check if these exist in HIR only
-                    todo!("research if this is unreachable or not; likely it's not reachable")
-                }
-                AssertKind::ResumedAfterPanic(..) => {
-                    todo!("research if this is unreachable or not; likely it's not reachable")
+                AssertKind::ResumedAfterReturn(..) | AssertKind::ResumedAfterPanic(..) => {
+                    /* NOTE: These two assertions look to be used to make sure
+                     * that the state machine is correctly generated.
+                     * When they are reached, an illegal has happened in the state machine.
+                     * They are in fact assert(false) statements.
+                     */
+                    None
                 }
                 AssertKind::MisalignedPointerDereference { required, found } => {
                     let required_ref = self.reference_operand(required);
                     let found_ref = self.reference_operand(found);
-                    (
+                    Some((
                         sym::check_assert_misaligned_ptr_deref,
                         vec![
                             operand::copy_for_local(required_ref.into()),
                             operand::copy_for_local(found_ref.into()),
                         ],
                         vec![],
-                    )
+                    ))
                 }
             }
         }
@@ -2436,22 +2446,18 @@ mod implementation {
             ///
             /// [`ty`]: closure type
             pub fn fn_def_of_closure_call<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>) -> Ty<'tcx> {
-                log::debug!("Getting FnDef type of closure: {:?}", ty);
                 let TyKind::Closure(_, args) = ty.kind() else {
                     panic!("Expected closure type but received: {}", ty)
                 };
+
+                log::debug!("Getting FnDef type of closure: {:?}", ty);
                 let args = args.as_closure();
 
-                // Finding the call method in the Fn trait.
-                let fn_trait_fn_id = tcx
-                    .associated_items(
-                        tcx.fn_trait_kind_to_def_id(args.kind())
-                            .expect("Could not get the Fn trait id."),
-                    )
-                    .in_definition_order()
-                    .find(|x| matches!(x.kind, rustc_middle::ty::AssocKind::Fn))
-                    .unwrap()
-                    .def_id;
+                // Finding the call* method in the Fn* trait.
+                let fn_trait_fn_id = def_id_of_single_func_of_trait(
+                    tcx,
+                    tcx.fn_trait_kind_to_def_id(args.kind()).unwrap(),
+                );
 
                 let inputs = erased_tupled_closure_inputs(tcx, args);
                 Ty::new_fn_def(tcx, fn_trait_fn_id, [ty, inputs])
@@ -2466,12 +2472,50 @@ mod implementation {
                 tcx.instantiate_bound_regions_with_erased(inputs)
             }
 
+            /// Returns the corresponding FnDef type of a coroutine when resumed,
+            /// i.e. `<closure as Coroutine<R>>::resume()`
+            ///
+            /// [`ty`]: closure type
+            pub fn fn_def_of_coroutine_resume<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>) -> Ty<'tcx> {
+                let TyKind::Coroutine(_, args) = ty.kind() else {
+                    panic!("Expected coroutine type but received: {}", ty)
+                };
+
+                log::debug!("Getting FnDef type of coroutine: {:?}", ty);
+                let args = args.as_coroutine();
+
+                // Finding `resume` method in `Coroutine` trait.
+                let coroutine_trait_fn_id = def_id_of_single_func_of_trait(
+                    tcx,
+                    tcx.lang_items().coroutine_trait().unwrap(),
+                );
+
+                // NOTE: Currently, either zero or one parameters are supported for coroutines.
+                let inputs = args.sig().resume_ty;
+                Ty::new_fn_def(tcx, coroutine_trait_fn_id, [ty, inputs])
+            }
+
+            fn def_id_of_single_func_of_trait(tcx: TyCtxt, trait_id: DefId) -> DefId {
+                let mut funcs = tcx
+                    .associated_items(trait_id)
+                    .in_definition_order()
+                    .filter(|x| matches!(x.kind, rustc_middle::ty::AssocKind::Fn));
+                let func = funcs.next().expect("No function found in the trait.");
+                assert!(
+                    funcs.next().is_none(),
+                    "More than one function found in the trait."
+                );
+                func.def_id
+            }
+
             pub fn fn_ptr_sig<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>) -> mir_ty::PolyFnSig<'tcx> {
                 match ty.kind() {
                     TyKind::FnDef(..) => ty.fn_sig(tcx),
                     TyKind::FnPtr(sig) => *sig,
-                    TyKind::Closure(_, args) => args.as_closure().sig(),
-                    _ => unreachable!("Unexpected type to get function pointer from: {}", ty),
+                    _ => unreachable!(
+                        "Unexpected type to get function pointer directly from: {}",
+                        ty
+                    ),
                 }
             }
         }
