@@ -280,6 +280,23 @@ where
         _call_source: &mir::CallSource,
         _fn_span: rustc_span::Span,
     ) {
+        if let rustc_middle::ty::TyKind::FnDef(def_id, ..) =
+            func.ty(&self.call_adder, self.call_adder.tcx()).kind()
+        {
+            if self.call_adder.tcx().is_intrinsic(def_id) {
+                // FIXME: #172
+                /* NOTE: This definitely causes the runtime to diverge from the
+                 * concrete execution, but unless we want to handle them by
+                 * replacing with our implementation, as most of them
+                 * are not actual functions, they will be replaced by
+                 * flat instructions at the code generation phase.
+                 * Thus, presumably they should not be instrumented like a
+                 * function call anyway.
+                 */
+                return;
+            }
+        }
+
         let are_args_tupled =
             call::utils::are_args_tupled(self.call_adder.tcx(), &self.call_adder, func, args);
         Self::instrument_call(

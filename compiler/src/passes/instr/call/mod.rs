@@ -2698,6 +2698,13 @@ mod implementation {
                 if fn_ty.is_fn_ptr() {
                     Rvalue::Use(func.clone())
                 } else {
+                    let TyKind::FnDef(def_id, ..) = fn_ty.kind() else {
+                        unreachable!()
+                    };
+                    assert!(
+                        !tcx.is_intrinsic(def_id),
+                        "Cannot extract function pointer (as id) of intrinsic functions."
+                    );
                     rvalue::cast_to_coerced(PointerCoercion::ReifyFnPointer, func.clone(), ptr_ty)
                 },
             );
