@@ -418,7 +418,18 @@ mod implementation {
             let fn_def_ty = match ty.kind() {
                 TyKind::FnDef(..) => ty,
                 TyKind::Closure(..) => ty::fn_def_of_closure_call(tcx, ty),
-                TyKind::Coroutine(..) => ty::fn_def_of_coroutine_resume(tcx, ty),
+                TyKind::Coroutine(def_id, ..) => {
+                    use rustc_hir::{CoroutineDesugaring::*, CoroutineKind::*};
+                    match tcx.coroutine_kind(*def_id).unwrap() {
+                        Coroutine(..) => ty::fn_def_of_coroutine_resume(tcx, ty),
+                        Desugared(Async, ..) => ty::fn_def_of_coroutine_await(tcx, ty),
+                        Desugared(des, ..) => unimplemented!(
+                            "This type of coroutine is unstable and currently out of scope: {:?}, source: {:?}",
+                            des,
+                            ty,
+                        ),
+                    }
+                }
                 _ => unreachable!("Unexpected type for body instance: {:?}", ty),
             };
             debug_assert_matches!(fn_def_ty.kind(), TyKind::FnDef(..));
@@ -2473,14 +2484,13 @@ mod implementation {
             }
 
             /// Returns the corresponding FnDef type of a coroutine when resumed,
-            /// i.e. `<closure as Coroutine<R>>::resume()`
+            /// i.e. `<coroutine as Coroutine<R>>::resume()`
             ///
-            /// [`ty`]: closure type
+            /// [`ty`]: coroutine type
             pub fn fn_def_of_coroutine_resume<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>) -> Ty<'tcx> {
                 let TyKind::Coroutine(_, args) = ty.kind() else {
                     panic!("Expected coroutine type but received: {}", ty)
                 };
-
                 log::debug!("Getting FnDef type of coroutine: {:?}", ty);
                 let args = args.as_coroutine();
 
@@ -2493,6 +2503,31 @@ mod implementation {
                 // NOTE: Currently, either zero or one parameters are supported for coroutines.
                 let inputs = args.sig().resume_ty;
                 Ty::new_fn_def(tcx, coroutine_trait_fn_id, [ty, inputs])
+            }
+
+            /// Returns the corresponding FnDef type of an async coroutine when awaited,
+            /// i.e. `<coroutine as Future>::poll()`
+            ///
+            /// [`ty`]: coroutine type
+            pub fn fn_def_of_coroutine_await<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>) -> Ty<'tcx> {
+                let TyKind::Coroutine(def_id, args) = ty.kind() else {
+                    panic!("Expected coroutine type but received: {}", ty)
+                };
+                assert!(
+                    tcx.coroutine_is_async(*def_id),
+                    "Expected async coroutine kind but received: {:?}",
+                    tcx.coroutine_kind(*def_id),
+                );
+
+                log::debug!("Getting FnDef type of async coroutine: {:?}", ty);
+                let args = args.as_coroutine();
+
+                // Finding `resume` method in `Coroutine` trait.
+                let future_trait_fn_id = tcx.lang_items().future_poll_fn().unwrap();
+
+                // NOTE: Currently, either zero or one parameters are supported for coroutines.
+                let inputs = args.sig().resume_ty;
+                Ty::new_fn_def(tcx, future_trait_fn_id, [ty, inputs])
             }
 
             fn def_id_of_single_func_of_trait(tcx: TyCtxt, trait_id: DefId) -> DefId {
