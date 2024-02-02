@@ -29,7 +29,8 @@ fn test_compile(fic: &str) {
         )
         // Disable warnings to avoid polluting the output
         .arg("-Awarnings")
-        .env("RUST_LOG", "off")
+        .arg("--edition=2021")
+        .env("LEAFC_LOG", "off")
         .current_dir(&output_dir)
         .status()
         .expect("Failed to spawn and wait for command termination");
