@@ -1,5 +1,5 @@
 use core::fmt::Display;
-use std::{collections::HashMap, error::Error, fs::OpenOptions};
+use std::{collections::HashMap, env, error::Error, fs::OpenOptions, path::Path};
 
 use serde::{Deserialize, Serialize, Serializer};
 
@@ -78,18 +78,12 @@ impl Display for ReadError {
 // FIXME: Make this configurable and injectable.
 impl TypeExport {
     pub fn read() -> Result<HashMap<TypeId, TypeInfo>, ReadError> {
-        let file = OpenOptions::new()
-            .read(true)
-            .open("types.json")
-            .map_err(|err| ReadError {
-                message: "Failed to open file for type export",
-                cause: Some(Box::new(err)),
-            })?;
+        let exe_path = env::current_exe()
+            .expect("Failed to get the file path of the current running executable.");
+        let out_dir = exe_path.parent().unwrap_or(Path::new(""));
 
-        let type_infos: Vec<TypeInfo> = serde_json::from_reader(file).map_err(|err| ReadError {
-            message: "Failed to parse types from file.",
-            cause: Some(Box::new(err)),
-        })?;
+        let type_infos: Vec<TypeInfo> =
+            Self::get_type_info(out_dir.join("types.json").display().to_string())?;
         log::debug!("Retrieved {} types from file.", type_infos.len());
 
         let type_infos = type_infos
@@ -99,17 +93,32 @@ impl TypeExport {
         Ok(type_infos)
     }
 
-    pub fn write<'a>(types: impl Iterator<Item = &'a TypeInfo>) {
+    pub fn write<'a>(types: impl Iterator<Item = &'a TypeInfo>, file_path: String) {
         let file = OpenOptions::new()
             .create(true)
             .write(true)
             .truncate(true)
-            .open("types.json")
+            .open(file_path)
             .expect("Unable to open file for type export");
-
         let mut serializer = serde_json::Serializer::pretty(file);
         serializer
             .collect_seq(types)
             .expect("Failed to write types to file.");
+    }
+
+    pub fn get_type_info(file_path: String) -> Result<Vec<TypeInfo>, ReadError> {
+        let file = OpenOptions::new()
+            .read(true)
+            .open(file_path)
+            .map_err(|err| ReadError {
+                message: "Failed to open file for type export",
+                cause: Some(Box::new(err)),
+            })?;
+
+        let type_infos: Vec<TypeInfo> = serde_json::from_reader(file).map_err(|err| ReadError {
+            message: "Failed to parse types from file.",
+            cause: Some(Box::new(err)),
+        })?;
+        Ok(type_infos)
     }
 }

@@ -10,6 +10,10 @@ use rustc_middle::ty::{
 use rustc_target::abi::{FieldIdx, Layout, VariantIdx};
 
 use std::collections::HashMap;
+use std::env::{self};
+use std::path::Path;
+
+use glob::glob;
 
 use common::tyexp::*;
 
@@ -50,12 +54,58 @@ impl CompilationPass for TypeExporter {
                 })
             });
 
-        TypeExport::write(type_map.values());
+        // TODO: #379
+        let output_filenames = tcx.output_filenames(());
+        let file_path = if output_filenames.out_directory.as_os_str().is_empty()
+            || env::var("CARGO_PRIMARY_PACKAGE").is_ok()
+        {
+            aggregate_type_info(type_map);
+
+            output_filenames
+                .out_directory
+                .parent()
+                .unwrap_or(Path::new(""))
+                .join("types.json")
+                .display()
+                .to_string()
+        } else {
+            output_filenames
+                .out_directory
+                .join(format!(
+                    "types-{}{}.json",
+                    env::var("CARGO_PKG_NAME").unwrap().replace("-", "_"), // to follow the naming convention of the metadata output file
+                    tcx.sess.opts.cg.extra_filename
+                ))
+                .display()
+                .to_string()
+        };
+        TypeExport::write(type_map.values(), file_path);
     }
 }
 
 fn type_id<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>) -> u128 {
     tcx.type_id_hash(ty).as_u128()
+}
+
+fn aggregate_type_info(type_map: &mut HashMap<u128, TypeInfo>) {
+    let dep_types_file_pattern = format!(
+        "{}/**/types-*.json",
+        env::var("CARGO_MANIFEST_DIR").unwrap()
+    );
+    for entry in glob(dep_types_file_pattern.as_str())
+        .expect(format!("Failed to read glob pattern: {}", dep_types_file_pattern).as_str())
+    {
+        let file_path = entry
+            .expect("Failed to read glob entry")
+            .display()
+            .to_string();
+        let type_infos = TypeExport::get_type_info(file_path).unwrap();
+        for type_info in type_infos {
+            if !type_map.contains_key(&type_info.id) {
+                type_map.insert(type_info.id, type_info);
+            }
+        }
+    }
 }
 
 struct PlaceVisitor<'tcx, 's> {
