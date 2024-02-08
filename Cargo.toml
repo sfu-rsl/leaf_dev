@@ -3,12 +3,11 @@ resolver = "2"
 members = [
     "common",
     "compiler",
-    "runtime",
-    # We keep the shim project here to make the project management easier.
-    "runtime_shim",
+    "runtime/lib",
+    "runtime/flavors/*",
+    # We keep the shim in the workspace for project management, although it is built with the compiler.
+    "runtime/shim",
     "macros",
-    "runtime_basic",
-    "runtime_noop",
 ]
 exclude = [
     "samples/crates/"

@@ -5,7 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-const SHIM_LIB_PROJECT_DIR: &str = "../runtime_shim";
+const SHIM_LIB_PROJECT_DIR: &str = "../runtime/shim";
 const SHIM_LIB_FILE_NAME: &str = "libleafrtsh.rlib";
 
 const ENV_SHIM_LIB_LOCATION: &str = "SHIM_LIB_LOCATION";

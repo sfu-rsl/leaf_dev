@@ -11,4 +11,4 @@ crate-type = ["rlib"]
 
 [dependencies]
 # No dependencies other than the internal packages are supposed to be used by this crate.
-common = { path = "../common" }
+common = { path = "../../common" }
