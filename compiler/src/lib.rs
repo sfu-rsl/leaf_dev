@@ -115,6 +115,7 @@ mod driver_args {
     const ENV_TOOLCHAIN: &str = "RUSTUP_TOOLCHAIN";
 
     const FILE_RUNTIME_SHIM_LIB: &str = "libleafrtsh.rlib";
+    const FILE_RUNTIME_DYLIB_DEFAULT_FALLBACK: &str = "libleafrt_basic.so";
     const FILE_RUNTIME_DYLIB: &str = "libleafrt.so";
 
     const LIB_RUNTIME: &str = "leafrt";
@@ -187,6 +188,8 @@ mod driver_args {
             ),
         );
 
+        // FIXME: Add better support for setting the runtime flavor.
+        ensure_runtime_dylib_exists();
         // Add the runtime dynamic library as a dynamic dependency.
         /* NOTE: As long as the shim is getting compiled along with the program,
          * adding it explicitly should not be necessary (is expected to be
@@ -292,6 +295,24 @@ mod driver_args {
         )
     }
 
+    fn ensure_runtime_dylib_exists() {
+        if try_find_dependency_path(FILE_RUNTIME_DYLIB, iter::empty()).is_some() {
+            return;
+        }
+
+        // If the runtime dylib is not found, create a link to the fallback one.
+        let fallback_path =
+            find_dependency_path(FILE_RUNTIME_DYLIB_DEFAULT_FALLBACK, iter::empty());
+        let sym_link_path = Path::new(&fallback_path)
+            .parent()
+            .unwrap()
+            .join(FILE_RUNTIME_DYLIB);
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(fallback_path, sym_link_path).unwrap();
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_file(fallback_path, sym_link_path).unwrap();
+    }
+
     fn find_runtime_dylib_dir_path() -> String {
         /* NOTE: Alternative strategy:
          * We can put the library in the shim's lib deps folder to keep deps
@@ -306,8 +327,16 @@ mod driver_args {
 
     fn find_dependency_path<'a>(
         name: &'static str,
-        mut priority_dirs: impl Iterator<Item = &'a Path>,
+        priority_dirs: impl Iterator<Item = &'a Path>,
     ) -> String {
+        try_find_dependency_path(name, priority_dirs)
+            .unwrap_or_else(|| panic!("Unable to find the dependency with name: {}", name))
+    }
+
+    fn try_find_dependency_path<'a>(
+        name: &str,
+        mut priority_dirs: impl Iterator<Item = &'a Path>,
+    ) -> Option<String> {
         let try_dir = |path: &Path| {
             log::debug!("Trying dir in search of `{}`: {:?}", name, path);
             try_join(path, name)
@@ -325,7 +354,6 @@ mod driver_args {
             .or_else(try_cwd)
             .or_else(try_exe_path)
             .map(|path| path.to_string_lossy().to_string())
-            .unwrap_or_else(|| panic!("Unable to find the dependency with name: {}", name))
     }
 
     fn try_join(path: impl AsRef<Path>, child: impl AsRef<Path>) -> Option<PathBuf> {
