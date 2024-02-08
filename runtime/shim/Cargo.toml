@@ -8,6 +8,12 @@ edition = "2021"
 [lib]
 name = "leafrtsh"
 crate-type = ["rlib"]
+# NOTE: Although there is no test for this crate yet, we explicitly disable 
+# testing for it, to prevent errors due to possibly missing `libleafrt.so` file.
+# Compiler takes care of providing `libleafrt.so` file when building target
+# programs.
+# Fix it when we have tests for this crate.
+test = false
 
 [dependencies]
 # No dependencies other than the internal packages are supposed to be used by this crate.

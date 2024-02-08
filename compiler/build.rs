@@ -49,7 +49,7 @@ mod runtime_shim {
 
     const DIR_DEPS: &str = "deps";
 
-    /// Builds the `runtime_shim` library and returns the path to the target output
+    /// Builds the runtime shim library and returns the path to the target output
     /// directory, which holds the artifacts and dependencies.
     pub(super) fn build_lib(proj_path: &Path) -> PathBuf {
         const SHIM_LIB_TARGET_DIR: &str = "target/compiler";
@@ -73,7 +73,7 @@ mod runtime_shim {
         proj_path.join(SHIM_LIB_TARGET_DIR).join(profile)
     }
 
-    /// Copies the `runtime_shim`'s built artifact and its dependencies to the
+    /// Copies the built artifact and dependencies of the runtime shim to the
     /// the compiler's `deps` directory in a dedicated folder.
     pub(super) fn copy_lib_to_deps(lib_output_dir: &Path) -> PathBuf {
         /* At the moment, no cleaner way is found to get the artifacts path.
@@ -90,7 +90,7 @@ mod runtime_shim {
         shim_lib_copy_dir
     }
 
-    /// Copies the `runtime_shim`'s built artifact and its dependencies.
+    /// Copies the built artifact and dependencies of the runtime shim.
     fn copy_built_files(lib_output_dir: &Path, dst_dir: &Path) {
         assert!(lib_output_dir.is_dir());
         assert!(dst_dir.is_dir());
