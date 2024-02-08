@@ -2,7 +2,7 @@ use common::pri::*;
 
 use crate::abs::{self, BranchingMetadata, IntType};
 
-pub(crate) struct NoOpPri;
+pub struct NoOpPri;
 
 macro_rules! noop {
     ($(#[$($attr: meta)*])* fn $name:ident ($($(#[$($arg_attr: meta)*])* $arg:ident : $arg_type:ty),* $(,)?) $(-> $ret_ty:ty)?;) => {

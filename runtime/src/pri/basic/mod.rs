@@ -1,3 +1,4 @@
+mod ffi;
 mod instance;
 mod utils;
 
@@ -9,9 +10,9 @@ use crate::abs::{
 
 use self::instance::*;
 
-pub(crate) struct DefaultPri;
+pub struct BasicPri;
 
-impl ProgramRuntimeInterface for DefaultPri {
+impl ProgramRuntimeInterface for BasicPri {
     type U128 = u128;
     type Char = char;
     type ConstStr = &'static str;
@@ -449,7 +450,7 @@ impl ProgramRuntimeInterface for DefaultPri {
     }
 }
 
-impl DefaultPri {
+impl BasicPri {
     #[cfg(place_addr)]
     fn set_place_type(place: PlaceRef, ty: ValueType) {
         mut_place_ref(place, |p, place| p.metadata(place).set_primitive_type(ty));
@@ -474,7 +475,7 @@ impl DefaultPri {
     }
 }
 
-pub(crate) struct BranchingInfo {
+pub struct BranchingInfo {
     pub discriminant: OperandRef,
     pub metadata: BranchingMetadata,
 }

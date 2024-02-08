@@ -14,7 +14,6 @@
 
 pub mod abs;
 mod backends;
-pub mod ffi;
 pub(crate) mod outgen;
 pub(crate) mod pathics;
 pub mod pri;

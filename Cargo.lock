@@ -650,6 +650,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "runtime_basic"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "runtime",
+]
+
+[[package]]
+name = "runtime_noop"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "runtime",
+]
+
+[[package]]
 name = "runtime_shim"
 version = "0.1.0"
 dependencies = [
