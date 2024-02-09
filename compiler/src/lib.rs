@@ -296,21 +296,36 @@ mod driver_args {
     }
 
     fn ensure_runtime_dylib_exists() {
-        if try_find_dependency_path(FILE_RUNTIME_DYLIB, iter::empty()).is_some() {
+        let runtime_dylib_exists =
+            || try_find_dependency_path(FILE_RUNTIME_DYLIB, iter::empty()).is_some();
+
+        if runtime_dylib_exists() {
             return;
         }
 
-        // If the runtime dylib is not found, create a link to the fallback one.
+        // If the runtime dylib is not found, create a link to the fallback one next to it.
         let fallback_path =
             find_dependency_path(FILE_RUNTIME_DYLIB_DEFAULT_FALLBACK, iter::empty());
         let sym_link_path = Path::new(&fallback_path)
             .parent()
             .unwrap()
             .join(FILE_RUNTIME_DYLIB);
-        #[cfg(unix)]
-        std::os::unix::fs::symlink(fallback_path, sym_link_path).unwrap();
-        #[cfg(windows)]
-        std::os::windows::fs::symlink_file(fallback_path, sym_link_path).unwrap();
+
+        // NOTE: Parallel execution of the compiler may cause race conditions.
+        // FIXME: Come up with a better solution.
+        const MAX_RETRY: usize = 5;
+        retry(MAX_RETRY, std::time::Duration::from_secs(1), || {
+            if runtime_dylib_exists() {
+                Ok(())
+            } else {
+                #[cfg(unix)]
+                let result = std::os::unix::fs::symlink(&fallback_path, &sym_link_path);
+                #[cfg(windows)]
+                let result = std::os::windows::fs::symlink_file(&fallback_path, &sym_link_path);
+                result
+            }
+        })
+        .expect("Could not create a symlink to the fallback runtime dylib.");
     }
 
     fn find_runtime_dylib_dir_path() -> String {
@@ -363,5 +378,22 @@ mod driver_args {
         } else {
             None
         }
+    }
+
+    fn retry<T, E>(
+        times: usize,
+        sleep_dur: std::time::Duration,
+        mut f: impl FnMut() -> Result<T, E>,
+    ) -> Result<T, E> {
+        let mut result = f();
+        for _ in 0..times {
+            if result.is_ok() {
+                break;
+            } else {
+                std::thread::sleep(sleep_dur);
+            }
+            result = f();
+        }
+        result
     }
 }
