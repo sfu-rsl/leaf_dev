@@ -370,6 +370,8 @@ mod macros {
         { fn assign_aggregate_closure(dest: PlaceRef, upvars: ($slice_ty!(OperandRef))) }
         #[allow(unused_parens)]
         { fn assign_aggregate_coroutine(dest: PlaceRef, upvars: ($slice_ty!(OperandRef))) }
+        #[allow(unused_parens)]
+        { fn assign_aggregate_coroutine_closure(dest: PlaceRef, upvars: ($slice_ty!(OperandRef))) }
 
         #[allow(unused_parens)]
         { fn assign_shallow_init_box(_dest: PlaceRef, _operand: OperandRef, _dst_type_id: ($type_id_ty)) }
@@ -571,6 +573,8 @@ mod macros {
           #[allow(unused_parens)]fn assign_aggregate_closure(dest:PlaceRef,upvars:($slice_ty!(OperandRef)));
         }$modifier!{
           #[allow(unused_parens)]fn assign_aggregate_coroutine(dest:PlaceRef,upvars:($slice_ty!(OperandRef)));
+        }$modifier!{
+          #[allow(unused_parens)]fn assign_aggregate_coroutine_closure(dest:PlaceRef,upvars:($slice_ty!(OperandRef)));
         }$modifier!{
           #[allow(unused_parens)]fn assign_shallow_init_box(_dest:PlaceRef,_operand:OperandRef,_dst_type_id:($type_id_ty));
         }$modifier!{

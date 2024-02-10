@@ -191,6 +191,10 @@ pub(crate) trait AssignmentHandler: Sized {
         self.adt_from(upvars, None)
     }
 
+    fn coroutine_closure_from(self, upvars: impl Iterator<Item = Self::Field>) {
+        self.adt_from(upvars, None)
+    }
+
     fn variant_index(self, variant_index: VariantIndex);
 }
 

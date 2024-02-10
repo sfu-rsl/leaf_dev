@@ -8,6 +8,7 @@ use rustc_middle::{
     },
     ty::TyCtxt,
 };
+use rustc_span::source_map::Spanned;
 use rustc_target::abi::{FieldIdx, VariantIdx};
 
 use crate::{
@@ -273,7 +274,7 @@ where
     fn visit_call(
         &mut self,
         func: &Operand<'tcx>,
-        args: &[Operand<'tcx>],
+        args: &[Spanned<Operand<'tcx>>],
         destination: &Place<'tcx>,
         target: &Option<BasicBlock>,
         _unwind: &UnwindAction,
@@ -297,14 +298,18 @@ where
             }
         }
 
-        let are_args_tupled =
-            call::utils::are_args_tupled(self.call_adder.tcx(), &self.call_adder, func, args);
+        let are_args_tupled = call::utils::are_args_tupled(
+            self.call_adder.tcx(),
+            &self.call_adder,
+            func,
+            args.iter().map(|a| &a.node),
+        );
         Self::instrument_call(
             &mut self.call_adder,
             |call_adder| call_adder.reference_func(func),
             |call_adder| {
                 args.iter()
-                    .map(|arg| call_adder.reference_operand(arg))
+                    .map(|arg| call_adder.reference_operand(&arg.node))
                     .collect::<Vec<_>>()
             },
             are_args_tupled,
@@ -537,6 +542,9 @@ where
             }),
             Coroutine(..) => Box::new(|fields| {
                 self.call_adder.by_aggregate_coroutine(fields)
+            }),
+            CoroutineClosure(..) => Box::new(|fields| {
+                self.call_adder.by_aggregate_coroutine_closure(fields)
             }),
         };
 

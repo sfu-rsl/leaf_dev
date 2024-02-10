@@ -319,6 +319,12 @@ impl ProgramRuntimeInterface for BasicPri {
             h.coroutine_from(upvars.into_iter())
         })
     }
+    fn assign_aggregate_coroutine_closure(dest: PlaceRef, upvars: &[OperandRef]) {
+        assign_to(dest, |h| {
+            let upvars = Self::take_fields(upvars);
+            h.coroutine_closure_from(upvars.into_iter())
+        })
+    }
 
     fn assign_shallow_init_box(_dest: PlaceRef, _operand: OperandRef, _dst_type_id: Self::TypeId) {
         todo!("#351: Add support for ShallowInitBox in runtime")

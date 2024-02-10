@@ -9,7 +9,7 @@ use rustc_middle::{
     },
     ty::{Const, Region, Ty, Variance},
 };
-use rustc_span::Span;
+use rustc_span::{source_map::Spanned, Span};
 use rustc_target::abi::FieldIdx;
 use rustc_target::abi::VariantIdx;
 
@@ -162,21 +162,11 @@ macro_rules! make_terminator_kind_visitor {
                 Default::default()
             }
 
-            fn visit_drop_and_replace(
-                &mut self,
-                place: & $($mutability)? Place<'tcx>,
-                value: & $($mutability)? Operand<'tcx>,
-                target: & $($mutability)? BasicBlock,
-                unwind: & $($mutability)? UnwindAction,
-            ) -> T {
-                Default::default()
-            }
-
             #[allow(clippy::too_many_arguments)]
             fn visit_call(
                 &mut self,
                 func: & $($mutability)? Operand<'tcx>,
-                args: & $($mutability)? [Operand<'tcx>],
+                args: & $($mutability)? [Spanned<Operand<'tcx>>],
                 destination: & $($mutability)? Place<'tcx>,
                 target: & $($mutability)? Option<BasicBlock>,
                 unwind: & $($mutability)? UnwindAction,

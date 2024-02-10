@@ -47,7 +47,7 @@ where
 
     fn visit_switch_int(
         &mut self,
-        _discr: &mut rustc_middle::mir::Operand<'tcx>,
+        _discr: &mut Operand<'tcx>,
         targets: &mut rustc_middle::mir::SwitchTargets,
     ) {
         // Because of API limitations we have to take this weird approach.
@@ -66,7 +66,7 @@ where
 
     fn visit_drop(
         &mut self,
-        _place: &mut rustc_middle::mir::Place<'tcx>,
+        _place: &mut Place<'tcx>,
         target: &mut BasicBlock,
         unwind: &mut UnwindAction,
         _replace: &mut bool,
@@ -75,21 +75,10 @@ where
         self.update_maybe(unwind.basic_block());
     }
 
-    fn visit_drop_and_replace(
-        &mut self,
-        _place: &mut rustc_middle::mir::Place<'tcx>,
-        _value: &mut rustc_middle::mir::Operand<'tcx>,
-        target: &mut BasicBlock,
-        unwind: &mut UnwindAction,
-    ) {
-        self.update(target);
-        self.update_maybe(unwind.basic_block());
-    }
-
     fn visit_call(
         &mut self,
         _func: &mut Operand<'tcx>,
-        _args: &mut [Operand<'tcx>],
+        _args: &mut [rustc_span::source_map::Spanned<Operand<'tcx>>],
         _destination: &mut Place<'tcx>,
         target: &mut Option<BasicBlock>,
         unwind: &mut UnwindAction,
@@ -102,7 +91,7 @@ where
 
     fn visit_assert(
         &mut self,
-        _cond: &mut rustc_middle::mir::Operand<'tcx>,
+        _cond: &mut Operand<'tcx>,
         _expected: &mut bool,
         _msg: &mut rustc_middle::mir::AssertMessage<'tcx>,
         target: &mut BasicBlock,
@@ -114,9 +103,9 @@ where
 
     fn visit_yield(
         &mut self,
-        _value: &mut rustc_middle::mir::Operand<'tcx>,
+        _value: &mut Operand<'tcx>,
         resume: &mut BasicBlock,
-        _resume_arg: &mut rustc_middle::mir::Place<'tcx>,
+        _resume_arg: &mut Place<'tcx>,
         drop: &mut Option<BasicBlock>,
     ) {
         self.update(resume);

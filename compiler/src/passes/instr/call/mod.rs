@@ -110,6 +110,8 @@ pub(crate) trait Assigner<'tcx> {
 
     fn by_aggregate_coroutine(&mut self, upvars: &[OperandRef]);
 
+    fn by_aggregate_coroutine_closure(&mut self, upvars: &[OperandRef]);
+
     fn by_shallow_init_box(&mut self, operand: OperandRef, ty: &Ty<'tcx>);
 
     // Special case for SetDiscriminant StatementType since it is similar to a regular assignment
@@ -1398,6 +1400,14 @@ mod implementation {
             self.add_bb_for_aggregate_assign_call(sym::assign_aggregate_coroutine, upvars, vec![])
         }
 
+        fn by_aggregate_coroutine_closure(&mut self, upvars: &[OperandRef]) {
+            self.add_bb_for_aggregate_assign_call(
+                sym::assign_aggregate_coroutine_closure,
+                upvars,
+                vec![],
+            )
+        }
+
         fn by_shallow_init_box(&mut self, operand: OperandRef, ty: &Ty<'tcx>) {
             let id_local = {
                 let (block, id_local) = self.make_type_id_of_bb(*ty);
@@ -2557,6 +2567,7 @@ mod implementation {
 
         pub(super) mod terminator {
             use rustc_middle::mir::{Terminator, TerminatorKind, UnwindAction};
+            use rustc_span::source_map::Spanned;
 
             use super::*;
 
@@ -2574,7 +2585,13 @@ mod implementation {
                         /* NOTE: Check if it is supposed to be the same operand for each function definition,
                          * i.e. caching/lazy singleton. */
                         func: operand::func(tcx, func_def_id, generic_args),
-                        args,
+                        args: args
+                            .into_iter()
+                            .map(|a| Spanned {
+                                node: a,
+                                span: DUMMY_SP,
+                            })
+                            .collect(),
                         destination,
                         target: Some(target.unwrap_or(NEXT_BLOCK)),
                         unwind: UnwindAction::Continue,
@@ -2815,11 +2832,11 @@ mod implementation {
                 .is_some_and(|id| tcx.is_fn_trait(id))
         }
 
-        pub fn are_args_tupled<'tcx>(
+        pub fn are_args_tupled<'tcx: 'a, 'a>(
             tcx: TyCtxt<'tcx>,
             local_manager: &impl HasLocalDecls<'tcx>,
             func: &Operand<'tcx>,
-            args: &[Operand<'tcx>],
+            args: impl ExactSizeIterator<Item = &'a Operand<'tcx>>,
         ) -> bool {
             if !is_fn_trait_method_call(tcx, func.ty(local_manager, tcx)) {
                 return false;
