@@ -143,18 +143,12 @@ impl<VS, SP: SymbolicProjector> RawPointerVariableState<VS, SP> {
         &'a self,
         addr: RawPointer,
     ) -> Option<(&'a RawPointer, &'a MemoryObject)> {
-        let mut cursor = self.memory.before_or_at(&addr);
-        while let Some(start) = cursor.key().copied() {
-            // FIXME: (*) no type information is available so we just check for the exact start.
+        let cursor = self.memory.before_or_at(&addr);
+        if let entry @ Some((start, ..)) = cursor.peek_prev() {
             let size = 1;
-            let region = start..(start + size);
-            if addr < region.start {
-                cursor.move_next();
-                continue;
-            } else if addr >= region.end {
-                return None;
-            } else {
-                return cursor.key_value();
+            let region = *start..(start + size);
+            if region.contains(&addr) {
+                return entry;
             }
         }
 
@@ -200,8 +194,10 @@ where
                 /* At this point, we are looking for inner values, effectively
                  * located at the same address or after it. */
                 |start| self.memory.after_or_at(start),
-                |c| c.key_value(),
-                |c| c.move_next(),
+                |c| c.peek_next(),
+                |c| {
+                    c.next();
+                },
             ) {
                 return porter.to_value_ref();
             }
@@ -238,10 +234,10 @@ where
                 addr,
                 size,
                 |start| self.memory.after_or_at_mut(start),
-                |c| c.key_value(),
+                |c| c.as_cursor().peek_next(),
                 |c| {
                     // FIXME: (*)
-                    c.remove_current();
+                    c.remove_next();
                 },
             ) {
                 return Some(porter.to_value_ref());
@@ -350,21 +346,16 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
         addr: RawPointer,
         size: TypeSize,
         after_or_at: impl FnOnce(&RawPointer) -> C,
-        key_value: impl Fn(&C) -> Option<(&RawPointer, &MemoryObject)>,
+        entry: impl Fn(&C) -> Option<(&RawPointer, &MemoryObject)>,
         move_next: impl Fn(&mut C),
     ) -> Option<PorterValue> {
         let range = addr..addr + size;
         log::debug!("Checking to create a porter for range: {:?}", range);
 
+        // TODO: What if the address is at the middle of a symbolic value?
         let mut cursor = after_or_at(&range.start);
         let mut sym_values = Vec::new();
-        while let Some((sym_addr, (sym_value, sym_type_id))) = key_value(&cursor) {
-            if *sym_addr < range.start {
-                // TODO: Check for symbolic value size.
-                move_next(&mut cursor);
-                continue;
-            }
-
+        while let Some((sym_addr, (sym_value, sym_type_id))) = entry(&cursor) {
             if !range.contains(sym_addr) {
                 break;
             }
