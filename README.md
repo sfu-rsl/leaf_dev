@@ -1,9 +1,8 @@
 # leaf
 
-Concolic execution for Rust using MIR (mid-level IR). The project is in very early stages.
+Concolic execution for Rust using MIR (mid-level IR). The project is under development toward the first version.
 
-As a brief overview, `leafc` is used instead of `rustc` to compile a Rust program. It compiles the program normally, but
-also modifies the code and injects various function calls to the `runtime` via the pri (program runtime interface).
+As a brief overview, `leafc` is a wrapper around the Rust compiler and is usable anywhere in place of `rustc`. It compiles and instruments the program at the MIR level with function calls to the runtime library (shim)
 
 ## Table of Contents
 - [How to run?](#how-to-run)
@@ -17,15 +16,13 @@ also modifies the code and injects various function calls to the `runtime` via t
   - [`rushfmt` Git Hook](#rushfmt-git-hook)
   - [Project Wiki](#project-wiki)
 
-## How to run?
+## Development Setup
 
-### Setup
+You can set up and run the `leaf` project on your native environment or in a VS Code Dev Container.
 
-You can choose to setup and run the `leaf` project on your local machine or VS Code Dev Container.
+### Native Environment
 
-#### Setup for local machines
-
-Follow one the below guides based on your platform.
+Follow one of the guides below based on your platform.
 
 <details>
 <summary><b>Linux</b></summary>
@@ -83,7 +80,7 @@ $ cargo build
 
 </details>
 
-#### Setup for VS Code Dev Container
+### VS Code Dev Container
 
 Regardless of which platform you used, the setup for VS Code Dev Container should only be as follows.
 
@@ -106,11 +103,16 @@ $ cargo build
 
 </details>
 
-### Run a simple example
+## Compiling and Running
+`leaf`'s compiler (`leafc`) is a wrapper around `rustc` and should be usable in place of it. This includes the compilation of single Rust source code to a binary executable, or `cargo` crates.
+By default, an executable named `leafc` will be generated under `target/<profile>`. Note that at the moment this executable is not standalone and is dependent on dependencies in the folders nearby and an implementation of the runtime library named `leafrt[-flavor].so`. Passing the arguments you regularly pass to `rustc` to `leafc` should give you an instrumented version of the output.
 
-1. All runnable examples for the `leaf` compiler can be found under `leaf/samples/` folder.
+An alternative approach is to run the compiler using `cargo run`. In the root directory of the project, or in the compiler's project directory execute `cargo run -- <your arguments>` to run `leafc`.
 
-2. Choose an example you want to run.
+### An Example
+1. A set of sample programs can be found under `leaf/samples/` folder.
+
+2. Choose one you want to run (e.g., `if_basic`).
 ```sh
 $ cd leaf/samples/branching/if_basic
 $ cargo run -- main.rs                  # or `cargo run -- -O main.rs` to compile `main.rs` in release mode
@@ -152,7 +154,16 @@ $ LEAF_LOG=info ./main                  # you can also try LEAF_LOG=debug to see
 
 </details>
 
+### Cargo
+In most cases, we have Rust projects rather than a single file and we build them using `cargo`. To make `cargo` use `leafc` instead of `rustc` you can set `RUSTC` environment variable ([more information]([url](https://doc.rust-lang.org/cargo/reference/environment-variables.html))). 
+A few notes:
+- It might get complicated if you use `cargo run` for `leafc` as the target project and leaf may get overridden by each other. So a reasonable approach is to provide a path to `leafc` for `RUSTC`.
+- Currently, `leafc` is built with the latest nightly version of Rust and might require the latest nightly version of the standard library as well. So make sure that when compiling your target project `cargo` is using a compatible nightly toolchain.
+- You might get errors regarding missing shared libraries. In this case, make sure that a compatible nightly version of the standard library is in the search path of the environment you're running the commands in (`LD_LIBRARY_PATH`).
+- The compiler links the runtime shim library statically to the target program, so make sure that the `rlib` file is discoverable by it. On failures, please enable bugs and check which paths are searched by it.
+
 ### Emit MIR
+It can be handy to check the instrumented MIR of a program. By passing `--emit=mir` you can get such output.
 
 1. Run the below commands.
 ```sh
@@ -163,6 +174,9 @@ $ cargo run -- --emit=mir main.rs
 2. Observe the output in `main.mir` file.
 
 ## Miscellaneous
+
+### Logging
+We use [`env_logger`](https://docs.rs/env_logger/latest/env_logger/) with environment variables `LEAFC_LOG` and `LEAF_LOG` respectively for the compiler and the runtime library. Setting these variables to `info` will make the loggings emitted at the standard level. Some logs are tagged particularly to be easily configurable independently. You can refer to the example `tasks.json` under `.vscode` directory to find them.
 
 ### Example reasoning
 - Let's look at the example located at `leaf/samples/function/sym_arg/main.rs`.
@@ -189,15 +203,15 @@ fn bar() {}
 - 10 is the only symbolic value in the program, as converted with `mark_symbolic()`. The rest are concrete.
 - The solution found above of `0 = Concrete(Const(Int { bit_rep: 4, ... } ))` reflects that the 0th symbolic variable takes the value `4`, which satisfies the negation of the condition `!(x < 5)` (line 9), since `10 < 5 => false` is evaluated by the program. `x = 4` satisfies `x < 5` and would take the program down a new execution path.
 
-### `rushfmt` Git Hook
+### `rustfmt` Git Hook
 
-To any project developers, please make sure to copy all hooks from `.github/hooks/` to `.git/hooks/` via the following command, assuming you're in leaf's root directory:
+To any project developers, please make sure to copy all hooks from `.github/hooks/` to `.git/hooks/` via the following command, assuming you're in `leaf`'s root directory:
 
 ```sh
 cp .github/hooks/pre-commit .git/hooks/pre-commit
 ```
 
-With `rushfmt` Git Hook, if you try to commit code that is not well-formatted, it will fail.
+With `rustfmt` Git Hook, if you try to commit code that is not well-formatted, the commit command will fail with the formatting message. Make sure you stage those changes and commit again.
 
 Also note that `.git/` is not cloned with the rest of the repo.
 
