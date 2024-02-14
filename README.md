@@ -110,49 +110,49 @@ By default, an executable named `leafc` will be generated under `target/<profile
 An alternative approach is to run the compiler using `cargo run`. In the root directory of the project, or in the compiler's project directory execute `cargo run -- <your arguments>` to run `leafc`.
 
 ### An Example
-1. A set of sample programs can be found under `leaf/samples/` folder.
+1. Choose a single-file program you want to run. A set of sample programs can be found under the `samples` directory in the project's root. Let's pick `if_basic` for this example.
+1. Compile it using `cargo run` (or `target/<profile>/leafc`)
+    ```sh
+    $ cd samples/branching/if_basic
+    $ cargo run -- main.rs                  # or `cargo run -- -O main.rs` to compile `main.rs` in release mode
+    ```
+1. Enable logging by setting `LEAF_LOG` environment variable and then run the compiled program.
+    ```sh
+    $ LEAF_LOG=info ./main                  # you can also try LEAF_LOG=debug to see more output messages
+    ```
+1. Observe the output from the backend, which should be similar to the below one.
+    <details>
+    <summary><b>Sample output</b></summary>
 
-2. Choose one you want to run (e.g., `if_basic`).
-```sh
-$ cd leaf/samples/branching/if_basic
-$ cargo run -- main.rs                  # or `cargo run -- -O main.rs` to compile `main.rs` in release mode
-$ LEAF_LOG=info ./main                  # you can also try LEAF_LOG=debug to see more output messages
-```
+    ```log
+    [2023-09-04T23:30:13Z INFO  runtime::trace] Took step: 0 with constraints [(&(true, !=(<Var1: i32>, 5i32)))]
+    [2023-09-04T23:30:13Z INFO  runtime::outgen] Found a solution:
+        {
+            "1": 5i32,
+        }
+        
+    [2023-09-04T23:30:13Z INFO  runtime::trace] Took step: 0 with constraints [(!(==(<Var1: i32>, 5i32)))]
+    [2023-09-04T23:30:13Z INFO  runtime::trace] Unsatisfiable or unknown result.
+    [2023-09-04T23:30:13Z INFO  runtime::outgen] Found a solution:
+        {
+            "1": 5i32,
+        }
+        
+    [2023-09-04T23:30:13Z INFO  runtime::trace] Took step: 0 with constraints [(==(<Var1: i32>, 10i32))]
+    [2023-09-04T23:30:13Z INFO  runtime::outgen] Found a solution:
+        {
+            "1": 0i32,
+        }
+        
+    [2023-09-04T23:30:13Z INFO  runtime::trace] Took step: 0 with constraints [(&(true, !=(%(<Var1: i32>, 2i32), 1i32)))]
+    [2023-09-04T23:30:13Z INFO  runtime::trace] Unsatisfiable or unknown result.
+    [2023-09-04T23:30:13Z INFO  runtime::outgen] Found a solution:
+        {
+            "1": 1i32,
+        }
+    ``` 
 
-3. Observe the output from `leaf`, which should be similar to the below one.
-
-<details>
-<summary><b>Sample output</b></summary>
-
-```
-[2023-09-04T23:30:13Z INFO  runtime::trace] Took step: 0 with constraints [(&(true, !=(<Var1: i32>, 5i32)))]
-[2023-09-04T23:30:13Z INFO  runtime::outgen] Found a solution:
-    {
-        "1": 5i32,
-    }
-    
-[2023-09-04T23:30:13Z INFO  runtime::trace] Took step: 0 with constraints [(!(==(<Var1: i32>, 5i32)))]
-[2023-09-04T23:30:13Z INFO  runtime::trace] Unsatisfiable or unknown result.
-[2023-09-04T23:30:13Z INFO  runtime::outgen] Found a solution:
-    {
-        "1": 5i32,
-    }
-    
-[2023-09-04T23:30:13Z INFO  runtime::trace] Took step: 0 with constraints [(==(<Var1: i32>, 10i32))]
-[2023-09-04T23:30:13Z INFO  runtime::outgen] Found a solution:
-    {
-        "1": 0i32,
-    }
-    
-[2023-09-04T23:30:13Z INFO  runtime::trace] Took step: 0 with constraints [(&(true, !=(%(<Var1: i32>, 2i32), 1i32)))]
-[2023-09-04T23:30:13Z INFO  runtime::trace] Unsatisfiable or unknown result.
-[2023-09-04T23:30:13Z INFO  runtime::outgen] Found a solution:
-    {
-        "1": 1i32,
-    }
-``` 
-
-</details>
+    </details>
 
 ### Cargo
 In most cases, we have Rust projects rather than a single file and we build them using `cargo`. To make `cargo` use `leafc` instead of `rustc` you can set `RUSTC` environment variable ([more information]([url](https://doc.rust-lang.org/cargo/reference/environment-variables.html))). 
@@ -162,6 +162,33 @@ A few notes:
 - You might get errors regarding missing shared libraries. In this case, make sure that a compatible nightly version of the standard library is in the search path of the environment you're running the commands in (`LD_LIBRARY_PATH`).
 - The compiler links the runtime shim library statically to the target program, so make sure that the `rlib` file is discoverable by it. On failures, please enable bugs and check which paths are searched by it.
 
+#### Example
+1. Choose a project you want to run. A set of sample projects can be found under the `samples/crates` directory in the project's root. Let's pick `sym_basic_bin` for this example.
+1. Set `RUSTC` environment variable to override the compiler `cargo` uses during the build.
+    ```sh
+    $ export RUSTC=<path_to_leaf>/target/<profile>/leafc
+    ```
+1. Build the project with `cargo build`
+    ```sh
+    $ cd samples/crates/sym_basic_bin
+    $ cargo build
+    ```
+1. Run it using `cargo run`.
+   ```sh
+   $ LEAF_LOG=info cargo run
+   ```
+1. Observe the output from the backend, which should be similar to the below one.
+    <details>
+    <summary><b>Sample output</b></summary>
+
+    ```log
+    [2024-02-14T23:00:00Z INFO  leafrt::trace] Took step: 0 with constraints [(<(<Var1: i32>, 5i32))]
+    [2024-02-14T23:00:00Z INFO  leafrt::outgen] Found a solution:
+        {
+            "1": 8i32,
+        }
+    ``` 
+    </details>
 ### Emit MIR
 It can be handy to check the instrumented MIR of a program. By passing `--emit=mir` you can get such output.
 
