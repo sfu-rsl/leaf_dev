@@ -56,30 +56,27 @@ impl CompilationPass for TypeExporter {
             });
 
         // TODO: #379
-        let output_filenames = tcx.output_filenames(());
-        let file_path = if output_filenames.out_directory.as_os_str().is_empty()
-            || env::var("CARGO_PRIMARY_PACKAGE").is_ok()
-        {
-            aggregate_type_info(type_map);
+        let out_dir = &tcx.output_filenames(()).out_directory;
+        let file_path =
+            if out_dir.as_os_str().is_empty() || env::var("CARGO_PRIMARY_PACKAGE").is_ok() {
+                aggregate_type_info(type_map, out_dir.display().to_string());
 
-            output_filenames
-                .out_directory
-                .parent()
-                .unwrap_or(Path::new(""))
-                .join("types.json")
-                .display()
-                .to_string()
-        } else {
-            output_filenames
-                .out_directory
-                .join(format!(
-                    "types-{}{}.json",
-                    env::var("CARGO_PKG_NAME").unwrap().replace("-", "_"), // to follow the naming convention of the metadata output file
-                    tcx.sess.opts.cg.extra_filename
-                ))
-                .display()
-                .to_string()
-        };
+                out_dir
+                    .parent()
+                    .unwrap_or(Path::new(""))
+                    .join("types.json")
+                    .display()
+                    .to_string()
+            } else {
+                out_dir
+                    .join(format!(
+                        "types-{}{}.json",
+                        env::var("CARGO_PKG_NAME").unwrap().replace("-", "_"), // to follow the naming convention of the metadata output file
+                        tcx.sess.opts.cg.extra_filename
+                    ))
+                    .display()
+                    .to_string()
+            };
         TypeExport::write(type_map.values(), file_path);
     }
 }
@@ -88,11 +85,13 @@ fn type_id<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>) -> u128 {
     tcx.type_id_hash(ty).as_u128()
 }
 
-fn aggregate_type_info(type_map: &mut HashMap<u128, TypeInfo>) {
-    let dep_types_file_pattern = format!(
-        "{}/**/types-*.json",
-        env::var("CARGO_MANIFEST_DIR").unwrap()
-    );
+fn aggregate_type_info(type_map: &mut HashMap<u128, TypeInfo>, path_prefix: String) {
+    let path_prefix = if path_prefix.is_empty() {
+        ".".to_string()
+    } else {
+        path_prefix
+    };
+    let dep_types_file_pattern = format!("{}/**/types-*.json", path_prefix);
     for entry in glob(dep_types_file_pattern.as_str())
         .expect(format!("Failed to read glob pattern: {}", dep_types_file_pattern).as_str())
     {

@@ -117,8 +117,12 @@ mod driver_args {
     const ENV_TOOLCHAIN: &str = "RUSTUP_TOOLCHAIN";
 
     const FILE_RUNTIME_SHIM_LIB: &str = "libleafrtsh.rlib";
-    const FILE_RUNTIME_DYLIB_DEFAULT_FALLBACK: &str = "libleafrt_basic.so";
+    const FILE_RUNTIME_DYLIB_DEFAULT: &str = "libleafrt_basic.so";
+    const FILE_RUNTIME_DYLIB_NOOP: &str = "libleafrt_noop.so";
     const FILE_RUNTIME_DYLIB: &str = "libleafrt.so";
+
+    const DIR_RUNTIME_DYLIB_DEFAULT: &str = "runtime_basic";
+    const DIR_RUNTIME_DYLIB_NOOP: &str = "runtime_noop";
 
     const LIB_RUNTIME: &str = "leafrt";
 
@@ -191,7 +195,10 @@ mod driver_args {
         );
 
         // FIXME: Add better support for setting the runtime flavor.
-        ensure_runtime_dylib_exists();
+        // NOTE: If the compiled target is either a build script or a proc-macro crate type, we should use the noop runtime library.
+        let is_runtime_noop = args.contains(&"build_script_build".to_string())
+            || args.contains(&"proc-macro".to_string());
+        ensure_runtime_dylib_exists(is_runtime_noop);
         // Add the runtime dynamic library as a dynamic dependency.
         /* NOTE: As long as the shim is getting compiled along with the program,
          * adding it explicitly should not be necessary (is expected to be
@@ -204,13 +211,16 @@ mod driver_args {
             OPT_CODEGEN,
             format!(
                 "{CODEGEN_LINK_ARG}=-Wl,-rpath={}",
-                find_runtime_dylib_dir_path()
+                find_runtime_dylib_dir(is_runtime_noop).display()
             ),
         );
         // Also include it in the search path for Rust.
         args.add_pair(
             OPT_SEARCH_PATH,
-            format!("{SEARCH_KIND_NATIVE}={}", find_runtime_dylib_dir_path()),
+            format!(
+                "{SEARCH_KIND_NATIVE}={}",
+                find_runtime_dylib_dir(is_runtime_noop).display()
+            ),
         );
 
         if let Some(input_path) = input_path {
@@ -297,21 +307,26 @@ mod driver_args {
         )
     }
 
-    fn ensure_runtime_dylib_exists() {
-        let runtime_dylib_exists =
-            || try_find_dependency_path(FILE_RUNTIME_DYLIB, iter::empty()).is_some();
+    fn ensure_runtime_dylib_exists(is_runtime_dylib_noop: bool) {
+        let runtime_dylib_dir = find_runtime_dylib_dir(is_runtime_dylib_noop);
+        let runtime_dylib_exists = || {
+            try_find_dependency_path(
+                FILE_RUNTIME_DYLIB,
+                vec![runtime_dylib_dir.as_path()].into_iter(),
+            )
+            .is_some()
+        };
 
         if runtime_dylib_exists() {
             return;
         }
 
-        // If the runtime dylib is not found, create a link to the fallback one next to it.
-        let fallback_path =
-            find_dependency_path(FILE_RUNTIME_DYLIB_DEFAULT_FALLBACK, iter::empty());
-        let sym_link_path = Path::new(&fallback_path)
-            .parent()
-            .unwrap()
-            .join(FILE_RUNTIME_DYLIB);
+        let physical_dylib_path = if is_runtime_dylib_noop {
+            find_dependency_path(FILE_RUNTIME_DYLIB_NOOP, iter::empty())
+        } else {
+            find_dependency_path(FILE_RUNTIME_DYLIB_DEFAULT, iter::empty())
+        };
+        let sym_link_path = runtime_dylib_dir.join(FILE_RUNTIME_DYLIB);
 
         // NOTE: Parallel execution of the compiler may cause race conditions.
         // FIXME: Come up with a better solution.
@@ -321,7 +336,7 @@ mod driver_args {
                 Ok(())
             } else {
                 #[cfg(unix)]
-                let result = std::os::unix::fs::symlink(&fallback_path, &sym_link_path);
+                let result = std::os::unix::fs::symlink(&physical_dylib_path, &sym_link_path);
                 #[cfg(windows)]
                 let result = std::os::windows::fs::symlink_file(&fallback_path, &sym_link_path);
                 result
@@ -330,16 +345,17 @@ mod driver_args {
         .expect("Could not create a symlink to the fallback runtime dylib.");
     }
 
-    fn find_runtime_dylib_dir_path() -> String {
-        /* NOTE: Alternative strategy:
-         * We can put the library in the shim's lib deps folder to keep deps
-         * less scattered around. */
-        let file_path = find_dependency_path(FILE_RUNTIME_DYLIB, iter::empty());
-        Path::new(&file_path)
-            .parent()
-            .unwrap()
-            .to_string_lossy()
-            .to_string()
+    fn find_runtime_dylib_dir(is_runtime_dylib_noop: bool) -> PathBuf {
+        let folder = if is_runtime_dylib_noop {
+            DIR_RUNTIME_DYLIB_NOOP
+        } else {
+            DIR_RUNTIME_DYLIB_DEFAULT
+        };
+        let dir = env::current_exe().unwrap().parent().unwrap().join(folder);
+        if !dir.exists() {
+            std::fs::create_dir(&dir).unwrap();
+        }
+        dir
     }
 
     fn find_dependency_path<'a>(
