@@ -61,22 +61,16 @@ impl CompilationPass for TypeExporter {
             if out_dir.as_os_str().is_empty() || env::var("CARGO_PRIMARY_PACKAGE").is_ok() {
                 aggregate_type_info(type_map, out_dir.display().to_string());
 
-                out_dir
-                    .parent()
-                    .unwrap_or(Path::new(""))
-                    .join("types.json")
-                    .display()
-                    .to_string()
+                out_dir.parent().unwrap_or(Path::new("")).join("types.json")
             } else {
-                out_dir
-                    .join(format!(
-                        "types-{}{}.json",
-                        env::var("CARGO_PKG_NAME").unwrap().replace("-", "_"), // to follow the naming convention of the metadata output file
-                        tcx.sess.opts.cg.extra_filename
-                    ))
-                    .display()
-                    .to_string()
-            };
+                out_dir.join(format!(
+                    "types-{}{}.json",
+                    env::var("CARGO_PKG_NAME").unwrap().replace("-", "_"), // to follow the naming convention of the metadata output file
+                    tcx.sess.opts.cg.extra_filename
+                ))
+            }
+            .display()
+            .to_string();
         TypeExport::write(type_map.values(), file_path);
     }
 }
