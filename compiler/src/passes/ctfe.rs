@@ -26,6 +26,7 @@ use rustc_middle::ty::{Ty, TyCtxt};
 use rustc_span::def_id::{DefId, LocalDefId, LocalModDefId};
 
 use std::collections::HashSet;
+use std::ops::DerefMut;
 
 use bimap::BiHashMap;
 use thin_vec::{thin_vec, ThinVec};
@@ -139,15 +140,20 @@ impl CompilationPass for NctfeFunctionAdder {
         }
 
         // This NCTFE function is already associated with a CTFE.
-        let ctfe_id = if let Some(id) = get_nctfe_map(storage).get_by_right(&def_id) {
+        let ctfe_id = if let Some(id) = {
+            let associated = get_nctfe_map(storage).get_by_right(&def_id).copied();
+            associated
+        } {
             log::debug!("NCTFE is already associated with {:?}", id);
-            *id
+            id
         }
         /* This NCTFE function is getting processed before being associated with a CTFE.
          * As this is our only chance to fill its body, we find a CTFE that is not
          * associated with an NCTFE yet. */
-        else if let Some(id) = get_free_ctfe_ids(storage).iter().next() {
-            let id = *id;
+        else if let Some(id) = {
+            let free = get_free_ctfe_ids(storage).iter().next().copied();
+            free
+        } {
             associate(id, def_id, storage);
             id
         } else {
@@ -175,17 +181,16 @@ impl CompilationPass for NctfeFunctionAdder {
 /// Returns the id of the associated NCTFE function for the given CTFE.
 /// Picks a free one if this CTFE is not associated with any before.
 pub(crate) fn get_nctfe_func(id: CtfeId, storage: &mut dyn Storage) -> DefId {
-    if let Some(def_id) = get_nctfe_map(storage).get_by_left(&id) {
-        *def_id
-    } else {
-        let def_id = *get_free_nctfe_func_ids(storage)
-            .iter()
-            .next()
-            .expect("Not enough Non-CTFE functions");
-        associate(id, def_id, storage);
-        def_id
+    if let Some(def_id) = get_nctfe_map(storage).get_by_left(&id).cloned() {
+        return def_id.to_def_id();
     }
-    .to_def_id()
+
+    let def_id = *get_free_nctfe_func_ids(storage)
+        .iter()
+        .next()
+        .expect("Not enough Non-CTFE functions");
+    associate(id, def_id, storage);
+    def_id.to_def_id()
 }
 
 /// Removes the ids from free lists and adds them to the association map.
@@ -196,15 +201,21 @@ fn associate(ctfe_id: CtfeId, nctfe_id: LocalDefId, storage: &mut dyn Storage) {
     get_nctfe_map(storage).insert(ctfe_id, nctfe_id);
 }
 
-fn get_nctfe_map(storage: &mut dyn Storage) -> &mut BiHashMap<CtfeId, LocalDefId> {
+fn get_nctfe_map<'a>(
+    storage: &'a mut dyn Storage,
+) -> impl DerefMut<Target = BiHashMap<CtfeId, LocalDefId>> + 'a {
     storage.get_or_default::<BiHashMap<CtfeId, LocalDefId>>(KEY_NCTFE_MAP.to_owned())
 }
 
-fn get_free_ctfe_ids(storage: &mut dyn Storage) -> &mut HashSet<CtfeId> {
+fn get_free_ctfe_ids<'a>(
+    storage: &'a mut dyn Storage,
+) -> impl DerefMut<Target = HashSet<CtfeId>> + 'a {
     storage.get_or_default::<HashSet<CtfeId>>(KEY_FREE_CTFE_IDS.to_owned())
 }
 
-fn get_free_nctfe_func_ids(storage: &mut dyn Storage) -> &mut HashSet<LocalDefId> {
+fn get_free_nctfe_func_ids<'a>(
+    storage: &'a mut dyn Storage,
+) -> impl DerefMut<Target = HashSet<LocalDefId>> + 'a {
     storage.get_or_default::<HashSet<LocalDefId>>(KEY_FREE_NCTFE_FUNC_IDS.to_owned())
 }
 

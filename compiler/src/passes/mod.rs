@@ -7,7 +7,6 @@ pub(crate) mod tyexp;
 
 use std::any::Any;
 use std::collections::HashMap;
-use std::ops::DerefMut;
 use std::sync::{Arc, Mutex};
 
 use rustc_ast as ast;
@@ -101,17 +100,6 @@ pub(crate) struct NoOpPass;
 impl CompilationPass for NoOpPass {}
 
 pub(crate) trait CompilationPassExt {
-    fn chain<T>(self, next: T) -> Chain<Self, T>
-    where
-        Self: Sized,
-        T: CompilationPass,
-    {
-        Chain {
-            first: self,
-            second: next,
-        }
-    }
-
     fn to_callbacks(self) -> Callbacks;
 }
 impl<T: CompilationPass + Send + Sync + 'static> CompilationPassExt for T {
@@ -120,45 +108,34 @@ impl<T: CompilationPass + Send + Sync + 'static> CompilationPassExt for T {
     }
 }
 
+use implementation::ValueBorrow;
 pub(crate) trait Storage: std::fmt::Debug {
     fn get_raw_or_insert_with<'a>(
         &'a mut self,
         key: String,
         default: Box<dyn FnOnce() -> Box<dyn Any> + 'a>,
-    ) -> &mut Box<dyn Any>;
-}
-impl Storage for HashMap<String, Box<dyn Any>> {
-    fn get_raw_or_insert_with<'a>(
-        &'a mut self,
-        key: String,
-        default: Box<dyn FnOnce() -> Box<dyn Any> + 'a>,
-    ) -> &mut Box<dyn Any> {
-        self.entry(key).or_insert_with(default)
-    }
+    ) -> ValueBorrow<'a>;
+
+    fn get_raw_mut<'a>(&'a mut self, key: &String) -> Option<ValueBorrow<'a>>;
 }
 
 pub(crate) trait StorageExt {
+    type MutAccessor<'a, T>
+    where
+        Self: 'a,
+        T: 'a;
+
     fn get_or_insert_with<'a, V: Any>(
         &'a mut self,
         key: String,
         default: impl FnOnce() -> V + 'a,
-    ) -> &mut V;
+    ) -> Self::MutAccessor<'a, V>;
 
-    fn get_or_default<V: Default + Any>(&mut self, key: String) -> &mut V {
+    fn get_or_default<'a, V: Default + Any>(&'a mut self, key: String) -> Self::MutAccessor<'a, V> {
         self.get_or_insert_with(key, V::default)
     }
-}
-impl<T: Storage + ?Sized> StorageExt for T {
-    fn get_or_insert_with<'a, V: Any>(
-        &'a mut self,
-        key: String,
-        default: impl FnOnce() -> V + 'a,
-    ) -> &mut V {
-        self.get_raw_or_insert_with(key, Box::new(|| Box::new(default())))
-            .deref_mut()
-            .downcast_mut::<V>()
-            .unwrap()
-    }
+
+    fn get_mut<'a, V: Any>(&'a mut self, key: &String) -> Option<Self::MutAccessor<'a, V>>;
 }
 
 mod implementation {
@@ -169,6 +146,9 @@ mod implementation {
     use rustc_span::def_id::LocalDefId;
 
     use std::cell::Cell;
+    type RRef<T> = std::rc::Rc<std::cell::RefCell<T>>;
+
+    pub(crate) use storage::ValueBorrow;
 
     /* NOTE: How does `queries` work?
      * Here, the queries object is a structure that performs compiler-related
@@ -298,10 +278,8 @@ mod implementation {
         ) -> Compilation {
             queries.global_ctxt().unwrap().enter(global::set_ctxt_id);
             queries.global_ctxt().unwrap().enter(|tcx| {
-                global::with_storage(tcx, |storage| {
-                    let mut pass = self.0.lock().unwrap();
-                    pass.visit_tcx_after_analysis(tcx, storage)
-                })
+                let mut pass = self.0.lock().unwrap();
+                pass.visit_tcx_after_analysis(tcx, &mut global::get_storage())
             })
         }
     }
@@ -314,11 +292,10 @@ mod implementation {
             /* NOTE: Currently, it seems that there is no way to deallocate
              * something from arena. So, we have to clone the body. */
             let mut body = ORIGINAL_OPTIMIZED_MIR.get()(tcx, id).clone();
-            global::with_storage(tcx, |storage| {
-                T::visit_mir_body_before(tcx, &body, storage);
-                T::transform_mir_body(tcx, &mut body, storage);
-                T::visit_mir_body_after(tcx, &body, storage);
-            });
+            let mut storage = global::get_storage();
+            T::visit_mir_body_before(tcx, &body, &mut storage);
+            T::transform_mir_body(tcx, &mut body, &mut storage);
+            T::visit_mir_body_after(tcx, &body, &mut storage);
             tcx.arena.alloc(body)
         }
     }
@@ -473,17 +450,15 @@ mod implementation {
                 metadata: EncodedMetadata,
                 need_metadata_module: bool,
             ) -> Box<dyn Any> {
-                global::with_storage(tcx, |storage| {
-                    let mut pass = self.pass.lock().unwrap();
-                    pass.visit_tcx_at_codegen_before(tcx, storage)
-                });
+                let mut pass = self.pass.lock().unwrap();
+                pass.visit_tcx_at_codegen_before(tcx, &mut global::get_storage());
                 let result = self
                     .backend
                     .codegen_crate(tcx, metadata, need_metadata_module);
-                global::with_storage(tcx, |storage| {
-                    let mut pass = self.pass.lock().unwrap();
-                    pass.visit_tcx_at_codegen_after(tcx, storage)
-                });
+
+                let mut pass = self.pass.lock().unwrap();
+                pass.visit_tcx_at_codegen_after(tcx, &mut global::get_storage());
+
                 result
             }
         }
@@ -503,10 +478,153 @@ mod implementation {
         }
     }
 
-    mod global {
+    mod storage {
+        use std::ops::{Deref, DerefMut};
+
         use super::*;
 
-        use std::cell::{Cell, RefCell};
+        /* NOTE: How is the global storage implemented?
+         * The global Storage has the following properties:
+         * - It is a thread-local storage.
+         * - May be referenced mutably multiple times in a single trace.
+         *   e.g. codegen -> optimized_mir
+         *   Therefore, we use interior mutability and the storage is borrowed for short time slots.
+         * - A key is not expected to be accessed multiple times in a single trace.
+         *   Also, in the current code, each key is local to a single module.
+         *   Therefore, on each access it temporarily removes the value from the storage.
+         *   An alternative approach would be using `Rc` and `RefCell` to access
+         *   items without removing them from the storage. However, unnecessary
+         *   complexity is avoided for now. Particularly, the mapping to the 
+         *   downcast type is not easy to implement with `RefCell`.
+         */
+
+        pub(super) type StorageValueImpl = Box<dyn Any>;
+        pub(super) type StorageImpl = HashMap<String, StorageValueImpl>;
+
+        pub(super) struct GlobalStorage(pub RRef<StorageImpl>);
+
+        impl Storage for GlobalStorage {
+            fn get_raw_or_insert_with<'a>(
+                &'a mut self,
+                key: String,
+                default: Box<dyn FnOnce() -> Box<dyn Any> + 'a>,
+            ) -> ValueBorrow<'a> {
+                /* Although the signature requires mutably borrowing the storage,
+                 * for the global storage, we use interior mutability. */
+                let value = self
+                    .0
+                    .borrow_mut()
+                    .remove(&key)
+                    .unwrap_or_else(|| default());
+
+                ValueBorrow::new(self, key, value)
+            }
+
+            fn get_raw_mut<'a>(&'a mut self, key: &String) -> Option<ValueBorrow<'a>> {
+                log::debug!("Getting mutable reference with key: {}", key);
+                let value = self.0.borrow_mut().remove(key)?;
+                Some(ValueBorrow::new(self, key.clone(), value))
+            }
+        }
+
+        impl core::fmt::Debug for GlobalStorage {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                self.0.borrow().fmt(f)
+            }
+        }
+
+        pub(crate) struct ValueBorrow<'a> {
+            storage: &'a mut GlobalStorage,
+            key: Option<String>,
+            value: Option<StorageValueImpl>,
+        }
+
+        impl<'a> ValueBorrow<'a> {
+            fn new(storage: &'a mut GlobalStorage, key: String, value: StorageValueImpl) -> Self {
+                ValueBorrow {
+                    storage,
+                    key: Some(key),
+                    value: Some(value),
+                }
+            }
+        }
+
+        impl Drop for ValueBorrow<'_> {
+            fn drop(&mut self) {
+                log::debug!("Dropping DictMutRef2");
+                self.storage
+                    .0
+                    .borrow_mut()
+                    .insert(self.key.take().unwrap(), self.value.take().unwrap());
+            }
+        }
+
+        impl Deref for ValueBorrow<'_> {
+            type Target = StorageValueImpl;
+
+            fn deref(&self) -> &Self::Target {
+                self.value.as_ref().unwrap()
+            }
+        }
+
+        impl DerefMut for ValueBorrow<'_> {
+            fn deref_mut(&mut self) -> &mut Self::Target {
+                self.value.as_mut().unwrap()
+            }
+        }
+
+        impl<S: Storage + ?Sized> StorageExt for S {
+            type MutAccessor<'a, T> = DowncastValueBorrow<'a, T> where Self: 'a, T: 'a;
+
+            fn get_or_insert_with<'a, V: Any>(
+                &'a mut self,
+                key: String,
+                default: impl FnOnce() -> V + 'a,
+            ) -> Self::MutAccessor<'a, V> {
+                self.get_raw_or_insert_with(key.clone(), Box::new(|| Box::new(default())));
+                self.get_mut(&key).unwrap()
+            }
+
+            fn get_mut<'a, V: Any>(&'a mut self, key: &String) -> Option<Self::MutAccessor<'a, V>> {
+                self.get_raw_mut(key)
+                    .map(|v| DowncastValueBorrow::<'a, V>(v, Default::default()))
+            }
+        }
+
+        pub(crate) struct DowncastValueBorrow<'a, V: 'a>(
+            ValueBorrow<'a>,
+            std::marker::PhantomData<&'a mut V>,
+        );
+
+        impl<V: 'static> Deref for DowncastValueBorrow<'_, V> {
+            type Target = V;
+
+            fn deref(&self) -> &Self::Target {
+                self.0.downcast_ref::<V>().unwrap()
+            }
+        }
+
+        impl<V: 'static> DerefMut for DowncastValueBorrow<'_, V> {
+            fn deref_mut(&mut self) -> &mut Self::Target {
+                self.0.downcast_mut::<V>().unwrap()
+            }
+        }
+
+        impl<V: 'static> AsMut<V> for DowncastValueBorrow<'_, V> {
+            fn as_mut(&mut self) -> &mut V {
+                self.0.downcast_mut::<V>().unwrap()
+            }
+        }
+
+    }
+
+    mod global {
+        use super::{
+            storage::{GlobalStorage, StorageImpl},
+            *,
+        };
+
+        use std::cell::Cell;
 
         use rustc_middle::ty::TyCtxt;
 
@@ -520,12 +638,12 @@ mod implementation {
              * states that may happen by parallel compilations.
              */
             static CTXT_ID : Cell<Option<usize>> = Cell::new(None);
-            static STORAGE: RefCell<HashMap<String, Box<dyn Any>>> = Default::default();
+            static STORAGE: RRef<StorageImpl> = Default::default();
         }
 
         pub(crate) fn clear_ctxt_id_and_storage() {
             CTXT_ID.replace(None);
-            STORAGE.with_borrow_mut(|s| s.clear());
+            STORAGE.with(|s| s.borrow_mut().clear());
         }
 
         pub(crate) fn set_ctxt_id(tcx: TyCtxt) {
@@ -538,15 +656,9 @@ mod implementation {
             );
         }
 
-        pub(crate) fn with_storage<R>(tcx: TyCtxt, f: impl FnOnce(&mut dyn Storage) -> R) -> R {
-            assert_eq!(
-                CTXT_ID
-                    .get()
-                    .expect("The id has not been set. Possibly concurrent compilation."),
-                get_ctxt_id(tcx),
-                "The id is not matched. Possibly concurrent compilation."
-            );
-            STORAGE.with_borrow_mut(|s| f(s))
+        #[inline]
+        pub(crate) fn get_storage() -> GlobalStorage {
+            GlobalStorage(STORAGE.with(RRef::clone))
         }
 
         #[inline]

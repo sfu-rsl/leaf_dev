@@ -33,7 +33,8 @@ impl CompilationPass for TypeExporter {
         tcx: rustc_middle::ty::TyCtxt,
         storage: &mut dyn Storage,
     ) {
-        let type_map = storage.get_or_default::<HashMap<u128, TypeInfo>>(KEY_TYPE_MAP.to_owned());
+        let type_map =
+            &mut storage.get_or_default::<HashMap<u128, TypeInfo>>(KEY_TYPE_MAP.to_owned());
         tcx.collect_and_partition_mono_items(())
             .1
             .iter()
