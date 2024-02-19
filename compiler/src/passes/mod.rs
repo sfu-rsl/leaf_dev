@@ -27,7 +27,7 @@ pub(crate) use null::NullPass;
 pub(crate) use runtime_adder::RuntimeAdder;
 pub(crate) use tyexp::TypeExporter;
 
-pub(super) type Callbacks = Box<dyn driver::Callbacks + Send>;
+pub(super) type Callbacks = dyn driver::Callbacks + Send;
 pub(super) type PrerequisitePass = Chain<RuntimeAdder, NoOpPass>;
 
 pub(crate) trait HasResult<R> {
@@ -99,12 +99,14 @@ pub(crate) trait CompilationPass {
 pub(crate) struct NoOpPass;
 impl CompilationPass for NoOpPass {}
 
-pub(crate) trait CompilationPassExt {
-    fn to_callbacks(self) -> Callbacks;
+pub(crate) trait CompilationPassExt: CompilationPass {
+    fn to_callbacks(self) -> CompilationPassAdapter<Self>
+    where
+        Self: Send;
 }
 impl<T: CompilationPass + Send + Sync + 'static> CompilationPassExt for T {
-    fn to_callbacks(self) -> Callbacks {
-        Box::new(CompilationPassAdapter(Arc::new(Mutex::new(self))))
+    fn to_callbacks(self) -> CompilationPassAdapter<Self> {
+        CompilationPassAdapter::new(self)
     }
 }
 
@@ -217,7 +219,33 @@ mod implementation {
         > = Cell::new(|_, _| unreachable!());
     }
 
-    pub(super) struct CompilationPassAdapter<T: CompilationPass + Send + ?Sized>(pub Arc<Mutex<T>>);
+    struct PassHolder<T: CompilationPass + ?Sized>(Arc<Mutex<T>>);
+
+    impl<T: CompilationPass> PassHolder<T> {
+        fn new(pass: T) -> Self {
+            Self(Arc::new(Mutex::new(pass)))
+        }
+
+        fn into_pass(self) -> T {
+            Arc::into_inner(self.0).unwrap().into_inner().unwrap()
+        }
+    }
+
+    impl<T: CompilationPass + ?Sized> PassHolder<T> {
+        pub fn acquire(&self) -> std::sync::MutexGuard<'_, T> {
+            self.0
+                .lock()
+                .expect("Reentrance and concurrency are not expected in this design.")
+        }
+    }
+
+    impl<T: CompilationPass + ?Sized> Clone for PassHolder<T> {
+        fn clone(&self) -> Self {
+            Self(self.0.clone())
+        }
+    }
+
+    pub(crate) struct CompilationPassAdapter<T: CompilationPass + Send + ?Sized>(PassHolder<T>);
 
     macro_rules! stop_if_stop {
         ($result:expr) => {
@@ -227,9 +255,8 @@ mod implementation {
         };
     }
 
-    impl<T> driver::Callbacks for CompilationPassAdapter<T>
-    where
-        T: CompilationPass + Send + Sync + ?Sized + 'static,
+    impl<T: CompilationPass + Send + Sync + ?Sized + 'static> driver::Callbacks
+        for CompilationPassAdapter<T>
     {
         fn config(&mut self, config: &mut interface::Config) {
             ORIGINAL_OVERRIDE.set(config.override_queries.take());
@@ -255,7 +282,7 @@ mod implementation {
         ) -> Compilation {
             let mut ast_steal = queries.parse().unwrap();
 
-            let mut pass = self.0.lock().unwrap();
+            let mut pass = self.0.acquire();
             stop_if_stop!(pass.visit_ast_before(&ast_steal.borrow()));
             pass.transform_ast(ast_steal.get_mut());
             stop_if_stop!(pass.visit_ast_after(&ast_steal.borrow()));
@@ -278,7 +305,7 @@ mod implementation {
         ) -> Compilation {
             queries.global_ctxt().unwrap().enter(global::set_ctxt_id);
             queries.global_ctxt().unwrap().enter(|tcx| {
-                let mut pass = self.0.lock().unwrap();
+                let mut pass = self.0.acquire();
                 pass.visit_tcx_after_analysis(tcx, &mut global::get_storage())
             })
         }
@@ -297,6 +324,16 @@ mod implementation {
             T::transform_mir_body(tcx, &mut body, &mut storage);
             T::visit_mir_body_after(tcx, &body, &mut storage);
             tcx.arena.alloc(body)
+        }
+    }
+
+    impl<T: CompilationPass + Send> CompilationPassAdapter<T> {
+        pub(crate) fn new(pass: T) -> Self {
+            Self(PassHolder::new(pass))
+        }
+
+        pub(crate) fn into_pass(self) -> T {
+            self.0.into_pass()
         }
     }
 
@@ -397,9 +434,9 @@ mod implementation {
 
         use delegate::delegate;
 
-        pub(super) struct CodegenBackendWrapper<T: ?Sized> {
+        pub(super) struct CodegenBackendWrapper<T: CompilationPass + ?Sized> {
             backend: Box<dyn CodegenBackend>,
-            pass: Arc<Mutex<T>>,
+            pass: PassHolder<T>,
         }
 
         impl<T: CompilationPass + ?Sized> CodegenBackend for CodegenBackendWrapper<T> {
@@ -450,21 +487,22 @@ mod implementation {
                 metadata: EncodedMetadata,
                 need_metadata_module: bool,
             ) -> Box<dyn Any> {
-                let mut pass = self.pass.lock().unwrap();
-                pass.visit_tcx_at_codegen_before(tcx, &mut global::get_storage());
-                let result = self
-                    .backend
-                    .codegen_crate(tcx, metadata, need_metadata_module);
-
-                let mut pass = self.pass.lock().unwrap();
-                pass.visit_tcx_at_codegen_after(tcx, &mut global::get_storage());
-
+                let result = {
+                    let mut pass = self.pass.acquire();
+                    pass.visit_tcx_at_codegen_before(tcx, &mut global::get_storage());
+                    self.backend
+                        .codegen_crate(tcx, metadata, need_metadata_module)
+                };
+                {
+                    let mut pass = self.pass.acquire();
+                    pass.visit_tcx_at_codegen_after(tcx, &mut global::get_storage());
+                }
                 result
             }
         }
 
         pub(super) fn get_backend_maker<T: CompilationPass + Send + Sync + ?Sized + 'static>(
-            pass: Arc<Mutex<T>>,
+            pass: PassHolder<T>,
         ) -> Box<dyn FnOnce(&config::Options) -> Box<dyn CodegenBackend> + Send> {
             Box::new(|opts| {
                 // This is the default implementation taken from `interface::run_compiler`.
@@ -494,7 +532,7 @@ mod implementation {
          *   Therefore, on each access it temporarily removes the value from the storage.
          *   An alternative approach would be using `Rc` and `RefCell` to access
          *   items without removing them from the storage. However, unnecessary
-         *   complexity is avoided for now. Particularly, the mapping to the 
+         *   complexity is avoided for now. Particularly, the mapping to the
          *   downcast type is not easy to implement with `RefCell`.
          */
 
