@@ -8,7 +8,6 @@
 #![feature(macro_metavar_expr)]
 #![feature(box_into_inner)]
 #![feature(assert_matches)]
-#![feature(cell_leak)]
 
 mod mir_transform;
 mod passes;
@@ -51,15 +50,17 @@ pub fn run_compiler(args: impl Iterator<Item = String>, input_path: Option<PathB
     rustc_driver::install_ice_hook(URL_BUG_REPORT, |_| ());
 
     use passes::*;
-    let run_pass = |mut pass: Callbacks| -> i32 {
-        rustc_driver::catch_with_exit_code(|| RunCompiler::new(&args, pass.as_mut()).run())
+    let run_pass = |pass: &mut Callbacks| -> i32 {
+        rustc_driver::catch_with_exit_code(|| RunCompiler::new(&args, pass).run())
     };
 
     #[cfg(nctfe)]
     let nctfe_pass = {
         let ctfe_block_ids = {
-            let mut pass = chain!(<PrerequisitePass>, <CtfeScanner>,);
-            run_pass(pass.to_callbacks());
+            let pass = chain!(<PrerequisitePass>, <CtfeScanner>,);
+            let mut callbacks = pass.to_callbacks();
+            run_pass(&mut callbacks);
+            let pass = callbacks.into_pass();
             pass.second.into_result()
         };
         NctfeFunctionAdder::new(ctfe_block_ids.len())
@@ -74,7 +75,7 @@ pub fn run_compiler(args: impl Iterator<Item = String>, input_path: Option<PathB
         <Instrumentor>,
     )
     .into_logged();
-    run_pass(pass.to_callbacks())
+    run_pass(&mut pass.to_callbacks())
 }
 
 pub mod constants {

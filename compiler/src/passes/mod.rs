@@ -1,3 +1,4 @@
+#[cfg(nctfe)]
 pub(crate) mod ctfe;
 mod instr;
 pub(crate) mod logger;
@@ -23,6 +24,7 @@ use crate::utils::Chain;
 pub(crate) use ctfe::{CtfeScanner, NctfeFunctionAdder};
 pub(crate) use instr::Instrumentor;
 pub(crate) use logger::CompilationPassLogExt;
+#[allow(unused)]
 pub(crate) use null::NullPass;
 pub(crate) use runtime_adder::RuntimeAdder;
 pub(crate) use tyexp::TypeExporter;
@@ -653,7 +655,6 @@ mod implementation {
                 self.0.downcast_mut::<V>().unwrap()
             }
         }
-
     }
 
     mod global {
