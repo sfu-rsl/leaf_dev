@@ -2,7 +2,7 @@
 pub(crate) mod ctfe;
 mod instr;
 pub(crate) mod logger;
-mod null;
+mod noop;
 mod runtime_adder;
 pub(crate) mod tyexp;
 
@@ -25,7 +25,7 @@ pub(crate) use ctfe::{CtfeScanner, NctfeFunctionAdder};
 pub(crate) use instr::Instrumentor;
 pub(crate) use logger::CompilationPassLogExt;
 #[allow(unused)]
-pub(crate) use null::NullPass;
+pub(crate) use noop::NoOpPass;
 pub(crate) use runtime_adder::RuntimeAdder;
 pub(crate) use tyexp::TypeExporter;
 
@@ -96,10 +96,6 @@ pub(crate) trait CompilationPass {
         Default::default()
     }
 }
-
-#[derive(Default)]
-pub(crate) struct NoOpPass;
-impl CompilationPass for NoOpPass {}
 
 pub(crate) trait CompilationPassExt: CompilationPass {
     fn to_callbacks(self) -> CompilationPassAdapter<Self>

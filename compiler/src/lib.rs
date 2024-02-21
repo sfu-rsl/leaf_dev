@@ -66,7 +66,7 @@ pub fn run_compiler(args: impl Iterator<Item = String>, input_path: Option<PathB
         NctfeFunctionAdder::new(ctfe_block_ids.len())
     };
     #[cfg(not(nctfe))]
-    let nctfe_pass = NullPass;
+    let nctfe_pass = NoOpPass;
 
     let pass = chain!(
         <PrerequisitePass>,
