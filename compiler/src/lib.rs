@@ -196,9 +196,8 @@ mod driver_args {
 
         // FIXME: Add better support for setting the runtime flavor.
         // NOTE: If the compiled target is either a build script or a proc-macro crate type, we should use the noop runtime library.
-        let is_runtime_noop = args.contains(&"build_script_build".to_string())
+        let use_noop_runtime = args.contains(&"build_script_build".to_string())
             || args.contains(&"proc-macro".to_string());
-        ensure_runtime_dylib_exists(is_runtime_noop);
         // Add the runtime dynamic library as a dynamic dependency.
         /* NOTE: As long as the shim is getting compiled along with the program,
          * adding it explicitly should not be necessary (is expected to be
@@ -211,7 +210,10 @@ mod driver_args {
             OPT_CODEGEN,
             format!(
                 "{CODEGEN_LINK_ARG}=-Wl,-rpath={}",
-                find_runtime_dylib_dir(is_runtime_noop).display()
+                ensure_runtime_dylib_exists(use_noop_runtime)
+                    .parent()
+                    .unwrap()
+                    .display()
             ),
         );
         // Also include it in the search path for Rust.
@@ -219,7 +221,10 @@ mod driver_args {
             OPT_SEARCH_PATH,
             format!(
                 "{SEARCH_KIND_NATIVE}={}",
-                find_runtime_dylib_dir(is_runtime_noop).display()
+                ensure_runtime_dylib_exists(use_noop_runtime)
+                    .parent()
+                    .unwrap()
+                    .display()
             ),
         );
 
@@ -307,8 +312,21 @@ mod driver_args {
         )
     }
 
-    fn ensure_runtime_dylib_exists(is_runtime_dylib_noop: bool) {
-        let runtime_dylib_dir = find_runtime_dylib_dir(is_runtime_dylib_noop);
+    fn ensure_runtime_dylib_exists(use_noop_runtime: bool) -> PathBuf {
+        let runtime_dylib_folder = if use_noop_runtime {
+            DIR_RUNTIME_DYLIB_NOOP
+        } else {
+            DIR_RUNTIME_DYLIB_DEFAULT
+        };
+        let runtime_dylib_dir = env::current_exe()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join(runtime_dylib_folder);
+        if !runtime_dylib_dir.exists() {
+            std::fs::create_dir(&runtime_dylib_dir).unwrap();
+        }
+
         let runtime_dylib_exists = || {
             try_find_dependency_path(
                 FILE_RUNTIME_DYLIB,
@@ -317,16 +335,16 @@ mod driver_args {
             .is_some()
         };
 
+        let sym_dylib_path = runtime_dylib_dir.join(FILE_RUNTIME_DYLIB);
         if runtime_dylib_exists() {
-            return;
+            return sym_dylib_path;
         }
 
-        let physical_dylib_path = if is_runtime_dylib_noop {
+        let physical_dylib_path = if use_noop_runtime {
             find_dependency_path(FILE_RUNTIME_DYLIB_NOOP, iter::empty())
         } else {
             find_dependency_path(FILE_RUNTIME_DYLIB_DEFAULT, iter::empty())
         };
-        let sym_link_path = runtime_dylib_dir.join(FILE_RUNTIME_DYLIB);
 
         // NOTE: Parallel execution of the compiler may cause race conditions.
         // FIXME: Come up with a better solution.
@@ -336,26 +354,16 @@ mod driver_args {
                 Ok(())
             } else {
                 #[cfg(unix)]
-                let result = std::os::unix::fs::symlink(&physical_dylib_path, &sym_link_path);
+                let result = std::os::unix::fs::symlink(&physical_dylib_path, &sym_dylib_path);
                 #[cfg(windows)]
-                let result = std::os::windows::fs::symlink_file(&fallback_path, &sym_link_path);
+                let result =
+                    std::os::windows::fs::symlink_file(&physical_dylib_path, &sym_dylib_path);
                 result
             }
         })
         .expect("Could not create a symlink to the fallback runtime dylib.");
-    }
 
-    fn find_runtime_dylib_dir(is_runtime_dylib_noop: bool) -> PathBuf {
-        let folder = if is_runtime_dylib_noop {
-            DIR_RUNTIME_DYLIB_NOOP
-        } else {
-            DIR_RUNTIME_DYLIB_DEFAULT
-        };
-        let dir = env::current_exe().unwrap().parent().unwrap().join(folder);
-        if !dir.exists() {
-            std::fs::create_dir(&dir).unwrap();
-        }
-        dir
+        return sym_dylib_path;
     }
 
     fn find_dependency_path<'a>(

@@ -74,6 +74,8 @@ impl Display for ReadError {
     }
 }
 
+pub const FINAL_TYPE_EXPORT_FILE: &str = "types.json";
+
 // FIXME: Move these functions to a more appropriate place.
 // FIXME: Make this configurable and injectable.
 impl TypeExport {
@@ -83,7 +85,7 @@ impl TypeExport {
         let out_dir = exe_path.parent().unwrap_or(Path::new(""));
 
         let type_infos: Vec<TypeInfo> =
-            Self::get_type_info(out_dir.join("types.json").display().to_string())?;
+            Self::get_type_info(out_dir.join(FINAL_TYPE_EXPORT_FILE).display().to_string())?;
         log::debug!("Retrieved {} types from file.", type_infos.len());
 
         let type_infos = type_infos
