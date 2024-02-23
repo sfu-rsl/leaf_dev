@@ -194,10 +194,21 @@ mod driver_args {
             ),
         );
 
+        set_runtime_flavor(&mut args);
+
+        if let Some(input_path) = input_path {
+            args.push(input_path.to_string_lossy().into_owned());
+        }
+
+        args
+    }
+
+    fn set_runtime_flavor(args: &mut Vec<String>) {
         // FIXME: Add better support for setting the runtime flavor.
         // NOTE: If the compiled target is either a build script or a proc-macro crate type, we should use the noop runtime library.
         let use_noop_runtime = args.contains(&"build_script_build".to_string())
             || args.contains(&"proc-macro".to_string());
+        ensure_runtime_dylib_exists(use_noop_runtime);
         // Add the runtime dynamic library as a dynamic dependency.
         /* NOTE: As long as the shim is getting compiled along with the program,
          * adding it explicitly should not be necessary (is expected to be
@@ -210,10 +221,7 @@ mod driver_args {
             OPT_CODEGEN,
             format!(
                 "{CODEGEN_LINK_ARG}=-Wl,-rpath={}",
-                ensure_runtime_dylib_exists(use_noop_runtime)
-                    .parent()
-                    .unwrap()
-                    .display()
+                find_runtime_dylib_dir(use_noop_runtime)
             ),
         );
         // Also include it in the search path for Rust.
@@ -221,18 +229,9 @@ mod driver_args {
             OPT_SEARCH_PATH,
             format!(
                 "{SEARCH_KIND_NATIVE}={}",
-                ensure_runtime_dylib_exists(use_noop_runtime)
-                    .parent()
-                    .unwrap()
-                    .display()
+                find_runtime_dylib_dir(use_noop_runtime)
             ),
         );
-
-        if let Some(input_path) = input_path {
-            args.push(input_path.to_string_lossy().into_owned());
-        }
-
-        args
     }
 
     fn find_sysroot() -> String {
@@ -312,32 +311,15 @@ mod driver_args {
         )
     }
 
-    fn ensure_runtime_dylib_exists(use_noop_runtime: bool) -> PathBuf {
-        let runtime_dylib_folder = if use_noop_runtime {
-            DIR_RUNTIME_DYLIB_NOOP
-        } else {
-            DIR_RUNTIME_DYLIB_DEFAULT
-        };
-        let runtime_dylib_dir = env::current_exe()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .join(runtime_dylib_folder);
-        if !runtime_dylib_dir.exists() {
-            std::fs::create_dir(&runtime_dylib_dir).unwrap();
-        }
-
-        let runtime_dylib_exists = || {
-            try_find_dependency_path(
-                FILE_RUNTIME_DYLIB,
-                vec![runtime_dylib_dir.as_path()].into_iter(),
-            )
-            .is_some()
-        };
+    fn ensure_runtime_dylib_exists(use_noop_runtime: bool) {
+        ensure_runtime_dylib_dir_exist(use_noop_runtime);
+        let runtime_dylib_dir = PathBuf::from(find_runtime_dylib_dir(use_noop_runtime));
+        let runtime_dylib_exists =
+            || try_join(runtime_dylib_dir.as_path(), FILE_RUNTIME_DYLIB).is_some();
 
         let sym_dylib_path = runtime_dylib_dir.join(FILE_RUNTIME_DYLIB);
         if runtime_dylib_exists() {
-            return sym_dylib_path;
+            return;
         }
 
         let physical_dylib_path = if use_noop_runtime {
@@ -362,8 +344,30 @@ mod driver_args {
             }
         })
         .expect("Could not create a symlink to the fallback runtime dylib.");
+    }
 
-        return sym_dylib_path;
+    fn ensure_runtime_dylib_dir_exist(use_noop_runtime: bool) {
+        let runtime_dylib_folder = get_runtime_dylib_folder(use_noop_runtime);
+        if try_find_dependency_path(runtime_dylib_folder, iter::empty()).is_none() {
+            let runtime_dylib_dir = env::current_exe()
+                .unwrap()
+                .parent()
+                .unwrap()
+                .join(runtime_dylib_folder);
+            std::fs::create_dir(&runtime_dylib_dir).unwrap();
+        }
+    }
+
+    fn find_runtime_dylib_dir(use_noop_runtime: bool) -> String {
+        find_dependency_path(get_runtime_dylib_folder(use_noop_runtime), iter::empty())
+    }
+
+    fn get_runtime_dylib_folder(use_noop_runtime: bool) -> &'static str {
+        if use_noop_runtime {
+            DIR_RUNTIME_DYLIB_NOOP
+        } else {
+            DIR_RUNTIME_DYLIB_DEFAULT
+        }
     }
 
     fn find_dependency_path<'a>(

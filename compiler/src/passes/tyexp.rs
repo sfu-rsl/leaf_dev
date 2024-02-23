@@ -66,6 +66,8 @@ impl CompilationPass for TypeExporter {
             };
             aggregate_type_info(type_map, path_prefix);
 
+            /* For compiling a single file program, the final type export file is placed in the same directory as the program file.
+             * For compiling a project, the final type export file is placed in the output directory (i.e. "./target/debug/") */
             out_dir
                 .parent()
                 .unwrap_or(Path::new(""))
