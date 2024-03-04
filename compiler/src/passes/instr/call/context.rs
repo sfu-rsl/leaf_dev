@@ -107,15 +107,15 @@ impl<'tcx, 'm, 's> DefaultContext<'tcx, 'm, 's> {
         storage: &'s mut dyn Storage,
     ) -> Self {
         use crate::pri_utils::*;
-        let pri_symbols = find_pri_exported_symbols(tcx);
+        let pri_items = all_pri_items(tcx);
 
         Self {
             tcx,
             modification_unit,
             pri: PriItems {
-                funcs: find_pri_funcs(&pri_symbols, tcx), // FIXME: Perform caching
-                types: find_pri_types(&pri_symbols, tcx),
-                helper_funcs: find_helper_funcs(&pri_symbols, tcx),
+                funcs: filter_main_funcs(tcx, &pri_items), // FIXME: Perform caching
+                types: filter_helper_types(tcx, &pri_items),
+                helper_funcs: filter_helper_funcs(tcx, &pri_items),
             },
             storage,
         }

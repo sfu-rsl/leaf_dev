@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 
-use rustc_hir::{def::DefKind, def_id::DefId, definitions::DisambiguatedDefPathData};
+use rustc_hir::{
+    def::DefKind,
+    def_id::{CrateNum, DefId, LOCAL_CRATE},
+};
 use rustc_middle::ty::{Ty, TyCtxt};
 
 pub(super) const TAG_DISCOVERY: &str = "pri_discovery";
@@ -8,13 +11,16 @@ pub(super) const TAG_DISCOVERY: &str = "pri_discovery";
 pub mod sym {
     #![allow(non_upper_case_globals)]
 
-    #[derive(Clone, Copy, derive_more::Deref, Debug)]
+    use derive_more as dm;
+
+    #[derive(Clone, Copy, dm::Deref, Debug, dm::Display)]
     #[repr(transparent)]
     pub struct LeafSymbol(&'static str);
 
     use const_format::concatcp;
     use LeafSymbol as LS;
 
+    pub const CORE_LIB_CRATE: LS = LS("core");
     pub const RUNTIME_LIB_CRATE: LS = LS(crate::constants::CRATE_RUNTIME);
 
     macro_rules! in_lib {
@@ -91,6 +97,8 @@ pub mod sym {
     }
 }
 
+use sym::LeafSymbol;
+
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct FunctionInfo<'tcx> {
     pub def_id: DefId,
@@ -118,52 +126,105 @@ pub(crate) struct PriHelperFunctions<'tcx> {
     _phantom: std::marker::PhantomData<&'tcx ()>,
 }
 
-pub(crate) fn find_pri_exported_symbols(tcx: TyCtxt) -> Vec<DefId> {
-    use rustc_middle::middle::exported_symbols::ExportedSymbol;
+/// Lists all the PRI items, including the compiler helper items.
+pub(crate) fn all_pri_items(tcx: TyCtxt) -> Vec<DefId> {
+    let crate_num = find_pri_host_crate(tcx);
+    let marker_id = find_pri_marker(tcx, crate_num);
+    let result = collect_all_pri_items(tcx, marker_id);
+    log::debug!(
+        target: TAG_DISCOVERY,
+        "Found {} PRI items.",
+        result.len(),
+    );
+    result
+}
 
-    fn def_id<'a>(symbol: &'a ExportedSymbol) -> Option<&'a DefId> {
-        match symbol {
-            ExportedSymbol::NonGeneric(def_id) | ExportedSymbol::Generic(def_id, _) => Some(def_id),
-            _ => None,
-        }
-    }
+/// Finds the crate that holds the PRI items.
+/// # Remarks
+/// Currently, it is possible to have access to the PRI either as a part of
+/// the core library or as an external crate linked to the target program.
+/// This returns either crate that should be searched for the PRI items.
+/// When building the core library, the current crate is returned.
+fn find_pri_host_crate(tcx: TyCtxt) -> CrateNum {
+    let building_core = tcx.crate_name(LOCAL_CRATE).as_str() == *sym::CORE_LIB_CRATE;
 
-    // Finding the runtime crate.
-    let crate_num = *tcx
-        .crates(())
-        .iter()
+    tcx.crate_by_name(*sym::RUNTIME_LIB_CRATE)
+        .or_else(|| tcx.crate_by_name(*sym::CORE_LIB_CRATE))
+        .or_else(|| {
+            if building_core {
+                Some(LOCAL_CRATE)
+            } else {
+                None
+            }
+        })
         .inspect(|cnum| {
             log::debug!(
                 target: TAG_DISCOVERY,
-                "Found crate in the program: {}",
-                tcx.crate_name(**cnum).as_str().to_string()
+                "Selected crate {}, to search for PRI symbols.",
+                tcx.crate_name(*cnum).as_str().to_string()
             );
         })
-        .find(|cnum| tcx.crate_name(**cnum).as_str() == *sym::RUNTIME_LIB_CRATE)
-        .unwrap_or_else(|| {
-            panic!(
-                "{} crate is not added as a dependency.",
-                *sym::RUNTIME_LIB_CRATE
-            )
-        });
-
-    let runtime_symbols = tcx
-        .exported_symbols(crate_num)
-        .iter()
-        .filter_map(|(s, _)| def_id(s))
-        .cloned()
-        .filter(|def_id| def_id.krate == crate_num)
-        .collect::<Vec<_>>();
-
-    runtime_symbols.filter_by_marker(tcx, *sym::MODULE_MARKER, true)
+        .expect("Could not find the expected crates hosting PRI symbols.")
 }
 
-pub(crate) fn find_pri_funcs<'tcx>(
-    pri_symbols: &[DefId],
+/// Finds `DefId` of the PRI module's marker.
+/// # Remarks
+/// The marker is a dummy static variable residing in the PRI module.
+/// As we usually search through a set of definitions (and not modules), to find
+/// the PRI module/items, we use this workaround rather than looking for the
+/// module directly.
+fn find_pri_marker(tcx: TyCtxt, crate_num: CrateNum) -> DefId {
+    let search_space: Box<dyn Iterator<Item = DefId>> = if crate_num == LOCAL_CRATE {
+        Box::new(tcx.mir_keys(()).iter().map(|id| id.to_def_id()))
+    } else {
+        use rustc_middle::middle::exported_symbols::ExportedSymbol;
+        Box::new(
+            tcx.exported_symbols(crate_num)
+                .iter()
+                .filter_map(|(s, _)| match s {
+                    ExportedSymbol::NonGeneric(def_id) | ExportedSymbol::Generic(def_id, _) => {
+                        Some(*def_id)
+                    }
+                    _ => None,
+                }),
+        )
+    };
+
+    search_space.find_by_name(tcx, *sym::MODULE_MARKER).unwrap()
+}
+
+/// Collects all the PRI items with respect to the marker.
+/// # Returns
+/// The list of `DefId`s existing in the same module or submodules of the parent
+/// module of the marker.
+fn collect_all_pri_items<'tcx>(tcx: TyCtxt<'tcx>, module_marker_id: DefId) -> Vec<DefId> {
+    if module_marker_id.krate == LOCAL_CRATE {
+        /* NOTE: `module_children` panics for local ids,
+         * and `module_children_local` doesn't return items. */
+        tcx.mir_keys(())
+            .iter()
+            .map(|id| id.to_def_id())
+            .filter_by_module_marker(tcx, module_marker_id, true)
+            .collect()
+    } else {
+        tcx.module_children_rec(module_marker_id, true)
+    }
+}
+
+/// Filters out the top-level functions out of a list PRI items.
+/// # Remarks
+/// The functions are the main ones that record the program behavior,
+/// i.e. the ones in [`common::pri::ProgramRuntimeInterface`].
+/// These items are recognized as being on the same hierarchical level as the marker item.
+/// At the moment, the items that are not selected are compiler helpers.
+pub(crate) fn filter_main_funcs<'tcx>(
     tcx: TyCtxt<'tcx>,
+    all_pri_items: &[DefId],
 ) -> HashMap<String, FunctionInfo<'tcx>> {
-    pri_symbols
-        .filter_by_marker(tcx, *sym::MODULE_MARKER, false)
+    all_pri_items
+        .iter()
+        .copied()
+        .filter_by_sibling_module_marker_name(tcx, sym::MODULE_MARKER)
         .into_iter()
         .filter(|def_id| matches!(tcx.def_kind(def_id), DefKind::Fn | DefKind::AssocFn))
         .inspect(|def_id| {
@@ -173,27 +234,28 @@ pub(crate) fn find_pri_funcs<'tcx>(
                 def_id,
             );
         })
-        .map(|def_id| (tcx.def_path_str(def_id), func_info_from(tcx, def_id)))
+        .map(|def_id| (to_map_key(tcx, def_id), func_info_from(tcx, def_id)))
         .collect()
 }
 
-#[inline]
-pub(crate) fn normalize_str_path(name: &str) -> String {
-    name.replace(' ', "")
-}
-
-pub(crate) fn find_pri_types<'tcx>(pri_symbols: &[DefId], tcx: TyCtxt<'tcx>) -> PriTypes<'tcx> {
-    /*
-     * FIXME: The desired enums and type aliases don't show up in the exported symbols.
+/// Filters out the helper types out of a list of PRI items.
+pub(crate) fn filter_helper_types<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    all_pri_items: &[DefId],
+) -> PriTypes<'tcx> {
+    /* FIXME: The desired enums and type aliases don't show up in the exported symbols.
      * It may be because of the MIR phases that clean up/optimize/unify things,
      * the way that the library is added (using the compiled file), or
      * that enums and type aliases are not included at all in the exported_symbols.
      * As a workaround, we have defined some static variables having those desired
      * types and are accessible.
      * However, there should be some functions in TyCtxt that will list these items for us.
+     * Update: Check if the problem still exists with the introduction of `module_children`.
      */
-    let def_ids: HashMap<String, DefId> = pri_symbols
-        .filter_by_marker(tcx, *sym::CH_MODULE_MARKER, false)
+    let def_ids: HashMap<String, DefId> = all_pri_items
+        .iter()
+        .copied()
+        .filter_by_sibling_module_marker_name(tcx, sym::CH_MODULE_MARKER)
         .into_iter()
         .filter(|def_id| matches!(tcx.def_kind(def_id), DefKind::Static(_)))
         .inspect(|def_id| {
@@ -203,11 +265,11 @@ pub(crate) fn find_pri_types<'tcx>(pri_symbols: &[DefId], tcx: TyCtxt<'tcx>) -> 
                 def_id,
             );
         })
-        .map(|def_id| (tcx.def_path_str(def_id), def_id))
+        .map(|def_id| (to_map_key(tcx, def_id), def_id))
         .collect();
 
     let get_ty = |name: &str| -> Ty {
-        tcx.type_of(def_ids.get(&normalize_str_path(name)).unwrap())
+        tcx.type_of(def_ids.get(name).unwrap())
             .no_bound_vars()
             .expect("PRI types are not expected to have bound vars (generics).")
     };
@@ -222,12 +284,15 @@ pub(crate) fn find_pri_types<'tcx>(pri_symbols: &[DefId], tcx: TyCtxt<'tcx>) -> 
     }
 }
 
-pub(crate) fn find_helper_funcs<'tcx>(
-    pri_symbols: &[DefId],
+/// Filters out the helper functions out of a list of PRI items.
+pub(crate) fn filter_helper_funcs<'tcx>(
     tcx: TyCtxt<'tcx>,
+    all_pri_items: &[DefId],
 ) -> PriHelperFunctions<'tcx> {
-    let def_ids: HashMap<String, DefId> = pri_symbols
-        .filter_by_marker(tcx, *sym::CH_MODULE_MARKER, false)
+    let def_ids: HashMap<String, DefId> = all_pri_items
+        .iter()
+        .copied()
+        .filter_by_sibling_module_marker_name(tcx, sym::CH_MODULE_MARKER)
         .into_iter()
         .filter(|def_id| matches!(tcx.def_kind(def_id), DefKind::Fn | DefKind::AssocFn))
         .inspect(|def_id| {
@@ -237,7 +302,7 @@ pub(crate) fn find_helper_funcs<'tcx>(
                 def_id,
             );
         })
-        .map(|def_id| (tcx.def_path_str(def_id), def_id))
+        .map(|def_id| (to_map_key(tcx, def_id), def_id))
         .collect();
 
     let get_func_info = |name: &str| {
@@ -261,6 +326,15 @@ pub(crate) fn find_helper_funcs<'tcx>(
     }
 }
 
+fn to_map_key(tcx: TyCtxt, def_id: DefId) -> String {
+    let mut full_path = tcx.def_path_str(def_id);
+    if let Some(start) = full_path.find(*sym::RUNTIME_LIB_CRATE) {
+        full_path.split_off(start)
+    } else {
+        full_path
+    }
+}
+
 fn func_info_from(tcx: TyCtxt, def_id: DefId) -> FunctionInfo {
     FunctionInfo {
         def_id,
@@ -275,49 +349,117 @@ fn func_info_from(tcx: TyCtxt, def_id: DefId) -> FunctionInfo {
     }
 }
 
-pub(crate) fn eq_def_path_str(tcx: TyCtxt, def_id: &DefId, def_path_str: &str) -> bool {
-    tcx.def_path_str(def_id) == normalize_str_path(def_path_str)
+trait DefIdIterExt<'tcx> {
+    fn find_by_name(self, tcx: TyCtxt<'tcx>, name: &str) -> Option<DefId>;
+
+    fn filter_by_sibling_module_marker_name<'a>(
+        self,
+        tcx: TyCtxt<'tcx>,
+        marker_name: LeafSymbol,
+    ) -> Box<dyn Iterator<Item = DefId> + 'a>
+    where
+        Self: 'a + Clone,
+        'tcx: 'a;
+
+    fn filter_by_module_marker<'a>(
+        self,
+        tcx: TyCtxt<'tcx>,
+        marker: DefId,
+        submodules: bool,
+    ) -> Box<dyn Iterator<Item = DefId> + 'a>
+    where
+        Self: 'a,
+        'tcx: 'a;
 }
 
-fn get_module_of_marker(
-    mut symbols: impl Iterator<Item = DefId>,
-    tcx: TyCtxt,
-    marker_name: &str,
-) -> impl Iterator<Item = DisambiguatedDefPathData> {
-    symbols
-        .find(|def_id| eq_def_path_str(tcx, def_id, marker_name))
-        .map(|marker_id| module_of(tcx, &marker_id))
-        .unwrap_or_else(|| panic!("Could not find the marker symbol. {marker_name}"))
+impl<'tcx, I: Iterator<Item = DefId>> DefIdIterExt<'tcx> for I {
+    fn find_by_name(mut self, tcx: TyCtxt<'tcx>, name: &str) -> Option<DefId> {
+        self.find(|def_id| to_map_key(tcx, *def_id) == name)
+    }
+
+    fn filter_by_sibling_module_marker_name<'a>(
+        self,
+        tcx: TyCtxt<'tcx>,
+        marker_name: LeafSymbol,
+    ) -> Box<dyn Iterator<Item = DefId> + 'a>
+    where
+        Self: 'a + Clone,
+        'tcx: 'a,
+    {
+        let marker_id = self.clone().find_by_name(tcx, &marker_name).unwrap();
+        self.filter_by_module_marker(tcx, marker_id, false)
+    }
+
+    fn filter_by_module_marker<'a>(
+        self,
+        tcx: TyCtxt<'tcx>,
+        marker: DefId,
+        submodules: bool,
+    ) -> Box<dyn Iterator<Item = DefId> + 'a>
+    where
+        Self: 'a,
+        'tcx: 'a,
+    {
+        let module_of = move |def_id| {
+            use rustc_hir::definitions::DefPathData;
+            tcx.def_path(def_id)
+                .data
+                .into_iter()
+                .take_while(|p| matches!(p.data, DefPathData::TypeNs(_)))
+        };
+
+        let marker_module = module_of(marker).collect::<Vec<_>>();
+        let result = self.filter(move |def_id| {
+            let module = module_of(*def_id);
+            if submodules {
+                module
+                    .take(marker_module.len())
+                    .eq_by(&marker_module, |a, b| &a == b)
+            } else {
+                module.eq_by(&marker_module, |a, b| &a == b)
+            }
+        });
+        Box::new(result)
+    }
 }
 
-fn module_of(tcx: TyCtxt, def_id: &DefId) -> impl Iterator<Item = DisambiguatedDefPathData> {
-    use rustc_hir::definitions::DefPathData;
-    tcx.def_path(*def_id)
-        .data
-        .into_iter()
-        .take_while(|p| matches!(p.data, DefPathData::TypeNs(_)))
+trait TyCtxtExt<'tcx> {
+    fn crate_by_name(self, name: &str) -> Option<CrateNum>;
+    fn module_children_rec(self, module_id: DefId, submodules: bool) -> Vec<DefId>;
 }
 
-trait DefIdSliceExt {
-    fn filter_by_marker(self, tcx: TyCtxt, marker_name: &str, submodules: bool) -> Vec<DefId>;
-}
+impl<'tcx> TyCtxtExt<'tcx> for TyCtxt<'tcx> {
+    fn crate_by_name(self, name: &str) -> Option<CrateNum> {
+        self.crates(())
+            .iter()
+            .find(|cnum| self.crate_name(**cnum).as_str() == name)
+            .copied()
+    }
 
-impl DefIdSliceExt for &[DefId] {
-    fn filter_by_marker(self, tcx: TyCtxt, marker_name: &str, submodules: bool) -> Vec<DefId> {
-        let marker_module =
-            get_module_of_marker(self.iter().cloned(), tcx, marker_name).collect::<Vec<_>>();
-        self.iter()
-            .filter(|def_id| {
-                let module = module_of(tcx, def_id);
+    fn module_children_rec(self, module_id: DefId, submodules: bool) -> Vec<DefId> {
+        let children = if let Some(module_id) = module_id.as_local() {
+            self.module_children_local(module_id)
+        } else {
+            self.module_children(module_id)
+        };
+
+        children
+            .iter()
+            .map(|child| child.res)
+            .flat_map(|res| {
+                let child_id = match res.opt_def_id() {
+                    Some(def_id) if def_id != module_id => def_id,
+                    _ => return vec![],
+                };
+
+                let mut result = vec![child_id];
                 if submodules {
-                    module
-                        .take(marker_module.len())
-                        .eq_by(&marker_module, |a, b| &a == b)
-                } else {
-                    module.eq_by(&marker_module, |a, b| &a == b)
+                    if let Some(submodule_id) = res.mod_def_id() {
+                        result.extend(self.module_children_rec(submodule_id, true));
+                    }
                 }
+                result
             })
-            .cloned()
             .collect()
     }
 }
