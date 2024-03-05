@@ -25,6 +25,7 @@ extern crate rustc_data_structures;
 extern crate rustc_driver;
 extern crate rustc_hir;
 extern crate rustc_index;
+extern crate rustc_infer;
 extern crate rustc_interface;
 extern crate rustc_metadata;
 extern crate rustc_middle;
@@ -34,6 +35,7 @@ extern crate rustc_query_system;
 extern crate rustc_session;
 extern crate rustc_span;
 extern crate rustc_target;
+extern crate rustc_trait_selection;
 extern crate rustc_type_ir;
 extern crate thin_vec;
 

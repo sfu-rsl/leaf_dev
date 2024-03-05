@@ -298,12 +298,9 @@ where
             }
         }
 
-        let are_args_tupled = call::utils::are_args_tupled(
-            self.call_adder.tcx(),
-            &self.call_adder,
-            func,
-            args.iter().map(|a| &a.node),
-        );
+        let are_args_tupled = self
+            .call_adder
+            .are_args_tupled(func, args.iter().map(|a| &a.node));
         Self::instrument_call(
             &mut self.call_adder,
             |call_adder| call_adder.reference_func(func),

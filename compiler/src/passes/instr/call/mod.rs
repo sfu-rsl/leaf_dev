@@ -867,7 +867,7 @@ mod implementation {
             if cfg!(place_addr) {
                 let tcx = self.tcx();
                 let ty = place.ty(&self.context, tcx).ty;
-                if ty.is_adt() || ty.is_tuple() || ty.is_array() || !ty.is_known_rigid() {
+                if ty.is_adt() || ty.is_trivially_tuple() || ty.is_array() || !ty.is_known_rigid() {
                     additional_blocks.extend(self.set_place_size(place_ref, ty));
                 }
             }
@@ -1910,8 +1910,10 @@ mod implementation {
 
             let tcx = self.tcx();
 
-            let body_def_id = self.body().source.def_id();
-            if let TyKind::Closure(_, args) = tcx.type_of(body_def_id).instantiate_identity().kind()
+            if let TyKind::Closure(_, args) = tcx
+                .type_of(self.current_func_id())
+                .instantiate_identity()
+                .kind()
             {
                 blocks.extend(self.make_bb_for_try_untuple_args_in_closure(args.as_closure()));
             }
@@ -1944,6 +1946,23 @@ mod implementation {
                 "Inserting after_call before a block is not expected."
             );
             self.insert_blocks(blocks);
+        }
+    }
+
+    impl<'tcx, C> RuntimeCallAdder<C>
+    where
+        C: Basic<'tcx> + BodyProvider<'tcx>,
+    {
+        pub(crate) fn are_args_tupled<'a>(
+            &self,
+            callee: &Operand<'tcx>,
+            args: impl Iterator<Item = &'a Operand<'tcx>>,
+        ) -> bool
+        where
+            'tcx: 'a,
+        {
+            let tcx = self.tcx();
+            utils::are_args_tupled(tcx, &self.context, callee, args, self.current_param_env())
         }
     }
 
@@ -2427,13 +2446,25 @@ mod implementation {
 
             use super::*;
 
-            pub trait TyExt {
-                fn is_tuple(self) -> bool;
+            pub trait TyExt<'tcx> {
+                fn is_trivially_tuple(self) -> bool;
+                fn is_tuple(self, tcx: TyCtxt<'tcx>, param_env: ParamEnv<'tcx>) -> bool;
             }
 
-            impl TyExt for Ty<'_> {
-                fn is_tuple(self) -> bool {
+            impl<'tcx> TyExt<'tcx> for Ty<'tcx> {
+                #[inline]
+                fn is_trivially_tuple(self) -> bool {
                     matches!(self.kind(), TyKind::Tuple(..))
+                }
+
+                fn is_tuple(self, tcx: TyCtxt<'tcx>, param_env: ParamEnv<'tcx>) -> bool {
+                    self.is_trivially_tuple()
+                        || is_trait(
+                            tcx,
+                            self,
+                            param_env,
+                            tcx.lang_items().tuple_trait().unwrap(),
+                        )
                 }
             }
 
@@ -2572,6 +2603,21 @@ mod implementation {
                         ty
                     ),
                 }
+            }
+
+            fn is_trait<'tcx>(
+                tcx: TyCtxt<'tcx>,
+                ty: Ty<'tcx>,
+                param_env: ParamEnv<'tcx>,
+                trait_def_id: DefId,
+            ) -> bool {
+                use rustc_infer::infer::TyCtxtInferExt;
+                use rustc_trait_selection::infer::InferCtxtExt;
+
+                tcx.infer_ctxt()
+                    .build()
+                    .type_implements_trait(trait_def_id, [ty], param_env)
+                    .must_apply_modulo_regions()
             }
         }
 
@@ -2845,16 +2891,29 @@ mod implementation {
         pub fn are_args_tupled<'tcx: 'a, 'a>(
             tcx: TyCtxt<'tcx>,
             local_manager: &impl HasLocalDecls<'tcx>,
-            func: &Operand<'tcx>,
-            args: impl ExactSizeIterator<Item = &'a Operand<'tcx>>,
+            callee: &Operand<'tcx>,
+            args: impl Iterator<Item = &'a Operand<'tcx>>,
+            param_env: mir_ty::ParamEnv<'tcx>,
         ) -> bool {
-            if !is_fn_trait_method_call(tcx, func.ty(local_manager, tcx)) {
+            // Tupling is only observed in fn trait (closure) calls.
+            if !is_fn_trait_method_call(tcx, callee.ty(local_manager, tcx)) {
                 return false;
             }
 
-            // Ensure assumptions
+            // Ensure assumptions that runtime may rely upon.
+            let args = args.collect::<Vec<_>>();
             assert_eq!(args.len(), 2);
-            assert!(args.last().unwrap().ty(local_manager, tcx).is_tuple());
+            assert!(
+                args.last()
+                    .unwrap()
+                    .ty(local_manager, tcx)
+                    .is_tuple(tcx, param_env),
+                "Fn trait method call without tupled arguments observed. {:?}, {:?}",
+                callee,
+                args.iter()
+                    .map(|a| a.ty(local_manager, tcx))
+                    .collect::<Vec<_>>()
+            );
             true
         }
     }
