@@ -207,6 +207,7 @@ pub(crate) struct RuntimeCallAdder<C> {
 }
 
 mod implementation {
+    use core::intrinsics::unlikely;
     use std::assert_matches::{assert_matches, debug_assert_matches};
 
     use rustc_middle::mir::{self, BasicBlock, BasicBlockData, HasLocalDecls, UnevaluatedConst};
@@ -401,6 +402,14 @@ mod implementation {
 
     impl<'tcx, C> RuntimeCallAdder<C>
     where
+        C: context::BodyProvider<'tcx>,
+    {
+        fn current_func_id(&self) -> DefId {
+            self.context.body().source.def_id()
+        }
+    }
+    impl<'tcx, C> RuntimeCallAdder<C>
+    where
         C: context::BodyProvider<'tcx> + context::TyContextProvider<'tcx>,
     {
         fn current_func(&self) -> Operand<'tcx> {
@@ -441,6 +450,10 @@ mod implementation {
                 user_ty: None,
                 const_: mir::Const::zero_sized(fn_def_ty),
             }))
+        }
+
+        fn current_param_env(&self) -> mir_ty::ParamEnv<'tcx> {
+            self.context.tcx().param_env(self.current_func_id())
         }
     }
 
@@ -734,8 +747,7 @@ mod implementation {
             place_ref: Local,
             place_ty: Ty<'tcx>,
         ) -> Vec<BasicBlockData<'tcx>> {
-            // FIXME: Provide a real ParamEnv.
-            if !place_ty.is_sized(self.tcx(), mir_ty::ParamEnv::empty()) {
+            if unlikely(!place_ty.is_sized(self.tcx(), self.current_param_env())) {
                 log::warn!("Encountered unsized type. Skipping size setting.");
                 return vec![BasicBlockData::new(Some(terminator::goto(None)))];
             }
@@ -771,7 +783,7 @@ mod implementation {
                 Some((
                     sym::set_place_type_int,
                     vec![
-                        operand::const_from_uint(tcx, ty::size_of(self.tcx(), ty).bits()),
+                        operand::const_from_uint(tcx, ty.primitive_size(tcx).bits()),
                         operand::const_from_bool(tcx, ty.is_signed()),
                     ],
                 ))
@@ -912,7 +924,7 @@ mod implementation {
                 self.internal_reference_func_def_const_operand(constant)
             }
             // NOTE: Check this after all other ZSTs that you want to distinguish.
-            else if ty.is_trivially_sized(tcx) && ty::size_of(tcx, ty) == rustc_abi::Size::ZERO {
+            else if ty::size_of(tcx, ty, self.current_param_env()) == rustc_abi::Size::ZERO {
                 self.make_bb_for_operand_ref_call(sym::ref_operand_const_zst, Default::default())
                     .into()
             } else if let Some(c) = operand::const_try_as_unevaluated(constant) {
@@ -977,17 +989,15 @@ mod implementation {
             let ty = constant.ty();
             debug_assert!(ty.is_integral());
 
+            let tcx = self.tcx();
             let (bit_rep_local, additional_stmts) =
-                utils::cast_int_to_bit_rep(self.tcx(), &mut self.context, constant);
+                utils::cast_int_to_bit_rep(tcx, &mut self.context, constant);
             let (mut block, result) = self.make_bb_for_operand_ref_call(
                 sym::ref_operand_const_int,
                 vec![
                     operand::move_for_local(bit_rep_local),
-                    operand::const_from_uint(
-                        self.context.tcx(),
-                        ty::size_of(self.tcx(), ty).bits(),
-                    ),
-                    operand::const_from_bool(self.context.tcx(), ty.is_signed()),
+                    operand::const_from_uint(tcx, ty.primitive_size(tcx).bits()),
+                    operand::const_from_bool(tcx, ty.is_signed()),
                 ],
             );
             block.statements.extend(additional_stmts);
@@ -1559,7 +1569,7 @@ mod implementation {
 
                 let tcx = self.context.tcx();
                 let is_signed = ty.is_signed();
-                let bits = ty::size_of(tcx, ty).bits();
+                let bits = ty.primitive_size(tcx).bits();
 
                 self.add_bb_for_cast_assign_call_with_args(
                     sym::assign_cast_integer,
@@ -1678,7 +1688,7 @@ mod implementation {
             let tcx = self.context.tcx();
             let operand_ref = self.reference_operand(discr);
             let ty = discr.ty(self.context.local_decls(), tcx);
-            let discr_size = ty::size_of(tcx, ty).bits();
+            let discr_size = ty.primitive_size(tcx).bits();
             let node_index = self.context.block_index();
             let (block, info_store_var) = self.make_bb_for_call_with_ret(
                 sym::new_branching_info,
@@ -2413,6 +2423,7 @@ mod implementation {
 
         pub(super) mod ty {
             use rustc_abi::Size;
+            use rustc_middle::ty::ParamEnv;
 
             use super::*;
 
@@ -2430,13 +2441,12 @@ mod implementation {
                 Ty::new_imm_ref(tcx, tcx.lifetimes.re_erased, ty)
             }
 
-            pub fn size_of<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>) -> Size {
-                tcx.layout_of(mir_ty::ParamEnvAnd {
-                    param_env: mir_ty::ParamEnv::empty(),
-                    value: ty,
-                })
-                .unwrap()
-                .size
+            pub fn size_of<'tcx>(
+                tcx: TyCtxt<'tcx>,
+                ty: Ty<'tcx>,
+                param_env: ParamEnv<'tcx>,
+            ) -> Size {
+                tcx.layout_of(param_env.and(ty)).unwrap().size
             }
 
             pub fn ebit_sbit_size<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>) -> (u64, u64) {
@@ -2445,7 +2455,7 @@ mod implementation {
                     Float,
                 };
                 assert!(ty.is_floating_point());
-                let bit_size = size_of(tcx, ty).bits();
+                let bit_size = ty.primitive_size(tcx).bits();
                 let ebit_size = if bit_size == Single::BITS as u64 {
                     Single::PRECISION
                 } else {

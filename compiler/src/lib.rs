@@ -8,6 +8,7 @@
 #![feature(macro_metavar_expr)]
 #![feature(box_into_inner)]
 #![feature(assert_matches)]
+#![feature(core_intrinsics)]
 
 mod mir_transform;
 mod passes;
