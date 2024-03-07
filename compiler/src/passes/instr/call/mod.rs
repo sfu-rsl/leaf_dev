@@ -270,7 +270,7 @@ mod implementation {
         // Just a bit more semantics.
         fn make_bb_for_helper_call_with_all(
             &mut self,
-            func_info: FunctionInfo<'tcx>,
+            func_info: FunctionInfo,
             generic_args: impl IntoIterator<Item = GenericArg<'tcx>>,
             args: Vec<Operand<'tcx>>,
             target: Option<BasicBlock>,
@@ -280,7 +280,7 @@ mod implementation {
 
         fn make_bb_for_call_raw(
             &mut self,
-            func_info: FunctionInfo<'tcx>,
+            func_info: FunctionInfo,
             generic_args: impl IntoIterator<Item = GenericArg<'tcx>>,
             args: Vec<Operand<'tcx>>,
             target: Option<BasicBlock>,
@@ -300,14 +300,15 @@ mod implementation {
         ) -> Vec<BasicBlock>;
     }
 
-    impl<'tcx, 'm, 's> RuntimeCallAdder<DefaultContext<'tcx, 'm, 's>> {
+    impl<'tcx, 'm, 'p, 's> RuntimeCallAdder<DefaultContext<'tcx, 'm, 'p, 's>> {
         pub fn new(
             tcx: TyCtxt<'tcx>,
             modification_unit: &'m mut BodyInstrumentationUnit<'tcx>,
+            pri: &'p PriItems,
             storage: &'s mut dyn Storage,
         ) -> Self {
             Self {
-                context: DefaultContext::new(tcx, modification_unit, storage),
+                context: DefaultContext::new(tcx, modification_unit, pri, storage),
             }
         }
     }
@@ -509,12 +510,12 @@ mod implementation {
 
         fn make_bb_for_call_raw(
             &mut self,
-            func_info: FunctionInfo<'tcx>,
+            func_info: FunctionInfo,
             generic_args: impl IntoIterator<Item = GenericArg<'tcx>>,
             args: Vec<Operand<'tcx>>,
             target: Option<BasicBlock>,
         ) -> (BasicBlockData<'tcx>, Local) {
-            let result_local = self.context.add_local(func_info.ret_ty);
+            let result_local = self.context.add_local(func_info.ret_ty(self.tcx()));
             (
                 self.make_call_bb(
                     func_info.def_id,
@@ -1490,7 +1491,7 @@ mod implementation {
             &mut self,
             elements: &[OperandRef],
         ) -> (Local, [Statement<'tcx>; 3]) {
-            let operand_ref_ty = self.context.pri_types().operand_ref;
+            let operand_ref_ty = self.context.pri_types().operand_ref(self.tcx());
             let (items_local, additional_stmts) = prepare_operand_for_slice(
                 self.context.tcx(),
                 &mut self.context,
@@ -1875,9 +1876,10 @@ mod implementation {
             arguments: impl Iterator<Item = OperandRef>,
             are_args_tupled: bool,
         ) {
-            let operand_ref_ty = self.context.pri_types().operand_ref;
+            let tcx = self.tcx();
+            let operand_ref_ty = self.context.pri_types().operand_ref(tcx);
             let (arguments_local, additional_stmts) = prepare_operand_for_slice(
-                self.context.tcx(),
+                tcx,
                 &mut self.context,
                 operand_ref_ty,
                 arguments
@@ -1889,7 +1891,7 @@ mod implementation {
                 vec![
                     operand::copy_for_local(func.into()),
                     operand::move_for_local(arguments_local),
-                    operand::const_from_bool(self.tcx(), are_args_tupled),
+                    operand::const_from_bool(tcx, are_args_tupled),
                 ],
             );
             block.statements.extend(additional_stmts);
@@ -2029,12 +2031,10 @@ mod implementation {
         }
 
         fn internal_reference_func(&mut self, func: &Operand<'tcx>) -> BlocksAndResult<'tcx> {
-            log::debug!(
-                "Referencing function: {:?}",
-                func.ty(self, self.tcx()).kind()
-            );
-            let id_ty = self.context.pri_types().func_id;
-            let (stmts, id_local) = id_of_func(self.tcx(), &mut self.context, func, id_ty);
+            let tcx = self.tcx();
+            log::debug!("Referencing function: {:?}", func.ty(self, tcx).kind());
+            let id_ty = self.context.pri_types().func_id(tcx);
+            let (stmts, id_local) = id_of_func(tcx, &mut self.context, func, id_ty);
             let (mut new_block, ref_local) = self.make_bb_for_operand_ref_call(
                 sym::ref_operand_const_func,
                 vec![operand::move_for_local(id_local)],

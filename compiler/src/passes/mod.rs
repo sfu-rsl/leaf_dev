@@ -570,24 +570,33 @@ mod implementation {
         }
 
         pub(crate) struct ValueBorrow<'a> {
-            storage: &'a mut GlobalStorage,
+            storage: &'a GlobalStorage,
             key: Option<String>,
             value: Option<StorageValueImpl>,
+            leaked: bool,
         }
 
         impl<'a> ValueBorrow<'a> {
-            fn new(storage: &'a mut GlobalStorage, key: String, value: StorageValueImpl) -> Self {
+            fn new(storage: &'a GlobalStorage, key: String, value: StorageValueImpl) -> Self {
                 ValueBorrow {
                     storage,
                     key: Some(key),
                     value: Some(value),
+                    leaked: false,
                 }
+            }
+
+            pub(crate) fn leak(mut self) -> StorageValueImpl {
+                self.leaked = true;
+                self.value.take().unwrap()
             }
         }
 
         impl Drop for ValueBorrow<'_> {
             fn drop(&mut self) {
-                log::debug!("Dropping DictMutRef2");
+                if self.leaked {
+                    return;
+                }
                 self.storage
                     .0
                     .borrow_mut()
@@ -631,6 +640,12 @@ mod implementation {
             ValueBorrow<'a>,
             std::marker::PhantomData<&'a mut V>,
         );
+
+        impl<V: 'static> DowncastValueBorrow<'_, V> {
+            pub(crate) fn leak(self) -> Box<V> {
+                self.0.leak().downcast::<V>().unwrap()
+            }
+        }
 
         impl<V: 'static> Deref for DowncastValueBorrow<'_, V> {
             type Target = V;

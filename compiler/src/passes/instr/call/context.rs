@@ -13,11 +13,10 @@ use crate::{
         JumpTargetModifier, NewLocalDecl,
     },
     passes::Storage,
-    pri_utils::sym::LeafSymbol,
 };
 
 use super::{InsertionLocation, OperandRef, PlaceRef, SwitchInfo};
-use crate::pri_utils::{FunctionInfo, PriHelperFunctions, PriTypes};
+use crate::pri_utils::{sym::LeafSymbol, FunctionInfo, PriHelperFunctions, PriTypes};
 
 pub(crate) trait TyContextProvider<'tcx> {
     fn tcx(&self) -> TyCtxt<'tcx>;
@@ -30,9 +29,9 @@ pub(crate) trait BodyProvider<'tcx> {
 pub(crate) trait InEntryFunction {}
 
 pub(crate) trait PriItemsProvider<'tcx> {
-    fn get_pri_func_info(&self, func_name: LeafSymbol) -> &FunctionInfo<'tcx>;
-    fn pri_types(&self) -> &PriTypes<'tcx>;
-    fn pri_helper_funcs(&self) -> &PriHelperFunctions<'tcx>;
+    fn get_pri_func_info(&self, func_name: LeafSymbol) -> &FunctionInfo;
+    fn pri_types(&self) -> &PriTypes;
+    fn pri_helper_funcs(&self) -> &PriHelperFunctions;
 }
 
 pub(crate) trait StorageProvider {
@@ -87,48 +86,42 @@ impl<'tcx, C> BaseContext<'tcx> for C where
 {
 }
 
-pub(crate) struct DefaultContext<'tcx, 'm, 's> {
+pub(crate) struct DefaultContext<'tcx, 'm, 'p, 's> {
     tcx: TyCtxt<'tcx>,
     modification_unit: &'m mut BodyInstrumentationUnit<'tcx>,
-    pri: PriItems<'tcx>,
+    pri: &'p PriItems,
     storage: &'s mut dyn Storage,
 }
 
-pub(crate) struct PriItems<'tcx> {
-    pub funcs: HashMap<String, FunctionInfo<'tcx>>,
-    pub types: PriTypes<'tcx>,
-    pub helper_funcs: PriHelperFunctions<'tcx>,
+pub(crate) struct PriItems {
+    pub funcs: HashMap<LeafSymbol, FunctionInfo>,
+    pub types: PriTypes,
+    pub helper_funcs: PriHelperFunctions,
 }
 
-impl<'tcx, 'm, 's> DefaultContext<'tcx, 'm, 's> {
+impl<'tcx, 'm, 'p, 's> DefaultContext<'tcx, 'm, 'p, 's> {
     pub(crate) fn new(
         tcx: TyCtxt<'tcx>,
         modification_unit: &'m mut BodyInstrumentationUnit<'tcx>,
+        pri: &'p PriItems,
         storage: &'s mut dyn Storage,
     ) -> Self {
-        use crate::pri_utils::*;
-        let pri_items = all_pri_items(tcx);
-
         Self {
             tcx,
             modification_unit,
-            pri: PriItems {
-                funcs: filter_main_funcs(tcx, &pri_items), // FIXME: Perform caching
-                types: filter_helper_types(tcx, &pri_items),
-                helper_funcs: filter_helper_funcs(tcx, &pri_items),
-            },
+            pri,
             storage,
         }
     }
 }
 
-impl<'tcx> TyContextProvider<'tcx> for DefaultContext<'tcx, '_, '_> {
+impl<'tcx> TyContextProvider<'tcx> for DefaultContext<'tcx, '_, '_, '_> {
     fn tcx(&self) -> TyCtxt<'tcx> {
         self.tcx
     }
 }
 
-impl<'tcx> HasLocalDecls<'tcx> for DefaultContext<'tcx, '_, '_> {
+impl<'tcx> HasLocalDecls<'tcx> for DefaultContext<'tcx, '_, '_, '_> {
     delegate! {
         to self.modification_unit {
             fn local_decls(&self) -> &LocalDecls<'tcx>;
@@ -136,7 +129,7 @@ impl<'tcx> HasLocalDecls<'tcx> for DefaultContext<'tcx, '_, '_> {
     }
 }
 
-impl<'tcx> BodyLocalManager<'tcx> for DefaultContext<'tcx, '_, '_> {
+impl<'tcx> BodyLocalManager<'tcx> for DefaultContext<'tcx, '_, '_, '_> {
     delegate! {
         to self.modification_unit {
             fn add_local<T>(&mut self, decl_info: T) -> Local
@@ -146,7 +139,7 @@ impl<'tcx> BodyLocalManager<'tcx> for DefaultContext<'tcx, '_, '_> {
     }
 }
 
-impl<'tcx> BodyBlockManager<'tcx> for DefaultContext<'tcx, '_, '_> {
+impl<'tcx> BodyBlockManager<'tcx> for DefaultContext<'tcx, '_, '_, '_> {
     fn insert_blocks_before<I>(
         &mut self,
         index: BasicBlock,
@@ -168,7 +161,7 @@ impl<'tcx> BodyBlockManager<'tcx> for DefaultContext<'tcx, '_, '_> {
     }
 }
 
-impl JumpTargetModifier for DefaultContext<'_, '_, '_> {
+impl JumpTargetModifier for DefaultContext<'_, '_, '_, '_> {
     fn modify_jump_target_where(
         &mut self,
         terminator_location: BasicBlock,
@@ -181,33 +174,33 @@ impl JumpTargetModifier for DefaultContext<'_, '_, '_> {
     }
 }
 
-impl<'tcx> PriItemsProvider<'tcx> for PriItems<'tcx> {
-    fn get_pri_func_info(&self, func_name: LeafSymbol) -> &FunctionInfo<'tcx> {
+impl<'tcx> PriItemsProvider<'tcx> for PriItems {
+    fn get_pri_func_info(&self, func_name: LeafSymbol) -> &FunctionInfo {
         self.funcs
-            .get(&(*func_name).to_owned())
+            .get(&func_name)
             .unwrap_or_else(|| panic!("Invalid pri function name: `{:?}`.", func_name))
     }
 
-    fn pri_types(&self) -> &PriTypes<'tcx> {
+    fn pri_types(&self) -> &PriTypes {
         &self.types
     }
 
-    fn pri_helper_funcs(&self) -> &PriHelperFunctions<'tcx> {
+    fn pri_helper_funcs(&self) -> &PriHelperFunctions {
         &self.helper_funcs
     }
 }
 
-impl<'tcx> PriItemsProvider<'tcx> for DefaultContext<'tcx, '_, '_> {
+impl<'tcx> PriItemsProvider<'tcx> for DefaultContext<'tcx, '_, '_, '_> {
     delegate! {
         to self.pri {
-            fn get_pri_func_info(&self, func_name: LeafSymbol) -> &FunctionInfo<'tcx>;
-            fn pri_types(&self) -> &PriTypes<'tcx>;
-            fn pri_helper_funcs(&self) -> &PriHelperFunctions<'tcx>;
+            fn get_pri_func_info(&self, func_name: LeafSymbol) -> &FunctionInfo;
+            fn pri_types(&self) -> &PriTypes;
+            fn pri_helper_funcs(&self) -> &PriHelperFunctions;
         }
     }
 }
 
-impl StorageProvider for DefaultContext<'_, '_, '_> {
+impl StorageProvider for DefaultContext<'_, '_, '_, '_> {
     fn storage(&mut self) -> &mut dyn Storage {
         self.storage
     }
@@ -338,9 +331,9 @@ make_impl_macro! {
     impl_pri_items_provider,
     PriItemsProvider<'tcx>,
     self,
-    fn get_pri_func_info(&self, func_name: LeafSymbol) -> &FunctionInfo<'tcx>;
-    fn pri_types(&self) -> &PriTypes<'tcx>;
-    fn pri_helper_funcs(&self) -> &PriHelperFunctions<'tcx>;
+    fn get_pri_func_info(&self, func_name: LeafSymbol) -> &FunctionInfo;
+    fn pri_types(&self) -> &PriTypes;
+    fn pri_helper_funcs(&self) -> &PriHelperFunctions;
 }
 
 make_impl_macro! {

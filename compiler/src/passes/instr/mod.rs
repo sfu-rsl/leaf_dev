@@ -13,6 +13,7 @@ use rustc_target::abi::{FieldIdx, VariantIdx};
 
 use crate::{
     mir_transform::{split_blocks_with, BodyInstrumentationUnit, JumpTargetModifier},
+    passes::{instr::call::context::PriItems, StorageExt},
     visit::*,
 };
 
@@ -51,7 +52,8 @@ fn transform<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>, storage: &mut dyn S
     split_blocks_with(body, requires_immediate_instr_after);
 
     let mut modification = BodyInstrumentationUnit::new(body.local_decls());
-    let mut call_adder = RuntimeCallAdder::new(tcx, &mut modification, storage);
+    let pri_items = take_pri_items(tcx, storage);
+    let mut call_adder = RuntimeCallAdder::new(tcx, &mut modification, &pri_items, storage);
     let mut call_adder = call_adder.in_body(body);
     if tcx
         .entry_fn(())
@@ -72,6 +74,30 @@ fn transform<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>, storage: &mut dyn S
 
     VisitorFactory::make_body_visitor(&mut call_adder).visit_body(body);
     modification.commit(body);
+
+    return_pri_items(storage, pri_items);
+}
+
+const KEY_PRI_ITEMS: &str = "pri_items";
+
+fn take_pri_items(tcx: TyCtxt, storage: &mut dyn Storage) -> Box<PriItems> {
+    storage
+        .get_or_insert_with(KEY_PRI_ITEMS.to_owned(), || {
+            use crate::pri_utils::*;
+            let all_items = all_pri_items(tcx);
+            let main_funcs = filter_main_funcs(tcx, &all_items);
+            let helper_items = filter_helper_items(tcx, &all_items);
+            PriItems {
+                funcs: main_funcs,
+                types: collect_helper_types(&helper_items),
+                helper_funcs: collect_helper_funcs(&helper_items),
+            }
+        })
+        .leak()
+}
+
+fn return_pri_items(storage: &mut dyn Storage, pri_items: Box<PriItems>) {
+    storage.get_raw_or_insert_with(KEY_PRI_ITEMS.to_owned(), Box::new(|| pri_items));
 }
 
 fn handle_entry_function<'tcx, C>(call_adder: &mut RuntimeCallAdder<C>)

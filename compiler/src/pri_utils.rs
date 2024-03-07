@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use rustc_hir::{
     def::DefKind,
@@ -13,7 +13,7 @@ pub mod sym {
 
     use derive_more as dm;
 
-    #[derive(Clone, Copy, dm::Deref, Debug, dm::Display)]
+    #[derive(Clone, Copy, dm::Deref, Debug, dm::Display, Hash, PartialEq, Eq, PartialOrd, Ord)]
     #[repr(transparent)]
     pub struct LeafSymbol(&'static str);
 
@@ -30,7 +30,7 @@ pub mod sym {
     }
     macro_rules! symbols_in_lib {
         ($($name: ident),* $(,)?) => {
-            $(pub const $name: LS = LS(in_lib!($name));)*
+            $(pub(crate) const $name: LS = LS(in_lib!($name));)*
         };
     }
 
@@ -46,7 +46,7 @@ pub mod sym {
     macro_rules! symbols_in_pri {
         ($($name: ident),* $(,)?) => {
             #[allow(dead_code)]
-            $(pub const $name: LS = LS(in_pri!($name));)*
+            $(pub(crate) const $name: LS = LS(in_pri!($name));)*
         };
     }
 
@@ -55,75 +55,153 @@ pub mod sym {
         compiler_helpers,
     }
 
-    macro_rules! fn_name {
-        ($(#[$($attr: meta)*])* fn $name:ident ($($(#[$($arg_attr: meta)*])* $arg:ident : $arg_type:ty),* $(,)?) $(-> $ret_ty:ty)?;) => {
-            symbols_in_pri!($name);
-        };
+    mod mains {
+        use super::*;
+
+        common::pri::pass_func_names_to!(symbols_in_pri, all_comma_separated);
+
+        macro_rules! bracket {
+            ($($name: ident),*) => {
+                [
+                    $($name),*
+                ]
+            };
+        }
+        pub(crate) const ALL_MAINS: [LeafSymbol; 84] =
+            common::pri::pass_func_names_to!(bracket, all_comma_separated);
     }
-    common::pri::list_func_decls!(modifier: fn_name);
+    pub(crate) use mains::*;
 
-    macro_rules! in_compiler_helpers {
-        ($name: ident) => {
-            concatcp!(compiler_helpers.0, "::", stringify!($name))
-        };
+    mod compiler_helpers {
+        use super::*;
+
+        macro_rules! in_compiler_helpers {
+            ($name: ident) => {
+                concatcp!(compiler_helpers.0, "::", stringify!($name))
+            };
+        }
+        macro_rules! symbols_in_compiler_helpers {
+            ($($name: ident),* $(,)?) => {
+                $(pub(crate) const $name: LS = LS(in_compiler_helpers!($name));)*
+            };
+        }
+
+        symbols_in_compiler_helpers! {
+            CH_MODULE_MARKER,
+
+            PLACE_REF_TYPE_HOLDER,
+            OPERAND_REF_TYPE_HOLDER,
+            BINARY_OP_TYPE_HOLDER,
+            UNARY_OP_TYPE_HOLDER,
+            RAW_PTR_TYPE_HOLDER,
+            FUNC_ID_TYPE_HOLDER,
+
+            f32_to_bits,
+            f64_to_bits,
+
+            mark_as_nctfe,
+
+            set_place_address_typed,
+            type_id_of,
+            size_of,
+
+            const_binary_op_of,
+            const_unary_op_of,
+        }
+
+        pub(crate) const ALL_HELPERS: [LS; 15] = [
+            CH_MODULE_MARKER,
+            PLACE_REF_TYPE_HOLDER,
+            OPERAND_REF_TYPE_HOLDER,
+            BINARY_OP_TYPE_HOLDER,
+            UNARY_OP_TYPE_HOLDER,
+            RAW_PTR_TYPE_HOLDER,
+            FUNC_ID_TYPE_HOLDER,
+            f32_to_bits,
+            f64_to_bits,
+            mark_as_nctfe,
+            set_place_address_typed,
+            type_id_of,
+            size_of,
+            const_binary_op_of,
+            const_unary_op_of,
+        ];
     }
-    macro_rules! symbols_in_compiler_helpers {
-        ($($name: ident),* $(,)?) => {
-            $(pub const $name: LS = LS(in_compiler_helpers!($name));)*
-        };
-    }
+    pub(crate) use compiler_helpers::*;
 
-    symbols_in_compiler_helpers! {
-        CH_MODULE_MARKER,
+    impl TryFrom<String> for LeafSymbol {
+        type Error = String;
 
-        PLACE_REF_TYPE_HOLDER,
-        OPERAND_REF_TYPE_HOLDER,
-        BINARY_OP_TYPE_HOLDER,
-        UNARY_OP_TYPE_HOLDER,
-        RAW_PTR_TYPE_HOLDER,
-        FUNC_ID_TYPE_HOLDER,
-
-        f32_to_bits,
-        f64_to_bits,
-
-        mark_as_nctfe,
-
-        set_place_address_typed,
-        type_id_of,
-        size_of,
-
-        const_binary_op_of,
-        const_unary_op_of,
+        fn try_from(s: String) -> Result<Self, Self::Error> {
+            ALL_MAINS
+                .iter()
+                .chain(ALL_HELPERS.iter())
+                .find(|sym| sym.0 == s)
+                .copied()
+                .ok_or(s)
+        }
     }
 }
 
 use sym::LeafSymbol;
 
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct FunctionInfo<'tcx> {
+#[derive(Clone, Copy, Debug, derive_more::From, derive_more::Deref)]
+pub(crate) struct FunctionInfo {
     pub def_id: DefId,
-    pub ret_ty: Ty<'tcx>,
 }
 
-/// Contains types that are used in PRI functions along with primitive types.
-pub(crate) struct PriTypes<'tcx> {
-    pub place_ref: Ty<'tcx>,
-    pub operand_ref: Ty<'tcx>,
-    pub binary_op: Ty<'tcx>,
-    pub unary_op: Ty<'tcx>,
-    pub raw_ptr: Ty<'tcx>,
-    pub func_id: Ty<'tcx>,
+impl FunctionInfo {
+    pub(crate) fn ret_ty<'tcx>(&self, tcx: TyCtxt<'tcx>) -> Ty<'tcx> {
+        // FIXME: Check if additional caching can be beneficial
+        tcx.fn_sig(self.def_id)
+            .skip_binder()
+            .output()
+            .no_bound_vars()
+            .expect(
+                "PRI functions are not expected to have bound vars (generics) for the return type.",
+            )
+    }
 }
 
-pub(crate) struct PriHelperFunctions<'tcx> {
+struct TypeHolder(DefId);
+
+impl TypeHolder {
+    pub(crate) fn ty<'tcx>(&self, tcx: TyCtxt<'tcx>) -> Ty<'tcx> {
+        tcx.type_of(self.0)
+            .no_bound_vars()
+            .expect("PRI types are not expected to have bound vars.")
+    }
+}
+
+/// Provides types that are used in PRI functions along with primitive types.
+pub(crate) struct PriTypes {
+    place_ref: TypeHolder,
+    operand_ref: TypeHolder,
+    binary_op: TypeHolder,
+    unary_op: TypeHolder,
+    raw_ptr: TypeHolder,
+    func_id: TypeHolder,
+}
+
+impl PriTypes {
+    pub(crate) fn operand_ref<'tcx>(&self, tcx: TyCtxt<'tcx>) -> Ty<'tcx> {
+        // FIXME: Check if additional caching can be beneficial
+        self.operand_ref.ty(tcx)
+    }
+
+    pub(crate) fn func_id<'tcx>(&self, tcx: TyCtxt<'tcx>) -> Ty<'tcx> {
+        self.func_id.ty(tcx)
+    }
+}
+
+pub(crate) struct PriHelperFunctions {
     pub f32_to_bits: DefId,
     pub f64_to_bits: DefId,
-    pub set_place_address_typed: FunctionInfo<'tcx>,
-    pub type_id_of: FunctionInfo<'tcx>,
-    pub size_of: FunctionInfo<'tcx>,
-    pub const_binary_op_of: FunctionInfo<'tcx>,
-    pub const_unary_op_of: FunctionInfo<'tcx>,
-    _phantom: std::marker::PhantomData<&'tcx ()>,
+    pub set_place_address_typed: FunctionInfo,
+    pub type_id_of: FunctionInfo,
+    pub size_of: FunctionInfo,
+    pub const_binary_op_of: FunctionInfo,
+    pub const_unary_op_of: FunctionInfo,
 }
 
 /// Lists all the PRI items, including the compiler helper items.
@@ -211,7 +289,7 @@ fn collect_all_pri_items<'tcx>(tcx: TyCtxt<'tcx>, module_marker_id: DefId) -> Ve
     }
 }
 
-/// Filters out the top-level functions out of a list PRI items.
+/// Filters out the top-level functions out of the list of all PRI items.
 /// # Remarks
 /// The functions are the main ones that record the program behavior,
 /// i.e. the ones in [`common::pri::ProgramRuntimeInterface`].
@@ -220,12 +298,8 @@ fn collect_all_pri_items<'tcx>(tcx: TyCtxt<'tcx>, module_marker_id: DefId) -> Ve
 pub(crate) fn filter_main_funcs<'tcx>(
     tcx: TyCtxt<'tcx>,
     all_pri_items: &[DefId],
-) -> HashMap<String, FunctionInfo<'tcx>> {
-    all_pri_items
-        .iter()
-        .copied()
-        .filter_by_sibling_module_marker_name(tcx, sym::MODULE_MARKER)
-        .into_iter()
+) -> HashMap<LeafSymbol, FunctionInfo> {
+    let items = filter_pri_items(tcx, all_pri_items, sym::MODULE_MARKER)
         .filter(|def_id| matches!(tcx.def_kind(def_id), DefKind::Fn | DefKind::AssocFn))
         .inspect(|def_id| {
             log::debug!(
@@ -234,15 +308,30 @@ pub(crate) fn filter_main_funcs<'tcx>(
                 def_id,
             );
         })
-        .map(|def_id| (to_map_key(tcx, def_id), func_info_from(tcx, def_id)))
+        .filter_associate_with_symbol(tcx)
+        .map(|(s, id)| (s, id.into()))
+        .collect::<HashMap<_, _>>();
+    debug_assert_eq!(
+        items.len(),
+        sym::ALL_MAINS.len(),
+        "Some main functions are missing: {:?}",
+        &HashSet::from_iter(items.into_keys()) - &HashSet::from(sym::ALL_MAINS)
+    );
+    items
+}
+
+/// Filters out the compiler helper items out of the list of all PRI items.
+pub(crate) fn filter_helper_items<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    all_pri_items: &[DefId],
+) -> HashMap<LeafSymbol, DefId> {
+    filter_pri_items(tcx, all_pri_items, sym::CH_MODULE_MARKER)
+        .filter_associate_with_symbol(tcx)
         .collect()
 }
 
-/// Filters out the helper types out of a list of PRI items.
-pub(crate) fn filter_helper_types<'tcx>(
-    tcx: TyCtxt<'tcx>,
-    all_pri_items: &[DefId],
-) -> PriTypes<'tcx> {
+/// Collects the helper type holders out of the list of compiler helper PRI items.
+pub(crate) fn collect_helper_types<'tcx>(helper_def_ids: &HashMap<LeafSymbol, DefId>) -> PriTypes {
     /* FIXME: The desired enums and type aliases don't show up in the exported symbols.
      * It may be because of the MIR phases that clean up/optimize/unify things,
      * the way that the library is added (using the compiled file), or
@@ -252,78 +341,54 @@ pub(crate) fn filter_helper_types<'tcx>(
      * However, there should be some functions in TyCtxt that will list these items for us.
      * Update: Check if the problem still exists with the introduction of `module_children`.
      */
-    let def_ids: HashMap<String, DefId> = all_pri_items
-        .iter()
-        .copied()
-        .filter_by_sibling_module_marker_name(tcx, sym::CH_MODULE_MARKER)
-        .into_iter()
-        .filter(|def_id| matches!(tcx.def_kind(def_id), DefKind::Static(_)))
-        .inspect(|def_id| {
-            log::debug!(
-                target: TAG_DISCOVERY,
-                "Found PRI helper static item: {:?}",
-                def_id,
-            );
-        })
-        .map(|def_id| (to_map_key(tcx, def_id), def_id))
-        .collect();
 
-    let get_ty = |name: &str| -> Ty {
-        tcx.type_of(def_ids.get(name).unwrap())
-            .no_bound_vars()
-            .expect("PRI types are not expected to have bound vars (generics).")
-    };
+    let get_type_holder =
+        |name: LeafSymbol| -> TypeHolder { TypeHolder(*helper_def_ids.get(&name).unwrap()) };
 
     PriTypes {
-        place_ref: get_ty(*sym::PLACE_REF_TYPE_HOLDER),
-        operand_ref: get_ty(*sym::OPERAND_REF_TYPE_HOLDER),
-        binary_op: get_ty(*sym::BINARY_OP_TYPE_HOLDER),
-        unary_op: get_ty(*sym::UNARY_OP_TYPE_HOLDER),
-        raw_ptr: get_ty(*sym::RAW_PTR_TYPE_HOLDER),
-        func_id: get_ty(*sym::FUNC_ID_TYPE_HOLDER),
+        place_ref: get_type_holder(sym::PLACE_REF_TYPE_HOLDER),
+        operand_ref: get_type_holder(sym::OPERAND_REF_TYPE_HOLDER),
+        binary_op: get_type_holder(sym::BINARY_OP_TYPE_HOLDER),
+        unary_op: get_type_holder(sym::UNARY_OP_TYPE_HOLDER),
+        raw_ptr: get_type_holder(sym::RAW_PTR_TYPE_HOLDER),
+        func_id: get_type_holder(sym::FUNC_ID_TYPE_HOLDER),
     }
 }
 
-/// Filters out the helper functions out of a list of PRI items.
-pub(crate) fn filter_helper_funcs<'tcx>(
-    tcx: TyCtxt<'tcx>,
-    all_pri_items: &[DefId],
-) -> PriHelperFunctions<'tcx> {
-    let def_ids: HashMap<String, DefId> = all_pri_items
-        .iter()
-        .copied()
-        .filter_by_sibling_module_marker_name(tcx, sym::CH_MODULE_MARKER)
-        .into_iter()
-        .filter(|def_id| matches!(tcx.def_kind(def_id), DefKind::Fn | DefKind::AssocFn))
-        .inspect(|def_id| {
-            log::debug!(
-                target: TAG_DISCOVERY,
-                "Found PRI helper function: {:?}",
-                def_id,
-            );
-        })
-        .map(|def_id| (to_map_key(tcx, def_id), def_id))
-        .collect();
-
-    let get_func_info = |name: &str| {
-        func_info_from(
-            tcx,
-            *def_ids.get(name).unwrap_or_else(|| {
+/// Collects the helper functions out of the list of compiler helper PRI items.
+pub(crate) fn collect_helper_funcs<'tcx>(
+    helper_def_ids: &HashMap<LeafSymbol, DefId>,
+) -> PriHelperFunctions {
+    let get_func_info = |name: LeafSymbol| {
+        helper_def_ids
+            .get(&name)
+            .copied()
+            .unwrap_or_else(|| {
                 panic!("`{}` is not exported (probably erased by compiler).", name);
-            }),
-        )
+            })
+            .into()
     };
 
     PriHelperFunctions {
-        f32_to_bits: *def_ids.get(*sym::f32_to_bits).unwrap(),
-        f64_to_bits: *def_ids.get(*sym::f64_to_bits).unwrap(),
-        set_place_address_typed: get_func_info(*sym::set_place_address_typed),
-        type_id_of: get_func_info(*sym::type_id_of),
-        size_of: get_func_info(*sym::size_of),
-        const_binary_op_of: get_func_info(*sym::const_binary_op_of),
-        const_unary_op_of: get_func_info(*sym::const_unary_op_of),
-        _phantom: std::marker::PhantomData,
+        f32_to_bits: *helper_def_ids.get(&sym::f32_to_bits).unwrap(),
+        f64_to_bits: *helper_def_ids.get(&sym::f64_to_bits).unwrap(),
+        set_place_address_typed: get_func_info(sym::set_place_address_typed),
+        type_id_of: get_func_info(sym::type_id_of),
+        size_of: get_func_info(sym::size_of),
+        const_binary_op_of: get_func_info(sym::const_binary_op_of),
+        const_unary_op_of: get_func_info(sym::const_unary_op_of),
     }
+}
+
+fn filter_pri_items<'a, 'tcx: 'a>(
+    tcx: TyCtxt<'tcx>,
+    all_pri_items: &'a [DefId],
+    module_marker: LeafSymbol,
+) -> impl Iterator<Item = DefId> + 'a {
+    all_pri_items
+        .iter()
+        .copied()
+        .filter_by_sibling_module_marker_name(tcx, module_marker)
 }
 
 fn to_map_key(tcx: TyCtxt, def_id: DefId) -> String {
@@ -332,20 +397,6 @@ fn to_map_key(tcx: TyCtxt, def_id: DefId) -> String {
         full_path.split_off(start)
     } else {
         full_path
-    }
-}
-
-fn func_info_from(tcx: TyCtxt, def_id: DefId) -> FunctionInfo {
-    FunctionInfo {
-        def_id,
-        ret_ty: tcx
-            .fn_sig(def_id)
-            .skip_binder()
-            .output()
-            .no_bound_vars()
-            .expect(
-                "PRI functions are not expected to have bound vars (generics) for the return type.",
-            ),
     }
 }
 
@@ -367,6 +418,14 @@ trait DefIdIterExt<'tcx> {
         marker: DefId,
         submodules: bool,
     ) -> Box<dyn Iterator<Item = DefId> + 'a>
+    where
+        Self: 'a,
+        'tcx: 'a;
+
+    fn filter_associate_with_symbol<'a>(
+        self,
+        tcx: TyCtxt<'tcx>,
+    ) -> Box<dyn Iterator<Item = (LeafSymbol, DefId)> + 'a>
     where
         Self: 'a,
         'tcx: 'a;
@@ -418,6 +477,20 @@ impl<'tcx, I: Iterator<Item = DefId>> DefIdIterExt<'tcx> for I {
             } else {
                 module.eq_by(&marker_module, |a, b| &a == b)
             }
+        });
+        Box::new(result)
+    }
+
+    fn filter_associate_with_symbol<'a>(
+        self,
+        tcx: TyCtxt<'tcx>,
+    ) -> Box<dyn Iterator<Item = (LeafSymbol, DefId)> + 'a>
+    where
+        Self: 'a,
+        'tcx: 'a,
+    {
+        let result = self.filter_map(move |def_id| {
+            (LeafSymbol::try_from(to_map_key(tcx, def_id)).map(|s| (s, def_id))).ok()
         });
         Box::new(result)
     }
