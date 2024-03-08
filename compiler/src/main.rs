@@ -1,4 +1,4 @@
-use compiler::{constants, run_compiler};
+use compiler::{constants, run_compiler, set_up_compiler};
 
 fn main() {
     env_logger::Builder::new()
@@ -16,6 +16,7 @@ fn main() {
         )
         .init();
 
+    set_up_compiler();
     std::process::exit(run_compiler(
         // The first argument is the executable file name.
         std::env::args().collect::<Vec<_>>().into_iter().skip(1),

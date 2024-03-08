@@ -46,11 +46,16 @@ use rustc_driver::RunCompiler;
 
 use crate::utils::chain;
 
+pub fn set_up_compiler() {
+    use rustc_session::{config::ErrorOutputType, EarlyDiagCtxt};
+
+    rustc_driver::init_rustc_env_logger(&EarlyDiagCtxt::new(ErrorOutputType::default()));
+    rustc_driver::install_ice_hook(URL_BUG_REPORT, |_| ());
+}
+
 pub fn run_compiler(args: impl Iterator<Item = String>, input_path: Option<PathBuf>) -> i32 {
     let args = driver_args::set_up_args(args, input_path);
     log::info!("Running compiler with args: {:?}", args);
-
-    rustc_driver::install_ice_hook(URL_BUG_REPORT, |_| ());
 
     use passes::*;
     let run_pass = |pass: &mut Callbacks| -> i32 {
