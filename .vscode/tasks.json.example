@@ -108,7 +108,7 @@
                 "cwd": "${fileDirname}",
                 "env": {
                     // Your desired logging settings.
-                    "LEAFC_LOG": "info,pri_discovery=off,type_export=off,pass_objects=off",
+                    "LEAFC_LOG": "info,instrumentation=info,instrumentation::counter=info,pri_discovery=off,type_export=off,pass_objects=off",
                 },
             },
             "args": [

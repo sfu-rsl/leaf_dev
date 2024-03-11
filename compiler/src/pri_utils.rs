@@ -285,7 +285,7 @@ fn collect_all_pri_items<'tcx>(tcx: TyCtxt<'tcx>, module_marker_id: DefId) -> Ve
             .filter_by_module_marker(tcx, module_marker_id, true)
             .collect()
     } else {
-        tcx.module_children_rec(module_marker_id, true)
+        tcx.module_children_rec(tcx.parent(module_marker_id), true)
     }
 }
 

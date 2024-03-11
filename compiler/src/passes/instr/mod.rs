@@ -1,5 +1,6 @@
 mod call;
 
+use const_format::concatcp;
 use rustc_index::IndexVec;
 use rustc_middle::{
     mir::{
@@ -11,23 +12,27 @@ use rustc_middle::{
 use rustc_span::source_map::Spanned;
 use rustc_target::abi::{FieldIdx, VariantIdx};
 
+use std::sync::atomic;
+
 use crate::{
-    mir_transform::{split_blocks_with, BodyInstrumentationUnit, JumpTargetModifier},
+    mir_transform::{self, BodyInstrumentationUnit, JumpTargetModifier},
     passes::{instr::call::context::PriItems, StorageExt},
     visit::*,
 };
 
+use super::{CompilationPass, Storage};
+
 use call::{
-    context::{self, BodyProvider, TyContextProvider},
+    context::{self, BlockIndexProvider, TyContextProvider},
     ctxtreqs, AssertionHandler, Assigner, BranchingHandler, BranchingReferencer, CastAssigner,
     EntryFunctionHandler, FunctionHandler,
     InsertionLocation::*,
     OperandRef, OperandReferencer, PlaceReferencer, RuntimeCallAdder,
 };
 
-use self::call::{context::BlockIndexProvider, ctxtreqs::Basic};
-
-use super::{CompilationPass, Storage};
+const TAG_INSTRUMENTATION: &str = "instrumentation";
+use TAG_INSTRUMENTATION as TAG_INSTR;
+const TAG_INSTRUMENTATION_COUNTER: &str = concatcp!(TAG_INSTRUMENTATION, "::counter");
 
 #[derive(Default)]
 pub(crate) struct Instrumentor;
@@ -43,27 +48,38 @@ impl CompilationPass for Instrumentor {
 }
 
 fn transform<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>, storage: &mut dyn Storage) {
-    log::debug!(
+    on_start(tcx);
+
+    let def_id = body.source.def_id();
+
+    if !should_instrument(tcx, body) {
+        log::debug!(
+            target: TAG_INSTR,
+            "Skipping instrumentation for {:?}",
+            def_id
+        );
+        return;
+    }
+
+    log::info!(
+        target: TAG_INSTR,
         "Running instrumentation pass on body of {:#?} at {:?}",
-        body.source.def_id(),
+        def_id,
         body.span,
     );
 
-    split_blocks_with(body, requires_immediate_instr_after);
+    mir_transform::split_blocks_with(body, requires_immediate_instr_after);
+
+    let pri_items = storage
+        .get_or_insert_with(KEY_PRI_ITEMS.to_owned(), || make_pri_items(tcx))
+        .leak();
 
     let mut modification = BodyInstrumentationUnit::new(body.local_decls());
-    let pri_items = take_pri_items(tcx, storage);
     let mut call_adder = RuntimeCallAdder::new(tcx, &mut modification, &pri_items, storage);
     let mut call_adder = call_adder.in_body(body);
-    if tcx
-        .entry_fn(())
-        .is_some_and(|(id, _)| id == body.source.def_id())
-    {
-        handle_entry_function(
-            &mut call_adder
-                .in_entry_fn()
-                .at(Before(body.basic_blocks.indices().next().unwrap())),
-        );
+
+    if tcx.entry_fn(()).is_some_and(|(id, _)| id == def_id) {
+        handle_entry_function(&mut call_adder, body);
     }
 
     // TODO: determine if body will ever be a promoted block
@@ -75,35 +91,54 @@ fn transform<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>, storage: &mut dyn S
     VisitorFactory::make_body_visitor(&mut call_adder).visit_body(body);
     modification.commit(body);
 
-    return_pri_items(storage, pri_items);
+    pri_items.return_to(storage);
+}
+
+fn on_start(tcx: TyCtxt) {
+    {
+        static COUNTER: atomic::AtomicUsize = atomic::AtomicUsize::new(0);
+        let counter = COUNTER.fetch_add(1, atomic::Ordering::SeqCst);
+        let total = tcx.mir_keys(()).len();
+        let update_interval = core::cmp::max(1, total / 100);
+        if total - counter < update_interval || counter % update_interval == 0 {
+            log::info!(target: TAG_INSTRUMENTATION_COUNTER, "Transforming {} / {}", counter, total);
+        }
+    }
 }
 
 const KEY_PRI_ITEMS: &str = "pri_items";
-
-fn take_pri_items(tcx: TyCtxt, storage: &mut dyn Storage) -> Box<PriItems> {
-    storage
-        .get_or_insert_with(KEY_PRI_ITEMS.to_owned(), || {
-            use crate::pri_utils::*;
-            let all_items = all_pri_items(tcx);
-            let main_funcs = filter_main_funcs(tcx, &all_items);
-            let helper_items = filter_helper_items(tcx, &all_items);
-            PriItems {
-                funcs: main_funcs,
-                types: collect_helper_types(&helper_items),
-                helper_funcs: collect_helper_funcs(&helper_items),
-            }
-        })
-        .leak()
+fn make_pri_items(tcx: TyCtxt) -> PriItems {
+    use crate::pri_utils::*;
+    let all_items = all_pri_items(tcx);
+    let main_funcs = filter_main_funcs(tcx, &all_items);
+    let helper_items = filter_helper_items(tcx, &all_items);
+    PriItems {
+        funcs: main_funcs,
+        types: collect_helper_types(&helper_items),
+        helper_funcs: collect_helper_funcs(&helper_items),
+    }
 }
 
-fn return_pri_items(storage: &mut dyn Storage, pri_items: Box<PriItems>) {
-    storage.get_raw_or_insert_with(KEY_PRI_ITEMS.to_owned(), Box::new(|| pri_items));
+fn should_instrument<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>) -> bool {
+    if tcx.def_path_str(body.source.def_id()).contains("leafrtsh") {
+        return false;
+    }
+
+    // FIXME: A const function doesn't mean it won't be called at runtime.
+    if tcx.is_const_fn(body.source.def_id()) {
+        return false;
+    }
+
+    true
 }
 
-fn handle_entry_function<'tcx, C>(call_adder: &mut RuntimeCallAdder<C>)
+fn handle_entry_function<'tcx, C>(call_adder: &mut RuntimeCallAdder<C>, body: &Body<'tcx>)
 where
-    C: ctxtreqs::ForEntryFunction<'tcx> + ctxtreqs::ForFunctionCalling<'tcx>,
+    C: ctxtreqs::Basic<'tcx>,
 {
+    let mut call_adder = call_adder.in_entry_fn();
+    let first_block = body.basic_blocks.indices().next().unwrap();
+    let mut call_adder = call_adder.at(Before(first_block));
     call_adder.init_runtime_lib();
 }
 
@@ -119,7 +154,7 @@ impl VisitorFactory {
         call_adder: &'c mut RuntimeCallAdder<C>,
     ) -> impl Visitor<'tcx> + 'c
     where
-        C: ctxtreqs::Basic<'tcx> + JumpTargetModifier + BodyProvider<'tcx>,
+        C: ctxtreqs::Basic<'tcx> + JumpTargetModifier,
     {
         LeafBodyVisitor {
             call_adder: RuntimeCallAdder::borrow_from(call_adder),
@@ -131,7 +166,7 @@ impl VisitorFactory {
         block: BasicBlock,
     ) -> impl Visitor<'tcx> + 'c
     where
-        C: Basic<'tcx> + BodyProvider<'tcx> + JumpTargetModifier,
+        C: ctxtreqs::Basic<'tcx> + JumpTargetModifier,
     {
         LeafBasicBlockVisitor {
             call_adder: call_adder.at(Before(block)),
@@ -193,12 +228,12 @@ make_general_visitor!(LeafBodyVisitor);
 
 impl<'tcx, C> Visitor<'tcx> for LeafBodyVisitor<C>
 where
-    C: ctxtreqs::Basic<'tcx> + JumpTargetModifier + BodyProvider<'tcx>,
+    C: ctxtreqs::Basic<'tcx> + JumpTargetModifier,
 {
     fn visit_basic_block_data(&mut self, block: BasicBlock, data: &BasicBlockData<'tcx>) {
         if data.is_cleanup {
             // NOTE: Cleanup blocks will be investigated in #206.
-            log::debug!("Skipping instrumenting cleanup block: {:?}", block);
+            log::debug!(target: TAG_INSTR, "Skipping instrumenting cleanup block: {:?}", block);
             return;
         }
 
@@ -211,14 +246,19 @@ make_general_visitor!(LeafBasicBlockVisitor);
 
 impl<'tcx, C> Visitor<'tcx> for LeafBasicBlockVisitor<C>
 where
-    C: Basic<'tcx> + BodyProvider<'tcx> + BlockIndexProvider + JumpTargetModifier,
+    C: ctxtreqs::Basic<'tcx> + BlockIndexProvider + JumpTargetModifier,
 {
     fn visit_statement(
         &mut self,
         statement: &rustc_middle::mir::Statement<'tcx>,
         location: Location,
     ) {
-        log::debug!("Visiting statement: {:?} at {:?}", statement.kind, location);
+        log::debug!(
+            target: TAG_INSTR,
+            "Visiting statement: {:?} at {:?}",
+            statement.kind,
+            location
+        );
         VisitorFactory::make_statement_kind_visitor(&mut self.call_adder.before())
             .visit_statement_kind(&statement.kind);
     }
@@ -351,7 +391,6 @@ where
         _unwind: &UnwindAction,
     ) {
         let cond_ref = self.call_adder.reference_operand(cond);
-        log::debug!("looking at assert message: '{:?}'", msg);
         self.call_adder.check_assert(cond_ref, *expected, msg);
     }
 
@@ -405,7 +444,6 @@ where
             // This branch is only triggered by hitting a divergent function:
             // https://doc.rust-lang.org/rust-by-example/fn/diverging.html
             // (this means the program will exit immediately)
-            log::warn!("visit_call() had no target, so couldn't insert block");
         }
     }
 }
@@ -417,7 +455,7 @@ where
     C: ctxtreqs::ForPlaceRef<'tcx> + ctxtreqs::ForOperandRef<'tcx> + ctxtreqs::ForAssignment<'tcx>,
 {
     fn visit_rvalue(&mut self, rvalue: &Rvalue<'tcx>) {
-        log::debug!("Visiting Rvalue: {:#?}", rvalue);
+        log::debug!(target: TAG_INSTR, "Visiting Rvalue: {:#?}", rvalue);
         self.super_rvalue(rvalue)
     }
 
@@ -476,7 +514,9 @@ where
                     }
                     MutToConstPointer => call_adder.to_another_ptr(*ty, *kind),
                     ArrayToPointer => {
-                        log::warn!(concat!(
+                        log::warn!(
+                            target: TAG_INSTR,
+                            concat!(
                             "ArrayToPointer casts are expected to be optimized away by at this point.",
                             "Sending it to runtime as a regular pointer cast."
                         ));

@@ -1953,7 +1953,7 @@ mod implementation {
 
     impl<'tcx, C> RuntimeCallAdder<C>
     where
-        C: Basic<'tcx> + BodyProvider<'tcx>,
+        C: Basic<'tcx>,
     {
         pub(crate) fn are_args_tupled<'a>(
             &self,
@@ -2888,7 +2888,7 @@ mod implementation {
                 .is_some_and(|id| tcx.is_fn_trait(id))
         }
 
-        pub fn are_args_tupled<'tcx: 'a, 'a>(
+        pub(super) fn are_args_tupled<'tcx: 'a, 'a>(
             tcx: TyCtxt<'tcx>,
             local_manager: &impl HasLocalDecls<'tcx>,
             callee: &Operand<'tcx>,
@@ -2926,17 +2926,14 @@ mod implementation {
     pub(crate) mod context_requirements {
         use super::{context::*, *};
 
-        pub(crate) trait Basic<'tcx>: BaseContext<'tcx> {}
-        impl<'tcx, C> Basic<'tcx> for C where C: BaseContext<'tcx> {}
+        pub(crate) trait Basic<'tcx>: BaseContext<'tcx> + BodyProvider<'tcx> {}
+        impl<'tcx, C> Basic<'tcx> for C where C: BaseContext<'tcx> + BodyProvider<'tcx> {}
 
         pub(crate) trait ForInsertion<'tcx>:
-            Basic<'tcx> + BodyProvider<'tcx> + InsertionLocationProvider
+            Basic<'tcx> + InsertionLocationProvider
         {
         }
-        impl<'tcx, C> ForInsertion<'tcx> for C where
-            C: Basic<'tcx> + BodyProvider<'tcx> + InsertionLocationProvider
-        {
-        }
+        impl<'tcx, C> ForInsertion<'tcx> for C where C: Basic<'tcx> + InsertionLocationProvider {}
 
         pub(crate) trait ForPlaceRef<'tcx>: ForInsertion<'tcx> {}
         impl<'tcx, C> ForPlaceRef<'tcx> for C where C: ForInsertion<'tcx> {}
@@ -2992,7 +2989,3 @@ mod implementation {
 }
 
 pub(super) use implementation::context_requirements as ctxtreqs;
-
-pub(super) mod utils {
-    pub use super::implementation::utils::are_args_tupled;
-}

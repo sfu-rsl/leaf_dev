@@ -124,6 +124,7 @@ pub(crate) trait StorageExt {
     where
         Self: 'a,
         T: 'a;
+    type ManualBorrow<T>;
 
     fn get_or_insert_with<'a, V: Any>(
         &'a mut self,
@@ -620,6 +621,7 @@ mod implementation {
 
         impl<S: Storage + ?Sized> StorageExt for S {
             type MutAccessor<'a, T> = DowncastValueBorrow<'a, T> where Self: 'a, T: 'a;
+            type ManualBorrow<T> = ManualBorrow<T>;
 
             fn get_or_insert_with<'a, V: Any>(
                 &'a mut self,
@@ -642,8 +644,11 @@ mod implementation {
         );
 
         impl<V: 'static> DowncastValueBorrow<'_, V> {
-            pub(crate) fn leak(self) -> Box<V> {
-                self.0.leak().downcast::<V>().unwrap()
+            pub(crate) fn leak(mut self) -> ManualBorrow<V> {
+                ManualBorrow {
+                    key: self.0.key.take().unwrap(),
+                    value: self.0.leak().downcast::<V>().unwrap(),
+                }
             }
         }
 
@@ -664,6 +669,31 @@ mod implementation {
         impl<V: 'static> AsMut<V> for DowncastValueBorrow<'_, V> {
             fn as_mut(&mut self) -> &mut V {
                 self.0.downcast_mut::<V>().unwrap()
+            }
+        }
+
+        pub(crate) struct ManualBorrow<V> {
+            key: String,
+            value: Box<V>,
+        }
+
+        impl<V> Deref for ManualBorrow<V> {
+            type Target = Box<V>;
+
+            fn deref(&self) -> &Self::Target {
+                &self.value
+            }
+        }
+
+        impl<V> AsRef<V> for ManualBorrow<V> {
+            fn as_ref(&self) -> &V {
+                &self.value
+            }
+        }
+
+        impl<V: 'static> ManualBorrow<V> {
+            pub(crate) fn return_to(self, storage: &mut dyn Storage) {
+                storage.get_raw_or_insert_with(self.key, Box::new(|| self.value));
             }
         }
     }
