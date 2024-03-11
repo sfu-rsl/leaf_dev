@@ -1,3 +1,4 @@
+use super::common;
 use common::pri::*;
 
 pub static CH_MODULE_MARKER: u8 = 0;
@@ -11,12 +12,15 @@ pub static UNARY_OP_TYPE_HOLDER: UnaryOp = UnaryOp::NEG;
 pub static RAW_PTR_TYPE_HOLDER: RawPointer = 0;
 pub static FUNC_ID_TYPE_HOLDER: FuncId = 0;
 
-pub const fn f32_to_bits(value: f32) -> u128 {
-    value.to_bits() as u128
+/* NOTE: The const version of this conversion is unstable
+ * and causes errors during the compilation of the core library.
+ */
+pub fn f32_to_bits(value: f32) -> u128 {
+    unsafe { core::intrinsics::transmute::<f32, u32>(value) as u128 }
 }
 
-pub const fn f64_to_bits(value: f64) -> u128 {
-    value.to_bits() as u128
+pub fn f64_to_bits(value: f64) -> u128 {
+    unsafe { core::intrinsics::transmute::<f64, u64>(value) as u128 }
 }
 
 pub const fn mark_as_nctfe() {}
@@ -59,7 +63,7 @@ pub fn type_id_of<T: ?Sized + 'static>() -> TypeId {
 }
 
 pub fn size_of<T>() -> TypeSize {
-    core::mem::size_of::<T>() as TypeSize
+    core::intrinsics::size_of::<T>() as TypeSize
 }
 
 pub const fn const_binary_op_of(raw: u8) -> BinaryOp {

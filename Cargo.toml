@@ -5,10 +5,9 @@ members = [
     "compiler",
     "runtime/lib",
     "runtime/flavors/*",
-    # We keep the shim in the workspace for project management, although it is built with the compiler.
-    "runtime/shim",
     "macros",
 ]
 exclude = [
+    "runtime/shim",
     "samples/crates/"
 ]

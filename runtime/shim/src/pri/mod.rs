@@ -1,5 +1,7 @@
 pub mod compiler_helpers;
 
+use super::common;
+
 use common::pri::*;
 
 // Call order: Rust ABI -> ForeignPri (+ conversions) -> runtime lib's C ABI
