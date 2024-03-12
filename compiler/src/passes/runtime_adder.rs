@@ -23,7 +23,7 @@ impl RuntimeAdder {
 }
 
 impl CompilationPass for RuntimeAdder {
-    fn transform_ast(&mut self, krate: &mut rustc_ast::Crate) {
+    fn transform_ast(&mut self, krate: &mut rustc_ast::Crate, _storage: &mut dyn super::Storage) {
         if !self.enabled {
             return;
         }

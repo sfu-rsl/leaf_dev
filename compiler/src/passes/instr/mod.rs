@@ -34,15 +34,40 @@ const TAG_INSTRUMENTATION: &str = "instrumentation";
 use TAG_INSTRUMENTATION as TAG_INSTR;
 const TAG_INSTRUMENTATION_COUNTER: &str = concatcp!(TAG_INSTRUMENTATION, "::counter");
 
+const KEY_PRI_ITEMS: &str = "pri_items";
+const KEY_ENABLED: &str = "instr_enabled";
+
 #[derive(Default)]
-pub(crate) struct Instrumentor;
+pub(crate) struct Instrumentor {
+    enabled: bool,
+}
+
+impl Instrumentor {
+    pub(crate) fn new(enabled: bool) -> Self {
+        Self { enabled }
+    }
+}
 
 impl CompilationPass for Instrumentor {
+    fn visit_ast_before(
+        &mut self,
+        _krate: &rustc_ast::Crate,
+        storage: &mut dyn Storage,
+    ) -> rustc_driver::Compilation {
+        // As early as possible, we use transform_ast to set the enabled flag.
+        storage.get_or_insert_with(KEY_ENABLED.to_owned(), || self.enabled);
+        rustc_driver::Compilation::Continue
+    }
+
     fn transform_mir_body<'tcx>(
         tcx: TyCtxt<'tcx>,
         body: &mut Body<'tcx>,
         storage: &mut dyn Storage,
     ) {
+        if !*storage.get_mut::<bool>(&KEY_ENABLED.to_owned()).unwrap() {
+            return;
+        }
+
         transform(tcx, body, storage);
     }
 }
@@ -106,7 +131,6 @@ fn on_start(tcx: TyCtxt) {
     }
 }
 
-const KEY_PRI_ITEMS: &str = "pri_items";
 fn make_pri_items(tcx: TyCtxt) -> PriItems {
     use crate::pri_utils::*;
     let all_items = all_pri_items(tcx);

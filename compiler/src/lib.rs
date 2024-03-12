@@ -42,6 +42,7 @@ extern crate thin_vec;
 
 use std::path::PathBuf;
 
+use config::CompilerConfig;
 use constants::*;
 use rustc_driver::RunCompiler;
 
@@ -64,6 +65,7 @@ pub fn run_compiler(args: impl Iterator<Item = String>, input_path: Option<PathB
     let run_pass = |pass: &mut Callbacks| -> i32 {
         rustc_driver::catch_with_exit_code(|| RunCompiler::new(&args, pass).run())
     };
+
     let prerequisites_pass = RuntimeAdder::new(
         config.runtime_shim.crate_name.clone(),
         config.runtime_shim.as_external,
@@ -83,17 +85,23 @@ pub fn run_compiler(args: impl Iterator<Item = String>, input_path: Option<PathB
     #[cfg(not(nctfe))]
     let nctfe_pass = NoOpPass;
 
+    let should_instrument = should_instrument(&config, &args);
+    if !should_instrument {
+        log::info!("Instrumentation will be skipped.");
+    }
+    let instrumentor_pass = Instrumentor::new(should_instrument);
+
     let pass = chain!(
         prerequisites_pass,
         <TypeExporter>,
         nctfe_pass,
-        <Instrumentor>,
+        instrumentor_pass,
     )
     .into_logged();
     run_pass(&mut pass.to_callbacks())
 }
 
-fn load_config() -> crate::config::CompilerConfig {
+fn load_config() -> CompilerConfig {
     use ::config::{Environment, File};
     ::config::Config::builder()
         .add_source(
@@ -111,6 +119,16 @@ fn load_config() -> crate::config::CompilerConfig {
         .and_then(|c| c.try_deserialize())
         .inspect(|c| log::debug!("Loaded configurations: {:?}", c))
         .expect("Failed to read configurations")
+}
+
+fn should_instrument(config: &CompilerConfig, args: &[String]) -> bool {
+    let crate_name = driver_args::find_crate_name(args);
+
+    if crate_name.is_some_and(|name| name == "build_script_build") {
+        return false;
+    }
+
+    true
 }
 
 pub mod constants {
@@ -161,6 +179,7 @@ mod driver_args {
 
     const OPT_EXTERN: &str = "--extern";
     const OPT_CODEGEN: &str = "-C";
+    const OPT_CRATE_NAME: &str = "--crate-name";
     const OPT_LINK_NATIVE: &str = "-l";
     const OPT_PRINT_SYSROOT: &str = "--print=sysroot";
     const OPT_SYSROOT: &str = "--sysroot";
@@ -268,6 +287,11 @@ mod driver_args {
             OPT_SEARCH_PATH,
             format!("{SEARCH_KIND_NATIVE}={}", runtime_dylib_dir),
         );
+    }
+
+    pub(super) fn find_crate_name(args: &[String]) -> Option<String> {
+        let index = args.iter().rposition(|arg| arg == OPT_CRATE_NAME)? + 1;
+        args.get(index).cloned()
     }
 
     fn find_sysroot() -> String {

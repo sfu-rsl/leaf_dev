@@ -48,12 +48,12 @@ macro_rules! visit_before_after {
 #[allow(unused)]
 pub(crate) trait CompilationPass {
     visit_before_after! {
-        fn ast(&mut self, krate: &ast::Crate) -> Compilation {
+        fn ast(&mut self, krate: &ast::Crate, storage: &mut dyn Storage) -> Compilation {
             Compilation::Continue
         }
     }
 
-    fn transform_ast(&mut self, krate: &mut ast::Crate) {
+    fn transform_ast(&mut self, krate: &mut ast::Crate, storage: &mut dyn Storage) {
         Default::default()
     }
 
@@ -281,9 +281,9 @@ mod implementation {
             let mut ast_steal = queries.parse().unwrap();
 
             let mut pass = self.0.acquire();
-            stop_if_stop!(pass.visit_ast_before(&ast_steal.borrow()));
-            pass.transform_ast(ast_steal.get_mut());
-            stop_if_stop!(pass.visit_ast_after(&ast_steal.borrow()));
+            stop_if_stop!(pass.visit_ast_before(&ast_steal.borrow(), &mut global::get_storage()));
+            pass.transform_ast(ast_steal.get_mut(), &mut global::get_storage());
+            stop_if_stop!(pass.visit_ast_after(&ast_steal.borrow(), &mut global::get_storage()));
 
             Compilation::Continue
         }
@@ -340,17 +340,25 @@ mod implementation {
         A: CompilationPass,
         B: CompilationPass,
     {
-        fn visit_ast_before(&mut self, krate: &ast::Crate) -> Compilation {
-            stop_if_stop!(self.first.visit_ast_before(krate));
-            stop_if_stop!(self.second.visit_ast_before(krate));
+        fn visit_ast_before(
+            &mut self,
+            krate: &ast::Crate,
+            storage: &mut dyn Storage,
+        ) -> Compilation {
+            stop_if_stop!(self.first.visit_ast_before(krate, storage));
+            stop_if_stop!(self.second.visit_ast_before(krate, storage));
 
             Compilation::Continue
         }
 
-        fn visit_ast_after(&mut self, krate: &ast::Crate) -> Compilation {
+        fn visit_ast_after(
+            &mut self,
+            krate: &ast::Crate,
+            storage: &mut dyn Storage,
+        ) -> Compilation {
             // NOTE: We perform in the telescope order.
-            stop_if_stop!(self.second.visit_ast_after(krate));
-            stop_if_stop!(self.first.visit_ast_after(krate));
+            stop_if_stop!(self.second.visit_ast_after(krate, storage));
+            stop_if_stop!(self.first.visit_ast_after(krate, storage));
 
             Compilation::Continue
         }
@@ -394,9 +402,9 @@ mod implementation {
             B::visit_mir_body_after(tcx, body, storage);
         }
 
-        fn transform_ast(&mut self, krate: &mut ast::Crate) {
-            self.first.transform_ast(krate);
-            self.second.transform_ast(krate);
+        fn transform_ast(&mut self, krate: &mut ast::Crate, storage: &mut dyn Storage) {
+            self.first.transform_ast(krate, storage);
+            self.second.transform_ast(krate, storage);
         }
 
         fn transform_mir_body<'tcx>(
