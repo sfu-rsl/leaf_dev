@@ -189,6 +189,7 @@ version = "0.1.0"
 dependencies = [
  "bimap",
  "common",
+ "config",
  "const_format",
  "delegate",
  "derive_more",
@@ -197,6 +198,7 @@ dependencies = [
  "log",
  "macros",
  "paste",
+ "serde",
 ]
 
 [[package]]

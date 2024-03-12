@@ -30,7 +30,6 @@ pub(crate) use runtime_adder::RuntimeAdder;
 pub(crate) use tyexp::TypeExporter;
 
 pub(super) type Callbacks = dyn driver::Callbacks + Send;
-pub(super) type PrerequisitePass = Chain<RuntimeAdder, NoOpPass>;
 
 pub(crate) trait HasResult<R> {
     fn into_result(self) -> R;

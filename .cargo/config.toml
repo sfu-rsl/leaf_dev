@@ -15,4 +15,3 @@ rustflags = [
 [env]
 # You can set this (during compile time) to change the name of the runtime library
 # in the extern prelude of the compiled program.
-CFG_RUNTIME_CRATE_NAME = "leaf"

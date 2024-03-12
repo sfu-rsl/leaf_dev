@@ -7,11 +7,27 @@ use rustc_span::{
 use super::CompilationPass;
 
 /// A pass that adds the runtime library as an extern crate to the program.
-#[derive(Default)]
-pub(crate) struct RuntimeAdder;
+#[derive(Clone)]
+pub(crate) struct RuntimeAdder {
+    crate_name: String,
+    enabled: bool,
+}
+
+impl RuntimeAdder {
+    pub fn new(crate_name: String, enabled: bool) -> Self {
+        Self {
+            crate_name,
+            enabled,
+        }
+    }
+}
 
 impl CompilationPass for RuntimeAdder {
     fn transform_ast(&mut self, krate: &mut rustc_ast::Crate) {
+        if !self.enabled {
+            return;
+        }
+
         // extern crate runtime;
         let item = Item {
             attrs: Default::default(),
@@ -22,10 +38,7 @@ impl CompilationPass for RuntimeAdder {
                 span: DUMMY_SP,
                 tokens: None,
             },
-            ident: Ident::with_dummy_span(Symbol::intern(
-                // FIXME: Make it configurable. #358
-                crate::constants::NAME_RUNTIME_LIB_DEFAULT,
-            )),
+            ident: Ident::with_dummy_span(Symbol::intern(&self.crate_name)),
             kind: ItemKind::ExternCrate(Some(Symbol::intern(
                 *crate::pri_utils::sym::RUNTIME_LIB_CRATE,
             ))),

@@ -75,23 +75,13 @@ pub(super) fn init_backend() {
 
 fn load_config() -> ::config::Config {
     use config::{Environment, File};
-    fn search_parent_dirs(name: &str) -> String {
-        std::env::current_dir()
-            .unwrap()
-            .ancestors()
-            .find(|p| {
-                p.read_dir().is_ok_and(|entries| {
-                    entries
-                        .filter_map(|e| e.ok())
-                        .any(|e| e.file_name().to_str().is_some_and(|n| n.starts_with(name)))
-                })
-            })
-            .map(|p| p.join(name).to_string_lossy().to_string())
-            .unwrap_or(name.to_string())
-    }
-
     config::Config::builder()
-        .add_source(File::with_name(&search_parent_dirs("leaf_config_default")).required(false))
+        .add_source(
+            File::with_name(&common::utils::search_current_ancestor_dirs_for(
+                "leaf_config_default",
+            ))
+            .required(false),
+        )
         .add_source(
             Environment::with_prefix("LEAF")
                 .prefix_separator("_")

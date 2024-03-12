@@ -10,6 +10,7 @@
 #![feature(assert_matches)]
 #![feature(core_intrinsics)]
 
+mod config;
 mod mir_transform;
 mod passes;
 mod pri_utils;
@@ -54,18 +55,24 @@ pub fn set_up_compiler() {
 }
 
 pub fn run_compiler(args: impl Iterator<Item = String>, input_path: Option<PathBuf>) -> i32 {
-    let args = driver_args::set_up_args(args, input_path);
+    let config = load_config();
+
+    let args = driver_args::set_up_args(args, input_path, &config);
     log::info!("Running compiler with args: {:?}", args);
 
     use passes::*;
     let run_pass = |pass: &mut Callbacks| -> i32 {
         rustc_driver::catch_with_exit_code(|| RunCompiler::new(&args, pass).run())
     };
+    let prerequisites_pass = RuntimeAdder::new(
+        config.runtime_shim.crate_name.clone(),
+        config.runtime_shim.as_external,
+    );
 
     #[cfg(nctfe)]
     let nctfe_pass = {
         let ctfe_block_ids = {
-            let pass = chain!(<PrerequisitePass>, <CtfeScanner>,);
+            let pass = chain!(prerequisites_pass.clone(), <CtfeScanner>,);
             let mut callbacks = pass.to_callbacks();
             run_pass(&mut callbacks);
             let pass = callbacks.into_pass();
@@ -77,7 +84,7 @@ pub fn run_compiler(args: impl Iterator<Item = String>, input_path: Option<PathB
     let nctfe_pass = NoOpPass;
 
     let pass = chain!(
-        <PrerequisitePass>,
+        prerequisites_pass,
         <TypeExporter>,
         nctfe_pass,
         <Instrumentor>,
@@ -86,22 +93,40 @@ pub fn run_compiler(args: impl Iterator<Item = String>, input_path: Option<PathB
     run_pass(&mut pass.to_callbacks())
 }
 
+fn load_config() -> crate::config::CompilerConfig {
+    use ::config::{Environment, File};
+    ::config::Config::builder()
+        .add_source(
+            File::with_name(&common::utils::search_current_ancestor_dirs_for(
+                "leafc_config",
+            ))
+            .required(false),
+        )
+        .add_source(
+            Environment::with_prefix(CONFIG_ENV_PREFIX)
+                .prefix_separator("_")
+                .separator("__"),
+        )
+        .build()
+        .and_then(|c| c.try_deserialize())
+        .inspect(|c| log::debug!("Loaded configurations: {:?}", c))
+        .expect("Failed to read configurations")
+}
+
 pub mod constants {
+    use const_format::concatcp;
+
     // The instrumented code is going to call the shim.
     pub(super) const CRATE_RUNTIME: &str = "leafrtsh";
 
-    // The name of the runtime shim library to be in the extern prelude.
-    pub(super) const NAME_RUNTIME_LIB_DEFAULT: &str = env!(
-        "CFG_RUNTIME_CRATE_NAME",
-        "Could not find runtime crate name in the environment. Have you removed it from `config.toml`?"
-    );
+    pub(super) const CONFIG_ENV_PREFIX: &str = "LEAFC";
 
     pub(super) const URL_BUG_REPORT: &str = "https://github.com/sfu-rsl/leaf/issues/new";
 
     pub(super) const LEAF_AUG_MOD_NAME: &str = "__leaf_augmentation";
 
-    pub const LOG_ENV: &str = "LEAFC_LOG";
-    pub const LOG_WRITE_STYLE_ENV: &str = "LEAFC_LOG_STYLE";
+    pub const LOG_ENV: &str = concatcp!(CONFIG_ENV_PREFIX, "_LOG");
+    pub const LOG_WRITE_STYLE_ENV: &str = concatcp!(CONFIG_ENV_PREFIX, "_LOG_STYLE");
 
     pub const LOG_PASS_OBJECTS_TAG: &str = super::passes::logger::OBJECTS_TAG;
     pub const LOG_PRI_DISCOVERY_TAG: &str = super::pri_utils::TAG_DISCOVERY;
@@ -177,6 +202,7 @@ mod driver_args {
     pub(super) fn set_up_args(
         given_args: impl Iterator<Item = String>,
         input_path: Option<PathBuf>,
+        config: &crate::config::CompilerConfig,
     ) -> Vec<String> {
         // Although the driver throws out the first argument, we set the correct value for it.
         let given_args = std::iter::once(
@@ -192,17 +218,19 @@ mod driver_args {
 
         args.push(OPT_UNSTABLE.to_owned());
 
-        // Add the runtime shim library as a direct external dependency.
-        let shim_lib_path = find_shim_lib_path();
-        args.add_pair(OPT_EXTERN, format!("{}={}", CRATE_RUNTIME, shim_lib_path));
-        // Add the runtime shim library dependencies into the search path.
-        args.add_pair(
-            OPT_SEARCH_PATH,
-            format!(
-                "{SEARCH_KIND_TRANS_DEP}={}",
-                find_shim_lib_deps_path(&shim_lib_path)
-            ),
-        );
+        if config.runtime_shim.as_external {
+            // Add the runtime shim library as a direct external dependency.
+            let shim_lib_path = find_shim_lib_path();
+            args.add_pair(OPT_EXTERN, format!("{}={}", CRATE_RUNTIME, shim_lib_path));
+            // Add the runtime shim library dependencies into the search path.
+            args.add_pair(
+                OPT_SEARCH_PATH,
+                format!(
+                    "{SEARCH_KIND_TRANS_DEP}={}",
+                    find_shim_lib_deps_path(&shim_lib_path)
+                ),
+            );
+        }
 
         set_up_runtime_dylib(&mut args);
 
