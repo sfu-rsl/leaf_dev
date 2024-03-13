@@ -194,7 +194,7 @@ mod driver_args {
             ),
         );
 
-        set_runtime_flavor(&mut args);
+        set_up_runtime_dylib(&mut args);
 
         if let Some(input_path) = input_path {
             args.push(input_path.to_string_lossy().into_owned());
@@ -203,12 +203,16 @@ mod driver_args {
         args
     }
 
-    fn set_runtime_flavor(args: &mut Vec<String>) {
+    fn set_up_runtime_dylib(args: &mut Vec<String>) {
         // FIXME: Add better support for setting the runtime flavor.
         // NOTE: If the compiled target is either a build script or a proc-macro crate type, we should use the noop runtime library.
-        let use_noop_runtime = args.contains(&"build_script_build".to_string())
-            || args.contains(&"proc-macro".to_string());
+        let args_str = args.join(" ");
+        let use_noop_runtime = args_str.contains(&"--crate-name build_script_build".to_string())
+            || args_str.contains(&"feature=\\\"proc-macro\\\"".to_string())
+            || args_str.contains(&"--crate-type proc-macro ".to_string());
+
         ensure_runtime_dylib_exists(use_noop_runtime);
+        let runtime_dylib_dir = find_runtime_dylib_dir(use_noop_runtime);
         // Add the runtime dynamic library as a dynamic dependency.
         /* NOTE: As long as the shim is getting compiled along with the program,
          * adding it explicitly should not be necessary (is expected to be
@@ -219,18 +223,12 @@ mod driver_args {
          * it in `LD_LIBRARY_PATH` won't be necessary. */
         args.add_pair(
             OPT_CODEGEN,
-            format!(
-                "{CODEGEN_LINK_ARG}=-Wl,-rpath={}",
-                find_runtime_dylib_dir(use_noop_runtime)
-            ),
+            format!("{CODEGEN_LINK_ARG}=-Wl,-rpath={}", runtime_dylib_dir),
         );
         // Also include it in the search path for Rust.
         args.add_pair(
             OPT_SEARCH_PATH,
-            format!(
-                "{SEARCH_KIND_NATIVE}={}",
-                find_runtime_dylib_dir(use_noop_runtime)
-            ),
+            format!("{SEARCH_KIND_NATIVE}={}", runtime_dylib_dir),
         );
     }
 

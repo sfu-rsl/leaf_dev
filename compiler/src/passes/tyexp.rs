@@ -59,7 +59,7 @@ impl CompilationPass for TypeExporter {
         let out_dir = &tcx.output_filenames(()).out_directory;
         let is_single_file_program = out_dir.as_os_str().is_empty();
         let file_path = if is_single_file_program || env::var("CARGO_PRIMARY_PACKAGE").is_ok() {
-            let path_prefix = if out_dir.display().to_string().is_empty() {
+            let path_prefix = if is_single_file_program {
                 None
             } else {
                 Some(out_dir.display().to_string())
