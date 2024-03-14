@@ -141,6 +141,8 @@ mod driver_args {
 
     const SUFFIX_OVERRIDE: &str = "(override)";
 
+    const MAX_RETRY: usize = 5;
+
     macro_rules! read_var {
         ($name:expr) => {{ env::var($name).ok() }};
     }
@@ -312,11 +314,9 @@ mod driver_args {
     fn ensure_runtime_dylib_exists(use_noop_runtime: bool) {
         ensure_runtime_dylib_dir_exist(use_noop_runtime);
         let runtime_dylib_dir = PathBuf::from(find_runtime_dylib_dir(use_noop_runtime));
-        let runtime_dylib_exists =
-            || try_join(runtime_dylib_dir.as_path(), FILE_RUNTIME_DYLIB).is_some();
 
         let sym_dylib_path = runtime_dylib_dir.join(FILE_RUNTIME_DYLIB);
-        if runtime_dylib_exists() {
+        if sym_dylib_path.exists() {
             return;
         }
 
@@ -328,9 +328,8 @@ mod driver_args {
 
         // NOTE: Parallel execution of the compiler may cause race conditions.
         // FIXME: Come up with a better solution.
-        const MAX_RETRY: usize = 5;
         retry(MAX_RETRY, std::time::Duration::from_secs(1), || {
-            if runtime_dylib_exists() {
+            if sym_dylib_path.exists() {
                 Ok(())
             } else {
                 #[cfg(unix)]
@@ -346,14 +345,20 @@ mod driver_args {
 
     fn ensure_runtime_dylib_dir_exist(use_noop_runtime: bool) {
         let runtime_dylib_folder = get_runtime_dylib_folder(use_noop_runtime);
-        if try_find_dependency_path(runtime_dylib_folder, iter::empty()).is_none() {
-            let runtime_dylib_dir = env::current_exe()
-                .unwrap()
-                .parent()
-                .unwrap()
-                .join(runtime_dylib_folder);
-            std::fs::create_dir(&runtime_dylib_dir).unwrap();
-        }
+        // FIXME: Come up with a better solution.
+        retry(MAX_RETRY, std::time::Duration::from_secs(1), || {
+            if try_find_dependency_path(runtime_dylib_folder, iter::empty()).is_none() {
+                let runtime_dylib_dir = env::current_exe()
+                    .unwrap()
+                    .parent()
+                    .unwrap()
+                    .join(runtime_dylib_folder);
+                std::fs::create_dir(&runtime_dylib_dir)
+            } else {
+                Ok(())
+            }
+        })
+        .expect("Could not create a symlink to the fallback runtime dylib.");
     }
 
     fn find_runtime_dylib_dir(use_noop_runtime: bool) -> String {
