@@ -4,6 +4,10 @@ use serde::Deserialize;
 pub(crate) struct CompilerConfig {
     #[serde(default)]
     pub runtime_shim: RuntimeShimConfig,
+    #[serde(default)]
+    pub building_core: bool,
+    #[serde(default)]
+    pub set_sysroot: bool,
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]

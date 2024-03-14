@@ -102,16 +102,15 @@ pub fn run_compiler(args: impl Iterator<Item = String>, input_path: Option<PathB
 }
 
 fn load_config() -> CompilerConfig {
-    use ::config::{Environment, File};
     ::config::Config::builder()
         .add_source(
-            File::with_name(&common::utils::search_current_ancestor_dirs_for(
+            ::config::File::with_name(&common::utils::search_current_ancestor_dirs_for(
                 "leafc_config",
             ))
             .required(false),
         )
         .add_source(
-            Environment::with_prefix(CONFIG_ENV_PREFIX)
+            ::config::Environment::with_prefix(CONFIG_ENV_PREFIX)
                 .prefix_separator("_")
                 .separator("__"),
         )
@@ -233,7 +232,9 @@ mod driver_args {
         .chain(given_args);
         let mut args = given_args.collect::<Vec<_>>();
 
-        args.set_if_absent(OPT_SYSROOT, find_sysroot);
+        if config.set_sysroot {
+            args.set_if_absent(OPT_SYSROOT, find_sysroot);
+        }
 
         args.push(OPT_UNSTABLE.to_owned());
 
