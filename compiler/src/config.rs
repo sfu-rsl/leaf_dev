@@ -14,10 +14,14 @@ pub(crate) struct CompilerConfig {
 pub(crate) struct RuntimeShimConfig {
     #[serde(default = "default_runtime_shim_crate_name")]
     pub crate_name: String,
-    #[serde(default)]
+    #[serde(default = "default_runtime_shim_as_external")]
     pub as_external: bool,
 }
 
 fn default_runtime_shim_crate_name() -> String {
     "leaf".to_string()
+}
+
+fn default_runtime_shim_as_external() -> bool {
+    true
 }
