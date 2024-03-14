@@ -236,7 +236,7 @@ fn find_pri_host_crate(tcx: TyCtxt) -> CrateNum {
             }
         })
         .inspect(|cnum| {
-            log::debug!(
+            log::info!(
                 target: TAG_DISCOVERY,
                 "Selected crate {}, to search for PRI symbols.",
                 tcx.crate_name(*cnum).as_str().to_string()
@@ -252,6 +252,11 @@ fn find_pri_host_crate(tcx: TyCtxt) -> CrateNum {
 /// the PRI module/items, we use this workaround rather than looking for the
 /// module directly.
 fn find_pri_marker(tcx: TyCtxt, crate_num: CrateNum) -> DefId {
+    log::debug!(
+        target: TAG_DISCOVERY,
+        "Searching for the PRI module marker in crate {}.",
+        tcx.crate_name(crate_num).as_str(),
+    );
     let search_space: Box<dyn Iterator<Item = DefId>> = if crate_num == LOCAL_CRATE {
         Box::new(tcx.mir_keys(()).iter().map(|id| id.to_def_id()))
     } else {
@@ -276,6 +281,11 @@ fn find_pri_marker(tcx: TyCtxt, crate_num: CrateNum) -> DefId {
 /// The list of `DefId`s existing in the same module or submodules of the parent
 /// module of the marker.
 fn collect_all_pri_items<'tcx>(tcx: TyCtxt<'tcx>, module_marker_id: DefId) -> Vec<DefId> {
+    log::debug!(
+        target: TAG_DISCOVERY,
+        "Collecting all PRI items in the same module or sibling modules of {:?}.",
+        module_marker_id,
+    );
     if module_marker_id.krate == LOCAL_CRATE {
         /* NOTE: `module_children` panics for local ids,
          * and `module_children_local` doesn't return items. */
@@ -519,13 +529,14 @@ impl<'tcx> TyCtxtExt<'tcx> for TyCtxt<'tcx> {
         children
             .iter()
             .map(|child| child.res)
+            .filter(|res| res.opt_def_id().is_some_and(|id| id != module_id))
+            .filter(|res| {
+                // Skipping imports
+                self.opt_parent(res.def_id())
+                    .is_some_and(|parent| parent == module_id)
+            })
             .flat_map(|res| {
-                let child_id = match res.opt_def_id() {
-                    Some(def_id) if def_id != module_id => def_id,
-                    _ => return vec![],
-                };
-
-                let mut result = vec![child_id];
+                let mut result = vec![res.def_id()];
                 if submodules {
                     if let Some(submodule_id) = res.mod_def_id() {
                         result.extend(self.module_children_rec(submodule_id, true));
