@@ -45,5 +45,11 @@ impl CompilationPass for RuntimeAdder {
             tokens: None,
         };
         krate.items.insert(0, P(item));
+
+        log::info!(
+            "Added extern crate statement for the runtime library: extern crate {} as {};",
+            *crate::pri_utils::sym::RUNTIME_LIB_CRATE,
+            self.crate_name
+        );
     }
 }

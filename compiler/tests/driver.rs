@@ -5,6 +5,8 @@ use std::process::Command;
 use macros::{gen_tests_rs, gen_tests_toml};
 
 const ENV_LEAFC_LOG: &str = "LEAFC_LOG";
+const ENV_LEAFC_RUNTIME_SHIM_CRATE_NAME: &str = "LEAFC_RUNTIME_SHIM__CRATE_NAME";
+const ENV_LEAFC_RUNTIME_SHIM_AS_EXTERNAL: &str = "LEAFC_RUNTIME_SHIM__AS_EXTERNAL";
 const ENV_RUSTC: &str = "RUSTC";
 const ENV_RUST_FLAGS: &str = "RUSTFLAGS";
 const ENV_RUST_BACKTRACE: &str = "RUST_BACKTRACE";
@@ -23,6 +25,8 @@ fn test_compile_rs(fic: &str) {
         .arg(RUST_FLAGS)
         .arg("--edition=2021")
         .env(ENV_LEAFC_LOG, LOG_CONFIG)
+        .env(ENV_LEAFC_RUNTIME_SHIM_CRATE_NAME, "leaf")
+        .env(ENV_LEAFC_RUNTIME_SHIM_AS_EXTERNAL, "true")
         .env(ENV_RUST_BACKTRACE, "1")
         .current_dir(&output_dir)
         .status()
@@ -48,6 +52,8 @@ fn test_compile_toml(source_dir: &str) {
         .arg("build")
         .env("CARGO_TARGET_DIR", &output_dir)
         .env(ENV_LEAFC_LOG, LOG_CONFIG)
+        .env(ENV_LEAFC_RUNTIME_SHIM_CRATE_NAME, "leaf")
+        .env(ENV_LEAFC_RUNTIME_SHIM_AS_EXTERNAL, "true")
         .env(ENV_RUSTC, env!("CARGO_BIN_EXE_leafc"))
         .env(ENV_RUST_FLAGS, RUST_FLAGS)
         .env(ENV_RUST_BACKTRACE, "1")
