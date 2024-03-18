@@ -85,7 +85,7 @@ fn load_config() -> ::config::Config {
         .add_source(
             Environment::with_prefix("LEAF")
                 .prefix_separator("_")
-                .separator("."),
+                .separator("__"),
         )
         .build()
         .expect("Failed to read configurations")
