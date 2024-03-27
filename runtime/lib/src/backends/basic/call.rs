@@ -21,6 +21,10 @@ pub(super) struct BasicCallStackManager<VS: VariablesState> {
     /// The data passed between from the call point (in the caller)
     /// to the entrance point (in the callee).
     latest_call: Option<CallInfo>,
+    #[cfg(place_addr)]
+    args_metadata: Vec<Option<PlaceMetadata>>,
+    #[cfg(place_addr)]
+    return_val_metadata: Option<PlaceMetadata>,
     /// The data (return value) passed between the exit point (in the callee)
     /// to the return point (in the caller).
     latest_returned_val: Option<ValueRef>,
@@ -54,10 +58,6 @@ pub(super) struct CallInfo {
     expected_func: ValueRef,
     args: Vec<ValueRef>,
     are_args_tupled: bool,
-    #[cfg(place_addr)]
-    args_metadata: Vec<Option<PlaceMetadata>>,
-    #[cfg(place_addr)]
-    return_val_metadata: Option<PlaceMetadata>,
 }
 
 impl<VS: VariablesState> BasicCallStackManager<VS> {
@@ -66,6 +66,10 @@ impl<VS: VariablesState> BasicCallStackManager<VS> {
             stack: vec![],
             vars_state_factory,
             latest_call: None,
+            #[cfg(place_addr)]
+            args_metadata: vec![],
+            #[cfg(place_addr)]
+            return_val_metadata: None,
             latest_returned_val: None,
             vars_state: None,
             config: config.clone(),
@@ -193,26 +197,19 @@ impl<VS: VariablesState + SelfHierarchical> BasicCallStackManager<VS> {
 
 impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackManager<VS> {
     fn prepare_for_call(&mut self, func: ValueRef, args: Vec<ValueRef>, are_args_tupled: bool) {
-        let args_len = args.len();
         self.latest_call = Some(CallInfo {
             expected_func: func,
             args,
             are_args_tupled,
-            #[cfg(place_addr)]
-            args_metadata: Vec::with_capacity(args_len),
-            #[cfg(place_addr)]
-            return_val_metadata: None,
         });
     }
     #[cfg(place_addr)]
     fn set_local_metadata(&mut self, local: &Local, metadata: super::place::PlaceMetadata) {
         match local {
-            Local::ReturnValue => {
-                self.latest_call.as_mut().unwrap().return_val_metadata = Some(metadata)
-            }
+            Local::ReturnValue => self.return_val_metadata = Some(metadata),
             Local::Argument(local_index) => {
                 log::info!("Setting metadata for argument {:?}.", local);
-                let args_metadata = &mut self.latest_call.as_mut().unwrap().args_metadata;
+                let args_metadata = &mut self.args_metadata;
                 let index = *local_index as usize - 1;
                 if args_metadata.len() <= index {
                     args_metadata.resize(index + 1, None);
@@ -231,7 +228,6 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
         let Some(CallInfo {
             args,
             are_args_tupled,
-            args_metadata,
             ..
         }) = self.latest_call.as_mut()
         else {
@@ -248,7 +244,7 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
         let untupled_args = Self::untuple(
             tupled_value,
             #[cfg(place_addr)]
-            args_metadata.get(arg_index).and_then(|m| m.as_ref()),
+            self.args_metadata.get(arg_index).and_then(|m| m.as_ref()),
             untuple_helper().as_mut(),
             (self.vars_state_factory)(usize::MAX),
         );
@@ -261,10 +257,6 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
             expected_func,
             mut args,
             are_args_tupled: _,
-            #[cfg(place_addr)]
-            args_metadata,
-            #[cfg(place_addr)]
-            return_val_metadata,
         }) = self.latest_call.take()
         {
             let expected_func = &expected_func;
@@ -275,7 +267,9 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
             }
 
             #[cfg(place_addr)]
-            let arg_locals = args_metadata
+            let arg_locals = self
+                .args_metadata
+                .drain(0..)
                 .into_iter()
                 .map(|m| m.expect("Missing argument metadata."))
                 .enumerate()
@@ -297,6 +291,8 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
                     "Inconsistent number of passed arguments."
                 );
             }
+
+            let return_val_metadata = self.return_val_metadata.take();
             self.push_new_stack_frame(
                 arg_locals.clone().into_iter().zip(args.into_iter()),
                 CallStackFrame {
