@@ -202,6 +202,8 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
             args,
             are_args_tupled,
         });
+        debug_assert_eq!(self.args_metadata.len(), 0);
+        debug_assert_eq!(self.return_val_metadata.is_none(), true);
     }
     #[cfg(place_addr)]
     fn set_local_metadata(&mut self, local: &Local, metadata: super::place::PlaceMetadata) {
@@ -253,6 +255,27 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
     }
 
     fn notify_enter(&mut self, current_func: ValueRef) {
+        #[cfg(place_addr)]
+        let arg_locals = self
+            .args_metadata
+            .drain(..)
+            .into_iter()
+            .map(|m| m.expect("Missing argument metadata."))
+            .enumerate()
+            .map(|(i, metadata)| ArgLocal::new(Local::Argument((i + 1) as LocalIndex), metadata))
+            .collect::<Vec<_>>();
+        #[cfg(not(place_addr))]
+        let arg_locals = (1..=args.len())
+            .map(|i| Local::Argument(i as LocalIndex))
+            .collect::<Vec<_>>();
+
+        let call_stack_frame = CallStackFrame {
+            arg_locals: arg_locals.clone(),
+            #[cfg(place_addr)]
+            return_val_metadata: self.return_val_metadata.take(),
+            ..Default::default()
+        };
+
         if let Some(CallInfo {
             expected_func,
             mut args,
@@ -266,22 +289,6 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
                 parent_frame.is_callee_external = Some(broken_stack);
             }
 
-            #[cfg(place_addr)]
-            let arg_locals = self
-                .args_metadata
-                .drain(0..)
-                .into_iter()
-                .map(|m| m.expect("Missing argument metadata."))
-                .enumerate()
-                .map(|(i, metadata)| {
-                    ArgLocal::new(Local::Argument((i + 1) as LocalIndex), metadata)
-                })
-                .collect::<Vec<_>>();
-            #[cfg(not(place_addr))]
-            let arg_locals = (1..=args.len())
-                .map(|i| Local::Argument(i as LocalIndex))
-                .collect::<Vec<_>>();
-
             if broken_stack {
                 args.clear()
             } else {
@@ -292,15 +299,9 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
                 );
             }
 
-            let return_val_metadata = self.return_val_metadata.take();
             self.push_new_stack_frame(
-                arg_locals.clone().into_iter().zip(args.into_iter()),
-                CallStackFrame {
-                    arg_locals,
-                    #[cfg(place_addr)]
-                    return_val_metadata,
-                    ..Default::default()
-                },
+                arg_locals.into_iter().zip(args.into_iter()),
+                call_stack_frame,
             );
         } else {
             if !self.stack.is_empty() {
@@ -310,7 +311,7 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
                 ));
             }
 
-            self.push_new_stack_frame(core::iter::empty(), Default::default());
+            self.push_new_stack_frame(core::iter::empty(), call_stack_frame);
         }
     }
 
