@@ -56,7 +56,7 @@ pub fn set_up_compiler() {
 }
 
 pub fn run_compiler(args: impl Iterator<Item = String>, input_path: Option<PathBuf>) -> i32 {
-    let config = load_config();
+    let config = config::load_config();
 
     let args = driver_args::set_up_args(args, input_path, &config);
     log::info!("Running compiler with args: {:?}", args);
@@ -101,25 +101,6 @@ pub fn run_compiler(args: impl Iterator<Item = String>, input_path: Option<PathB
     run_pass(&mut pass.to_callbacks())
 }
 
-fn load_config() -> CompilerConfig {
-    ::config::Config::builder()
-        .add_source(
-            ::config::File::with_name(&common::utils::search_current_ancestor_dirs_for(
-                "leafc_config",
-            ))
-            .required(false),
-        )
-        .add_source(
-            ::config::Environment::with_prefix(CONFIG_ENV_PREFIX)
-                .prefix_separator("_")
-                .separator("__"),
-        )
-        .build()
-        .and_then(|c| c.try_deserialize())
-        .inspect(|c| log::debug!("Loaded configurations: {:?}", c))
-        .expect("Failed to read configurations")
-}
-
 fn should_instrument(config: &CompilerConfig, args: &[String]) -> bool {
     let crate_name = driver_args::find_crate_name(args);
 
@@ -136,7 +117,7 @@ pub mod constants {
     // The instrumented code is going to call the shim.
     pub(super) const CRATE_RUNTIME: &str = "leafrtsh";
 
-    pub(super) const CONFIG_ENV_PREFIX: &str = "LEAFC";
+    pub(crate) const CONFIG_ENV_PREFIX: &str = "LEAFC";
 
     pub(super) const URL_BUG_REPORT: &str = "https://github.com/sfu-rsl/leaf/issues/new";
 
