@@ -1,4 +1,4 @@
-use std::{collections::btree_map::Entry, ops::Bound, rc::Rc};
+use std::{cell::RefCell, collections::btree_map::Entry, ops::Bound, rc::Rc};
 
 use delegate::delegate;
 
@@ -6,6 +6,7 @@ use crate::{
     abs::{place::HasMetadata, PointerOffset, RawPointer, TypeId, TypeSize, USIZE_TYPE},
     backends::basic::{
         alias::TypeManager,
+        concrete::Concretizer,
         expr::{PorterValue, RawConcreteValue},
         place::{LocalWithMetadata, PlaceMetadata},
         VariablesState,
@@ -94,10 +95,16 @@ pub(in super::super) struct RawPointerVariableState<VS, SP: SymbolicProjector> {
     fallback: VS,
     sym_projector: RRef<SP>,
     type_manager: Rc<dyn TypeManager>,
+    concretizer: RefCell<Box<dyn Concretizer>>,
 }
 
 impl<VS, SP: SymbolicProjector> RawPointerVariableState<VS, SP> {
-    pub fn new(fallback: VS, sym_projector: RRef<SP>, type_manager: Rc<dyn TypeManager>) -> Self
+    pub fn new(
+        fallback: VS,
+        sym_projector: RRef<SP>,
+        type_manager: Rc<dyn TypeManager>,
+        concretizer: RefCell<Box<dyn Concretizer>>,
+    ) -> Self
     where
         VS: VariablesState<Place>,
     {
@@ -106,6 +113,7 @@ impl<VS, SP: SymbolicProjector> RawPointerVariableState<VS, SP> {
             fallback,
             sym_projector,
             type_manager,
+            concretizer,
         }
     }
 
@@ -305,10 +313,19 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
                 .find_map(|(i, (proj, metadata))| {
                     // Checking for symbolic index.
                     if let Projection::Index(index) = proj {
-                        if let Some(index) = IndexResolver::get(self, index) {
-                            if index.is_symbolic() {
-                                let value = todo!("Symbolic index");
-                                return Some((i, value));
+                        if let Some(index_val) = IndexResolver::get(self, index) {
+                            if index_val.is_symbolic() {
+                                if let Some(index_addr) = index.address() {
+                                    log::debug!("Concretizing and stamping symbolic index");
+                                    self.concretizer.borrow_mut().stamp(
+                                        SymValueRef::new(index_val),
+                                        ConcreteValueRef::new(
+                                            RawConcreteValue(index_addr, Some(USIZE_TYPE.into()))
+                                                .to_value_ref(),
+                                        ),
+                                    );
+                                    return None;
+                                }
                             }
                         }
                     }

@@ -1,5 +1,6 @@
 mod alias;
 mod call;
+mod concrete;
 mod config;
 pub(crate) mod expr;
 pub(crate) mod logger;
@@ -7,7 +8,12 @@ pub(crate) mod operand;
 mod place;
 mod state;
 
-use std::{cell::RefCell, collections::HashMap, ops::DerefMut, rc::Rc};
+use std::{
+    cell::{RefCell, RefMut},
+    collections::HashMap,
+    ops::DerefMut,
+    rc::Rc,
+};
 
 use crate::{
     abs::{
@@ -18,6 +24,7 @@ use crate::{
     solvers::z3::Z3Solver,
     trace::ImmediateTraceManager,
     tyexp::{self, TypeInfoExt},
+    utils::alias::RRef,
 };
 use common::tyexp::{FieldsShapeInfo, StructShape, TypeExport, TypeInfo};
 
@@ -26,6 +33,7 @@ use self::{
         TypeManager, ValueRefBinaryExprBuilder as BinaryExprBuilder,
         ValueRefExprBuilder as OperationalExprBuilder,
     },
+    concrete::BasicConcretizer,
     config::BasicBackendConfig,
     expr::{
         builders::DefaultExprBuilder as ExprBuilder, prelude::*,
@@ -36,7 +44,7 @@ use self::{
     state::{RawPointerVariableState, StackedLocalIndexVariablesState},
 };
 
-type TraceManager = Box<dyn abs::backend::TraceManager<BasicBlockIndex, ValueRef>>;
+type TraceManager = dyn abs::backend::TraceManager<BasicBlockIndex, ValueRef>;
 
 #[cfg(place_addr)]
 type BasicVariablesState =
@@ -66,9 +74,8 @@ pub(crate) type Field<S = SymValueRef> = Operand<S>;
 
 pub struct BasicBackend {
     call_stack_manager: BasicCallStackManager,
-    trace_manager: TraceManager,
-    current_constraints: Vec<Constraint>,
-    expr_builder: Rc<RefCell<ExprBuilder>>,
+    trace_manager: RRef<TraceManager>,
+    expr_builder: RRef<ExprBuilder>,
     sym_id_counter: u32,
     type_manager: Rc<dyn TypeManager>,
     config: BasicBackendConfig,
@@ -76,8 +83,17 @@ pub struct BasicBackend {
 
 impl BasicBackend {
     pub fn new(config: BasicBackendConfig) -> Self {
-        let expr_builder = Rc::new(RefCell::new(expr::builders::new_expr_builder()));
+        let expr_builder_ref = Rc::new(RefCell::new(expr::builders::new_expr_builder()));
+        let expr_builder = expr_builder_ref.clone();
         let sym_projector = Rc::new(RefCell::new(expr::proj::new_sym_projector()));
+        let trace_manager_ref = Rc::new(RefCell::new(ImmediateTraceManager::<
+            BasicBlockIndex,
+            u32,
+            ValueRef,
+        >::new_basic(Box::new(
+            Z3Solver::new_in_global_context(),
+        ))));
+        let trace_manager = trace_manager_ref.clone();
         let type_manager_ref = Rc::new(BasicTypeManager::default());
         let type_manager = type_manager_ref.clone();
         Self {
@@ -88,6 +104,10 @@ impl BasicBackend {
                         StackedLocalIndexVariablesState::new(id, sym_projector.clone()),
                         sym_projector.clone(),
                         type_manager_ref.clone(),
+                        RefCell::new(Box::new(BasicConcretizer::new(
+                            expr_builder_ref.clone(),
+                            trace_manager_ref.clone(),
+                        ))),
                     );
                     #[cfg(not(place_addr))]
                     let vars_state =
@@ -97,12 +117,7 @@ impl BasicBackend {
                 }),
                 &config.call,
             ),
-            trace_manager: Box::new(
-                ImmediateTraceManager::<BasicBlockIndex, u32, ValueRef>::new_basic(Box::new(
-                    Z3Solver::new_in_global_context(),
-                )),
-            ),
-            current_constraints: Vec::new(),
+            trace_manager,
             expr_builder,
             sym_id_counter: 0,
             type_manager,
@@ -158,8 +173,7 @@ impl RuntimeBackend for BasicBackend {
     fn branch(&mut self) -> Self::BranchingHandler<'_> {
         BasicBranchingHandler {
             vars_state: self.call_stack_manager.top(),
-            trace_manager: &mut self.trace_manager,
-            current_constraints: &mut self.current_constraints,
+            trace_manager: self.trace_manager.borrow_mut(),
             expr_builder: self.expr_builder.clone(),
         }
     }
@@ -179,15 +193,11 @@ impl BasicBackend {
 pub(crate) struct BasicAssignmentHandler<'s, EB: OperationalExprBuilder> {
     dest: Place,
     vars_state: &'s mut dyn VariablesState,
-    expr_builder: Rc<RefCell<EB>>,
+    expr_builder: RRef<EB>,
 }
 
 impl<'s, EB: OperationalExprBuilder> BasicAssignmentHandler<'s, EB> {
-    fn new(
-        dest: Place,
-        vars_state: &'s mut dyn VariablesState,
-        expr_builder: Rc<RefCell<EB>>,
-    ) -> Self {
+    fn new(dest: Place, vars_state: &'s mut dyn VariablesState, expr_builder: RRef<EB>) -> Self {
         Self {
             dest,
             vars_state,
@@ -371,9 +381,8 @@ impl<EB: OperationalExprBuilder> BasicAssignmentHandler<'_, EB> {
 
 pub(crate) struct BasicBranchingHandler<'a, EB: BinaryExprBuilder> {
     vars_state: &'a mut dyn VariablesState,
-    trace_manager: &'a mut TraceManager,
-    current_constraints: &'a mut Vec<Constraint>,
-    expr_builder: Rc<RefCell<EB>>,
+    trace_manager: RefMut<'a, TraceManager>,
+    expr_builder: RRef<EB>,
 }
 
 impl<'a, EB: BinaryExprBuilder> BranchingHandler for BasicBranchingHandler<'a, EB> {
@@ -386,18 +395,17 @@ impl<'a, EB: BinaryExprBuilder> BranchingHandler for BasicBranchingHandler<'a, E
         metadata: abs::BranchingMetadata,
     ) -> Self::ConditionalBranchingHandler {
         let disc = get_operand_value(self.vars_state, discriminant);
-        BasicConditionalBranchingHandler::new(
-            disc,
-            metadata,
-            self.trace_manager,
-            self.current_constraints,
-            self.expr_builder,
-        )
+        BasicConditionalBranchingHandler::new(disc, metadata, self.trace_manager, self.expr_builder)
     }
 
     /// This function provides runtime support for all 5 assertion kinds in the leaf compiler.
     /// See: https://doc.rust-lang.org/beta/nightly-rustc/rustc_middle/mir/enum.AssertKind.html
-    fn assert(self, cond: Self::Operand, expected: bool, _assert_kind: AssertKind<Self::Operand>) {
+    fn assert(
+        mut self,
+        cond: Self::Operand,
+        expected: bool,
+        _assert_kind: AssertKind<Self::Operand>,
+    ) {
         // For now, we will call this function before the assert occurs and assume that assertions always succeed.
         // TODO: add a result: bool parameter to this function, and add support for it using a panic hook.
         let cond_val = get_operand_value(self.vars_state, cond);
@@ -407,10 +415,9 @@ impl<'a, EB: BinaryExprBuilder> BranchingHandler for BasicBranchingHandler<'a, E
                 constraint = constraint.not();
             }
 
-            self.current_constraints.push(constraint);
             self.trace_manager.notify_step(
                 0, /* TODO: The unique index of the block we have entered. */
-                self.current_constraints.drain(..).collect(),
+                vec![constraint],
             );
         }
     }
@@ -419,33 +426,29 @@ impl<'a, EB: BinaryExprBuilder> BranchingHandler for BasicBranchingHandler<'a, E
 pub(crate) struct BasicConditionalBranchingHandler<'a, EB: BinaryExprBuilder> {
     discriminant: ValueRef,
     metadata: BranchingMetadata,
-    trace_manager: &'a mut TraceManager,
-    current_constraints: &'a mut Vec<Constraint>,
-    expr_builder: Rc<RefCell<EB>>,
+    trace_manager: RefMut<'a, TraceManager>,
+    expr_builder: RRef<EB>,
 }
 
 impl<'a, EB: BinaryExprBuilder> BasicConditionalBranchingHandler<'a, EB> {
     fn new(
         discriminant: ValueRef,
         metadata: BranchingMetadata,
-        trace_manager: &'a mut TraceManager,
-        current_constraints: &'a mut Vec<Constraint>,
-        expr_builder: Rc<RefCell<EB>>,
+        trace_manager: RefMut<'a, TraceManager>,
+        expr_builder: RRef<EB>,
     ) -> Self {
         Self {
             discriminant,
             metadata,
             trace_manager,
-            current_constraints,
             expr_builder,
         }
     }
 
     fn notify_constraint(&mut self, constraint: Constraint) {
-        self.current_constraints.push(constraint);
         self.trace_manager.notify_step(
             0, /* TODO: The unique index of the block we have entered. */
-            self.current_constraints.drain(..).collect(),
+            vec![constraint],
         );
     }
 }
