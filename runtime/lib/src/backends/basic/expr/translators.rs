@@ -285,7 +285,12 @@ pub(crate) mod z3 {
                         BinaryOp::BitAnd => ast::Bool::and(left.get_ctx(), &[left, right]),
                         BinaryOp::BitOr => ast::Bool::or(left.get_ctx(), &[left, right]),
                         BinaryOp::BitXor => ast::Bool::xor(left, right),
-                        _ => unreachable!("Bool can only used with logical operators."),
+                        _ => {
+                            unreachable!(
+                                "Bool can only used with logical operators. {:?}",
+                                operator
+                            )
+                        }
                     }
                     .into()
                 }
