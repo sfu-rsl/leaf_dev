@@ -26,15 +26,15 @@ impl<H, HI, DC> ProjectionOn<H, HI, DC> {
             Downcast(host, target) => Downcast(f(host), f_dc(target)),
         }
     }
-}
 
-impl<H, I, DC> ProjectionOn<H, (H, I), DC> {
-    #[inline(always)]
-    pub(crate) fn index_into<IInto>(self) -> ProjectionOn<H, (H, IInto), DC>
+    #[inline]
+    pub(crate) fn map_into<HNew, HINew, DCNew>(self) -> ProjectionOn<HNew, HINew, DCNew>
     where
-        I: Into<IInto>,
+        H: Into<HNew>,
+        HI: Into<HINew>,
+        DC: Into<DCNew>,
     {
-        self.map(|h| h, |(h, i)| (h, i.into()), |dc| dc)
+        self.map(Into::into, Into::into, Into::into)
     }
 }
 

@@ -128,18 +128,13 @@ impl<R, H: Debug, P: Debug> ProjResultExt<R, P> for Result<R, H> {
     }
 }
 
-pub(super) fn apply_projs_sym<'a, 'b, SP: SymbolicProjector>(
-    sym_projector: RRef<SP>,
+pub(super) fn apply_projs_sym<'a, 'b>(
+    sym_projector: &mut impl SymbolicProjector,
     host: &'a SymValueRef,
     projs: impl Iterator<Item = ResolvedProjection>,
 ) -> SymValueRef {
     projs.fold(host.clone(), |current, proj| {
-        apply_proj_sym(
-            sym_projector.as_ref().borrow_mut().deref_mut(),
-            current,
-            &proj,
-        )
-        .to_value_ref()
+        apply_proj_sym(sym_projector, current, &proj).to_value_ref()
     })
 }
 

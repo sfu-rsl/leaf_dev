@@ -1,6 +1,7 @@
 alloc
 bitvector
 clippy
+Deque
 dylib
 peekable
 repr

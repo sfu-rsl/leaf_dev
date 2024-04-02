@@ -37,7 +37,7 @@ where
 {
     type HostRef<'a>: From<SymValueRef> = SymValueRef;
     type HIRefPair<'a>: From<SymIndexPair> = SymIndexPair;
-    type DowncastTarget: From<abs::VariantIndex> = DowncastKind;
+    type DowncastTarget: From<abs::VariantIndex> + From<DowncastKind> = DowncastKind;
     type Proj<'a>: Into<ProjExpr> = ProjExpr;
 }
 

@@ -15,7 +15,12 @@ pub(super) fn apply_projs<'a, 'b, SP: SymbolicProjector>(
     let mut current = host.clone();
 
     if current.is_symbolic() {
-        return apply_projs_sym(sym_projector, &SymValueRef::new(current), projs).0;
+        return apply_projs_sym(
+            sym_projector.as_ref().borrow_mut().deref_mut(),
+            &SymValueRef::new(current),
+            projs,
+        )
+        .0;
     }
 
     while let Some(proj) = projs.next() {
@@ -27,7 +32,12 @@ pub(super) fn apply_projs<'a, 'b, SP: SymbolicProjector>(
         );
 
         if current.is_symbolic() {
-            return apply_projs_sym(sym_projector, &SymValueRef::new(current), projs).0;
+            return apply_projs_sym(
+                sym_projector.as_ref().borrow_mut().deref_mut(),
+                &SymValueRef::new(current),
+                projs,
+            )
+            .0;
         }
     }
 

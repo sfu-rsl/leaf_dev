@@ -78,7 +78,6 @@ pub struct BasicBackend {
     expr_builder: RRef<ExprBuilder>,
     sym_id_counter: u32,
     type_manager: Rc<dyn TypeManager>,
-    config: BasicBackendConfig,
 }
 
 impl BasicBackend {
@@ -104,10 +103,11 @@ impl BasicBackend {
                         StackedLocalIndexVariablesState::new(id, sym_projector.clone()),
                         sym_projector.clone(),
                         type_manager_ref.clone(),
-                        RefCell::new(Box::new(BasicConcretizer::new(
+                        Rc::new(RefCell::new(BasicConcretizer::new(
                             expr_builder_ref.clone(),
                             trace_manager_ref.clone(),
                         ))),
+                        &config.sym_place,
                     );
                     #[cfg(not(place_addr))]
                     let vars_state =
@@ -121,7 +121,6 @@ impl BasicBackend {
             expr_builder,
             sym_id_counter: 0,
             type_manager,
-            config,
         }
     }
 }
