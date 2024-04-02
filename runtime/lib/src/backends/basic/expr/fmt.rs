@@ -169,10 +169,9 @@ impl Expr {
     fn fmt_params(&self, f: &mut Formatter<'_>) -> Result {
         match self {
             Expr::Unary { operand, .. } => write!(f, "{operand}"),
-            Expr::Binary(BinaryExpr { operands, .. }) => match operands {
-                BinaryOperands::Orig { first, second } => write!(f, "{first}, {second}"),
-                BinaryOperands::Rev { first, second } => write!(f, "{first}, {second}"),
-            },
+            Expr::Binary(BinaryExpr { operands, .. }) => {
+                write!(f, "{}, {}", operands.first(), operands.second())
+            }
             Expr::Extension {
                 source,
                 is_zero_ext,

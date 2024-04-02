@@ -344,6 +344,7 @@ mod core {
         }
 
         fn cast<'a>(&mut self, operand: Self::ExprRef<'a>, target: CastKind) -> Self::Expr<'a> {
+            log::debug!("Casting {:?} to {:?}", operand, target);
             let expr = match ValueType::try_from(target) {
                 Ok(value_type) => to_cast_expr(operand, value_type),
                 Err(target) => {

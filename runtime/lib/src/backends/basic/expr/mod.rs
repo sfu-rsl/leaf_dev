@@ -656,6 +656,22 @@ define_reversible_pair!(
 
 type SymBinaryOperands = BinaryOperands<SymValueRef, ValueRef>;
 
+impl SymBinaryOperands {
+    pub fn first(&self) -> &ValueRef {
+        match self {
+            Self::Orig { first, .. } => &first.0,
+            Self::Rev { first, .. } => first,
+        }
+    }
+
+    pub fn second(&self) -> &ValueRef {
+        match self {
+            Self::Orig { second, .. } => second,
+            Self::Rev { second, .. } => &second.0,
+        }
+    }
+}
+
 // FIXME: Remove this error suppression after adding support for more variants
 #[allow(unused)]
 #[derive(Clone, Debug, dm::From)]
@@ -995,21 +1011,21 @@ mod convert {
         }
     }
 
-    impl TryFrom<&Value> for ValueType {
-        type Error = Value;
+    impl<'a> TryFrom<&'a Value> for ValueType {
+        type Error = &'a Value;
 
-        fn try_from(value: &Value) -> Result<Self, Self::Error> {
+        fn try_from(value: &'a Value) -> Result<Self, Self::Error> {
             match value {
-                Value::Concrete(con_val) => ValueType::try_from(con_val).or(Err(value.clone())),
-                Value::Symbolic(sym_val) => ValueType::try_from(sym_val).or(Err(value.clone())),
+                Value::Concrete(con_val) => ValueType::try_from(con_val).or(Err(value)),
+                Value::Symbolic(sym_val) => ValueType::try_from(sym_val).or(Err(value)),
             }
         }
     }
 
-    impl TryFrom<&SymValue> for ValueType {
-        type Error = SymValue;
+    impl<'a> TryFrom<&'a SymValue> for ValueType {
+        type Error = &'a SymValue;
 
-        fn try_from(value: &SymValue) -> Result<Self, Self::Error> {
+        fn try_from(value: &'a SymValue) -> Result<Self, Self::Error> {
             match value {
                 SymValue::Variable(SymbolicVar { id: _, ty }) => Ok(ty.clone()),
                 SymValue::Expression(expr) => match expr {
@@ -1017,8 +1033,16 @@ mod convert {
                         operator: _,
                         operand,
                     } => ValueType::try_from(operand.as_ref()),
-                    Expr::Binary(bin_expr) => {
-                        ValueType::try_from(bin_expr.clone().to_value_ref().as_ref())
+                    Expr::Binary(BinaryExpr {
+                        operator,
+                        operands,
+                        checked: _,
+                    }) => {
+                        use BinaryOp::*;
+                        match operator {
+                            Eq | Lt | Le | Ne | Ge | Gt => Ok(ValueType::Bool),
+                            _ => ValueType::try_from(operands.first().as_ref()).map_err(|_| value),
+                        }
                     }
                     Expr::Extension { source, .. } | Expr::Extraction { source, .. } => {
                         ValueType::try_from(source.as_ref())
@@ -1027,43 +1051,40 @@ mod convert {
                         condition: _,
                         if_target,
                         else_target,
-                    } => {
-                        let if_type = match ValueType::try_from(if_target.as_ref()) {
-                            Ok(value_type) => value_type,
-                            Err(_) => return Err(value.clone()),
-                        };
-                        let else_type = match ValueType::try_from(else_target.as_ref()) {
-                            Ok(value_type) => value_type,
-                            Err(_) => return Err(value.clone()),
-                        };
+                    } => Option::zip(
+                        ValueType::try_from(if_target.as_ref()).ok(),
+                        ValueType::try_from(else_target.as_ref()).ok(),
+                    )
+                    .map(|(if_ty, else_ty)| {
                         debug_assert_eq!(
-                            if_type, else_type,
+                            if_ty, else_ty,
                             "The types of ITE operands must be the same."
                         );
-                        Ok(if_type)
-                    }
-                    _ => Err(value.clone()),
+                        if_ty
+                    })
+                    .ok_or(value),
+                    _ => Err(value),
                 },
             }
         }
     }
 
-    impl TryFrom<&ConcreteValue> for ValueType {
-        type Error = ConcreteValue;
+    impl<'a> TryFrom<&'a ConcreteValue> for ValueType {
+        type Error = &'a ConcreteValue;
 
-        fn try_from(value: &ConcreteValue) -> Result<Self, Self::Error> {
+        fn try_from(value: &'a ConcreteValue) -> Result<Self, Self::Error> {
             match value {
                 ConcreteValue::Const(const_value) => match const_value {
                     ConstValue::Bool(_) => Ok(ValueType::Bool),
                     ConstValue::Char(_) => Ok(ValueType::Char),
                     ConstValue::Int { bit_rep: _, ty } => Ok((*ty).into()),
                     ConstValue::Float { bit_rep: _, ty } => Ok((*ty).into()),
-                    _ => Err(value.clone()),
+                    _ => Err(value),
                 },
                 ConcreteValue::Unevaluated(UnevalValue::Lazy(value)) if value.1.is_some() => {
                     Ok(value.1.clone().unwrap())
                 }
-                _ => Err(value.clone()),
+                _ => Err(value),
             }
         }
     }

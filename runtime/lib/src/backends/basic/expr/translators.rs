@@ -257,14 +257,10 @@ pub(crate) mod z3 {
             &mut self,
             operands: &SymBinaryOperands,
         ) -> (AstNode<'ctx>, AstNode<'ctx>) {
-            match operands {
-                SymBinaryOperands::Orig { first, second } => {
-                    (self.translate_symbolic(first), self.translate_value(second))
-                }
-                SymBinaryOperands::Rev { first, second } => {
-                    (self.translate_value(first), self.translate_symbolic(second))
-                }
-            }
+            (
+                self.translate_value(operands.first()),
+                self.translate_value(operands.second()),
+            )
         }
 
         fn translate_binary_expr(
