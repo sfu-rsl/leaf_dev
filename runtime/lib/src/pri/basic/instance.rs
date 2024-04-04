@@ -78,7 +78,7 @@ fn load_config() -> ::config::Config {
     config::Config::builder()
         .add_source(
             File::with_name(&common::utils::search_current_ancestor_dirs_for(
-                "leaf_config_default",
+                "leaf_config",
             ))
             .required(false),
         )

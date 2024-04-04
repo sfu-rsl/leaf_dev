@@ -1,0 +1,8 @@
+[call]
+# Panic, Concretization, OverApproximation, OptimisticConcretization
+external_call = "Concretization"
+
+[sym_place]
+# ProjExpression, Concretization, Stamping
+read = "Stamping"
+write = "Stamping"
