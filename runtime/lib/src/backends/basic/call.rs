@@ -106,7 +106,7 @@ impl<VS: VariablesState + SelfHierarchical> BasicCallStackManager<VS> {
 
     fn finalize_external_call(&mut self, result_dest: &Place) {
         if let Some(overridden) = self.top_frame().overridden_return_val.take() {
-            log::info!(concat!(
+            log::debug!(concat!(
                 "Consuming the overridden return value as the returned value ",
                 "from the external function."
             ));
@@ -210,7 +210,7 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
         match local {
             Local::ReturnValue => self.return_val_metadata = Some(metadata),
             Local::Argument(local_index) => {
-                log::info!("Setting metadata for argument {:?}.", local);
+                log::debug!("Setting metadata for argument {:?}.", local);
                 let args_metadata = &mut self.args_metadata;
                 let index = *local_index as usize - 1;
                 if args_metadata.len() <= index {
@@ -360,7 +360,7 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
     }
 
     fn override_return_value(&mut self, value: ValueRef) {
-        log::info!("Overriding the return value with {:?}", value);
+        log::debug!("Overriding the return value with {:?}", value);
         self.top_frame().overridden_return_val = Some(value);
     }
 

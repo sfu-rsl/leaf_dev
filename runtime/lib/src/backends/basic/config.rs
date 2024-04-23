@@ -5,6 +5,7 @@ impl TryFrom<::config::Config> for super::BasicBackend {
 
     fn try_from(value: ::config::Config) -> Result<Self, Self::Error> {
         let config = value.try_deserialize()?;
+        log::debug!("Loaded configurations: {:?}", config);
         Ok(Self::new(config))
     }
 }

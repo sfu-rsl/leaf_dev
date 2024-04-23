@@ -185,6 +185,11 @@ impl RuntimeBackend for BasicBackend {
 impl BasicBackend {
     fn new_symbolic_value(&mut self, ty: abs::ValueType) -> SymValueRef {
         self.sym_id_counter += 1;
+        log::info!(
+            "Introducing a new symbolic variable: {} : {}",
+            self.sym_id_counter,
+            ty
+        );
         SymValue::Variable(SymbolicVar::new(self.sym_id_counter, ty)).to_value_ref()
     }
 }

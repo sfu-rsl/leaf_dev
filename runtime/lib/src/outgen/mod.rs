@@ -18,6 +18,6 @@ impl<I: Display + Ord + Hash, V: Display> OutputGenerator<I, V> for LoggerOutput
             writeln!(answers_str, "    \"{}\": {},", i, answers[i]).unwrap();
         }
         writeln!(answers_str, "}}").unwrap();
-        log::info!("Found a solution:\n{answers_str}");
+        log::info!("Solver returned a solution:\n{answers_str}");
     }
 }

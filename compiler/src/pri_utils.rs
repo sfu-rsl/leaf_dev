@@ -273,7 +273,15 @@ fn find_pri_marker(tcx: TyCtxt, crate_num: CrateNum) -> DefId {
         )
     };
 
-    search_space.find_by_name(tcx, *sym::MODULE_MARKER).unwrap()
+    search_space
+        .find_by_name(tcx, *sym::MODULE_MARKER)
+        .unwrap_or_else(|| {
+            panic!(
+                "Could not find the PRI module marker in the given crate: {}:{}.",
+                crate_num,
+                tcx.crate_name(crate_num).as_str(),
+            )
+        })
 }
 
 /// Collects all the PRI items with respect to the marker.

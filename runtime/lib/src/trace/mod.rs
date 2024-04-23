@@ -51,13 +51,13 @@ impl<S, I: Display + Ord + std::hash::Hash, V: Display> ImmediateTraceManager<S,
 impl<S: Display, I, V: Display> TraceManager<S, V> for ImmediateTraceManager<S, I, V> {
     fn notify_step(&mut self, step: S, new_constraints: Vec<Constraint<V>>) {
         log::info!(
-            "Took step: {} with constraints [{}]",
-            step,
+            "Notified about constraints [{}] at step {}",
             &new_constraints
                 .iter()
                 .map(|c| c.to_string())
                 .collect::<Vec<_>>()
-                .join(", ")
+                .join(", "),
+            step,
         );
 
         self.trace.push(step);
@@ -75,10 +75,14 @@ impl<S: Display, I, V: Display> TraceManager<S, V> for ImmediateTraceManager<S, 
             return;
         }
 
+        log::info!("Checking for possible values diverging at the last step");
+
+        log::debug!("Negating the last constraint");
         let last = self.constraints.pop().unwrap();
         self.constraints.push(last.not());
 
         if !self.check(..) {
+            log::info!("Checking optimistically for possible values diverging at the last step");
             /* NOTE: What is optimistic checking?
              * Consider two independent branch conditions at the same level
              * that the current execution has taken neither.

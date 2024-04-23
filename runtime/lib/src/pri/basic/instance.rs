@@ -52,6 +52,7 @@ pub(super) fn init_backend() {
         crate::init();
 
         let config = load_config();
+        log::info!("Initializing basic backend");
         let backend =
             BackendImpl::try_from(config).expect("Failed to initialize backend through the config");
         #[cfg(runtime_access = "safe_mt")]

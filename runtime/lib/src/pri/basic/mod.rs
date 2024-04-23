@@ -24,7 +24,6 @@ impl ProgramRuntimeInterface for BasicPri {
     type UnaryOp = abs::UnaryOp;
 
     fn init_runtime_lib() {
-        log::info!("Initializing the runtime library.");
         init_backend();
     }
 

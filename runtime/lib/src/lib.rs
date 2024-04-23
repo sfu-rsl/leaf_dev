@@ -24,5 +24,5 @@ pub(crate) mod utils;
 
 fn init() {
     utils::logging::init_logging();
-    log::debug!("Initializing runtime");
+    log::info!("Initializing runtime library");
 }
