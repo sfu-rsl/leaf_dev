@@ -49,7 +49,7 @@ pub(crate) struct SymbolicPlaceConfig {
 
 #[derive(Debug, Default, Clone, Copy, Deserialize)]
 pub(crate) enum SymbolicPlaceStrategy {
-    /// Builds an expression with different possible values.
+    /// Builds an expression with multiple possible values.
     #[serde(alias = "proj", alias = "expr")]
     ProjExpression,
     /// Uses the concrete value of place for memory reading/writing.

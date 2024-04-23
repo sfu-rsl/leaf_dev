@@ -36,7 +36,6 @@ use super::{
         ValueRef,
     },
     proj::{apply_projs_sym, IndexResolver, ProjectionResolutionExt},
-    sym_place::SymPlaceHandler,
 };
 
 mod memory;
@@ -48,6 +47,8 @@ use utils::*;
 type Local = LocalWithMetadata;
 type Place = PlaceWithMetadata;
 type Projection = crate::abs::Projection<Local>;
+
+type SymPlaceHandlerObject = Box<dyn super::SymPlaceHandler<PlaceMetadata>>;
 
 /* NOTE: Memory structure
  * How does this state tries to store (symbolic) objects?
@@ -111,8 +112,8 @@ pub(in super::super) struct RawPointerVariableState<VS, SP: SymbolicProjector> {
     fallback: VS,
     sym_projector: RRef<SP>,
     type_manager: Rc<dyn TypeManager>,
-    sym_read_handler: RefCell<Box<dyn SymPlaceHandler>>,
-    sym_write_handler: RefCell<Box<dyn SymPlaceHandler>>,
+    sym_read_handler: RefCell<SymPlaceHandlerObject>,
+    sym_write_handler: RefCell<SymPlaceHandlerObject>,
 }
 
 impl<VS, SP: SymbolicProjector> RawPointerVariableState<VS, SP> {
@@ -120,7 +121,7 @@ impl<VS, SP: SymbolicProjector> RawPointerVariableState<VS, SP> {
         fallback: VS,
         sym_projector: RRef<SP>,
         type_manager: Rc<dyn TypeManager>,
-        sym_place_handler_factory: impl Fn(SymbolicPlaceStrategy) -> Box<dyn SymPlaceHandler>,
+        sym_place_handler_factory: impl Fn(SymbolicPlaceStrategy) -> SymPlaceHandlerObject,
         sym_place_config: &SymbolicPlaceConfig,
     ) -> Self
     where
@@ -301,7 +302,7 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
     fn try_find_sym_value<'a, 'b>(
         &'a self,
         place: &'b Place,
-        sym_place_handler: RefMut<'a, dyn SymPlaceHandler>,
+        sym_place_handler: RefMut<'a, SymPlaceHandlerObject>,
     ) -> Option<(
         &'a SymValueRef,
         &'b [Projection],
@@ -323,7 +324,7 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
         local_metadata: &PlaceMetadata,
         projs: &'b [Projection],
         mut projs_metadata: I,
-        mut sym_place_handler: RefMut<'a, dyn SymPlaceHandler>,
+        mut sym_place_handler: RefMut<'a, SymPlaceHandlerObject>,
     ) -> Option<(&'a SymValueRef, &'b [Projection], I)>
     where
         Self: IndexResolver<Local>,
@@ -593,7 +594,7 @@ where
 
 struct SymIndexHandler<'a, 'b, SP: SymbolicProjector> {
     sym_projector: RRef<SP>,
-    sym_read_handler: RefMut<'a, dyn SymPlaceHandler>,
+    sym_read_handler: RefMut<'a, SymPlaceHandlerObject>,
     /* NOTE: This is a workaround to access the metadata while implementing the trait.
      * We are relying on the fact that the projections will be applied in the
      * same order and only once. */
