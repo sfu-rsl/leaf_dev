@@ -41,7 +41,7 @@ use self::{
     },
     operand::BasicOperandHandler,
     place::{BasicPlaceHandler, PlaceMetadata},
-    state::{RawPointerVariableState, StackedLocalIndexVariablesState},
+    state::{make_sym_place_handler, RawPointerVariableState, StackedLocalIndexVariablesState},
 };
 
 type TraceManager = dyn abs::backend::TraceManager<BasicBlockIndex, ValueRef>;
@@ -103,10 +103,14 @@ impl BasicBackend {
                         StackedLocalIndexVariablesState::new(id, sym_projector.clone()),
                         sym_projector.clone(),
                         type_manager_ref.clone(),
-                        Rc::new(RefCell::new(BasicConcretizer::new(
-                            expr_builder_ref.clone(),
-                            trace_manager_ref.clone(),
-                        ))),
+                        |s| {
+                            make_sym_place_handler(s, || {
+                                Box::new(BasicConcretizer::new(
+                                    expr_builder_ref.clone(),
+                                    trace_manager_ref.clone(),
+                                ))
+                            })
+                        },
                         &config.sym_place,
                     );
                     #[cfg(not(place_addr))]

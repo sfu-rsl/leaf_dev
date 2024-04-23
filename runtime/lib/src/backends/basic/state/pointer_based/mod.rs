@@ -1,4 +1,5 @@
 use std::{
+    cell::{RefCell, RefMut},
     collections::{btree_map::Entry, VecDeque},
     ops::Bound,
     rc::Rc,
@@ -13,11 +14,10 @@ use crate::{
             ProjectionOn, Projector,
         },
         place::HasMetadata,
-        PointerOffset, RawPointer, TypeId, TypeSize, ValueType, USIZE_TYPE,
+        PointerOffset, RawPointer, TypeId, TypeSize, USIZE_TYPE,
     },
     backends::basic::{
         alias::TypeManager,
-        concrete::Concretizer,
         config::{SymbolicPlaceConfig, SymbolicPlaceStrategy},
         expr::{PorterValue, RawConcreteValue, SymIndexPair},
         place::{LocalWithMetadata, PlaceMetadata},
@@ -30,13 +30,17 @@ use common::tyexp::{ArrayShape, FieldsShapeInfo, StructShape, TypeInfo};
 
 use super::{
     super::{
-        alias::RRef, alias::SymValueRefProjector as SymbolicProjector, expr::prelude::*,
-        place::PlaceWithMetadata, ValueRef,
+        alias::{RRef, SymValueRefProjector as SymbolicProjector},
+        expr::prelude::*,
+        place::PlaceWithMetadata,
+        ValueRef,
     },
     proj::{apply_projs_sym, IndexResolver, ProjectionResolutionExt},
+    sym_place::SymPlaceHandler,
 };
 
 mod memory;
+pub(super) mod sym_place;
 mod utils;
 
 use utils::*;
@@ -107,8 +111,8 @@ pub(in super::super) struct RawPointerVariableState<VS, SP: SymbolicProjector> {
     fallback: VS,
     sym_projector: RRef<SP>,
     type_manager: Rc<dyn TypeManager>,
-    concretizer: RRef<dyn Concretizer>,
-    sym_place_config: SymbolicPlaceConfig,
+    sym_read_handler: RefCell<Box<dyn SymPlaceHandler>>,
+    sym_write_handler: RefCell<Box<dyn SymPlaceHandler>>,
 }
 
 impl<VS, SP: SymbolicProjector> RawPointerVariableState<VS, SP> {
@@ -116,7 +120,7 @@ impl<VS, SP: SymbolicProjector> RawPointerVariableState<VS, SP> {
         fallback: VS,
         sym_projector: RRef<SP>,
         type_manager: Rc<dyn TypeManager>,
-        concretizer: RRef<dyn Concretizer>,
+        sym_place_handler_factory: impl Fn(SymbolicPlaceStrategy) -> Box<dyn SymPlaceHandler>,
         sym_place_config: &SymbolicPlaceConfig,
     ) -> Self
     where
@@ -127,8 +131,8 @@ impl<VS, SP: SymbolicProjector> RawPointerVariableState<VS, SP> {
             fallback,
             sym_projector,
             type_manager,
-            concretizer,
-            sym_place_config: sym_place_config.clone(),
+            sym_read_handler: RefCell::new(sym_place_handler_factory(sym_place_config.read)),
+            sym_write_handler: RefCell::new(sym_place_handler_factory(sym_place_config.write)),
         }
     }
 
@@ -205,7 +209,7 @@ where
 
         // If the place is pointing to a symbolic value.
         if let Some((sym_val, sym_projs, _)) =
-            self.try_find_sym_value(place, self.sym_place_config.read)
+            self.try_find_sym_value(place, self.sym_read_handler.borrow_mut())
         {
             return self.handle_sym_value_read(sym_val, sym_projs).into();
         }
@@ -241,7 +245,7 @@ where
             place.local().metadata(),
             place.projections(),
             place.projs_metadata(),
-            self.sym_place_config.read,
+            self.sym_read_handler.borrow_mut(),
         ) {
             return Some(if sym_projs.is_empty() {
                 let value = sym_val.clone_to();
@@ -279,7 +283,7 @@ where
         };
 
         if let Some((_sym_val, sym_projs, _)) =
-            self.try_find_sym_value(place, self.sym_place_config.write)
+            self.try_find_sym_value(place, self.sym_write_handler.borrow_mut())
         {
             if !sym_projs.is_empty() {
                 todo!("#238");
@@ -297,7 +301,7 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
     fn try_find_sym_value<'a, 'b>(
         &'a self,
         place: &'b Place,
-        sym_place_strategy: SymbolicPlaceStrategy,
+        sym_place_handler: RefMut<'a, dyn SymPlaceHandler>,
     ) -> Option<(
         &'a SymValueRef,
         &'b [Projection],
@@ -310,7 +314,7 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
             place.local().metadata(),
             place.projections(),
             place.projs_metadata(),
-            sym_place_strategy,
+            sym_place_handler,
         )
     }
 
@@ -319,7 +323,7 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
         local_metadata: &PlaceMetadata,
         projs: &'b [Projection],
         mut projs_metadata: I,
-        sym_place_strategy: SymbolicPlaceStrategy,
+        mut sym_place_handler: RefMut<'a, dyn SymPlaceHandler>,
     ) -> Option<(&'a SymValueRef, &'b [Projection], I)>
     where
         Self: IndexResolver<Local>,
@@ -330,13 +334,7 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
             local_metadata.unwrap_type_id(),
         ) {
             if let Some(Projection::Deref) = projs.first() {
-                let ref_val = handle_sym_location(
-                    sym_val.clone(),
-                    local_metadata.address(),
-                    sym_val.as_ref().try_into().ok(),
-                    sym_place_strategy,
-                    self.concretizer.clone(),
-                );
+                let ref_val = sym_place_handler.handle(sym_val.clone(), local_metadata);
 
                 // If concretized by the strategy, we continue with the dereferenced place.
                 if !ref_val.is_symbolic() {
@@ -349,7 +347,7 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
                         &after_deref,
                         &projs[1..],
                         projs_metadata,
-                        sym_place_strategy,
+                        sym_place_handler,
                     );
                 }
             }
@@ -366,13 +364,8 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
                     if let Projection::Index(index) = proj {
                         if let Some(mut index_val) = IndexResolver::get(self, index) {
                             if index_val.is_symbolic() {
-                                index_val = handle_sym_location(
-                                    SymValueRef::new(index_val),
-                                    index.metadata().address(),
-                                    Some(USIZE_TYPE.into()),
-                                    sym_place_strategy,
-                                    self.concretizer.clone(),
-                                );
+                                index_val = sym_place_handler
+                                    .handle(SymValueRef::new(index_val), index.metadata());
                             }
 
                             if index_val.is_symbolic() {
@@ -408,8 +401,7 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
 
         let mut sym_place_handler = SymIndexHandler {
             sym_projector: self.sym_projector.clone(),
-            concretizer: self.concretizer.clone(),
-            strategy: self.sym_place_config.read,
+            sym_read_handler: self.sym_read_handler.borrow_mut(),
             projs: projs.iter().collect(),
         };
         apply_projs_sym(
@@ -599,17 +591,16 @@ where
     }
 }
 
-struct SymIndexHandler<'b, SP: SymbolicProjector> {
+struct SymIndexHandler<'a, 'b, SP: SymbolicProjector> {
     sym_projector: RRef<SP>,
-    concretizer: RRef<dyn Concretizer>,
-    strategy: SymbolicPlaceStrategy,
+    sym_read_handler: RefMut<'a, dyn SymPlaceHandler>,
     /* NOTE: This is a workaround to access the metadata while implementing the trait.
      * We are relying on the fact that the projections will be applied in the
      * same order and only once. */
     projs: VecDeque<&'b Projection>,
 }
 
-impl<SP: SymbolicProjector> Projector for SymIndexHandler<'_, SP> {
+impl<SP: SymbolicProjector> Projector for SymIndexHandler<'_, '_, SP> {
     type HostRef<'a> = SymValueRef;
     type HIRefPair<'a> = SymIndexPair;
     type DowncastTarget = DowncastKind;
@@ -638,24 +629,13 @@ impl<SP: SymbolicProjector> Projector for SymIndexHandler<'_, SP> {
                         (SymValueRef::new(host), index.into())
                     }
                 };
-                
+
                 if index.is_symbolic() {
                     let Projection::Index(index_local) = proj else {
                         unreachable!()
                     };
-                    index = {
-                        let this = &mut *self;
-                        let index = SymValueRef::new(index);
-                        let index_meta: &PlaceMetadata = &index_local.metadata();
-                        handle_sym_location(
-                            index,
-                            index_meta.address(),
-                            Some(USIZE_TYPE.into()),
-                            this.strategy,
-                            this.concretizer.clone(),
-                        )
-                    };
-                };
+                    index = self.sym_read_handler.handle(SymValueRef::new(index), index_local.metadata());
+                }
 
                 self.sym_projector.borrow_mut().index(
                     Into::<SymIndexPair>::into((sym_host, index)).into(),
@@ -669,26 +649,4 @@ impl<SP: SymbolicProjector> Projector for SymIndexHandler<'_, SP> {
 
     impl_singular_projs_through_general!();
 }
-impl<SP: SymbolicProjector> SymbolicProjector for SymIndexHandler<'_, SP> {}
-
-fn handle_sym_location(
-    value: SymValueRef,
-    address: Option<RawPointer>,
-    ty: Option<ValueType>,
-    strategy: SymbolicPlaceStrategy,
-    concretizer: RRef<dyn Concretizer>,
-) -> ValueRef {
-    use SymbolicPlaceStrategy::*;
-    match (strategy, address) {
-        (ProjExpression, _) | (_, None) => value.into(),
-        (Concretization | Stamping, Some(addr)) => {
-            let conc_val = RawConcreteValue(addr, ty).to_value_ref();
-            if let Stamping = strategy {
-                concretizer
-                    .borrow_mut()
-                    .stamp(value, ConcreteValueRef::new(conc_val.clone()));
-            }
-            conc_val
-        }
-    }
-}
+impl<SP: SymbolicProjector> SymbolicProjector for SymIndexHandler<'_, '_, SP> {}
