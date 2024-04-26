@@ -2,6 +2,7 @@ pub trait Transmute<T>: From<T> + Into<T> {}
 impl<T> Transmute<T> for T {}
 
 #[repr(transparent)]
+#[derive(Debug)]
 pub struct U128Pack<T = u128>(
     [u8; core::mem::size_of::<u128>()],
     core::marker::PhantomData<T>,
@@ -25,6 +26,7 @@ impl<T> From<u128> for U128Pack<T> {
 }
 
 #[repr(transparent)]
+#[derive(Debug)]
 pub struct CharPack([u8; core::mem::size_of::<char>()]);
 impl From<CharPack> for char {
     #[inline(always)]
@@ -41,6 +43,7 @@ impl From<char> for CharPack {
 impl Transmute<char> for CharPack {}
 
 #[repr(C)]
+#[derive(Debug)]
 pub struct SlicePack<T> {
     pub ptr: *const T,
     pub len: usize,
@@ -68,6 +71,7 @@ where
 }
 
 #[repr(C)]
+#[derive(Debug)]
 pub struct ConstStrPack {
     pub ptr: *const u8,
     pub len: usize,

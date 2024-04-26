@@ -1,6 +1,6 @@
-use crate::{ffi, utils};
+use super::{ffi, utils};
 
-pub use crate::types::{
+pub use super::types::{
     Alignment, BasicBlockIndex, FieldIndex, FuncId, LocalIndex, RawPointer, TypeId, TypeSize,
     VariantIndex,
 };
@@ -9,8 +9,10 @@ pub type PlaceRef = Ref;
 pub type OperandRef = Ref;
 
 #[repr(transparent)]
+#[derive(Debug)]
 pub struct BinaryOp(pub u8);
 #[repr(transparent)]
+#[derive(Debug)]
 pub struct UnaryOp(pub u8);
 
 impl BinaryOp {
@@ -97,6 +99,7 @@ impl UnaryOp {
 }
 
 #[repr(C)]
+#[derive(Debug)]
 pub struct BranchingInfo {
     pub node_location: BasicBlockIndex,
     pub discriminant: OperandRef,
