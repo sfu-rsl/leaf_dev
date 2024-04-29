@@ -8,32 +8,48 @@ pub type Ref = u64;
 pub type PlaceRef = Ref;
 pub type OperandRef = Ref;
 
+#[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
 #[repr(transparent)]
 #[derive(Debug)]
 pub struct BinaryOp(pub u8);
+#[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
 #[repr(transparent)]
 #[derive(Debug)]
 pub struct UnaryOp(pub u8);
 
-impl BinaryOp {
-    pub const ADD: Self = Self(1);
-    pub const SUB: Self = Self(2);
-    pub const MUL: Self = Self(3);
-    pub const DIV: Self = Self(4);
-    pub const REM: Self = Self(5);
-    pub const BIT_XOR: Self = Self(6);
-    pub const BIT_AND: Self = Self(7);
-    pub const BIT_OR: Self = Self(8);
-    pub const SHL: Self = Self(9);
-    pub const SHR: Self = Self(10);
-    pub const EQ: Self = Self(11);
-    pub const LT: Self = Self(12);
-    pub const LE: Self = Self(13);
-    pub const NE: Self = Self(14);
-    pub const GE: Self = Self(15);
-    pub const GT: Self = Self(16);
-    pub const OFFSET: Self = Self(17);
+macro_rules! op_const {
+    ($($name:ident = $raw:literal;)*) => {
+        $(
+            #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
+            pub const $name: Self = Self($raw);
+        )*
+    };
+}
 
+#[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
+impl BinaryOp {
+    op_const! {
+        ADD = 1;
+        SUB = 2;
+        MUL = 3;
+        DIV = 4;
+        REM = 5;
+        BIT_XOR = 6;
+        BIT_AND = 7;
+        BIT_OR = 8;
+        SHL = 9;
+        SHR = 10;
+        EQ = 11;
+        LT = 12;
+        LE = 13;
+        NE = 14;
+        GE = 15;
+        GT = 16;
+        OFFSET = 17;
+    }
+
+    #[cfg_attr(core_build, rustc_const_stable(feature = "rust1", since = "1.0.0"))]
+    #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
     pub const fn from_raw(raw: u8) -> Self {
         if raw == BinaryOp::ADD.as_u8() {
             BinaryOp::ADD
@@ -74,15 +90,22 @@ impl BinaryOp {
         }
     }
 
+    #[cfg_attr(core_build, rustc_const_stable(feature = "rust1", since = "1.0.0"))]
+    #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
     pub const fn as_u8(self) -> u8 {
         self.0
     }
 }
 
+#[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
 impl UnaryOp {
-    pub const NOT: Self = Self(31);
-    pub const NEG: Self = Self(32);
+    op_const! {
+        NOT = 31;
+        NEG = 32;
+    }
 
+    #[cfg_attr(core_build, rustc_const_stable(feature = "rust1", since = "1.0.0"))]
+    #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
     pub const fn from_raw(raw: u8) -> Self {
         if raw == UnaryOp::NOT.as_u8() {
             UnaryOp::NOT
@@ -93,11 +116,14 @@ impl UnaryOp {
         }
     }
 
+    #[cfg_attr(core_build, rustc_const_stable(feature = "rust1", since = "1.0.0"))]
+    #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
     pub const fn as_u8(self) -> u8 {
         self.0
     }
 }
 
+#[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
 #[repr(C)]
 #[derive(Debug)]
 pub struct BranchingInfo {
@@ -107,18 +133,13 @@ pub struct BranchingInfo {
     pub discr_is_signed: bool,
 }
 
-#[macro_export]
-macro_rules! self_slice_of { ($t:ty) => { Self::Slice<'_, $t> }; }
-
-#[macro_export]
-macro_rules! slice_pack_of { ($t:ty) => { common::ffi::SlicePack<$t> }; }
-
 /// The definition of the interface between the program and the runtime library.
 ///
 /// This trait provides a compile-time guarantee that the list of functions
 /// is kept consistent between the runtime library, its exported C ABI, and the
 /// shim. User is required to implement this trait wherever the list of functions
 /// is used.
+#[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
 pub trait ProgramRuntimeInterface {
     type U128;
     type Char;
@@ -135,6 +156,7 @@ pub trait ProgramRuntimeInterface {
 
 /// A marker trait to make sure that the FFI/ABI is the same between
 /// the runtime library and the shim.
+#[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
 pub trait FfiPri:
     // This is currently not supported by the compiler.
     // for<'a, T>
@@ -152,7 +174,13 @@ pub trait FfiPri:
 {
 }
 
-mod macros {
+pub mod macros {
+    #[cfg_attr(not(core_build), macro_export)]
+    macro_rules! self_slice_of { ($t:ty) => { Self::Slice<'_, $t> }; }
+
+    #[cfg_attr(not(core_build), macro_export)]
+    macro_rules! slice_pack_of { ($t:ty) => { common::ffi::SlicePack<$t> }; }
+
     /* NOTE: What are these macros for?
      * The list of PRI functions should get repeated in multiple places:
      * - in the runtime library, the actual PRI calling the backend.
@@ -182,7 +210,7 @@ mod macros {
      * - Ideally, all other use cases of these functions should be updated automatically.
      */
 
-    #[macro_export]
+    #[cfg_attr(not(core_build), macro_export)]
     macro_rules! pass_func_decls_to {
         ($macro:ident) => {
             $macro! {
@@ -380,7 +408,7 @@ mod macros {
 
     macro_rules! make_pass_func_names_to_macro {
         ($($(#[$($attr: meta)*])* {fn $name:ident ($($arg:tt)*) $(-> $($ret_ty:tt)*)?})*) => {
-            #[macro_export]
+            #[cfg_attr(not(core_build), macro_export)]
             macro_rules! pass_func_names_to {
                 ($$macro:ident, one_by_one) => {
                     $(
@@ -396,7 +424,6 @@ mod macros {
         };
     }
     pass_func_decls_to!(make_pass_func_names_to_macro);
-    pub use pass_func_names_to;
 
     #[allow(unused_macros)]
     macro_rules! make_list_func_decls_macro {
@@ -430,7 +457,7 @@ mod macros {
                             char: (),
                             &str: (),
                             &[u8]: (),
-                            slice: common::utils::identity,
+                            slice: $crate::leaf::common::utils::identity,
                             branching_info: (),
                             type_id: (),
                             binary_op:(),
@@ -446,7 +473,7 @@ mod macros {
                             char: Self::Char,
                             &str: Self::ConstStr,
                             &[u8]: Self::ConstByteStr,
-                            slice: $crate::self_slice_of,
+                            slice: $crate::leaf::common::pri::macros::self_slice_of,
                             branching_info: Self::BranchingInfo,
                             type_id: Self::TypeId,
                             binary_op: Self::BinaryOp,
@@ -462,7 +489,7 @@ mod macros {
                             char: CharPack,
                             &str: ConstStrPack,
                             &[u8]: ConstByteStrPack,
-                            slice: $crate::slice_pack_of,
+                            slice: $crate::leaf::common::pri::macros::slice_pack_of,
                             branching_info: BranchingInfo,
                             type_id: U128Pack<TypeId>,
                             binary_op: common::pri::BinaryOp,
@@ -478,7 +505,7 @@ mod macros {
 
     // Recursive expansion of make_list_func_decls_macro! macro
     // =========================================================
-    #[macro_export]
+    #[cfg_attr(not(core_build), macro_export)]
     macro_rules! list_func_decls {
       (modifier: $modifier:path,(u128: $u128_ty:ty,char: $char_ty:ty, &str: $str_ty:ty, &[u8]: $byte_str_ty:ty,slice: $slice_ty:path,branching_info: $branching_info_ty:ty,type_id: $type_id_ty:ty,binary_op: $binary_op_ty:ty,unary_op: $unary_op_ty:ty$(,)?)) => {
         $modifier!{
@@ -652,22 +679,29 @@ mod macros {
         }
       };
       (modifier: $modifier:path) => {
-        $crate::list_func_decls!{
-          modifier: $modifier,(u128:(),char:(), &str:(), &[u8]:(),slice:common::utils::identity,branching_info:(),type_id:(),binary_op:(),unary_op:(),)
+        $crate::leaf::common::pri::macros::list_func_decls!{
+          modifier: $modifier,(u128:(),char:(), &str:(), &[u8]:(),slice:$crate::leaf::common::utils::identity,branching_info:(),type_id:(),binary_op:(),unary_op:(),)
         }
       };
       (modifier: $modifier:path,(from Self)) => {
-        $crate::list_func_decls!{
-          modifier: $modifier,(u128:Self::U128,char:Self::Char, &str:Self::ConstStr, &[u8]:Self::ConstByteStr,slice:$crate::self_slice_of,branching_info:Self::BranchingInfo,type_id:Self::TypeId,binary_op:Self::BinaryOp,unary_op:Self::UnaryOp,)
+        $crate::leaf::common::pri::macros::list_func_decls!{
+          modifier: $modifier,(u128:Self::U128,char:Self::Char, &str:Self::ConstStr, &[u8]:Self::ConstByteStr,slice:$crate::leaf::common::pri::macros::self_slice_of,branching_info:Self::BranchingInfo,type_id:Self::TypeId,binary_op:Self::BinaryOp,unary_op:Self::UnaryOp,)
         }
       };
       (modifier: $modifier:path,(from common::ffi)) => {
-        $crate::list_func_decls!{
-          modifier: $modifier,(u128:U128Pack,char:CharPack, &str:ConstStrPack, &[u8]:ConstByteStrPack,slice:$crate::slice_pack_of,branching_info:BranchingInfo,type_id:U128Pack<TypeId>,binary_op:common::pri::BinaryOp,unary_op:common::pri::UnaryOp,)
+        $crate::leaf::common::pri::macros::list_func_decls!{
+          modifier: $modifier,(u128:U128Pack,char:CharPack, &str:ConstStrPack, &[u8]:ConstByteStrPack,slice:$crate::leaf::common::pri::macros::slice_pack_of,branching_info:BranchingInfo,type_id:U128Pack<TypeId>,binary_op:common::pri::BinaryOp,unary_op:common::pri::UnaryOp,)
         }
       };
     }
 
-    pub use list_func_decls;
+    #[cfg(not(core_build))]
+    pub use {list_func_decls, pass_func_names_to, self_slice_of, slice_pack_of};
+    #[cfg(core_build)]
+    #[stable(feature = "rust1", since = "1.0.0")]
+    pub(crate) use {list_func_decls, pass_func_names_to, self_slice_of, slice_pack_of};
 }
+#[cfg(not(core_build))]
 pub use macros::{list_func_decls, pass_func_names_to};
+#[cfg(core_build)]
+pub(crate) use macros::{list_func_decls, pass_func_names_to};

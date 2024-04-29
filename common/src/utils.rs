@@ -1,10 +1,13 @@
-#[macro_export]
+#[cfg_attr(not(core_build), macro_export)]
 macro_rules! identity {
     ($($input:tt)+) => {
         $($input)+
     };
 }
+#[cfg(not(core_build))]
 pub use identity;
+#[cfg(core_build)]
+pub(crate) use identity;
 
 #[inline(always)]
 pub fn type_id_of<T: ?Sized + 'static>() -> u128 {

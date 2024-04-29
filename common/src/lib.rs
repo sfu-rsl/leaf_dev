@@ -13,3 +13,8 @@ pub mod pri;
 pub mod tyexp;
 pub mod types;
 pub mod utils;
+
+// NOTE: For compatibility when embedded in the core library.
+pub mod leaf {
+    pub use crate as common;
+}
