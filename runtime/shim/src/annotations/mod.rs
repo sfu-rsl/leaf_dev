@@ -1,8 +1,9 @@
 use core::concat_idents;
 use core::mem::size_of;
 
-use crate::pri::*;
+use super::pri::*;
 
+#[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
 pub trait Symbolizable: Sized {
     fn symbolize();
 
@@ -15,6 +16,7 @@ pub trait Symbolizable: Sized {
 macro_rules! impl_symbolizable_direct {
     ($($ty:ident),*) => {
         $(
+            #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
             impl Symbolizable for $ty {
                 fn symbolize() {
                     let operand_ref = concat_idents!(new_sym_value_, $ty)();
@@ -29,6 +31,7 @@ impl_symbolizable_direct!(bool, char);
 macro_rules! impl_symbolizable_int {
     ($($ty:ty),*, $signed:literal) => {
         $(
+            #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
             impl Symbolizable for $ty {
                 fn symbolize() {
                     let operand_ref = new_sym_value_int(size_of::<$ty>() as u64 * 8, $signed);
@@ -45,6 +48,7 @@ impl_symbolizable_int!(u8, u16, u32, u64, u128, usize, false);
 macro_rules! impl_symbolizable_float {
     ($($ty:ty),*) => {
         $(
+            #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
             impl Symbolizable for $ty {
                 fn symbolize() {
                     let sbits = <$ty>::MANTISSA_DIGITS as u64;
