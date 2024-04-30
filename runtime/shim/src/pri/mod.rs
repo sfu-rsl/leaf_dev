@@ -53,7 +53,7 @@ mod ffi {
         type BinaryOp = common::pri::BinaryOp;
         type UnaryOp = common::pri::UnaryOp;
 
-        list_func_decls!(modifier: delegate_to_leafrt, (from Self));
+        common::pri::list_func_decls!(modifier: delegate_to_leafrt, (from Self));
     }
 
     impl FfiPri for ForeignPri {}

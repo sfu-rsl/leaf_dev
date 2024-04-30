@@ -12,4 +12,7 @@ pub mod annotations;
 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
 pub mod pri;
 
+#[cfg(core_build)]
+use super::common;
+#[cfg(not(core_build))]
 use common;

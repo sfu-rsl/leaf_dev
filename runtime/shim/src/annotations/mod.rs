@@ -5,8 +5,10 @@ use super::pri::*;
 
 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
 pub trait Symbolizable: Sized {
+    #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
     fn symbolize();
 
+    #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
     fn mark_symbolic(self) -> Self {
         Self::symbolize();
         self
