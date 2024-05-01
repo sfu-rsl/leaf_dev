@@ -1,0 +1,12 @@
+diff --git a/leaf/mod.rs b/leaf/mod.rs
+new file mode 100644
+index 0000000000..04e1223750
+--- /dev/null
++++ b/leaf/mod.rs
+@@ -0,0 +1,6 @@
++mod common;
++
++pub mod leafrtsh;
++
++#[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
++pub use leafrtsh::annotations;

@@ -1,0 +1,16 @@
+[build]
+rustflags = [
+    "--cfg",
+    "runtime_access=\"safe_brt\"",
+    "--cfg",
+    "place_addr",
+    "--cfg",
+    "abs_concrete",
+    "--cfg",
+    "core_build",
+    "--sysroot",
+    "$toolchain_path",
+]
+
+[env]
+LEAFC_RUNTIME_SHIM__AS_EXTERNAL = "false"

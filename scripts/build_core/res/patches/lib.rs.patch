@@ -1,0 +1,19 @@
+diff --git a/lib.rs b/lib.rs
+index b54680a61b..ef9a329856 100644
+--- a/lib.rs
++++ b/lib.rs
+@@ -124,6 +124,7 @@
+ #![feature(const_caller_location)]
+ #![feature(const_cell_into_inner)]
+ #![feature(const_char_from_u32_unchecked)]
++#![feature(concat_idents)]
+ #![feature(const_eval_select)]
+ #![feature(const_exact_div)]
+ #![feature(const_float_bits_conv)]
+@@ -455,3 +456,6 @@ pub mod simd {
+ }
+ 
+ include!("primitive_docs.rs");
++
++#[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
++pub mod leaf;

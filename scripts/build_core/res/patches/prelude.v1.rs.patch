@@ -1,0 +1,11 @@
+diff --git a/prelude/v1.rs b/prelude/v1.rs
+index 10525a16f3..b4274b7fe5 100644
+--- a/prelude/v1.rs
++++ b/prelude/v1.rs
+@@ -103,3 +103,6 @@
+     reason = "placeholder syntax for type ascription"
+ )]
+ pub use crate::macros::builtin::type_ascribe;
++
++#[stable(feature = "core_prelude", since = "1.4.0")]
++pub use crate::leaf;

@@ -37,3 +37,6 @@ samples/**/main
 *.bench
 *.data
 *.svg
+
+scripts/**/out
+scripts/**/work
