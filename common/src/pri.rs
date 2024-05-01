@@ -428,7 +428,7 @@ pub mod macros {
     #[allow(unused_macros)]
     macro_rules! make_list_func_decls_macro {
         ($($(#[$($attr: meta)*])*{$($sig:tt)+})+) => {
-            #[macro_export]
+            #[cfg_attr(not(core_build), macro_export)]
             macro_rules! list_func_decls {
                 (
                     modifier: $$modifier:path,
@@ -450,7 +450,7 @@ pub mod macros {
                     )+
                 };
                 (modifier: $$modifier:path) => {
-                    $$crate::list_func_decls! {
+                    $$crate::leaf::common::pri::macros::list_func_decls! {
                         modifier: $$modifier,
                         (
                             u128: (),
@@ -466,7 +466,7 @@ pub mod macros {
                     }
                 };
                 (modifier: $$modifier:path, (from Self)) => {
-                    list_func_decls! {
+                    $$crate::leaf::common::pri::macros::list_func_decls! {
                         modifier: $$modifier,
                         (
                             u128: Self::U128,
@@ -482,7 +482,7 @@ pub mod macros {
                     }
                 };
                 (modifier: $$modifier:path, (from common::ffi)) => {
-                    list_func_decls! {
+                    $$crate::leaf::common::pri::macros::list_func_decls! {
                         modifier: $$modifier,
                         (
                             u128: U128Pack,
