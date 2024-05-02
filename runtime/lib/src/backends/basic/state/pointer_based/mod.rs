@@ -365,6 +365,7 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
                     if let Projection::Index(index) = proj {
                         if let Some(mut index_val) = IndexResolver::get(self, index) {
                             if index_val.is_symbolic() {
+                                log::debug!("Symbolic index observed: {}", index_val.as_ref());
                                 index_val = sym_place_handler
                                     .handle(SymValueRef::new(index_val), index.metadata());
                             }

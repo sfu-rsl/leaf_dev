@@ -12,11 +12,15 @@ pub(crate) fn make_sym_place_handler(
     config: SymbolicPlaceStrategy,
     concretizer_factory: impl FnOnce() -> Box<dyn Concretizer>,
 ) -> Box<dyn SymPlaceHandler<PlaceMetadata>> {
+    log::debug!(
+        "Creating a symbolic place handler for strategy {:?}",
+        config
+    );
     use SymbolicPlaceStrategy::*;
     match config {
-        ProjExpr => Box::new(ProjExprSymPlaceHandler),
-        Concretizer => Box::new(ConcretizerSymPlaceHandler),
-        Stamper => Box::new(StamperSymPlaceHandler {
+        ProjExpression => Box::new(ProjExprSymPlaceHandler),
+        Concretization => Box::new(ConcretizerSymPlaceHandler),
+        Stamping => Box::new(StamperSymPlaceHandler {
             concretizer: concretizer_factory(),
         }),
     }
@@ -33,7 +37,13 @@ impl<M> SymPlaceHandler<M> for ProjExprSymPlaceHandler {
 struct ConcretizerSymPlaceHandler;
 impl SymPlaceHandler<PlaceMetadata> for ConcretizerSymPlaceHandler {
     fn handle(&mut self, place_value: SymValueRef, place_meta: &PlaceMetadata) -> ValueRef {
-        get_concrete_value(&place_meta, place_value.as_ref().try_into().ok())
+        let conc_val = get_concrete_value(&place_meta, place_value.as_ref().try_into().ok());
+        log::debug!(
+            "Concretizing symbolic value {} with value {}",
+            place_value,
+            conc_val,
+        );
+        conc_val
     }
 }
 
@@ -43,6 +53,11 @@ struct StamperSymPlaceHandler {
 impl SymPlaceHandler<PlaceMetadata> for StamperSymPlaceHandler {
     fn handle(&mut self, place_value: SymValueRef, place_meta: &PlaceMetadata) -> ValueRef {
         let conc_val = get_concrete_value(&place_meta, place_value.as_ref().try_into().ok());
+        log::debug!(
+            "Stamping symbolic value {} with concrete value {}",
+            place_value,
+            conc_val
+        );
         self.concretizer
             .stamp(place_value, ConcreteValueRef::new(conc_val.clone()));
         conc_val
