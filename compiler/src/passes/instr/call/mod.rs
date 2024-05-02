@@ -1089,17 +1089,15 @@ mod implementation {
         where
             C: ForOperandRef<'tcx>,
         {
-            {
-                let def_id = constant.def.expect_local();
-                let ctfe_id = if let Some(index) = constant.promoted {
-                    CtfeId::Promoted(def_id, index)
-                } else {
-                    CtfeId::Const(def_id)
-                };
+            let def_id = constant.def.expect_local();
+            let ctfe_id = if let Some(index) = constant.promoted {
+                CtfeId::Promoted(def_id, index)
+            } else {
+                CtfeId::Const(def_id)
+            };
 
-                let nctfe_result_local = self.call_nctfe(ctfe_id);
-                self.internal_reference_operand(&operand::move_for_local(nctfe_result_local))
-            }
+            let nctfe_result_local = self.call_nctfe(ctfe_id);
+            self.internal_reference_operand(&operand::move_for_local(nctfe_result_local))
         }
         #[cfg(not(nctfe))]
         fn internal_reference_unevaluated_const_operand(
@@ -1121,42 +1119,39 @@ mod implementation {
         where
             C: ForOperandRef<'tcx>,
         {
-            #[cfg(nctfe)]
+            let item_ty = match ty.kind() {
+                TyKind::Ref(_, ty, rustc_ast::Mutability::Not) => ty.clone(),
+                _ => unreachable!("Constant type should be an immutable reference."),
+            };
+
+            let tcx = self.tcx();
+            let ctfe_id = CtfeId::Const(def_id.expect_local());
+
+            assert!(
+                ty::is_ref_assignable(&item_ty, &ctfe_id.ty(tcx)),
+                concat!(
+                    "Constant type should be the reference of the init block's return type.",
+                    "Constant type: {:?}, init block return type: {:?}",
+                ),
+                ty,
+                ctfe_id.ty(tcx)
+            );
+
+            let nctfe_result_local = self.call_nctfe(ctfe_id);
+
+            // Simulate referencing the result of the NCTFE call.
+            let ref_local = self.context.add_local(ty);
             {
-                let item_ty = match ty.kind() {
-                    TyKind::Ref(_, ty, rustc_ast::Mutability::Not) => ty.clone(),
-                    _ => unreachable!("Constant type should be an immutable reference."),
-                };
-
-                let tcx = self.tcx();
-                let ctfe_id = CtfeId::Const(def_id.expect_local());
-
-                assert!(
-                    ty::is_ref_assignable(&item_ty, &ctfe_id.ty(tcx)),
-                    concat!(
-                        "Constant type should be the reference of the init block's return type.",
-                        "Constant type: {:?}, init block return type: {:?}",
-                    ),
-                    ty,
-                    ctfe_id.ty(tcx)
+                // FIXME: Duplicate code with `LeafStatementVisitor::visit_assign`.
+                let ref_local_ref = self.reference_place(&ref_local.into());
+                instr::LeafAssignmentVisitor::instrument_ref(
+                    &mut self.assign(ref_local_ref, ty),
+                    &rustc_middle::mir::BorrowKind::Shared,
+                    &nctfe_result_local.into(),
                 );
-
-                let nctfe_result_local = self.call_nctfe(ctfe_id);
-
-                // Simulate referencing the result of the NCTFE call.
-                let ref_local = self.context.add_local(ty);
-                {
-                    // FIXME: Duplicate code with `LeafStatementVisitor::visit_assign`.
-                    let ref_local_ref = self.reference_place(&ref_local.into());
-                    instr::LeafAssignmentVisitor::instrument_ref(
-                        &mut self.assign(ref_local_ref, ty),
-                        &rustc_middle::mir::BorrowKind::Shared,
-                        &nctfe_result_local.into(),
-                    );
-                }
-
-                self.internal_reference_operand(&operand::move_for_local(ref_local))
             }
+
+            self.internal_reference_operand(&operand::move_for_local(ref_local))
         }
 
         #[cfg(not(nctfe))]
@@ -2978,17 +2973,8 @@ mod implementation {
         pub(crate) trait ForPlaceRef<'tcx>: ForInsertion<'tcx> {}
         impl<'tcx, C> ForPlaceRef<'tcx> for C where C: ForInsertion<'tcx> {}
 
-        #[cfg(not(nctfe))]
         pub(crate) trait ForOperandRef<'tcx>: ForPlaceRef<'tcx> {}
-        #[cfg(not(nctfe))]
         impl<'tcx, C> ForOperandRef<'tcx> for C where C: ForPlaceRef<'tcx> {}
-        #[cfg(nctfe)]
-        pub(crate) trait ForOperandRef<'tcx>:
-            ForPlaceRef<'tcx> + ForFunctionCalling<'tcx>
-        {
-        }
-        #[cfg(nctfe)]
-        impl<'tcx, C> ForOperandRef<'tcx> for C where C: ForPlaceRef<'tcx> + ForFunctionCalling<'tcx> {}
 
         pub(crate) trait ForAssignment<'tcx>:
             ForInsertion<'tcx> + DestinationProvider<'tcx>
