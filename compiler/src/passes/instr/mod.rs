@@ -548,8 +548,8 @@ where
                     }
                 }
             }
-            PointerExposeAddress => call_adder.expose_address(),
-            PointerFromExposedAddress => call_adder.from_exposed_address(*ty),
+            PointerExposeProvenance => call_adder.expose_prov(),
+            PointerWithExposedProvenance => call_adder.with_exposed_prov(*ty),
             PtrToPtr | FnPtrToPtr => call_adder.to_another_ptr(*ty, *kind),
             DynStar => call_adder.through_sized_dynamization(*ty),
             Transmute => call_adder.transmuted(*ty),
@@ -633,6 +633,13 @@ where
             CoroutineClosure(..) => Box::new(|fields| {
                 self.call_adder.by_aggregate_coroutine_closure(fields)
             }),
+            RawPtr(_, mutability) => Box::new(|fields| {
+                match fields {
+                    [data_ptr, metadata] => {
+                        self.call_adder.by_aggregate_raw_ptr(*data_ptr, *metadata, mutability.is_mut())
+                    },
+                    _ => unreachable!()
+            }}),
         };
 
         add_call(operands.as_slice())

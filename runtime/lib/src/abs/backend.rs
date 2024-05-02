@@ -195,6 +195,8 @@ pub(crate) trait AssignmentHandler: Sized {
         self.adt_from(upvars, None)
     }
 
+    fn raw_ptr_from(self, data_ptr: Self::Operand, metadata: Self::Operand, is_mutable: bool);
+
     fn variant_index(self, variant_index: VariantIndex);
 }
 

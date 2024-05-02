@@ -361,7 +361,7 @@ mod core {
                                 ),
                             }
                         }
-                        ExposeAddress | ToPointer(_) => {
+                        ExposeProvenance | ToPointer(_) => {
                             todo!("#331: Add support for casting symbolic pointers")
                         }
                         SizedDynamize => {
@@ -608,7 +608,7 @@ mod concrete {
                     }
                     _ => unreachable!("Unsize cast is supposed to happen on a reference."),
                 },
-                ExposeAddress | ToPointer(_) => {
+                ExposeProvenance | ToPointer(_) => {
                     todo!("#313: Add support for raw pointers in concrete values domain")
                 }
                 SizedDynamize | Transmute(_) => {

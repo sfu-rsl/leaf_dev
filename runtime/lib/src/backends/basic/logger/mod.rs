@@ -107,7 +107,7 @@ impl AssignmentHandler for LoggerAssignmentHandler {
             CastKind::ToInt(to) => format!("{operand} as {to:#?}"),
             CastKind::ToFloat(to) => format!("{operand} as {to:#?}"),
             CastKind::PointerUnsize => format!("{operand} as DST pointer"),
-            CastKind::ExposeAddress => format!("{operand} as usizeᵖ"),
+            CastKind::ExposeProvenance => format!("{operand} as usizeᵖ"),
             CastKind::ToPointer(type_id) => format!("{operand} from {type_id:#?}"),
             CastKind::SizedDynamize => format!("{operand} as dyn*"),
             CastKind::Transmute(dst) => format!("{operand} as Ty({dst})"),
@@ -156,6 +156,13 @@ impl AssignmentHandler for LoggerAssignmentHandler {
 
     fn union_from(self, active_field: crate::abs::FieldIndex, value: Self::Field) {
         self.log(format!("{{{active_field}: {value}}}"));
+    }
+
+    fn raw_ptr_from(self, data_ptr: Self::Operand, metadata: Self::Operand, is_mutable: bool) {
+        self.log(format!(
+            "RawPtr({data_ptr}, {metadata}, {is_mutable})",
+            is_mutable = if is_mutable { "mut" } else { "const" }
+        ));
     }
 
     fn variant_index(self, variant_index: VariantIndex) {

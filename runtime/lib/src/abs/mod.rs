@@ -177,7 +177,7 @@ pub(crate) enum CastKind {
     ToInt(IntType),
     ToFloat(FloatType),
     PointerUnsize,
-    ExposeAddress,
+    ExposeProvenance,
     ToPointer(TypeId),
     SizedDynamize, // dyn*
     Transmute(TypeId),

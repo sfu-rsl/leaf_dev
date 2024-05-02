@@ -112,6 +112,13 @@ pub(crate) trait Assigner<'tcx> {
 
     fn by_aggregate_coroutine_closure(&mut self, upvars: &[OperandRef]);
 
+    fn by_aggregate_raw_ptr(
+        &mut self,
+        data_ptr: OperandRef,
+        metadata: OperandRef,
+        is_mutable: bool,
+    );
+
     fn by_shallow_init_box(&mut self, operand: OperandRef, ty: &Ty<'tcx>);
 
     // Special case for SetDiscriminant StatementType since it is similar to a regular assignment
@@ -129,9 +136,9 @@ pub(crate) trait CastAssigner<'tcx> {
 
     fn through_sized_dynamization(&mut self, ty: Ty<'tcx>);
 
-    fn expose_address(&mut self);
+    fn expose_prov(&mut self);
 
-    fn from_exposed_address(&mut self, ty: Ty<'tcx>);
+    fn with_exposed_prov(&mut self, ty: Ty<'tcx>);
 
     fn to_another_ptr(&mut self, ty: Ty<'tcx>, kind: CastKind);
 
@@ -1419,6 +1426,23 @@ mod implementation {
             )
         }
 
+        fn by_aggregate_raw_ptr(
+            &mut self,
+            data_ptr: OperandRef,
+            metadata: OperandRef,
+            is_mutable: bool,
+        ) {
+            self.add_bb_for_assign_call_with_statements(
+                sym::assign_aggregate_raw_ptr,
+                vec![                    
+                    operand::move_for_local(data_ptr.into()),
+                    operand::move_for_local(metadata.into()),
+                    operand::const_from_bool(self.tcx(), is_mutable),
+                ],
+                vec![],
+            )
+        }
+
         fn by_shallow_init_box(&mut self, operand: OperandRef, ty: &Ty<'tcx>) {
             let id_local = {
                 let (block, id_local) = self.make_type_id_of_bb(*ty);
@@ -1609,12 +1633,12 @@ mod implementation {
             self.add_bb_for_cast_assign_call(sym::assign_cast_sized_dyn);
         }
 
-        fn expose_address(&mut self) {
-            self.add_bb_for_cast_assign_call(sym::assign_cast_expose_addr);
+        fn expose_prov(&mut self) {
+            self.add_bb_for_cast_assign_call(sym::assign_cast_expose_prov);
         }
 
-        fn from_exposed_address(&mut self, ty: Ty<'tcx>) {
-            self.add_bb_for_pointer_cast_assign_call(ty, sym::assign_cast_from_exposed_addr);
+        fn with_exposed_prov(&mut self, ty: Ty<'tcx>) {
+            self.add_bb_for_pointer_cast_assign_call(ty, sym::assign_cast_with_exposed_prov);
         }
 
         fn to_another_ptr(&mut self, ty: Ty<'tcx>, kind: CastKind) {
@@ -2824,7 +2848,7 @@ mod implementation {
             let raw_ptr_assignment = assignment::create(
                 Place::from(raw_ptr_local),
                 Rvalue::Cast(
-                    mir::CastKind::PointerExposeAddress,
+                    mir::CastKind::PointerExposeProvenance,
                     operand::move_for_local(ptr_local),
                     tcx.types.usize,
                 ),

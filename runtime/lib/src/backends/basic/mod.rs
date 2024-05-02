@@ -340,6 +340,10 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
         todo!("Unions are not yet supported. {active_field} = {value:?}")
     }
 
+    fn raw_ptr_from(self, data_ptr: Self::Operand, metadata: Self::Operand, _is_mutable: bool) {
+        self.adt_from([data_ptr, metadata].into_iter(), None)
+    }
+
     // TODO: Need to add support for the Deinit MIR instruction to have this working properly.
     // This solution works for now to avoid crashes when samples are run.
     fn variant_index(mut self, variant_index: VariantIndex) {

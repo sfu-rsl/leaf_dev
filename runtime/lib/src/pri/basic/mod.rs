@@ -206,12 +206,12 @@ impl ProgramRuntimeInterface for BasicPri {
             )
         })
     }
-    fn assign_cast_expose_addr(dest: PlaceRef, operand: OperandRef) {
+    fn assign_cast_expose_prov(dest: PlaceRef, operand: OperandRef) {
         assign_to(dest, |h| {
-            h.cast_of(take_back_operand_ref(operand), CastKind::ExposeAddress)
+            h.cast_of(take_back_operand_ref(operand), CastKind::ExposeProvenance)
         })
     }
-    fn assign_cast_from_exposed_addr(dest: PlaceRef, operand: OperandRef, dst_type_id: TypeId) {
+    fn assign_cast_with_exposed_prov(dest: PlaceRef, operand: OperandRef, dst_type_id: TypeId) {
         Self::assign_cast_pointer(dest, operand, dst_type_id);
     }
     fn assign_cast_to_another_ptr(dest: PlaceRef, operand: OperandRef, dst_type_id: TypeId) {
@@ -322,6 +322,20 @@ impl ProgramRuntimeInterface for BasicPri {
         assign_to(dest, |h| {
             let upvars = Self::take_fields(upvars);
             h.coroutine_closure_from(upvars.into_iter())
+        })
+    }
+    fn assign_aggregate_raw_ptr(
+        dest: PlaceRef,
+        data_ptr: OperandRef,
+        metadata: OperandRef,
+        is_mutable: bool,
+    ) {
+        assign_to(dest, |h| {
+            h.raw_ptr_from(
+                take_back_operand_ref(data_ptr),
+                take_back_operand_ref(metadata),
+                is_mutable,
+            )
         })
     }
 

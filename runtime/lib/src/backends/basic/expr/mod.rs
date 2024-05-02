@@ -588,7 +588,7 @@ impl RawConcreteValue {
          * necessary.
          */
         let addr = self.0 as usize;
-        use std::ptr::from_exposed_addr as to_ptr;
+        use std::ptr::with_exposed_provenance as to_ptr;
         let value: ConstValue = match ty {
             ValueType::Bool => (*(to_ptr::<bool>(addr))).into(),
             ValueType::Char => (*(to_ptr::<char>(addr))).into(),
@@ -603,7 +603,7 @@ impl RawConcreteValue {
 
     unsafe fn read_int(addr: usize, bit_size: usize) -> u128 {
         let bytes =
-            std::slice::from_raw_parts(std::ptr::from_exposed_addr::<u8>(addr), bit_size / 8);
+            std::slice::from_raw_parts(std::ptr::with_exposed_provenance::<u8>(addr), bit_size / 8);
 
         #[cfg(target_endian = "big")]
         let bytes = bytes.iter();
