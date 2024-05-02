@@ -26,6 +26,7 @@ pub enum BinaryOp {
     Ne = common::pri::BinaryOp::NE.as_u8(),
     Ge = common::pri::BinaryOp::GE.as_u8(),
     Gt = common::pri::BinaryOp::GT.as_u8(),
+    Cmp = common::pri::BinaryOp::CMP.as_u8(),
 
     Offset = common::pri::BinaryOp::OFFSET.as_u8(),
 }

@@ -45,7 +45,8 @@ impl BinaryOp {
         NE = 14;
         GE = 15;
         GT = 16;
-        OFFSET = 17;
+        CMP = 17;
+        OFFSET = 18;
     }
 
     #[cfg_attr(core_build, rustc_const_stable(feature = "rust1", since = "1.0.0"))]
@@ -83,6 +84,8 @@ impl BinaryOp {
             BinaryOp::GE
         } else if raw == BinaryOp::GT.as_u8() {
             BinaryOp::GT
+        } else if raw == BinaryOp::CMP.as_u8() {
+            BinaryOp::CMP
         } else if raw == BinaryOp::OFFSET.as_u8() {
             BinaryOp::OFFSET
         } else {

@@ -107,7 +107,7 @@ where
     impl_binary_expr_method!(div rem);
     impl_binary_expr_method!(and or xor);
     impl_binary_expr_method!(shl shr);
-    impl_binary_expr_method!(eq ne lt le gt ge);
+    impl_binary_expr_method!(eq ne lt le gt ge cmp);
     impl_binary_expr_method!(offset);
 }
 

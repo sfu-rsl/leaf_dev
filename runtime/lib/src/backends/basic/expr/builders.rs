@@ -965,6 +965,10 @@ mod simp {
             }
         }
 
+        fn cmp<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            Err(operands)
+        }
+
         fn offset<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
             Err(operands)
         }
@@ -1241,6 +1245,10 @@ mod simp {
         }
 
         fn ge<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            Err(operands)
+        }
+
+        fn cmp<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
             Err(operands)
         }
 

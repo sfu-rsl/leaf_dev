@@ -34,6 +34,7 @@ macro_rules! impl_general_binary_op_through_singulars {
                         Ne => Self::ne,
                         Ge => Self::ge,
                         Gt => Self::gt,
+                        Cmp => Self::cmp,
                         Offset => Self::offset,
                         _ => unreachable!(),
                     };
@@ -72,7 +73,8 @@ macro_rules! impl_singular_binary_ops_through_general {
         impl_general_binary_op_for!(
             add = BinaryOp::Add
             sub = BinaryOp::Sub
-            mul = BinaryOp::Mul, checked: bool
+            mul = BinaryOp::Mul,
+            checked: bool
         );
         impl_general_binary_op_for!(
             div = BinaryOp::Div
@@ -88,6 +90,7 @@ macro_rules! impl_singular_binary_ops_through_general {
             ne = BinaryOp::Ne
             ge = BinaryOp::Ge
             gt = BinaryOp::Gt
+            cmp = BinaryOp::Cmp
             offset = BinaryOp::Offset
         );
     };

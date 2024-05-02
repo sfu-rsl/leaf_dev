@@ -191,7 +191,7 @@ pub(crate) mod z3 {
                     // A checked binary expression without a field projection is not well formed (before MIR optimizations are run).
                     assert!(!checked, "translating unexpected checked operation");
                     let (left, right) = self.translate_binary_operands(operands);
-                    self.translate_binary_expr(operator, left, right)
+                    self.translate_binary_expr(*operator, left, right)
                 }
                 Expr::Extension {
                     source,
@@ -265,7 +265,7 @@ pub(crate) mod z3 {
 
         fn translate_binary_expr(
             &mut self,
-            operator: &BinaryOp,
+            operator: BinaryOp,
             left: AstNode<'ctx>,
             right: AstNode<'ctx>,
         ) -> AstNode<'ctx> {
@@ -314,8 +314,9 @@ pub(crate) mod z3 {
                     debug_assert_eq!(left.z3_sort(), right.z3_sort());
                     let right_bv = right.as_bit_vector();
                     let is_signed = left_node.is_signed();
-                    let ar_func: Option<fn(&ast::BV<'ctx>, &ast::BV<'ctx>) -> ast::BV<'ctx>> =
-                        match (operator, is_signed) {
+
+                    let handle_ar_op = || {
+                        let f: Option<fn(&_, &_) -> ast::BV<'ctx>> = match (operator, is_signed) {
                             (BinaryOp::Add, _) => Some(ast::BV::bvadd),
                             (BinaryOp::Sub, _) => Some(ast::BV::bvsub),
                             (BinaryOp::Mul, _) => Some(ast::BV::bvmul),
@@ -327,34 +328,46 @@ pub(crate) mod z3 {
                             (BinaryOp::BitAnd, _) => Some(ast::BV::bvand),
                             (BinaryOp::BitOr, _) => Some(ast::BV::bvor),
                             (BinaryOp::Shl, _) => Some(ast::BV::bvshl),
-                            /* Shift right function obtained from documentation
-                             * https://doc.rust-lang.org/reference/expressions/operator-expr.html#arithmetic-and-logical-binary-operators
-                             */
                             (BinaryOp::Shr, true) => Some(ast::BV::bvashr),
                             (BinaryOp::Shr, false) => Some(ast::BV::bvlshr),
+                            (BinaryOp::Offset, _) => Some(todo!()),
                             _ => None,
                         };
+                        f.map(|f| left_node.map(|left| f(left, right_bv)).into())
+                    };
+                    let handle_logical_op = || {
+                        let f: Option<fn(&_, &_) -> ast::Bool<'ctx>> = match (operator, is_signed) {
+                            (BinaryOp::Eq, _) => Some(ast::BV::_eq),
+                            (BinaryOp::Ne, _) => Some(|l, r| ast::BV::_eq(l, r).not()),
+                            (BinaryOp::Lt, true) => Some(ast::BV::bvslt),
+                            (BinaryOp::Lt, false) => Some(ast::BV::bvult),
+                            (BinaryOp::Le, true) => Some(ast::BV::bvsle),
+                            (BinaryOp::Le, false) => Some(ast::BV::bvule),
+                            (BinaryOp::Ge, true) => Some(ast::BV::bvsge),
+                            (BinaryOp::Ge, false) => Some(ast::BV::bvuge),
+                            (BinaryOp::Gt, true) => Some(ast::BV::bvsgt),
+                            (BinaryOp::Gt, false) => Some(ast::BV::bvugt),
+                            _ => None,
+                        };
+                        f.map(|f| f(&left_node.0, right_bv).into())
+                    };
+                    let handle_other_func = || {
+                        let f: Option<fn(&_, &_) -> ast::BV<'ctx>> = match (operator, is_signed) {
+                            (BinaryOp::Cmp, _) => Some(|_, _| {
+                                unreachable!(concat!(
+                                    "Cmp is not expected to be translated directly. ",
+                                    "The discriminant operator should break it down."
+                                ))
+                            }),
+                            _ => None,
+                        };
+                        f.map(|f| left_node.map(|left| f(left, right_bv)).into())
+                    };
 
-                    if let Some(func) = ar_func {
-                        left_node.map(|left| func(left, right_bv)).into()
-                    } else {
-                        let logical_func: fn(&ast::BV<'ctx>, &ast::BV<'ctx>) -> ast::Bool<'ctx> =
-                            match (operator, is_signed) {
-                                (BinaryOp::Eq, _) => ast::BV::_eq,
-                                (BinaryOp::Ne, _) => |l, r| ast::BV::_eq(l, r).not(),
-                                (BinaryOp::Lt, true) => ast::BV::bvslt,
-                                (BinaryOp::Lt, false) => ast::BV::bvult,
-                                (BinaryOp::Le, true) => ast::BV::bvsle,
-                                (BinaryOp::Le, false) => ast::BV::bvule,
-                                (BinaryOp::Ge, true) => ast::BV::bvsge,
-                                (BinaryOp::Ge, false) => ast::BV::bvuge,
-                                (BinaryOp::Gt, true) => ast::BV::bvsgt,
-                                (BinaryOp::Gt, false) => ast::BV::bvugt,
-                                (BinaryOp::Offset, _) => todo!(),
-                                _ => unreachable!(),
-                            };
-                        logical_func(&left_node.0, right_bv).into()
-                    }
+                    None.or_else(handle_ar_op)
+                        .or_else(handle_logical_op)
+                        .or_else(handle_other_func)
+                        .unwrap()
                 }
                 _ => unreachable!("Binary expressions are not supported for this type: {left:#?}"),
             }
@@ -467,7 +480,7 @@ pub(crate) mod z3 {
                         )
                     }
                 };
-                self.translate_binary_expr(&BinaryOp::Sub, len, index)
+                self.translate_binary_expr(BinaryOp::Sub, len, index)
             } else {
                 index
             };

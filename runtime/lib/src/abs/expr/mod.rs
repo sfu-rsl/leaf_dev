@@ -35,7 +35,7 @@ pub(crate) trait BinaryExprBuilder {
     bin_fn_signature!(div rem);
     bin_fn_signature!(and or xor);
     bin_fn_signature!(shl shr);
-    bin_fn_signature!(eq ne lt le gt ge);
+    bin_fn_signature!(eq ne lt le gt ge cmp);
     bin_fn_signature!(offset);
 }
 

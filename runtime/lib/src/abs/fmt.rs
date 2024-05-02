@@ -93,6 +93,7 @@ impl Display for BinaryOp {
             BinaryOp::Le => "<=",
             BinaryOp::Gt => ">",
             BinaryOp::Ge => ">=",
+            BinaryOp::Cmp => "<=>",
             BinaryOp::Offset => "->",
         })
     }

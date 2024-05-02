@@ -54,7 +54,7 @@ where
     delegate_binary_op!(div rem);
     delegate_binary_op!(and or xor);
     delegate_binary_op!(shl shr);
-    delegate_binary_op!(eq ne lt le gt ge);
+    delegate_binary_op!(eq ne lt le gt ge cmp);
     delegate_binary_op!(offset);
 }
 
