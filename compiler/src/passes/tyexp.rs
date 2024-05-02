@@ -56,7 +56,8 @@ impl CompilationPass for TypeExporter {
             });
 
         // TODO: #379
-        let out_dir = &tcx.output_filenames(()).out_directory;
+        let sample_file_path = tcx.output_filenames(()).with_extension(".json");
+        let out_dir = &sample_file_path.parent().unwrap();
         let is_single_file_program = out_dir.as_os_str().is_empty();
         let file_path = if is_single_file_program || env::var("CARGO_PRIMARY_PACKAGE").is_ok() {
             let path_prefix = if is_single_file_program {

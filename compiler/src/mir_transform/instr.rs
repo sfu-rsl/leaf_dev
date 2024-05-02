@@ -421,30 +421,30 @@ impl<'tcx> BodyInstrumentationUnit<'tcx> {
                 .get_mut(original_block_index)
                 .unwrap()
                 .terminator_mut();
+            let unwind = terminator.unwind().cloned();
             let mut successors = terminator.successors_mut();
-            let target: &mut BasicBlock = successors.next().unwrap();
 
-            // Update jump target of the original block & save the original target
+            let target: &mut BasicBlock = successors.next().unwrap();
             let original_block_target = *target;
             *target = NEXT_BLOCK;
 
-            // Make sure that there is only one successor
-            if let Some(other_target) = successors.next().cloned() {
-                // A cleanup unwind is also included in the successors, which we currently ignore.
-                // TODO: #206
-                if !terminator.unwind().is_some_and(|unwind| {
-                    if let UnwindAction::Cleanup(block) = unwind {
-                        other_target == *block
-                    } else {
-                        false
-                    }
-                }) {
+            // More than one successor?
+            if let Some(other_target) = successors.next() {
+                if let Some(UnwindAction::Cleanup(block)) = unwind
+                    && *other_target == block
+                {
+                    // TODO: #206
+                } else {
+                    drop(successors);
                     panic!(
-                        "Unexpected insertion after a block with multiple successors. Basic Block: {:?}, Terminator: {:#?}",
+                        concat!(
+                            "Insertion after a block with unexpected with multiple successors. ",
+                            "Basic Block: {:?}, Terminator: {:#?}",
+                        ),
                         original_block_index, terminator,
                     );
                 }
-            };
+            }
 
             original_block_target
         };

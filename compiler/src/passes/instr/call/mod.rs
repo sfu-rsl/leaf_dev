@@ -1081,6 +1081,7 @@ mod implementation {
         /// _11 = reference(10);
         /// assign(_1, _11);
         /// ```
+        #[cfg(nctfe)]
         fn internal_reference_unevaluated_const_operand(
             &mut self,
             constant: &UnevaluatedConst,
@@ -1088,7 +1089,6 @@ mod implementation {
         where
             C: ForOperandRef<'tcx>,
         {
-            #[cfg(nctfe)]
             {
                 let def_id = constant.def.expect_local();
                 let ctfe_id = if let Some(index) = constant.promoted {
@@ -1100,12 +1100,19 @@ mod implementation {
                 let nctfe_result_local = self.call_nctfe(ctfe_id);
                 self.internal_reference_operand(&operand::move_for_local(nctfe_result_local))
             }
-            #[cfg(not(nctfe))]
-            {
-                panic!("Unevaluated constant is not supported by this configuration.")
-            }
+        }
+        #[cfg(not(nctfe))]
+        fn internal_reference_unevaluated_const_operand(
+            &mut self,
+            _constant: &UnevaluatedConst,
+        ) -> BlocksAndResult<'tcx>
+        where
+            C: ForOperandRef<'tcx>,
+        {
+            panic!("Unevaluated constant is not supported by this configuration.")
         }
 
+        #[cfg(nctfe)]
         fn internal_reference_static_ref_const_operand(
             &mut self,
             def_id: DefId,
@@ -1150,10 +1157,18 @@ mod implementation {
 
                 self.internal_reference_operand(&operand::move_for_local(ref_local))
             }
-            #[cfg(not(nctfe))]
-            {
-                panic!("Static reference constant is not supported by this configuration.")
-            }
+        }
+
+        #[cfg(not(nctfe))]
+        fn internal_reference_static_ref_const_operand(
+            &mut self,
+            _def_id: DefId,
+            _ty: Ty<'tcx>,
+        ) -> BlocksAndResult<'tcx>
+        where
+            C: ForOperandRef<'tcx>,
+        {
+            panic!("Static reference constant is not supported by this configuration.")
         }
 
         #[cfg(nctfe)]
@@ -1434,7 +1449,7 @@ mod implementation {
         ) {
             self.add_bb_for_assign_call_with_statements(
                 sym::assign_aggregate_raw_ptr,
-                vec![                    
+                vec![
                     operand::move_for_local(data_ptr.into()),
                     operand::move_for_local(metadata.into()),
                     operand::const_from_bool(self.tcx(), is_mutable),
@@ -2834,7 +2849,7 @@ mod implementation {
                         unreachable!()
                     };
                     assert!(
-                        !tcx.is_intrinsic(def_id),
+                        tcx.intrinsic(def_id).is_none(),
                         "Cannot extract function pointer (as id) of intrinsic functions."
                     );
                     rvalue::cast_to_coerced(PointerCoercion::ReifyFnPointer, func.clone(), ptr_ty)
@@ -2893,6 +2908,7 @@ mod implementation {
                 mir::BinOp::Ne => common::pri::BinaryOp::NE,
                 mir::BinOp::Ge => common::pri::BinaryOp::GE,
                 mir::BinOp::Gt => common::pri::BinaryOp::GT,
+                mir::BinOp::Cmp => common::pri::BinaryOp::CMP,
                 mir::BinOp::Offset => common::pri::BinaryOp::OFFSET,
             }
         }

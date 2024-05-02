@@ -333,7 +333,7 @@ pub(crate) fn filter_main_funcs<'tcx>(
         items.len(),
         sym::ALL_MAINS.len(),
         "Some main functions are missing: {:?}",
-        &HashSet::from_iter(items.into_keys()) - &HashSet::from(sym::ALL_MAINS)
+        &HashSet::from(sym::ALL_MAINS) - &HashSet::from_iter(items.into_keys())
     );
     items
 }

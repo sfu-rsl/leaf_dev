@@ -2,10 +2,10 @@ use rustc_ast::{InlineAsmOptions, InlineAsmTemplatePiece, Mutability};
 use rustc_index::IndexVec;
 use rustc_middle::{
     mir::{
-        AggregateKind, AssertMessage, BasicBlock, BinOp, BorrowKind, CallSource, CastKind,
-        Coverage, FakeReadCause, InlineAsmOperand, Local, NonDivergingIntrinsic, NullOp, Operand,
-        Place, RetagKind, Rvalue, StatementKind, SwitchTargets, TerminatorKind, UnOp, UnwindAction,
-        UnwindTerminateReason, UserTypeProjection,
+        coverage::CoverageKind, AggregateKind, AssertMessage, BasicBlock, BinOp, BorrowKind,
+        CallSource, CastKind, FakeReadCause, InlineAsmOperand, Local, NonDivergingIntrinsic,
+        NullOp, Operand, Place, RetagKind, Rvalue, StatementKind, SwitchTargets, TerminatorKind,
+        UnOp, UnwindAction, UnwindTerminateReason, UserTypeProjection,
     },
     ty::{Const, Region, Ty, Variance},
 };
@@ -66,7 +66,7 @@ macro_rules! make_statement_kind_visitor {
                 Default::default()
             }
 
-            fn visit_coverage(&mut self, coverage: & $($mutability)? Coverage) -> T {
+            fn visit_coverage(&mut self, coverage: & $($mutability)? CoverageKind) -> T {
                 Default::default()
             }
 
@@ -219,11 +219,11 @@ macro_rules! make_terminator_kind_visitor {
 
             fn visit_inline_asm(
                 &mut self,
-                template: & $($mutability)? &[InlineAsmTemplatePiece],
+                template: &'tcx [InlineAsmTemplatePiece],
                 operands: & $($mutability)? [InlineAsmOperand<'tcx>],
                 options: & $($mutability)? InlineAsmOptions,
                 line_spans: &'tcx [Span],
-                destination: & $($mutability)? Option<BasicBlock>,
+                destination: & $($mutability)? Vec<BasicBlock>,
                 unwind: & $($mutability)? UnwindAction,
             ) -> T {
                 Default::default()
@@ -286,18 +286,18 @@ macro_rules! make_terminator_kind_visitor {
                         ref $($mutability)? unwind,
                     } => self.visit_false_unwind(real_target, unwind),
                     TerminatorKind::InlineAsm {
-                        ref $($mutability)? template,
+                        ref template,
                         ref $($mutability)? operands,
                         ref $($mutability)? options,
                         line_spans,
-                        ref $($mutability)? destination,
+                        ref $($mutability)? targets,
                         ref $($mutability)? unwind,
                     } => self.visit_inline_asm(
                         template,
                         operands,
                         options,
                         line_spans,
-                        destination,
+                        targets,
                         unwind,
                     ),
                 }

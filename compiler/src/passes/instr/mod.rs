@@ -374,7 +374,7 @@ where
         if let rustc_middle::ty::TyKind::FnDef(def_id, ..) =
             func.ty(&self.call_adder, self.call_adder.tcx()).kind()
         {
-            if self.call_adder.tcx().is_intrinsic(def_id) {
+            if self.call_adder.tcx().intrinsic(def_id).is_some() {
                 // FIXME: #172
                 /* NOTE: This definitely causes the runtime to diverge from the
                  * concrete execution, but unless we want to handle them by
@@ -434,11 +434,11 @@ where
 
     fn visit_inline_asm(
         &mut self,
-        _template: &&[rustc_ast::InlineAsmTemplatePiece],
+        _template: &[rustc_ast::InlineAsmTemplatePiece],
         _operands: &[mir::InlineAsmOperand<'tcx>],
         _options: &rustc_ast::InlineAsmOptions,
         _line_spans: &'tcx [rustc_span::Span],
-        _destination: &Option<BasicBlock>,
+        _destination: &Vec<BasicBlock>,
         _unwind: &UnwindAction,
     ) {
         Default::default()

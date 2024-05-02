@@ -128,14 +128,14 @@ where
 
     fn visit_inline_asm(
         &mut self,
-        _template: &mut &[rustc_ast::InlineAsmTemplatePiece],
+        _template: &'tcx [rustc_ast::InlineAsmTemplatePiece],
         _operands: &mut [rustc_middle::mir::InlineAsmOperand<'tcx>],
         _options: &mut rustc_ast::InlineAsmOptions,
         _line_spans: &'tcx [Span],
-        destination: &mut Option<BasicBlock>,
+        targets: &mut Vec<BasicBlock>,
         unwind: &mut UnwindAction,
     ) {
-        self.update_maybe(destination.as_mut());
+        targets.iter_mut().for_each(|target| self.update(target));
         self.update_maybe(unwind.basic_block());
     }
 }

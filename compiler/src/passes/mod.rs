@@ -451,21 +451,13 @@ mod implementation {
                     fn locale_resource(&self) -> &'static str;
 
                     fn init(&self, sess: &Session);
-                    fn print(
-                        &self,
-                        req: &PrintRequest,
-                        out: &mut dyn PrintBackendInfo,
-                        sess: &Session
-                    );
+                    fn print(&self, req: &PrintRequest, out: &mut dyn PrintBackendInfo, sess: &Session);
                     fn target_features(&self, sess: &Session, allow_unstable: bool) -> Vec<Symbol>;
                     fn print_passes(&self);
                     fn print_version(&self);
 
-                    fn target_override(
-                        &self,
-                        opts: &config::Options
-                    ) -> Option<Target>;
                     fn metadata_loader(&self) -> Box<MetadataLoaderDyn>;
+
                     fn provide(&self, providers: &mut Providers);
 
                     fn join_codegen(
@@ -473,10 +465,7 @@ mod implementation {
                         ongoing_codegen: Box<dyn Any>,
                         sess: &Session,
                         outputs: &OutputFilenames,
-                    ) -> Result<
-                        (CodegenResults, FxIndexMap<WorkProductId, WorkProduct>),
-                        ErrorGuaranteed,
-                    >;
+                    ) -> (CodegenResults, FxIndexMap<WorkProductId, WorkProduct>);
 
                     fn link(
                         &self,
@@ -484,6 +473,8 @@ mod implementation {
                         codegen_results: CodegenResults,
                         outputs: &OutputFilenames,
                     ) -> Result<(), ErrorGuaranteed>;
+
+                    fn supports_parallel(&self) -> bool;
                 }
             }
 
@@ -512,10 +503,15 @@ mod implementation {
         ) -> Box<dyn FnOnce(&config::Options) -> Box<dyn CodegenBackend> + Send> {
             Box::new(|opts| {
                 // This is the default implementation taken from `interface::run_compiler`.
+                let early_dcx = rustc_session::EarlyDiagCtxt::new(opts.error_format);
+                let sysroot =
+                    rustc_session::filesearch::materialize_sysroot(opts.maybe_sysroot.clone());
+                let target = config::build_target_config(&early_dcx, opts, &sysroot);
                 let backend = rustc_interface::util::get_codegen_backend(
-                    &rustc_session::EarlyDiagCtxt::new(opts.error_format),
-                    &opts.maybe_sysroot,
+                    &early_dcx,
+                    &sysroot,
                     opts.unstable_opts.codegen_backend.as_deref(),
+                    &target,
                 );
                 Box::new(CodegenBackendWrapper { backend, pass })
             })
