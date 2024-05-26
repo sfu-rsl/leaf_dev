@@ -89,7 +89,7 @@ Regardless of which platform you used, the setup for VS Code Dev Container shoul
 
 1. Install [VS Code](https://code.visualstudio.com/download) and [Dev Container](https://code.visualstudio.com/docs/devcontainers/containers) extension.
 
-2. Duplicate `leaf/.vscode/devcontainer.json.example` to `leaf/.vscode/devcontainer.json` and properly set the path for `CMAKE_BIN_URL` as instructed (e.g. `https://github.com/Kitware/CMake/releases/download/v3.27.4/cmake-3.27.4-linux-x86_64.tar.gz`).
+2. Duplicate `leaf/.devcontainer/devcontainer.json.example` to `leaf/.devcontainer/devcontainer.json` and properly set the path for `CMAKE_BIN_URL` as instructed (e.g. `https://github.com/Kitware/CMake/releases/download/v3.27.4/cmake-3.27.4-linux-x86_64.tar.gz`).
 
 3. Reopen the workspace in Dev Container.
 
