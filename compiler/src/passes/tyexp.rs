@@ -58,20 +58,24 @@ impl CompilationPass for TypeExporter {
         // TODO: #379
         let sample_file_path = tcx.output_filenames(()).with_extension(".json");
         let out_dir = &sample_file_path.parent().unwrap();
-        let is_single_file_program = out_dir.as_os_str().is_empty();
-        let file_path = if is_single_file_program || env::var("CARGO_PRIMARY_PACKAGE").is_ok() {
-            let path_prefix = if is_single_file_program {
-                None
-            } else {
-                Some(out_dir.display().to_string())
-            };
-            aggregate_type_info(type_map, path_prefix);
+        let is_single_file_program =
+            out_dir.as_os_str().is_empty() || !rustc_session::utils::was_invoked_from_cargo();
+        log::warn!(
+            "is_single_file_program: {}, CARGO_PRIMARY_PACKAGE: {}",
+            is_single_file_program,
+            env::var("CARGO_PRIMARY_PACKAGE").is_ok()
+        );
+        let file_path = if is_single_file_program {
+            out_dir.join(FINAL_TYPE_EXPORT_FILE)
+        }
+        else if env::var("CARGO_PRIMARY_PACKAGE").is_ok() {
+            aggregate_type_info(type_map, Some(out_dir.display().to_string()));
 
             /* For compiling a single file program, the final type export file is placed in the same directory as the program file.
              * For compiling a project, the final type export file is placed in the output directory (i.e. "./target/debug/") */
             out_dir
                 .parent()
-                .unwrap_or(Path::new(""))
+                .unwrap()
                 .join(FINAL_TYPE_EXPORT_FILE)
         } else {
             out_dir.join(format!(

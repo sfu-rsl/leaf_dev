@@ -9,6 +9,10 @@ path = "src/main.rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[dev-dependencies]
+ignore = "0.4.22"
+
+
 [dependencies]
 common = { path = "../common", features = ["tyexp"] }
 macros = { path = "../macros" }
