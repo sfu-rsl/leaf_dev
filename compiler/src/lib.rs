@@ -429,7 +429,7 @@ mod driver_args {
     ) -> Option<String> {
         let try_dir = |path: &Path| {
             log::debug!("Trying dir in search of `{}`: {:?}", name, path);
-            try_join(path, name)
+            common::utils::try_join(path, name)
         };
 
         let try_priority_dirs = || priority_dirs.find_map(try_dir);
@@ -444,15 +444,6 @@ mod driver_args {
             .or_else(try_cwd)
             .or_else(try_exe_path)
             .map(|path| path.to_string_lossy().to_string())
-    }
-
-    fn try_join(path: impl AsRef<Path>, child: impl AsRef<Path>) -> Option<PathBuf> {
-        let path = path.as_ref().join(child);
-        if path.exists() {
-            Some(path.to_owned())
-        } else {
-            None
-        }
     }
 
     fn retry<T, E>(

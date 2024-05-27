@@ -34,3 +34,12 @@ pub fn search_current_ancestor_dirs_for(name: &str) -> std::string::String {
         .map(|p| p.join(name).to_string_lossy().to_string())
         .unwrap_or(name.to_string())
 }
+
+#[cfg(feature = "std")]
+pub fn try_join(
+    path: impl AsRef<std::path::Path>,
+    child: impl AsRef<std::path::Path>,
+) -> Option<std::path::PathBuf> {
+    let path = path.as_ref().join(child);
+    if path.exists() { Some(path) } else { None }
+}

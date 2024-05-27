@@ -3,7 +3,7 @@ use std::{collections::HashMap, env, error::Error, fs::OpenOptions, path::Path};
 
 use serde::{Deserialize, Serialize, Serializer};
 
-use crate::{types::*, *};
+use crate::{types::*, utils::try_join, *};
 
 pub use crate::types::TypeId;
 
@@ -84,8 +84,16 @@ impl TypeExport {
             .expect("Failed to get the file path of the current running executable.");
         let out_dir = exe_path.parent().unwrap_or(Path::new(""));
 
+        let type_info_file_path = try_join(out_dir, FINAL_TYPE_EXPORT_FILE)
+            .or_else(|| {
+                try_join(
+                    out_dir.parent().unwrap_or(Path::new("")),
+                    FINAL_TYPE_EXPORT_FILE,
+                )
+            })
+            .expect("Failed to find the type info file.");
         let type_infos: Vec<TypeInfo> =
-            Self::get_type_info(out_dir.join(FINAL_TYPE_EXPORT_FILE).display().to_string())?;
+            Self::get_type_info(type_info_file_path.display().to_string())?;
         log::debug!("Retrieved {} types from file.", type_infos.len());
 
         let type_infos = type_infos
