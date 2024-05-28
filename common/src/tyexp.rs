@@ -3,7 +3,7 @@ use std::{collections::HashMap, env, error::Error, fs::OpenOptions, path::Path};
 
 use serde::{Deserialize, Serialize, Serializer};
 
-use crate::{types::*, utils::try_join, *};
+use crate::{types::*, utils::try_join_path, *};
 
 pub use crate::types::TypeId;
 
@@ -84,9 +84,9 @@ impl TypeExport {
             .expect("Failed to get the file path of the current running executable.");
         let out_dir = exe_path.parent().unwrap_or(Path::new(""));
 
-        let type_info_file_path = try_join(out_dir, FINAL_TYPE_EXPORT_FILE)
+        let type_info_file_path = try_join_path(out_dir, FINAL_TYPE_EXPORT_FILE)
             .or_else(|| {
-                try_join(
+                try_join_path(
                     out_dir.parent().unwrap_or(Path::new("")),
                     FINAL_TYPE_EXPORT_FILE,
                 )

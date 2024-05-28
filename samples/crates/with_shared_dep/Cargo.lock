@@ -526,7 +526,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "with_dep"
+name = "with_shared_dep"
 version = "0.1.0"
 dependencies = [
  "config",

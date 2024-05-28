@@ -36,7 +36,7 @@ pub fn search_current_ancestor_dirs_for(name: &str) -> std::string::String {
 }
 
 #[cfg(feature = "std")]
-pub fn try_join(
+pub fn try_join_path(
     path: impl AsRef<std::path::Path>,
     child: impl AsRef<std::path::Path>,
 ) -> Option<std::path::PathBuf> {

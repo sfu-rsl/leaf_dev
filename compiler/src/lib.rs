@@ -429,7 +429,7 @@ mod driver_args {
     ) -> Option<String> {
         let try_dir = |path: &Path| {
             log::debug!("Trying dir in search of `{}`: {:?}", name, path);
-            common::utils::try_join(path, name)
+            common::utils::try_join_path(path, name)
         };
 
         let try_priority_dirs = || priority_dirs.find_map(try_dir);
