@@ -80,18 +80,9 @@ pub const FINAL_TYPE_EXPORT_FILE: &str = "types.json";
 // FIXME: Make this configurable and injectable.
 impl TypeExport {
     pub fn read() -> Result<HashMap<TypeId, TypeInfo>, ReadError> {
-        let exe_path = env::current_exe()
-            .expect("Failed to get the file path of the current running executable.");
-        let out_dir = exe_path.parent().unwrap_or(Path::new(""));
-
-        let type_info_file_path = try_join_path(out_dir, FINAL_TYPE_EXPORT_FILE)
-            .or_else(|| {
-                try_join_path(
-                    out_dir.parent().unwrap_or(Path::new("")),
-                    FINAL_TYPE_EXPORT_FILE,
-                )
-            })
-            .expect("Failed to find the type info file.");
+        let type_info_file_path =
+            crate::utils::search_current_ancestor_dirs_for(FINAL_TYPE_EXPORT_FILE)
+                .expect("Failed to find the type info file.");
         let type_infos: Vec<TypeInfo> =
             Self::get_type_info(type_info_file_path.display().to_string())?;
         log::debug!("Retrieved {} types from file.", type_infos.len());
