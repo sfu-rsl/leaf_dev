@@ -74,21 +74,10 @@ pub(super) fn init_backend() {
     });
 }
 
+const CONFIG_FILENAME: &str = "leaf_config";
+
 fn load_config() -> ::config::Config {
-    use config::{Environment, File};
-    config::Config::builder()
-        .add_source(
-            File::with_name(&common::utils::search_current_ancestor_dirs_for(
-                "leaf_config",
-            ))
-            .required(false),
-        )
-        .add_source(
-            Environment::with_prefix("LEAF")
-                .prefix_separator("_")
-                .separator("__"),
-        )
-        .build()
+    common::config::load_config(CONFIG_FILENAME, "LEAF", |b| Ok(b))
         .expect("Failed to read configurations")
 }
 

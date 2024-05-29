@@ -18,9 +18,7 @@ pub fn type_id_of<T: ?Sized + 'static>() -> u128 {
 /// Searches all ancestor directories of the current working directory
 /// (including itself) for a file or directory with the given name.
 /// If found, returns the path to the file or directory.
-/// otherwise, returns the given name.
-pub fn search_current_ancestor_dirs_for(name: &str) -> std::string::String {
-    use std::string::ToString;
+pub fn search_current_ancestor_dirs_for(name: &str) -> Option<std::path::PathBuf> {
     std::env::current_dir()
         .unwrap()
         .ancestors()
@@ -31,8 +29,7 @@ pub fn search_current_ancestor_dirs_for(name: &str) -> std::string::String {
                     .any(|e| e.file_name().to_str().is_some_and(|n| n.starts_with(name)))
             })
         })
-        .map(|p| p.join(name).to_string_lossy().to_string())
-        .unwrap_or(name.to_string())
+        .map(|p| p.join(name))
 }
 
 #[cfg(feature = "std")]

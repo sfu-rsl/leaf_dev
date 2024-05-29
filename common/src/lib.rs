@@ -7,6 +7,8 @@ extern crate std;
 #[cfg(feature = "std")]
 use std::prelude::rust_2021::*;
 
+#[cfg(feature = "config")]
+pub mod config;
 pub mod ffi;
 pub mod pri;
 #[cfg(feature = "tyexp")]

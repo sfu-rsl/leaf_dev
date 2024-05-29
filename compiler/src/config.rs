@@ -1,6 +1,8 @@
 use config::{builder::DefaultState, Config, ConfigBuilder};
 use serde::Deserialize;
 
+use crate::CONFIG_ENV_PREFIX;
+
 #[derive(Debug, Default, Clone, Deserialize)]
 pub(crate) struct CompilerConfig {
     #[serde(default)]
@@ -39,48 +41,30 @@ fn default_runtime_shim_as_external() -> bool {
 const CONFIG_FILENAME: &str = "leafc_config";
 
 pub(super) fn load_config() -> CompilerConfig {
-    use config::{Environment, File};
-
-    default_builder()
-        .add_source(
-            File::with_name(&common::utils::search_current_ancestor_dirs_for(
-                CONFIG_FILENAME,
-            ))
-            .required(false),
-        )
-        .add_source(
-            Environment::with_prefix(super::constants::CONFIG_ENV_PREFIX)
-                .prefix_separator("_")
-                .separator("__"),
-        )
-        .build()
-        .inspect(|c| log::debug!("Loaded raw configurations: {:?}", c))
-        .and_then(|c| c.try_deserialize())
-        .inspect(|c| log::debug!("Loaded configurations: {:?}", c))
-        .expect("Failed to read configurations")
-}
-
-fn default_builder() -> ConfigBuilder<DefaultState> {
-    Ok(Config::builder())
-        .and_then(|b| {
-            b.set_default(
-                format!(
-                    "{}.{}",
-                    CompilerConfig::F_RUNTIME_SHIM,
-                    RuntimeShimConfig::F_CRATE_NAME,
-                ),
-                default_runtime_shim_crate_name(),
-            )
-        })
-        .and_then(|b| {
-            b.set_default(
-                format!(
-                    "{}.{}",
-                    CompilerConfig::F_RUNTIME_SHIM,
-                    RuntimeShimConfig::F_AS_EXTERNAL,
-                ),
-                default_runtime_shim_as_external(),
-            )
-        })
-        .unwrap()
+    common::config::load_config(CONFIG_FILENAME, CONFIG_ENV_PREFIX, |b| {
+        Ok(b)
+            .and_then(|b| {
+                b.set_default(
+                    format!(
+                        "{}.{}",
+                        CompilerConfig::F_RUNTIME_SHIM,
+                        RuntimeShimConfig::F_CRATE_NAME,
+                    ),
+                    default_runtime_shim_crate_name(),
+                )
+            })
+            .and_then(|b| {
+                b.set_default(
+                    format!(
+                        "{}.{}",
+                        CompilerConfig::F_RUNTIME_SHIM,
+                        RuntimeShimConfig::F_AS_EXTERNAL,
+                    ),
+                    default_runtime_shim_as_external(),
+                )
+            })
+    })
+    .and_then(|c| c.try_deserialize())
+    .inspect(|c| log::debug!("Loaded configurations: {:?}", c))
+    .expect("Failed to read configurations")
 }

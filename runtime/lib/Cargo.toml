@@ -10,7 +10,7 @@ name = "leafrt"
 crate-type = ["rlib"]
 
 [dependencies]
-common = { path = "../../common", features = ["tyexp"] }
+common = { path = "../../common", features = ["tyexp", "config"] }
 
 config = { version = "0.14.0", features = ["toml", "json"] }
 log = "0.4.17"

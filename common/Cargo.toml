@@ -8,6 +8,7 @@ edition = "2021"
 [features]
 std = []
 tyexp = ["std", "dep:serde", "dep:serde_json", "dep:log"]
+config = ["dep:config"]
 
 [dependencies]
 # No dependencies are supposed to be used by this crate in the mode that is used by the shim library.
@@ -15,3 +16,4 @@ tyexp = ["std", "dep:serde", "dep:serde_json", "dep:log"]
 serde = { version = "1.0.188", features = ["derive"], optional = true }
 serde_json = { version = "1.0.107", optional = true }
 log = { version = "0.4.20", optional = true }
+config = { version = "0.14.0", optional = true }

@@ -14,7 +14,7 @@ ignore = "0.4.22"
 
 
 [dependencies]
-common = { path = "../common", features = ["tyexp"] }
+common = { path = "../common", features = ["tyexp", "config"] }
 macros = { path = "../macros" }
 
 log = "0.4.17"
