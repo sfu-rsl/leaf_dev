@@ -287,7 +287,7 @@ where
             }
         }
 
-        Some(create_lazy(addr, place.metadata().ty()))
+        Some(create_lazy(addr, place.metadata().ty().cloned()))
     }
 
     fn set_place(&mut self, place: &Place, value: ValueRef) {
@@ -603,7 +603,7 @@ where
             ) {
                 sym_val.clone_to()
             } else {
-                UnevalValue::Lazy(RawConcreteValue(addr, Some(USIZE_TYPE.into()))).to_value_ref()
+                create_lazy(addr, Some(USIZE_TYPE.into()))
             },
         )
     }

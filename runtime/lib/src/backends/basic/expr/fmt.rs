@@ -107,13 +107,25 @@ impl Display for UnevalValue {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
             UnevalValue::Some => write!(f, ".C."),
-            UnevalValue::Lazy(RawConcreteValue(addr, ty)) => write!(
+            UnevalValue::Lazy(RawConcreteValue(addr, v_ty, ty)) => write!(
                 f,
                 "@({:x}:{})",
                 addr,
-                ty.as_ref().map_or("?".to_owned(), |ty| format!("{}", ty))
+                v_ty.as_ref()
+                    .map(|t| format!("{}", t))
+                    .unwrap_or_else(|| format!("{}", ty))
             ),
             UnevalValue::Porter(PorterValue { .. }) => write!(f, "{{.S.}}"),
+        }
+    }
+}
+
+impl Display for LazyTypeInfo {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        match self {
+            LazyTypeInfo::None => write!(f, "?"),
+            LazyTypeInfo::Id(id) => write!(f, "T#{:x}", id),
+            LazyTypeInfo::Fetched(ty) => write!(f, "T#{:x}", ty.id),
         }
     }
 }
@@ -151,6 +163,7 @@ impl Expr {
             Expr::Extension { .. } => write!(f, "Extend"),
             Expr::Extraction { .. } => write!(f, "Extract"),
             Expr::Ite { .. } => write!(f, "Ite"),
+            Expr::Select(_) => write!(f, "Select"),
             Expr::AddrOf(_) => write!(f, "AddrOf"),
             Expr::Len(_) => write!(f, "Len"),
             Expr::Projection(_) => write!(f, "Proj"),
@@ -184,6 +197,7 @@ impl Expr {
                 if_target,
                 else_target,
             } => write!(f, "{condition} ? {if_target} : {else_target}"),
+            Expr::Select(select) => write!(f, "{select}"),
             Expr::AddrOf(operand) => write!(f, "{operand}"),
             Expr::Len(of) => write!(f, "{of}"),
             Expr::Projection(proj) => write!(f, "{proj}"),

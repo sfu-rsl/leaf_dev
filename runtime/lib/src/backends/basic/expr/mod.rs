@@ -1,5 +1,6 @@
 pub(super) mod builders;
 mod fmt;
+pub(crate) mod lazy;
 pub(crate) mod prelude;
 pub(super) mod proj;
 pub(super) mod sym_place;
@@ -7,7 +8,9 @@ pub(super) mod translators;
 
 use std::{assert_matches::assert_matches, num::Wrapping, ops::Deref, rc::Rc};
 
+use common::tyexp::TypeInfo;
 use derive_more as dm;
+use sym_place::Select;
 
 use crate::abs::{
     self, FieldIndex, FloatType, FuncId, IntType, PointerOffset, RawPointer, TypeId, ValueType,
@@ -35,8 +38,22 @@ pub(crate) enum Value {
 }
 
 impl Value {
+    #[inline]
     pub(crate) fn is_symbolic(&self) -> bool {
-        matches!(self, Value::Symbolic(_))
+        self.as_sym().is_some()
+    }
+
+    #[inline]
+    pub(crate) fn as_sym(&self) -> Option<&SymValue> {
+        match self {
+            Value::Symbolic(sym) => Some(sym),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub(crate) fn as_proj(&self) -> Option<&ProjExpr> {
+        self.as_sym().and_then(SymValue::as_proj)
     }
 }
 
@@ -570,54 +587,41 @@ pub(crate) enum UnevalValue {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct RawConcreteValue(pub(crate) RawPointer, pub(crate) Option<ValueType>);
+pub(crate) struct RawConcreteValue(
+    pub(crate) RawPointer,
+    /* NOTE: Can we perform evaluation without storing the type separately?
+     * It seems to be possible as we evaluate them only when we
+     * are evaluating a operation which includes a symbolic value (otherwise
+     * the concrete result would be referenced).
+     * Thus, we should be able to infer the type based on the type of symbolic
+     * value.
+     * However there are a few cases that this is not easily achievable:
+     * - In shift operations, which the operands may not be from the same type.
+     * - Arrays and effectively symbolic projections.
+     * So we may end up with a hybrid solution. Currently, we have defined
+     * the type as an option to not pass the type in the future unless it is
+     * necessary.
+     */
+    pub(crate) Option<ValueType>,
+    /* At the moment, type info is not supposed to be filled by default. */
+    pub(crate) LazyTypeInfo,
+);
 
-impl RawConcreteValue {
-    pub(crate) unsafe fn evaluate(&self) -> ConcreteValue {
-        let Some(ty) = &self.1 else {
-            panic!("The type for the lazy value is not available.");
-        };
-        /* NOTE: Can we perform evaluation without storing the type separately?
-         * It seems to be possible as we evaluate them only when we
-         * are evaluating a operation which includes a symbolic value (otherwise
-         * the concrete result would be referenced).
-         * Thus, we should be able to infer the type based on the type of symbolic
-         * value.
-         * However there are a few cases that this is not easily achievable:
-         * - In shift operations, which the operands may not be from the same type.
-         * - Arrays and effectively symbolic projections.
-         * So we may end up with a hybrid solution. Currently, we have defined
-         * the type as an option to not pass the type in the future unless it is
-         * necessary.
-         */
-        let addr = self.0 as usize;
-        use std::ptr::with_exposed_provenance as to_ptr;
-        let value: ConstValue = match ty {
-            ValueType::Bool => (*(to_ptr::<bool>(addr))).into(),
-            ValueType::Char => (*(to_ptr::<char>(addr))).into(),
-            ValueType::Int(ty @ IntType { bit_size, .. }) => ConstValue::Int {
-                bit_rep: Wrapping(Self::read_int(addr, *bit_size as usize)),
-                ty: *ty,
-            },
-            ValueType::Float(_) => unimplemented!(),
-        };
-        value.into()
-    }
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum LazyTypeInfo {
+    None,
+    Id(TypeId),
+    Fetched(&'static TypeInfo),
+}
 
-    unsafe fn read_int(addr: usize, bit_size: usize) -> u128 {
-        let bytes =
-            std::slice::from_raw_parts(std::ptr::with_exposed_provenance::<u8>(addr), bit_size / 8);
-
-        #[cfg(target_endian = "big")]
-        let bytes = bytes.iter();
-        #[cfg(target_endian = "little")]
-        let bytes = bytes.iter().rev();
-
-        let mut result: u128 = 0;
-        for byte in bytes {
-            result = result << 8 | *byte as u128;
+impl From<Option<TypeId>> for LazyTypeInfo {
+    fn from(ty_id: Option<TypeId>) -> Self {
+        match ty_id {
+            Some(ty_id) => Self::Id(ty_id),
+            None => Self::None,
         }
-        result
+    }
+}
     }
 }
 
@@ -631,6 +635,16 @@ pub(crate) enum SymValue {
     Variable(SymbolicVar),
     #[from(types(BinaryExpr, ProjExpr))]
     Expression(Expr),
+}
+
+impl SymValue {
+    #[inline]
+    pub(crate) fn as_proj(&self) -> Option<&ProjExpr> {
+        match self {
+            SymValue::Expression(Expr::Projection(host)) => Some(host),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -719,6 +733,8 @@ pub(crate) enum Expr {
         else_target: ValueRef,
     },
 
+    Select(Select),
+
     #[from(ignore)]
     AddrOf(ProjExprRef),
 
@@ -737,7 +753,7 @@ pub(crate) struct BinaryExpr<Operands = SymBinaryOperands> {
 
 // FIXME: Remove this error suppression after adding support for symbolic projection.
 #[allow(unused)]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, dm::From)]
 pub(crate) enum ProjExpr {
     SymIndex(ConcreteHostProj),
     SymHost(SymHostProj),

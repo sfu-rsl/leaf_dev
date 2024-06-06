@@ -44,10 +44,10 @@ where
 }
 
 pub(crate) trait TypeManager:
-    abs::backend::TypeManager<Key = abs::TypeId, Value = Option<&'static TypeInfo>>
+    abs::backend::TypeManager<Key = abs::TypeId, Value = &'static TypeInfo>
 {
 }
 impl<'t, T> TypeManager for T where
-    T: abs::backend::TypeManager<Key = abs::TypeId, Value = Option<&'static TypeInfo>>
+    T: abs::backend::TypeManager<Key = abs::TypeId, Value = &'static TypeInfo>
 {
 }

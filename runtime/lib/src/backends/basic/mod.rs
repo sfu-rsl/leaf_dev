@@ -253,7 +253,7 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
 
     fn address_of(mut self, place: Self::Place, _is_mutable: bool) {
         let value = self.vars_state.copy_place(&place);
-        if let Value::Symbolic(SymValue::Expression(Expr::Projection(_))) = value.as_ref() {
+        if value.as_proj().is_some() {
             let address_of_value = self.expr_builder().address_of(value.into());
             self.set(address_of_value.into())
         } else {
@@ -763,10 +763,9 @@ impl<'a> BasicUntupleHelper<'a> {
         }
     }
 
+    #[inline]
     fn get_type(&self, type_id: TypeId) -> &'static TypeInfo {
-        self.type_manager
-            .get_type(type_id)
-            .expect("Could not find type info for the tupled argument.")
+        self.type_manager.get_type(type_id)
     }
 
     fn type_info(&mut self) -> &'static TypeInfo {
@@ -810,10 +809,12 @@ impl Default for BasicTypeManager<'static> {
 
 impl<'t> crate::abs::backend::TypeManager for BasicTypeManager<'t> {
     type Key = TypeId;
-    type Value = Option<&'t TypeInfo>;
+    type Value = &'t TypeInfo;
 
     fn get_type(&self, key: Self::Key) -> Self::Value {
-        self.type_map.get(&key)
+        self.type_map
+            .get(&key)
+            .unwrap_or_else(|| panic!("Type information was not found. TypeId: {}", key))
     }
 }
 
@@ -849,8 +850,8 @@ trait VariablesState<P = Place, V = ValueRef> {
     /// but the returned value should be independently usable from the original value.
     fn copy_place(&self, place: &P) -> V;
 
-    /// Returns the value stored at the given place. The place should not contain a value after
-    /// this operation.
+    /// Returns the value stored at the given place.
+    /// Conceptually, it is required that the place will not contain the value right after this operation.
     fn take_place(&mut self, place: &P) -> V
     where
         P: self::state::PlaceRef,

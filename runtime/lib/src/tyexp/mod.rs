@@ -1,19 +1,28 @@
 use common::tyexp::*;
 
 pub(crate) trait TypeInfoExt {
+    fn as_single_variant(&self) -> Option<&VariantInfo>;
     fn expect_single_variant(&self) -> &VariantInfo;
     fn child_type_ids(&self) -> impl Iterator<Item = TypeId> + '_;
 }
 
 impl TypeInfoExt for TypeInfo {
-    fn expect_single_variant(&self) -> &VariantInfo {
+    #[inline]
+    fn as_single_variant(&self) -> Option<&VariantInfo> {
         match self.variants.as_slice() {
-            [v] => v,
-            _ => panic!(
+            [v] => Some(v),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    fn expect_single_variant(&self) -> &VariantInfo {
+        self.as_single_variant().unwrap_or_else(|| {
+            panic!(
                 "Expected the type to have a single variant found {:?}",
                 self
-            ),
-        }
+            )
+        })
     }
 
     fn child_type_ids(&self) -> impl Iterator<Item = TypeId> + '_ {

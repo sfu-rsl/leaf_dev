@@ -11,6 +11,7 @@
 #![feature(strict_provenance)]
 #![feature(core_intrinsics)]
 #![feature(exposed_provenance)]
+#![feature(iter_map_windows)]
 
 pub mod abs;
 mod backends;

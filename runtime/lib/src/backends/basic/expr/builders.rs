@@ -153,7 +153,15 @@ mod symbolic {
         ) -> Self::Expr<'a> {
             match operands.as_flat().1.as_ref() {
                 Value::Concrete(ConcreteValue::Unevaluated(UnevalValue::Lazy(lazy))) => {
-                    let value = unsafe { lazy.evaluate() }.to_value_ref();
+                    let value = unsafe { 
+                        lazy.try_retrieve_as_primitive(None)
+                            .expect(
+                                concat!(
+                                    "The value participating in a binary expression is expected to be a primitive.",
+                                    "Maybe the value type is not available?"
+                                ),
+                            )
+                    }.to_value_ref();
                     let mut operands = operands.flatten();
                     operands.1 = value;
                     Err(Self::ExprRefPair::from(operands))
@@ -548,7 +556,7 @@ mod concrete {
 
         fn address_of<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
             match operand {
-                Unevaluated(UnevalValue::Lazy(RawConcreteValue(addr, _))) => ConstValue::new_int(
+                Unevaluated(UnevalValue::Lazy(RawConcreteValue(addr, ..))) => ConstValue::new_int(
                     *addr as u128,
                     IntType {
                         bit_size: std::mem::size_of_val(&addr) as u64 * 8,
