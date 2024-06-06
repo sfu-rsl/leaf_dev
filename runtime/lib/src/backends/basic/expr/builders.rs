@@ -354,7 +354,7 @@ mod core {
         }
 
         fn address_of<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
-            Expr::AddrOf(ProjExprRef::new(operand.into()))
+            Expr::Ref(ProjExprRef::new(operand.into()))
         }
 
         fn len<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {

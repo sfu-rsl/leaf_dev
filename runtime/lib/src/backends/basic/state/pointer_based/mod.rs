@@ -471,7 +471,7 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
                 Expr::Select(select) => {
                     Into::<Expr>::into(self.retrieve_select_proj_result(select)).to_value_ref()
                 }
-                Expr::Ref(..) | Expr::AddrOf(..) | Expr::Len(..) => {
+                Expr::Ref(..) | Expr::Len(..) => {
                     unimplemented!("Not supported yet.")
                 }
                 _ => value,

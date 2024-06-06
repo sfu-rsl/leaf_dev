@@ -175,7 +175,6 @@ impl Expr {
             Expr::Ite { .. } => write!(f, "Ite"),
             Expr::Select(_) => write!(f, "Select"),
             Expr::Ref(_) => write!(f, "&"),
-            Expr::AddrOf(_) => write!(f, "AddrOf"),
             Expr::Len(_) => write!(f, "Len"),
             Expr::Projection(_) => write!(f, "Proj"),
         }
@@ -210,7 +209,6 @@ impl Expr {
             } => write!(f, "{condition} ? {if_target} : {else_target}"),
             Expr::Select(select) => write!(f, "{select}"),
             Expr::Ref(operand) => write!(f, "{operand}"),
-            Expr::AddrOf(operand) => write!(f, "{operand}"),
             Expr::Len(of) => write!(f, "{of}"),
             Expr::Projection(proj) => write!(f, "{proj}"),
         }

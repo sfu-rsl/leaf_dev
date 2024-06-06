@@ -735,10 +735,18 @@ pub(crate) enum Expr {
 
     Select(Select),
 
+    /// A reference or the address of a value.
+    /* NOTE: Should not we have a separate variant for the address of a value?
+     * It should not be required in two ways:
+     * First, the address of is obtained in the same way as a reference is obtained,
+     * i.e., by taking a place. Also the case in which a reference is converted
+     * to a pointer (address), it is first dereferenced and then the address is
+     * obtained from the result. So effectively equivalent.
+     * Second, we are working at runtime which means references are already
+     * converted to pointers. So, we should also have the same behavior for both.
+     */
     #[from(ignore)]
     Ref(ProjExprRef),
-    #[from(ignore)]
-    AddrOf(ProjExprRef),
 
     #[from(ignore)]
     Len(ProjExprRef),

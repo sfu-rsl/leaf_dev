@@ -254,27 +254,9 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
         todo!()
     }
 
-    fn address_of(mut self, place: Self::Place, _is_mutable: bool) {
+    fn address_of(self, place: Self::Place, is_mutable: bool) {
         // For symbolic values `ref_to` and `address_of` should have the same behavior.
-        let place_value = self.get_place_value(place);
-        let value = self.expect_sym_place_as_proj(place_value).map_or_else(
-            |_value| {
-                #[cfg(abs_concrete)]
-                let value = UnevalValue::Some;
-                #[cfg(not(abs_concrete))]
-                let value = {
-                    #[cfg(place_addr)]
-                    let value =
-                        ConstValue::from(place.address().expect("Address is not available!"));
-                    #[cfg(not(place_addr))]
-                    let value = unimplemented!("Addresses are not supported!");
-                    value
-                };
-                value.into()
-            },
-            |proj| Expr::AddrOf(proj).into(),
-        );
-        self.set_value(value)
+        self.ref_to(place, is_mutable)
     }
 
     fn len_of(mut self, place: Self::Place) {

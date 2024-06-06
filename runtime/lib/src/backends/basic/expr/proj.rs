@@ -28,7 +28,7 @@ mod core {
 
         fn deref<'a>(&mut self, host: Self::HostRef<'a>) -> Self::Proj<'a> {
             // Peel off the reference.
-            if let SymValue::Expression(Expr::Ref(proj) | Expr::AddrOf(proj)) = host.as_ref() {
+            if let SymValue::Expression(Expr::Ref(proj)) = host.as_ref() {
                 proj.as_ref().clone()
             } else {
                 ProjExpr::SymHost(SymHostProj {
