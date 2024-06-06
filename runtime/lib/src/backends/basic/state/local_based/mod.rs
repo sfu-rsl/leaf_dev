@@ -81,6 +81,10 @@ where
         self.top.id
     }
 
+    fn ref_place(&self, place: &Place) -> ValueRef {
+        self.copy_place(place)
+    }
+
     fn copy_place(&self, place: &Place) -> ValueRef {
         self.get_place_iter(
             place.local().as_ref(),

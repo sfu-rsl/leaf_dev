@@ -1,6 +1,7 @@
 use std::{
     cell::{RefCell, RefMut},
     collections::{btree_map::Entry, VecDeque},
+    iter,
     ops::Bound,
     rc::Rc,
 };
@@ -9,9 +10,12 @@ use delegate::delegate;
 
 use crate::{
     abs::{
-        expr::proj::{
-            macros::{impl_singular_proj_through_general, impl_singular_projs_through_general},
-            ProjectionOn, Projector,
+        expr::{
+            proj::{
+                macros::{impl_singular_proj_through_general, impl_singular_projs_through_general},
+                ProjectionOn, Projector,
+            },
+            sym_place::SelectTarget,
         },
         place::HasMetadata,
         PointerOffset, RawPointer, TypeId, TypeSize, USIZE_TYPE,
@@ -19,8 +23,6 @@ use crate::{
     backends::basic::{
         alias::TypeManager,
         config::{SymbolicPlaceConfig, SymbolicPlaceStrategy},
-        expr::{PorterValue, RawConcreteValue, SymIndexPair},
-        place::{LocalWithMetadata, PlaceMetadata},
         VariablesState,
     },
     tyexp::TypeInfoExt,
@@ -31,8 +33,8 @@ use common::tyexp::{ArrayShape, FieldsShapeInfo, StructShape, TypeInfo, UnionSha
 use super::{
     super::{
         alias::{RRef, SymValueRefProjector as SymbolicProjector},
-        expr::prelude::*,
-        place::PlaceWithMetadata,
+        expr::{prelude::*, sym_place::*, PorterValue, SymIndexPair},
+        place::{LocalWithMetadata, PlaceMetadata, PlaceWithMetadata},
         ValueRef,
     },
     proj::{apply_projs_sym, IndexResolver, ProjectionResolutionExt},
@@ -198,6 +200,11 @@ impl<VS, SP: SymbolicProjector> RawPointerVariableState<VS, SP> {
             .unwrap_or(addr);
         self.memory.entry_at(key)
     }
+
+    #[inline]
+    fn get_type(&self, type_id: TypeId) -> &'static TypeInfo {
+        self.type_manager.get_type(type_id)
+    }
 }
 
 impl<VS: VariablesState<Place>, SP: SymbolicProjector> VariablesState<Place>
@@ -211,37 +218,40 @@ where
         }
     }
 
-    fn copy_place(&self, place: &Place) -> ValueRef {
+    fn ref_place(&self, place: &Place) -> Rc<Value> {
         let Some(addr) = place.address() else {
-            return self.fallback.copy_place(place);
+            return self.fallback.ref_place(place);
         };
 
         // If the place is pointing to a symbolic value.
         if let Some((sym_val, sym_projs, _)) =
             self.try_find_sym_value(place, self.sym_read_handler.borrow_mut())
         {
-            return self.handle_sym_value_read(sym_val, sym_projs).into();
+            return self.apply_projs_on_sym_value(&sym_val, sym_projs).into();
+        }
+
+        create_lazy(addr, place.metadata().ty().cloned())
+    }
+
+    fn copy_place(&self, place: &Place) -> ValueRef {
+        let Some(addr) = place.address() else {
+            return self.fallback.copy_place(place);
+        };
+
+        let place_val = self.ref_place(place);
+        if place_val.is_symbolic() {
+            return self.retrieve_sym_value(SymValueRef::new(place_val)).into();
         }
 
         // Or it is pointing to an object embracing symbolic values.
         if let Some(size) = place.metadata().size() {
             // FIXME: Double querying memory.
-            if let Some(porter) = Self::try_create_porter(
-                addr,
-                size,
-                /* At this point, we are looking for inner values, effectively
-                 * located at the same address or after it. */
-                |start| self.memory.after_or_at(start),
-                |c| c.peek_next(),
-                |c| {
-                    c.next();
-                },
-            ) {
+            if let Some(porter) = self.try_create_porter_for_copy(addr, size) {
                 return porter.to_value_ref();
             }
         }
 
-        create_lazy(addr, place.metadata().ty())
+        create_lazy(addr, place.metadata().ty().cloned())
     }
 
     fn try_take_place(&mut self, place: &Place) -> Option<ValueRef> {
@@ -250,22 +260,16 @@ where
         };
 
         // If the place is pointing to a symbolic value.
-        if let Some((sym_val, sym_projs, _)) = self.try_find_sym_value_iter(
-            place.local().metadata(),
-            place.projections(),
-            place.projs_metadata(),
-            self.sym_read_handler.borrow_mut(),
-        ) {
-            return Some(if sym_projs.is_empty() {
-                let value = sym_val.clone_to();
-                // FIXME: (*)
+        let place_val = self.ref_place(place);
+        if place_val.is_symbolic() {
+            let retrieved_val = self.retrieve_sym_value(SymValueRef::new(place_val));
+            // FIXME: (*) Also remove non-deterministic values.
+            if retrieved_val.as_proj().is_none() {
                 // Disabling removal because of possible use after move.
                 // https://github.com/rust-lang/unsafe-code-guidelines/issues/188
                 // self.memory.remove_at(&addr);
-                value
-            } else {
-                self.handle_sym_value_read(sym_val, sym_projs).into()
-            });
+            }
+            return Some(retrieved_val.into());
         }
 
         // Or it is pointing to an object embracing symbolic values.
@@ -316,7 +320,7 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
         place: &'b Place,
         sym_place_handler: RefMut<'a, SymPlaceHandlerObject>,
     ) -> Option<(
-        &'a SymValueRef,
+        SymValueRef,
         &'b [Projection],
         impl Iterator<Item = &'b PlaceMetadata>,
     )>
@@ -333,11 +337,11 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
 
     fn try_find_sym_value_iter<'a, 'b, I: Iterator<Item = &'b PlaceMetadata>>(
         &'a self,
-        local_metadata: &PlaceMetadata,
+        local_metadata: &'b PlaceMetadata,
         projs: &'b [Projection],
         mut projs_metadata: I,
         mut sym_place_handler: RefMut<'a, SymPlaceHandlerObject>,
-    ) -> Option<(&'a SymValueRef, &'b [Projection], I)>
+    ) -> Option<(SymValueRef, &'b [Projection], I)>
     where
         Self: IndexResolver<Local>,
     {
@@ -364,36 +368,40 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
                     );
                 }
             }
-            Some((sym_val, projs, projs_metadata))
+            Some((sym_val.clone(), projs, projs_metadata))
         } else {
             // Checking for the value after each projection.
             projs
                 .iter()
-                .zip(projs_metadata.by_ref())
+                .zip(
+                    iter::once(local_metadata)
+                        .chain(projs_metadata.by_ref())
+                        .map_windows(|[a, b]| (*a, *b)),
+                )
                 .enumerate()
                 // The first symbolic value in the projection chain.
-                .find_map(|(i, (proj, metadata))| {
-                    // Checking for symbolic index.
+                .find_map(|(i, (proj, (prev_meta, meta)))| {
+                    // Index may be symbolic.
                     if let Projection::Index(index) = proj {
-                        if let Some(mut index_val) = IndexResolver::get(self, index) {
+                        if let Some(index_val) = IndexResolver::get(self, index) {
                             if index_val.is_symbolic() {
                                 log_debug!("Symbolic index observed: {}", index_val.as_ref());
-                                index_val = sym_place_handler
-                                    .handle(SymValueRef::new(index_val), index.metadata());
-                            }
-
-                            if index_val.is_symbolic() {
-                                // Create appropriate index expression.
-                                todo!("Symbolic memory locations are not supported yet.")
+                                return self
+                                    .handle_first_sym_index(
+                                        SymValueRef::new(index_val),
+                                        index.metadata(),
+                                        prev_meta,
+                                        &mut sym_place_handler,
+                                    )
+                                    .map(|sym_val| (i, sym_val));
                             }
                         }
                     }
 
-                    // Or any symbolic value residing in a location in the chain.
-                    metadata
-                        .address()
-                        .and_then(|addr| self.get(&addr, metadata.unwrap_type_id()))
-                        .map(|sym_val| (i, sym_val))
+                    // Default behavior for any projection.
+                    meta.address()
+                        .and_then(|addr| self.get(&addr, meta.unwrap_type_id()))
+                        .map(|sym_val| (i, sym_val.clone()))
                 })
                 // Returning the remaining projections.
                 .map(|(i, sym_val)| (sym_val, &projs[(Bound::Excluded(i), Bound::Unbounded)]))
@@ -401,7 +409,69 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
         }
     }
 
-    fn handle_sym_value_read<'a, 'b>(
+    fn handle_first_sym_index<'a, 'b>(
+        &'a self,
+        index_val: SymValueRef,
+        index_local_metadata: &'b PlaceMetadata,
+        host_metadata: &'b PlaceMetadata,
+        sym_place_handler: &mut RefMut<'a, SymPlaceHandlerObject>,
+    ) -> Option<SymValueRef> {
+        // First apply the strategy.
+        let index_val = sym_place_handler.handle(index_val, index_local_metadata);
+
+        // If the index is still symbolic, we need to project it.
+        index_val.is_symbolic().then(|| {
+            debug_assert!(
+                host_metadata
+                    .address()
+                    .and_then(|addr| self.get(&addr, host_metadata.unwrap_type_id()))
+                    .is_none(),
+                "The host is expected to be concrete for the first symbolic index."
+            );
+            self.sym_projector
+                .borrow_mut()
+                .index(
+                    SymIndexPair::SymIndex {
+                        host: lazy_from_meta(&host_metadata).unwrap(),
+                        index: SymValueRef::new(index_val),
+                    }
+                    .into(),
+                    false,
+                )
+                .into()
+                .to_value_ref()
+        })
+    }
+
+    /// Retrieves the memory content for the given symbolic value.
+    /// It makes sure that the result value can live independently with no
+    /// lazily-evaluated parts.
+    /// In fact checks if the symbolic value is a projection expression then
+    /// resolves it to its corresponding possible values.
+    fn retrieve_sym_value(&self, value: SymValueRef) -> SymValueRef {
+        if let Some(proj) = value.as_proj() {
+            log::debug!("Resolving and retrieving symbolic projection expression");
+            let resolved = self.resolve_sym_proj(proj);
+            debug_assert!(
+                if let SymbolicProjResult::Array(_) = &resolved {
+                    false
+                } else {
+                    true
+                },
+                "The root resolved value cannot be an array."
+            );
+            /* NOTE: How is this guaranteed to be symbolic?
+             * Basically: A symbolic value cannot be resolved to a concrete value.
+             * Also, those structurally possible concrete values (like transmuted values)
+             * cannot appear as the root of the resolved value. */
+            SymValueRef::new(self.retrieve_sym_proj_result(&resolved))
+        } else {
+            value
+        }
+    }
+
+    /// Takes a symbolic value as the host and applies the given projections on it.
+    fn apply_projs_on_sym_value<'a, 'b>(
         &self,
         host: &'a SymValueRef,
         projs: &'b [Projection],
@@ -422,6 +492,20 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
             &mut sym_place_handler,
             host,
             projs.iter().map(|p| p.resolved_index(self)),
+        )
+    }
+
+    fn try_create_porter_for_copy(&self, addr: RawPointer, size: TypeSize) -> Option<PorterValue> {
+        Self::try_create_porter(
+            addr,
+            size,
+            /* At this point, we are looking for inner values, effectively
+             * located at the same address or after it. */
+            |start| self.memory.after_or_at(start),
+            |c| c.peek_next(),
+            |c| {
+                c.next();
+            },
         )
     }
 
@@ -457,7 +541,85 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
             None
         }
     }
+}
 
+impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<VS, SP> {
+    fn resolve_sym_proj(&self, proj: &ProjExpr) -> SymbolicProjResult {
+        DefaultProjExprReadResolver::new(self.type_manager.as_ref(), self).resolve(proj)
+    }
+
+    fn retrieve_sym_proj_result(&self, proj_result: &SymbolicProjResult) -> ValueRef {
+        match proj_result {
+            SymbolicProjResult::Single(single) => self.retrieve_single_proj_result(single),
+            SymbolicProjResult::Array(items) => Into::<ConcreteValue>::into(ArrayValue {
+                elements: items
+                    .iter()
+                    .map(|item| self.retrieve_sym_proj_result(item))
+                    .collect(),
+            })
+            .to_value_ref(),
+            SymbolicProjResult::SymRead(select) => {
+                Into::<Expr>::into(self.retrieve_select_proj_result(select))
+                    .to_value_ref()
+                    .into()
+            }
+        }
+    }
+
+    fn retrieve_single_proj_result(&self, single: &SingleProjResult) -> ValueRef {
+        let result = match single {
+            SingleProjResult::Transmuted(value) => {
+                // This is guaranteed to not be a projection expression.
+                value.value().clone()
+            }
+            SingleProjResult::Value(value) => {
+                if let Some(proj) = value.as_proj() {
+                    self.retrieve_sym_proj_result(&self.resolve_sym_proj(proj))
+                } else if let Value::Symbolic(SymValue::Expression(Expr::Select(select))) =
+                    value.as_ref()
+                {
+                    Into::<Expr>::into(self.retrieve_select_proj_result(select))
+                        .to_value_ref()
+                        .into()
+                } else {
+                    value.clone()
+                }
+            }
+        };
+        if let Value::Concrete(ConcreteValue::Unevaluated(UnevalValue::Lazy(raw))) = result.as_ref()
+        {
+            unsafe { raw.retrieve(self.type_manager.as_ref(), self) }
+                .unwrap()
+                .into()
+        } else {
+            result
+        }
+    }
+
+    fn retrieve_select_proj_result(&self, select: &Select) -> Select {
+        let target = match &select.target {
+            SelectTarget::Array(possible_values) => SelectTarget::Array(
+                possible_values
+                    .iter()
+                    .map(|value| self.retrieve_sym_proj_result(value))
+                    .map(SingleProjResult::Value)
+                    .map(SymbolicProjResult::Single)
+                    .collect(),
+            ),
+            SelectTarget::Nested(box inner) => {
+                let inner = self.retrieve_select_proj_result(inner);
+                SelectTarget::Nested(Box::new(inner))
+            }
+        };
+
+        Select {
+            index: select.index.clone(),
+            target,
+        }
+    }
+}
+
+impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<VS, SP> {
     fn set_addr(&mut self, addr: RawPointer, value: ValueRef, type_id: TypeId) {
         fn insert(entry: Entry<RawPointer, MemoryObject>, value: MemoryObject) {
             log_debug!("Storing value: {:?} at address: {}", value, entry.key());
@@ -574,14 +736,36 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
             self.set_addr(item_addr, element.clone(), item_ty.id);
         }
     }
+}
 
-    fn get_type(&self, type_id: TypeId) -> &'static TypeInfo {
-        self.type_manager.get_type(type_id).unwrap_or_else(|| {
-            panic!(
-                "Type information for type id: {:?} is not available.",
-                type_id
-            )
+impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerRetriever
+    for RawPointerVariableState<VS, SP>
+{
+    fn retrieve(&self, addr: RawPointer, type_id: TypeId) -> ValueRef {
+        log::debug!(
+            "Retrieving value at address: {} with type: {:?}",
+            addr,
+            type_id
+        );
+
+        if let Some(sym_val) = self.get(&addr, type_id) {
+            return self.retrieve_sym_value(sym_val.clone()).into();
+        }
+
+        // Or it is pointing to an object embracing symbolic values.
+        // FIXME: Double querying memory.
+        if let Some(porter) = self.try_create_porter_for_copy(addr, self.get_type(type_id).size) {
+            return porter.to_value_ref();
+        }
+
+        RawConcreteValue::try_from(&{
+            let mut metadata = PlaceMetadata::default();
+            metadata.set_address(addr);
+            metadata.set_type_id(type_id);
+            metadata
         })
+        .unwrap()
+        .to_value_ref()
     }
 }
 

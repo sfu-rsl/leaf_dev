@@ -23,19 +23,20 @@
  * symbolic read, which may be resolved on demand.
  */
 
+use common::pri::RawPointer;
 use derive_more::From;
 
 use crate::abs::TypeId;
 use common::log_debug;
 
-use super::{prelude::*, SliceIndex};
+use super::{super::alias::TypeManager, prelude::*, SliceIndex};
 
 type SymIndex = SliceIndex<SymValueRef>;
-pub(super) type Select<V = SymbolicProjResult> = crate::abs::expr::sym_place::Select<SymIndex, V>;
+pub(crate) type Select<V = SymbolicProjResult> = crate::abs::expr::sym_place::Select<SymIndex, V>;
 
 /// Represents a possible value of a symbolic projection.
 /// It can be either a symbolic read or a transmutation of a symbolic value.
-#[derive(Clone, From)]
+#[derive(Debug, Clone, From)]
 pub(crate) enum SymbolicProjResult {
     /// A symbolic read, i.e. projection with symbolic index.
     /// This one introduces multiple possible values.
@@ -85,25 +86,44 @@ pub(crate) struct TransmutedValue {
     /* NOTE: Why `ValueRef`?
      * It is feasible to transmute possible values of a select, which are possibly
      * concrete. */
+    /// Remark: The value is guarded to not be a projection.
     pub(super) value: ValueRef,
     pub(super) dst_ty_id: TypeId,
 }
 
-pub(super) trait ProjExprResolver {
+pub(crate) trait RawPointerRetriever {
+    fn retrieve(&self, addr: RawPointer, type_id: TypeId) -> ValueRef;
+}
+
+pub(crate) trait ProjExprResolver {
     fn resolve<'a>(&self, proj_value: &'a ProjExpr) -> SymbolicProjResult;
 
     /// Expands the given value to another representation that is indexable.
     /// # Returns
     /// An expanded version of the given value.
-    /// If the value get resolved to a single possible value, that value must
+    /// If the value gets resolved to a single possible value, that value must
     /// be indexable and it is expanded to an `Array`,
     /// otherwise a `Select` will be returned to be expanded later.
     /// The returned value is guaranteed to not be a `SingleResult`.
-    fn expand<'a>(&self, value: &SingleProjResult) -> SymbolicProjResult;
+    fn expand<'a>(&self, value: &'a SingleProjResult) -> SymbolicProjResult;
 }
 
-#[derive(Default)]
-pub(super) struct DefaultProjExprReadResolver;
+pub(crate) struct DefaultProjExprReadResolver<'a> {
+    type_manager: &'a dyn TypeManager,
+    retriever: &'a dyn RawPointerRetriever,
+}
+
+impl<'a> DefaultProjExprReadResolver<'a> {
+    pub(crate) fn new(
+        type_manager: &'a dyn TypeManager,
+        retriever: &'a dyn RawPointerRetriever,
+    ) -> Self {
+        Self {
+            type_manager,
+            retriever,
+        }
+    }
+}
 
 pub(super) fn apply_address_of(
     mut host: SymbolicProjResult,
@@ -184,8 +204,9 @@ mod implementation {
     use super::*;
     use utils::*;
 
-    impl ProjExprResolver for DefaultProjExprReadResolver {
+    impl ProjExprResolver for DefaultProjExprReadResolver<'_> {
         fn resolve<'a>(&self, proj_value: &'a ProjExpr) -> SymbolicProjResult {
+            log::debug!("Resolving a projection: {:?}", proj_value);
             // FIXME: No need to distinguish these cases anymore. We may remove ConcreteHostProj.
             let (base, projs) = proj_value.flatten();
             match base {
@@ -199,7 +220,8 @@ mod implementation {
             }
         }
 
-        fn expand<'a>(&self, value: &SingleProjResult) -> SymbolicProjResult {
+        fn expand<'a>(&self, value: &'a SingleProjResult) -> SymbolicProjResult {
+            log::debug!("Expanding a single value: {:?}", value);
             match value {
                 SingleProjResult::Transmuted(trans) => SymbolicProjResult::Array(
                     self.expand_transmuted(trans)
@@ -223,7 +245,7 @@ mod implementation {
     /// # Remarks
     /// If there is concrete host, we know for sure that the result is a select.
     /// However, transmutations turn into symbolic reads if there is a symbolic index.
-    impl SymbolicReadResolver<SymIndex> for DefaultProjExprReadResolver {
+    impl SymbolicReadResolver<SymIndex> for DefaultProjExprReadResolver<'_> {
         type SymValue<'a> = (&'a ConcreteHostProj, &'a [&'a ProjKind]);
         type PossibleValue<'a> = SymbolicProjResult;
 
@@ -247,20 +269,20 @@ mod implementation {
 
     impl TransmutedValue {
         pub(super) fn new(value: ValueRef, dst_ty_id: TypeId) -> Self {
-            let is_proj = match value.as_ref() {
-                Value::Symbolic(SymValue::Expression(Expr::Projection(..))) => true,
-                _ => false,
-            };
             assert!(
-                !is_proj,
+                !value.as_proj().is_some(),
                 "The base value of a transmutation should be resolved at this point."
             );
 
             Self { value, dst_ty_id }
         }
+
+        pub fn value(&self) -> &ValueRef {
+            &self.value
+        }
     }
 
-    impl DefaultProjExprReadResolver {
+    impl DefaultProjExprReadResolver<'_> {
         pub(super) fn resolve_symbolic_projs(
             &self,
             base: SymbolicProjResult,
@@ -311,7 +333,14 @@ mod implementation {
                 ConcreteValue::Array(array) => {
                     array.elements.iter().cloned().map(Into::into).collect()
                 }
-                _ => unreachable!("Only arrays are expected to be expanded, got: {:?}", value),
+                ConcreteValue::Unevaluated(UnevalValue::Lazy(raw)) => {
+                    self.expand_concrete(unsafe {
+                        raw.retrieve(self.type_manager, self.retriever)
+                            .unwrap()
+                            .as_ref()
+                    })
+                }
+                _ => unreachable!("Unexpected/unsupported value to be expanded: {:?}", value),
             }
         }
 
@@ -420,9 +449,7 @@ mod implementation {
         ) {
             if let SymbolicProjResult::Single(SingleProjResult::Value(value)) = self {
                 // Resolve projections before the mutation.
-                if let Value::Symbolic(SymValue::Expression(Expr::Projection(proj))) =
-                    value.as_ref()
-                {
+                if let Some(proj) = value.as_proj() {
                     *self = ProjExprResolver::resolve(resolver, proj);
                 }
             }
@@ -445,7 +472,7 @@ mod implementation {
     }
 
     struct ResultInPlaceProjector<'r> {
-        resolver: &'r DefaultProjExprReadResolver,
+        resolver: &'r DefaultProjExprReadResolver<'r>,
     }
 
     impl Projector for ResultInPlaceProjector<'_> {
@@ -573,13 +600,6 @@ mod implementation {
         use crate::{abs::expr::proj::ProjectionOn, backends::basic::expr::prelude::*};
 
         impl SymValue {
-            pub(super) fn as_proj(&self) -> Option<&ProjExpr> {
-                match self {
-                    SymValue::Expression(Expr::Projection(host)) => Some(host),
-                    _ => None,
-                }
-            }
-
             pub(super) fn expect_proj(&self) -> &ProjExpr {
                 self.as_proj().unwrap_or_else(|| {
                     panic!(

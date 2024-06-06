@@ -1,13 +1,13 @@
 use crate::{
     abs::ValueType,
     backends::basic::{
-        concrete::Concretizer, config::SymbolicPlaceStrategy, expr::RawConcreteValue,
-        place::PlaceMetadata, state::SymPlaceHandler, ValueRef,
+        concrete::Concretizer, config::SymbolicPlaceStrategy, place::PlaceMetadata,
+        state::SymPlaceHandler, ValueRef,
     },
 };
 
-use super::{ConcreteValueRef, SymValueRef};
-use common::log_debug;
+use super::{create_lazy, ConcreteValueRef, SymValueRef};
+use common::{log_debug, log_info, log_warn};
 
 pub(crate) fn make_sym_place_handler(
     config: SymbolicPlaceStrategy,
@@ -70,5 +70,5 @@ fn get_concrete_value(place_meta: &PlaceMetadata, ty: Option<ValueType>) -> Valu
         .address()
         .expect("Cannot concretize a place without the raw address.");
     let ty = ty.or_else(|| place_meta.ty().cloned());
-    RawConcreteValue(addr, ty).to_value_ref()
+    create_lazy(addr, ty)
 }
