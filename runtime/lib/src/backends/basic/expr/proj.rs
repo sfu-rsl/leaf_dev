@@ -27,10 +27,15 @@ mod core {
         impl_general_proj_through_singulars!();
 
         fn deref<'a>(&mut self, host: Self::HostRef<'a>) -> Self::Proj<'a> {
-            ProjExpr::SymHost(SymHostProj {
-                host,
-                kind: ProjKind::Deref,
-            })
+            // Peel off the reference.
+            if let SymValue::Expression(Expr::Ref(proj) | Expr::AddrOf(proj)) = host.as_ref() {
+                proj.as_ref().clone()
+            } else {
+                ProjExpr::SymHost(SymHostProj {
+                    host,
+                    kind: ProjKind::Deref,
+                })
+            }
         }
 
         fn field<'a>(

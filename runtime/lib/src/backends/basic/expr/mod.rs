@@ -736,6 +736,8 @@ pub(crate) enum Expr {
     Select(Select),
 
     #[from(ignore)]
+    Ref(ProjExprRef),
+    #[from(ignore)]
     AddrOf(ProjExprRef),
 
     #[from(ignore)]
@@ -1019,7 +1021,14 @@ mod convert {
         };
     }
 
-    impl_conc_to_value_ref!(ConstValue, AdtValue, ArrayValue, UnevalValue, RawConcreteValue, PorterValue);
+    impl_conc_to_value_ref!(
+        ConstValue,
+        AdtValue,
+        ArrayValue,
+        UnevalValue,
+        RawConcreteValue,
+        PorterValue
+    );
 
     impl SymValue {
         #[inline]

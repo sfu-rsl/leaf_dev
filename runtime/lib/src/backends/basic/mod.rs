@@ -237,13 +237,16 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
         self.set_value(value)
     }
 
-    fn ref_to(mut self, place: Self::Place, is_mutable: bool) {
-        let value = ConcreteValue::Ref(if is_mutable {
-            RefValue::Mut(FullPlace::new(place, self.vars_state.id()))
-        } else {
-            RefValue::Immut(self.vars_state.copy_place(&place))
-        })
-        .into();
+    fn ref_to(mut self, place: Self::Place, _is_mutable: bool) {
+        let place_value = self.get_place_value(place);
+        let value = self.expect_sym_place_as_proj(place_value).map_or_else(
+            |_value| {
+                // No use case for the reference value at the moment.
+                #[cfg(abs_concrete)]
+                UnevalValue::Some.into()
+            },
+            |proj| Expr::Ref(proj).into(),
+        );
         self.set_value(value)
     }
 
@@ -252,28 +255,35 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
     }
 
     fn address_of(mut self, place: Self::Place, _is_mutable: bool) {
-        let value = self.vars_state.copy_place(&place);
-        if value.as_proj().is_some() {
-            let address_of_value = self.expr_builder().address_of(value.into());
-            self.set(address_of_value.into())
-        } else {
-            #[cfg(abs_concrete)]
-            let value = get_operand_value(self.vars_state, Operand::Const(abs::Constant::Some));
-            #[cfg(not(abs_concrete))]
-            let value = {
-                #[cfg(place_addr)]
-                let value = ConstValue::from(place.address().expect("Address is not available!"))
-                    .to_value_ref();
-                #[cfg(not(place_addr))]
-                let value = unimplemented!("Addresses are not supported!");
-                value
-            };
-            self.set(value);
-        }
+        // For symbolic values `ref_to` and `address_of` should have the same behavior.
+        let place_value = self.get_place_value(place);
+        let value = self.expect_sym_place_as_proj(place_value).map_or_else(
+            |_value| {
+                #[cfg(abs_concrete)]
+                let value = UnevalValue::Some;
+                #[cfg(not(abs_concrete))]
+                let value = {
+                    #[cfg(place_addr)]
+                    let value =
+                        ConstValue::from(place.address().expect("Address is not available!"));
+                    #[cfg(not(place_addr))]
+                    let value = unimplemented!("Addresses are not supported!");
+                    value
+                };
+                value.into()
+            },
+            |proj| Expr::AddrOf(proj).into(),
+        );
+        self.set_value(value)
     }
 
     fn len_of(mut self, place: Self::Place) {
-        let value = self.vars_state.copy_place(&place);
+        /* FIXME: Len should be retrieved eagerly.
+         * However, it requires working with slice types which is feasible.
+         * But as len is supposed to be removed from the Runtime MIR,
+         * we are not implementing it now.
+         */
+        let value = self.vars_state.ref_place(&place);
         let len_value = self.expr_builder().len(value.into());
         self.set(len_value.into())
     }
@@ -361,6 +371,22 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
 }
 
 impl<EB: OperationalExprBuilder> BasicAssignmentHandler<'_, EB> {
+    fn get_place_value(&mut self, place: Place) -> ValueRef {
+        self.vars_state.ref_place(&place)
+    }
+
+    fn expect_sym_place_as_proj(&mut self, place_value: ValueRef) -> Result<ProjExprRef, ValueRef> {
+        if place_value.is_symbolic() {
+            debug_assert!(
+                place_value.as_proj().is_some(),
+                "A symbolic place should correspond to a symbolic projection."
+            );
+            Ok(ProjExprRef::new(place_value))
+        } else {
+            Err(place_value)
+        }
+    }
+
     fn set(&mut self, value: ValueRef) {
         self.vars_state.set_place(&self.dest, value);
     }
