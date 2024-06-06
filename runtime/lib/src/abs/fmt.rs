@@ -184,7 +184,7 @@ where
 {
     fn fmt(&self, f: &mut Formatter) -> Result {
         match self {
-            SelectTarget::Array(values) => write!(f, "{}", comma_separated(values.iter())),
+            SelectTarget::Array(values) => write!(f, "[{}]", comma_separated(values.iter())),
             SelectTarget::Nested(box select) => write!(f, "{select}"),
         }
     }

@@ -2,7 +2,10 @@ use std::fmt::{Display, Formatter, Result};
 
 use crate::utils::logging::comma_separated;
 
-use super::{sym_place::SymbolicProjResult, PorterValue, RawConcreteValue, *};
+use super::{
+    sym_place::{SingleProjResult, SymbolicProjResult, TransmutedValue},
+    PorterValue, RawConcreteValue, *,
+};
 
 impl Display for Value {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
@@ -107,16 +110,23 @@ impl Display for UnevalValue {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
             UnevalValue::Some => write!(f, ".C."),
-            UnevalValue::Lazy(RawConcreteValue(addr, v_ty, ty)) => write!(
-                f,
-                "@({:x}:{})",
-                addr,
-                v_ty.as_ref()
-                    .map(|t| format!("{}", t))
-                    .unwrap_or_else(|| format!("{}", ty))
-            ),
+            UnevalValue::Lazy(raw) => write!(f, "{raw}"),
             UnevalValue::Porter(PorterValue { .. }) => write!(f, "{{.S.}}"),
         }
+    }
+}
+
+impl Display for RawConcreteValue {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        write!(
+            f,
+            "@({:x}:{})",
+            self.0,
+            self.1
+                .as_ref()
+                .map(|t| format!("{}", t))
+                .unwrap_or_else(|| format!("{}", self.2))
+        )
     }
 }
 
@@ -259,7 +269,7 @@ impl Display for DowncastKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
             DowncastKind::EnumVariant(variant) => write!(f, "V#{}", variant),
-            DowncastKind::Transmutation(ty_id) => write!(f, "T#{:p}", ty_id),
+            DowncastKind::Transmutation(ty_id) => write!(f, "T#{}", ty_id),
         }
     }
 }
@@ -270,23 +280,33 @@ fn end_symbol(from_end: &bool) -> &str {
 }
 
 impl Display for SliceIndex<SymValueRef> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{}{}ˢ", self.index, if self.from_end { "^" } else { "" })
     }
 }
 
 impl Display for SymbolicProjResult {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
-            SymbolicProjResult::SymRead(select) => write!(f, "{}", select),
-            SymbolicProjResult::Array(values) => write!(f, "{}", comma_separated(values.iter())),
-            SymbolicProjResult::Single(value) => match value {
-                sym_place::SingleProjResult::Transmuted(trans) => {
-                    write!(f, "{} as T#{}", trans.value, trans.dst_ty_id)
-                }
-                sym_place::SingleProjResult::Value(value) => write!(f, "{}", value),
-            },
+            SymbolicProjResult::SymRead(select) => write!(f, "{select}"),
+            SymbolicProjResult::Array(values) => write!(f, "[{}]", comma_separated(values.iter())),
+            SymbolicProjResult::Single(value) => write!(f, "{value}"),
         }
+    }
+}
+
+impl Display for SingleProjResult {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        match self {
+            SingleProjResult::Transmuted(value) => write!(f, "{value}"),
+            SingleProjResult::Value(value) => write!(f, "{value}"),
+        }
+    }
+}
+
+impl Display for TransmutedValue {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        write!(f, "{} as T#{}", self.value, self.dst_ty_id)
     }
 }
 
