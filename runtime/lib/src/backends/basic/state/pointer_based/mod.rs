@@ -449,24 +449,34 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
     /// In fact checks if the symbolic value is a projection expression then
     /// resolves it to its corresponding possible values.
     fn retrieve_sym_value(&self, value: SymValueRef) -> SymValueRef {
-        if let Some(proj) = value.as_proj() {
-            log::debug!("Resolving and retrieving symbolic projection expression");
-            let resolved = self.resolve_sym_proj(proj);
-            debug_assert!(
-                if let SymbolicProjResult::Array(_) = &resolved {
-                    false
-                } else {
-                    true
-                },
-                "The root resolved value cannot be an array."
-            );
-            /* NOTE: How is this guaranteed to be symbolic?
-             * Basically: A symbolic value cannot be resolved to a concrete value.
-             * Also, those structurally possible concrete values (like transmuted values)
-             * cannot appear as the root of the resolved value. */
-            SymValueRef::new(self.retrieve_sym_proj_result(&resolved))
-        } else {
-            value
+        match value.as_ref() {
+            SymValue::Expression(expr) => match expr {
+                Expr::Projection(proj) => {
+                    log::debug!("Resolving and retrieving symbolic projection expression: {proj}");
+                    let resolved = self.resolve_sym_proj(proj);
+                    debug_assert!(
+                        if let SymbolicProjResult::Array(_) = &resolved {
+                            false
+                        } else {
+                            true
+                        },
+                        "The root resolved value cannot be an array."
+                    );
+                    /* NOTE: How is this guaranteed to be symbolic?
+                     * Basically: A symbolic value cannot be resolved to a concrete value.
+                     * Also, those structurally possible concrete values (like transmuted values)
+                     * cannot appear as the root of the resolved value. */
+                    SymValueRef::new(self.retrieve_sym_proj_result(&resolved))
+                }
+                Expr::Select(select) => {
+                    Into::<Expr>::into(self.retrieve_select_proj_result(select)).to_value_ref()
+                }
+                Expr::Ref(..) | Expr::AddrOf(..) | Expr::Len(..) => {
+                    unimplemented!("Not supported yet.")
+                }
+                _ => value,
+            },
+            _ => value,
         }
     }
 
@@ -549,6 +559,7 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
     }
 
     fn retrieve_sym_proj_result(&self, proj_result: &SymbolicProjResult) -> ValueRef {
+        log::debug!("Retrieving symbolic projection result: {}", proj_result);
         match proj_result {
             SymbolicProjResult::Single(single) => self.retrieve_single_proj_result(single),
             SymbolicProjResult::Array(items) => Into::<ConcreteValue>::into(ArrayValue {
@@ -567,36 +578,19 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
     }
 
     fn retrieve_single_proj_result(&self, single: &SingleProjResult) -> ValueRef {
+        log::debug!("Retrieving single projection result: {}", single);
         let result = match single {
             SingleProjResult::Transmuted(value) => {
                 // This is guaranteed to not be a projection expression.
                 value.value().clone()
             }
-            SingleProjResult::Value(value) => {
-                if let Some(proj) = value.as_proj() {
-                    self.retrieve_sym_proj_result(&self.resolve_sym_proj(proj))
-                } else if let Value::Symbolic(SymValue::Expression(Expr::Select(select))) =
-                    value.as_ref()
-                {
-                    Into::<Expr>::into(self.retrieve_select_proj_result(select))
-                        .to_value_ref()
-                        .into()
-                } else {
-                    value.clone()
-                }
-            }
+            SingleProjResult::Value(value) => value.clone(),
         };
-        if let Value::Concrete(ConcreteValue::Unevaluated(UnevalValue::Lazy(raw))) = result.as_ref()
-        {
-            unsafe { raw.retrieve(self.type_manager.as_ref(), self) }
-                .unwrap()
-                .into()
-        } else {
-            result
-        }
+        self.retrieve_value(result)
     }
 
     fn retrieve_select_proj_result(&self, select: &Select) -> Select {
+        log::debug!("Retrieving select projection result: {}", select);
         let target = match &select.target {
             SelectTarget::Array(possible_values) => SelectTarget::Array(
                 possible_values
@@ -616,6 +610,48 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
             index: select.index.clone(),
             target,
         }
+    }
+
+    fn retrieve_value(&self, value: ValueRef) -> ValueRef {
+        match value.as_ref() {
+            Value::Concrete(_) => self
+                .retrieve_conc_value(ConcreteValueRef::new(value))
+                .into(),
+            Value::Symbolic(_) => self.retrieve_sym_value(SymValueRef::new(value)).into(),
+        }
+    }
+
+    fn retrieve_conc_value(&self, value: ConcreteValueRef) -> ConcreteValueRef {
+        ConcreteValueRef::new(match value.as_ref() {
+            ConcreteValue::Array(array) => ArrayValue {
+                elements: array
+                    .elements
+                    .iter()
+                    .map(|element| self.retrieve_value(element.clone()))
+                    .collect(),
+            }
+            .to_value_ref(),
+            ConcreteValue::Adt(adt) => AdtValue {
+                kind: adt.kind.clone(),
+                fields: adt
+                    .fields
+                    .iter()
+                    .map(|field| AdtField {
+                        value: field
+                            .value
+                            .as_ref()
+                            .map(|value| self.retrieve_value(value.clone())),
+                    })
+                    .collect(),
+            }
+            .to_value_ref(),
+            ConcreteValue::Unevaluated(UnevalValue::Lazy(raw)) => {
+                unsafe { raw.retrieve(self.type_manager.as_ref(), self) }
+                    .unwrap()
+                    .into()
+            }
+            _ => value.into(),
+        })
     }
 }
 
@@ -743,7 +779,7 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerRetriever
 {
     fn retrieve(&self, addr: RawPointer, type_id: TypeId) -> ValueRef {
         log::debug!(
-            "Retrieving value at address: {} with type: {:?}",
+            "Retrieving value at address: {:x} with type: {:?}",
             addr,
             type_id
         );

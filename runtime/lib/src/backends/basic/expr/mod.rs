@@ -1019,7 +1019,7 @@ mod convert {
         };
     }
 
-    impl_conc_to_value_ref!(ConstValue, UnevalValue, RawConcreteValue, PorterValue);
+    impl_conc_to_value_ref!(ConstValue, AdtValue, ArrayValue, UnevalValue, RawConcreteValue, PorterValue);
 
     impl SymValue {
         #[inline]
