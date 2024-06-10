@@ -224,10 +224,16 @@ where
         };
 
         // If the place is pointing to a symbolic value.
-        if let Some((sym_val, sym_projs, _)) =
+        if let Some((sym_val, host_metadata, sym_projs, projs_metadata)) =
             self.try_find_sym_value(place, self.sym_read_handler.borrow_mut())
         {
-            return self.apply_projs_on_sym_value(&sym_val, sym_projs).into();
+            return self
+                .apply_projs_on_sym_value(
+                    &sym_val,
+                    sym_projs,
+                    iter::once(host_metadata).chain(projs_metadata),
+                )
+                .into();
         }
 
         create_lazy(addr, place.metadata().ty().cloned())
@@ -299,7 +305,7 @@ where
             return self.fallback.set_place(place, value);
         };
 
-        if let Some((_sym_val, sym_projs, _)) =
+        if let Some((_sym_val, _, sym_projs, _)) =
             self.try_find_sym_value(place, self.sym_write_handler.borrow_mut())
         {
             if !sym_projs.is_empty() {
@@ -321,6 +327,7 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
         sym_place_handler: RefMut<'a, SymPlaceHandlerObject>,
     ) -> Option<(
         SymValueRef,
+        &'b PlaceMetadata,
         &'b [Projection],
         impl Iterator<Item = &'b PlaceMetadata>,
     )>
@@ -341,7 +348,7 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
         projs: &'b [Projection],
         mut projs_metadata: I,
         mut sym_place_handler: RefMut<'a, SymPlaceHandlerObject>,
-    ) -> Option<(SymValueRef, &'b [Projection], I)>
+    ) -> Option<(SymValueRef, &'b PlaceMetadata, &'b [Projection], I)>
     where
         Self: IndexResolver<Local>,
     {
@@ -368,7 +375,7 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
                     );
                 }
             }
-            Some((sym_val.clone(), projs, projs_metadata))
+            Some((sym_val.clone(), local_metadata, projs, projs_metadata))
         } else {
             // Checking for the value after each projection.
             projs
@@ -380,7 +387,7 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
                 )
                 .enumerate()
                 // The first symbolic value in the projection chain.
-                .find_map(|(i, (proj, (prev_meta, meta)))| {
+                .find_map(|(i, (proj, (host_meta, meta)))| {
                     // Index may be symbolic.
                     if let Projection::Index(index) = proj {
                         if let Some(index_val) = IndexResolver::get(self, index) {
@@ -390,10 +397,10 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
                                     .handle_first_sym_index(
                                         SymValueRef::new(index_val),
                                         index.metadata(),
-                                        prev_meta,
+                                        host_meta,
                                         &mut sym_place_handler,
                                     )
-                                    .map(|sym_val| (i, sym_val));
+                                    .map(|sym_val| (i, sym_val, meta));
                             }
                         }
                     }
@@ -401,11 +408,17 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
                     // Default behavior for any projection.
                     meta.address()
                         .and_then(|addr| self.get(&addr, meta.unwrap_type_id()))
-                        .map(|sym_val| (i, sym_val.clone()))
+                        .map(|sym_val| (i, sym_val.clone(), meta))
                 })
                 // Returning the remaining projections.
-                .map(|(i, sym_val)| (sym_val, &projs[(Bound::Excluded(i), Bound::Unbounded)]))
-                .map(|(sym_val, projs)| (sym_val, projs, projs_metadata))
+                .map(|(i, sym_val, meta)| {
+                    (
+                        sym_val,
+                        meta,
+                        &projs[(Bound::Excluded(i), Bound::Unbounded)],
+                    )
+                })
+                .map(|(sym_val, meta, projs)| (sym_val, meta, projs, projs_metadata))
         }
     }
 
@@ -437,6 +450,7 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
                     }
                     .into(),
                     false,
+                    ProjMetadata(host_metadata.unwrap_type_id()).into(),
                 )
                 .into()
                 .to_value_ref()
@@ -485,6 +499,7 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
         &self,
         host: &'a SymValueRef,
         projs: &'b [Projection],
+        place_metadata: impl Iterator<Item = &'b PlaceMetadata>,
     ) -> SymValueRef
     where
         Self: IndexResolver<Local>,
@@ -501,7 +516,12 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
         apply_projs_sym(
             &mut sym_place_handler,
             host,
-            projs.iter().map(|p| p.resolved_index(self)),
+            projs.iter().zip(place_metadata).map(|(proj, meta)| {
+                (
+                    proj.resolved_index(self),
+                    ProjMetadata(meta.unwrap_type_id()),
+                )
+            }),
         )
     }
 
@@ -859,6 +879,7 @@ struct SymIndexHandler<'a, 'b, SP: SymbolicProjector> {
 
 impl<SP: SymbolicProjector> Projector for SymIndexHandler<'_, '_, SP> {
     type HostRef<'a> = SymValueRef;
+    type Metadata<'a> = ProjMetadata;
     type FieldAccessor = FieldAccessKind;
     type HIRefPair<'a> = SymIndexPair;
     type DowncastTarget = DowncastKind;
@@ -872,6 +893,7 @@ impl<SP: SymbolicProjector> Projector for SymIndexHandler<'_, '_, SP> {
             Self::HIRefPair<'a>,
             Self::DowncastTarget,
         >,
+        metadata: Self::Metadata<'a>,
     ) -> Self::Proj<'a> {
         let proj = self
             .projs
@@ -903,9 +925,10 @@ impl<SP: SymbolicProjector> Projector for SymIndexHandler<'_, '_, SP> {
                 self.sym_projector.borrow_mut().index(
                     Into::<SymIndexPair>::into((sym_host, index)).into(),
                     from_end,
+                    metadata.into(),
                 )
             }
-            _ => self.sym_projector.borrow_mut().project(proj_on.map_into()),
+            _ => self.sym_projector.borrow_mut().project(proj_on.map_into(), metadata.into()),
         }
         .into()
     }

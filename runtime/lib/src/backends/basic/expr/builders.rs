@@ -396,6 +396,7 @@ mod core {
                             ProjExpr::SymHost(SymHostProj {
                                 host: operand.into(),
                                 kind: ProjKind::Downcast(DowncastKind::Transmutation(dst_ty_id)),
+                                metadata: todo!("Check if we really need to provide this value."),
                             })
                             .into()
                         }

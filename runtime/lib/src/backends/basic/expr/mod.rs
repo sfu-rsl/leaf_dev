@@ -622,8 +622,6 @@ impl From<Option<TypeId>> for LazyTypeInfo {
         }
     }
 }
-    }
-}
 
 #[derive(Clone, Debug)]
 pub(crate) struct PorterValue {
@@ -764,23 +762,28 @@ pub(crate) struct BinaryExpr<Operands = SymBinaryOperands> {
 // FIXME: Remove this error suppression after adding support for symbolic projection.
 #[allow(unused)]
 #[derive(Clone, Debug, dm::From)]
-pub(crate) enum ProjExpr {
-    SymIndex(ConcreteHostProj),
-    SymHost(SymHostProj),
+pub(crate) enum ProjExpr<M = ProjMetadata> {
+    SymIndex(ConcreteHostProj<M>),
+    SymHost(SymHostProj<M>),
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct ConcreteHostProj {
+pub(crate) struct ConcreteHostProj<M = ProjMetadata> {
     host: ConcreteValueRef,
     index: SliceIndex<SymValueRef>,
+    metadata: M,
 }
 
 #[allow(unused)]
 #[derive(Clone, Debug)]
-pub(crate) struct SymHostProj {
+pub(crate) struct SymHostProj<M = ProjMetadata> {
     host: SymValueRef,
     kind: ProjKind,
+    metadata: M,
 }
+
+#[derive(Clone, Debug)]
+pub(crate) struct ProjMetadata(pub TypeId);
 
 // FIXME: Remove this error suppression after adding support for symbolic projection.
 #[allow(unused)]

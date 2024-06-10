@@ -1,4 +1,4 @@
-use std::ops::DerefMut;
+use std::{iter, ops::DerefMut};
 
 use super::super::super::{
     expr::{prelude::*, SymIndexPair},
@@ -18,7 +18,7 @@ pub(super) fn apply_projs<'a, 'b, SP: SymbolicProjector>(
         return apply_projs_sym(
             sym_projector.as_ref().borrow_mut().deref_mut(),
             &SymValueRef::new(current),
-            projs,
+            projs.zip(iter::repeat_with(proj_metadata)),
         )
         .0;
     }
@@ -35,7 +35,7 @@ pub(super) fn apply_projs<'a, 'b, SP: SymbolicProjector>(
             return apply_projs_sym(
                 sym_projector.as_ref().borrow_mut().deref_mut(),
                 &SymValueRef::new(current),
-                projs,
+                projs.zip(iter::repeat_with(proj_metadata)),
             )
             .0;
         }
@@ -63,6 +63,7 @@ fn apply_proj_con<SP: SymbolicProjector>(
                     }
                     .into(),
                     c,
+                    proj_metadata().into(),
                 )
                 .into()
                 .to_value_ref()
@@ -70,8 +71,13 @@ fn apply_proj_con<SP: SymbolicProjector>(
         },
     };
 
-    apply_proj::<_, _, _, Result<ValueRef, ConcreteValueRef>>(host, proj, &mut projector)
-        .unwrap_result(proj)
+    apply_proj::<_, _, _, _, Result<ValueRef, ConcreteValueRef>>(
+        host,
+        proj,
+        proj_metadata().into(),
+        &mut projector,
+    )
+    .unwrap_result(proj)
 }
 
 pub(super) fn apply_projs_mut<'a, 'b, 'h, SP: SymbolicProjector>(
@@ -97,6 +103,7 @@ pub(super) fn apply_projs_mut<'a, 'b, 'h, SP: SymbolicProjector>(
                         sym_projector.as_ref().borrow_mut().deref_mut(),
                         SymValueRef::new(current.clone()),
                         &proj,
+                        proj_metadata(),
                     ))
                 }
             }
@@ -104,6 +111,7 @@ pub(super) fn apply_projs_mut<'a, 'b, 'h, SP: SymbolicProjector>(
                 sym_projector.as_ref().borrow_mut().deref_mut(),
                 current.to_value_ref(),
                 &proj,
+                proj_metadata(),
             )),
         }
     })
@@ -126,10 +134,20 @@ fn apply_proj_con_mut<'h, SP: SymbolicProjector>(
                     }
                     .into(),
                     from_end,
+                    proj_metadata().into(),
                 )
                 .into()
         },
     );
-    apply_proj::<_, _, _, Result<MutPlaceValue, &mut ConcreteValue>>(host, proj, &mut projector)
-        .unwrap_result(proj)
+    apply_proj::<_, _, _, _, Result<MutPlaceValue, &mut ConcreteValue>>(
+        host,
+        proj,
+        proj_metadata(),
+        &mut projector,
+    )
+    .unwrap_result(proj)
+}
+
+pub(super) fn proj_metadata() -> ProjMetadata {
+    unimplemented!("Metadata is not supported in the local based model.")
 }

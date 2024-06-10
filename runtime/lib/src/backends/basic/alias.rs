@@ -1,4 +1,6 @@
-use super::expr::{DowncastKind, FieldAccessKind, ProjExpr, SymIndexPair, SymValueRef, ValueRef};
+use super::expr::{
+    DowncastKind, FieldAccessKind, ProjExpr, ProjMetadata, SymIndexPair, SymValueRef, ValueRef,
+};
 use crate::abs::{
     self,
     expr::{proj::Projector, BinaryExprBuilder, ExprBuilder},
@@ -30,6 +32,7 @@ pub(crate) trait SymValueRefProjector
 where
     Self: for<'a> Projector<
             HostRef<'a> = <Self as SVP>::HostRef<'a>,
+            Metadata<'a> = <Self as SVP>::Metadata<'a>,
             FieldAccessor = <Self as SVP>::FieldAccessor,
             HIRefPair<'a> = <Self as SVP>::HIRefPair<'a>,
             DowncastTarget = <Self as SVP>::DowncastTarget,
@@ -37,6 +40,7 @@ where
         >,
 {
     type HostRef<'a>: From<SymValueRef> = SymValueRef;
+    type Metadata<'a>: From<ProjMetadata> = ProjMetadata;
     type FieldAccessor: From<abs::FieldIndex> + From<FieldAccessKind> = FieldAccessKind;
     type HIRefPair<'a>: From<SymIndexPair> = SymIndexPair;
     type DowncastTarget: From<abs::VariantIndex> + From<DowncastKind> = DowncastKind;

@@ -23,6 +23,7 @@ where
     I: Fn(ConcreteValueRef, SymValueRef, bool) -> ValueRef,
 {
     type HostRef<'a> = ConcreteValueRef;
+    type Metadata<'a> = ProjMetadata;
     type FieldAccessor = FieldIndex;
     type HIRefPair<'a> = (ConcreteValueRef, ValueRef);
     type DowncastTarget = VariantIndex;
@@ -30,7 +31,11 @@ where
 
     impl_general_proj_through_singulars!();
 
-    fn deref<'a>(&mut self, host: Self::HostRef<'a>) -> Self::Proj<'a> {
+    fn deref<'a>(
+        &mut self,
+        host: Self::HostRef<'a>,
+        _metadata: Self::Metadata<'a>,
+    ) -> Self::Proj<'a> {
         match host.as_ref() {
             ConcreteValue::Ref(RefValue::Immut(value)) => Ok(value.clone()),
             ConcreteValue::Ref(RefValue::Mut(place)) => Ok((self.get_place)(place)),
@@ -38,7 +43,12 @@ where
         }
     }
 
-    fn field<'a>(&mut self, host: Self::HostRef<'a>, field: FieldIndex) -> Self::Proj<'a> {
+    fn field<'a>(
+        &mut self,
+        host: Self::HostRef<'a>,
+        field: FieldIndex,
+        _metadata: Self::Metadata<'a>,
+    ) -> Self::Proj<'a> {
         match host.as_ref() {
             ConcreteValue::Adt(AdtValue { fields, .. }) => Ok(fields[field as usize]
                 .value
@@ -53,6 +63,7 @@ where
         &mut self,
         (host, index): (ConcreteValueRef, ValueRef),
         from_end: bool,
+        _metadata: Self::Metadata<'a>,
     ) -> Self::Proj<'a> {
         match index.as_ref() {
             Value::Concrete(ConcreteValue::Const(ConstValue::Int { bit_rep, .. })) => {
@@ -83,6 +94,7 @@ where
         from: u64,
         to: u64,
         from_end: bool,
+        _metadata: Self::Metadata<'a>,
     ) -> Self::Proj<'a> {
         todo!(
             "Add support for subslice {:?} {} {} {}.",
@@ -97,6 +109,7 @@ where
         &mut self,
         host: Self::HostRef<'a>,
         to_variant: VariantIndex,
+        _metadata: Self::Metadata<'a>,
     ) -> Self::Proj<'a> {
         match host.as_ref() {
             ConcreteValue::Adt(AdtValue {
@@ -131,10 +144,10 @@ impl<R, H: Debug, P: Debug> ProjResultExt<R, P> for Result<R, H> {
 pub(super) fn apply_projs_sym<'a, 'b>(
     sym_projector: &mut impl SymbolicProjector,
     host: &'a SymValueRef,
-    projs: impl Iterator<Item = ResolvedProjection>,
+    projs: impl Iterator<Item = (ResolvedProjection, ProjMetadata)>,
 ) -> SymValueRef {
-    projs.fold(host.clone(), |current, proj| {
-        apply_proj_sym(sym_projector, current, &proj).to_value_ref()
+    projs.fold(host.clone(), |current, (proj, metadata)| {
+        apply_proj_sym(sym_projector, current, &proj, metadata).to_value_ref()
     })
 }
 
@@ -143,18 +156,21 @@ pub(super) fn apply_proj_sym<'b>(
     projector: &mut impl SymbolicProjector,
     host: SymValueRef,
     proj: &'b ResolvedProjection,
+    metadata: ProjMetadata,
 ) -> ProjExpr {
-    apply_proj(host, proj, projector)
+    apply_proj(host, proj, metadata, projector)
 }
 
-pub(super) fn apply_proj<'b, 'h, 'p, Host, IndexPair, P, Result>(
+pub(super) fn apply_proj<'b, 'h, 'p, Host, Meta, IndexPair, P, Result>(
     host: Host,
     proj: &'b ResolvedProjection,
+    metadata: Meta,
     projector: &'p mut P,
 ) -> Result
 where
     P: Projector,
     P::HostRef<'h>: From<Host>,
+    P::Metadata<'h>: From<Meta>,
     P::FieldAccessor: From<FieldIndex>,
     IndexPair: From<(Host, ValueRef)>,
     P::HIRefPair<'h>: From<IndexPair>,
@@ -163,19 +179,27 @@ where
 {
     use crate::abs::place::Projection::*;
     match proj {
-        Field(field) => projector.field(host.into(), (*field).into()),
-        Deref => projector.deref(host.into()),
-        Index(index) => {
-            projector.index(Into::<IndexPair>::into((host, index.clone())).into(), false)
-        }
+        Field(field) => projector.field(host.into(), (*field).into(), metadata.into()),
+        Deref => projector.deref(host.into(), metadata.into()),
+        Index(index) => projector.index(
+            Into::<IndexPair>::into((host, index.clone())).into(),
+            false,
+            metadata.into(),
+        ),
         ConstantIndex {
             offset, from_end, ..
         } => {
             let index = ConstValue::from(*offset).to_value_ref();
-            projector.index(Into::<IndexPair>::into((host, index)).into(), *from_end)
+            projector.index(
+                Into::<IndexPair>::into((host, index)).into(),
+                *from_end,
+                metadata.into(),
+            )
         }
-        Subslice { from, to, from_end } => projector.subslice(host.into(), *from, *to, *from_end),
-        Downcast(variant) => projector.downcast(host.into(), (*variant).into()),
+        Subslice { from, to, from_end } => {
+            projector.subslice(host.into(), *from, *to, *from_end, metadata.into())
+        }
+        Downcast(variant) => projector.downcast(host.into(), (*variant).into(), metadata.into()),
         OpaqueCast => todo!(),
         Subtype => todo!("#285"),
     }

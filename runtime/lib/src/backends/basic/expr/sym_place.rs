@@ -246,7 +246,7 @@ mod implementation {
     /// If there is concrete host, we know for sure that the result is a select.
     /// However, transmutations turn into symbolic reads if there is a symbolic index.
     impl SymbolicReadResolver<SymIndex> for DefaultProjExprReadResolver<'_> {
-        type SymValue<'a> = (&'a ConcreteHostProj, &'a [&'a ProjKind]);
+        type SymValue<'a> = (&'a ConcreteHostProj, &'a [(&'a ProjKind, &'a ProjMetadata)]);
         type PossibleValue<'a> = SymbolicProjResult;
 
         fn resolve<'a>(
@@ -257,8 +257,9 @@ mod implementation {
                 index: base.index.index.0.clone().into(),
                 from_end: base.index.from_end,
             });
+            let index = (&index, &base.metadata);
             let base = base.host.0.clone().into();
-            let projs = [&[&index], projs].concat();
+            let projs = [&[index], projs].concat();
             let SymbolicProjResult::SymRead(select) = self.resolve_symbolic_projs(base, &projs)
             else {
                 unreachable!("Symbolic index causes a symbolic read.")
@@ -286,9 +287,9 @@ mod implementation {
         pub(super) fn resolve_symbolic_projs(
             &self,
             base: SymbolicProjResult,
-            projs: &[&ProjKind],
+            projs: &[(&ProjKind, &ProjMetadata)],
         ) -> SymbolicProjResult {
-            let indices = projs.iter().enumerate().filter_map(|(i, p)| match p {
+            let indices = projs.iter().enumerate().filter_map(|(i, (p, _))| match p {
                 ProjKind::Index(SliceIndex { index, from_end }) if index.is_symbolic() => Some((
                     i,
                     SliceIndex {
@@ -365,7 +366,7 @@ mod implementation {
         fn project_one_to_ones(
             &self,
             mut host: SymbolicProjResult,
-            projs: &[&ProjKind],
+            projs: &[(&ProjKind, &ProjMetadata)],
         ) -> SymbolicProjResult {
             if projs.is_empty() {
                 return host;
@@ -373,15 +374,18 @@ mod implementation {
 
             debug_assert!(
                 !projs.iter().any(
-                    |p| matches!(p, ProjKind::Index (SliceIndex{ index, .. }) if index.is_symbolic())
+                    |(p, _)| matches!(p, ProjKind::Index (SliceIndex{ index, .. }) if index.is_symbolic())
                 ),
                 "Not meant for one-to-many projections (symbolic indices)."
             );
 
             let mut projector = ResultInPlaceProjector { resolver: self };
 
-            for proj in projs {
-                projector.project(proj.with_host(&mut host, ConcreteValueRef::new));
+            for (proj, metadata) in projs {
+                projector.project(
+                    proj.with_host(&mut host, ConcreteValueRef::new),
+                    (*metadata).clone(),
+                );
             }
 
             host
@@ -477,6 +481,7 @@ mod implementation {
 
     impl Projector for ResultInPlaceProjector<'_> {
         type HostRef<'a> = &'a mut SymbolicProjResult;
+        type Metadata<'a> = ProjMetadata;
         type FieldAccessor = FieldAccessKind;
         type HIRefPair<'a> = (&'a mut SymbolicProjResult, ConcreteValueRef);
         type DowncastTarget = DowncastKind;
@@ -490,16 +495,17 @@ mod implementation {
                 Self::HIRefPair<'a>,
                 Self::DowncastTarget,
             >,
+            metadata: Self::Metadata<'a>,
         ) -> Self::Proj<'a> {
             let (host, proj) = proj_on.destruct();
             let resolver = self.resolver;
             let mut value_projector = SingleValueInPlaceProjector;
             match host {
                 SymbolicProjResult::Single(single) => {
-                    value_projector.project(proj.clone_with_host(single))
+                    value_projector.project(proj.clone_with_host(single), metadata)
                 }
                 _ => host.mutate_values(
-                    &mut |v| value_projector.project(proj.clone_with_host(v)),
+                    &mut |v| value_projector.project(proj.clone_with_host(v), metadata.clone()),
                     resolver,
                 ),
             }
@@ -512,6 +518,7 @@ mod implementation {
 
     impl Projector for SingleValueInPlaceProjector {
         type HostRef<'a> = &'a mut SingleProjResult;
+        type Metadata<'a> = ProjMetadata;
         type FieldAccessor = FieldAccessKind;
         type HIRefPair<'a> = (&'a mut SingleProjResult, ConcreteValueRef);
         type DowncastTarget = DowncastKind;
@@ -525,6 +532,7 @@ mod implementation {
                 Self::HIRefPair<'a>,
                 Self::DowncastTarget,
             >,
+            metadata: Self::Metadata<'a>,
         ) -> Self::Proj<'a> {
             let (host, proj) = proj_on.destruct();
             match host {
@@ -545,6 +553,7 @@ mod implementation {
                         .clone_with_host(ConcreteValueRef::new(value.clone()))
                         .map(
                             |h| h,
+                            |(h, i)| (h, i.into()),
                             |fa| {
                                 if let FieldAccessKind::Index(index) = fa {
                                     index
@@ -552,17 +561,13 @@ mod implementation {
                                     todo!("PtrMetadata is not supported yet.")
                                 }
                             },
-                            |(h, i)| (h, i.into()),
-                            |dc| {
-                                if let DowncastKind::EnumVariant(variant_index) = dc {
-                                    variant_index
-                                } else {
-                                    unreachable!()
-                                }
+                            |dc| match dc {
+                                DowncastKind::EnumVariant(variant_index) => variant_index,
+                                DowncastKind::Transmutation(..) => unreachable!(),
                             },
                         );
 
-                    *value = projector.project(proj_on).unwrap_result(&proj);
+                    *value = projector.project(proj_on, metadata).unwrap_result(&proj);
                 }
             }
         }
@@ -573,6 +578,7 @@ mod implementation {
             &mut self,
             host: Self::HostRef<'a>,
             target: Self::DowncastTarget,
+            metadata: Self::Metadata<'a>,
         ) -> Self::Proj<'a> {
             match target {
                 DowncastKind::Transmutation(dst_ty_id) => {
@@ -590,7 +596,9 @@ mod implementation {
                     }
                     .into()
                 }
-                DowncastKind::EnumVariant(_) => self.project(ProjectionOn::Downcast(host, target)),
+                DowncastKind::EnumVariant(_) => {
+                    self.project(ProjectionOn::Downcast(host, target), metadata)
+                }
             }
         }
     }
@@ -614,13 +622,15 @@ mod implementation {
             }
         }
 
-        pub(super) enum ProjBase<'a> {
-            Concrete(&'a ConcreteHostProj),
-            Transmutation(&'a SymValueRef, TypeId),
+        pub(super) enum ProjBase<'a, M = ProjMetadata> {
+            Concrete(&'a ConcreteHostProj<M>),
+            Transmutation(&'a SymValueRef, TypeId, &'a M),
         }
 
         impl ProjExpr {
-            pub(super) fn flatten(&self) -> (ProjBase, Vec<&ProjKind>) {
+            pub(super) fn flatten(
+                &self,
+            ) -> (ProjBase<ProjMetadata>, Vec<(&ProjKind, &ProjMetadata)>) {
                 use ProjBase::*;
                 match self {
                     ProjExpr::SymIndex(sym_index) => (Concrete(sym_index), vec![]),
@@ -630,18 +640,22 @@ mod implementation {
         }
 
         impl SymHostProj {
-            fn flatten(&self) -> (ProjBase, Vec<&ProjKind>) {
-                let SymHostProj { host, kind } = self;
+            fn flatten(&self) -> (ProjBase, Vec<(&ProjKind, &ProjMetadata)>) {
+                let SymHostProj {
+                    host,
+                    kind,
+                    metadata,
+                } = self;
                 match kind {
                     ProjKind::Downcast(DowncastKind::Transmutation(dst_ty_id))
                         if host.as_proj().is_none() =>
                     {
-                        (ProjBase::Transmutation(host, *dst_ty_id), vec![])
+                        (ProjBase::Transmutation(host, *dst_ty_id, metadata), vec![])
                     }
                     _ => {
                         let host = host.expect_proj();
                         let (sym_index, mut projs) = host.flatten();
-                        projs.push(kind);
+                        projs.push((kind, metadata));
                         (sym_index, projs)
                     }
                 }

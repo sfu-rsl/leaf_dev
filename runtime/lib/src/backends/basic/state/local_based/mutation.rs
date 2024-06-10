@@ -27,6 +27,7 @@ where
     I: Fn(ConcreteValueMutRef, SymValueRef, bool) -> ProjExpr,
 {
     type HostRef<'a> = ConcreteValueMutRef<'a>;
+    type Metadata<'a> = ProjMetadata;
     type FieldAccessor = FieldIndex;
     type HIRefPair<'a> = (ConcreteValueMutRef<'a>, ValueRef);
     type DowncastTarget = VariantIndex;
@@ -34,7 +35,12 @@ where
 
     impl_general_proj_through_singulars!();
 
-    fn field<'a>(&mut self, host: Self::HostRef<'a>, field: FieldIndex) -> Self::Proj<'a> {
+    fn field<'a>(
+        &mut self,
+        host: Self::HostRef<'a>,
+        field: FieldIndex,
+        _metadata: Self::Metadata<'a>,
+    ) -> Self::Proj<'a> {
         match Self::make_mut(host) {
             ConcreteValue::Adt(AdtValue { fields, .. }) => Ok(MutPlaceValue::Normal(
                 fields[field as usize]
@@ -46,11 +52,20 @@ where
         }
     }
 
-    fn deref<'a>(&mut self, _host: Self::HostRef<'a>) -> Self::Proj<'a> {
+    fn deref<'a>(
+        &mut self,
+        _host: Self::HostRef<'a>,
+        _metadata: Self::Metadata<'a>,
+    ) -> Self::Proj<'a> {
         unreachable!("Deref should be handled before.")
     }
 
-    fn index<'a>(&mut self, (host, index): Self::HIRefPair<'a>, from_end: bool) -> Self::Proj<'a> {
+    fn index<'a>(
+        &mut self,
+        (host, index): Self::HIRefPair<'a>,
+        from_end: bool,
+        _metadata: Self::Metadata<'a>,
+    ) -> Self::Proj<'a> {
         match index.as_ref() {
             Value::Concrete(ConcreteValue::Const(ConstValue::Int { bit_rep, .. })) => {
                 match Self::make_mut(host) {
@@ -81,6 +96,7 @@ where
         from: u64,
         to: u64,
         from_end: bool,
+        _metadata: Self::Metadata<'a>,
     ) -> Self::Proj<'a> {
         todo!(
             "Add support for subslice {:?} {} {} {}.",
@@ -95,6 +111,7 @@ where
         &mut self,
         host: Self::HostRef<'a>,
         to_variant: VariantIndex,
+        _metadata: Self::Metadata<'a>,
     ) -> Self::Proj<'a> {
         match host.as_ref() {
             ConcreteValue::Adt(AdtValue {
