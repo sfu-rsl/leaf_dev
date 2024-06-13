@@ -9,5 +9,6 @@ members = [
 ]
 exclude = [
     "runtime/shim",
-    "samples/crates/"
+    "samples/crates/",
+    "scripts",
 ]
