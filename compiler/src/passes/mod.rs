@@ -86,8 +86,10 @@ pub(crate) trait CompilationPass {
         }
     }
 
-    /* As we need function pointers in the query structures, this function cannot
-     * take self. */
+    /* As we need function pointers in the query structures, the following functions
+     * cannot take self. Users may want to work with storage to work in a stateful
+     * fashion.
+     */
     fn transform_mir_body<'tcx>(
         tcx: mir_ty::TyCtxt<'tcx>,
         body: &mut mir::Body<'tcx>,
@@ -144,6 +146,7 @@ mod implementation {
 
     use mir_ty::TyCtxt;
     use rustc_driver::Compilation;
+    use rustc_hir::def_id::DefId;
     use rustc_span::def_id::LocalDefId;
 
     use std::cell::Cell;
@@ -216,6 +219,9 @@ mod implementation {
         static ORIGINAL_OPTIMIZED_MIR: Cell<
             for<'tcx> fn(TyCtxt<'tcx>, LocalDefId) -> &mir::Body<'tcx>
         > = Cell::new(|_, _| unreachable!());
+        static ORIGINAL_EXTERN_OPTIMIZED_MIR: Cell<
+            for<'tcx> fn(TyCtxt<'tcx>, DefId) -> &mir::Body<'tcx>
+        > = Cell::new(|_, _| unreachable!());
     }
 
     struct PassHolder<T: CompilationPass + ?Sized>(Arc<Mutex<T>>);
@@ -267,6 +273,8 @@ mod implementation {
 
                 ORIGINAL_OPTIMIZED_MIR.set(providers.optimized_mir);
                 providers.optimized_mir = Self::optimized_mir;
+                ORIGINAL_EXTERN_OPTIMIZED_MIR.set(providers.extern_queries.optimized_mir);
+                providers.extern_queries.optimized_mir = Self::extern_optimized_mir;
             });
 
             config.make_codegen_backend = Some(codegen::get_backend_maker(self.0.clone()));
@@ -318,6 +326,20 @@ mod implementation {
             /* NOTE: Currently, it seems that there is no way to deallocate
              * something from arena. So, we have to clone the body. */
             let mut body = ORIGINAL_OPTIMIZED_MIR.get()(tcx, id).clone();
+            let mut storage = global::get_storage();
+            T::visit_mir_body_before(tcx, &body, &mut storage);
+            T::transform_mir_body(tcx, &mut body, &mut storage);
+            T::visit_mir_body_after(tcx, &body, &mut storage);
+            tcx.arena.alloc(body)
+        }
+
+        fn extern_optimized_mir(tcx: TyCtxt, id: DefId) -> &mir::Body {
+            // NOTE: It is possible that this function is called before the callbacks.
+            global::set_ctxt_id(tcx);
+
+            /* NOTE: Currently, it seems that there is no way to deallocate
+             * something from arena. So, we have to clone the body. */
+            let mut body = ORIGINAL_EXTERN_OPTIMIZED_MIR.get()(tcx, id).clone();
             let mut storage = global::get_storage();
             T::visit_mir_body_before(tcx, &body, &mut storage);
             T::transform_mir_body(tcx, &mut body, &mut storage);
