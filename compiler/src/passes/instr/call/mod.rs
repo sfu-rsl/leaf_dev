@@ -797,7 +797,7 @@ mod implementation {
                     ],
                 ))
             } else if ty.is_floating_point() {
-                let (e_bits, s_bits) = ty::ebit_sbit_size(tcx, ty);
+                let (e_bits, s_bits) = ty::ebit_sbit_size(ty);
                 Some((
                     sym::set_place_type_float,
                     vec![
@@ -1023,7 +1023,7 @@ mod implementation {
             let tcx = self.tcx();
             let (bit_rep_local, conversion_block) =
                 utils::cast_float_to_bit_rep(tcx, &mut self.context, constant);
-            let (e_bits, s_bits) = ty::ebit_sbit_size(tcx, ty);
+            let (e_bits, s_bits) = ty::ebit_sbit_size(ty);
             let block_pair = self.make_bb_for_operand_ref_call(
                 sym::ref_operand_const_float,
                 vec![
@@ -1618,7 +1618,7 @@ mod implementation {
         }
 
         fn to_float(&mut self, ty: Ty<'tcx>) {
-            let (e_bits, s_bits) = ty::ebit_sbit_size(self.context.tcx(), ty);
+            let (e_bits, s_bits) = ty::ebit_sbit_size(ty);
             self.add_bb_for_cast_assign_call_with_args(
                 sym::assign_cast_float,
                 vec![
@@ -2515,19 +2515,20 @@ mod implementation {
                 tcx.layout_of(param_env.and(ty)).unwrap().size
             }
 
-            pub fn ebit_sbit_size<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>) -> (u64, u64) {
-                use rustc_apfloat::{
-                    ieee::{Double, Single},
-                    Float,
+            pub fn ebit_sbit_size<'tcx>(ty: Ty<'tcx>) -> (u64, u64) {
+                use rustc_apfloat::{ieee::*, Float};
+                let mir_ty::Float(float_ty) = ty.kind() else {
+                    panic!("Expected floating point type but received: {}", ty)
                 };
-                assert!(ty.is_floating_point());
-                let bit_size = ty.primitive_size(tcx).bits();
-                let ebit_size = if bit_size == Single::BITS as u64 {
-                    Single::PRECISION
-                } else {
-                    Double::PRECISION
+                let bit_size = float_ty.bit_width();
+                let sbit_size = match bit_size as usize {
+                    Half::BITS => Half::PRECISION,
+                    Single::BITS => Single::PRECISION,
+                    Double::BITS => Double::PRECISION,
+                    Quad::BITS => Quad::PRECISION,
+                    _ => unreachable!("Unexpected floating point bit size: {}", bit_size),
                 } as u64;
-                (ebit_size, bit_size - ebit_size)
+                (bit_size - sbit_size, sbit_size)
             }
 
             #[inline]
