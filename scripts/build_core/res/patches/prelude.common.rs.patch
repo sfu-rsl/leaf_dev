@@ -1,0 +1,11 @@
+diff --git a/prelude/common.rs b/prelude/common.rs
+index afc6817aa1d..ac02ef4a81d 100644
+--- a/prelude/common.rs
++++ b/prelude/common.rs
+@@ -103,3 +103,6 @@
+     reason = "placeholder syntax for deref patterns"
+ )]
+ pub use crate::macros::builtin::deref;
++
++#[stable(feature = "core_prelude", since = "1.4.0")]
++pub use crate::leaf;

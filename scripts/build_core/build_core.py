@@ -16,7 +16,8 @@ ENV_CARGO = "CARGO"
 ENV_RUSTC = "RUSTC"
 
 BUILD_TARGET = "x86_64-unknown-linux-gnu"
-BUILD_PROFILE = "debug"
+# debug or release
+BUILD_PROFILE = "release"
 
 SHIM_MODULE_NAME = "leafrtsh"
 
@@ -56,17 +57,18 @@ def find_leaf_workspace_dir() -> Path:
 
 
 def get_toolchain_path(cwd, env=None) -> Path:
-    return Path(
-        subprocess.run(
+    try:
+        process = subprocess.run(
             args=["cargo", "rustc", "--", "--print=sysroot"],
             cwd=cwd,
             env=env,
             check=True,
             capture_output=True,
         )
-        .stdout.decode("utf-8")
-        .strip()
-    )
+        return Path(process.stdout.decode("utf-8").strip())
+    except subprocess.CalledProcessError as e:
+        logging.error("Failed to get the toolchain path: %s", e.stderr.decode("utf-8"))
+        raise
 
 
 def get_core_src_dir(toolchain_path) -> Path:
@@ -146,19 +148,22 @@ def add_leaf_to_core(core_src_dir: Path, leaf_workspace_dir: Path, res_dir: Path
 
     def apply_patches():
         logging.debug("Applying patches")
-        for patch in res_dir.joinpath("patches").glob("*.patch"):
+        for patch_path in res_dir.joinpath("patches").glob("*.patch"):
             subprocess.run(
                 args=[
                     "git",
                     "apply",
+                    "-C1",
                     "--unsafe-paths",
                     "--directory",
                     core_src_dir,
-                    patch,
+                    patch_path,
                 ],
                 cwd=core_src_dir,
                 check=True,
             )
+        # Probe patching is effective.
+        assert Path(core_src_dir.joinpath("leaf", "mod.rs")).exists()
 
     logging.info("Adding leaf to the core library source")
 
@@ -189,37 +194,37 @@ def substitute_template(template_path: Path, **substitutions: object):
 
 def set_dummy_crate_toolchain(dummy_crate_dir: Path, toolchain_path: Path):
     substitute_template(
-        dummy_crate_dir.joinpath("rust-toolchain.toml.template"),
-        toolchain_path=toolchain_path.absolute(),
-    )
-    substitute_template(
         dummy_crate_dir.joinpath(".cargo", "config.toml.template"),
         toolchain_path=toolchain_path.absolute(),
     )
 
 
-def get_build_env():
+def get_build_env(toolchain_path: Path):
     return {
         **os.environ,
-        ENV_LEAFC: "leafc",
+        ENV_RUSTC: os.environ.get(ENV_LEAFC, default="leafc"),
+        "RUSTUP_TOOLCHAIN": str(toolchain_path),
     }
 
 
-def build_crate_with_core(dummy_crate_dir: Path, leafc: Path):
+def build_crate_with_core(dummy_crate_dir: Path, toolchain_path):
     logging.info("Building the core library through dummy crate")
 
     output = subprocess.DEVNULL if logging.getLogger().level > logging.DEBUG else None
+    args = [
+        "cargo",
+        "build",
+        # Causes the core lib to be built as a dependency
+        "-Zbuild-std=core",
+        f"--target={BUILD_TARGET}",
+        "--verbose",
+        f"--profile={'dev' if BUILD_PROFILE == 'debug' else BUILD_PROFILE}",
+    ]
+    logging.debug("Running: %s", " ".join(args))
     subprocess.run(
-        args=[
-            "cargo",
-            "build",
-            # Causes the core lib to be built as a dependency
-            "-Zbuild-std=core",
-            f"--target={BUILD_TARGET}",
-            "--verbose",
-        ],
+        args=args,
         cwd=dummy_crate_dir,
-        env=get_build_env(),
+        env=get_build_env(toolchain_path),
         check=True,
         stdout=output,
         stderr=output,
@@ -234,12 +239,16 @@ def make_toolchain(dummy_crate_dir: Path, out_dir: Path) -> Path:
     deps_dir = dummy_crate_dir.joinpath("target", BUILD_TARGET, BUILD_PROFILE, "deps")
     # As this dummy crate depends only on the core lib, all of the dependencies
     # are part of the sysroot.
+    logging.debug("Globbing lib files in %s", deps_dir)
     lib_files = set(deps_dir.glob("lib*.r*")) - set(deps_dir.glob("libdummy*"))
     logging.debug("Found lib files: %s", lib_files)
 
     toolchain_dir = out_dir.joinpath("toolchain")
     dst_dir = toolchain_dir.joinpath("lib", "rustlib", BUILD_TARGET, "lib")
     dst_dir.mkdir(parents=True, exist_ok=True)
+    # Clear the destination directory
+    for file in dst_dir.glob("lib*.r*"):
+        file.unlink()
     for file in lib_files:
         shutil.copy(file, dst_dir)
 
@@ -265,15 +274,17 @@ def main():
     logging.debug("Copied toolchain path: %s", copied_toolchain_path)
 
     set_dummy_crate_toolchain(dummy_crate_dir, copied_toolchain_path)
-    toolchain_path = get_toolchain_path(cwd=dummy_crate_dir, env=get_build_env())
+    toolchain_path = get_toolchain_path(
+        cwd=dummy_crate_dir, env=get_build_env(copied_toolchain_path)
+    )
+    logging.debug("Toolchain path: %s", toolchain_path)
     assert toolchain_path.absolute() == copied_toolchain_path.absolute(), toolchain_path
 
     core_src = get_core_src_dir(toolchain_path)
     logging.debug("Core source dir: %s", core_src)
     add_leaf_to_core(core_src, paths.leaf_workspace, paths.res)
 
-    leafc = os.environ.get(ENV_LEAFC, default="leafc")
-    build_crate_with_core(dummy_crate_dir, leafc)
+    build_crate_with_core(dummy_crate_dir, toolchain_path)
     out_toolchain_path = make_toolchain(dummy_crate_dir, paths.out)
 
     logging.info(
