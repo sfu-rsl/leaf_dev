@@ -2,6 +2,7 @@
 #![cfg_attr(not(core_build), feature(concat_idents))]
 #![cfg_attr(not(core_build), feature(core_intrinsics))]
 #![cfg_attr(not(core_build), no_std)]
+#![cfg_attr(not(core_build), feature(rustc_attrs))]
 // -----
 #![cfg_attr(core_build, allow(missing_docs))]
 #![cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]

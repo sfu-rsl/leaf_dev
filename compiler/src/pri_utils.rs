@@ -24,6 +24,8 @@ pub mod sym {
     pub const CORE_LIB_CRATE: LS = LS("core");
     pub const RUNTIME_LIB_CRATE: LS = LS(crate::constants::CRATE_RUNTIME);
 
+    pub const MODULE_MARKER_DIAG_NAME: LS = LS("leaf_module_marker");
+
     macro_rules! in_lib {
         ($name: ident) => {
             concatcp!(RUNTIME_LIB_CRATE.0, "::", stringify!($name))
@@ -258,6 +260,15 @@ fn find_pri_marker(tcx: TyCtxt, crate_num: CrateNum) -> DefId {
         "Searching for the PRI module marker in crate {}.",
         tcx.crate_name(crate_num).as_str(),
     );
+
+    if let Some(def_id) = tcx
+        .diagnostic_items(crate_num)
+        .name_to_id
+        .get(&rustc_span::Symbol::intern(*sym::MODULE_MARKER_DIAG_NAME))
+    {
+        return *def_id;
+    }
+
     let search_space: Box<dyn Iterator<Item = DefId>> = if crate_num == LOCAL_CRATE {
         Box::new(tcx.mir_keys(()).iter().map(|id| id.to_def_id()))
     } else {

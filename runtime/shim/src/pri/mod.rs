@@ -11,6 +11,7 @@ use common::pri::*;
  * This field serves as a marker to find the module in the compiler easier.
  */
 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
+#[rustc_diagnostic_item = "leaf_module_marker"]
 pub static MODULE_MARKER: u8 = 0;
 
 mod ffi {
@@ -62,6 +63,7 @@ mod ffi {
 macro_rules! export_to_rust_abi {
     ($(#[$($attr: meta)*])* fn $name:ident ($($(#[$($arg_attr: meta)*])* $arg:ident : $arg_type:ty),* $(,)?) $(-> $ret_ty:ty)?;) => {
         $(#[$($attr)*])*
+        #[inline(always)]
         #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
         pub fn $name ($($(#[$($arg_attr)*])* $arg : $arg_type),*) $(-> $ret_ty)? {
             ffi::ForeignPri::$name($($arg.into()),*).into()
