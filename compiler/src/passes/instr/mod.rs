@@ -145,12 +145,30 @@ fn make_pri_items(tcx: TyCtxt) -> PriItems {
 }
 
 fn should_instrument<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>) -> bool {
-    if tcx.def_path_str(body.source.def_id()).contains("leafrtsh") {
+    let def_id = body.source.def_id();
+
+    if tcx.def_path_str(def_id).contains("leafrtsh") || tcx.def_path_str(def_id).contains("common")
+    {
+        return false;
+    }
+
         return false;
     }
 
     // FIXME: A const function doesn't mean it won't be called at runtime.
-    if tcx.is_const_fn(body.source.def_id()) {
+    if tcx.is_const_fn(def_id) {
+        return false;
+    }
+
+    // Some intrinsic functions have body.
+    if tcx.intrinsic(def_id).is_some() {
+        return false;
+    }
+    use rustc_attr::InlineAttr;
+    if matches!(
+        tcx.codegen_fn_attrs(def_id).inline,
+        InlineAttr::Hint | InlineAttr::Always
+    ) {
         return false;
     }
 
