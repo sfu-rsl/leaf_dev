@@ -21,5 +21,14 @@ jobs:
           target: x86_64-unknown-linux-gnu
       - name: Build
         run: cargo build
+
+      - name: Setting LD_LIBRARY_PATH for leaf with no-op flavor
+        run: |
+          mkdir -p libleafrt_dir
+          ln -s target/debug/libleafrt_noop.so libleafrt_dir/libleafrt_noop.so
+          export LD_LIBRARY_PATH=$PWD/libleafrt_dir:$LD_LIBRARY_PATH
+        env:
+          LD_LIBRARY_PATH: $PWD/libleafrt_dir:$LD_LIBRARY_PATH     
+
       - name: Run tests
         run: cargo test --verbose
