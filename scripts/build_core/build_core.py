@@ -30,6 +30,15 @@ class Paths:
     leaf_workspace: Path
 
 
+def run_command(**kwargs):
+    logging.debug(
+        "Running: %s %s",
+        " ".join(str(arg) for arg in kwargs["args"]),
+        "in " + str(kwargs.get("cwd", Path.cwd())),
+    )
+    return subprocess.run(**kwargs)
+
+
 def ensure_env_dir(var_name: str, default) -> Path:
     path = Path(os.environ.get(var_name, default=default))
     assert not path.exists() or path.is_dir()
@@ -58,7 +67,7 @@ def find_leaf_workspace_dir() -> Path:
 
 def get_toolchain_path(cwd, env=None) -> Path:
     try:
-        process = subprocess.run(
+        process = run_command(
             args=["cargo", "rustc", "--", "--print=sysroot"],
             cwd=cwd,
             env=env,
@@ -149,10 +158,11 @@ def add_leaf_to_core(core_src_dir: Path, leaf_workspace_dir: Path, res_dir: Path
     def apply_patches():
         logging.debug("Applying patches")
         for patch_path in res_dir.joinpath("patches").glob("*.patch"):
-            subprocess.run(
+            process = run_command(
                 args=[
                     "git",
                     "apply",
+                    "--verbose",
                     "-C1",
                     "--unsafe-paths",
                     "--directory",
@@ -160,7 +170,11 @@ def add_leaf_to_core(core_src_dir: Path, leaf_workspace_dir: Path, res_dir: Path
                     patch_path,
                 ],
                 cwd=core_src_dir,
+                env={
+                    "GIT_CEILING_DIRECTORIES": core_src_dir.parent,
+                },
                 check=True,
+                capture_output=True,
             )
         # Probe patching is effective.
         assert Path(core_src_dir.joinpath("leaf", "mod.rs")).exists()
@@ -215,13 +229,12 @@ def build_crate_with_core(dummy_crate_dir: Path, toolchain_path):
         "cargo",
         "build",
         # Causes the core lib to be built as a dependency
-        "-Zbuild-std=core",
+        "-Zbuild-std",
         f"--target={BUILD_TARGET}",
         "--verbose",
         f"--profile={'dev' if BUILD_PROFILE == 'debug' else BUILD_PROFILE}",
     ]
-    logging.debug("Running: %s", " ".join(args))
-    subprocess.run(
+    run_command(
         args=args,
         cwd=dummy_crate_dir,
         env=get_build_env(toolchain_path),
@@ -289,7 +302,7 @@ def main():
 
     logging.info(
         "The toolchain is available at %s",
-        out_toolchain_path,
+        out_toolchain_path.absolute(),
     )
 
 
