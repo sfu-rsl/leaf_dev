@@ -150,11 +150,22 @@ mod driver_args {
     const ENV_TOOLCHAIN: &str = "RUSTUP_TOOLCHAIN";
 
     const FILE_RUNTIME_SHIM_LIB: &str = "libleafrtsh.rlib";
-    const FILE_RUNTIME_DYLIB_DEFAULT: &str = "libleafrt_basic.so";
+
+    const FILE_RUNTIME_DYLIB_DEFAULT: &str = FILE_RUNTIME_DYLIB_BASIC_LATE_INIT;
+    #[allow(dead_code)]
+    const FILE_RUNTIME_DYLIB_BASIC: &str = "libleafrt_basic.so";
+    #[allow(dead_code)]
+    const FILE_RUNTIME_DYLIB_BASIC_LATE_INIT: &str = "libleafrt_basic_li.so";
     const FILE_RUNTIME_DYLIB_NOOP: &str = "libleafrt_noop.so";
+    #[allow(dead_code)]
     const FILE_RUNTIME_DYLIB: &str = "libleafrt.so";
 
-    const DIR_RUNTIME_DYLIB_DEFAULT: &str = "runtime_basic";
+    const DIR_RUNTIME_DYLIB_DEFAULT: &str = DIR_RUNTIME_DYLIB_BASIC_LATE_INIT;
+    #[allow(dead_code)]
+    const DIR_RUNTIME_DYLIB_BASIC: &str = "runtime_basic";
+    #[allow(dead_code)]
+    const DIR_RUNTIME_DYLIB_BASIC_LATE_INIT: &str = "runtime_basic_li";
+    #[allow(dead_code)]
     const DIR_RUNTIME_DYLIB_NOOP: &str = "runtime_noop";
 
     const LIB_RUNTIME: &str = "leafrt";
