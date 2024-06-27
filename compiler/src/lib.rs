@@ -46,7 +46,6 @@ extern crate thin_vec;
 use common::{log_debug, log_info, log_warn};
 use std::path::PathBuf;
 
-use config::CompilerConfig;
 use constants::*;
 use rustc_driver::RunCompiler;
 
@@ -66,57 +65,90 @@ pub fn run_compiler(args: impl Iterator<Item = String>, input_path: Option<PathB
     log_info!("Running compiler with args: {:?}", args);
 
     use passes::*;
-    let run_pass = |pass: &mut Callbacks| -> i32 {
-        rustc_driver::catch_with_exit_code(|| RunCompiler::new(&args, pass).run())
+    let mut pass: Box<Callbacks> = if should_do_nothing(&args) {
+        log::info!("Leafc will work as the normal Rust compiler.");
+        Box::new(NoOpPass.to_callbacks())
+    } else {
+        // We should force codegen for any crate so that they are self-contained.
+        const FLAGS: u8 = OverrideFlags::SHOULD_CODEGEN.bits();
+        let codegen_force_pass = OverrideFlagsForcePass::<FLAGS>::default();
+
+        if is_dependency_crate(driver_args::find_crate_name(&args)) {
+            Box::new(
+                chain!(
+                    <MonoItemInternalizer>,
+                    codegen_force_pass,
+                )
+                .to_callbacks(),
+            )
+        } else {
+            let prerequisites_pass = RuntimeAdder::new(
+                config.runtime_shim.crate_name.clone(),
+                config.runtime_shim.as_external,
+            );
+
+            #[cfg(nctfe)]
+            let nctfe_pass = {
+                let ctfe_block_ids = {
+                    let pass = chain!(prerequisites_pass.clone(), <CtfeScanner>,);
+                    let mut callbacks = pass.to_callbacks();
+                    run_pass(&mut callbacks);
+                    let pass = callbacks.into_pass();
+                    pass.second.into_result()
+                };
+                NctfeFunctionAdder::new(ctfe_block_ids.len())
+            };
+            #[cfg(not(nctfe))]
+            let nctfe_pass = NoOpPass;
+
+            Box::new(
+                chain!(
+                    codegen_force_pass,
+                    prerequisites_pass,
+                    <TypeExporter>,
+                    nctfe_pass,
+                    Instrumentor::new(true),
+                )
+                .into_logged()
+                .to_callbacks(),
+            )
+        }
     };
 
-    let prerequisites_pass = RuntimeAdder::new(
-        config.runtime_shim.crate_name.clone(),
-        config.runtime_shim.as_external,
-    );
-
-    #[cfg(nctfe)]
-    let nctfe_pass = {
-        let ctfe_block_ids = {
-            let pass = chain!(prerequisites_pass.clone(), <CtfeScanner>,);
-            let mut callbacks = pass.to_callbacks();
-            run_pass(&mut callbacks);
-            let pass = callbacks.into_pass();
-            pass.second.into_result()
-        };
-        NctfeFunctionAdder::new(ctfe_block_ids.len())
-    };
-    #[cfg(not(nctfe))]
-    let nctfe_pass = NoOpPass;
-
-    let should_instrument = should_instrument(&config, &args);
-    if !should_instrument {
-        log_info!("Instrumentation will be skipped.");
-    }
-    let instrumentor_pass = Instrumentor::new(should_instrument);
-
-    let pass = chain!(
-        prerequisites_pass,
-        <TypeExporter>,
-        nctfe_pass,
-        instrumentor_pass,
-    )
-    .into_logged();
-    run_pass(&mut pass.to_callbacks())
+    rustc_driver::catch_with_exit_code(|| RunCompiler::new(&args, pass.as_mut()).run())
 }
 
-fn should_instrument(config: &CompilerConfig, args: &[String]) -> bool {
+fn should_do_nothing(args: &[String]) -> bool {
     let crate_name = driver_args::find_crate_name(args);
 
-    if crate_name.is_some_and(|name| name == "build_script_build") {
-        return false;
+    if crate_name
+        .as_ref()
+        .is_some_and(|name| name == CRATE_BUILD_SCRIPT)
+    {
+        return true;
     }
 
-    true
+    false
+}
+
+fn is_dependency_crate(crate_name: Option<String>) -> bool {
+    let from_cargo = rustc_session::utils::was_invoked_from_cargo();
+    let is_primary = std::env::var("CARGO_PRIMARY_PACKAGE").is_ok();
+
+    log::debug!(
+        "Checking if crate `{}` is a dependency. From cargo: {}, Primary Package: {}",
+        crate_name.as_deref().unwrap_or("UNKNOWN"),
+        from_cargo,
+        is_primary,
+    );
+
+    from_cargo && !is_primary
 }
 
 pub mod constants {
     use const_format::concatcp;
+
+    pub(super) const CRATE_BUILD_SCRIPT: &str = "build_script_build";
 
     // The instrumented code is going to call the shim.
     pub(super) const CRATE_RUNTIME: &str = "leafrtsh";
@@ -227,6 +259,10 @@ mod driver_args {
         )
         .chain(given_args);
         let mut args = given_args.collect::<Vec<_>>();
+
+        if should_do_nothing(&args) {
+            return args;
+        }
 
         if config.set_sysroot {
             args.set_if_absent(OPT_SYSROOT, find_sysroot);
