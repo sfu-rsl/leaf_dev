@@ -106,10 +106,15 @@ where
         T::visit_mir_body_after(tcx, body, storage)
     }
 
-    fn transform_ast(&mut self, krate: &mut rustc_ast::Crate, storage: &mut dyn Storage) {
+    fn transform_ast(
+        &mut self,
+        session: &rustc_session::Session,
+        krate: &mut rustc_ast::Crate,
+        storage: &mut dyn Storage,
+    ) {
         log_debug!("target: {} Transforming AST", target!());
         log_debug!("target: {} AST to transform: {:#?}", obj_target!(), krate);
-        self.pass.transform_ast(krate, storage)
+        self.pass.transform_ast(session, krate, storage)
     }
 
     fn transform_mir_body<'tcx>(

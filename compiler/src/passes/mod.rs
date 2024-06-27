@@ -16,6 +16,7 @@ use rustc_ast as ast;
 use rustc_driver::{self as driver, Compilation};
 use rustc_interface::{interface, Queries};
 use rustc_middle::{mir, ty as mir_ty};
+use rustc_session::Session;
 
 use paste::paste;
 
@@ -30,7 +31,8 @@ pub(crate) use logger::CompilationPassLogExt;
 #[allow(unused)]
 pub(crate) use noop::NoOpPass;
 pub(crate) use noop::OverrideFlagsForcePass;
-pub(crate) use runtime_adder::RuntimeAdder;
+pub(crate) use runtime_adder::LeafToolAdder;
+pub(crate) use runtime_adder::RuntimeExternCrateAdder;
 pub(crate) use tyexp::TypeExporter;
 
 pub(super) type Callbacks = dyn driver::Callbacks + Send;
@@ -61,7 +63,12 @@ pub(crate) trait CompilationPass {
         }
     }
 
-    fn transform_ast(&mut self, krate: &mut ast::Crate, storage: &mut dyn Storage) {
+    fn transform_ast(
+        &mut self,
+        session: &Session,
+        krate: &mut ast::Crate,
+        storage: &mut dyn Storage,
+    ) {
         Default::default()
     }
 
@@ -243,7 +250,7 @@ mod implementation {
          */
         #[allow(clippy::type_complexity)]
         static ORIGINAL_OVERRIDE: Cell<
-            Option<fn(&rustc_session::Session, &mut rustc_middle::util::Providers)>,
+            Option<fn(&Session, &mut rustc_middle::util::Providers)>,
         > = Cell::new(None);
         static ORIGINAL_OPTIMIZED_MIR: Cell<
             for<'tcx> fn(TyCtxt<'tcx>, LocalDefId) -> &mir::Body<'tcx>
@@ -355,14 +362,18 @@ mod implementation {
 
         fn after_crate_root_parsing<'tcx>(
             &mut self,
-            _compiler: &interface::Compiler,
+            compiler: &interface::Compiler,
             queries: &'tcx Queries<'tcx>,
         ) -> Compilation {
             let mut ast_steal = queries.parse().unwrap();
 
             let mut pass = self.0.acquire();
             stop_if_stop!(pass.visit_ast_before(&ast_steal.borrow(), &mut global::get_storage()));
-            pass.transform_ast(ast_steal.get_mut(), &mut global::get_storage());
+            pass.transform_ast(
+                &compiler.sess,
+                ast_steal.get_mut(),
+                &mut global::get_storage(),
+            );
             stop_if_stop!(pass.visit_ast_after(&ast_steal.borrow(), &mut global::get_storage()));
 
             Compilation::Continue
@@ -513,9 +524,14 @@ mod implementation {
             B::visit_mir_body_after(tcx, body, storage);
         }
 
-        fn transform_ast(&mut self, krate: &mut ast::Crate, storage: &mut dyn Storage) {
-            self.first.transform_ast(krate, storage);
-            self.second.transform_ast(krate, storage);
+        fn transform_ast(
+            &mut self,
+            session: &Session,
+            krate: &mut ast::Crate,
+            storage: &mut dyn Storage,
+        ) {
+            self.first.transform_ast(session, krate, storage);
+            self.second.transform_ast(session, krate, storage);
         }
 
         fn transform_mir_body<'tcx>(

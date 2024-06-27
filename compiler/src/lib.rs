@@ -82,7 +82,7 @@ pub fn run_compiler(args: impl Iterator<Item = String>, input_path: Option<PathB
                 .to_callbacks(),
             )
         } else {
-            let prerequisites_pass = RuntimeAdder::new(
+            let prerequisites_pass = RuntimeExternCrateAdder::new(
                 config.runtime_shim.crate_name.clone(),
                 config.runtime_shim.as_external,
             );
@@ -105,6 +105,7 @@ pub fn run_compiler(args: impl Iterator<Item = String>, input_path: Option<PathB
                 chain!(
                     codegen_force_pass,
                     prerequisites_pass,
+                    <LeafToolAdder>,
                     <TypeExporter>,
                     nctfe_pass,
                     Instrumentor::new(true, None /* FIXME */),
@@ -164,6 +165,8 @@ pub mod constants {
 
     pub const LOG_PASS_OBJECTS_TAG: &str = super::passes::logger::OBJECTS_TAG;
     pub const LOG_PRI_DISCOVERY_TAG: &str = super::pri_utils::TAG_DISCOVERY;
+
+    pub const TOOL_LEAF: &str = "leaf_attr";
 }
 
 mod driver_args {

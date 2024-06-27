@@ -1,4 +1,5 @@
 mod call;
+mod decision;
 
 use const_format::concatcp;
 use rustc_index::IndexVec;
@@ -33,7 +34,7 @@ use call::{
 
 const TAG_INSTRUMENTATION: &str = "instrumentation";
 use TAG_INSTRUMENTATION as TAG_INSTR;
-const TAG_INSTRUMENTATION_COUNTER: &str = concatcp!(TAG_INSTRUMENTATION, "::counter");
+const TAG_INSTR_COUNTER: &str = concatcp!(TAG_INSTRUMENTATION, "::counter");
 
 const KEY_PRI_ITEMS: &str = "pri_items";
 const KEY_ENABLED: &str = "instr_enabled";
@@ -84,9 +85,9 @@ fn transform<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>, storage: &mut dyn S
 
     let def_id = body.source.def_id();
 
-    if !should_instrument(tcx, body) {
-        log_debug!(
-            target: TAG_INSTR,
+    if !decision::should_instrument(tcx, body) {
+        log_info!(
+            target: decision::TAG_INSTR_DECISION,
             "Skipping instrumentation for {:?}",
             def_id
         );
@@ -137,7 +138,7 @@ fn on_start(_tcx: TyCtxt, storage: &mut dyn Storage) {
         let update_interval = total.map_or(100, |t| usize::from(t) / 100);
         if total_num - update_interval < counter || counter % update_interval == 0 {
             log_info!(
-                target: TAG_INSTRUMENTATION_COUNTER,
+                target: TAG_INSTR_COUNTER,
                 "Transforming {} / {}",
                 counter,
                 total.as_ref().map(NonZeroUsize::to_string).unwrap_or("?".to_owned()),
@@ -156,37 +157,6 @@ fn make_pri_items(tcx: TyCtxt) -> PriItems {
         types: collect_helper_types(&helper_items),
         helper_funcs: collect_helper_funcs(&helper_items),
     }
-}
-
-fn should_instrument<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>) -> bool {
-    let def_id = body.source.def_id();
-
-    if tcx.def_path_str(def_id).contains("leafrtsh") || tcx.def_path_str(def_id).contains("common")
-    {
-        return false;
-    }
-
-        return false;
-    }
-
-    // FIXME: A const function doesn't mean it won't be called at runtime.
-    if tcx.is_const_fn(def_id) {
-        return false;
-    }
-
-    // Some intrinsic functions have body.
-    if tcx.intrinsic(def_id).is_some() {
-        return false;
-    }
-    use rustc_attr::InlineAttr;
-    if matches!(
-        tcx.codegen_fn_attrs(def_id).inline,
-        InlineAttr::Hint | InlineAttr::Always
-    ) {
-        return false;
-    }
-
-    true
 }
 
 fn handle_entry_function<'tcx, C>(call_adder: &mut RuntimeCallAdder<C>, body: &Body<'tcx>)
