@@ -25,6 +25,7 @@ pub(crate) mod z3 {
     };
 
     use crate::solvers::z3::{AstNode, TranslatedConstraint};
+    use common::{log_debug, log_info, log_warn};
 
     const CHAR_BIT_SIZE: u32 = size_of::<char>() as u32 * 8;
     const USIZE_BIT_SIZE: u32 = size_of::<usize>() as u32 * 8;
@@ -56,7 +57,7 @@ pub(crate) mod z3 {
 
     impl<'ctx> Z3ValueTranslator<'ctx> {
         fn translate(mut self, value: &ValueRef) -> TranslatedConstraint<'ctx, SymVarId> {
-            log::debug!("Translating value: {}", value);
+            log_debug!("Translating value: {}", value);
             let ast = self.translate_value(value);
             match ast {
                 AstNode::Bool(ast) => TranslatedConstraint {
@@ -176,7 +177,7 @@ pub(crate) mod z3 {
         }
 
         fn translate_symbolic_expr(&mut self, expr: &Expr) -> AstNode<'ctx> {
-            log::debug!("Translating symbolic expression: {:?}", expr);
+            log_debug!("Translating symbolic expression: {:?}", expr);
             match expr {
                 Expr::Unary { operator, operand } => {
                     let operand = self.translate_symbolic(operand);

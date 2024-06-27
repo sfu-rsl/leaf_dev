@@ -25,6 +25,7 @@ use rustc_middle::mir::{self};
 use rustc_middle::ty::{Ty, TyCtxt};
 use rustc_span::def_id::{DefId, LocalDefId, LocalModDefId};
 
+use crate::utils::{log_debug, log_info, log_warn};
 use std::collections::HashSet;
 use std::ops::DerefMut;
 
@@ -64,7 +65,7 @@ pub(crate) struct CtfeScanner {
 impl CompilationPass for CtfeScanner {
     fn visit_tcx_after_analysis(&mut self, tcx: TyCtxt, _storage: &mut dyn Storage) -> Compilation {
         for id in find_ctfes(tcx) {
-            log::debug!("Found CTFE: {:?}", &id);
+            log_debug!("Found CTFE: {:?}", &id);
             self.block_ids.insert(id);
         }
 
@@ -104,7 +105,7 @@ impl CompilationPass for NctfeFunctionAdder {
             return;
         }
 
-        log::info!("Adding {} NCTFE functions", self.ctfe_count);
+        log_info!("Adding {} NCTFE functions", self.ctfe_count);
         let mut items = ThinVec::with_capacity(self.ctfe_count);
         for i in 0..self.ctfe_count {
             items.push(P(make_unit_fn_item(
@@ -121,7 +122,7 @@ impl CompilationPass for NctfeFunctionAdder {
         get_free_ctfe_ids(storage).extend(find_ctfes(tcx));
         get_free_nctfe_func_ids(storage).extend({
             let nctfes = find_nctfes(tcx);
-            log::info!("Retrieved {} NCTFEs", nctfes.len());
+            log_info!("Retrieved {} NCTFEs", nctfes.len());
             nctfes
         });
 
@@ -144,7 +145,7 @@ impl CompilationPass for NctfeFunctionAdder {
             let associated = get_nctfe_map(storage).get_by_right(&def_id).copied();
             associated
         } {
-            log::debug!("NCTFE is already associated with {:?}", id);
+            log_debug!("NCTFE is already associated with {:?}", id);
             id
         }
         /* This NCTFE function is getting processed before being associated with a CTFE.
@@ -157,7 +158,7 @@ impl CompilationPass for NctfeFunctionAdder {
             associate(id, def_id, storage);
             id
         } else {
-            log::warn!("Excess of Non-CTFE functions observed, leaving the function as is");
+            log_warn!("Excess of Non-CTFE functions observed, leaving the function as is");
             return;
         };
 
@@ -195,7 +196,7 @@ pub(crate) fn get_nctfe_func(id: CtfeId, storage: &mut dyn Storage) -> DefId {
 
 /// Removes the ids from free lists and adds them to the association map.
 fn associate(ctfe_id: CtfeId, nctfe_id: LocalDefId, storage: &mut dyn Storage) {
-    log::info!("Associating CTFE {ctfe_id:?} with NCTFE {nctfe_id:?}");
+    log_info!("Associating CTFE {ctfe_id:?} with NCTFE {nctfe_id:?}");
     assert!(get_free_ctfe_ids(storage).remove(&ctfe_id));
     assert!(get_free_nctfe_func_ids(storage).remove(&nctfe_id));
     get_nctfe_map(storage).insert(ctfe_id, nctfe_id);

@@ -2,6 +2,8 @@ use std::string::ToString;
 
 use config::{builder::DefaultState, Config, ConfigBuilder, ConfigError, Environment, File};
 
+use crate::log_debug;
+
 pub fn load_config(
     file_name: &str,
     env_prefix: &str,
@@ -25,5 +27,5 @@ pub fn load_config(
                 .separator("__"),
         )
         .build()
-        .inspect(|c| log::debug!("Loaded raw configurations: {:?}", c))
+        .inspect(|c| log_debug!("Loaded raw configurations: {:?}", c))
 }

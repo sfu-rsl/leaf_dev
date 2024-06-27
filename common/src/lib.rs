@@ -10,6 +10,8 @@ use std::prelude::rust_2021::*;
 #[cfg(feature = "config")]
 pub mod config;
 pub mod ffi;
+#[cfg(feature = "logging")]
+pub mod logging;
 pub mod pri;
 #[cfg(feature = "tyexp")]
 pub mod tyexp;

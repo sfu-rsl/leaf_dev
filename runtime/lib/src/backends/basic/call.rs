@@ -11,6 +11,8 @@ use super::{
     CallStackManager, Place, UntupleHelper, ValueRef, VariablesState,
 };
 
+use common::{log_debug, log_info, log_warn};
+
 type VariablesStateFactory<VS> = Box<dyn Fn(usize) -> VS>;
 
 pub(super) struct BasicCallStackManager<VS: VariablesState> {
@@ -106,7 +108,7 @@ impl<VS: VariablesState + SelfHierarchical> BasicCallStackManager<VS> {
 
     fn finalize_external_call(&mut self, result_dest: &Place) {
         if let Some(overridden) = self.top_frame().overridden_return_val.take() {
-            log::debug!(concat!(
+            log_debug!(concat!(
                 "Consuming the overridden return value as the returned value ",
                 "from the external function."
             ));
@@ -210,7 +212,7 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
         match local {
             Local::ReturnValue => self.return_val_metadata = Some(metadata),
             Local::Argument(local_index) => {
-                log::debug!("Setting metadata for argument {:?}.", local);
+                log_debug!("Setting metadata for argument {:?}.", local);
                 let args_metadata = &mut self.args_metadata;
                 let index = *local_index as usize - 1;
                 if args_metadata.len() <= index {
@@ -241,7 +243,7 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
         }
 
         let arg_index = arg_index as usize - 1;
-        log::debug!("Untupling argument at index {}.", arg_index);
+        log_debug!("Untupling argument at index {}.", arg_index);
         let tupled_value = args.remove(arg_index);
         let untupled_args = Self::untuple(
             tupled_value,
@@ -305,7 +307,7 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
             );
         } else {
             if !self.stack.is_empty() {
-                log::warn!(concat!(
+                log_warn!(concat!(
                     "No call info was found for this entrance. ",
                     "This means a mixture of external and internal call has happened."
                 ));
@@ -337,7 +339,7 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
             .and_then(|p| self.top().try_take_place(&p));
         if let Some(overridden) = popped_frame.overridden_return_val {
             if self.latest_returned_val.is_some() {
-                log::warn!(concat!(
+                log_warn!(concat!(
                     "The return value is overridden while an actual value was available. ",
                     "This may not be intended."
                 ))
@@ -360,7 +362,7 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
     }
 
     fn override_return_value(&mut self, value: ValueRef) {
-        log::debug!("Overriding the return value with {:?}", value);
+        log_debug!("Overriding the return value with {:?}", value);
         self.top_frame().overridden_return_val = Some(value);
     }
 

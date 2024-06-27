@@ -1,25 +1,44 @@
+use std::env;
+use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+
 use compiler::{constants, run_compiler, set_up_compiler};
 
 fn main() {
-    env_logger::Builder::new()
-        .filter_module(constants::LOG_PASS_OBJECTS_TAG, log::LevelFilter::Off)
-        .filter_module(constants::LOG_PRI_DISCOVERY_TAG, log::LevelFilter::Off)
-        .filter_module(
-            &stringify!(compiler::mir_transform::jump).replace(" ", ""),
-            log::LevelFilter::Off,
-        )
-        .parse_default_env()
-        .parse_env(
-            env_logger::Env::new()
-                .filter(constants::LOG_ENV)
-                .write_style(constants::LOG_WRITE_STYLE_ENV),
-        )
-        .init();
+    init_logging();
 
     set_up_compiler();
+
     std::process::exit(run_compiler(
         // The first argument is the executable file name.
         std::env::args().collect::<Vec<_>>().into_iter().skip(1),
         None,
     ));
+}
+
+fn init_logging() {
+    let env = env::var(constants::LOG_ENV).unwrap_or_default();
+
+    let custom_filter = EnvFilter::builder()
+        .with_default_directive(
+            format!("{}=off", constants::LOG_PASS_OBJECTS_TAG)
+                .parse()
+                .unwrap(),
+        )
+        .with_default_directive(
+            format!("{}=off", constants::LOG_PRI_DISCOVERY_TAG)
+                .parse()
+                .unwrap(),
+        )
+        .parse_lossy(&env);
+
+    // Create a formatting layer with optional write style based on environment variable
+    let fmt_layer = fmt::layer()
+        .with_writer(std::io::stdout)
+        .with_ansi(env::var(constants::LOG_WRITE_STYLE_ENV).map_or(true, |val| val != "never"));
+
+    // Create a subscriber
+    tracing_subscriber::registry()
+        .with(custom_filter)
+        .with(fmt_layer)
+        .init();
 }

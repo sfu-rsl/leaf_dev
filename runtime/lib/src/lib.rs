@@ -21,8 +21,9 @@ pub(crate) mod solvers;
 pub(crate) mod trace;
 pub mod tyexp;
 pub(crate) mod utils;
+use common::log_info;
 
 fn init() {
     utils::logging::init_logging();
-    log::info!("Initializing runtime library");
+    log_info!("Initializing runtime library");
 }

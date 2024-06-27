@@ -40,6 +40,7 @@ extern crate rustc_trait_selection;
 extern crate rustc_type_ir;
 extern crate thin_vec;
 
+use common::{log_debug, log_info, log_warn};
 use std::path::PathBuf;
 
 use config::CompilerConfig;
@@ -59,7 +60,7 @@ pub fn run_compiler(args: impl Iterator<Item = String>, input_path: Option<PathB
     let config = config::load_config();
 
     let args = driver_args::set_up_args(args, input_path, &config);
-    log::info!("Running compiler with args: {:?}", args);
+    log_info!("Running compiler with args: {:?}", args);
 
     use passes::*;
     let run_pass = |pass: &mut Callbacks| -> i32 {
@@ -87,7 +88,7 @@ pub fn run_compiler(args: impl Iterator<Item = String>, input_path: Option<PathB
 
     let should_instrument = should_instrument(&config, &args);
     if !should_instrument {
-        log::info!("Instrumentation will be skipped.");
+        log_info!("Instrumentation will be skipped.");
     }
     let instrumentor_pass = Instrumentor::new(should_instrument);
 
@@ -303,7 +304,7 @@ mod driver_args {
                 })
                 .map(|t| format!("+{}", t.trim()))
                 .unwrap_or_else(|| {
-                    log::warn!("Unable to find a nightly toolchain. Using the default one.");
+                    log_warn!("Unable to find a nightly toolchain. Using the default one.");
                     Default::default()
                 });
 
@@ -316,7 +317,7 @@ mod driver_args {
                     if out.status.success() {
                         true
                     } else {
-                        log::debug!("Rustc print sysroot was not successful: {:?}", out);
+                        log_debug!("Rustc print sysroot was not successful: {:?}", out);
                         false
                     }
                 })
@@ -428,7 +429,7 @@ mod driver_args {
         mut priority_dirs: impl Iterator<Item = &'a Path>,
     ) -> Option<String> {
         let try_dir = |path: &Path| {
-            log::debug!("Trying dir in search of `{}`: {:?}", name, path);
+            log_debug!("Trying dir in search of `{}`: {:?}", name, path);
             common::utils::try_join_path(path, name)
         };
 

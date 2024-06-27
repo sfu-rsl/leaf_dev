@@ -26,6 +26,7 @@
 use derive_more::From;
 
 use crate::abs::TypeId;
+use common::{log_debug, log_info, log_warn};
 
 use super::{prelude::*, SliceIndex};
 
@@ -282,7 +283,7 @@ mod implementation {
                 current = self.project_one_to_ones(current, &projs[last_index..i]);
                 last_index = i + 1;
 
-                log::debug!("Found a symbolic index in the projection chain at {i}");
+                log_debug!("Found a symbolic index in the projection chain at {i}");
                 if let SymbolicProjResult::Single(value) = current {
                     current = self.expand(&value)
                 }

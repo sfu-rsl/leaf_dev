@@ -12,6 +12,7 @@ use rustc_middle::{
 use rustc_span::source_map::Spanned;
 use rustc_target::abi::{FieldIdx, VariantIdx};
 
+use common::{log_debug, log_info, log_warn};
 use std::sync::atomic;
 
 use crate::{
@@ -78,7 +79,7 @@ fn transform<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>, storage: &mut dyn S
     let def_id = body.source.def_id();
 
     if !should_instrument(tcx, body) {
-        log::debug!(
+        log_debug!(
             target: TAG_INSTR,
             "Skipping instrumentation for {:?}",
             def_id
@@ -86,7 +87,7 @@ fn transform<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>, storage: &mut dyn S
         return;
     }
 
-    log::info!(
+    log_info!(
         target: TAG_INSTR,
         "Running instrumentation pass on body of {:#?} at {:?}",
         def_id,
@@ -126,7 +127,7 @@ fn on_start(tcx: TyCtxt) {
         let total = tcx.mir_keys(()).len();
         let update_interval = core::cmp::max(1, total / 100);
         if total - counter < update_interval || counter % update_interval == 0 {
-            log::info!(target: TAG_INSTRUMENTATION_COUNTER, "Transforming {} / {}", counter, total);
+            log_info!(target: TAG_INSTRUMENTATION_COUNTER, "Transforming {} / {}", counter, total);
         }
     }
 }
@@ -257,7 +258,7 @@ where
     fn visit_basic_block_data(&mut self, block: BasicBlock, data: &BasicBlockData<'tcx>) {
         if data.is_cleanup {
             // NOTE: Cleanup blocks will be investigated in #206.
-            log::debug!(target: TAG_INSTR, "Skipping instrumenting cleanup block: {:?}", block);
+            log_debug!(target: TAG_INSTR, "Skipping instrumenting cleanup block: {:?}", block);
             return;
         }
 
@@ -277,7 +278,7 @@ where
         statement: &rustc_middle::mir::Statement<'tcx>,
         location: Location,
     ) {
-        log::debug!(
+        log_debug!(
             target: TAG_INSTR,
             "Visiting statement: {:?} at {:?}",
             statement.kind,
@@ -479,7 +480,7 @@ where
     C: ctxtreqs::ForPlaceRef<'tcx> + ctxtreqs::ForOperandRef<'tcx> + ctxtreqs::ForAssignment<'tcx>,
 {
     fn visit_rvalue(&mut self, rvalue: &Rvalue<'tcx>) {
-        log::debug!(target: TAG_INSTR, "Visiting Rvalue: {:#?}", rvalue);
+        log_debug!(target: TAG_INSTR, "Visiting Rvalue: {:#?}", rvalue);
         self.super_rvalue(rvalue)
     }
 
@@ -538,7 +539,7 @@ where
                     }
                     MutToConstPointer => call_adder.to_another_ptr(*ty, *kind),
                     ArrayToPointer => {
-                        log::warn!(
+                        log_warn!(
                             target: TAG_INSTR,
                             concat!(
                             "ArrayToPointer casts are expected to be optimized away by at this point.",

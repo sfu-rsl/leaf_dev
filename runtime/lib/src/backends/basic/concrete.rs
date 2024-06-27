@@ -2,6 +2,7 @@ use super::{
     alias::{RRef, ValueRefBinaryExprBuilder},
     ConcreteValueRef, Constraint, SymValueRef, TraceManager,
 };
+use common::{log_debug, log_info, log_warn};
 
 pub(super) trait Concretizer {
     fn stamp(&mut self, value: SymValueRef, concrete_value: ConcreteValueRef);
@@ -23,7 +24,7 @@ impl<EB: ValueRefBinaryExprBuilder> BasicConcretizer<EB> {
 
 impl<EB: ValueRefBinaryExprBuilder> Concretizer for BasicConcretizer<EB> {
     fn stamp(&mut self, value: SymValueRef, concrete_value: ConcreteValueRef) {
-        log::debug!("Stamping symbolic value {} == {}", value, concrete_value);
+        log_debug!("Stamping symbolic value {} == {}", value, concrete_value);
         let eq_expr = self
             .expr_builder
             .borrow_mut()

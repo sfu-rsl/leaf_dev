@@ -27,6 +27,7 @@ use crate::{
     utils::alias::RRef,
 };
 use common::tyexp::{FieldsShapeInfo, StructShape, TypeExport, TypeInfo};
+use common::{log_debug, log_info, log_warn};
 
 use self::{
     alias::{
@@ -189,7 +190,7 @@ impl RuntimeBackend for BasicBackend {
 impl BasicBackend {
     fn new_symbolic_value(&mut self, ty: abs::ValueType) -> SymValueRef {
         self.sym_id_counter += 1;
-        log::info!(
+        log_info!(
             "Introducing a new symbolic variable: {} : {}",
             self.sym_id_counter,
             ty

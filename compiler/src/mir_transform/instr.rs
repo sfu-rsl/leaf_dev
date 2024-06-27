@@ -11,6 +11,7 @@ use rustc_middle::{
 };
 
 use super::*;
+use common::{log_debug, log_info, log_warn};
 
 #[derive(Debug, Clone)]
 struct NewBasicBlock<'tcx> {
@@ -175,7 +176,7 @@ impl JumpTargetModifier for BodyInstrumentationUnit<'_> {
         constraint: JumpModificationConstraint,
     ) {
         if from == to {
-            log::warn!(
+            log_warn!(
                 "Ignoring modification of jump target to the same index. from == to == {:?}",
                 from
             );
@@ -330,7 +331,7 @@ impl<'tcx> BodyInstrumentationUnit<'tcx> {
         // This is an indirect target
         && target >= min_new_block_index
         {
-            log::debug!("Moving indirect new blocks targeting {:?}", target);
+            log_debug!("Moving indirect new blocks targeting {:?}", target);
             let before_chunk = pop_if_target(before_chunks, target);
             let after_chunk = pop_if_target(after_chunks, target);
 

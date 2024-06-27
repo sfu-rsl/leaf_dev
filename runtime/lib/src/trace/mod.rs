@@ -11,6 +11,8 @@ use crate::{
     pathics::AllPathInterestChecker,
 };
 
+use common::{log_debug, log_info, log_warn};
+
 pub(crate) struct ImmediateTraceManager<Step, Id, Val> {
     trace: Vec<Step>,
     constraints: Vec<Constraint<Val>>,
@@ -50,7 +52,7 @@ impl<S, I: Display + Ord + std::hash::Hash, V: Display> ImmediateTraceManager<S,
 
 impl<S: Display, I, V: Display> TraceManager<S, V> for ImmediateTraceManager<S, I, V> {
     fn notify_step(&mut self, step: S, new_constraints: Vec<Constraint<V>>) {
-        log::info!(
+        log_info!(
             "Notified about constraints [{}] at step {}",
             &new_constraints
                 .iter()
@@ -75,14 +77,14 @@ impl<S: Display, I, V: Display> TraceManager<S, V> for ImmediateTraceManager<S, 
             return;
         }
 
-        log::info!("Checking for possible values diverging at the last step");
+        log_info!("Checking for possible values diverging at the last step");
 
-        log::debug!("Negating the last constraint");
+        log_debug!("Negating the last constraint");
         let last = self.constraints.pop().unwrap();
         self.constraints.push(last.not());
 
         if !self.check(..) {
-            log::info!("Checking optimistically for possible values diverging at the last step");
+            log_info!("Checking optimistically for possible values diverging at the last step");
             /* NOTE: What is optimistic checking?
              * Consider two independent branch conditions at the same level
              * that the current execution has taken neither.
@@ -105,7 +107,7 @@ impl<S, I, V: Display> ImmediateTraceManager<S, I, V> {
     fn check(&mut self, range: impl SliceIndex<[Constraint<V>], Output = [Constraint<V>]>) -> bool {
         let constraints = self.constraints.index(range);
 
-        log::debug!(
+        log_debug!(
             "Sending constraints to the solver: [\n{}\n]",
             constraints
                 .iter()
@@ -121,7 +123,7 @@ impl<S, I, V: Display> ImmediateTraceManager<S, I, V> {
                 true
             }
             _ => {
-                log::info!("Unsatisfiable or unknown result.");
+                log_info!("Unsatisfiable or unknown result.");
                 false
             }
         }

@@ -2,6 +2,7 @@ use config::{builder::DefaultState, Config, ConfigBuilder};
 use serde::Deserialize;
 
 use crate::CONFIG_ENV_PREFIX;
+use common::{log_debug, log_info, log_warn};
 
 #[derive(Debug, Default, Clone, Deserialize)]
 pub(crate) struct CompilerConfig {
@@ -65,6 +66,6 @@ pub(super) fn load_config() -> CompilerConfig {
             })
     })
     .and_then(|c| c.try_deserialize())
-    .inspect(|c| log::debug!("Loaded configurations: {:?}", c))
+    .inspect(|c| log_debug!("Loaded configurations: {:?}", c))
     .expect("Failed to read configurations")
 }

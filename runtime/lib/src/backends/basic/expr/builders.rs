@@ -7,6 +7,7 @@ use crate::abs::{
     },
     BinaryOp, CastKind, UnaryOp,
 };
+use common::{log_debug, log_info, log_warn};
 
 type Composite<Binary, Unary> = CompositeExprBuilder<Binary, Unary>;
 type Chained<Current, Next, Expr = ValueRef, CurrentExpr = Expr> =
@@ -344,7 +345,7 @@ mod core {
         }
 
         fn cast<'a>(&mut self, operand: Self::ExprRef<'a>, target: CastKind) -> Self::Expr<'a> {
-            log::debug!("Casting {:?} to {:?}", operand, target);
+            log_debug!("Casting {:?} to {:?}", operand, target);
             let expr = match ValueType::try_from(target) {
                 Ok(value_type) => to_cast_expr(operand, value_type),
                 Err(target) => {
@@ -381,7 +382,7 @@ mod core {
                     }
                 }
             };
-            log::debug!("Cast expression for {:?}: {}", target, expr);
+            log_debug!("Cast expression for {:?}: {}", target, expr);
 
             expr
         }

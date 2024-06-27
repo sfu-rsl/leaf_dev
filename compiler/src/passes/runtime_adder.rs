@@ -5,6 +5,7 @@ use rustc_span::{
 };
 
 use super::CompilationPass;
+use common::{log_debug, log_info, log_warn};
 
 /// A pass that adds the runtime library as an extern crate to the program.
 #[derive(Clone)]
@@ -46,7 +47,7 @@ impl CompilationPass for RuntimeAdder {
         };
         krate.items.insert(0, P(item));
 
-        log::info!(
+        log_info!(
             "Added extern crate statement for the runtime library: extern crate {} as {};",
             *crate::pri_utils::sym::RUNTIME_LIB_CRATE,
             self.crate_name

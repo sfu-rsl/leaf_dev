@@ -9,6 +9,7 @@ use rustc_middle::ty::{
 };
 use rustc_target::abi::{FieldIdx, Layout, VariantIdx};
 
+use common::{log_debug, log_info, log_warn};
 use std::collections::HashMap;
 use std::env::{self};
 use std::path::Path;
@@ -42,7 +43,7 @@ impl CompilationPass for TypeExporter {
                 unit.items().iter().for_each(|(item, _)| match item {
                     mir::mono::MonoItem::Fn(instance) => {
                         let body = tcx.instance_mir(instance.def);
-                        log::debug!(target: TAG_TYPE_EXPORT, "Exporting types in {:?}", instance);
+                        log_debug!(target: TAG_TYPE_EXPORT, "Exporting types in {:?}", instance);
                         let mut place_visitor = PlaceVisitor {
                             tcx,
                             type_map,
@@ -60,7 +61,7 @@ impl CompilationPass for TypeExporter {
         let out_dir = &sample_file_path.parent().unwrap();
         let is_single_file_program =
             out_dir.as_os_str().is_empty() || !rustc_session::utils::was_invoked_from_cargo();
-        log::warn!(
+        log_warn!(
             "is_single_file_program: {}, CARGO_PRIMARY_PACKAGE: {}",
             is_single_file_program,
             env::var("CARGO_PRIMARY_PACKAGE").is_ok()
@@ -127,7 +128,7 @@ impl<'tcx, 's> Visitor<'tcx> for PlaceVisitor<'tcx, 's> {
             self.param_env,
             EarlyBinder::bind(ty),
         );
-        log::debug!(target: TAG_TYPE_EXPORT, "Normalized ty with param: {} -> {}", ty, normalized_ty);
+        log_debug!(target: TAG_TYPE_EXPORT, "Normalized ty with param: {} -> {}", ty, normalized_ty);
 
         if self
             .type_map
@@ -145,12 +146,12 @@ impl<'tcx, 's> PlaceVisitor<'tcx, 's> {
         let layout = match self.tcx.layout_of(self.param_env.and(ty)) {
             Ok(TyAndLayout { layout, .. }) => layout,
             Err(err) => {
-                log::warn!("Failed to get layout of type {:?}: {:?}", ty, err);
+                log_warn!("Failed to get layout of type {:?}: {:?}", ty, err);
                 return;
             }
         };
 
-        log::debug!(target: TAG_TYPE_EXPORT, "Generating type information for {:?}", ty);
+        log_debug!(target: TAG_TYPE_EXPORT, "Generating type information for {:?}", ty);
         let cx = LayoutCx {
             tcx: self.tcx,
             param_env: self.param_env,

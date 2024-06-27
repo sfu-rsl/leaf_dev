@@ -12,6 +12,7 @@ use rustc_middle::{
 use rustc_span::def_id::DefId;
 use rustc_target::abi::{FieldIdx, VariantIdx};
 
+use common::{log_debug, log_info, log_warn};
 use core::iter;
 use std::vec;
 
@@ -423,7 +424,7 @@ mod implementation {
         fn current_func(&self) -> Operand<'tcx> {
             let instance = self.context.body().source.instance;
             let def_id = instance.def_id();
-            log::debug!("Creating operand of current function: {:?}", def_id);
+            log_debug!("Creating operand of current function: {:?}", def_id);
 
             assert_matches!(
                 instance,
@@ -756,7 +757,7 @@ mod implementation {
             place_ty: Ty<'tcx>,
         ) -> Vec<BasicBlockData<'tcx>> {
             if unlikely(!place_ty.is_sized(self.tcx(), self.current_param_env())) {
-                log::warn!("Encountered unsized type. Skipping size setting.");
+                log_warn!("Encountered unsized type. Skipping size setting.");
                 return vec![BasicBlockData::new(Some(terminator::goto(None)))];
             }
 
@@ -2066,7 +2067,7 @@ mod implementation {
 
         fn internal_reference_func(&mut self, func: &Operand<'tcx>) -> BlocksAndResult<'tcx> {
             let tcx = self.tcx();
-            log::debug!("Referencing function: {:?}", func.ty(self, tcx).kind());
+            log_debug!("Referencing function: {:?}", func.ty(self, tcx).kind());
             let id_ty = self.context.pri_types().func_id(tcx);
             let (stmts, id_local) = id_of_func(tcx, &mut self.context, func, id_ty);
             let (mut new_block, ref_local) = self.make_bb_for_operand_ref_call(
@@ -2546,7 +2547,7 @@ mod implementation {
                     panic!("Expected closure type but received: {}", ty)
                 };
 
-                log::debug!("Getting FnDef type of closure: {:?}", ty);
+                log_debug!("Getting FnDef type of closure: {:?}", ty);
                 let args = args.as_closure();
 
                 // Finding the call* method in the Fn* trait.
@@ -2576,7 +2577,7 @@ mod implementation {
                 let TyKind::Coroutine(_, args) = ty.kind() else {
                     panic!("Expected coroutine type but received: {}", ty)
                 };
-                log::debug!("Getting FnDef type of coroutine: {:?}", ty);
+                log_debug!("Getting FnDef type of coroutine: {:?}", ty);
                 let args = args.as_coroutine();
 
                 // Finding `resume` method in `Coroutine` trait.
@@ -2604,7 +2605,7 @@ mod implementation {
                     tcx.coroutine_kind(*def_id),
                 );
 
-                log::debug!("Getting FnDef type of async coroutine: {:?}", ty);
+                log_debug!("Getting FnDef type of async coroutine: {:?}", ty);
                 let args = args.as_coroutine();
 
                 // Finding `resume` method in `Coroutine` trait.
@@ -2829,7 +2830,7 @@ mod implementation {
             func: &Operand<'tcx>,
             id_ty: Ty<'tcx>,
         ) -> ([Statement<'tcx>; 3], Local) {
-            log::debug!("Getting id (pointer) of function {:?}.", func);
+            log_debug!("Getting id (pointer) of function {:?}.", func);
 
             let fn_ty = func.ty(local_manager, tcx);
             debug_assert_matches!(fn_ty.kind(), TyKind::FnDef(..) | TyKind::FnPtr(..));

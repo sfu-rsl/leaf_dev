@@ -7,6 +7,7 @@ use common::pri::*;
 use crate::abs::{
     self, backend::*, AssertKind, BranchingMetadata, CastKind, FloatType, IntType, Local, ValueType,
 };
+use common::log_warn;
 
 use self::instance::*;
 
@@ -273,7 +274,7 @@ impl ProgramRuntimeInterface for BasicPri {
         #[cfg(place_addr)] align: Alignment,
     ) {
         #[cfg(place_addr)]
-        log::warn!(
+        log_warn!(
             "Align is going to be supported based on types. Ignoring it {}.",
             align
         );

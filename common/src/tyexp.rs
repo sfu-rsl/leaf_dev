@@ -85,7 +85,7 @@ impl TypeExport {
                 .expect("Failed to find the type info file.");
         let type_infos: Vec<TypeInfo> =
             Self::get_type_info(type_info_file_path.display().to_string())?;
-        log::debug!("Retrieved {} types from file.", type_infos.len());
+        log_debug!("Retrieved {} types from file.", type_infos.len());
 
         let type_infos = type_infos
             .into_iter()

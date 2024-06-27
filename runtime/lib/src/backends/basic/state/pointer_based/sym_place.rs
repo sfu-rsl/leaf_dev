@@ -7,12 +7,13 @@ use crate::{
 };
 
 use super::{ConcreteValueRef, SymValueRef};
+use common::{log_debug, log_info, log_warn};
 
 pub(crate) fn make_sym_place_handler(
     config: SymbolicPlaceStrategy,
     concretizer_factory: impl FnOnce() -> Box<dyn Concretizer>,
 ) -> Box<dyn SymPlaceHandler<PlaceMetadata>> {
-    log::debug!(
+    log_debug!(
         "Creating a symbolic place handler for strategy {:?}",
         config
     );
@@ -38,7 +39,7 @@ struct ConcretizerSymPlaceHandler;
 impl SymPlaceHandler<PlaceMetadata> for ConcretizerSymPlaceHandler {
     fn handle(&mut self, place_value: SymValueRef, place_meta: &PlaceMetadata) -> ValueRef {
         let conc_val = get_concrete_value(&place_meta, place_value.as_ref().try_into().ok());
-        log::debug!(
+        log_debug!(
             "Concretizing symbolic value {} with value {}",
             place_value,
             conc_val,
@@ -53,7 +54,7 @@ struct StamperSymPlaceHandler {
 impl SymPlaceHandler<PlaceMetadata> for StamperSymPlaceHandler {
     fn handle(&mut self, place_value: SymValueRef, place_meta: &PlaceMetadata) -> ValueRef {
         let conc_val = get_concrete_value(&place_meta, place_value.as_ref().try_into().ok());
-        log::debug!(
+        log_debug!(
             "Stamping symbolic value {} with concrete value {}",
             place_value,
             conc_val

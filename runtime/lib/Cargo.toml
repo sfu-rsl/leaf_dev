@@ -10,11 +10,10 @@ name = "leafrt"
 crate-type = ["rlib"]
 
 [dependencies]
-common = { path = "../../common", features = ["tyexp", "config"] }
+common = { path = "../../common", features = ["tyexp", "config", "logging"] }
 
 config = { version = "0.14.0", features = ["toml", "json"] }
-log = "0.4.17"
-env_logger = "0.11.1"
+tracing-subscriber = {version="0.3", features=["env-filter"]}
 paste = "1.0"
 z3 = { version = "0.12.1" }
 lazy_static = "1.4.0"

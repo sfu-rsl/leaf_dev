@@ -1,3 +1,4 @@
+use common::{log_debug, log_info, log_warn};
 use std::collections::{HashMap, HashSet};
 
 use rustc_hir::{
@@ -209,7 +210,7 @@ pub(crate) fn all_pri_items(tcx: TyCtxt) -> Vec<DefId> {
     let crate_num = find_pri_host_crate(tcx);
     let marker_id = find_pri_marker(tcx, crate_num);
     let result = collect_all_pri_items(tcx, marker_id);
-    log::debug!(
+    log_debug!(
         target: TAG_DISCOVERY,
         "Found {} PRI items.",
         result.len(),
@@ -236,7 +237,7 @@ fn find_pri_host_crate(tcx: TyCtxt) -> CrateNum {
             }
         })
         .inspect(|cnum| {
-            log::info!(
+            log_info!(
                 target: TAG_DISCOVERY,
                 "Selected crate {}, to search for PRI symbols.",
                 tcx.crate_name(*cnum).as_str().to_string()
@@ -252,7 +253,7 @@ fn find_pri_host_crate(tcx: TyCtxt) -> CrateNum {
 /// the PRI module/items, we use this workaround rather than looking for the
 /// module directly.
 fn find_pri_marker(tcx: TyCtxt, crate_num: CrateNum) -> DefId {
-    log::debug!(
+    log_debug!(
         target: TAG_DISCOVERY,
         "Searching for the PRI module marker in crate {}.",
         tcx.crate_name(crate_num).as_str(),
@@ -289,7 +290,7 @@ fn find_pri_marker(tcx: TyCtxt, crate_num: CrateNum) -> DefId {
 /// The list of `DefId`s existing in the same module or submodules of the parent
 /// module of the marker.
 fn collect_all_pri_items<'tcx>(tcx: TyCtxt<'tcx>, module_marker_id: DefId) -> Vec<DefId> {
-    log::debug!(
+    log_debug!(
         target: TAG_DISCOVERY,
         "Collecting all PRI items in the same module or sibling modules of {:?}.",
         module_marker_id,
@@ -320,7 +321,7 @@ pub(crate) fn filter_main_funcs<'tcx>(
     let items = filter_pri_items(tcx, all_pri_items, sym::MODULE_MARKER)
         .filter(|def_id| matches!(tcx.def_kind(def_id), DefKind::Fn | DefKind::AssocFn))
         .inspect(|def_id| {
-            log::debug!(
+            log_debug!(
                 target: TAG_DISCOVERY,
                 "Found PRI function: {:?}",
                 def_id,

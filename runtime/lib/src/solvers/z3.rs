@@ -1,6 +1,7 @@
 use std::{borrow::Borrow, collections::HashMap, hash::Hash};
 
 use crate::{abs::backend, utils::UnsafeSync};
+use common::{log_debug, log_info, log_warn};
 use lazy_static::lazy_static;
 use z3::{
     self,
@@ -233,7 +234,7 @@ where
         constraints: &[ast::Bool<'ctx>],
         vars: HashMap<I, AstNode<'ctx>>,
     ) -> backend::SolveResult<I, V> {
-        log::debug!("Sending constraints to Z3: {:#?}", constraints);
+        log_debug!("Sending constraints to Z3: {:#?}", constraints);
 
         solver.push();
 

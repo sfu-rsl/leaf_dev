@@ -203,7 +203,7 @@ $ cargo run -- --emit=mir main.rs
 ## Miscellaneous
 
 ### Logging
-We use [`env_logger`](https://docs.rs/env_logger/latest/env_logger/) with environment variables `LEAFC_LOG` and `LEAF_LOG` respectively for the compiler and the runtime library. Setting these variables to `info` will make the loggings emitted at the standard level. Some logs are tagged particularly to be easily configurable independently. You can refer to the example `tasks.json` under `.vscode` directory to find them.
+We use [`tracing`](https://docs.rs/tracing/latest/tracing/) with environment variables `LEAFC_LOG` and `LEAF_LOG` respectively for the compiler and the runtime library. Setting these variables to `info` will make the loggings emitted at the standard level. Some logs are tagged particularly to be easily configurable independently. You can refer to the example `tasks.json` under `.vscode` directory to find them.
 
 ### Example reasoning
 - Let's look at the example located at `leaf/samples/function/sym_arg/main.rs`.

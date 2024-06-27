@@ -7,7 +7,7 @@ use crate::abs::{
 
 use super::{Field, OperandHandler, Place, PlaceHandler};
 
-use crate::utils::logging::log_info;
+use common::{log_debug, log_info, log_warn};
 
 // Here we only store the type information for the symbolic value.
 type Operand = super::operand::Operand<Place, ValueType>;
@@ -331,11 +331,11 @@ impl FunctionHandler for LoggerFunctionHandler<'_> {
 
     fn enter(self, current_func: Self::Operand) {
         let _info = self.call_manager.notify_enter_call();
-        log::info!("Entered function {}", current_func);
+        log_info!("Entered function {}", current_func);
     }
 
     fn override_return_value(self, value: Self::Operand) {
-        log::info!("Overriding return value to {}", value);
+        log_info!("Overriding return value to {}", value);
     }
 
     fn ret(self) {

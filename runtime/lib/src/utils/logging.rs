@@ -1,23 +1,25 @@
-#[deprecated(note = "Use `log::info!` instead")]
-macro_rules! log_info {
-    ($($arg:tt)+) => (log::info!($($arg)+))
-}
-
-#[deprecated(note = "Use `log::debug!` instead")]
-macro_rules! log_debug {
-    ($($arg:tt)+) => (log::debug!($($arg)+))
-}
-
-pub(crate) use {log_debug, log_info};
+use common::log_debug;
 
 pub(crate) fn init_logging() {
-    use env_logger::Env;
+    use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+
     const ENV_LOG: &str = "LEAF_LOG";
     const ENV_WRITE_STYLE: &str = "LEAF_LOG_STYLE";
-    env_logger::Builder::new()
-        .filter_module("z3", log::LevelFilter::Off)
-        .parse_env(Env::new().filter(ENV_LOG).write_style(ENV_WRITE_STYLE))
-        .init();
 
-    log::debug!("Logging initialized");
+    let env = std::env::var(ENV_LOG).unwrap_or_default();
+
+    let env_filter = EnvFilter::builder()
+        .with_default_directive("z3=off".parse().unwrap())
+        .parse_lossy(&env);
+
+    let fmt_layer = fmt::layer()
+        .with_writer(std::io::stdout)
+        .with_ansi(std::env::var(ENV_WRITE_STYLE).map_or(true, |val| val != "never"));
+
+    let _ = tracing_subscriber::registry()
+        .with(env_filter)
+        .with(fmt_layer)
+        .try_init();
+
+    log_debug!("Logging initialized");
 }

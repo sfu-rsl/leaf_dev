@@ -6,7 +6,7 @@ on:
   pull_request: # Every target branch
 
 env:
-  RUST_LOG: debug
+  RUST_LOG: error
 
 jobs:
   rust-test:

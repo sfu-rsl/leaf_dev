@@ -6,6 +6,7 @@ mod noop;
 mod runtime_adder;
 pub(crate) mod tyexp;
 
+use common::{log_debug, log_info, log_warn};
 use std::any::Any;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -561,7 +562,7 @@ mod implementation {
             }
 
             fn get_raw_mut<'a>(&'a mut self, key: &String) -> Option<ValueBorrow<'a>> {
-                log::debug!("Getting mutable reference with key: {}", key);
+                log_debug!("Getting mutable reference with key: {}", key);
                 let value = self.0.borrow_mut().remove(key)?;
                 Some(ValueBorrow::new(self, key.clone(), value))
             }

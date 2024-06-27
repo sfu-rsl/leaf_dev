@@ -5,6 +5,7 @@ use std::{
 };
 
 use crate::abs::backend::OutputGenerator;
+use common::{log_debug, log_info, log_warn};
 
 pub(crate) struct LoggerOutputGenerator;
 
@@ -18,6 +19,6 @@ impl<I: Display + Ord + Hash, V: Display> OutputGenerator<I, V> for LoggerOutput
             writeln!(answers_str, "    \"{}\": {},", i, answers[i]).unwrap();
         }
         writeln!(answers_str, "}}").unwrap();
-        log::info!("Solver returned a solution:\n{answers_str}");
+        log_info!("Solver returned a solution:\n{answers_str}");
     }
 }

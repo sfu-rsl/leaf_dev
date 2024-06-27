@@ -3,6 +3,7 @@ use super::{BranchingInfo, OperandRef, PlaceRef};
 use crate::abs::backend::{
     AssignmentHandler, BranchingHandler, OperandHandler, PlaceHandler, RuntimeBackend,
 };
+use common::{log_debug, log_info, log_warn};
 
 #[allow(unused_imports)] // Mutex is detected as unused unless runtime_access is set to safe_mt
 use std::{
@@ -52,7 +53,7 @@ pub(super) fn init_backend() {
         crate::init();
 
         let config = load_config();
-        log::info!("Initializing basic backend");
+        log_info!("Initializing basic backend");
         let backend =
             BackendImpl::try_from(config).expect("Failed to initialize backend through the config");
         #[cfg(runtime_access = "safe_mt")]

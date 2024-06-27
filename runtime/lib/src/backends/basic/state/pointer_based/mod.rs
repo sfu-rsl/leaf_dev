@@ -42,6 +42,7 @@ mod memory;
 pub(super) mod sym_place;
 mod utils;
 
+use common::{log_debug, log_info, log_warn};
 use utils::*;
 
 type Local = LocalWithMetadata;
@@ -138,7 +139,7 @@ impl<VS, SP: SymbolicProjector> RawPointerVariableState<VS, SP> {
     }
 
     fn get<'a, 'b>(&'a self, addr: &'b RawPointer, type_id: TypeId) -> Option<&'a SymValueRef> {
-        log::debug!(
+        log_debug!(
             "Querying memory for address: {} with type: {:?}",
             addr,
             type_id
@@ -158,7 +159,7 @@ impl<VS, SP: SymbolicProjector> RawPointerVariableState<VS, SP> {
         if obj_type_id.eq(&type_id) {
             Some(obj_value)
         } else {
-            log::debug!(
+            log_debug!(
                 "Faced an (nested) object with different type: {:?}",
                 obj_type_id
             );
@@ -365,7 +366,7 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
                     if let Projection::Index(index) = proj {
                         if let Some(mut index_val) = IndexResolver::get(self, index) {
                             if index_val.is_symbolic() {
-                                log::debug!("Symbolic index observed: {}", index_val.as_ref());
+                                log_debug!("Symbolic index observed: {}", index_val.as_ref());
                                 index_val = sym_place_handler
                                     .handle(SymValueRef::new(index_val), index.metadata());
                             }
@@ -424,7 +425,7 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
         move_next: impl Fn(&mut C),
     ) -> Option<PorterValue> {
         let range = addr..addr + size;
-        log::debug!("Checking to create a porter for range: {:?}", range);
+        log_debug!("Checking to create a porter for range: {:?}", range);
 
         // TODO: What if the address is at the middle of a symbolic value?
         let mut cursor = after_or_at(&range.start);
@@ -448,7 +449,7 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
 
     fn set_addr(&mut self, addr: RawPointer, value: ValueRef, type_id: TypeId) {
         fn insert(entry: Entry<RawPointer, MemoryObject>, value: MemoryObject) {
-            log::debug!("Storing value: {:?} at address: {}", value, entry.key());
+            log_debug!("Storing value: {:?} at address: {}", value, entry.key());
             match entry {
                 Entry::Occupied(mut entry) => {
                     entry.insert(value);
