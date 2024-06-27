@@ -1,16 +1,23 @@
 diff --git a/lib.rs b/lib.rs
-index b54680a61b..ef9a329856 100644
+index cee3870c629..3cf7fa0e4e5 100644
 --- a/lib.rs
 +++ b/lib.rs
-@@ -124,6 +124,7 @@
- #![feature(const_caller_location)]
- #![feature(const_cell_into_inner)]
- #![feature(const_char_from_u32_unchecked)]
+@@ -278,6 +278,14 @@
+ #![feature(wasm_target_feature)]
+ // tidy-alphabetical-end
+ 
++//
++// Leaf-required features:
++// tidy-alphabetical-start
 +#![feature(concat_idents)]
- #![feature(const_eval_select)]
- #![feature(const_exact_div)]
- #![feature(const_float_bits_conv)]
-@@ -455,3 +456,6 @@ pub mod simd {
++#![feature(register_tool)]
++#![register_tool(leaf_attr)]
++// tidy-alphabetical-end
++
+ // allow using `core::` in intra-doc links
+ #[allow(unused_extern_crates)]
+ extern crate self as core;
+@@ -477,3 +485,6 @@ pub mod simd {
  }
  
  include!("primitive_docs.rs");
