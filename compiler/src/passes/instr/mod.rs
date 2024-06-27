@@ -13,7 +13,7 @@ use rustc_span::source_map::Spanned;
 use rustc_target::abi::{FieldIdx, VariantIdx};
 
 use common::{log_debug, log_info, log_warn};
-use std::sync::atomic;
+use std::{num::NonZeroUsize, sync::atomic};
 
 use crate::{
     mir_transform::{self, BodyInstrumentationUnit, JumpTargetModifier},
@@ -37,15 +37,20 @@ const TAG_INSTRUMENTATION_COUNTER: &str = concatcp!(TAG_INSTRUMENTATION, "::coun
 
 const KEY_PRI_ITEMS: &str = "pri_items";
 const KEY_ENABLED: &str = "instr_enabled";
+const KEY_TOTAL_COUNT: &str = "total_body_count";
 
 #[derive(Default)]
 pub(crate) struct Instrumentor {
     enabled: bool,
+    total_body_count: Option<NonZeroUsize>,
 }
 
 impl Instrumentor {
-    pub(crate) fn new(enabled: bool) -> Self {
-        Self { enabled }
+    pub(crate) fn new(enabled: bool, total_body_count: Option<NonZeroUsize>) -> Self {
+        Self {
+            enabled,
+            total_body_count,
+        }
     }
 }
 
@@ -57,6 +62,7 @@ impl CompilationPass for Instrumentor {
     ) -> rustc_driver::Compilation {
         // As early as possible, we use transform_ast to set the enabled flag.
         storage.get_or_insert_with(KEY_ENABLED.to_owned(), || self.enabled);
+        storage.get_or_insert_with(KEY_TOTAL_COUNT.to_owned(), || self.total_body_count);
         rustc_driver::Compilation::Continue
     }
 
@@ -74,7 +80,7 @@ impl CompilationPass for Instrumentor {
 }
 
 fn transform<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>, storage: &mut dyn Storage) {
-    on_start(tcx);
+    on_start(tcx, storage);
 
     let def_id = body.source.def_id();
 
@@ -120,14 +126,22 @@ fn transform<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>, storage: &mut dyn S
     pri_items.return_to(storage);
 }
 
-fn on_start(tcx: TyCtxt) {
+fn on_start(_tcx: TyCtxt, storage: &mut dyn Storage) {
     {
         static COUNTER: atomic::AtomicUsize = atomic::AtomicUsize::new(0);
         let counter = COUNTER.fetch_add(1, atomic::Ordering::SeqCst);
-        let total = tcx.mir_keys(()).len();
-        let update_interval = core::cmp::max(1, total / 100);
-        if total - counter < update_interval || counter % update_interval == 0 {
-            log_info!(target: TAG_INSTRUMENTATION_COUNTER, "Transforming {} / {}", counter, total);
+        let total = *storage
+            .get_mut::<Option<NonZeroUsize>>(&KEY_TOTAL_COUNT.to_owned())
+            .unwrap();
+        let total_num: usize = total.unwrap_or(NonZeroUsize::MAX).into();
+        let update_interval = total.map_or(100, |t| usize::from(t) / 100);
+        if total_num - update_interval < counter || counter % update_interval == 0 {
+            log_info!(
+                target: TAG_INSTRUMENTATION_COUNTER,
+                "Transforming {} / {}",
+                counter,
+                total.as_ref().map(NonZeroUsize::to_string).unwrap_or("?".to_owned()),
+            );
         }
     }
 }

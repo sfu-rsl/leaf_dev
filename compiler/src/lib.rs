@@ -107,7 +107,7 @@ pub fn run_compiler(args: impl Iterator<Item = String>, input_path: Option<PathB
                     prerequisites_pass,
                     <TypeExporter>,
                     nctfe_pass,
-                    Instrumentor::new(true),
+                    Instrumentor::new(true, None /* FIXME */),
                 )
                 .into_logged()
                 .to_callbacks(),
