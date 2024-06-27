@@ -9,6 +9,7 @@
 #![feature(box_into_inner)]
 #![feature(assert_matches)]
 #![feature(core_intrinsics)]
+#![feature(const_option)]
 
 mod config;
 mod mir_transform;
@@ -33,6 +34,7 @@ extern crate rustc_metadata;
 extern crate rustc_middle;
 extern crate rustc_mir_build;
 extern crate rustc_mir_transform;
+extern crate rustc_monomorphize;
 extern crate rustc_query_system;
 extern crate rustc_session;
 extern crate rustc_span;

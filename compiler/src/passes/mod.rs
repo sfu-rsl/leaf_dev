@@ -1,3 +1,4 @@
+mod codegen;
 #[cfg(nctfe)]
 pub(crate) mod ctfe;
 mod instr;
@@ -21,12 +22,14 @@ use paste::paste;
 use self::implementation::CompilationPassAdapter;
 use crate::utils::Chain;
 
+pub(crate) use codegen::MonoItemInternalizer;
 #[cfg(nctfe)]
 pub(crate) use ctfe::{CtfeScanner, NctfeFunctionAdder};
 pub(crate) use instr::Instrumentor;
 pub(crate) use logger::CompilationPassLogExt;
 #[allow(unused)]
 pub(crate) use noop::NoOpPass;
+pub(crate) use noop::OverrideFlagsForcePass;
 pub(crate) use runtime_adder::RuntimeAdder;
 pub(crate) use tyexp::TypeExporter;
 
@@ -48,6 +51,10 @@ macro_rules! visit_before_after {
 
 #[allow(unused)]
 pub(crate) trait CompilationPass {
+    fn override_flags() -> OverrideFlags {
+        OverrideFlags::all()
+    }
+
     visit_before_after! {
         fn ast(&mut self, krate: &ast::Crate, storage: &mut dyn Storage) -> Compilation {
             Compilation::Continue
@@ -97,6 +104,28 @@ pub(crate) trait CompilationPass {
     ) {
         Default::default()
     }
+
+    fn visit_codegen_units<'tcx>(
+        tcx: mir_ty::TyCtxt<'tcx>,
+        units: &'tcx [mir::mono::CodegenUnit<'tcx>],
+        storage: &mut dyn Storage,
+    ) -> &'tcx [mir::mono::CodegenUnit<'tcx>] {
+        units
+    }
+}
+
+bitflags::bitflags! {
+    #[derive(Clone, Copy)]
+    pub(crate) struct OverrideFlags: u8 {
+        const OPTIMIZED_MIR = 1;
+        const EXTERN_OPTIMIZED_MIR = 1 << 1;
+
+        const SHOULD_CODEGEN = 1 << 2;
+
+        const COLLECT_PARTITION = 1 << 3;
+
+        const MAKE_CODEGEN_BACKEND = 1 << 4;
+    }
 }
 
 pub(crate) trait CompilationPassExt: CompilationPass {
@@ -106,7 +135,7 @@ pub(crate) trait CompilationPassExt: CompilationPass {
 }
 impl<T: CompilationPass + Send + Sync + 'static> CompilationPassExt for T {
     fn to_callbacks(self) -> CompilationPassAdapter<Self> {
-        CompilationPassAdapter::new(self)
+        CompilationPassAdapter::new(self, Self::override_flags())
     }
 }
 
@@ -222,6 +251,13 @@ mod implementation {
         static ORIGINAL_EXTERN_OPTIMIZED_MIR: Cell<
             for<'tcx> fn(TyCtxt<'tcx>, DefId) -> &mir::Body<'tcx>
         > = Cell::new(|_, _| unreachable!());
+        static ORIGINAL_SHOULD_CODEGEN: Cell<
+            for<'tcx> fn(TyCtxt<'tcx>, mir_ty::Instance<'tcx>) -> bool
+        > = Cell::new(|_, _| unreachable!());
+        static ORIGINAL_COLLECT_PARTITION: Cell<
+            for<'tcx> fn(TyCtxt<'tcx>, ()) -> (&rustc_data_structures::unord::UnordSet<DefId>, &[mir::mono::CodegenUnit])
+        > = Cell::new(|_, _| unreachable!());
+        // > = Cell::new(|_, _| unreachable!());
     }
 
     struct PassHolder<T: CompilationPass + ?Sized>(Arc<Mutex<T>>);
@@ -250,7 +286,10 @@ mod implementation {
         }
     }
 
-    pub(crate) struct CompilationPassAdapter<T: CompilationPass + Send + ?Sized>(PassHolder<T>);
+    pub(crate) struct CompilationPassAdapter<T: CompilationPass + Send + ?Sized>(
+        PassHolder<T>,
+        OverrideFlags,
+    );
 
     macro_rules! stop_if_stop {
         ($result:expr) => {
@@ -264,20 +303,52 @@ mod implementation {
         for CompilationPassAdapter<T>
     {
         fn config(&mut self, config: &mut interface::Config) {
+            log::debug!("Overriding queries with flags: {:b}", self.1);
+
+            *global::OVERRIDE_FLAGS.lock().unwrap() = self.1;
             ORIGINAL_OVERRIDE.set(config.override_queries.take());
+            config.override_queries = Some(
+                move |session, providers: &mut rustc_middle::util::Providers| {
+                    if let Some(existing_override) = ORIGINAL_OVERRIDE.get() {
+                        existing_override(session, providers);
+                    }
 
-            config.override_queries = Some(move |session, providers| {
-                if let Some(existing_override) = ORIGINAL_OVERRIDE.get() {
-                    existing_override(session, providers);
-                }
+                    let overrides = global::OVERRIDE_FLAGS.lock().unwrap();
 
-                ORIGINAL_OPTIMIZED_MIR.set(providers.optimized_mir);
-                providers.optimized_mir = Self::optimized_mir;
-                ORIGINAL_EXTERN_OPTIMIZED_MIR.set(providers.extern_queries.optimized_mir);
-                providers.extern_queries.optimized_mir = Self::extern_optimized_mir;
-            });
+                    if overrides.contains(OverrideFlags::OPTIMIZED_MIR) {
+                        ORIGINAL_OPTIMIZED_MIR.set(providers.optimized_mir);
+                        providers.optimized_mir = Self::optimized_mir;
+                    }
+                    if overrides.contains(OverrideFlags::EXTERN_OPTIMIZED_MIR) {
+                        ORIGINAL_EXTERN_OPTIMIZED_MIR.set(providers.extern_queries.optimized_mir);
+                        providers.extern_queries.optimized_mir = Self::extern_optimized_mir;
+                    if overrides.contains(OverrideFlags::SHOULD_CODEGEN) {
+                        ORIGINAL_SHOULD_CODEGEN.set(providers.should_codegen_locally);
+                        providers.should_codegen_locally = |tcx, instance| {
+                            let def_id = instance.def.def_id();
 
-            config.make_codegen_backend = Some(codegen::get_backend_maker(self.0.clone()));
+                            if tcx.is_foreign_item(def_id) {
+                                // Foreign items are always linked against, there's no way of instantiating them.
+                                return false;
+                            }
+
+                            // Force everything to be codegened.
+                            true
+                        };
+                    }
+
+                    if overrides.contains(OverrideFlags::COLLECT_PARTITION) {
+                        ORIGINAL_COLLECT_PARTITION.set(providers.collect_and_partition_mono_items);
+                        providers.collect_and_partition_mono_items =
+                            Self::collect_and_partition_mono_items;
+                    }
+
+                },
+            );
+
+            if self.1.contains(OverrideFlags::MAKE_CODEGEN_BACKEND) {
+                config.make_codegen_backend = Some(codegen::get_backend_maker(self.0.clone()));
+            }
 
             global::clear_ctxt_id_and_storage();
         }
@@ -346,11 +417,24 @@ mod implementation {
             T::visit_mir_body_after(tcx, &body, &mut storage);
             tcx.arena.alloc(body)
         }
+
+        fn collect_and_partition_mono_items(
+            tcx: TyCtxt,
+            _: (),
+        ) -> (
+            &rustc_data_structures::unord::UnordSet<DefId>,
+            &[mir::mono::CodegenUnit],
+        ) {
+            global::set_ctxt_id(tcx);
+            let (items, units) = ORIGINAL_COLLECT_PARTITION.get()(tcx, ());
+            let units = T::visit_codegen_units(tcx, units, &mut global::get_storage());
+            (items, units)
+        }
     }
 
     impl<T: CompilationPass + Send> CompilationPassAdapter<T> {
-        pub(crate) fn new(pass: T) -> Self {
-            Self(PassHolder::new(pass))
+        pub(crate) fn new(pass: T, overrides: OverrideFlags) -> Self {
+            Self(PassHolder::new(pass), overrides)
         }
 
         pub(crate) fn into_pass(self) -> T {
@@ -363,6 +447,10 @@ mod implementation {
         A: CompilationPass,
         B: CompilationPass,
     {
+        fn override_flags() -> OverrideFlags {
+            A::override_flags() | B::override_flags()
+        }
+
         fn visit_ast_before(
             &mut self,
             krate: &ast::Crate,
@@ -438,9 +526,19 @@ mod implementation {
             A::transform_mir_body(tcx, body, storage);
             B::transform_mir_body(tcx, body, storage);
         }
+
+        fn visit_codegen_units<'tcx>(
+            tcx: mir_ty::TyCtxt<'tcx>,
+            units: &'tcx [mir::mono::CodegenUnit<'tcx>],
+            storage: &mut dyn Storage,
+        ) -> &'tcx [mir::mono::CodegenUnit<'tcx>] {
+            let units = A::visit_codegen_units(tcx, units, storage);
+            let units = B::visit_codegen_units(tcx, units, storage);
+            units
+        }
     }
 
-    mod codegen {
+    pub mod codegen {
         /* NOTE: Currently we do not do any modification during code generation.
          * This wrapper is only supposed to provide callbacks
          */
@@ -733,6 +831,8 @@ mod implementation {
         use std::cell::Cell;
 
         use rustc_middle::ty::TyCtxt;
+
+        pub(super) static OVERRIDE_FLAGS: Mutex<OverrideFlags> = Mutex::new(OverrideFlags::empty());
 
         thread_local! {
             /*

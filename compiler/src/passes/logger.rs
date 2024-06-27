@@ -126,6 +126,16 @@ where
         log_debug!("target: {} Storage: {:#?}", obj_target!(), storage);
         T::transform_mir_body(tcx, body, storage)
     }
+
+    fn visit_codegen_units<'tcx>(
+        tcx: rustc_middle::ty::TyCtxt<'tcx>,
+        units: &'tcx [mir::mono::CodegenUnit<'tcx>],
+        storage: &mut dyn Storage,
+    ) -> &'tcx [mir::mono::CodegenUnit<'tcx>] {
+        log::debug!(target: target!(), "Visiting codegen units");
+        log::debug!(target: obj_target!(), "Storage: {:#?}", storage);
+        T::visit_codegen_units(tcx, units, storage)
+    }
 }
 
 fn get_mir_pretty<'tcx>(tcx: TyCtxt<'tcx>, body: &mir::Body<'tcx>) -> String {
