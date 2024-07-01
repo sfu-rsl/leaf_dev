@@ -114,10 +114,10 @@ pub(crate) trait CompilationPass {
 
     fn visit_codegen_units<'tcx>(
         tcx: mir_ty::TyCtxt<'tcx>,
-        units: &'tcx [mir::mono::CodegenUnit<'tcx>],
+        units: &mut [mir::mono::CodegenUnit<'tcx>],
         storage: &mut dyn Storage,
-    ) -> &'tcx [mir::mono::CodegenUnit<'tcx>] {
-        units
+    ) {
+        Default::default()
     }
 }
 
@@ -180,6 +180,7 @@ pub(crate) trait StorageExt {
 mod implementation {
     use super::*;
 
+    use mir::mono::CodegenUnit;
     use mir_ty::TyCtxt;
     use rustc_driver::Compilation;
     use rustc_hir::def_id::DefId;
@@ -262,7 +263,7 @@ mod implementation {
             for<'tcx> fn(TyCtxt<'tcx>, mir_ty::Instance<'tcx>) -> bool
         > = Cell::new(|_, _| unreachable!());
         static ORIGINAL_COLLECT_PARTITION: Cell<
-            for<'tcx> fn(TyCtxt<'tcx>, ()) -> (&rustc_data_structures::unord::UnordSet<DefId>, &[mir::mono::CodegenUnit])
+            for<'tcx> fn(TyCtxt<'tcx>, ()) -> (&rustc_data_structures::unord::UnordSet<DefId>, &[CodegenUnit])
         > = Cell::new(|_, _| unreachable!());
         // > = Cell::new(|_, _| unreachable!());
     }
@@ -434,12 +435,26 @@ mod implementation {
             _: (),
         ) -> (
             &rustc_data_structures::unord::UnordSet<DefId>,
-            &[mir::mono::CodegenUnit],
+            &[CodegenUnit],
         ) {
+            fn clone_cgu<'tcx>(cgu: &CodegenUnit<'tcx>) -> CodegenUnit<'tcx> {
+                let mut new_cgu = CodegenUnit::new(cgu.name().clone());
+                new_cgu.items_mut().extend(cgu.items().clone());
+                new_cgu.compute_size_estimate();
+                if cgu.is_primary() {
+                    new_cgu.make_primary();
+                }
+                if cgu.is_code_coverage_dead_code_cgu() {
+                    new_cgu.make_code_coverage_dead_code_cgu();
+                }
+                new_cgu
+            }
+
             global::set_ctxt_id(tcx);
             let (items, units) = ORIGINAL_COLLECT_PARTITION.get()(tcx, ());
-            let units = T::visit_codegen_units(tcx, units, &mut global::get_storage());
-            (items, units)
+            let mut units = units.iter().map(clone_cgu).collect::<Vec<_>>();
+            T::visit_codegen_units(tcx, &mut units, &mut global::get_storage());
+            (items, tcx.arena.alloc_from_iter(units))
         }
     }
 
@@ -545,12 +560,11 @@ mod implementation {
 
         fn visit_codegen_units<'tcx>(
             tcx: mir_ty::TyCtxt<'tcx>,
-            units: &'tcx [mir::mono::CodegenUnit<'tcx>],
+            units: &mut [CodegenUnit<'tcx>],
             storage: &mut dyn Storage,
-        ) -> &'tcx [mir::mono::CodegenUnit<'tcx>] {
-            let units = A::visit_codegen_units(tcx, units, storage);
-            let units = B::visit_codegen_units(tcx, units, storage);
-            units
+        ) {
+            A::visit_codegen_units(tcx, units, storage);
+            B::visit_codegen_units(tcx, units, storage);
         }
     }
 
@@ -573,7 +587,6 @@ mod implementation {
             Session,
         };
         use rustc_span::{ErrorGuaranteed, Symbol};
-        use rustc_target::spec::Target;
 
         use delegate::delegate;
 

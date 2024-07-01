@@ -17,9 +17,9 @@ impl CompilationPass for MonoItemInternalizer {
 
     fn visit_codegen_units<'tcx>(
         tcx: TyCtxt<'tcx>,
-        units: &'tcx [CodegenUnit<'tcx>],
+        units: &mut [CodegenUnit<'tcx>],
         _storage: &mut dyn super::Storage,
-    ) -> &'tcx [CodegenUnit<'tcx>] {
+    ) {
         log::info!(
             "Internalizing items for crate `{}`",
             tcx.crate_name(LOCAL_CRATE)
@@ -32,18 +32,15 @@ impl CompilationPass for MonoItemInternalizer {
             )
         }
 
-        let units = units.into_iter().map(clone_cgu).map(|mut cgu| {
-            cgu.items_mut().iter_mut().for_each(|(item, data)| {
+        for unit in units {
+            unit.items_mut().iter_mut().for_each(|(item, data)| {
                 if should_be_internalized(tcx, item) {
                     data.linkage = Linkage::Internal;
                 } else {
                     log::debug!("Not internalizing item: {:?}", item.def_id());
                 }
             });
-            cgu
-        });
-
-        tcx.arena.alloc_from_iter(units)
+        }
     }
 }
 
@@ -79,17 +76,4 @@ fn should_be_internalized(tcx: TyCtxt, item: &MonoItem<'_>) -> bool {
     else {
         true
     }
-}
-
-fn clone_cgu<'tcx>(cgu: &CodegenUnit<'tcx>) -> CodegenUnit<'tcx> {
-    let mut new_cgu = CodegenUnit::new(cgu.name().clone());
-    new_cgu.items_mut().extend(cgu.items().clone());
-    new_cgu.compute_size_estimate();
-    if cgu.is_primary() {
-        new_cgu.make_primary();
-    }
-    if cgu.is_code_coverage_dead_code_cgu() {
-        new_cgu.make_code_coverage_dead_code_cgu();
-    }
-    new_cgu
 }

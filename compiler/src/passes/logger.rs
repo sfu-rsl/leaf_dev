@@ -134,9 +134,9 @@ where
 
     fn visit_codegen_units<'tcx>(
         tcx: rustc_middle::ty::TyCtxt<'tcx>,
-        units: &'tcx [mir::mono::CodegenUnit<'tcx>],
+        units: &mut [mir::mono::CodegenUnit<'tcx>],
         storage: &mut dyn Storage,
-    ) -> &'tcx [mir::mono::CodegenUnit<'tcx>] {
+    ) {
         log::debug!(target: target!(), "Visiting codegen units");
         log::debug!(target: obj_target!(), "Storage: {:#?}", storage);
         T::visit_codegen_units(tcx, units, storage)
