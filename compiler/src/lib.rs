@@ -10,6 +10,7 @@
 #![feature(assert_matches)]
 #![feature(core_intrinsics)]
 #![feature(const_option)]
+#![feature(trait_upcasting)]
 
 mod config;
 mod mir_transform;
@@ -65,55 +66,93 @@ pub fn run_compiler(args: impl Iterator<Item = String>, input_path: Option<PathB
     log_info!("Running compiler with args: {:?}", args);
 
     use passes::*;
-    let mut pass: Box<Callbacks> = if should_do_nothing(&args) {
+    let mut pass = if should_do_nothing(&args) {
         log::info!("Leafc will work as the normal Rust compiler.");
         Box::new(NoOpPass.to_callbacks())
     } else {
         // We should force codegen for any crate so that they are self-contained.
         const FLAGS: u8 = OverrideFlags::SHOULD_CODEGEN.bits();
-        let codegen_force_pass = OverrideFlagsForcePass::<FLAGS>::default();
+        let codegen_enable_pass = OverrideFlagsForcePass::<FLAGS>::default();
 
-        if is_dependency_crate(driver_args::find_crate_name(&args)) {
-            Box::new(
-                chain!(
-                    <MonoItemInternalizer>,
-                    codegen_force_pass,
+        let mut pass: Box<Callbacks> =
+            if config.codegen_all_mir && is_dependency_crate(driver_args::find_crate_name(&args)) {
+                /*
+                 * In this mode, we only internalize the items in the compiled objects,
+                 * and do the instrumentation with the final crate. */
+                Box::new(
+                    chain!(
+                        <MonoItemInternalizer>,
+                        codegen_enable_pass,
+                    )
+                    .to_callbacks(),
                 )
-                .to_callbacks(),
-            )
-        } else {
-            let prerequisites_pass = RuntimeExternCrateAdder::new(
-                config.runtime_shim.crate_name.clone(),
-                config.runtime_shim.as_external,
-            );
+            } else {
+                let prerequisites_pass = RuntimeExternCrateAdder::new(
+                    config.runtime_shim.crate_name.clone(),
+                    config.runtime_shim.as_external,
+                );
 
-            #[cfg(nctfe)]
-            let nctfe_pass = {
-                let ctfe_block_ids = {
-                    let pass = chain!(prerequisites_pass.clone(), <CtfeScanner>,);
-                    let mut callbacks = pass.to_callbacks();
-                    run_pass(&mut callbacks);
-                    let pass = callbacks.into_pass();
-                    pass.second.into_result()
+                #[cfg(nctfe)]
+                let nctfe_pass = {
+                    let ctfe_block_ids = {
+                        let pass = chain!(prerequisites_pass.clone(), <CtfeScanner>,);
+                        let mut callbacks = pass.to_callbacks();
+                        run_pass(&mut callbacks);
+                        let pass = callbacks.into_pass();
+                        pass.second.into_result()
+                    };
+                    NctfeFunctionAdder::new(ctfe_block_ids.len())
                 };
-                NctfeFunctionAdder::new(ctfe_block_ids.len())
-            };
-            #[cfg(not(nctfe))]
-            let nctfe_pass = NoOpPass;
+                #[cfg(not(nctfe))]
+                let nctfe_pass = NoOpPass;
 
-            Box::new(
-                chain!(
-                    codegen_force_pass,
-                    prerequisites_pass,
-                    <LeafToolAdder>,
-                    <TypeExporter>,
-                    nctfe_pass,
-                    Instrumentor::new(true, None /* FIXME */),
+                Box::new(
+                    chain!(
+                        codegen_enable_pass,
+                        prerequisites_pass,
+                        <LeafToolAdder>,
+                        <TypeExporter>,
+                        nctfe_pass,
+                        Instrumentor::new(true, None /* FIXME */),
+                    )
+                    .into_logged()
+                    .to_callbacks(),
                 )
-                .into_logged()
-                .to_callbacks(),
-            )
-        }
+            };
+        pass.set_leaf_config(config);
+        pass.add_config_callback(Box::new(move |rustc_config, leafc_config| {
+            if leafc_config.codegen_all_mir {
+                rustc_config.opts.unstable_opts.always_encode_mir = true;
+                rustc_config
+                    .opts
+                    .cli_forced_codegen_units
+                    .replace(1)
+                    .inspect(|old| {
+                        log::warn!(
+                            concat!(
+                                "Forcing codegen units to 1 because of compilation mode. ",
+                                "The requested value was: {:?}",
+                            ),
+                            old,
+                        );
+                    });
+                if rustc_config.opts.maybe_sysroot.is_none() {
+                    let is_building_core = leafc_config.building_core
+                        || rustc_config
+                            .crate_cfg
+                            .iter()
+                            .any(|cfg| cfg == CONFIG_CORE_BUILD);
+                    if !is_building_core {
+                        log::warn!(concat!(
+                            "Codegen all MIR is enabled, but the sysroot is not set. ",
+                            "It is necessary to use a sysroot with MIR for all libraries included.",
+                            "Unless you are building the core library, this may cause issues.",
+                        ));
+                    }
+                }
+            }
+        }));
+        pass
     };
 
     rustc_driver::catch_with_exit_code(|| RunCompiler::new(&args, pass.as_mut()).run())
@@ -155,6 +194,8 @@ pub mod constants {
     pub(super) const CRATE_RUNTIME: &str = "leafrtsh";
 
     pub(crate) const CONFIG_ENV_PREFIX: &str = "LEAFC";
+
+    pub(super) const CONFIG_CORE_BUILD: &str = "core_build";
 
     pub(super) const URL_BUG_REPORT: &str = "https://github.com/sfu-rsl/leaf/issues/new";
 
@@ -251,7 +292,7 @@ mod driver_args {
     pub(super) fn set_up_args(
         given_args: impl Iterator<Item = String>,
         input_path: Option<PathBuf>,
-        config: &crate::config::CompilerConfig,
+        config: &crate::config::LeafCompilerConfig,
     ) -> Vec<String> {
         // Although the driver throws out the first argument, we set the correct value for it.
         let given_args = std::iter::once(

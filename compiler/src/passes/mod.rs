@@ -21,6 +21,7 @@ use rustc_session::Session;
 use paste::paste;
 
 use self::implementation::CompilationPassAdapter;
+use crate::config::LeafCompilerConfig;
 use crate::utils::Chain;
 
 pub(crate) use codegen::MonoItemInternalizer;
@@ -35,7 +36,7 @@ pub(crate) use runtime_adder::LeafToolAdder;
 pub(crate) use runtime_adder::RuntimeExternCrateAdder;
 pub(crate) use tyexp::TypeExporter;
 
-pub(super) type Callbacks = dyn driver::Callbacks + Send;
+pub(super) type Callbacks = dyn CallbacksExt + Send;
 
 pub(crate) trait HasResult<R> {
     fn into_result(self) -> R;
@@ -144,6 +145,15 @@ impl<T: CompilationPass + Send + Sync + 'static> CompilationPassExt for T {
     fn to_callbacks(self) -> CompilationPassAdapter<Self> {
         CompilationPassAdapter::new(self, Self::override_flags())
     }
+}
+
+pub(crate) trait CallbacksExt: driver::Callbacks {
+    fn set_leaf_config(&mut self, config: LeafCompilerConfig);
+
+    fn add_config_callback(
+        &mut self,
+        callback: Box<dyn FnOnce(&mut interface::Config, &mut LeafCompilerConfig) + Send + 'static>,
+    );
 }
 
 use implementation::ValueBorrow;
@@ -294,10 +304,13 @@ mod implementation {
         }
     }
 
-    pub(crate) struct CompilationPassAdapter<T: CompilationPass + Send + ?Sized>(
-        PassHolder<T>,
-        OverrideFlags,
-    );
+    pub(crate) struct CompilationPassAdapter<T: CompilationPass + Send + ?Sized> {
+        pass: PassHolder<T>,
+        overrides: OverrideFlags,
+        leaf_config: Option<LeafCompilerConfig>,
+        config_callbacks:
+            Vec<Box<dyn FnOnce(&mut interface::Config, &mut LeafCompilerConfig) + Send>>,
+    }
 
     macro_rules! stop_if_stop {
         ($result:expr) => {
@@ -311,9 +324,16 @@ mod implementation {
         for CompilationPassAdapter<T>
     {
         fn config(&mut self, config: &mut interface::Config) {
-            log::debug!("Overriding queries with flags: {:b}", self.1);
+            if let Some(leaf_config) = self.leaf_config.as_ref() {
+                if leaf_config.codegen_all_mir {
+                    assert!(self.overrides.contains(OverrideFlags::SHOULD_CODEGEN));
+                    global::FORCE_CODEGEN_FOR_ALL.store(true, std::sync::atomic::Ordering::Relaxed);
+                }
+            }
 
-            *global::OVERRIDE_FLAGS.lock().unwrap() = self.1;
+            *global::OVERRIDE_FLAGS.lock().unwrap() = self.overrides;
+            log::debug!("Overriding queries with flags: {:b}", self.overrides);
+
             ORIGINAL_OVERRIDE.set(config.override_queries.take());
             config.override_queries = Some(
                 move |session, providers: &mut rustc_middle::util::Providers| {
@@ -331,18 +351,24 @@ mod implementation {
                         ORIGINAL_EXTERN_OPTIMIZED_MIR.set(providers.extern_queries.optimized_mir);
                         providers.extern_queries.optimized_mir = Self::extern_optimized_mir;
                     if overrides.contains(OverrideFlags::SHOULD_CODEGEN) {
-                        ORIGINAL_SHOULD_CODEGEN.set(providers.should_codegen_locally);
-                        providers.should_codegen_locally = |tcx, instance| {
-                            let def_id = instance.def.def_id();
+                        /* Currently we only do forcing code generation in this override,
+                         * Thus, overriding it is equivalent to forcing it.
+                         * If not, we should do this if inside the override. */
+                        if global::FORCE_CODEGEN_FOR_ALL.load(std::sync::atomic::Ordering::Relaxed)
+                        {
+                            ORIGINAL_SHOULD_CODEGEN.set(providers.should_codegen_locally);
+                            providers.should_codegen_locally = |tcx, instance| {
+                                let def_id = instance.def.def_id();
 
-                            if tcx.is_foreign_item(def_id) {
-                                // Foreign items are always linked against, there's no way of instantiating them.
-                                return false;
-                            }
+                                if tcx.is_foreign_item(def_id) {
+                                    // Foreign items are always linked against, there's no way of instantiating them.
+                                    return false;
+                                }
 
-                            // Force everything to be codegened.
-                            true
-                        };
+                                // Force everything to be codegened.
+                                true
+                            };
+                        }
                     }
 
                     if overrides.contains(OverrideFlags::COLLECT_PARTITION) {
@@ -354,11 +380,18 @@ mod implementation {
                 },
             );
 
-            if self.1.contains(OverrideFlags::MAKE_CODEGEN_BACKEND) {
-                config.make_codegen_backend = Some(codegen::get_backend_maker(self.0.clone()));
+            if self.overrides.contains(OverrideFlags::MAKE_CODEGEN_BACKEND) {
+                config.make_codegen_backend = Some(codegen::get_backend_maker(self.pass.clone()));
             }
 
             global::clear_ctxt_id_and_storage();
+
+            for callback in self.config_callbacks.drain(..) {
+                callback(
+                    config,
+                    &mut self.leaf_config.as_mut().expect("Leaf config is not set"),
+                );
+            }
         }
 
         fn after_crate_root_parsing<'tcx>(
@@ -368,7 +401,7 @@ mod implementation {
         ) -> Compilation {
             let mut ast_steal = queries.parse().unwrap();
 
-            let mut pass = self.0.acquire();
+            let mut pass = self.pass.acquire();
             stop_if_stop!(pass.visit_ast_before(&ast_steal.borrow(), &mut global::get_storage()));
             pass.transform_ast(
                 &compiler.sess,
@@ -395,7 +428,7 @@ mod implementation {
         ) -> Compilation {
             queries.global_ctxt().unwrap().enter(global::set_ctxt_id);
             queries.global_ctxt().unwrap().enter(|tcx| {
-                let mut pass = self.0.acquire();
+                let mut pass = self.pass.acquire();
                 pass.visit_tcx_after_analysis(tcx, &mut global::get_storage())
             })
         }
@@ -460,11 +493,34 @@ mod implementation {
 
     impl<T: CompilationPass + Send> CompilationPassAdapter<T> {
         pub(crate) fn new(pass: T, overrides: OverrideFlags) -> Self {
-            Self(PassHolder::new(pass), overrides)
+            Self {
+                pass: PassHolder::new(pass),
+                overrides,
+                leaf_config: None,
+                config_callbacks: Vec::new(),
+            }
         }
 
         pub(crate) fn into_pass(self) -> T {
-            self.0.into_pass()
+            self.pass.into_pass()
+        }
+    }
+
+    impl<T: CompilationPass + Send + ?Sized> CallbacksExt for CompilationPassAdapter<T>
+    where
+        Self: driver::Callbacks,
+    {
+        fn set_leaf_config(&mut self, config: LeafCompilerConfig) {
+            self.leaf_config = Some(config);
+        }
+
+        fn add_config_callback(
+            &mut self,
+            callback: Box<
+                dyn FnOnce(&mut interface::Config, &mut LeafCompilerConfig) + Send + 'static,
+            >,
+        ) {
+            self.config_callbacks.push(callback);
         }
     }
 
@@ -857,11 +913,12 @@ mod implementation {
             *,
         };
 
-        use std::cell::Cell;
+        use std::{cell::Cell, sync::atomic::AtomicBool};
 
         use rustc_middle::ty::TyCtxt;
 
         pub(super) static OVERRIDE_FLAGS: Mutex<OverrideFlags> = Mutex::new(OverrideFlags::empty());
+        pub(super) static FORCE_CODEGEN_FOR_ALL: AtomicBool = AtomicBool::new(false);
 
         thread_local! {
             /*
