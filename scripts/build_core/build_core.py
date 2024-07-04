@@ -74,7 +74,10 @@ def get_toolchain_path(cwd, env=None) -> Path:
             check=True,
             capture_output=True,
         )
-        return Path(process.stdout.decode("utf-8").strip())
+        path = process.stdout.decode("utf-8").strip()
+        logging.debug("Toolchain path: %s", path)
+        logging.debug("Toolchain path stderr: %s", process.stderr.decode("utf-8"))
+        return Path(path)
     except subprocess.CalledProcessError as e:
         logging.error("Failed to get the toolchain path: %s", e.stderr.decode("utf-8"))
         raise
@@ -176,6 +179,9 @@ def add_leaf_to_core(core_src_dir: Path, leaf_workspace_dir: Path, res_dir: Path
                 check=True,
                 capture_output=True,
             )
+            logging.debug("Patch output: %s", process.stdout.decode("utf-8"))
+            logging.debug("Patch stderr: %s", process.stderr.decode("utf-8"))
+
         # Probe patching is effective.
         assert Path(core_src_dir.joinpath("leaf", "mod.rs")).exists()
 
@@ -218,6 +224,7 @@ def get_build_env(toolchain_path: Path):
         **os.environ,
         ENV_RUSTC: os.environ.get(ENV_LEAFC, default="leafc"),
         "RUSTUP_TOOLCHAIN": str(toolchain_path),
+        # "CARGO_LOG": "debug",
     }
 
 
@@ -233,6 +240,8 @@ def build_crate_with_core(dummy_crate_dir: Path, toolchain_path):
         f"--target={BUILD_TARGET}",
         "--verbose",
         f"--profile={'dev' if BUILD_PROFILE == 'debug' else BUILD_PROFILE}",
+        # You can switch to a single thread for easier debugging
+        # "-j1",
     ]
     run_command(
         args=args,

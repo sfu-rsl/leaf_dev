@@ -8,8 +8,8 @@ rustflags = [
     "abs_concrete",
     "--cfg",
     "core_build",
-    "--sysroot",
-    "$toolchain_path",
+    "-Zalways-encode-mir",
+    "-Ccodegen-units=1",
 ]
 
 [env]
