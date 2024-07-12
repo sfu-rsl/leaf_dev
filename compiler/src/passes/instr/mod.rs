@@ -111,8 +111,10 @@ fn transform<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>, storage: &mut dyn S
     let mut call_adder = RuntimeCallAdder::new(tcx, &mut modification, &pri_items, storage);
     let mut call_adder = call_adder.in_body(body);
 
-    if tcx.entry_fn(()).is_some_and(|(id, _)| id == def_id) {
-        handle_entry_function(&mut call_adder, body);
+    let is_entry = tcx.entry_fn(()).is_some_and(|(id, _)| id == def_id);
+
+    if is_entry {
+        handle_entry_function_pre(&mut call_adder, body);
     }
 
     // TODO: determine if body will ever be a promoted block
@@ -122,6 +124,11 @@ fn transform<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>, storage: &mut dyn S
         .enter_func();
 
     VisitorFactory::make_body_visitor(&mut call_adder).visit_body(body);
+
+    if is_entry {
+        handle_entry_function_post(&mut call_adder, body);
+    }
+
     modification.commit(body);
 
     pri_items.return_to(storage);
@@ -159,7 +166,7 @@ fn make_pri_items(tcx: TyCtxt) -> PriItems {
     }
 }
 
-fn handle_entry_function<'tcx, C>(call_adder: &mut RuntimeCallAdder<C>, body: &Body<'tcx>)
+fn handle_entry_function_pre<'tcx, C>(call_adder: &mut RuntimeCallAdder<C>, body: &Body<'tcx>)
 where
     C: ctxtreqs::Basic<'tcx>,
 {
@@ -167,6 +174,19 @@ where
     let first_block = body.basic_blocks.indices().next().unwrap();
     let mut call_adder = call_adder.at(Before(first_block));
     call_adder.init_runtime_lib();
+}
+
+fn handle_entry_function_post<'tcx, C>(call_adder: &mut RuntimeCallAdder<C>, body: &Body<'tcx>)
+where
+    C: ctxtreqs::Basic<'tcx>,
+{
+    let mut call_adder = call_adder.in_entry_fn();
+    body.basic_blocks
+        .iter_enumerated()
+        .filter(|(_, bb)| bb.terminator().kind == mir::TerminatorKind::Return)
+        .for_each(|(index, _)| {
+            call_adder.at(Before(index)).shutdown_runtime_lib();
+        });
 }
 
 fn requires_immediate_instr_after(stmt: &Statement) -> bool {

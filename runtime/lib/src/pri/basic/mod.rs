@@ -29,6 +29,10 @@ impl ProgramRuntimeInterface for BasicPri {
         init_backend();
     }
 
+    fn shutdown_runtime_lib() {
+        log::warn!("Shutting down has no effect on the basic backend.");
+    }
+
     fn ref_place_return_value() -> PlaceRef {
         push_place_ref(|p| p.of_local(Local::ReturnValue))
     }

@@ -10,11 +10,11 @@ pub type OperandRef = Ref;
 
 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
 #[repr(transparent)]
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct BinaryOp(pub u8);
 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
 #[repr(transparent)]
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct UnaryOp(pub u8);
 
 macro_rules! op_const {
@@ -126,14 +126,29 @@ impl UnaryOp {
     }
 }
 
+static DEFAULT_BRANCHING_INFO: BranchingInfo = BranchingInfo {
+    node_location: 0,
+    discriminant: 0,
+    discr_bit_size: 0,
+    discr_is_signed: false,
+};
+
 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct BranchingInfo {
     pub node_location: BasicBlockIndex,
     pub discriminant: OperandRef,
     pub discr_bit_size: u64,
     pub discr_is_signed: bool,
+}
+
+impl Default for BranchingInfo {
+    #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
+    #[inline(always)]
+    fn default() -> Self {
+        DEFAULT_BRANCHING_INFO
+    }
 }
 
 /// The definition of the interface between the program and the runtime library.
@@ -218,6 +233,7 @@ pub mod macros {
         ($macro:ident) => {
             $macro! {
               { fn init_runtime_lib() }
+              { fn shutdown_runtime_lib() }
 
               { fn ref_place_return_value() -> PlaceRef }
               { fn ref_place_argument(local_index: LocalIndex) -> PlaceRef }
@@ -515,7 +531,11 @@ pub mod macros {
         (modifier: $modifier:path,(u128: $u128_ty:ty,char: $char_ty:ty, &str: $str_ty:ty, &[u8]: $byte_str_ty:ty,slice: $slice_ty:path,branching_info: $branching_info_ty:ty,type_id: $type_id_ty:ty,binary_op: $binary_op_ty:ty,unary_op: $unary_op_ty:ty$(,)?)) => {
             $modifier!{
                 fn init_runtime_lib();
-            }$modifier!{
+            }
+            $modifier!{
+                fn shutdown_runtime_lib();
+            }
+            $modifier!{
                 fn ref_place_return_value()->PlaceRef;
             }$modifier!{
                 fn ref_place_argument(local_index:LocalIndex)->PlaceRef;

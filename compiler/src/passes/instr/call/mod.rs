@@ -184,6 +184,8 @@ pub trait FunctionHandler<'tcx> {
 
 pub(crate) trait EntryFunctionHandler {
     fn init_runtime_lib(&mut self);
+
+    fn shutdown_runtime_lib(&mut self);
 }
 
 pub(crate) trait AssertionHandler<'tcx> {
@@ -2215,6 +2217,11 @@ mod implementation {
     {
         fn init_runtime_lib(&mut self) {
             let block = self.make_bb_for_call(sym::init_runtime_lib, vec![]);
+            self.insert_blocks([block]);
+        }
+
+        fn shutdown_runtime_lib(&mut self) {
+            let block = self.make_bb_for_call(sym::shutdown_runtime_lib, vec![]);
             self.insert_blocks([block]);
         }
     }
