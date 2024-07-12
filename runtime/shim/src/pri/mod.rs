@@ -60,13 +60,29 @@ mod ffi {
     impl FfiPri for ForeignPri {}
 }
 
+static mut REC_GUARD: bool = false;
+
 macro_rules! export_to_rust_abi {
     ($(#[$($attr: meta)*])* fn $name:ident ($($(#[$($arg_attr: meta)*])* $arg:ident : $arg_type:ty),* $(,)?) $(-> $ret_ty:ty)?;) => {
         $(#[$($attr)*])*
-        #[inline(always)]
+        // #[inline(always)]
         #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
         pub fn $name ($($(#[$($arg_attr)*])* $arg : $arg_type),*) $(-> $ret_ty)? {
-            ffi::ForeignPri::$name($($arg.into()),*).into()
+            /* NOTE: This might be an inefficient way of preventing recursions.
+             * The recursion is possible as we call `into` function here that is
+             * instrumented (note that we are still in the space of the program
+             * here and not in the runtime library).
+             * Another solution is to make sure that we are not calling any
+             * instrumented function statically, but that does not seem to be
+             * easy to achieve. So unless we have evidence that this is significantly
+             * affecting the performance, we will keep this solution. */
+            if core::intrinsics::unlikely(unsafe { REC_GUARD }) {
+                return Default::default();
+            }
+            unsafe { REC_GUARD = true; }
+            let result = ffi::ForeignPri::$name($($arg.into()),*).into();
+            unsafe { REC_GUARD = false; }
+            result
         }
     };
 }
