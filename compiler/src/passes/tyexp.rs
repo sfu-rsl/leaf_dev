@@ -12,7 +12,6 @@ use rustc_target::abi::{FieldIdx, Layout, VariantIdx};
 use common::{log_debug, log_info, log_warn};
 use std::collections::HashMap;
 use std::env::{self};
-use std::path::Path;
 
 use glob::glob;
 
@@ -61,11 +60,6 @@ impl CompilationPass for TypeExporter {
         let out_dir = &sample_file_path.parent().unwrap();
         let is_single_file_program =
             out_dir.as_os_str().is_empty() || !rustc_session::utils::was_invoked_from_cargo();
-        log_warn!(
-            "is_single_file_program: {}, CARGO_PRIMARY_PACKAGE: {}",
-            is_single_file_program,
-            env::var("CARGO_PRIMARY_PACKAGE").is_ok()
-        );
         let file_path = if is_single_file_program {
             out_dir.join(FINAL_TYPE_EXPORT_FILE)
         }
@@ -237,22 +231,37 @@ where
         let tcx = cx.tcx();
         match self {
             FieldsShape::Primitive => FieldsShapeInfo::NoFields,
-            FieldsShape::Union(..) => FieldsShapeInfo::Union,
+            FieldsShape::Union(count) => FieldsShapeInfo::Union(StructShape {
+                fields: (0..(*count).into())
+                    .into_iter()
+                    .map(|idx| {
+                        let ty = field_ty(ty_layout, cx, FieldIdx::from_usize(idx));
+                        FieldInfo {
+                            ty: type_id(tcx, ty),
+                            offset: 0,
+                        }
+                    })
+                    .collect(),
+            }),
             FieldsShape::Array { count, .. } => FieldsShapeInfo::Array(ArrayShape {
                 len: *count,
                 item_ty: type_id(tcx, field_ty(ty_layout, cx, FieldIdx::from_usize(0))),
             }),
-            FieldsShape::Arbitrary { offsets, .. } => {
-                let mut fields = vec![];
-                for (idx, size) in offsets.clone().into_iter_enumerated() {
-                    let ty = field_ty(ty_layout, cx, idx);
-                    fields.push(FieldInfo {
-                        ty: type_id(tcx, ty),
-                        offset: size.bytes(),
-                    })
-                }
-                FieldsShapeInfo::Struct(StructShape { fields })
-            }
+            FieldsShape::Arbitrary { offsets, .. } => FieldsShapeInfo::Struct(StructShape {
+                fields: {
+                    offsets
+                        .clone()
+                        .into_iter_enumerated()
+                        .map(|(idx, size)| {
+                            let ty = field_ty(ty_layout, cx, idx);
+                            FieldInfo {
+                                ty: type_id(tcx, ty),
+                                offset: size.bytes(),
+                            }
+                        })
+                        .collect()
+                },
+            }),
         }
     }
 }

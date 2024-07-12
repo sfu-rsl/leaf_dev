@@ -11,6 +11,7 @@ mod state;
 use std::{
     cell::{RefCell, RefMut},
     collections::HashMap,
+    iter,
     ops::DerefMut,
     rc::Rc,
 };
@@ -334,11 +335,14 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
             Some(variant) => AdtKind::Enum { variant },
             None => AdtKind::Struct,
         };
-        self.set_adt_value(kind, fields)
+        self.set_adt_value(kind, fields.map(|f| Some(f)))
     }
 
-    fn union_from(self, active_field: abs::FieldIndex, value: Self::Field) {
-        todo!("Unions are not yet supported. {active_field} = {value:?}")
+    fn union_from(mut self, active_field: abs::FieldIndex, value: Self::Field) {
+        let fields = (0..active_field)
+            .map(|_| None)
+            .chain(iter::once(Some(value)));
+        self.set_adt_value(AdtKind::Struct, fields.into_iter())
     }
 
     fn raw_ptr_from(self, data_ptr: Self::Operand, metadata: Self::Operand, _is_mutable: bool) {
@@ -378,13 +382,13 @@ impl<EB: OperationalExprBuilder> BasicAssignmentHandler<'_, EB> {
     fn set_adt_value(
         &mut self,
         kind: AdtKind,
-        fields: impl Iterator<Item = <Self as AssignmentHandler>::Field>,
+        fields: impl Iterator<Item = Option<<Self as AssignmentHandler>::Field>>,
     ) {
         let value = Value::Concrete(ConcreteValue::Adt(AdtValue {
             kind,
             fields: fields
                 .map(|f| AdtField {
-                    value: Some(self.get_operand_value(f.into())),
+                    value: f.map(|f| self.get_operand_value(f.into())),
                 })
                 .collect(),
         }));

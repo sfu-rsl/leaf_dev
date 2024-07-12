@@ -26,7 +26,7 @@ use crate::{
     tyexp::TypeInfoExt,
     utils::{type_id_of, SelfHierarchical},
 };
-use common::tyexp::{ArrayShape, FieldsShapeInfo, StructShape, TypeInfo};
+use common::tyexp::{ArrayShape, FieldsShapeInfo, StructShape, TypeInfo, UnionShape};
 
 use super::{
     super::{
@@ -500,21 +500,44 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
             AdtKind::Enum { variant } => &ty.variants[variant as usize],
             _ => ty.expect_single_variant(),
         };
-        let FieldsShapeInfo::Struct(StructShape { fields }) = &variant.fields else {
-            panic!(
-                "Expected the fields to be in shape of a struct, found: {:?}",
-                variant.fields
-            )
-        };
-        for (field, info) in adt.fields.iter().zip(fields) {
-            if let Some(value) = &field.value {
-                if !value.is_symbolic() {
-                    continue;
-                }
 
-                self.set_addr(addr + info.offset, value.clone(), info.ty);
+        match &variant.fields {
+            FieldsShapeInfo::Struct(StructShape { fields }) => {
+                for (field, info) in adt.fields.iter().zip(fields) {
+                    if let Some(value) = &field.value {
+                        if !value.is_symbolic() {
+                            continue;
+                        }
+
+                        self.set_addr(addr + info.offset, value.clone(), info.ty);
+                    }
+                }
             }
-        }
+            FieldsShapeInfo::Union(UnionShape { fields }) => {
+                let field_find = &mut adt
+                    .fields
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, f)| f.value.as_ref().map(|v| (i, v.clone())));
+                let (i, value) = field_find
+                    .next()
+                    .expect("Could not find the single field of a union.");
+                debug_assert!(
+                    field_find.next().is_none(),
+                    "Multiple fields found in a union."
+                );
+                /* NOTE: The documents about union is a bit unreliable.
+                 * - https://doc.rust-lang.org/reference/types/union.html
+                 * - https://doc.rust-lang.org/nightly/nightly-rustc/rustc_target/abi/enum.FieldsShape.html#variant.Union
+                 */
+                let offset = 0;
+                self.set_addr(addr + offset, value.clone(), fields[i].ty);
+            }
+            _ => panic!(
+                "Unexpected shape for fields of an ADT: {:?}",
+                variant.fields
+            ),
+        };
     }
 
     fn set_addr_array(&mut self, addr: RawPointer, array: &ArrayValue, type_id: TypeId) {

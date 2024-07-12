@@ -28,9 +28,9 @@ pub struct VariantInfo {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum FieldsShapeInfo {
     NoFields,
-    Union,
     Array(ArrayShape),
     Struct(StructShape),
+    Union(UnionShape),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -43,6 +43,9 @@ pub struct ArrayShape {
 pub struct StructShape {
     pub fields: Vec<FieldInfo>,
 }
+
+// We use the same struct to avoid redundancy. Offset is not used for unions.
+pub type UnionShape = StructShape;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FieldInfo {
