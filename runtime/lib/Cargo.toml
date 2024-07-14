@@ -11,9 +11,11 @@ crate-type = ["rlib"]
 
 [dependencies]
 common = { path = "../../common", features = ["tyexp", "config", "logging"] }
+leaf_macros = {package = "macros", path = "../../macros"}
 
 config = { version = "0.14.0", features = ["toml", "json"] }
 tracing-subscriber = {version="0.3", features=["env-filter"]}
+tracing = {version="0.1", features=["log"]}
 paste = "1.0"
 z3 = { version = "0.12.1" }
 lazy_static = "1.4.0"
@@ -21,3 +23,6 @@ delegate = "0.12.0"
 derive_more = "0.99.11"
 serde = { version = "1.0.188", features = ["derive"] }
 serde_json = "1.0.107"
+tracing-tree = "0.4.0"
+chrono = "0.4.38"
+

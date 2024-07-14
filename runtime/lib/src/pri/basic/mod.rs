@@ -4,15 +4,16 @@ mod utils;
 
 use common::pri::*;
 
+use self::instance::*;
 use crate::abs::{
     self, backend::*, AssertKind, BranchingMetadata, CastKind, FloatType, IntType, Local, ValueType,
 };
 use common::log_warn;
-
-use self::instance::*;
+use leaf_macros::trait_log_fn;
 
 pub struct BasicPri;
 
+#[trait_log_fn(target = "pri")]
 impl ProgramRuntimeInterface for BasicPri {
     type U128 = u128;
     type Char = char;
@@ -37,7 +38,7 @@ impl ProgramRuntimeInterface for BasicPri {
     fn ref_place_local(local_index: LocalIndex) -> PlaceRef {
         push_place_ref(|p| p.of_local(Local::Normal(local_index)))
     }
-
+    #[tracing::instrument]
     fn ref_place_deref(place: PlaceRef) {
         mut_place_ref(place, |p, place| p.project_on(place).deref())
     }
@@ -497,7 +498,7 @@ impl BasicPri {
 
 pub struct BranchingInfo {
     pub discriminant: OperandRef,
-    pub metadata: BranchingMetadata,
+    pub(crate) metadata: BranchingMetadata,
 }
 
 impl BranchingInfo {
@@ -518,5 +519,15 @@ impl BranchingInfo {
                 },
             },
         }
+    }
+}
+
+impl core::fmt::Debug for BranchingInfo {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "BranchingInfo(on: {} as {} @ {})",
+            self.discriminant, self.metadata.discr_as_int, self.metadata.node_location
+        )
     }
 }

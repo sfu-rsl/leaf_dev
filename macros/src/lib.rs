@@ -2,7 +2,7 @@ use ignore::WalkBuilder;
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use std::path::{Path, MAIN_SEPARATOR};
-use syn::{parse_macro_input, ItemFn, LitStr};
+use syn::{parse_macro_input, Attribute, ImplItem, ItemFn, ItemImpl, LitStr};
 
 #[proc_macro_attribute]
 pub fn gen_tests_rs(input_path: TokenStream, input_fn: TokenStream) -> TokenStream {
@@ -85,4 +85,33 @@ fn get_test_name(path: &Path) -> String {
         .to_string_lossy()
         .replace("-", "_")
         .replace(MAIN_SEPARATOR, "__")
+}
+
+fn function_contains_log_fn(st: &str) -> bool {
+    st.contains("tracing")
+}
+
+#[proc_macro_attribute]
+pub fn trait_log_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let attr: proc_macro2::TokenStream = attr.into();
+    let mut input = parse_macro_input!(item as ItemImpl);
+    let instrument_stmt: Attribute = syn::parse_quote! {
+        #[tracing::instrument(#attr)]
+    };
+
+    for item in &mut input.items {
+        if let ImplItem::Fn(method) = item {
+
+            let att = &mut method.attrs;
+            let att_string = format!("{:?}", att);
+
+            if !function_contains_log_fn(att_string.as_str()) {
+                att.insert(0, instrument_stmt.clone());
+            }
+        }
+    }
+    let output = quote! {
+        #input
+    };
+    output.into()
 }

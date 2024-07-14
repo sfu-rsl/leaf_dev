@@ -96,6 +96,7 @@ pub enum AssertKind<Operand> {
     MisalignedPointerDereference { required: Operand, found: Operand },
 }
 
+#[derive(Debug)]
 pub(crate) struct BranchingMetadata {
     pub node_location: BasicBlockIndex,
     /* NOTE: If more type information was passed (such as reporting type for all local variables),
