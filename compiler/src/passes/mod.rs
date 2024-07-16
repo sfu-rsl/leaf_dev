@@ -194,6 +194,7 @@ mod implementation {
     use mir_ty::TyCtxt;
     use rustc_driver::Compilation;
     use rustc_hir::def_id::DefId;
+    use rustc_middle::query::TyCtxtAt;
     use rustc_span::def_id::LocalDefId;
 
     use std::cell::Cell;
@@ -252,30 +253,29 @@ mod implementation {
      */
 
     thread_local! {
-        /*
-         * NOTE: Both `override_queries` and `optimized_mir` are function pointers, which means
-         * that they cannot be closures with captured variables. Therefore, we use these statically
-         * allocated cells to store the original functions.
-         * As there will be a single transformation pass in the project and the original pointer
-         * is the same anyway, this should not cause any problems.
-         */
-        #[allow(clippy::type_complexity)]
-        static ORIGINAL_OVERRIDE: Cell<
-            Option<fn(&Session, &mut rustc_middle::util::Providers)>,
-        > = Cell::new(None);
-        static ORIGINAL_OPTIMIZED_MIR: Cell<
-            for<'tcx> fn(TyCtxt<'tcx>, LocalDefId) -> &mir::Body<'tcx>
-        > = Cell::new(|_, _| unreachable!());
-        static ORIGINAL_EXTERN_OPTIMIZED_MIR: Cell<
-            for<'tcx> fn(TyCtxt<'tcx>, DefId) -> &mir::Body<'tcx>
-        > = Cell::new(|_, _| unreachable!());
-        static ORIGINAL_SHOULD_CODEGEN: Cell<
-            for<'tcx> fn(TyCtxt<'tcx>, mir_ty::Instance<'tcx>) -> bool
-        > = Cell::new(|_, _| unreachable!());
-        static ORIGINAL_COLLECT_PARTITION: Cell<
-            for<'tcx> fn(TyCtxt<'tcx>, ()) -> (&rustc_data_structures::unord::UnordSet<DefId>, &[CodegenUnit])
-        > = Cell::new(|_, _| unreachable!());
-        // > = Cell::new(|_, _| unreachable!());
+         /*
+          * NOTE: Both `override_queries` and `optimized_mir` are function pointers, which means
+          * that they cannot be closures with captured variables. Therefore, we use these statically
+          * allocated cells to store the original functions.
+          * As there will be a single transformation pass in the project and the original pointer
+          * is the same anyway, this should not cause any problems.
+          */
+         #[allow(clippy::type_complexity)]
+         static ORIGINAL_OVERRIDE: Cell<
+             Option<fn(&Session, &mut rustc_middle::util::Providers)>,
+         > = Cell::new(None);
+         static ORIGINAL_OPTIMIZED_MIR: Cell<
+             for<'tcx> fn(TyCtxt<'tcx>, LocalDefId) -> &mir::Body<'tcx>
+         > = Cell::new(|_, _| unreachable!());
+         static ORIGINAL_EXTERN_OPTIMIZED_MIR: Cell<
+             for<'tcx> fn(TyCtxt<'tcx>, DefId) -> &mir::Body<'tcx>
+         > = Cell::new(|_, _| unreachable!());
+         static ORIGINAL_SHOULD_CODEGEN: Cell<
+             for<'tcx> fn(TyCtxtAt<'tcx>, mir_ty::Instance<'tcx>) -> bool
+         > = Cell::new(|_, _| unreachable!());
+         static ORIGINAL_COLLECT_PARTITION: Cell<
+             for<'tcx> fn(TyCtxt<'tcx>, ()) -> (&rustc_data_structures::unord::UnordSet<DefId>, &[CodegenUnit])
+         > = Cell::new(|_, _| unreachable!());
     }
 
     struct PassHolder<T: CompilationPass + ?Sized>(Arc<Mutex<T>>);
@@ -350,14 +350,15 @@ mod implementation {
                     if overrides.contains(OverrideFlags::EXTERN_OPTIMIZED_MIR) {
                         ORIGINAL_EXTERN_OPTIMIZED_MIR.set(providers.extern_queries.optimized_mir);
                         providers.extern_queries.optimized_mir = Self::extern_optimized_mir;
+                    }
                     if overrides.contains(OverrideFlags::SHOULD_CODEGEN) {
                         /* Currently we only do forcing code generation in this override,
                          * Thus, overriding it is equivalent to forcing it.
                          * If not, we should do this if inside the override. */
                         if global::FORCE_CODEGEN_FOR_ALL.load(std::sync::atomic::Ordering::Relaxed)
                         {
-                            ORIGINAL_SHOULD_CODEGEN.set(providers.should_codegen_locally);
-                            providers.should_codegen_locally = |tcx, instance| {
+                            ORIGINAL_SHOULD_CODEGEN.set(providers.hooks.should_codegen_locally);
+                            providers.hooks.should_codegen_locally = |tcx, instance| {
                                 let def_id = instance.def.def_id();
 
                                 if tcx.is_foreign_item(def_id) {
@@ -376,7 +377,6 @@ mod implementation {
                         providers.collect_and_partition_mono_items =
                             Self::collect_and_partition_mono_items;
                     }
-
                 },
             );
 
