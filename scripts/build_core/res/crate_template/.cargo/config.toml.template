@@ -6,8 +6,8 @@ rustflags = [
     "place_addr",
     "--cfg",
     "abs_concrete",
-    "--cfg",
-    "core_build",
+    $core_build_cfg_switch "--cfg",
+    $core_build_cfg_switch "core_build",
     "-Zalways-encode-mir",
     "-Ccodegen-units=1",
 ]

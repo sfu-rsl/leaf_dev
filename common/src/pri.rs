@@ -143,8 +143,8 @@ pub struct BranchingInfo {
     pub discr_is_signed: bool,
 }
 
+#[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
 impl Default for BranchingInfo {
-    #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
     #[inline(always)]
     fn default() -> Self {
         DEFAULT_BRANCHING_INFO

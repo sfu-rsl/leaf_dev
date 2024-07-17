@@ -10,6 +10,7 @@ ENV_WORK_DIR = "WORK_DIR"
 ENV_OUT_DIR = "OUT_DIR"
 ENV_LEAF_WORKSPACE = "LEAF_WORKSPACE"
 ENV_LOG_LEVEL = "LEAFS_LOG_LEVEL"
+ENV_ADD_LEAF_AS_DEP = "LEAFS_ADD_LEAF_AS_DEP"
 
 ENV_LEAFC = "LEAFC"
 ENV_CARGO = "CARGO"
@@ -212,10 +213,23 @@ def substitute_template(template_path: Path, **substitutions: object):
         f.write(template.substitute(**substitutions))
 
 
-def set_dummy_crate_toolchain(dummy_crate_dir: Path, toolchain_path: Path):
+def set_dummy_crate_config_toml(
+    dummy_crate_dir: Path, toolchain_path: Path, enable_core_build_cfg: bool
+):
     substitute_template(
         dummy_crate_dir.joinpath(".cargo", "config.toml.template"),
         toolchain_path=toolchain_path.absolute(),
+        core_build_cfg_switch="#" if not enable_core_build_cfg else "",
+    )
+
+
+def set_dummy_crate_cargo_toml(
+    dummy_crate_dir: Path, add_leaf_as_dep: bool, leaf_workspace_dir: Path
+):
+    substitute_template(
+        dummy_crate_dir.joinpath("Cargo.toml.template"),
+        leaf_workspace_dir=leaf_workspace_dir,
+        leaf_dep_switch="#" if not add_leaf_as_dep else "",
     )
 
 
@@ -295,7 +309,14 @@ def main():
     copied_toolchain_path = copy_toolchain(orig_toolchain_path, paths.work)
     logging.debug("Copied toolchain path: %s", copied_toolchain_path)
 
-    set_dummy_crate_toolchain(dummy_crate_dir, copied_toolchain_path)
+
+    add_leaf_as_dep = ENV_ADD_LEAF_AS_DEP in os.environ
+
+    set_dummy_crate_config_toml(
+        dummy_crate_dir,
+        copied_toolchain_path,
+        enable_core_build_cfg=not add_leaf_as_dep,
+    )
     toolchain_path = get_toolchain_path(
         cwd=dummy_crate_dir, env=get_build_env(copied_toolchain_path)
     )
@@ -304,7 +325,11 @@ def main():
 
     core_src = get_core_src_dir(toolchain_path)
     logging.debug("Core source dir: %s", core_src)
-    add_leaf_to_core(core_src, paths.leaf_workspace, paths.res)
+
+    if not add_leaf_as_dep:
+        add_leaf_to_core(core_src, paths.leaf_workspace, paths.res)
+
+    set_dummy_crate_cargo_toml(dummy_crate_dir, add_leaf_as_dep, paths.leaf_workspace)
 
     build_crate_with_core(dummy_crate_dir, toolchain_path)
     out_toolchain_path = make_toolchain(dummy_crate_dir, paths.out)
