@@ -44,13 +44,12 @@ extern crate rustc_trait_selection;
 extern crate rustc_type_ir;
 extern crate thin_vec;
 
+use rustc_driver::RunCompiler;
+
 use common::{log_debug, log_info, log_warn};
 use std::path::PathBuf;
 
 use constants::*;
-use rustc_driver::RunCompiler;
-
-use crate::utils::chain;
 
 pub fn set_up_compiler() {
     use rustc_session::{config::ErrorOutputType, EarlyDiagCtxt};
@@ -65,129 +64,157 @@ pub fn run_compiler(args: impl Iterator<Item = String>, input_path: Option<PathB
     let args = driver_args::set_up_args(args, input_path, &config);
     log_info!("Running compiler with args: {:?}", args);
 
-    use passes::*;
-    let mut pass = if should_do_nothing(&args) {
-        log::info!("Leafc will work as the normal Rust compiler.");
-        Box::new(NoOpPass.to_callbacks())
-    } else {
-        // We should force codegen for any crate so that they are self-contained.
-        const FLAGS: u8 = OverrideFlags::SHOULD_CODEGEN.bits();
-        let codegen_enable_pass = OverrideFlagsForcePass::<FLAGS>::default();
+    let mut callbacks =
+        driver_callbacks::set_up_callbacks(config, driver_args::find_crate_name(&args));
 
-        let mut pass: Box<Callbacks> =
-            if config.codegen_all_mir && is_dependency_crate(driver_args::find_crate_name(&args)) {
-                /*
-                 * In this mode, we only internalize the items in the compiled objects,
-                 * and do the instrumentation with the final crate. */
-                Box::new(
-                    chain!(
-                        <MonoItemInternalizer>,
-                        codegen_enable_pass,
-                    )
-                    .to_callbacks(),
-                )
-            } else {
-                let prerequisites_pass = RuntimeExternCrateAdder::new(
-                    config.runtime_shim.crate_name.clone(),
-                    config.runtime_shim.as_external,
-                );
-
-                #[cfg(nctfe)]
-                let nctfe_pass = {
-                    let ctfe_block_ids = {
-                        let pass = chain!(prerequisites_pass.clone(), <CtfeScanner>,);
-                        let mut callbacks = pass.to_callbacks();
-                        run_pass(&mut callbacks);
-                        let pass = callbacks.into_pass();
-                        pass.second.into_result()
-                    };
-                    NctfeFunctionAdder::new(ctfe_block_ids.len())
-                };
-                #[cfg(not(nctfe))]
-                let nctfe_pass = NoOpPass;
-
-                let passes = chain!(
-                    prerequisites_pass,
-                    <LeafToolAdder>,
-                    <TypeExporter>,
-                    nctfe_pass,
-                    Instrumentor::new(true, None /* FIXME */),
-                );
-
-                if config.codegen_all_mir {
-                    Box::new(
-                        chain!(codegen_enable_pass, passes,)
-                            .into_logged()
-                            .to_callbacks(),
-                    )
-                } else {
-                    Box::new(passes.into_logged().to_callbacks())
-                }
-            };
-        pass.set_leaf_config(config);
-        pass.add_config_callback(Box::new(move |rustc_config, leafc_config| {
-            if leafc_config.codegen_all_mir {
-                rustc_config.opts.unstable_opts.always_encode_mir = true;
-                rustc_config
-                    .opts
-                    .cli_forced_codegen_units
-                    .replace(1)
-                    .inspect(|old| {
-                        log::warn!(
-                            concat!(
-                                "Forcing codegen units to 1 because of compilation mode. ",
-                                "The requested value was: {:?}",
-                            ),
-                            old,
-                        );
-                    });
-                if rustc_config.opts.maybe_sysroot.is_none() {
-                    let is_building_core = leafc_config.building_core
-                        || rustc_config
-                            .crate_cfg
-                            .iter()
-                            .any(|cfg| cfg == CONFIG_CORE_BUILD);
-                    if !is_building_core {
-                        log::warn!(concat!(
-                            "Codegen all MIR is enabled, but the sysroot is not set. ",
-                            "It is necessary to use a sysroot with MIR for all libraries included.",
-                            "Unless you are building the core library, this may cause issues.",
-                        ));
-                    }
-                }
-            }
-        }));
-        pass
-    };
-
-    rustc_driver::catch_with_exit_code(|| RunCompiler::new(&args, pass.as_mut()).run())
+    rustc_driver::catch_with_exit_code(|| RunCompiler::new(&args, callbacks.as_mut()).run())
 }
 
-fn should_do_nothing(args: &[String]) -> bool {
-    let crate_name = driver_args::find_crate_name(args);
-
-    if crate_name
-        .as_ref()
-        .is_some_and(|name| name == CRATE_BUILD_SCRIPT)
-    {
+fn should_do_nothing(crate_name: Option<&String>) -> bool {
+    if crate_name.is_some_and(|name| name == CRATE_BUILD_SCRIPT) {
         return true;
     }
 
     false
 }
 
-fn is_dependency_crate(crate_name: Option<String>) -> bool {
-    let from_cargo = rustc_session::utils::was_invoked_from_cargo();
-    let is_primary = std::env::var("CARGO_PRIMARY_PACKAGE").is_ok();
+mod driver_callbacks {
+    use super::{config::LeafCompilerConfig, constants::*, passes::*};
+    use crate::utils::chain;
 
-    log::debug!(
-        "Checking if crate `{}` is a dependency. From cargo: {}, Primary Package: {}",
-        crate_name.as_deref().unwrap_or("UNKNOWN"),
-        from_cargo,
-        is_primary,
-    );
+    pub(super) fn set_up_callbacks(
+        config: LeafCompilerConfig,
+        crate_name: Option<String>,
+    ) -> Box<Callbacks> {
+        if super::should_do_nothing(crate_name.as_ref()) {
+            log::info!("Leafc will work as the normal Rust compiler.");
+            Box::new(NoOpPass.to_callbacks())
+        } else {
+            let mut passes = if config.codegen_all_mir && is_dependency_crate(crate_name.as_ref()) {
+                build_dep_passes_in_codegen_all_mode()
+            } else {
+                build_primary_passes(&config)
+            };
+            passes.set_leaf_config(config);
+            passes.add_config_callback(Box::new(move |rustc_config, leafc_config| {
+                if leafc_config.codegen_all_mir {
+                    config_codegen_all_mode(rustc_config, leafc_config);
+                }
+            }));
+            passes
+        }
+    }
 
-    from_cargo && !is_primary
+    fn build_primary_passes(config: &LeafCompilerConfig) -> Box<Callbacks> {
+        let prerequisites_pass = RuntimeExternCrateAdder::new(
+            config.runtime_shim.crate_name.clone(),
+            config.runtime_shim.as_external,
+        );
+
+        #[cfg(nctfe)]
+        let nctfe_pass = {
+            let ctfe_block_ids = {
+                let pass = chain!(prerequisites_pass.clone(), <CtfeScanner>,);
+                let mut callbacks = pass.to_callbacks();
+                run_pass(&mut callbacks);
+                let pass = callbacks.into_pass();
+                pass.second.into_result()
+            };
+            NctfeFunctionAdder::new(ctfe_block_ids.len())
+        };
+        #[cfg(not(nctfe))]
+        let nctfe_pass = NoOpPass;
+
+        let passes = chain!(
+            prerequisites_pass,
+            <LeafToolAdder>,
+            <TypeExporter>,
+            nctfe_pass,
+            Instrumentor::new(true, None /* FIXME */),
+        );
+
+        if config.codegen_all_mir {
+            Box::new(
+                chain!(force_codegen_all_pass(), passes,)
+                    .into_logged()
+                    .to_callbacks(),
+            )
+        } else {
+            Box::new(passes.into_logged().to_callbacks())
+        }
+    }
+
+    fn build_dep_passes_in_codegen_all_mode() -> Box<Callbacks> {
+        /* In this mode, we only internalize the items in the compiled objects,
+         * and do the instrumentation with the final crate. */
+        Box::new(
+            chain!(
+                force_codegen_all_pass(),
+                <MonoItemInternalizer>,
+            )
+            .to_callbacks(),
+        )
+    }
+
+    const SHOULD_CODEGEN_FLAGS: u8 = OverrideFlags::SHOULD_CODEGEN.bits();
+
+    fn force_codegen_all_pass() -> OverrideFlagsForcePass<SHOULD_CODEGEN_FLAGS> {
+        /* We must enable overriding should_codegen to force the codegen for all items.
+         * Currently, overriding it equals to forcing the codegen for all items. */
+        OverrideFlagsForcePass::<SHOULD_CODEGEN_FLAGS>::default()
+    }
+
+    fn config_codegen_all_mode(
+        rustc_config: &mut rustc_interface::Config,
+        leafc_config: &mut LeafCompilerConfig,
+    ) {
+        assert!(
+            leafc_config.codegen_all_mir,
+            "This function is meant for codegen all mode."
+        );
+        rustc_config.opts.unstable_opts.always_encode_mir = true;
+        rustc_config
+            .opts
+            .cli_forced_codegen_units
+            .replace(1)
+            .inspect(|old| {
+                log::warn!(
+                    concat!(
+                        "Forcing codegen units to 1 because of compilation mode. ",
+                        "The requested value was: {:?}",
+                    ),
+                    old,
+                );
+            });
+        if rustc_config.opts.maybe_sysroot.is_none() {
+            let is_building_core = leafc_config.building_core
+                || rustc_config
+                    .crate_cfg
+                    .iter()
+                    .any(|cfg| cfg == CONFIG_CORE_BUILD);
+            if !is_building_core {
+                log::warn!(concat!(
+                    "Codegen all MIR is enabled, but the sysroot is not set. ",
+                    "It is necessary to use a sysroot with MIR for all libraries included.",
+                    "Unless you are building the core library, this may cause issues.",
+                ));
+            }
+        }
+    }
+
+    fn is_dependency_crate(crate_name: Option<&String>) -> bool {
+        let from_cargo = rustc_session::utils::was_invoked_from_cargo();
+        let is_primary = std::env::var("CARGO_PRIMARY_PACKAGE").is_ok();
+
+        log::debug!(
+            "Checking if crate `{}` is a dependency. From cargo: {}, Primary Package: {}",
+            crate_name.map(|s| s.as_str()).unwrap_or("UNKNOWN"),
+            from_cargo,
+            is_primary,
+        );
+
+        from_cargo && !is_primary
+    }
 }
 
 pub mod constants {
@@ -309,7 +336,7 @@ mod driver_args {
         .chain(given_args);
         let mut args = given_args.collect::<Vec<_>>();
 
-        if should_do_nothing(&args) {
+        if should_do_nothing(find_crate_name(&args).as_ref()) {
             return args;
         }
 
