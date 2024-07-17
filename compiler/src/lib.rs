@@ -106,18 +106,23 @@ pub fn run_compiler(args: impl Iterator<Item = String>, input_path: Option<PathB
                 #[cfg(not(nctfe))]
                 let nctfe_pass = NoOpPass;
 
-                Box::new(
-                    chain!(
-                        codegen_enable_pass,
-                        prerequisites_pass,
-                        <LeafToolAdder>,
-                        <TypeExporter>,
-                        nctfe_pass,
-                        Instrumentor::new(true, None /* FIXME */),
+                let passes = chain!(
+                    prerequisites_pass,
+                    <LeafToolAdder>,
+                    <TypeExporter>,
+                    nctfe_pass,
+                    Instrumentor::new(true, None /* FIXME */),
+                );
+
+                if config.codegen_all_mir {
+                    Box::new(
+                        chain!(codegen_enable_pass, passes,)
+                            .into_logged()
+                            .to_callbacks(),
                     )
-                    .into_logged()
-                    .to_callbacks(),
-                )
+                } else {
+                    Box::new(passes.into_logged().to_callbacks())
+                }
             };
         pass.set_leaf_config(config);
         pass.add_config_callback(Box::new(move |rustc_config, leafc_config| {

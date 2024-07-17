@@ -9,7 +9,7 @@ rustflags = [
     # "--cfg",
     # "nctfe",
     # "--cfg",
-    # "runtime_impl=\"noop\"",
+    # "rustc_should_codegen_locally_hook",
 ]
 
 [env]

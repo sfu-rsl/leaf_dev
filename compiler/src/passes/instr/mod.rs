@@ -22,7 +22,7 @@ use crate::{
     visit::*,
 };
 
-use super::{CompilationPass, Storage};
+use super::{CompilationPass, OverrideFlags, Storage};
 
 use call::{
     context::{self, BlockIndexProvider, TyContextProvider},
@@ -56,6 +56,10 @@ impl Instrumentor {
 }
 
 impl CompilationPass for Instrumentor {
+    fn override_flags() -> OverrideFlags {
+        OverrideFlags::OPTIMIZED_MIR | OverrideFlags::EXTERN_OPTIMIZED_MIR
+    }
+
     fn visit_ast_before(
         &mut self,
         _krate: &rustc_ast::Crate,

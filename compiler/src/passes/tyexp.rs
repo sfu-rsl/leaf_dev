@@ -28,6 +28,10 @@ const TAG_TYPE_EXPORT: &str = "type_export";
 pub(crate) struct TypeExporter;
 
 impl CompilationPass for TypeExporter {
+    fn override_flags() -> super::OverrideFlags {
+        super::OverrideFlags::MAKE_CODEGEN_BACKEND
+    }
+
     fn visit_tcx_at_codegen_after(
         &mut self,
         tcx: rustc_middle::ty::TyCtxt,

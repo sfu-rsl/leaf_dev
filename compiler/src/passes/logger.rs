@@ -24,6 +24,11 @@ impl<T> CompilationPass for LoggerPass<T>
 where
     T: CompilationPass,
 {
+    fn override_flags() -> super::OverrideFlags {
+        log::debug!(target: target!(), "Getting override flags");
+        T::override_flags()
+    }
+
     fn visit_ast_before(
         &mut self,
         krate: &super::ast::Crate,
