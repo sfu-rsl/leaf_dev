@@ -1,0 +1,7 @@
+# codegen_all_mir = true
+codegen_all_mir = false
+
+[runtime_shim]
+# as_external = false
+as_external = true
+crate_name = "leaf"

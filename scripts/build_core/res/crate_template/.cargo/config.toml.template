@@ -14,3 +14,4 @@ rustflags = [
 
 [env]
 LEAFC_RUNTIME_SHIM__AS_EXTERNAL = "false"
+LEAFC_BUILDING_CORE = "true"
