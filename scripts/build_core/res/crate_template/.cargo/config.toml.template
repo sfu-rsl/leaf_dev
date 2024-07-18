@@ -13,5 +13,6 @@ rustflags = [
 ]
 
 [env]
+LEAFC_CODEGEN_ALL_MIR = "true"
 LEAFC_RUNTIME_SHIM__AS_EXTERNAL = "false"
 LEAFC_BUILDING_CORE = "true"

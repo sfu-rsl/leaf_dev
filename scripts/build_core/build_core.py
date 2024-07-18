@@ -309,8 +309,11 @@ def main():
     copied_toolchain_path = copy_toolchain(orig_toolchain_path, paths.work)
     logging.debug("Copied toolchain path: %s", copied_toolchain_path)
 
-
     add_leaf_as_dep = ENV_ADD_LEAF_AS_DEP in os.environ
+    logging.info(
+        "Leaf's runtime shim will be %s.",
+        "added as a dependency" if add_leaf_as_dep else "added to core library",
+    )
 
     set_dummy_crate_config_toml(
         dummy_crate_dir,

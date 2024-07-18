@@ -372,7 +372,7 @@ mod implementation {
                                 true
                             };
                         };
-                        #[cfg(not(rustc_should_codegen_hook))]
+                        #[cfg(not(rustc_should_codegen_locally_hook))]
                         unimplemented!(concat!(
                             "Overriding should_codegen_locally was requested ",
                             "without enabling the compilation of override.",

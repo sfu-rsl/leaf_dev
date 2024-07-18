@@ -22,12 +22,12 @@ pub(super) fn should_instrument<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>) 
         return explicit;
     }
 
-    if tcx.def_path_str(def_id).contains("leafrtsh") || tcx.def_path_str(def_id).contains("common")
-    {
+    if tcx.lang_items().start_fn().is_some_and(|id| id == def_id) {
         return false;
     }
 
-    if tcx.lang_items().start_fn().is_some_and(|id| id == def_id) {
+    // FIXME: To be replaced with a better-specified list.
+    if tcx.def_path_str(def_id).contains("panicking") || tcx.def_path_str(def_id).contains("sync") {
         return false;
     }
 
