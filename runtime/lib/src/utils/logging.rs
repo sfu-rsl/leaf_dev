@@ -27,7 +27,7 @@ pub(crate) fn init_logging() {
 
     let fmt_layer = HierarchicalLayer::default()
         .with_ansi(std::env::var(ENV_WRITE_STYLE).map_or(true, |val| val != "false"))
-        .with_writer(std::io::stdout)
+        .with_writer(std::io::stderr)
         .with_thread_names(false)
         .with_bracketed_fields(false)
         .with_verbose_exit(false)

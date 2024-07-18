@@ -238,7 +238,7 @@ pub mod constants {
     pub const LOG_ENV: &str = concatcp!(CONFIG_ENV_PREFIX, "_LOG");
     pub const LOG_WRITE_STYLE_ENV: &str = concatcp!(CONFIG_ENV_PREFIX, "_LOG_STYLE");
 
-    pub const LOG_PASS_OBJECTS_TAG: &str = super::passes::logger::OBJECTS_TAG;
+    pub const LOG_PASS_OBJECTS_TAG: &str = super::passes::logger::TAG_OBJECTS;
     pub const LOG_PRI_DISCOVERY_TAG: &str = super::pri_utils::TAG_DISCOVERY;
 
     pub const TOOL_LEAF: &str = "leaf_attr";

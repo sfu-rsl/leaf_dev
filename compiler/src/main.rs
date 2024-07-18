@@ -33,7 +33,7 @@ fn init_logging() {
 
     // Create a formatting layer with optional write style based on environment variable
     let fmt_layer = fmt::layer()
-        .with_writer(std::io::stdout)
+        .with_writer(std::io::stderr)
         .with_ansi(env::var(constants::LOG_WRITE_STYLE_ENV).map_or(true, |val| val != "never"));
 
     // Create a subscriber

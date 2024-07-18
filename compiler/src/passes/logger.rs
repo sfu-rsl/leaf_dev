@@ -8,16 +8,10 @@ pub(crate) struct LoggerPass<T> {
 }
 use common::log_debug;
 
-pub(crate) const OBJECTS_TAG: &str = "pass_objects";
+pub(crate) const TAG_OBJECTS: &str = "pass_objects";
 
 macro_rules! target {
     () => {{ std::any::type_name::<T>() }};
-}
-
-macro_rules! obj_target {
-    () => {
-        &format!("{}::{}", OBJECTS_TAG, target!())
-    };
 }
 
 impl<T> CompilationPass for LoggerPass<T>
@@ -39,7 +33,7 @@ where
             target!(),
             krate.id
         );
-        log_debug!("target: {} AST: {:#?}", obj_target!(), krate);
+        log_debug!(target: TAG_OBJECTS, "AST: {:#?}", krate);
         self.pass.visit_ast_before(krate, storage)
     }
 
@@ -55,8 +49,7 @@ where
             krate.id
         );
 
-        log_debug!("target: {} AST: {:#?}", obj_target!(), krate);
-        // log_debug!(target: obj_target!(), "AST: {:#?}", krate);
+        log_debug!(target: TAG_OBJECTS, "AST: {:#?}", krate);
         self.pass.visit_ast_after(krate, storage)
     }
 
@@ -86,8 +79,8 @@ where
             body.source.def_id(),
         );
         log_debug!(
-            "target: {} MIR body:\n{}",
-            obj_target!(),
+            target: TAG_OBJECTS,
+            "MIR body:\n{}",
             get_mir_pretty(tcx, body)
         );
         T::visit_mir_body_before(tcx, body, storage)
@@ -104,8 +97,8 @@ where
             body.source.def_id(),
         );
         log_debug!(
-            "target: {} MIR body:\n{}",
-            obj_target!(),
+            target: TAG_OBJECTS,
+            "MIR body:\n{}",
             get_mir_pretty(tcx, body)
         );
         T::visit_mir_body_after(tcx, body, storage)
@@ -118,7 +111,7 @@ where
         storage: &mut dyn Storage,
     ) {
         log_debug!("target: {} Transforming AST", target!());
-        log_debug!("target: {} AST to transform: {:#?}", obj_target!(), krate);
+        log_debug!(target: TAG_OBJECTS, "AST to transform: {:#?}", krate);
         self.pass.transform_ast(session, krate, storage)
     }
 
@@ -129,11 +122,11 @@ where
     ) {
         log_debug!("target: {} Transforming MIR body", target!());
         log_debug!(
-            "target: {} MIR body to transform:\n{}",
-            obj_target!(),
+            target: TAG_OBJECTS,
+            "MIR body to transform:\n{}",
             get_mir_pretty(tcx, body)
         );
-        log_debug!("target: {} Storage: {:#?}", obj_target!(), storage);
+        log_debug!(target: TAG_OBJECTS, "Storage: {:#?}", storage);
         T::transform_mir_body(tcx, body, storage)
     }
 
@@ -143,7 +136,7 @@ where
         storage: &mut dyn Storage,
     ) {
         log_debug!("target: {} Visiting codegen units", target!());
-        log_debug!("target: {} Storage: {:#?}", obj_target!(), storage);
+        log_debug!(target: TAG_OBJECTS, "Storage: {:#?}", storage);
         T::visit_codegen_units(tcx, units, storage)
     }
 }
