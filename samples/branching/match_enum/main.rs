@@ -23,12 +23,12 @@ fn get_bar() -> Bar {
 
 enum AnotherBar {
     Third,
-    Fourth { x: Box<AnotherBar>, y: i64 },
+    Fourth { x: Bar, y: i64 },
 }
 
 fn get_another_bar() -> AnotherBar {
     AnotherBar::Fourth {
-        x: Box::new(AnotherBar::Third),
+        x: Bar::First,
         y: 15,
     }
 }
