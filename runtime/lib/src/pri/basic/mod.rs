@@ -30,7 +30,7 @@ impl ProgramRuntimeInterface for BasicPri {
     }
 
     fn shutdown_runtime_lib() {
-        log::warn!("Shutting down has no effect on the basic backend.");
+        log_warn!("Shutting down has no effect on the basic backend.");
     }
 
     fn ref_place_return_value() -> PlaceRef {

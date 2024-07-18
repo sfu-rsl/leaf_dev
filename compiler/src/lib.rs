@@ -79,6 +79,8 @@ fn should_do_nothing(crate_name: Option<&String>) -> bool {
 }
 
 mod driver_callbacks {
+    use common::{log_debug, log_info, log_warn};
+
     use super::{config::LeafCompilerConfig, constants::*, passes::*};
     use crate::utils::chain;
 
@@ -87,7 +89,7 @@ mod driver_callbacks {
         crate_name: Option<String>,
     ) -> Box<Callbacks> {
         if super::should_do_nothing(crate_name.as_ref()) {
-            log::info!("Leafc will work as the normal Rust compiler.");
+            log_info!("Leafc will work as the normal Rust compiler.");
             Box::new(NoOpPass.to_callbacks())
         } else {
             let mut passes = if config.codegen_all_mir && is_dependency_crate(crate_name.as_ref()) {
@@ -178,7 +180,7 @@ mod driver_callbacks {
             .cli_forced_codegen_units
             .replace(1)
             .inspect(|old| {
-                log::warn!(
+                log_warn!(
                     concat!(
                         "Forcing codegen units to 1 because of compilation mode. ",
                         "The requested value was: {:?}",
@@ -193,7 +195,7 @@ mod driver_callbacks {
                     .iter()
                     .any(|cfg| cfg == CONFIG_CORE_BUILD);
             if !is_building_core {
-                log::warn!(concat!(
+                log_warn!(concat!(
                     "Codegen all MIR is enabled, but the sysroot is not set. ",
                     "It is necessary to use a sysroot with MIR for all libraries included.",
                     "Unless you are building the core library, this may cause issues.",
@@ -206,7 +208,7 @@ mod driver_callbacks {
         let from_cargo = rustc_session::utils::was_invoked_from_cargo();
         let is_primary = std::env::var("CARGO_PRIMARY_PACKAGE").is_ok();
 
-        log::debug!(
+        log_debug!(
             "Checking if crate `{}` is a dependency. From cargo: {}, Primary Package: {}",
             crate_name.map(|s| s.as_str()).unwrap_or("UNKNOWN"),
             from_cargo,

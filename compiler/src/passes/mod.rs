@@ -332,7 +332,7 @@ mod implementation {
             }
 
             *global::OVERRIDE_FLAGS.lock().unwrap() = self.overrides;
-            log::debug!("Overriding queries with flags: {:b}", self.overrides);
+            log_debug!("Overriding queries with flags: {:b}", self.overrides);
 
             ORIGINAL_OVERRIDE.set(config.override_queries.take());
             config.override_queries = Some(

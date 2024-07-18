@@ -25,7 +25,7 @@ where
     T: CompilationPass,
 {
     fn override_flags() -> super::OverrideFlags {
-        log::debug!(target: target!(), "Getting override flags");
+        log_debug!("target: {} Getting override flags", target!());
         T::override_flags()
     }
 
@@ -142,8 +142,8 @@ where
         units: &mut [mir::mono::CodegenUnit<'tcx>],
         storage: &mut dyn Storage,
     ) {
-        log::debug!(target: target!(), "Visiting codegen units");
-        log::debug!(target: obj_target!(), "Storage: {:#?}", storage);
+        log_debug!("target: {} Visiting codegen units", target!());
+        log_debug!("target: {} Storage: {:#?}", obj_target!(), storage);
         T::visit_codegen_units(tcx, units, storage)
     }
 }

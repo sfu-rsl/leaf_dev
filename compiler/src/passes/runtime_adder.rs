@@ -93,6 +93,6 @@ impl CompilationPass for LeafToolAdder {
             DUMMY_SP,
         ));
 
-        log::info!("Added tool registration attributes to the crate.");
+        log_info!("Added tool registration attributes to the crate.");
     }
 }

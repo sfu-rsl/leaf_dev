@@ -3,6 +3,8 @@ use rustc_hir::def_id::DefId;
 use rustc_middle::{mir::Body, ty::TyCtxt};
 use rustc_span::Symbol;
 
+use common::{log_info, log_warn};
+
 pub(super) const TAG_INSTR_DECISION: &str = concatcp!(super::TAG_INSTRUMENTATION, "::skip");
 
 const TOOL_NAME: &str = crate::constants::TOOL_LEAF;
@@ -12,7 +14,7 @@ pub(super) fn should_instrument<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>) 
     let def_id = body.source.def_id();
 
     if let Some((explicit, item)) = opt_instrument_attr_inheritable(tcx, def_id) {
-        log::info!(
+        log_info!(
             target: TAG_INSTR_DECISION,
             "Found explicit instrumentation attribute for {:?} on {:?} with value: {}",
             def_id,
@@ -91,7 +93,7 @@ fn opt_instrument_attr<'tcx>(tcx: TyCtxt<'tcx>, def_id: DefId) -> Option<bool> {
                     _ => None,
                 };
                 if as_bool.is_none() {
-                    log::warn!(
+                    log_warn!(
                         "Invalid argument for attribute `{}`: {:?}",
                         ATTR_NAME,
                         token

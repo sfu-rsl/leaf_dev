@@ -229,7 +229,7 @@ pub(crate) fn all_pri_items(tcx: TyCtxt) -> Vec<DefId> {
 fn find_pri_host_crate(tcx: TyCtxt) -> CrateNum {
     let building_core = tcx.crate_name(LOCAL_CRATE).as_str() == *sym::CORE_LIB_CRATE;
 
-    log::debug!(
+    log_debug!(
         target: TAG_DISCOVERY,
         "Searching for the crate hosting PRI symbols among: {:?}",
         tcx.crates(()).iter().map(|cnum| tcx.crate_name(*cnum)).collect::<Vec<_>>(),

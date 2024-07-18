@@ -5,6 +5,8 @@ use rustc_middle::{
     ty::TyCtxt,
 };
 
+use common::{log_debug, log_info, log_warn};
+
 use super::CompilationPass;
 
 #[derive(Debug, Default)]
@@ -20,13 +22,13 @@ impl CompilationPass for MonoItemInternalizer {
         units: &mut [CodegenUnit<'tcx>],
         _storage: &mut dyn super::Storage,
     ) {
-        log::info!(
+        log_info!(
             "Internalizing items for crate `{}`",
             tcx.crate_name(LOCAL_CRATE)
         );
 
         if units.len() > 1 {
-            log::warn!(
+            log_warn!(
                 "Item internalization can break linking if there are multiple codegen units. Codegen units count: {}",
                 units.len()
             )
@@ -37,7 +39,7 @@ impl CompilationPass for MonoItemInternalizer {
                 if should_be_internalized(tcx, item) {
                     data.linkage = Linkage::Internal;
                 } else {
-                    log::debug!("Not internalizing item: {:?}", item.def_id());
+                    log_debug!("Not internalizing item: {:?}", item.def_id());
                 }
             });
         }
