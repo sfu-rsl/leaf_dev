@@ -389,7 +389,7 @@ mod core {
     }
 
     const CHAR_BIT_SIZE: u32 = size_of::<char>() as u32 * 8;
-    const TO_CHAR_BIT_SIZE: u32 = 8; // Can only cast to a char from a u8
+    const TO_CHAR_BIT_SIZE: u32 = size_of::<u8>() as u32 * 8; // Can only cast to a char from a u8
 
     fn to_cast_expr(from: SymValueRef, to: ValueType) -> Expr {
         let from_type = match ValueType::try_from(from.as_ref()) {
@@ -411,7 +411,7 @@ mod core {
                     source: from,
                     is_zero_ext: true,
                     bits_to_add: CHAR_BIT_SIZE - TO_CHAR_BIT_SIZE,
-                    is_signed: false,
+                    ty: to,
                 }
             }
             ValueType::Int(IntType {
@@ -443,14 +443,14 @@ mod core {
                             source: from,
                             is_zero_ext: true,
                             bits_to_add: bit_size as u32 - CHAR_BIT_SIZE,
-                            is_signed,
+                            ty: to,
                         };
                     } else {
                         return Expr::Extraction {
                             source: from,
                             high: bit_size as u32 - 1,
                             low: 0,
-                            is_signed,
+                            ty: to,
                         };
                     }
                 }
@@ -464,14 +464,14 @@ mod core {
                             source: from,
                             is_zero_ext: !is_from_signed,
                             bits_to_add: bits_to_add as u32,
-                            is_signed,
+                            ty: to,
                         };
                     } else {
                         return Expr::Extraction {
                             source: from,
                             high: bit_size as u32 - 1,
                             low: 0,
-                            is_signed,
+                            ty: to,
                         };
                     }
                 }

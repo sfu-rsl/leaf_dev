@@ -198,19 +198,24 @@ pub(crate) mod z3 {
                     source,
                     is_zero_ext,
                     bits_to_add,
-                    is_signed,
+                    ty,
                 } => {
                     let source = self.translate_symbolic(source);
-                    self.translate_extension_expr(source, *is_zero_ext, *bits_to_add, *is_signed)
+                    self.translate_extension_expr(
+                        source,
+                        *is_zero_ext,
+                        *bits_to_add,
+                        ty.is_signed(),
+                    )
                 }
                 Expr::Extraction {
                     source,
                     high,
                     low,
-                    is_signed,
+                    ty,
                 } => {
                     let source = self.translate_symbolic(source);
-                    self.translate_extraction_expr(source, *high, *low, *is_signed)
+                    self.translate_extraction_expr(source, *high, *low, ty.is_signed())
                 }
                 Expr::Ite {
                     condition,

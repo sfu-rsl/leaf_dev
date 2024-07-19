@@ -687,14 +687,18 @@ pub(crate) enum Expr {
         source: SymValueRef,
         is_zero_ext: bool,
         bits_to_add: u32,
-        is_signed: bool,
+        /* NOTE: Currently, extension is only used for casting,
+         * thus we include the destination type in the expression. */
+        ty: ValueType,
     },
 
     Extraction {
         source: SymValueRef,
         high: u32,
         low: u32,
-        is_signed: bool,
+        /* NOTE: Currently, extraction is only used for casting,
+         * thus we include the destination type in the expression. */
+        ty: ValueType,
     },
 
     Ite {
@@ -1044,9 +1048,7 @@ mod convert {
                             _ => ValueType::try_from(operands.first().as_ref()).map_err(|_| value),
                         }
                     }
-                    Expr::Extension { source, .. } | Expr::Extraction { source, .. } => {
-                        ValueType::try_from(source.as_ref())
-                    }
+                    Expr::Extension { ty, .. } | Expr::Extraction { ty, .. } => Ok(ty.clone()),
                     Expr::Ite {
                         condition: _,
                         if_target,

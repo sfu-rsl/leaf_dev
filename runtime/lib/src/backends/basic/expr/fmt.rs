@@ -176,14 +176,18 @@ impl Expr {
                 source,
                 is_zero_ext,
                 bits_to_add,
-                is_signed,
-            } => write!(f, "{source}, {is_zero_ext}, {bits_to_add}, {is_signed}"),
+                ty,
+            } => write!(
+                f,
+                "{source}, {}{bits_to_add} as {ty}",
+                if *is_zero_ext { "0" } else { "S" }
+            ),
             Expr::Extraction {
                 source,
                 high,
                 low,
-                is_signed,
-            } => write!(f, "{source}, {high}, {low}, {is_signed}"),
+                ty,
+            } => write!(f, "{source}, {high}=..={low} as {ty}"),
             Expr::Ite {
                 condition,
                 if_target,

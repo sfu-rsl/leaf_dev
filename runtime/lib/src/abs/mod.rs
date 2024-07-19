@@ -149,6 +149,16 @@ impl ValueType {
     pub(crate) fn new_float(e_bits: u64, s_bits: u64) -> Self {
         Self::Float(FloatType { e_bits, s_bits })
     }
+
+    /// Returns whether the type is signed if it.
+    /// Remarks: Returns false for bool and char.
+    pub(crate) fn is_signed(&self) -> bool {
+        match self {
+            Self::Bool | Self::Char => false,
+            Self::Int(IntType { is_signed, .. }) => *is_signed,
+            Self::Float(_) => true,
+        }
+    }
 }
 
 /* FIXME: These types will have a limited set of possible values. Thus they can be
