@@ -8,8 +8,6 @@ rustflags = [
     "abs_concrete",
     # "--cfg",
     # "nctfe",
-    # "--cfg",
-    # "rustc_should_codegen_locally_hook",
 ]
 
 [env]

@@ -356,7 +356,6 @@ mod implementation {
                          * Thus, overriding it is equivalent to forcing it.
                          * If it was overridden for other purposes, we should check inside the
                          * override. */
-                        #[cfg(rustc_should_codegen_locally_hook)]
                         if global::FORCE_CODEGEN_FOR_ALL.load(std::sync::atomic::Ordering::Relaxed)
                         {
                             ORIGINAL_SHOULD_CODEGEN.set(providers.hooks.should_codegen_locally);
@@ -371,13 +370,7 @@ mod implementation {
                                 // Force everything to be codegened.
                                 true
                             };
-                        };
-                        #[cfg(not(rustc_should_codegen_locally_hook))]
-                        unimplemented!(concat!(
-                            "Overriding should_codegen_locally was requested ",
-                            "without enabling the compilation of override.",
-                            "Make sure you have enabled it and your compiler provides the hook.",
-                        ));
+                        }
                     }
 
                     if overrides.contains(OverrideFlags::COLLECT_PARTITION) {
