@@ -18,27 +18,38 @@ pub struct BinaryOp(pub u8);
 pub struct UnaryOp(pub u8);
 
 macro_rules! op_const {
-    ($($name:ident = $raw:literal;)*) => {
+    ($($name:ident = $value:expr;)*) => {
         $(
             #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
-            pub const $name: Self = Self($raw);
+            pub const $name: Self = Self($value);
         )*
     };
 }
 
 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
 impl BinaryOp {
+    const OVERFLOW: u8 = 0b01 << (core::mem::size_of::<u8>() * 8 - 2);
+    const UNCHECKED: u8 = 0b10 << (core::mem::size_of::<u8>() * 8 - 2);
+
     op_const! {
         ADD = 1;
+        ADD_UNCHECKED = BinaryOp::ADD.0 | BinaryOp::UNCHECKED;
+        ADD_WITH_OVERFLOW = BinaryOp::ADD.0 | BinaryOp::OVERFLOW;
         SUB = 2;
+        SUB_UNCHECKED = BinaryOp::SUB.0 | BinaryOp::UNCHECKED;
+        SUB_WITH_OVERFLOW = BinaryOp::SUB.0 | BinaryOp::OVERFLOW;
         MUL = 3;
+        MUL_UNCHECKED = BinaryOp::MUL.0 | BinaryOp::UNCHECKED;
+        MUL_WITH_OVERFLOW = BinaryOp::MUL.0 | BinaryOp::OVERFLOW;
         DIV = 4;
         REM = 5;
         BIT_XOR = 6;
         BIT_AND = 7;
         BIT_OR = 8;
         SHL = 9;
+        SHL_UNCHECKED = BinaryOp::SHL.0 | BinaryOp::UNCHECKED;
         SHR = 10;
+        SHR_UNCHECKED = BinaryOp::SHR.0 | BinaryOp::UNCHECKED;
         EQ = 11;
         LT = 12;
         LE = 13;
@@ -316,7 +327,6 @@ pub mod macros {
                   operator: ($binary_op_ty),
                   first: OperandRef,
                   second: OperandRef,
-                  checked: bool,
               ) }
               #[allow(unused_parens)]
               { fn assign_unary_op(dest: PlaceRef, operator: ($unary_op_ty), operand: OperandRef) }
@@ -632,7 +642,7 @@ pub mod macros {
             }$modifier!{
                 #[allow(unused_parens)]fn assign_cast_transmute(dest:PlaceRef,operand:OperandRef,dst_type_id:($type_id_ty));
             }$modifier!{
-                #[allow(unused_parens)]fn assign_binary_op(dest:PlaceRef,operator:($binary_op_ty),first:OperandRef,second:OperandRef,checked:bool,);
+                #[allow(unused_parens)]fn assign_binary_op(dest:PlaceRef,operator:($binary_op_ty),first:OperandRef,second:OperandRef,);
             }$modifier!{
                 #[allow(unused_parens)]fn assign_unary_op(dest:PlaceRef,operator:($unary_op_ty),operand:OperandRef);
             }$modifier!{

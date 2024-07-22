@@ -12,22 +12,29 @@ macro_rules! impl_general_binary_op_through_singulars {
             &mut self,
             operands: Self::ExprRefPair<'a>,
             op: BinaryOp,
-            checked: bool,
         ) -> Self::Expr<'a> {
             use BinaryOp::*;
             match op {
-                Add => Self::add(self, operands, checked),
-                Sub => Self::sub(self, operands, checked),
-                Mul => Self::mul(self, operands, checked),
                 _ => {
                     let binop = match op {
+                        Add => Self::add,
+                        AddUnchecked => Self::add_unchecked,
+                        AddWithOverflow => Self::add_with_overflow,
+                        Sub => Self::sub,
+                        SubUnchecked => Self::sub_unchecked,
+                        SubWithOverflow => Self::sub_with_overflow,
+                        Mul => Self::mul,
+                        MulUnchecked => Self::mul_unchecked,
+                        MulWithOverflow => Self::mul_with_overflow,
                         Div => Self::div,
                         Rem => Self::rem,
                         BitXor => Self::xor,
                         BitAnd => Self::and,
                         BitOr => Self::or,
                         Shl => Self::shl,
+                        ShlUnchecked => Self::shl_unchecked,
                         Shr => Self::shr,
+                        ShrUnchecked => Self::shr_unchecked,
                         Eq => Self::eq,
                         Lt => Self::lt,
                         Le => Self::le,
@@ -52,7 +59,7 @@ macro_rules! impl_general_binary_op_for {
                 &mut self,
                 operands: <Self as BinaryExprBuilder>::ExprRefPair<'a>,
             ) -> <Self as BinaryExprBuilder>::Expr<'a> {
-                self.binary_op(operands, $op, false)
+                self.binary_op(operands, $op)
             }
         )*
     };
@@ -72,18 +79,23 @@ macro_rules! impl_singular_binary_ops_through_general {
     () => {
         impl_general_binary_op_for!(
             add = BinaryOp::Add
+            add_unchecked = BinaryOp::AddUnchecked
+            add_with_overflow = BinaryOp::AddWithOverflow
             sub = BinaryOp::Sub
-            mul = BinaryOp::Mul,
-            checked: bool
-        );
-        impl_general_binary_op_for!(
+            sub_unchecked = BinaryOp::SubUnchecked
+            sub_with_overflow = BinaryOp::SubWithOverflow
+            mul = BinaryOp::Mul
+            mul_unchecked = BinaryOp::MulUnchecked
+            mul_with_overflow = BinaryOp::MulWithOverflow
             div = BinaryOp::Div
             rem = BinaryOp::Rem
             xor = BinaryOp::BitXor
             and = BinaryOp::BitAnd
             or = BinaryOp::BitOr
             shl = BinaryOp::Shl
+            shl_unchecked = BinaryOp::ShlUnchecked
             shr = BinaryOp::Shr
+            shr_unchecked = BinaryOp::ShrUnchecked
             eq = BinaryOp::Eq
             lt = BinaryOp::Lt
             le = BinaryOp::Le

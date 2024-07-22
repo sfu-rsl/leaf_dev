@@ -85,13 +85,7 @@ pub(crate) trait Assigner<'tcx> {
 
     fn by_cast(&mut self, operand: OperandRef) -> Self::Cast<'_>;
 
-    fn by_binary_op(
-        &mut self,
-        operator: &BinOp,
-        first: OperandRef,
-        second: OperandRef,
-        checked: bool,
-    );
+    fn by_binary_op(&mut self, operator: &BinOp, first: OperandRef, second: OperandRef);
 
     fn by_unary_op(&mut self, operator: &UnOp, operand: OperandRef);
 
@@ -1316,13 +1310,7 @@ mod implementation {
             }
         }
 
-        fn by_binary_op(
-            &mut self,
-            operator: &BinOp,
-            first: OperandRef,
-            second: OperandRef,
-            checked: bool,
-        ) {
+        fn by_binary_op(&mut self, operator: &BinOp, first: OperandRef, second: OperandRef) {
             let tcx = self.tcx();
             let operator = convert_mir_binop_to_pri(operator);
             let operator_local = {
@@ -1342,7 +1330,6 @@ mod implementation {
                     operand::move_for_local(operator_local),
                     operand::copy_for_local(first.into()),
                     operand::copy_for_local(second.into()),
-                    operand::const_from_bool(tcx, checked),
                 ],
             )
         }
@@ -2894,23 +2881,23 @@ mod implementation {
             // FIXME: #197: Add support for unchecked operations.
             match op {
                 mir::BinOp::Add => common::pri::BinaryOp::ADD,
-                mir::BinOp::AddWithOverflow => todo!(),
-                mir::BinOp::AddUnchecked => common::pri::BinaryOp::ADD,
+                mir::BinOp::AddUnchecked => common::pri::BinaryOp::ADD_UNCHECKED,
+                mir::BinOp::AddWithOverflow => common::pri::BinaryOp::ADD_WITH_OVERFLOW,
                 mir::BinOp::Sub => common::pri::BinaryOp::SUB,
-                mir::BinOp::SubUnchecked => common::pri::BinaryOp::SUB,
-                mir::BinOp::SubWithOverflow => todo!(),
+                mir::BinOp::SubUnchecked => common::pri::BinaryOp::SUB_UNCHECKED,
+                mir::BinOp::SubWithOverflow => common::pri::BinaryOp::SUB_WITH_OVERFLOW,
                 mir::BinOp::Mul => common::pri::BinaryOp::MUL,
-                mir::BinOp::MulUnchecked => common::pri::BinaryOp::MUL,
-                mir::BinOp::MulWithOverflow => todo!(),
+                mir::BinOp::MulUnchecked => common::pri::BinaryOp::MUL_UNCHECKED,
+                mir::BinOp::MulWithOverflow => common::pri::BinaryOp::MUL_WITH_OVERFLOW,
                 mir::BinOp::Div => common::pri::BinaryOp::DIV,
                 mir::BinOp::Rem => common::pri::BinaryOp::REM,
                 mir::BinOp::BitXor => common::pri::BinaryOp::BIT_XOR,
                 mir::BinOp::BitAnd => common::pri::BinaryOp::BIT_AND,
                 mir::BinOp::BitOr => common::pri::BinaryOp::BIT_OR,
                 mir::BinOp::Shl => common::pri::BinaryOp::SHL,
-                mir::BinOp::ShlUnchecked => todo!(),
+                mir::BinOp::ShlUnchecked => common::pri::BinaryOp::SHL_UNCHECKED,
                 mir::BinOp::Shr => common::pri::BinaryOp::SHR,
-                mir::BinOp::ShrUnchecked => todo!(),
+                mir::BinOp::ShrUnchecked => common::pri::BinaryOp::SHR_UNCHECKED,
                 mir::BinOp::Eq => common::pri::BinaryOp::EQ,
                 mir::BinOp::Lt => common::pri::BinaryOp::LT,
                 mir::BinOp::Le => common::pri::BinaryOp::LE,

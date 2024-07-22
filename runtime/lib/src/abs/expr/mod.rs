@@ -23,18 +23,15 @@ pub(crate) trait BinaryExprBuilder {
     type ExprRefPair<'a>;
     type Expr<'a>;
 
-    fn binary_op<'a>(
-        &mut self,
-        operands: Self::ExprRefPair<'a>,
-        op: BinaryOp,
-        checked: bool,
-    ) -> Self::Expr<'a>;
+    fn binary_op<'a>(&mut self, operands: Self::ExprRefPair<'a>, op: BinaryOp) -> Self::Expr<'a>;
 
-    bin_fn_signature!(add sub mul + checked: bool);
-
+    bin_fn_signature!(add add_unchecked add_with_overflow);
+    bin_fn_signature!(sub sub_unchecked sub_with_overflow);
+    bin_fn_signature!(mul mul_unchecked mul_with_overflow);
     bin_fn_signature!(div rem);
     bin_fn_signature!(and or xor);
-    bin_fn_signature!(shl shr);
+    bin_fn_signature!(shl shl_unchecked);
+    bin_fn_signature!(shr shr_unchecked);
     bin_fn_signature!(eq ne lt le gt ge cmp);
     bin_fn_signature!(offset);
 }

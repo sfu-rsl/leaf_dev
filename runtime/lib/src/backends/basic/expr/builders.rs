@@ -51,7 +51,6 @@ mod toplevel {
             &mut self,
             (first, second): Self::ExprRefPair<'a>,
             op: BinaryOp,
-            checked: bool,
         ) -> Self::Expr<'a> {
             if first.is_symbolic() {
                 self.sym_builder.binary_op(
@@ -60,7 +59,6 @@ mod toplevel {
                         second,
                     },
                     op,
-                    checked,
                 )
             } else if second.is_symbolic() {
                 self.sym_builder.binary_op(
@@ -69,13 +67,11 @@ mod toplevel {
                         second: SymValueRef::new(second),
                     },
                     op,
-                    checked,
                 )
             } else {
                 self.conc_builder.binary_op(
                     (ConcreteValueRef::new(first), ConcreteValueRef::new(second)),
                     op,
-                    checked,
                 )
             }
         }
@@ -150,7 +146,6 @@ mod symbolic {
             &mut self,
             operands: Self::ExprRefPair<'a>,
             _op: BinaryOp,
-            _checked: bool,
         ) -> Self::Expr<'a> {
             match operands.as_flat().1.as_ref() {
                 Value::Concrete(ConcreteValue::Unevaluated(UnevalValue::Lazy(lazy))) => {
@@ -271,7 +266,6 @@ mod adapters {
                                 BinaryExpr {
                                     operands: (x, a, is_inner_reversed).into(),
                                     operator: first.operator,
-                                    checked: first.checked,
                                 },
                                 b,
                                 is_reversed,
@@ -307,12 +301,10 @@ mod core {
             &mut self,
             operands: Self::ExprRefPair<'a>,
             op: BinaryOp,
-            checked: bool,
         ) -> Self::Expr<'a> {
             Expr::Binary(BinaryExpr {
                 operator: op,
                 operands,
-                checked,
             })
         }
 
@@ -501,12 +493,9 @@ mod concrete {
             &mut self,
             operands: Self::ExprRefPair<'a>,
             op: BinaryOp,
-            checked: bool,
         ) -> Self::Expr<'a> {
             match operands {
-                (Const(first_c), Const(second_c)) => {
-                    ConstValue::binary_op(first_c, second_c, op, checked)
-                }
+                (Const(first_c), Const(second_c)) => ConstValue::binary_op(first_c, second_c, op),
                 _ => unreachable!(
                     "Binary operations for concrete values are only supposed to be called on constants."
                 ),
@@ -642,7 +631,6 @@ mod concrete {
             &mut self,
             operands: Self::ExprRefPair<'a>,
             _op: BinaryOp,
-            _checked: bool,
         ) -> Self::Expr<'a> {
             /* If either of the operands is unevaluated, the result will not be evaluated.
              * (the other operator is also concrete, so the result is concrete.) */
@@ -811,7 +799,7 @@ mod simp {
          * Optimize if it becomes a bottleneck.
          */
 
-        fn add<'a>(&mut self, operands: Self::ExprRefPair<'a>, _checked: bool) -> Self::Expr<'a> {
+        fn add<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
             // x + 0 = 0 + x = x
             if operands.konst().is_zero() {
                 Ok(operands.other_into())
@@ -820,7 +808,15 @@ mod simp {
             }
         }
 
-        fn sub<'a>(&mut self, operands: Self::ExprRefPair<'a>, _checked: bool) -> Self::Expr<'a> {
+        fn add_unchecked<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            self.add(operands)
+        }
+
+        fn add_with_overflow<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            self.add(operands)
+        }
+
+        fn sub<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
             // x - 0 = x
             if operands.is_second_zero() {
                 Ok(operands.other_into())
@@ -829,7 +825,15 @@ mod simp {
             }
         }
 
-        fn mul<'a>(&mut self, operands: Self::ExprRefPair<'a>, _checked: bool) -> Self::Expr<'a> {
+        fn sub_unchecked<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            self.sub(operands)
+        }
+
+        fn sub_with_overflow<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            self.sub(operands)
+        }
+
+        fn mul<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
             // x * 0 = 0 * x = 0
             if operands.konst().is_zero() {
                 Ok(operands.konst().into())
@@ -840,6 +844,14 @@ mod simp {
             } else {
                 Err(operands)
             }
+        }
+
+        fn mul_unchecked<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            self.mul(operands)
+        }
+
+        fn mul_with_overflow<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            self.mul(operands)
         }
 
         fn div<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
@@ -912,6 +924,10 @@ mod simp {
             }
         }
 
+        fn shl_unchecked<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            self.shl(operands)
+        }
+
         fn shr<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
             match operands {
                 // x >> 0 = x
@@ -920,6 +936,10 @@ mod simp {
                 BinaryOperands::Rev { first, .. } if first.is_zero() => Ok(first.into()),
                 _ => Err(operands),
             }
+        }
+
+        fn shr_unchecked<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            self.shr(operands)
         }
 
         fn eq<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
@@ -1018,7 +1038,6 @@ mod simp {
                     is_reversed,
                 )),
                 operator: expr.operator,
-                checked: expr.checked,
             }
         }
 
@@ -1035,7 +1054,6 @@ mod simp {
                     is_reversed,
                 )),
                 operator: op,
-                checked: expr.checked,
             }
         }
     }
@@ -1052,7 +1070,7 @@ mod simp {
 
         impl_general_binary_op_through_singulars!();
 
-        fn add<'a>(&mut self, operands: Self::ExprRefPair<'a>, _checked: bool) -> Self::Expr<'a> {
+        fn add<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
             let (a, b) = (operands.a(), operands.b());
 
             match operands.expr().operator {
@@ -1081,7 +1099,11 @@ mod simp {
             }
         }
 
-        fn sub<'a>(&mut self, operands: Self::ExprRefPair<'a>, _checked: bool) -> Self::Expr<'a> {
+        fn add_unchecked<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            self.add(operands)
+        }
+
+        fn sub<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
             let (a, b) = (operands.a(), operands.b());
 
             match operands {
@@ -1139,7 +1161,11 @@ mod simp {
             }
         }
 
-        fn mul<'a>(&mut self, operands: Self::ExprRefPair<'a>, _checked: bool) -> Self::Expr<'a> {
+        fn sub_unchecked<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            self.sub(operands)
+        }
+
+        fn mul<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
             let (a, b) = (operands.a(), operands.b());
 
             match operands.expr().operator {
@@ -1150,6 +1176,10 @@ mod simp {
                 }
                 _ => Err(operands),
             }
+        }
+
+        fn mul_unchecked<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            self.mul(operands)
         }
 
         fn div<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
@@ -1212,6 +1242,10 @@ mod simp {
             }
         }
 
+        fn shl_unchecked<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            self.shl(operands)
+        }
+
         fn shr<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
             let (a, b) = (operands.a(), operands.b());
 
@@ -1223,6 +1257,22 @@ mod simp {
                 }
                 _ => Err(operands),
             }
+        }
+
+        fn shr_unchecked<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            self.shr(operands)
+        }
+
+        fn add_with_overflow<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            Err(operands)
+        }
+
+        fn sub_with_overflow<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            Err(operands)
+        }
+
+        fn mul_with_overflow<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            Err(operands)
         }
 
         fn eq<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {

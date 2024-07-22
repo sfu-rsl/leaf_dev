@@ -596,7 +596,7 @@ where
     }
 
     fn visit_binary_op(&mut self, op: &mir::BinOp, operands: &Box<(Operand<'tcx>, Operand<'tcx>)>) {
-        self.visit_binary_op_general(op, operands, false)
+        self.visit_binary_op_general(op, operands)
     }
 
     fn visit_nullary_op(
@@ -706,13 +706,11 @@ where
         &mut self,
         op: &mir::BinOp,
         operands: &(Operand<'tcx>, Operand<'tcx>),
-        checked: bool,
     ) where
         C: ctxtreqs::ForOperandRef<'tcx>,
     {
         let first_ref = self.call_adder.reference_operand(&operands.0);
         let second_ref = self.call_adder.reference_operand(&operands.1);
-        self.call_adder
-            .by_binary_op(op, first_ref, second_ref, checked)
+        self.call_adder.by_binary_op(op, first_ref, second_ref)
     }
 }

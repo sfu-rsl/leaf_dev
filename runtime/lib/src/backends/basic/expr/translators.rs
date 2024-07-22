@@ -183,14 +183,7 @@ pub(crate) mod z3 {
                     let operand = self.translate_symbolic(operand);
                     self.translate_unary_expr(operator, operand)
                 }
-                Expr::Binary(BinaryExpr {
-                    operator,
-                    operands,
-                    checked,
-                }) => {
-                    // Only projections care about if a binary operation is checked or not.
-                    // A checked binary expression without a field projection is not well formed (before MIR optimizations are run).
-                    assert!(!checked, "translating unexpected checked operation");
+                Expr::Binary(BinaryExpr { operator, operands }) => {
                     let (left, right) = self.translate_binary_operands(operands);
                     self.translate_binary_expr(*operator, left, right)
                 }
@@ -337,6 +330,18 @@ pub(crate) mod z3 {
                             (BinaryOp::Shr, true) => Some(ast::BV::bvashr),
                             (BinaryOp::Shr, false) => Some(ast::BV::bvlshr),
                             (BinaryOp::Offset, _) => Some(todo!()),
+                            _ if operator.is_with_overflow() => {
+                                panic!(
+                                    "Binary operation with overflow is expected to be broken down at this point. Operator: {:?}",
+                                    operator
+                                );
+                            }
+                            _ if operator.is_unchecked() => {
+                                todo!(
+                                    "#197: Unchecked binary operations are not supported yet. Operator: {:?}",
+                                    operator
+                                );
+                            }
                             _ => None,
                         };
                         f.map(|f| left_node.map(|left| f(left, right_bv)).into())
@@ -447,16 +452,15 @@ pub(crate) mod z3 {
         fn translate_projection_expr(&mut self, proj_expr: &ProjExpr) -> AstNode<'ctx> {
             if let ProjExpr::SymHost(sym_host) = proj_expr {
                 if let (
-                    SymValue::Expression(Expr::Binary(BinaryExpr {
-                        operator,
-                        operands,
-                        checked,
-                    })),
+                    SymValue::Expression(Expr::Binary(BinaryExpr { operator, operands })),
                     ProjKind::Field(field_index),
                 ) = (sym_host.host.as_ref(), &sym_host.kind)
                 {
-                    assert!(checked, "unexpected field projection on unchecked binop");
-                    return self.translate_field_on_checked_binary_expression(
+                    assert!(
+                        operator.is_with_overflow(),
+                        "Projection on binary expression is only expected for the ones with an overflow flag."
+                    );
+                    return self.translate_field_on_binary_expression_with_overflow(
                         *operator,
                         operands,
                         *field_index,
@@ -596,12 +600,13 @@ pub(crate) mod z3 {
             }
         }
 
-        fn translate_field_on_checked_binary_expression(
+        fn translate_field_on_binary_expression_with_overflow(
             &mut self,
             operator: BinaryOp,
             operands: &SymBinaryOperands,
             field_index: FieldIndex,
         ) -> AstNode<'ctx> {
+            debug_assert!(operator.is_with_overflow());
             const RESULT: u32 = 0;
             const DID_OVERFLOW: u32 = 1;
             match field_index {
@@ -611,9 +616,13 @@ pub(crate) mod z3 {
                     // since checked binary operations return the tuple `(binop(x, y), did_overflow)`,
                     // and failed checked binops immediately assert!(no_overflow == true), then panic.
                     let unchecked_host = SymValue::Expression(Expr::Binary(BinaryExpr {
-                        operator,
+                        operator: match operator {
+                            BinaryOp::AddWithOverflow => BinaryOp::Add,
+                            BinaryOp::SubWithOverflow => BinaryOp::Sub,
+                            BinaryOp::MulWithOverflow => BinaryOp::Mul,
+                            _ => unreachable!(),
+                        },
                         operands: operands.clone(),
-                        checked: false,
                     }));
                     self.translate_symbolic(&unchecked_host)
                 }
@@ -628,6 +637,7 @@ pub(crate) mod z3 {
             operator: BinaryOp,
             operands: &SymBinaryOperands,
         ) -> AstNode<'ctx> {
+            debug_assert!(operator.is_with_overflow());
             let (left, right) = self.translate_binary_operands(operands);
             let AstNode::BitVector(BVNode(_, BVSort { is_signed })) = left else {
                 unreachable!("Overflow only applies to numerical arithmetic operations.")
@@ -637,15 +647,15 @@ pub(crate) mod z3 {
             let right = right.as_bit_vector();
             let no_overflow = if is_signed {
                 let (overflow, underflow) = match operator {
-                    BinaryOp::Add => (
+                    BinaryOp::AddWithOverflow => (
                         ast::BV::bvadd_no_overflow(left, right, true),
                         ast::BV::bvadd_no_underflow(left, right),
                     ),
-                    BinaryOp::Sub => (
+                    BinaryOp::SubWithOverflow => (
                         ast::BV::bvsub_no_overflow(left, right),
                         ast::BV::bvsub_no_underflow(left, right, true),
                     ),
-                    BinaryOp::Mul => (
+                    BinaryOp::MulWithOverflow => (
                         ast::BV::bvmul_no_overflow(left, right, true),
                         ast::BV::bvmul_no_underflow(left, right),
                     ),

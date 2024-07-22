@@ -147,16 +147,7 @@ impl Expr {
     fn fmt_operator(&self, f: &mut Formatter<'_>) -> Result {
         match self {
             Expr::Unary { operator, .. } => write!(f, "{operator}"),
-            Expr::Binary(BinaryExpr {
-                operator,
-                checked: false,
-                ..
-            }) => write!(f, "{operator}"),
-            Expr::Binary(BinaryExpr {
-                operator,
-                checked: true,
-                ..
-            }) => write!(f, "{operator}ꟲ"),
+            Expr::Binary(BinaryExpr { operator, .. }) => write!(f, "{operator}"),
             Expr::Extension { .. } => write!(f, "Extend"),
             Expr::Extraction { .. } => write!(f, "Extract"),
             Expr::Ite { .. } => write!(f, "Ite"),

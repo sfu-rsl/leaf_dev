@@ -114,20 +114,8 @@ impl AssignmentHandler for LoggerAssignmentHandler {
         });
     }
 
-    fn binary_op_between(
-        self,
-        operator: BinaryOp,
-        first: Self::Operand,
-        second: Self::Operand,
-        checked: bool,
-    ) {
-        self.log(format!(
-            "{} {} {} {}",
-            first,
-            operator,
-            second,
-            if checked { "| ✓" } else { "" }
-        ));
+    fn binary_op_between(self, operator: BinaryOp, first: Self::Operand, second: Self::Operand) {
+        self.log(format!("{} {} {}", first, operator, second));
     }
 
     fn unary_op_on(self, operator: UnaryOp, operand: Self::Operand) {

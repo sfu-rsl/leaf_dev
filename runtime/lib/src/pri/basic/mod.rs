@@ -248,14 +248,12 @@ impl ProgramRuntimeInterface for BasicPri {
         operator: Self::BinaryOp,
         first: OperandRef,
         second: OperandRef,
-        checked: bool,
     ) {
         assign_to(dest, |h| {
             h.binary_op_between(
                 operator,
                 take_back_operand_ref(first),
                 take_back_operand_ref(second),
-                checked,
             )
         })
     }

@@ -161,13 +161,7 @@ pub(crate) trait AssignmentHandler: Sized {
 
     fn cast_of(self, operand: Self::Operand, target: CastKind);
 
-    fn binary_op_between(
-        self,
-        operator: BinaryOp,
-        first: Self::Operand,
-        second: Self::Operand,
-        checked: bool,
-    );
+    fn binary_op_between(self, operator: BinaryOp, first: Self::Operand, second: Self::Operand);
 
     fn unary_op_on(self, operator: UnaryOp, operand: Self::Operand);
 

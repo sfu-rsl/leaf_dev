@@ -127,12 +127,7 @@ impl ConstValue {
         }
     }
 
-    pub fn binary_op(
-        first: &Self,
-        second: &Self,
-        operator: BinaryOp,
-        checked: bool,
-    ) -> ConcreteValue {
+    pub fn binary_op(first: &Self, second: &Self, operator: BinaryOp) -> ConcreteValue {
         match operator {
             BinaryOp::Add
             | BinaryOp::Sub
@@ -142,14 +137,18 @@ impl ConstValue {
             | BinaryOp::BitXor
             | BinaryOp::BitAnd
             | BinaryOp::BitOr => {
-                if checked {
-                    ConcreteValue::Adt(Self::binary_op_checked_arithmetic(first, second, operator))
-                } else {
-                    ConcreteValue::Const(Self::binary_op_arithmetic(first, second, operator))
-                }
+                ConcreteValue::Const(Self::binary_op_arithmetic(first, second, operator))
             }
             BinaryOp::Shl | BinaryOp::Shr => {
                 ConcreteValue::Const(Self::binary_op_shift(first, second, operator))
+            }
+            BinaryOp::AddWithOverflow | BinaryOp::SubWithOverflow | BinaryOp::MulWithOverflow => {
+                ConcreteValue::Adt(Self::binary_op_with_overflow_arithmetic(
+                    first, second, operator,
+                ))
+            }
+            BinaryOp::AddUnchecked | BinaryOp::SubUnchecked | BinaryOp::MulUnchecked => {
+                todo!("#197")
             }
             BinaryOp::Eq
             | BinaryOp::Lt
@@ -241,7 +240,11 @@ impl ConstValue {
         }
     }
 
-    fn binary_op_checked_arithmetic(first: &Self, second: &Self, operator: BinaryOp) -> AdtValue {
+    fn binary_op_with_overflow_arithmetic(
+        first: &Self,
+        second: &Self,
+        operator: BinaryOp,
+    ) -> AdtValue {
         /// use logic to determine whether the operation will overflow or underflow or be in bounds
         fn checked_op(
             operator: BinaryOp,
@@ -720,7 +723,6 @@ pub(crate) enum Expr {
 pub(crate) struct BinaryExpr<Operands = SymBinaryOperands> {
     operator: BinaryOp,
     operands: Operands,
-    checked: bool,
 }
 
 // FIXME: Remove this error suppression after adding support for symbolic projection.
@@ -1037,11 +1039,7 @@ mod convert {
                         operator: _,
                         operand,
                     } => ValueType::try_from(operand.as_ref()),
-                    Expr::Binary(BinaryExpr {
-                        operator,
-                        operands,
-                        checked: _,
-                    }) => {
+                    Expr::Binary(BinaryExpr { operator, operands }) => {
                         use BinaryOp::*;
                         match operator {
                             Eq | Lt | Le | Ne | Ge | Gt => Ok(ValueType::Bool),
