@@ -432,6 +432,18 @@ where
         );
     }
 
+    fn visit_tail_call(
+        &mut self,
+        _func: &Operand<'tcx>,
+        _args: &[Spanned<Operand<'tcx>>],
+        _fn_span: rustc_span::Span,
+    ) -> () {
+        // NOTE: https://github.com/rust-lang/rust/issues/112788
+        unimplemented!(
+            "This is still an experimental feature in the compiler and is not expected to appear in target projects."
+        )
+    }
+
     fn visit_assert(
         &mut self,
         cond: &Operand<'tcx>,
@@ -465,7 +477,7 @@ where
         _operands: &[mir::InlineAsmOperand<'tcx>],
         _options: &rustc_ast::InlineAsmOptions,
         _line_spans: &'tcx [rustc_span::Span],
-        _destination: &Vec<BasicBlock>,
+        _destination: &Box<[BasicBlock]>,
         _unwind: &UnwindAction,
     ) {
         Default::default()
@@ -585,14 +597,6 @@ where
 
     fn visit_binary_op(&mut self, op: &mir::BinOp, operands: &Box<(Operand<'tcx>, Operand<'tcx>)>) {
         self.visit_binary_op_general(op, operands, false)
-    }
-
-    fn visit_checked_binary_op(
-        &mut self,
-        op: &mir::BinOp,
-        operands: &Box<(Operand<'tcx>, Operand<'tcx>)>,
-    ) {
-        self.visit_binary_op_general(op, operands, true)
     }
 
     fn visit_nullary_op(

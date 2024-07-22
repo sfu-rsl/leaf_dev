@@ -176,6 +176,16 @@ macro_rules! make_terminator_kind_visitor {
                 Default::default()
             }
 
+            #[allow(clippy::too_many_arguments)]
+            fn visit_tail_call(
+                &mut self,
+                func: & $($mutability)? Operand<'tcx>,
+                args: & $($mutability)? [Spanned<Operand<'tcx>>],
+                fn_span: Span,
+            ) -> T {
+                Default::default()
+            }
+
             fn visit_assert(
                 &mut self,
                 cond: & $($mutability)? Operand<'tcx>,
@@ -223,7 +233,7 @@ macro_rules! make_terminator_kind_visitor {
                 operands: & $($mutability)? [InlineAsmOperand<'tcx>],
                 options: & $($mutability)? InlineAsmOptions,
                 line_spans: &'tcx [Span],
-                destination: & $($mutability)? Vec<BasicBlock>,
+                targets: & $($mutability)? Box<[BasicBlock]>,
                 unwind: & $($mutability)? UnwindAction,
             ) -> T {
                 Default::default()
@@ -263,6 +273,11 @@ macro_rules! make_terminator_kind_visitor {
                         call_source,
                         *fn_span,
                     ),
+                    TerminatorKind::TailCall {
+                        func,
+                        args,
+                        fn_span,
+                    } => self.visit_tail_call(func, args, *fn_span),
                     TerminatorKind::Assert {
                         ref $($mutability)? cond,
                         ref $($mutability)? expected,
@@ -370,14 +385,6 @@ macro_rules! make_rvalue_visitor {
                 Default::default()
             }
 
-            fn visit_checked_binary_op(
-                &mut self,
-                op: & $($mutability)? BinOp,
-                operands: & $($mutability)? Box<(Operand<'tcx>, Operand<'tcx>)>,
-            ) -> T {
-                Default::default()
-            }
-
             fn visit_nullary_op(&mut self, op: & $($mutability)? NullOp, ty: & $($mutability)? Ty<'tcx>) -> T {
                 Default::default()
             }
@@ -424,9 +431,6 @@ macro_rules! make_rvalue_visitor {
                     Rvalue::Len(place) => self.visit_len(place),
                     Rvalue::Cast(kind, operand, ty) => self.visit_cast(kind, operand, ty),
                     Rvalue::BinaryOp(op, operands) => self.visit_binary_op(op, operands),
-                    Rvalue::CheckedBinaryOp(op, operands) => {
-                        self.visit_checked_binary_op(op, operands)
-                    }
                     Rvalue::NullaryOp(op, ty) => self.visit_nullary_op(op, ty),
                     Rvalue::UnaryOp(op, operand) => self.visit_unary_op(op, operand),
                     Rvalue::Discriminant(place) => self.visit_discriminant(place),

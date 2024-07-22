@@ -133,7 +133,7 @@ where
         _operands: &mut [rustc_middle::mir::InlineAsmOperand<'tcx>],
         _options: &mut rustc_ast::InlineAsmOptions,
         _line_spans: &'tcx [Span],
-        targets: &mut Vec<BasicBlock>,
+        targets: &mut Box<[BasicBlock]>,
         unwind: &mut UnwindAction,
     ) {
         targets.iter_mut().for_each(|target| self.update(target));

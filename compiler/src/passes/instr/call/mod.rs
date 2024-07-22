@@ -424,13 +424,13 @@ mod implementation {
         C: context::BodyProvider<'tcx> + context::TyContextProvider<'tcx>,
     {
         fn current_func(&self) -> Operand<'tcx> {
-            let instance = self.context.body().source.instance;
-            let def_id = instance.def_id();
+            let kind = self.context.body().source.instance;
+            let def_id = kind.def_id();
             log_debug!("Creating operand of current function: {:?}", def_id);
 
             assert_matches!(
-                instance,
-                rustc_middle::ty::InstanceDef::Item(..),
+                kind,
+                rustc_middle::ty::InstanceKind::Item(..),
                 "Only user-defined items are expected."
             );
 
@@ -1265,13 +1265,12 @@ mod implementation {
         }
 
         fn by_repeat(&mut self, operand: OperandRef, count: &Const<'tcx>) {
-            debug_assert_eq!(count.ty(), self.tcx().types.usize);
             self.add_bb_for_assign_call(
                 sym::assign_repeat,
                 vec![
                     operand::copy_for_local(operand.into()),
                     #[allow(clippy::clone_on_copy)]
-                    operand::const_from_existing_ty_const(count.clone()),
+                    operand::const_from_existing_ty_const(self.tcx().types.usize, count.clone()),
                 ],
             )
         }
@@ -2044,7 +2043,7 @@ mod implementation {
 
         fn make_bb_for_try_untuple_args_in_closure(
             &mut self,
-            args: mir_ty::ClosureArgs<'tcx>,
+            args: mir_ty::ClosureArgs<TyCtxt<'tcx>>,
         ) -> Vec<BasicBlockData<'tcx>> {
             let mut blocks = vec![];
 
@@ -2304,11 +2303,14 @@ mod implementation {
                 .unwrap()
             }
 
-            pub fn const_from_existing_ty_const(constant: ty::Const) -> Operand {
+            pub fn const_from_existing_ty_const<'tcx>(
+                ty: Ty<'tcx>,
+                constant: ty::Const<'tcx>,
+            ) -> Operand<'tcx> {
                 const_from_existing(&Box::new(ConstOperand {
                     span: DUMMY_SP,
                     user_ty: None,
-                    const_: Const::Ty(constant),
+                    const_: Const::Ty(ty, constant),
                 }))
             }
 
@@ -2350,7 +2352,7 @@ mod implementation {
             ) -> Option<mir::UnevaluatedConst<'tcx>> {
                 match constant.const_ {
                     Const::Unevaluated(c, _) => Some(c),
-                    Const::Ty(c) => match c.kind() {
+                    Const::Ty(_ty, c) => match c.kind() {
                         ty::ConstKind::Unevaluated(ty::UnevaluatedConst { def, args }) => {
                             Some(mir::UnevaluatedConst {
                                 def,
@@ -2570,7 +2572,7 @@ mod implementation {
 
             pub fn erased_tupled_closure_inputs<'tcx>(
                 tcx: TyCtxt<'tcx>,
-                args: mir_ty::ClosureArgs<'tcx>,
+                args: mir_ty::ClosureArgs<TyCtxt<'tcx>>,
             ) -> Ty<'tcx> {
                 // Inputs types are collated into a tuple and are the only generic argument of the Fn trait.
                 let inputs = args.sig().inputs().map_bound(|inputs| inputs[0]);
@@ -2892,20 +2894,23 @@ mod implementation {
             // FIXME: #197: Add support for unchecked operations.
             match op {
                 mir::BinOp::Add => common::pri::BinaryOp::ADD,
+                mir::BinOp::AddWithOverflow => todo!(),
                 mir::BinOp::AddUnchecked => common::pri::BinaryOp::ADD,
                 mir::BinOp::Sub => common::pri::BinaryOp::SUB,
                 mir::BinOp::SubUnchecked => common::pri::BinaryOp::SUB,
+                mir::BinOp::SubWithOverflow => todo!(),
                 mir::BinOp::Mul => common::pri::BinaryOp::MUL,
                 mir::BinOp::MulUnchecked => common::pri::BinaryOp::MUL,
+                mir::BinOp::MulWithOverflow => todo!(),
                 mir::BinOp::Div => common::pri::BinaryOp::DIV,
                 mir::BinOp::Rem => common::pri::BinaryOp::REM,
                 mir::BinOp::BitXor => common::pri::BinaryOp::BIT_XOR,
                 mir::BinOp::BitAnd => common::pri::BinaryOp::BIT_AND,
                 mir::BinOp::BitOr => common::pri::BinaryOp::BIT_OR,
                 mir::BinOp::Shl => common::pri::BinaryOp::SHL,
-                mir::BinOp::ShlUnchecked => common::pri::BinaryOp::SHL,
+                mir::BinOp::ShlUnchecked => todo!(),
                 mir::BinOp::Shr => common::pri::BinaryOp::SHR,
-                mir::BinOp::ShrUnchecked => common::pri::BinaryOp::SHR,
+                mir::BinOp::ShrUnchecked => todo!(),
                 mir::BinOp::Eq => common::pri::BinaryOp::EQ,
                 mir::BinOp::Lt => common::pri::BinaryOp::LT,
                 mir::BinOp::Le => common::pri::BinaryOp::LE,
@@ -2921,6 +2926,7 @@ mod implementation {
             match op {
                 mir::UnOp::Not => common::pri::UnaryOp::NOT,
                 mir::UnOp::Neg => common::pri::UnaryOp::NEG,
+                mir::UnOp::PtrMetadata => todo!(),
             }
         }
 

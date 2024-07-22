@@ -638,10 +638,7 @@ mod implementation {
          */
         use super::*;
 
-        use rustc_codegen_ssa::{
-            traits::{CodegenBackend, PrintBackendInfo},
-            CodegenResults,
-        };
+        use rustc_codegen_ssa::{traits::CodegenBackend, CodegenResults};
         use rustc_data_structures::fx::FxIndexMap;
         use rustc_metadata::{creader::MetadataLoaderDyn, EncodedMetadata};
         use rustc_middle::util::Providers;
@@ -665,7 +662,7 @@ mod implementation {
                     fn locale_resource(&self) -> &'static str;
 
                     fn init(&self, sess: &Session);
-                    fn print(&self, req: &PrintRequest, out: &mut dyn PrintBackendInfo, sess: &Session);
+                    fn print(&self, req: &PrintRequest, out: &mut String, sess: &Session);
                     fn target_features(&self, sess: &Session, allow_unstable: bool) -> Vec<Symbol>;
                     fn print_passes(&self);
                     fn print_version(&self);

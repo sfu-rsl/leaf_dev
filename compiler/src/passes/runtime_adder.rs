@@ -80,6 +80,7 @@ impl CompilationPass for LeafToolAdder {
         krate.attrs.push(attr::mk_attr_nested_word(
             &generator,
             ast::AttrStyle::Inner,
+            ast::Safety::Default,
             sym::feature,
             sym::register_tool,
             DUMMY_SP,
@@ -88,6 +89,7 @@ impl CompilationPass for LeafToolAdder {
         krate.attrs.push(attr::mk_attr_nested_word(
             generator,
             ast::AttrStyle::Inner,
+            ast::Safety::Default,
             sym::register_tool,
             Symbol::intern(TOOL_NAME),
             DUMMY_SP,
