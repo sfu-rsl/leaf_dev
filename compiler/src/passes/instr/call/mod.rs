@@ -2913,7 +2913,7 @@ mod implementation {
             match op {
                 mir::UnOp::Not => common::pri::UnaryOp::NOT,
                 mir::UnOp::Neg => common::pri::UnaryOp::NEG,
-                mir::UnOp::PtrMetadata => todo!(),
+                mir::UnOp::PtrMetadata => common::pri::UnaryOp::PTR_METADATA,
             }
         }
 
