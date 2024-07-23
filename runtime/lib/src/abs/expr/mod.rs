@@ -19,6 +19,16 @@ macro_rules_method_with_optional_args! (bin_fn_signature {
     };
 });
 
+macro_rules_method_with_optional_args! (unary_fn_signature {
+    ($method: ident + $($arg: ident : $arg_type: ty),* $(,)?) => {
+        fn $method<'a>(
+            &mut self,
+            operand: Self::ExprRef<'a>,
+            $($arg: $arg_type),*
+        ) -> Self::Expr<'a>;
+    };
+});
+
 pub(crate) trait BinaryExprBuilder {
     type ExprRefPair<'a>;
     type Expr<'a>;
@@ -42,17 +52,10 @@ pub(crate) trait UnaryExprBuilder {
 
     fn unary_op<'a>(&mut self, operand: Self::ExprRef<'a>, op: UnaryOp) -> Self::Expr<'a>;
 
-    fn not<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a>;
+    unary_fn_signature!(not neg ptr_metadata);
+    unary_fn_signature!(address_of len discriminant);
 
-    fn neg<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a>;
-
-    fn address_of<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a>;
-
-    fn len<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a>;
-
-    fn discriminant<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a>;
-
-    fn cast<'a>(&mut self, operand: Self::ExprRef<'a>, target: CastKind) -> Self::Expr<'a>;
+    unary_fn_signature!(cast + target: CastKind);
 }
 
 // NOTE: Because of an internal compiler bug, the blanket impl can't be added.

@@ -116,6 +116,7 @@ impl UnaryOp {
     op_const! {
         NOT = 31;
         NEG = 32;
+        PTR_METADATA = 33;
     }
 
     #[cfg_attr(core_build, rustc_const_stable(feature = "rust1", since = "1.0.0"))]
@@ -125,6 +126,8 @@ impl UnaryOp {
             UnaryOp::NOT
         } else if raw == UnaryOp::NEG.as_u8() {
             UnaryOp::NEG
+        } else if raw == UnaryOp::PTR_METADATA.as_u8() {
+            UnaryOp::PTR_METADATA
         } else {
             unreachable!()
         }

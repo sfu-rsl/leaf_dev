@@ -64,6 +64,7 @@ impl BinaryOp {
 pub enum UnaryOp {
     Not = common::pri::UnaryOp::NOT.as_u8(),
     Neg = common::pri::UnaryOp::NEG.as_u8(),
+    PtrMetadata = common::pri::UnaryOp::PTR_METADATA.as_u8(),
 }
 
 pub(crate) type Local = place::Local;

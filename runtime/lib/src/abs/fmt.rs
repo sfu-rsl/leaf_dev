@@ -112,6 +112,7 @@ impl Display for UnaryOp {
         f.write_str(match self {
             UnaryOp::Not => "!",
             UnaryOp::Neg => "-",
+            UnaryOp::PtrMetadata => "m",
         })
     }
 }

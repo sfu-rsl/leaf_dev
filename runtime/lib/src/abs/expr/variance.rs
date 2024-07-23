@@ -99,6 +99,7 @@ where
     type Expr<'a> = T::TargetExpr<'a>;
 
     delegate_singular_unary_op!(unary_op + op: UnaryOp);
-    delegate_singular_unary_op!(not neg address_of len discriminant);
+    delegate_singular_unary_op!(not neg ptr_metadata);
+    delegate_singular_unary_op!(address_of len discriminant);
     delegate_singular_unary_op!(cast + target: CastKind);
 }

@@ -43,7 +43,6 @@ macro_rules! impl_general_binary_op_through_singulars {
                         Gt => Self::gt,
                         Cmp => Self::cmp,
                         Offset => Self::offset,
-                        _ => unreachable!(),
                     };
                     binop(self, operands)
                 }
@@ -111,11 +110,12 @@ macro_rules! impl_singular_binary_ops_through_general {
 #[allow(unused_macros)]
 macro_rules! impl_general_unary_op_through_singulars {
     () => {
-        fn unary_op<'a>(&mut self, operand: Self::ExprRefPair<'a>, op: UnaryOp) -> Self::Expr<'a> {
+        fn unary_op<'a>(&mut self, operand: Self::ExprRef<'a>, op: UnaryOp) -> Self::Expr<'a> {
             use UnaryOp::*;
             (match op {
                 Not => Self::not,
                 Neg => Self::neg,
+                PtrMetadata => Self::ptr_metadata,
             })(self, operand)
         }
     };
@@ -134,6 +134,7 @@ macro_rules! impl_singular_unary_ops_through_general {
             impl_singular_unary_op_through_general;
             (not = UnaryOp::Not)
             (neg = UnaryOp::Neg)
+            (ptr_metadata = UnaryOp::PtrMetadata)
         );
     };
 }
