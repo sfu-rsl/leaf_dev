@@ -65,10 +65,22 @@ impl BinaryOp {
     pub const fn from_raw(raw: u8) -> Self {
         if raw == BinaryOp::ADD.as_u8() {
             BinaryOp::ADD
+        } else if raw == BinaryOp::ADD_UNCHECKED.as_u8() {
+            BinaryOp::ADD_UNCHECKED
+        } else if raw == BinaryOp::ADD_WITH_OVERFLOW.as_u8() {
+            BinaryOp::ADD_WITH_OVERFLOW
         } else if raw == BinaryOp::SUB.as_u8() {
             BinaryOp::SUB
+        } else if raw == BinaryOp::SUB_UNCHECKED.as_u8() {
+            BinaryOp::SUB_UNCHECKED
+        } else if raw == BinaryOp::SUB_WITH_OVERFLOW.as_u8() {
+            BinaryOp::SUB_WITH_OVERFLOW
         } else if raw == BinaryOp::MUL.as_u8() {
             BinaryOp::MUL
+        } else if raw == BinaryOp::MUL_UNCHECKED.as_u8() {
+            BinaryOp::MUL_UNCHECKED
+        } else if raw == BinaryOp::MUL_WITH_OVERFLOW.as_u8() {
+            BinaryOp::MUL_WITH_OVERFLOW
         } else if raw == BinaryOp::DIV.as_u8() {
             BinaryOp::DIV
         } else if raw == BinaryOp::REM.as_u8() {
@@ -81,8 +93,12 @@ impl BinaryOp {
             BinaryOp::BIT_OR
         } else if raw == BinaryOp::SHL.as_u8() {
             BinaryOp::SHL
+        } else if raw == BinaryOp::SHL_UNCHECKED.as_u8() {
+            BinaryOp::SHL_UNCHECKED
         } else if raw == BinaryOp::SHR.as_u8() {
             BinaryOp::SHR
+        } else if raw == BinaryOp::SHR_UNCHECKED.as_u8() {
+            BinaryOp::SHR_UNCHECKED
         } else if raw == BinaryOp::EQ.as_u8() {
             BinaryOp::EQ
         } else if raw == BinaryOp::LT.as_u8() {

@@ -664,17 +664,17 @@ pub(crate) mod z3 {
                 ast::Bool::and(overflow.get_ctx(), &[&overflow, &underflow])
             } else {
                 match operator {
-                    BinaryOp::Add => {
+                    BinaryOp::AddWithOverflow => {
                         // note: in unsigned addition, underflow is impossible because there
                         //       are no negative numbers. 0 + 0 is the smallest expression
                         ast::BV::bvadd_no_overflow(left, right, false)
                     }
-                    BinaryOp::Sub => {
+                    BinaryOp::SubWithOverflow => {
                         // note: in unsigned subtraction, overflow is impossible because there
                         //       are no negative numbers. max - 0 is the largest expression
                         ast::BV::bvsub_no_underflow(left, right, false)
                     }
-                    BinaryOp::Mul => {
+                    BinaryOp::MulWithOverflow => {
                         // note: in unsigned multiplication, underflow is impossible because there
                         //       are no negative numbers. x * 0 is the smallest expression
                         ast::BV::bvmul_no_overflow(left, right, false)
