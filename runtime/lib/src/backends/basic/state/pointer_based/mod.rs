@@ -147,6 +147,13 @@ impl<VS, SP: SymbolicProjector> RawPointerVariableState<VS, SP> {
 
         let (obj_address, (obj_value, obj_type_id)) = self.get_object(*addr)?;
 
+        log_debug!(
+            "Found value {} for address: {} with type: {:?}",
+            obj_value,
+            addr,
+            type_id
+        );
+
         // FIXME: (*)
         debug_assert_eq!(
             obj_address, addr,
@@ -252,7 +259,9 @@ where
             return Some(if sym_projs.is_empty() {
                 let value = sym_val.clone_to();
                 // FIXME: (*)
-                self.memory.remove_at(&addr);
+                // Disabling removal because of possible use after move.
+                // https://github.com/rust-lang/unsafe-code-guidelines/issues/188
+                // self.memory.remove_at(&addr);
                 value
             } else {
                 self.handle_sym_value_read(sym_val, sym_projs).into()
@@ -269,6 +278,8 @@ where
                 |c| c.as_cursor().peek_next(),
                 |c| {
                     // FIXME: (*)
+                    // Disabling removal because of possible use after move.
+                    // https://github.com/rust-lang/unsafe-code-guidelines/issues/188
                     c.remove_next();
                 },
             ) {
