@@ -27,6 +27,7 @@ where
     I: Fn(ConcreteValueMutRef, SymValueRef, bool) -> ProjExpr,
 {
     type HostRef<'a> = ConcreteValueMutRef<'a>;
+    type FieldAccessor = FieldIndex;
     type HIRefPair<'a> = (ConcreteValueMutRef<'a>, ValueRef);
     type DowncastTarget = VariantIndex;
     type Proj<'a> = Result<MutPlaceValue<'a>, &'a mut ConcreteValue>;

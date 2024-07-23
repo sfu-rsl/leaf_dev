@@ -1,13 +1,12 @@
 use super::{
     super::{expr::prelude::*, FullPlace, ValueRef},
-    PlaceError, RRef, ResolvedProjection, SymbolicProjector,
+    PlaceError, ResolvedProjection, SymbolicProjector,
 };
 use crate::abs::{
     expr::proj::{macros::impl_general_proj_through_singulars, Projector},
     FieldIndex, VariantIndex,
 };
 use std::fmt::Debug;
-use std::ops::DerefMut;
 
 pub(crate) trait MutRefResolver {
     fn get_full_place(&self, place: &FullPlace) -> Result<ValueRef, PlaceError>;
@@ -24,6 +23,7 @@ where
     I: Fn(ConcreteValueRef, SymValueRef, bool) -> ValueRef,
 {
     type HostRef<'a> = ConcreteValueRef;
+    type FieldAccessor = FieldIndex;
     type HIRefPair<'a> = (ConcreteValueRef, ValueRef);
     type DowncastTarget = VariantIndex;
     type Proj<'a> = Result<ValueRef, ConcreteValueRef>;
@@ -155,6 +155,7 @@ pub(super) fn apply_proj<'b, 'h, 'p, Host, IndexPair, P, Result>(
 where
     P: Projector,
     P::HostRef<'h>: From<Host>,
+    P::FieldAccessor: From<FieldIndex>,
     IndexPair: From<(Host, ValueRef)>,
     P::HIRefPair<'h>: From<IndexPair>,
     P::DowncastTarget: From<VariantIndex>,
@@ -162,7 +163,7 @@ where
 {
     use crate::abs::place::Projection::*;
     match proj {
-        Field(field) => projector.field(host.into(), *field),
+        Field(field) => projector.field(host.into(), (*field).into()),
         Deref => projector.deref(host.into()),
         Index(index) => {
             projector.index(Into::<IndexPair>::into((host, index.clone())).into(), false)

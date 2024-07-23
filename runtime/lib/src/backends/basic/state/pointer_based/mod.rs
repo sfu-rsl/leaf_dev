@@ -628,13 +628,19 @@ struct SymIndexHandler<'a, 'b, SP: SymbolicProjector> {
 
 impl<SP: SymbolicProjector> Projector for SymIndexHandler<'_, '_, SP> {
     type HostRef<'a> = SymValueRef;
+    type FieldAccessor = FieldAccessKind;
     type HIRefPair<'a> = SymIndexPair;
     type DowncastTarget = DowncastKind;
     type Proj<'a> = ProjExpr;
 
     fn project<'a>(
         &mut self,
-        proj_on: ProjectionOn<Self::HostRef<'a>, Self::HIRefPair<'a>, Self::DowncastTarget>,
+        proj_on: ProjectionOn<
+            Self::HostRef<'a>,
+            Self::FieldAccessor,
+            Self::HIRefPair<'a>,
+            Self::DowncastTarget,
+        >,
     ) -> Self::Proj<'a> {
         let proj = self
             .projs

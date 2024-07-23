@@ -12,7 +12,7 @@ pub(crate) mod z3 {
     };
 
     use crate::{
-        abs::{expr::sym_place::SelectTarget, BinaryOp, FieldIndex, IntType, UnaryOp, ValueType},
+        abs::{expr::sym_place::SelectTarget, FieldIndex, IntType, ValueType},
         backends::basic::expr::{
             prelude::*,
             sym_place::{
@@ -453,7 +453,7 @@ pub(crate) mod z3 {
             if let ProjExpr::SymHost(sym_host) = proj_expr {
                 if let (
                     SymValue::Expression(Expr::Binary(BinaryExpr { operator, operands })),
-                    ProjKind::Field(field_index),
+                    ProjKind::Field(FieldAccessKind::Index(field_index)),
                 ) = (sym_host.host.as_ref(), &sym_host.kind)
                 {
                     assert!(

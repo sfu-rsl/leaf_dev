@@ -232,6 +232,15 @@ impl ProjKind {
     }
 }
 
+impl Display for FieldAccessKind {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        match self {
+            FieldAccessKind::Index(index) => write!(f, "{}", index),
+            FieldAccessKind::PtrMetadata => write!(f, "meta"),
+        }
+    }
+}
+
 impl Display for DowncastKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
@@ -264,5 +273,12 @@ impl Display for SymbolicProjResult {
                 sym_place::SingleProjResult::Value(value) => write!(f, "{}", value),
             },
         }
+    }
+}
+
+impl Display for super::UnaryOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        let op: abs::UnaryOp = (*self).into();
+        op.fmt(f)
     }
 }

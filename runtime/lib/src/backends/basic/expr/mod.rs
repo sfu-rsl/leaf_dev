@@ -10,8 +10,8 @@ use std::{assert_matches::assert_matches, num::Wrapping, ops::Deref, rc::Rc};
 use derive_more as dm;
 
 use crate::abs::{
-    BinaryOp, FieldIndex, FloatType, FuncId, IntType, PointerOffset, RawPointer, TypeId, UnaryOp,
-    ValueType, VariantIndex,
+    self, FieldIndex, FloatType, FuncId, IntType, PointerOffset, RawPointer, TypeId, ValueType,
+    VariantIndex,
 };
 
 use crate::utils::meta::define_reversible_pair;
@@ -675,6 +675,15 @@ impl SymBinaryOperands {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+#[repr(u8)]
+pub(crate) enum UnaryOp {
+    Neg = abs::UnaryOp::Neg as u8,
+    Not = abs::UnaryOp::Not as u8,
+}
+
+pub(crate) type BinaryOp = crate::abs::BinaryOp;
+
 // FIXME: Remove this error suppression after adding support for more variants
 #[allow(unused)]
 #[derive(Clone, Debug, dm::From)]
@@ -710,6 +719,7 @@ pub(crate) enum Expr {
         else_target: ValueRef,
     },
 
+    #[from(ignore)]
     AddrOf(ProjExprRef),
 
     #[from(ignore)]
@@ -751,10 +761,16 @@ pub(crate) struct SymHostProj {
 #[derive(Clone, Debug)]
 pub(crate) enum ProjKind {
     Deref,
-    Field(FieldIndex),
+    Field(FieldAccessKind),
     Index(SliceIndex<ValueRef>),
     Subslice { from: u64, to: u64, from_end: bool },
     Downcast(DowncastKind),
+}
+
+#[derive(Clone, Debug, dm::From)]
+pub(crate) enum FieldAccessKind {
+    Index(FieldIndex),
+    PtrMetadata,
 }
 
 #[derive(Clone, Debug)]
@@ -1040,7 +1056,7 @@ mod convert {
                         operand,
                     } => ValueType::try_from(operand.as_ref()),
                     Expr::Binary(BinaryExpr { operator, operands }) => {
-                        use BinaryOp::*;
+                        use abs::BinaryOp::*;
                         match operator {
                             Eq | Lt | Le | Ne | Ge | Gt => Ok(ValueType::Bool),
                             _ => ValueType::try_from(operands.first().as_ref()).map_err(|_| value),
@@ -1085,6 +1101,29 @@ mod convert {
                     Ok(value.1.clone().unwrap())
                 }
                 _ => Err(value),
+            }
+        }
+    }
+
+    impl TryFrom<abs::UnaryOp> for super::UnaryOp {
+        type Error = abs::UnaryOp;
+
+        fn try_from(value: abs::UnaryOp) -> Result<Self, Self::Error> {
+            use abs::UnaryOp::*;
+            match value {
+                Neg => Ok(Self::Neg),
+                Not => Ok(Self::Not),
+                _ => Err(value),
+            }
+        }
+    }
+
+    impl From<super::UnaryOp> for abs::UnaryOp {
+        fn from(value: super::UnaryOp) -> Self {
+            use super::UnaryOp::*;
+            match value {
+                Neg => Self::Neg,
+                Not => Self::Not,
             }
         }
     }

@@ -1,5 +1,5 @@
 use super::super::alias::ValueRefBinaryExprBuilder;
-use super::*;
+use super::{UnaryOp as BasicUnaryOp, *};
 use crate::abs::{
     expr::{
         macros::*, BinaryExprBuilder, ChainedExprBuilder, CompositeExprBuilder, ExprBuilder,
@@ -106,6 +106,10 @@ mod toplevel {
 
         fn neg<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
             call_unary_method!(self, neg, operand)
+        }
+
+        fn ptr_metadata<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
+            call_unary_method!(self, ptr_metadata, operand)
         }
 
         fn address_of<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
@@ -315,14 +319,31 @@ mod core {
         type ExprRef<'a> = SymValueRef;
         type Expr<'a> = Expr;
 
-        fn unary_op<'a>(&mut self, operand: Self::ExprRef<'a>, op: UnaryOp) -> Self::Expr<'a> {
+        impl_general_unary_op_through_singulars!();
+
+        fn neg<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
             Expr::Unary {
-                operator: op,
+                operator: BasicUnaryOp::Neg,
                 operand,
             }
         }
 
-        impl_singular_unary_ops_through_general!();
+        fn not<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
+            Expr::Unary {
+                operator: BasicUnaryOp::Not,
+                operand,
+            }
+        }
+
+        fn ptr_metadata<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
+            Expr::Projection(
+                ProjExpr::SymHost(SymHostProj {
+                    host: operand.into(),
+                    kind: ProjKind::Field(FieldAccessKind::PtrMetadata),
+                })
+                .into(),
+            )
+        }
 
         fn address_of<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
             Expr::AddrOf(ProjExprRef::new(operand.into()))
@@ -511,7 +532,12 @@ mod concrete {
 
         fn unary_op<'a>(&mut self, operand: Self::ExprRef<'a>, op: UnaryOp) -> Self::Expr<'a> {
             match operand {
-                Const(c) => ConstValue::unary_op(c, op).into(),
+                Const(c) => match BasicUnaryOp::try_from(op) {
+                    Ok(op) => ConstValue::unary_op(c, op).into(),
+                    Err(_) => {
+                        unreachable!("Unexpected unary operation {:?} on a concrete value.", op)
+                    }
+                },
                 _ => unreachable!(
                     "Unary operations for concrete values are only supposed to be called on constants."
                 ),

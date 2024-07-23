@@ -450,13 +450,19 @@ mod implementation {
 
     impl Projector for ResultInPlaceProjector<'_> {
         type HostRef<'a> = &'a mut SymbolicProjResult;
+        type FieldAccessor = FieldAccessKind;
         type HIRefPair<'a> = (&'a mut SymbolicProjResult, ConcreteValueRef);
         type DowncastTarget = DowncastKind;
         type Proj<'a> = ();
 
         fn project<'a>(
             &mut self,
-            proj_on: ProjectionOn<Self::HostRef<'a>, Self::HIRefPair<'a>, Self::DowncastTarget>,
+            proj_on: ProjectionOn<
+                Self::HostRef<'a>,
+                Self::FieldAccessor,
+                Self::HIRefPair<'a>,
+                Self::DowncastTarget,
+            >,
         ) -> Self::Proj<'a> {
             let (host, proj) = proj_on.destruct();
             let resolver = self.resolver;
@@ -479,13 +485,19 @@ mod implementation {
 
     impl Projector for SingleValueInPlaceProjector {
         type HostRef<'a> = &'a mut SingleProjResult;
+        type FieldAccessor = FieldAccessKind;
         type HIRefPair<'a> = (&'a mut SingleProjResult, ConcreteValueRef);
         type DowncastTarget = DowncastKind;
         type Proj<'a> = ();
 
         fn project<'a>(
             &mut self,
-            proj_on: ProjectionOn<Self::HostRef<'a>, Self::HIRefPair<'a>, Self::DowncastTarget>,
+            proj_on: ProjectionOn<
+                Self::HostRef<'a>,
+                Self::FieldAccessor,
+                Self::HIRefPair<'a>,
+                Self::DowncastTarget,
+            >,
         ) -> Self::Proj<'a> {
             let (host, proj) = proj_on.destruct();
             match host {
@@ -506,6 +518,13 @@ mod implementation {
                         .clone_with_host(ConcreteValueRef::new(value.clone()))
                         .map(
                             |h| h,
+                            |fa| {
+                                if let FieldAccessKind::Index(index) = fa {
+                                    index
+                                } else {
+                                    todo!("PtrMetadata is not supported yet.")
+                                }
+                            },
                             |(h, i)| (h, i.into()),
                             |dc| {
                                 if let DowncastKind::EnumVariant(variant_index) = dc {
@@ -526,7 +545,7 @@ mod implementation {
         fn downcast<'a>(
             &mut self,
             host: Self::HostRef<'a>,
-            target: DowncastKind,
+            target: Self::DowncastTarget,
         ) -> Self::Proj<'a> {
             match target {
                 DowncastKind::Transmutation(dst_ty_id) => {
@@ -614,10 +633,10 @@ mod implementation {
                 &self,
                 host: H,
                 map_index: impl FnOnce(ValueRef) -> I,
-            ) -> ProjectionOn<H, (H, I), DowncastKind> {
+            ) -> ProjectionOn<H, FieldAccessKind, (H, I), DowncastKind> {
                 match self {
                     ProjKind::Deref => ProjectionOn::Deref(host),
-                    ProjKind::Field(field) => ProjectionOn::Field(host, *field),
+                    ProjKind::Field(field) => ProjectionOn::Field(host, field.clone()),
                     ProjKind::Index(SliceIndex { index, from_end }) => {
                         ProjectionOn::Index((host, map_index(index.clone())), *from_end)
                     }

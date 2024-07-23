@@ -1,26 +1,25 @@
-use crate::abs::FieldIndex;
-
 #[derive(Debug, Clone)]
-pub(crate) enum ProjectionOn<H, HI, DC> {
+pub(crate) enum ProjectionOn<H, FA, HI, DC> {
     Deref(H),
-    Field(H, FieldIndex),
+    Field(H, FA),
     Index(HI, bool),
     Subslice(H, u64, u64, bool),
     Downcast(H, DC),
 }
 use ProjectionOn::*;
 
-impl<H, HI, DC> ProjectionOn<H, HI, DC> {
+impl<H, FA, HI, DC> ProjectionOn<H, FA, HI, DC> {
     #[inline]
-    pub(crate) fn map<HNew, HINew, DCNew>(
+    pub(crate) fn map<HNew, FANew, HINew, DCNew>(
         self,
         f: impl FnOnce(H) -> HNew,
+        f_field: impl FnOnce(FA) -> FANew,
         f_index: impl FnOnce(HI) -> HINew,
         f_dc: impl FnOnce(DC) -> DCNew,
-    ) -> ProjectionOn<HNew, HINew, DCNew> {
+    ) -> ProjectionOn<HNew, FANew, HINew, DCNew> {
         match self {
             Deref(host) => Deref(f(host)),
-            Field(host, field) => Field(f(host), field),
+            Field(host, field) => Field(f(host), f_field(field)),
             Index(host_index, from_end) => Index(f_index(host_index), from_end),
             Subslice(host, from, to, from_end) => Subslice(f(host), from, to, from_end),
             Downcast(host, target) => Downcast(f(host), f_dc(target)),
@@ -28,19 +27,22 @@ impl<H, HI, DC> ProjectionOn<H, HI, DC> {
     }
 
     #[inline]
-    pub(crate) fn map_into<HNew, HINew, DCNew>(self) -> ProjectionOn<HNew, HINew, DCNew>
+    pub(crate) fn map_into<HNew, FANew, HINew, DCNew>(
+        self,
+    ) -> ProjectionOn<HNew, FANew, HINew, DCNew>
     where
         H: Into<HNew>,
+        FA: Into<FANew>,
         HI: Into<HINew>,
         DC: Into<DCNew>,
     {
-        self.map(Into::into, Into::into, Into::into)
+        self.map(Into::into, Into::into, Into::into, Into::into)
     }
 }
 
-impl<H, I, DC> ProjectionOn<H, (H, I), DC> {
+impl<H, FA, I, DC> ProjectionOn<H, FA, (H, I), DC> {
     #[inline]
-    pub(crate) fn destruct(self) -> (H, ProjectionOn<(), ((), I), DC>) {
+    pub(crate) fn destruct(self) -> (H, ProjectionOn<(), FA, ((), I), DC>) {
         match self {
             Deref(old_host) => (old_host, Deref(())),
             Field(old_host, field) => (old_host, Field((), field)),
@@ -50,14 +52,15 @@ impl<H, I, DC> ProjectionOn<H, (H, I), DC> {
         }
     }
 
-    pub(crate) fn clone_with_host<T>(&self, host: T) -> ProjectionOn<T, (T, I), DC>
+    pub(crate) fn clone_with_host<T>(&self, host: T) -> ProjectionOn<T, FA, (T, I), DC>
     where
+        FA: Clone,
         I: Clone,
         DC: Clone,
     {
         match self {
             Deref(_) => Deref(host),
-            Field(_, field) => Field(host, *field),
+            Field(_, field) => Field(host, field.clone()),
             Index((_, index), from_end) => Index((host, index.clone()), *from_end),
             Subslice(_, from, to, from_end) => Subslice(host, *from, *to, *from_end),
             Downcast(_, target) => Downcast(host, target.clone()),
@@ -69,6 +72,9 @@ impl<H, I, DC> ProjectionOn<H, (H, I), DC> {
 pub(crate) trait Projector {
     /// Type of the reference to the host object.
     type HostRef<'a>;
+    // Type of the field access.
+    // Used for field projection.
+    type FieldAccessor;
     /// Type of the reference to the host object and the index object.
     /// Used for index projection.
     type HIRefPair<'a>;
@@ -81,12 +87,17 @@ pub(crate) trait Projector {
 
     fn project<'a>(
         &mut self,
-        proj_on: ProjectionOn<Self::HostRef<'a>, Self::HIRefPair<'a>, Self::DowncastTarget>,
+        proj_on: ProjectionOn<
+            Self::HostRef<'a>,
+            Self::FieldAccessor,
+            Self::HIRefPair<'a>,
+            Self::DowncastTarget,
+        >,
     ) -> Self::Proj<'a>;
 
     fn deref<'a>(&mut self, host: Self::HostRef<'a>) -> Self::Proj<'a>;
 
-    fn field<'a>(&mut self, host: Self::HostRef<'a>, field: FieldIndex) -> Self::Proj<'a>;
+    fn field<'a>(&mut self, host: Self::HostRef<'a>, field: Self::FieldAccessor) -> Self::Proj<'a>;
 
     fn index<'a>(&mut self, host_index: Self::HIRefPair<'a>, from_end: bool) -> Self::Proj<'a>;
 
@@ -112,6 +123,7 @@ pub(crate) mod macros {
                 &mut self,
                 pair: crate::abs::expr::proj::ProjectionOn<
                     Self::HostRef<'a>,
+                    Self::FieldAccessor,
                     Self::HIRefPair<'a>,
                     Self::DowncastTarget,
                 >,
@@ -138,7 +150,7 @@ pub(crate) mod macros {
             fn field<'a>(
                 &mut self,
                 host: Self::HostRef<'a>,
-                field: crate::abs::FieldIndex,
+                field: Self::FieldAccessor,
             ) -> Self::Proj<'a> {
                 self.project(ProjectionOn::Field(host, field))
             }

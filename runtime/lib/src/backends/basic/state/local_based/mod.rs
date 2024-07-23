@@ -227,7 +227,7 @@ impl<SP: SymbolicProjector> StackedLocalIndexVariablesState<SP> {
             self.sym_projector
                 .as_ref()
                 .borrow_mut()
-                .field(host.into(), field)
+                .field(host.into(), field.into())
                 .into()
                 .to_value_ref()
                 .into()

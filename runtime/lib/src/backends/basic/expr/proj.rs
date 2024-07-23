@@ -1,13 +1,7 @@
-use crate::abs::{
-    expr::proj::{macros::impl_general_proj_through_singulars, Projector},
-    FieldIndex,
-};
+use crate::abs::expr::proj::{macros::impl_general_proj_through_singulars, Projector};
 
 use super::super::alias::SymValueRefProjector;
-use super::{
-    ConcreteHostProj, ConcreteValueRef, ProjExpr, ProjKind, SliceIndex, SymHostProj, SymIndexPair,
-    SymValueRef,
-};
+use super::{prelude::*, SliceIndex, SymIndexPair};
 
 pub(crate) type DefaultSymProjector = core::CoreProjector;
 
@@ -18,8 +12,6 @@ pub(crate) fn new_sym_projector() -> DefaultSymProjector {
 impl SymValueRefProjector for DefaultSymProjector {}
 
 mod core {
-    use crate::backends::basic::expr::DowncastKind;
-
     use super::*;
 
     #[derive(Default)]
@@ -27,6 +19,7 @@ mod core {
 
     impl Projector for CoreProjector {
         type HostRef<'a> = SymValueRef;
+        type FieldAccessor = FieldAccessKind;
         type HIRefPair<'a> = SymIndexPair;
         type DowncastTarget = DowncastKind;
         type Proj<'a> = ProjExpr;
@@ -40,7 +33,11 @@ mod core {
             })
         }
 
-        fn field<'a>(&mut self, host: Self::HostRef<'a>, field: FieldIndex) -> Self::Proj<'a> {
+        fn field<'a>(
+            &mut self,
+            host: Self::HostRef<'a>,
+            field: Self::FieldAccessor,
+        ) -> Self::Proj<'a> {
             ProjExpr::SymHost(SymHostProj {
                 host,
                 kind: ProjKind::Field(field),
