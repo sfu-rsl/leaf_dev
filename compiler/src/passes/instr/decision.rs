@@ -1,5 +1,5 @@
 use const_format::concatcp;
-use rustc_hir::def_id::DefId;
+use rustc_hir::{def_id::DefId, definitions::DefPathData};
 use rustc_middle::{mir::Body, ty::TyCtxt};
 use rustc_span::Symbol;
 
@@ -70,6 +70,15 @@ fn opt_instrument_attr_inheritable<'tcx>(
 /// If the attribute is not found, or the argument passed to the attribute is invalid
 /// returns `None`.
 fn opt_instrument_attr<'tcx>(tcx: TyCtxt<'tcx>, def_id: DefId) -> Option<bool> {
+    // Avoid possibly problematic const items.
+    // See https://github.com/rust-lang/rust/issues/128145
+    if matches!(
+        tcx.def_key(def_id).disambiguated_data.data,
+        DefPathData::AnonConst
+    ) {
+        return None;
+    }
+
     tcx.get_attrs_by_path(
         def_id,
         &[Symbol::intern(TOOL_NAME), Symbol::intern(ATTR_NAME)],

@@ -304,6 +304,8 @@ def main():
 
     dummy_crate_dir = create_dummy_crate(paths.work, paths.res)
 
+    run_command(args=["cargo", "--version"], cwd=dummy_crate_dir, env=os.environ, check=True)
+
     orig_toolchain_path = get_toolchain_path(cwd=dummy_crate_dir, env=os.environ)
     logging.debug("Original toolchain path: %s", orig_toolchain_path)
     copied_toolchain_path = copy_toolchain(orig_toolchain_path, paths.work)
