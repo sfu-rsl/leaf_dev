@@ -38,7 +38,7 @@ use self::{
     config::BasicBackendConfig,
     expr::{
         builders::DefaultExprBuilder as ExprBuilder, prelude::*,
-        proj::DefaultSymProjector as SymProjector,
+        proj::DefaultSymProjector as SymProjector, translators::z3::Z3ValueTranslator,
     },
     operand::BasicOperandHandler,
     place::{BasicPlaceHandler, PlaceMetadata},
@@ -86,16 +86,18 @@ impl BasicBackend {
         let expr_builder_ref = Rc::new(RefCell::new(expr::builders::new_expr_builder()));
         let expr_builder = expr_builder_ref.clone();
         let sym_projector = Rc::new(RefCell::new(expr::proj::new_sym_projector()));
+        let type_manager_ref = Rc::new(BasicTypeManager::default());
+        let type_manager = type_manager_ref.clone();
         let trace_manager_ref = Rc::new(RefCell::new(ImmediateTraceManager::<
             BasicBlockIndex,
             u32,
             ValueRef,
         >::new_basic(Box::new(
-            Z3Solver::new_in_global_context(),
+            Z3Solver::new_in_global_context(|ctx| {
+                Z3ValueTranslator::new(ctx, type_manager_ref.clone())
+            }),
         ))));
         let trace_manager = trace_manager_ref.clone();
-        let type_manager_ref = Rc::new(BasicTypeManager::default());
-        let type_manager = type_manager_ref.clone();
         Self {
             call_stack_manager: BasicCallStackManager::new(
                 Box::new(move |id| {

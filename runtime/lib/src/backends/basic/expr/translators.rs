@@ -4,6 +4,7 @@ pub(crate) mod z3 {
         default::Default,
         mem::{discriminant, size_of},
         ops::Not,
+        rc::Rc,
     };
 
     use z3::{
@@ -13,13 +14,16 @@ pub(crate) mod z3 {
 
     use crate::{
         abs::{expr::sym_place::SelectTarget, FieldIndex, IntType, ValueType},
-        backends::basic::expr::{
-            prelude::*,
-            sym_place::{
-                apply_address_of, apply_len, DefaultProjExprReadResolver, ProjExprResolver, Select,
-                SingleProjResult, SymbolicProjResult, TransmutedValue,
+        backends::basic::{
+            alias::TypeManager,
+            expr::{
+                prelude::*,
+                sym_place::{
+                    apply_address_of, apply_len, DefaultProjExprReadResolver, ProjExprResolver,
+                    Select, SingleProjResult, SymbolicProjResult, TransmutedValue,
+                },
+                SymBinaryOperands, SymVarId,
             },
-            SymBinaryOperands, SymVarId,
         },
         solvers::z3::{ArrayNode, ArraySort, BVNode, BVSort},
     };
@@ -31,46 +35,54 @@ pub(crate) mod z3 {
     const USIZE_BIT_SIZE: u32 = size_of::<usize>() as u32 * 8;
     const POSSIBLE_VALUES_PREFIX: &str = "pvs";
 
-    impl<'ctx> From<(&ValueRef, &'ctx Context)> for TranslatedConstraint<'ctx, SymVarId> {
-        fn from(value_with_context: (&ValueRef, &'ctx Context)) -> Self {
-            let (value, context) = value_with_context;
-            Z3ValueTranslator::new(context).translate(value)
-        }
-    }
-
-    pub(crate) struct Z3ValueTranslator<'ctx> {
+    pub(crate) struct Z3ValueTranslator<'ctx, R: ProjExprResolver> {
         context: &'ctx Context,
         variables: HashMap<SymVarId, AstNode<'ctx>>,
         constraints: Vec<ast::Bool<'ctx>>,
+        phantom: std::marker::PhantomData<R>,
     }
 
-    impl<'ctx> Z3ValueTranslator<'ctx> {
-        pub(crate) fn new(context: &'ctx Context) -> Self {
+    impl<'ctx> Z3ValueTranslator<'ctx, DefaultProjExprReadResolver<'_>> {
+        pub(crate) fn new(context: &'ctx Context, type_manager: Rc<dyn TypeManager>) -> Self {
             Self {
                 context,
                 variables: Default::default(),
                 // Additional constraints are not common.
                 constraints: Vec::with_capacity(0),
+                phantom: Default::default(),
             }
         }
     }
 
-    impl<'ctx> Z3ValueTranslator<'ctx> {
-        fn translate(mut self, value: &ValueRef) -> TranslatedConstraint<'ctx, SymVarId> {
+    impl<'ctx, R: ProjExprResolver> FnOnce<(&ValueRef,)> for Z3ValueTranslator<'ctx, R> {
+        type Output = TranslatedConstraint<'ctx, SymVarId>;
+        extern "rust-call" fn call_once(mut self, (value,): (&ValueRef,)) -> Self::Output {
+            self.translate(value)
+        }
+    }
+
+    impl<'ctx, R: ProjExprResolver> FnMut<(&ValueRef,)> for Z3ValueTranslator<'_, R> {
+        extern "rust-call" fn call_mut(&mut self, (value,): (&ValueRef,)) -> Self::Output {
+            self.translate(value)
+        }
+    }
+
+    impl<'ctx, R: ProjExprResolver> Z3ValueTranslator<'ctx, R> {
+        fn translate(&mut self, value: &ValueRef) -> TranslatedConstraint<'ctx, SymVarId> {
             log_debug!("Translating value: {}", value);
             let ast = self.translate_value(value);
             match ast {
                 AstNode::Bool(ast) => TranslatedConstraint {
                     constraint: ast,
-                    variables: self.variables,
-                    extra: self.constraints,
+                    variables: self.variables.drain().collect(),
+                    extra: self.constraints.drain(..).collect(),
                 },
                 _ => panic!("Expected the value to be a boolean expression but it is a {ast:#?}.",),
             }
         }
     }
 
-    impl<'ctx> Z3ValueTranslator<'ctx> {
+    impl<'ctx, R: ProjExprResolver> Z3ValueTranslator<'ctx, R> {
         fn translate_value(&mut self, value: &ValueRef) -> AstNode<'ctx> {
             match value.as_ref() {
                 Value::Concrete(c) => self.translate_concrete(c),
@@ -178,16 +190,17 @@ pub(crate) mod z3 {
 
         fn translate_symbolic_expr(&mut self, expr: &Expr) -> AstNode<'ctx> {
             log_debug!("Translating symbolic expression: {:?}", expr);
+            use Expr::*;
             match expr {
-                Expr::Unary { operator, operand } => {
+                Unary { operator, operand } => {
                     let operand = self.translate_symbolic(operand);
                     self.translate_unary_expr(operator, operand)
                 }
-                Expr::Binary(BinaryExpr { operator, operands }) => {
+                Binary(BinaryExpr { operator, operands }) => {
                     let (left, right) = self.translate_binary_operands(operands);
                     self.translate_binary_expr(*operator, left, right)
                 }
-                Expr::Extension {
+                Extension {
                     source,
                     is_zero_ext,
                     bits_to_add,
@@ -201,7 +214,7 @@ pub(crate) mod z3 {
                         ty.is_signed(),
                     )
                 }
-                Expr::Extraction {
+                Extraction {
                     source,
                     high,
                     low,
@@ -210,7 +223,7 @@ pub(crate) mod z3 {
                     let source = self.translate_symbolic(source);
                     self.translate_extraction_expr(source, *high, *low, ty.is_signed())
                 }
-                Expr::Ite {
+                Ite {
                     condition,
                     if_target,
                     else_target,
@@ -220,15 +233,12 @@ pub(crate) mod z3 {
                     let else_target = self.translate_value(else_target);
                     self.translate_ite_expr(condition, if_target, else_target)
                 }
-                Expr::AddrOf(operand) => {
-                    let operand = self.resolve_proj_expression(operand);
-                    self.translate_address_of_expr(operand)
+                Multi(select) => self.translate_select(select, None),
+                Ref(..) | Len(..) | Projection(..) => {
+                    unreachable!(
+                        "Projection expressions should be resolved before translation. Got: {expr}"
+                    )
                 }
-                Expr::Len(of) => {
-                    let of = self.resolve_proj_expression(of);
-                    self.translate_len_expr(of)
-                }
-                Expr::Projection(proj_expr) => self.translate_projection_expr(proj_expr),
             }
         }
 
