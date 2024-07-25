@@ -731,7 +731,7 @@ pub(crate) enum Expr {
         else_target: ValueRef,
     },
 
-    Select(Select),
+    Multi(Select),
 
     /// A reference or the address of a value.
     /* NOTE: Should not we have a separate variant for the address of a value?
