@@ -206,14 +206,14 @@ mod implementation {
 
     impl ProjExprResolver for DefaultProjExprReadResolver<'_> {
         fn resolve<'a>(&self, proj_value: &'a ProjExpr) -> SymbolicProjResult {
-            log::debug!("Resolving a projection: {:?}", proj_value);
+            log_debug!("Resolving a projection: {:?}", proj_value);
             // FIXME: No need to distinguish these cases anymore. We may remove ConcreteHostProj.
             let (base, projs) = proj_value.flatten();
             match base {
                 ProjBase::Concrete(host) => SymbolicProjResult::SymRead(
                     SymbolicReadResolver::resolve(self, (host, &projs)).into(),
                 ),
-                ProjBase::Transmutation(host, dst_ty_id) => self.resolve_symbolic_projs(
+                ProjBase::Transmutation(host, dst_ty_id, _metadata) => self.resolve_symbolic_projs(
                     TransmutedValue::new(host.clone().into(), dst_ty_id).into(),
                     &projs,
                 ),
@@ -221,7 +221,7 @@ mod implementation {
         }
 
         fn expand<'a>(&self, value: &'a SingleProjResult) -> SymbolicProjResult {
-            log::debug!("Expanding a single value: {:?}", value);
+            log_debug!("Expanding a single value: {:?}", value);
             match value {
                 SingleProjResult::Transmuted(trans) => SymbolicProjResult::Array(
                     self.expand_transmuted(trans)
@@ -303,13 +303,21 @@ mod implementation {
             let mut current = base;
             let mut last_index = 0;
             for (i, index) in indices {
+                log_debug!("Found a symbolic index in the projection chain at {i}");
                 current = self.project_one_to_ones(current, &projs[last_index..i]);
                 last_index = i + 1;
 
-                log_debug!("Found a symbolic index in the projection chain at {i}");
-                if let SymbolicProjResult::Single(value) = current {
-                    current = self.expand(&value)
+                current.mutate_values(&mut |v| *v = self.expand(v).into_single(), self);
+
+                if let SymbolicProjResult::Single(single @ SingleProjResult::Value(value)) =
+                    &current
+                {
+                    if let Value::Concrete(ConcreteValue::Array(_)) = value.as_ref() {
+                        // FIXME: Reexpansion due to conversion back to single.
+                        current = self.expand(single)
+                    }
                 }
+
                 let target = match current {
                     SymbolicProjResult::SymRead(current) => SelectTarget::Nested(Box::new(current)),
                     SymbolicProjResult::Array(values) => SelectTarget::Array(values),
@@ -413,6 +421,25 @@ mod implementation {
     }
 
     impl SymbolicProjResult {
+        pub(super) fn into_single(self) -> SingleProjResult {
+            match self {
+                SymbolicProjResult::SymRead(select) => {
+                    SingleProjResult::Value(Expr::Multi(select).to_value_ref().into())
+                }
+                SymbolicProjResult::Array(values) => SingleProjResult::Value(
+                    ArrayValue {
+                        elements: values
+                            .into_iter()
+                            .map(SymbolicProjResult::into_single)
+                            .map(SingleProjResult::into_value)
+                            .collect(),
+                    }
+                    .to_value_ref(),
+                ),
+                SymbolicProjResult::Single(single) => single,
+            }
+        }
+
         pub(super) fn mutate_values(
             &mut self,
             f: &mut impl FnMut(&mut SingleProjResult),
@@ -475,6 +502,27 @@ mod implementation {
         }
     }
 
+    impl SingleProjResult {
+        pub(super) fn into_value(self) -> ValueRef {
+            match self {
+                SingleProjResult::Transmuted(trans) => {
+                    // FIXME: Destination type loss for concrete
+                    if trans.value.is_symbolic() {
+                        ProjExpr::SymHost(SymHostProj {
+                            host: SymValueRef::new(trans.value),
+                            kind: ProjKind::Downcast(DowncastKind::Transmutation(trans.dst_ty_id)),
+                            metadata: todo!("Unknown transmutation base type."),
+                        })
+                        .to_value_ref()
+                        .into()
+                    } else {
+                        trans.value
+                    }
+                }
+                SingleProjResult::Value(value) => value,
+            }
+        }
+    }
     struct ResultInPlaceProjector<'r> {
         resolver: &'r DefaultProjExprReadResolver<'r>,
     }

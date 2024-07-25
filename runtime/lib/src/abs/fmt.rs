@@ -173,7 +173,7 @@ where
     V: Display,
 {
     fn fmt(&self, f: &mut Formatter) -> Result {
-        write!(f, "{}[{}]", self.target, self.index)
+        write!(f, "select({}, {})", self.target, self.index)
     }
 }
 

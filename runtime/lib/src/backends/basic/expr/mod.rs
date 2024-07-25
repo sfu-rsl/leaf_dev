@@ -614,11 +614,46 @@ pub(crate) enum LazyTypeInfo {
     Fetched(&'static TypeInfo),
 }
 
+impl LazyTypeInfo {
+    pub(crate) fn id(&self) -> Option<TypeId> {
+        match self {
+            Self::None => None,
+            Self::Id(id) => Some(*id),
+            Self::Fetched(ty) => Some(ty.id),
+        }
+    }
+}
+
 impl From<Option<TypeId>> for LazyTypeInfo {
     fn from(ty_id: Option<TypeId>) -> Self {
         match ty_id {
             Some(ty_id) => Self::Id(ty_id),
             None => Self::None,
+        }
+    }
+}
+
+impl<'a> TryFrom<&'a TypeInfo> for ValueType {
+    type Error = ();
+
+    fn try_from(value: &'a TypeInfo) -> Result<Self, Self::Error> {
+        // TODO: To be replaced with a well-cached implementation
+        let name = value.name.as_str();
+        match name {
+            "bool" => Ok(ValueType::Bool),
+            "char" => Ok(ValueType::Char),
+            _ if name.starts_with("i") => name[1..]
+                .parse()
+                .map(|bit_size| {
+                    IntType {
+                        bit_size,
+                        is_signed: false,
+                    }
+                    .into()
+                })
+                .map_err(|_| ()),
+            _ if name.starts_with("f") => unimplemented!(),
+            _ => Err(()),
         }
     }
 }

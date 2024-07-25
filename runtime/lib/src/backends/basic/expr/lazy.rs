@@ -143,7 +143,7 @@ unsafe fn retrieve_by_type(
                     unsupported()
                 }
             }
-            Union | Struct(_) => unsupported(),
+            Union(..) | Struct(..) => unsupported(),
         }
     } else {
         unsupported()
@@ -156,6 +156,10 @@ fn retrieve_array(
     item_ty: &'static TypeInfo,
     retrieve_addr: impl Fn(RawPointer) -> ValueRef,
 ) -> ArrayValue {
+    /* FIXME: We can do better by querying the memory in a coarser way.
+     * The current memory supports checking ranges and porter values.
+     * Thus we can check for the whole array region and place those symbolic
+     * values at the right indices. */
     let mut elements = Vec::with_capacity(len);
     for i in 0..(len as u64) {
         let item_addr = addr + i * item_ty.size;
