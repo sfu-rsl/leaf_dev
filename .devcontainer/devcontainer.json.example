@@ -25,6 +25,12 @@
 			"target": "/usr/local/cargo",
 			"type": "volume"
 		},
+		// Optional: Home Folder
+		{
+			"source": "devcontainer-home-${devcontainerId}",
+			"target": "/home/vscode",
+			"type": "volume"
+		},
 	],
 	"customizations": {
 		"vscode": {

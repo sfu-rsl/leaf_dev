@@ -3,10 +3,11 @@
         // Rust
         "tamasfe.even-better-toml",
         "wcrichton.flowistry",
-        "serayuzgur.crates",
+        "fill-labs.dependi",
         // VSC
         "eamodio.gitlens",
         "mhutchie.git-graph",
+        "phil294.git-log--graph",
         // Experience
         "streetsidesoftware.code-spell-checker",
         "GitHub.copilot",
