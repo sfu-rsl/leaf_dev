@@ -248,7 +248,7 @@ mod driver_args {
     use super::*;
 
     use std::path::{Path, PathBuf};
-    use std::{env, iter};
+    use std::{env, fs, iter};
 
     const CMD_RUSTC: &str = "rustc";
     const CMD_RUSTUP: &str = "rustup";
@@ -486,8 +486,12 @@ mod driver_args {
         ensure_runtime_dylib_dir_exist(use_noop_runtime);
         let runtime_dylib_dir = PathBuf::from(find_runtime_dylib_dir(use_noop_runtime));
 
+        fn sym_link_exists(sym_path: &Path) -> bool {
+            fs::symlink_metadata(sym_path).is_ok()
+        }
+
         let sym_dylib_path = runtime_dylib_dir.join(FILE_RUNTIME_DYLIB);
-        if sym_dylib_path.exists() {
+        if sym_link_exists(&sym_dylib_path) && sym_dylib_path.exists() {
             return;
         }
 
@@ -500,16 +504,20 @@ mod driver_args {
         // NOTE: Parallel execution of the compiler may cause race conditions.
         // FIXME: Come up with a better solution.
         retry(MAX_RETRY, std::time::Duration::from_secs(1), || {
-            if sym_dylib_path.exists() {
-                Ok(())
-            } else {
-                #[cfg(unix)]
-                let result = std::os::unix::fs::symlink(&physical_dylib_path, &sym_dylib_path);
-                #[cfg(windows)]
-                let result =
-                    std::os::windows::fs::symlink_file(&physical_dylib_path, &sym_dylib_path);
-                result
+            if sym_link_exists(&sym_dylib_path) {
+                if sym_dylib_path.exists() {
+                    return Ok(());
+                } else {
+                    // Invalid symbolic link.
+                    fs::remove_file(&sym_dylib_path)?;
+                }
             }
+
+            #[cfg(unix)]
+            let result = std::os::unix::fs::symlink(&physical_dylib_path, &sym_dylib_path);
+            #[cfg(windows)]
+            let result = std::os::windows::fs::symlink_file(&physical_dylib_path, &sym_dylib_path);
+            result
         })
         .expect("Could not create a symlink to the fallback runtime dylib.");
     }
