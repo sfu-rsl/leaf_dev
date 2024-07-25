@@ -553,7 +553,6 @@ mod implementation {
                         .clone_with_host(ConcreteValueRef::new(value.clone()))
                         .map(
                             |h| h,
-                            |(h, i)| (h, i.into()),
                             |fa| {
                                 if let FieldAccessKind::Index(index) = fa {
                                     index
@@ -561,6 +560,7 @@ mod implementation {
                                     todo!("PtrMetadata is not supported yet.")
                                 }
                             },
+                            |(h, i)| (h, i.into()),
                             |dc| match dc {
                                 DowncastKind::EnumVariant(variant_index) => variant_index,
                                 DowncastKind::Transmutation(..) => unreachable!(),

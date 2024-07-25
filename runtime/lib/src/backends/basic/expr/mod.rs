@@ -767,6 +767,15 @@ pub(crate) enum ProjExpr<M = ProjMetadata> {
     SymHost(SymHostProj<M>),
 }
 
+impl<M> ProjExpr<M> {
+    pub fn metadata(&self) -> &M {
+        match self {
+            ProjExpr::SymIndex(proj) => &proj.metadata,
+            ProjExpr::SymHost(proj) => &proj.metadata,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct ConcreteHostProj<M = ProjMetadata> {
     host: ConcreteValueRef,
@@ -783,7 +792,19 @@ pub(crate) struct SymHostProj<M = ProjMetadata> {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct ProjMetadata(pub TypeId);
+pub(crate) struct ProjMetadata {
+    host_type_id: TypeId,
+}
+
+impl ProjMetadata {
+    pub fn new(host_type_id: TypeId) -> Self {
+        Self { host_type_id }
+    }
+
+    pub fn host_type_id(&self) -> TypeId {
+        self.host_type_id
+    }
+}
 
 // FIXME: Remove this error suppression after adding support for symbolic projection.
 #[allow(unused)]

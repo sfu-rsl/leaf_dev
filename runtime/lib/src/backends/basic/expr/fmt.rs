@@ -221,8 +221,13 @@ impl Display for ProjExpr {
             ProjExpr::SymIndex(ConcreteHostProj {
                 host,
                 index: SliceIndex { index, from_end },
+                metadata: _,
             }) => write!(f, "({host})[{index}{}]", end_symbol(from_end)),
-            ProjExpr::SymHost(SymHostProj { host, kind }) => {
+            ProjExpr::SymHost(SymHostProj {
+                host,
+                kind,
+                metadata: _,
+            }) => {
                 kind.fmt_pre(f)?;
                 write!(f, "({host})")?;
                 kind.fmt_post(f)

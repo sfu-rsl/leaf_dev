@@ -348,6 +348,7 @@ mod core {
                 ProjExpr::SymHost(SymHostProj {
                     host: operand.into(),
                     kind: ProjKind::Field(FieldAccessKind::PtrMetadata),
+                    metadata: todo!("#443"),
                 })
                 .into(),
             )

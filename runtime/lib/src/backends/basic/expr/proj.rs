@@ -19,6 +19,7 @@ mod core {
 
     impl Projector for CoreProjector {
         type HostRef<'a> = SymValueRef;
+        type Metadata<'a> = ProjMetadata;
         type FieldAccessor = FieldAccessKind;
         type HIRefPair<'a> = SymIndexPair;
         type DowncastTarget = DowncastKind;
@@ -26,7 +27,11 @@ mod core {
 
         impl_general_proj_through_singulars!();
 
-        fn deref<'a>(&mut self, host: Self::HostRef<'a>) -> Self::Proj<'a> {
+        fn deref<'a>(
+            &mut self,
+            host: Self::HostRef<'a>,
+            metadata: Self::Metadata<'a>,
+        ) -> Self::Proj<'a> {
             // Peel off the reference.
             if let SymValue::Expression(Expr::Ref(proj)) = host.as_ref() {
                 proj.as_ref().clone()
@@ -34,6 +39,7 @@ mod core {
                 ProjExpr::SymHost(SymHostProj {
                     host,
                     kind: ProjKind::Deref,
+                    metadata,
                 })
             }
         }
@@ -42,23 +48,32 @@ mod core {
             &mut self,
             host: Self::HostRef<'a>,
             field: Self::FieldAccessor,
+            metadata: Self::Metadata<'a>,
         ) -> Self::Proj<'a> {
             ProjExpr::SymHost(SymHostProj {
                 host,
                 kind: ProjKind::Field(field),
+                metadata,
             })
         }
 
-        fn index<'a>(&mut self, host_index: Self::HIRefPair<'a>, from_end: bool) -> Self::Proj<'a> {
+        fn index<'a>(
+            &mut self,
+            host_index: Self::HIRefPair<'a>,
+            from_end: bool,
+            metadata: Self::Metadata<'a>,
+        ) -> Self::Proj<'a> {
             match host_index {
                 SymIndexPair::SymHost { host, index } => ProjExpr::SymHost(SymHostProj {
                     host,
                     kind: ProjKind::Index(SliceIndex { index, from_end }),
+                    metadata,
                 }),
                 SymIndexPair::SymIndex { index, host } if !host.is_symbolic() => {
                     ProjExpr::SymIndex(ConcreteHostProj {
                         host: ConcreteValueRef::new(host),
                         index: SliceIndex { index, from_end },
+                        metadata,
                     })
                 }
                 /* This case is not expected, however is structurally possible. */
@@ -68,6 +83,7 @@ mod core {
                         index: index.into(),
                         from_end,
                     }),
+                    metadata,
                 }),
             }
         }
@@ -78,10 +94,12 @@ mod core {
             from: u64,
             to: u64,
             from_end: bool,
+            metadata: Self::Metadata<'a>,
         ) -> Self::Proj<'a> {
             ProjExpr::SymHost(SymHostProj {
                 host,
                 kind: ProjKind::Subslice { from, to, from_end },
+                metadata,
             })
         }
 
@@ -89,10 +107,12 @@ mod core {
             &mut self,
             host: Self::HostRef<'a>,
             target: Self::DowncastTarget,
+            metadata: Self::Metadata<'a>,
         ) -> Self::Proj<'a> {
             ProjExpr::SymHost(SymHostProj {
                 host,
                 kind: ProjKind::Downcast(target),
+                metadata,
             })
         }
     }

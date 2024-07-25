@@ -450,7 +450,7 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
                     }
                     .into(),
                     false,
-                    ProjMetadata(host_metadata.unwrap_type_id()).into(),
+                    ProjMetadata::new(host_metadata.unwrap_type_id()).into(),
                 )
                 .into()
                 .to_value_ref()
@@ -519,7 +519,7 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
             projs.iter().zip(place_metadata).map(|(proj, meta)| {
                 (
                     proj.resolved_index(self),
-                    ProjMetadata(meta.unwrap_type_id()),
+                    ProjMetadata::new(meta.unwrap_type_id()),
                 )
             }),
         )
@@ -578,8 +578,7 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
         DefaultProjExprReadResolver::new(self.type_manager.as_ref(), self).resolve(proj)
     }
 
-    fn retrieve_sym_proj_result(&self, proj_result: &SymbolicProjResult) -> ValueRef {
-        log::debug!("Retrieving symbolic projection result: {}", proj_result);
+        log_debug!("Retrieving symbolic projection result: {}", proj_result);
         match proj_result {
             SymbolicProjResult::Single(single) => self.retrieve_single_proj_result(single),
             SymbolicProjResult::Array(items) => Into::<ConcreteValue>::into(ArrayValue {
@@ -598,7 +597,7 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
     }
 
     fn retrieve_single_proj_result(&self, single: &SingleProjResult) -> ValueRef {
-        log::debug!("Retrieving single projection result: {}", single);
+        log_debug!("Retrieving single projection result: {}", single);
         let result = match single {
             SingleProjResult::Transmuted(value) => {
                 // This is guaranteed to not be a projection expression.
@@ -610,7 +609,7 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
     }
 
     fn retrieve_select_proj_result(&self, select: &Select) -> Select {
-        log::debug!("Retrieving select projection result: {}", select);
+        log_debug!("Retrieving select projection result: {}", select);
         let target = match &select.target {
             SelectTarget::Array(possible_values) => SelectTarget::Array(
                 possible_values
@@ -798,7 +797,7 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerRetriever
     for RawPointerVariableState<VS, SP>
 {
     fn retrieve(&self, addr: RawPointer, type_id: TypeId) -> ValueRef {
-        log::debug!(
+        log_debug!(
             "Retrieving value at address: {:x} with type: {:?}",
             addr,
             type_id

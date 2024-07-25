@@ -72,6 +72,8 @@ impl<H, FA, I, DC> ProjectionOn<H, FA, (H, I), DC> {
 pub(crate) trait Projector {
     /// Type of the reference to the host object.
     type HostRef<'a>;
+    /// Type of the metadata to be put in the result expression.
+    type Metadata<'a>;
     // Type of the field access.
     // Used for field projection.
     type FieldAccessor;
@@ -93,13 +95,28 @@ pub(crate) trait Projector {
             Self::HIRefPair<'a>,
             Self::DowncastTarget,
         >,
+        metadata: Self::Metadata<'a>,
     ) -> Self::Proj<'a>;
 
-    fn deref<'a>(&mut self, host: Self::HostRef<'a>) -> Self::Proj<'a>;
+    fn deref<'a>(
+        &mut self,
+        host: Self::HostRef<'a>,
+        metadata: Self::Metadata<'a>,
+    ) -> Self::Proj<'a>;
 
-    fn field<'a>(&mut self, host: Self::HostRef<'a>, field: Self::FieldAccessor) -> Self::Proj<'a>;
+    fn field<'a>(
+        &mut self,
+        host: Self::HostRef<'a>,
+        field: Self::FieldAccessor,
+        metadata: Self::Metadata<'a>,
+    ) -> Self::Proj<'a>;
 
-    fn index<'a>(&mut self, host_index: Self::HIRefPair<'a>, from_end: bool) -> Self::Proj<'a>;
+    fn index<'a>(
+        &mut self,
+        host_index: Self::HIRefPair<'a>,
+        from_end: bool,
+        metadata: Self::Metadata<'a>,
+    ) -> Self::Proj<'a>;
 
     fn subslice<'a>(
         &mut self,
@@ -107,12 +124,14 @@ pub(crate) trait Projector {
         from: u64,
         to: u64,
         from_end: bool,
+        metadata: Self::Metadata<'a>,
     ) -> Self::Proj<'a>;
 
     fn downcast<'a>(
         &mut self,
         host: Self::HostRef<'a>,
         target: Self::DowncastTarget,
+        metadata: Self::Metadata<'a>,
     ) -> Self::Proj<'a>;
 }
 
@@ -127,14 +146,17 @@ pub(crate) mod macros {
                     Self::HIRefPair<'a>,
                     Self::DowncastTarget,
                 >,
+                metadata: Self::Metadata<'a>,
             ) -> Self::Proj<'a> {
                 use crate::abs::expr::proj::ProjectionOn::*;
                 match pair {
-                    Deref(host) => self.deref(host),
-                    Field(host, field) => self.field(host, field),
-                    Index(host_index, from_end) => self.index(host_index, from_end),
-                    Subslice(host, from, to, from_end) => self.subslice(host, from, to, from_end),
-                    Downcast(host, target) => self.downcast(host, target),
+                    Deref(host) => self.deref(host, metadata),
+                    Field(host, field) => self.field(host, field, metadata),
+                    Index(host_index, from_end) => self.index(host_index, from_end, metadata),
+                    Subslice(host, from, to, from_end) => {
+                        self.subslice(host, from, to, from_end, metadata)
+                    }
+                    Downcast(host, target) => self.downcast(host, target, metadata),
                 }
             }
         };
@@ -142,8 +164,12 @@ pub(crate) mod macros {
 
     macro_rules! impl_singular_proj_through_general {
         (deref) => {
-            fn deref<'a>(&mut self, host: Self::HostRef<'a>) -> Self::Proj<'a> {
-                self.project(ProjectionOn::Deref(host))
+            fn deref<'a>(
+                &mut self,
+                host: Self::HostRef<'a>,
+                metadata: Self::Metadata<'a>,
+            ) -> Self::Proj<'a> {
+                self.project(ProjectionOn::Deref(host), metadata)
             }
         };
         (field) => {
@@ -151,8 +177,9 @@ pub(crate) mod macros {
                 &mut self,
                 host: Self::HostRef<'a>,
                 field: Self::FieldAccessor,
+                metadata: Self::Metadata<'a>,
             ) -> Self::Proj<'a> {
-                self.project(ProjectionOn::Field(host, field))
+                self.project(ProjectionOn::Field(host, field), metadata)
             }
         };
         (index) => {
@@ -160,8 +187,9 @@ pub(crate) mod macros {
                 &mut self,
                 host_index: Self::HIRefPair<'a>,
                 from_end: bool,
+                metadata: Self::Metadata<'a>,
             ) -> Self::Proj<'a> {
-                self.project(ProjectionOn::Index(host_index, from_end))
+                self.project(ProjectionOn::Index(host_index, from_end), metadata)
             }
         };
         (subslice) => {
@@ -171,8 +199,9 @@ pub(crate) mod macros {
                 from: u64,
                 to: u64,
                 from_end: bool,
+                metadata: Self::Metadata<'a>,
             ) -> Self::Proj<'a> {
-                self.project(ProjectionOn::Subslice(host, from, to, from_end))
+                self.project(ProjectionOn::Subslice(host, from, to, from_end), metadata)
             }
         };
         (downcast) => {
@@ -180,8 +209,9 @@ pub(crate) mod macros {
                 &mut self,
                 host: Self::HostRef<'a>,
                 target: Self::DowncastTarget,
+                metadata: Self::Metadata<'a>,
             ) -> Self::Proj<'a> {
-                self.project(ProjectionOn::Downcast(host, target))
+                self.project(ProjectionOn::Downcast(host, target), metadata)
             }
         };
     }
