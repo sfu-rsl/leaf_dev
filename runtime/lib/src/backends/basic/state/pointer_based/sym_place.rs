@@ -7,7 +7,7 @@ use crate::{
 };
 
 use super::{ConcreteValueRef, SymValueRef};
-use common::{log_debug, log_info, log_warn};
+use common::log_debug;
 
 pub(crate) fn make_sym_place_handler(
     config: SymbolicPlaceStrategy,

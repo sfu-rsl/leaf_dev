@@ -12,7 +12,7 @@ use rustc_middle::{
 use rustc_span::def_id::DefId;
 use rustc_target::abi::{FieldIdx, VariantIdx};
 
-use common::{log_debug, log_info, log_warn};
+use common::{log_debug, log_warn};
 use core::iter;
 use std::vec;
 
@@ -2432,7 +2432,7 @@ mod implementation {
 
             pub mod rvalue {
                 use rustc_index::IndexVec;
-                use rustc_middle::mir::{AggregateKind, BorrowKind, CastKind, NullOp};
+                use rustc_middle::mir::{AggregateKind, BorrowKind, CastKind};
 
                 use super::*;
 

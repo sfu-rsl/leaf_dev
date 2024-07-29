@@ -7,7 +7,7 @@ use crate::abs::{
     },
     BinaryOp, CastKind, UnaryOp,
 };
-use common::{log_debug, log_info, log_warn};
+use common::log_debug;
 
 type Composite<Binary, Unary> = CompositeExprBuilder<Binary, Unary>;
 type Chained<Current, Next, Expr = ValueRef, CurrentExpr = Expr> =

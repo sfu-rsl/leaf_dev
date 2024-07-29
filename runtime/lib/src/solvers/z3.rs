@@ -1,7 +1,7 @@
 use std::{borrow::Borrow, collections::HashMap, hash::Hash};
 
 use crate::{abs::backend, utils::UnsafeSync};
-use common::{log_debug, log_info, log_warn};
+use common::log_debug;
 use lazy_static::lazy_static;
 use z3::{
     self,

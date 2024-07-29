@@ -101,7 +101,6 @@ pub fn trait_log_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     for item in &mut input.items {
         if let ImplItem::Fn(method) = item {
-
             let att = &mut method.attrs;
             let att_string = format!("{:?}", att);
 

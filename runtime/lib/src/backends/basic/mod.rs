@@ -28,7 +28,7 @@ use crate::{
     utils::alias::RRef,
 };
 use common::tyexp::{FieldsShapeInfo, StructShape, TypeExport, TypeInfo};
-use common::{log_debug, log_info, log_warn};
+use common::log_info;
 
 use self::{
     alias::{

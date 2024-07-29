@@ -8,7 +8,7 @@ use std::{
 };
 
 use crate::abs::RawPointer;
-use common::{log_debug, log_info, log_warn};
+use common::log_debug;
 
 use super::MemoryObject;
 

@@ -42,7 +42,7 @@ mod memory;
 pub(super) mod sym_place;
 mod utils;
 
-use common::{log_debug, log_info, log_warn};
+use common::log_debug;
 use utils::*;
 
 type Local = LocalWithMetadata;

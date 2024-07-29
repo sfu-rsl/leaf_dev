@@ -11,7 +11,7 @@ use crate::{
     pathics::AllPathInterestChecker,
 };
 
-use common::{log_debug, log_info, log_warn};
+use common::{log_debug, log_info};
 
 pub(crate) struct ImmediateTraceManager<Step, Id, Val> {
     trace: Vec<Step>,

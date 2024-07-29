@@ -2,7 +2,7 @@ use super::{
     alias::{RRef, ValueRefBinaryExprBuilder},
     ConcreteValueRef, Constraint, SymValueRef, TraceManager,
 };
-use common::{log_debug, log_info, log_warn};
+use common::log_debug;
 
 pub(super) trait Concretizer {
     fn stamp(&mut self, value: SymValueRef, concrete_value: ConcreteValueRef);

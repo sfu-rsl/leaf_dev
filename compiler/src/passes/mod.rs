@@ -7,7 +7,7 @@ mod noop;
 mod runtime_adder;
 pub(crate) mod tyexp;
 
-use common::{log_debug, log_info, log_warn};
+use common::log_debug;
 use std::any::Any;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};

@@ -11,7 +11,7 @@ use super::{
     CallStackManager, Place, UntupleHelper, ValueRef, VariablesState,
 };
 
-use common::{log_debug, log_info, log_warn};
+use common::{log_debug, log_warn};
 
 type VariablesStateFactory<VS> = Box<dyn Fn(usize) -> VS>;
 

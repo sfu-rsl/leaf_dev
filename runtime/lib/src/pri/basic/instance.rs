@@ -3,7 +3,7 @@ use super::{BranchingInfo, OperandRef, PlaceRef};
 use crate::abs::backend::{
     AssignmentHandler, BranchingHandler, OperandHandler, PlaceHandler, RuntimeBackend,
 };
-use common::{log_debug, log_info, log_warn};
+use common::log_info;
 
 #[allow(unused_imports)] // Mutex is detected as unused unless runtime_access is set to safe_mt
 use std::{

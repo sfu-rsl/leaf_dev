@@ -9,7 +9,7 @@ use rustc_middle::ty::{
 };
 use rustc_target::abi::{FieldIdx, Layout, VariantIdx};
 
-use common::{log_debug, log_info, log_warn};
+use common::{log_debug, log_warn};
 use std::collections::HashMap;
 use std::env::{self};
 

@@ -1,4 +1,4 @@
-use common::{log_debug, log_info, log_warn};
+use common::log_debug;
 use serde::Deserialize;
 
 impl TryFrom<::config::Config> for super::BasicBackend {

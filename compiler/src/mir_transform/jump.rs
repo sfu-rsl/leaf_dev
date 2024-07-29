@@ -1,4 +1,4 @@
-use common::{log_debug, log_info, log_warn};
+use common::log_debug;
 use std::marker::PhantomData;
 
 use rustc_middle::mir::{BasicBlock, Operand, Place, Terminator, UnwindAction};

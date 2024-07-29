@@ -25,7 +25,7 @@ pub(crate) mod z3 {
     };
 
     use crate::solvers::z3::{AstNode, TranslatedConstraint};
-    use common::{log_debug, log_info, log_warn};
+    use common::log_debug;
 
     const CHAR_BIT_SIZE: u32 = size_of::<char>() as u32 * 8;
     const USIZE_BIT_SIZE: u32 = size_of::<usize>() as u32 * 8;

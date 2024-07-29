@@ -7,7 +7,7 @@ use rustc_span::{
 };
 
 use super::CompilationPass;
-use common::{log_debug, log_info, log_warn};
+use common::log_info;
 
 /// A pass that adds the runtime library as an extern crate to the program.
 #[derive(Clone)]

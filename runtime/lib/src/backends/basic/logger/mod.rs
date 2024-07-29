@@ -7,7 +7,7 @@ use crate::abs::{
 
 use super::{Field, OperandHandler, Place, PlaceHandler};
 
-use common::{log_debug, log_info, log_warn};
+use common::log_info;
 
 // Here we only store the type information for the symbolic value.
 type Operand = super::operand::Operand<Place, ValueType>;

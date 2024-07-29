@@ -1,7 +1,7 @@
 use serde::Deserialize;
 
 use crate::CONFIG_ENV_PREFIX;
-use common::{log_debug, log_info, log_warn};
+use common::log_info;
 
 #[derive(Debug, Default, Clone, Deserialize)]
 pub(crate) struct LeafCompilerConfig {

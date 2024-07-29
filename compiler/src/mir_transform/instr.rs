@@ -11,7 +11,7 @@ use rustc_middle::{
 };
 
 use super::*;
-use common::{log_debug, log_info, log_warn};
+use common::{log_debug, log_warn};
 
 #[derive(Debug, Clone)]
 struct NewBasicBlock<'tcx> {
