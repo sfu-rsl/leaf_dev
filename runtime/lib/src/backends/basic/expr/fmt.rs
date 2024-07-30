@@ -23,6 +23,7 @@ impl Display for ConcreteValue {
             ConcreteValue::Adt(value) => write!(f, "{value}"),
             ConcreteValue::Array(value) => write!(f, "{value}"),
             ConcreteValue::Ref(value) => write!(f, "{value}"),
+            ConcreteValue::Pointer(value) => write!(f, "{value}"),
             ConcreteValue::Unevaluated(value) => write!(f, "{value}"),
         }
     }
@@ -102,6 +103,15 @@ impl Display for RefValue {
                     full_place.state_id()
                 )
             }
+        }
+    }
+}
+
+impl Display for PtrValue {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        match &self.metadata {
+            Some(metadata) => write!(f, "({}, {})", self.address, metadata),
+            None => write!(f, "{}", self.address),
         }
     }
 }
@@ -295,7 +305,7 @@ impl Display for SymbolicProjResult {
         match self {
             SymbolicProjResult::SymRead(select) => write!(f, "{select}"),
             SymbolicProjResult::Array(values) => write!(f, "[{}]", comma_separated(values.iter())),
-            SymbolicProjResult::Single(value) => write!(f, "{value}"),
+            SymbolicProjResult::Single(value) => write!(f, "<{value}>"),
         }
     }
 }

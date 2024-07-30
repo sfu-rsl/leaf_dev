@@ -13,7 +13,7 @@ use derive_more as dm;
 use sym_place::Select;
 
 use crate::abs::{
-    self, FieldIndex, FloatType, FuncId, IntType, PointerOffset, RawPointer, TypeId, ValueType,
+    self, FieldIndex, FloatType, FuncId, IntType, PointerOffset, RawAddress, TypeId, ValueType,
     VariantIndex,
 };
 
@@ -67,6 +67,8 @@ pub(crate) enum ConcreteValue {
     Array(ArrayValue),
     #[from]
     Ref(RefValue),
+    #[from]
+    Pointer(PtrValue),
     #[from(types(RawConcreteValue, PorterValue))]
     Unevaluated(UnevalValue),
 }
@@ -579,6 +581,13 @@ pub(crate) enum RefValue {
     Mut(FullPlace),
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct PtrValue {
+    pub address: ConcreteValueRef,
+    pub metadata: Option<ConcreteValueRef>,
+    pub ty: TypeId,
+}
+
 #[derive(Clone, Debug, dm::From)]
 pub(crate) enum UnevalValue {
     Some,
@@ -588,7 +597,7 @@ pub(crate) enum UnevalValue {
 
 #[derive(Clone, Debug)]
 pub(crate) struct RawConcreteValue(
-    pub(crate) RawPointer,
+    pub(crate) RawAddress,
     /* NOTE: Can we perform evaluation without storing the type separately?
      * It seems to be possible as we evaluate them only when we
      * are evaluating a operation which includes a symbolic value (otherwise

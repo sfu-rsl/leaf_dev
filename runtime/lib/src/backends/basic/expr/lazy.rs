@@ -1,17 +1,18 @@
 use core::num::Wrapping;
 
-use common::{pri::RawPointer, tyexp::TypeInfo};
+use common::{
+    log_debug,
+    pri::RawPointer,
+    tyexp::{FieldInfo, TypeInfo},
+};
 
 use crate::{
-    abs::{IntType, ValueType},
-    backends::basic::{alias::TypeManager, UnevalValue},
+    abs::{IntType, ValueType, USIZE_TYPE},
+    backends::basic::{alias::TypeManager, expr::PtrValue, UnevalValue},
     tyexp::TypeInfoExt,
 };
 
-use super::{
-    sym_place::RawPointerRetriever, ArrayValue, ConcreteValue, ConcreteValueRef, ConstValue,
-    LazyTypeInfo, RawConcreteValue, ValueRef,
-};
+use super::{sym_place::RawPointerRetriever, *};
 
 impl RawConcreteValue {
     /// Tries to retrieve the value from a primitive type.
@@ -70,6 +71,15 @@ impl RawConcreteValue {
             return Err(self.2);
         };
 
+        self.retrieve_with_type(ty, type_manager, field_retriever)
+    }
+
+    pub(crate) unsafe fn retrieve_with_type(
+        &self,
+        ty: &TypeInfo,
+        type_manager: &dyn TypeManager,
+        field_retriever: &dyn RawPointerRetriever,
+    ) -> Result<ConcreteValueRef, LazyTypeInfo> {
         let result = retrieve_by_type(self.0, ty, type_manager, field_retriever);
 
         debug_assert!(
@@ -116,16 +126,21 @@ unsafe fn retrieve_int(addr: usize, bit_size: usize) -> u128 {
 
 unsafe fn retrieve_by_type(
     addr: RawPointer,
-    ty: &'static TypeInfo,
+    ty: &TypeInfo,
     type_manager: &dyn TypeManager,
     field_retriever: &dyn RawPointerRetriever,
 ) -> ConcreteValue {
+    log_debug!("Retrieving value at {} of type: {:?}", addr, ty.id);
     let unsupported = || {
         unimplemented!(
             "Evaluation of raw concrete value with this type is not supported yet. {:?}",
             ty
         )
     };
+    debug_assert!(
+        ty.is_sized(),
+        "Unsized types are not expected to be retrieved.",
+    );
     if let Some(variant) = ty.as_single_variant() {
         use common::tyexp::FieldsShapeInfo::*;
         match &variant.fields {
@@ -139,11 +154,27 @@ unsafe fn retrieve_by_type(
             NoFields => {
                 if let Ok(ty) = ValueType::try_from(ty) {
                     retrieve_primitive(addr, &ty).into()
+                } else if let Some(pointee_ty) = ty.pointee_ty {
+                    debug_assert!(
+                        type_manager.get_type(pointee_ty).is_sized(),
+                        "Pointer with no fields is expected to be thin.",
+                    );
+                    retrieve_primitive(addr, &USIZE_TYPE.into()).into()
                 } else {
                     unsupported()
                 }
             }
-            Union(..) | Struct(..) => unsupported(),
+            Union(..) => unsupported(),
+            Struct(shape) => match ty.pointee_ty {
+                None => retrieve_struct(addr, &shape.fields, field_retriever).into(),
+                Some(pointee_ty) => {
+                    debug_assert!(
+                        !type_manager.get_type(pointee_ty).is_sized(),
+                        "Pointer with struct shape is expected to be fat."
+                    );
+                    retrieve_fat_ptr(addr, ty.id, &shape.fields, field_retriever)
+                }
+            },
         }
     } else {
         unsupported()
@@ -153,7 +184,7 @@ unsafe fn retrieve_by_type(
 fn retrieve_array(
     addr: RawPointer,
     len: usize,
-    item_ty: &'static TypeInfo,
+    item_ty: &TypeInfo,
     retrieve_addr: impl Fn(RawPointer) -> ValueRef,
 ) -> ArrayValue {
     /* FIXME: We can do better by querying the memory in a coarser way.
@@ -166,4 +197,42 @@ fn retrieve_array(
         elements.push(retrieve_addr(item_addr));
     }
     ArrayValue { elements }
+}
+
+fn retrieve_struct(
+    addr: RawPointer,
+    fields: &[FieldInfo],
+    field_retriever: &dyn RawPointerRetriever,
+) -> AdtValue {
+    /* FIXME: We can do better by querying the memory in a coarser way.
+     * The current memory supports checking ranges and porter values.
+     * Thus we can check for the whole struct region and place those symbolic
+     * values at the right indices. */
+    AdtValue {
+        kind: super::AdtKind::Struct,
+        fields: fields
+            .iter()
+            .map(|f| field_retriever.retrieve(addr + f.offset, f.ty))
+            .map(Some)
+            .map(Into::into)
+            .collect(),
+    }
+}
+
+fn retrieve_fat_ptr(
+    addr: u64,
+    type_id: TypeId,
+    fields: &[FieldInfo],
+    field_retriever: &dyn RawPointerRetriever,
+) -> ConcreteValue {
+    let mut adt = retrieve_struct(addr, fields, field_retriever);
+    // FIXME: There is no guarantee for this structure.
+    let metadata = adt.fields.pop().unwrap().value.unwrap(); // Field 1
+    let address = adt.fields.pop().unwrap().value.unwrap(); // Field 0
+    PtrValue {
+        address: ConcreteValueRef::new(address),
+        metadata: Some(ConcreteValueRef::new(metadata)),
+        ty: type_id,
+    }
+    .into()
 }
