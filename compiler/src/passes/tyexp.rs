@@ -89,11 +89,11 @@ impl CompilationPass for TypeExporter {
     }
 }
 
-fn type_id<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>) -> u128 {
-    tcx.type_id_hash(ty).as_u128()
+fn type_id<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>) -> TypeId {
+    TypeId::new(tcx.type_id_hash(ty).as_u128()).unwrap()
 }
 
-fn aggregate_type_info(type_map: &mut HashMap<u128, TypeInfo>, path_prefix: Option<String>) {
+fn aggregate_type_info(type_map: &mut HashMap<TypeId, TypeInfo>, path_prefix: Option<String>) {
     let path_prefix = path_prefix.unwrap_or_else(|| ".".to_string());
     let dep_types_file_pattern = format!("{}/**/types-*.json", path_prefix);
     for entry in glob(dep_types_file_pattern.as_str())

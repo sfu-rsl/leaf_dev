@@ -84,7 +84,7 @@ impl ProgramRuntimeInterface for BasicPri {
         mut_place_ref(place, |p, place| p.metadata(place).set_address(raw_ptr));
     }
     #[cfg(place_addr)]
-    fn set_place_type_id(place: PlaceRef, type_id: TypeId) {
+    fn set_place_type_id(place: PlaceRef, type_id: Self::TypeId) {
         mut_place_ref(place, |h, p| h.metadata(p).set_type_id(type_id))
     }
     #[cfg(place_addr)]
@@ -234,7 +234,7 @@ impl ProgramRuntimeInterface for BasicPri {
             h.cast_of(take_back_operand_ref(operand), CastKind::SizedDynamize)
         })
     }
-    fn assign_cast_transmute(dest: PlaceRef, operand: OperandRef, dst_type_id: TypeId) {
+    fn assign_cast_transmute(dest: PlaceRef, operand: OperandRef, dst_type_id: Self::TypeId) {
         assign_to(dest, |h| {
             h.cast_of(
                 take_back_operand_ref(operand),

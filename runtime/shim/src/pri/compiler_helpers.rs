@@ -63,6 +63,7 @@ pub fn set_place_address_typed<T>(place: PlaceRef, address: *const T) {
 }
 
 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
+#[inline(always)]
 pub fn type_id_of<T: ?Sized + 'static>() -> TypeId {
     /* NOTE: Once this function is const in stable build, we can mark this
      * function as constant as well. */

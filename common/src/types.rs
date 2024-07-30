@@ -8,6 +8,6 @@ pub type PointerOffset = RawPointer;
 pub type TypeSize = PointerOffset;
 pub type Alignment = TypeSize;
 
-pub type TypeId = u128;
+pub type TypeId = core::num::NonZero<u128>;
 
 pub type FuncId = RawPointer;

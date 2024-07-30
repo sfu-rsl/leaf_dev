@@ -1,3 +1,5 @@
+use crate::pri::TypeId;
+
 #[cfg_attr(not(core_build), macro_export)]
 macro_rules! identity {
     ($($input:tt)+) => {
@@ -10,8 +12,9 @@ pub use identity;
 pub(crate) use identity;
 
 #[inline(always)]
-pub fn type_id_of<T: ?Sized + 'static>() -> u128 {
-    core::intrinsics::type_id::<T>()
+pub const fn type_id_of<T: ?Sized + 'static>() -> TypeId {
+    // NOTE: Constant evaluation of `Option` is not complete and inlining does not work.
+    unsafe { TypeId::new_unchecked(core::intrinsics::type_id::<T>()) }
 }
 
 #[cfg(feature = "std")]

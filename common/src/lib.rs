@@ -1,5 +1,6 @@
 #![feature(macro_metavar_expr)]
 #![feature(core_intrinsics)]
+#![feature(const_type_id)]
 #![cfg_attr(not(core_build), feature(register_tool))]
 #![cfg_attr(not(core_build), register_tool(leaf_attr))]
 #![no_std]

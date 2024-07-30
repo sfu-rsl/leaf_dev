@@ -1,3 +1,5 @@
+use crate::pri::TypeId;
+
 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
 pub trait Transmute<T>: From<T> + Into<T> {}
 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
@@ -12,6 +14,8 @@ pub struct U128Pack<T = u128>(
 );
 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
 impl Transmute<u128> for U128Pack {}
+#[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
+impl Transmute<TypeId> for U128Pack<TypeId> {}
 
 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
 impl<T> From<U128Pack<T>> for u128 {
@@ -28,6 +32,20 @@ impl<T> From<u128> for U128Pack<T> {
             unsafe { core::mem::transmute(value) },
             core::marker::PhantomData,
         )
+    }
+}
+#[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
+impl<T> From<U128Pack<T>> for TypeId {
+    #[inline(always)]
+    fn from(value: U128Pack<T>) -> Self {
+        unsafe { TypeId::new_unchecked(Into::<u128>::into(value)) }
+    }
+}
+#[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
+impl<T> From<TypeId> for U128Pack<T> {
+    #[inline(always)]
+    fn from(value: TypeId) -> Self {
+        Into::<u128>::into(value).into()
     }
 }
 

@@ -27,7 +27,7 @@ use crate::{
         VariablesState,
     },
     tyexp::TypeInfoExt,
-    utils::{type_id_of, SelfHierarchical},
+    utils::SelfHierarchical,
 };
 use common::tyexp::{ArrayShape, FieldsShapeInfo, StructShape, TypeInfo, UnionShape};
 
@@ -746,7 +746,7 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
         }
     }
 
-    fn set_addr_adt(&mut self, type_id: u128, adt: &AdtValue, addr: u64) {
+    fn set_addr_adt(&mut self, type_id: TypeId, adt: &AdtValue, addr: u64) {
         let ty = self.get_type(type_id);
         let variant = match adt.kind {
             AdtKind::Enum { variant } => &ty.variants[variant as usize],
@@ -862,7 +862,7 @@ where
                 &addr,
                 // FIXME: As runtime library is compiled independently,
                 // this id is not guaranteed to be the same as the id used in the program.
-                type_id_of::<usize>(),
+                common::utils::type_id_of::<usize>(),
             ) {
                 sym_val.clone_to()
             } else {
