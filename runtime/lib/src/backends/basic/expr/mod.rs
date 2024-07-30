@@ -646,22 +646,34 @@ impl<'a> TryFrom<&'a TypeInfo> for ValueType {
     type Error = ();
 
     fn try_from(value: &'a TypeInfo) -> Result<Self, Self::Error> {
+        use abs::USIZE_TYPE;
         // TODO: To be replaced with a well-cached implementation
         let name = value.name.as_str();
         match name {
             "bool" => Ok(ValueType::Bool),
             "char" => Ok(ValueType::Char),
-            _ if name.starts_with("i") => name[1..]
+            _ if name.starts_with('i') || name.starts_with('u') => name[1..]
                 .parse()
                 .map(|bit_size| {
                     IntType {
                         bit_size,
-                        is_signed: false,
+                        is_signed: name.starts_with('i'),
                     }
                     .into()
                 })
-                .map_err(|_| ()),
+                .or_else(|_| {
+                    if name[1..] == *"size" {
+                        Ok(IntType {
+                            is_signed: name.starts_with('i'),
+                            ..USIZE_TYPE
+                        }
+                        .into())
+                    } else {
+                        Err(())
+                    }
+                }),
             _ if name.starts_with("f") => unimplemented!(),
+            "*mut ()" | "*const ()" => Ok(USIZE_TYPE.into()),
             _ => Err(()),
         }
     }

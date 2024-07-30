@@ -198,12 +198,15 @@ mod implementation {
             TypeId,
         },
         backends::basic::{
+            expr::LazyTypeInfo,
             state::proj::{ConcreteProjector, ProjResultExt},
             FullPlace,
         },
+        tyexp::TypeInfoExt,
     };
 
     use super::*;
+    use common::tyexp::TypeInfo;
     use utils::*;
 
     impl ProjExprResolver for DefaultProjExprReadResolver<'_> {
@@ -347,9 +350,15 @@ mod implementation {
         }
 
         pub(super) fn expand_concrete(&self, value: &ConcreteValue) -> Vec<SingleProjResult> {
+            log_debug!("Expanding a concrete value: {}", value);
             match value {
                 ConcreteValue::Array(array) => {
                     array.elements.iter().cloned().map(Into::into).collect()
+                }
+                ConcreteValue::Pointer(ptr) => {
+                    let ptr_ty = self.type_manager.get_type(ptr.ty);
+                    let slice_ty = self.type_manager.get_type(ptr_ty.pointee_ty.unwrap());
+                    self.expand_slice(slice_ty, ptr)
                 }
                 ConcreteValue::Unevaluated(UnevalValue::Lazy(raw)) => {
                     self.expand_concrete(unsafe {
@@ -360,6 +369,37 @@ mod implementation {
                 }
                 _ => unreachable!("Unexpected/unsupported value to be expanded: {:?}", value),
             }
+        }
+
+        fn expand_slice(&self, slice_ty: &TypeInfo, ptr: &PtrValue) -> Vec<SingleProjResult> {
+            debug_assert!(
+                slice_ty.is_slice(),
+                "Only slice pointers are expected as expandable pointers, got: {:?}",
+                slice_ty
+            );
+            let addr = ptr
+                .address
+                .try_to_num(self.type_manager, self.retriever)
+                .unwrap();
+            let len = ptr
+                .metadata
+                .as_ref()
+                .unwrap()
+                .try_to_num(self.type_manager, self.retriever)
+                .unwrap();
+            let item_ty = self.type_manager.get_type(slice_ty.expect_array().item_ty);
+            log_debug!(
+                "Expanding a slice at {addr} with len {len} and item type {}",
+                item_ty.id
+            );
+            let array_ty =
+                TypeInfo::new_pseudo_array_from_slice(&slice_ty, len, item_ty.align, item_ty.size);
+            self.expand_concrete(unsafe {
+                RawConcreteValue(addr, None, LazyTypeInfo::None)
+                    .retrieve_with_type(&array_ty, self.type_manager, self.retriever)
+                    .unwrap()
+                    .as_ref()
+            })
         }
 
         pub(super) fn expand_symbolic(&self, value: &SymValue) -> SymbolicProjResult {
@@ -607,13 +647,7 @@ mod implementation {
                         .clone_with_host(ConcreteValueRef::new(value.clone()))
                         .map(
                             |h| h,
-                            |fa| {
-                                if let FieldAccessKind::Index(index) = fa {
-                                    index
-                                } else {
-                                    todo!("PtrMetadata is not supported yet.")
-                                }
-                            },
+                            |fa| fa,
                             |(h, i)| (h, i.into()),
                             |dc| match dc {
                                 DowncastKind::EnumVariant(variant_index) => variant_index,
@@ -658,7 +692,7 @@ mod implementation {
     }
 
     pub(super) mod utils {
-        use super::{SliceIndex, TypeId};
+        use super::{RawPointerRetriever, Select, SliceIndex, TypeId, TypeManager};
         use crate::{abs::expr::proj::ProjectionOn, backends::basic::expr::prelude::*};
 
         impl SymValue {
@@ -745,6 +779,24 @@ mod implementation {
                         ProjectionOn::Subslice(host, *from, *to, *from_end)
                     }
                     ProjKind::Downcast(target) => ProjectionOn::Downcast(host, *target),
+                }
+            }
+        }
+
+        impl ConcreteValue {
+            pub(super) fn try_to_num<T: TryFrom<u128>>(
+                &self,
+                type_manager: &dyn TypeManager,
+                retriever: &dyn RawPointerRetriever,
+            ) -> Result<T, T::Error> {
+                match self {
+                    ConcreteValue::Const(ConstValue::Int { bit_rep, .. }) => T::try_from(bit_rep.0),
+                    ConcreteValue::Unevaluated(UnevalValue::Lazy(raw)) => {
+                        unsafe { raw.retrieve(type_manager, retriever) }
+                            .unwrap()
+                            .try_to_num(type_manager, retriever)
+                    }
+                    _ => panic!("Unexpected value to be converted to a number: {:?}", self),
                 }
             }
         }

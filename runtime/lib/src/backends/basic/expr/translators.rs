@@ -98,6 +98,9 @@ pub(crate) mod z3 {
                 }
                 ConcreteValue::Array(array) => AstNode::Array(self.translate_array(array)),
                 ConcreteValue::Ref(_) => todo!(),
+                ConcreteValue::Pointer(_) => {
+                    panic!("Pointer value should not exist at this phase.")
+                }
                 ConcreteValue::Unevaluated(_) => {
                     panic!("Unevaluated value should not exist at this phase.")
                 }
@@ -447,39 +450,11 @@ pub(crate) mod z3 {
             }
         }
 
-        fn translate_address_of_expr(&mut self, operand: SymbolicProjResult) -> AstNode<'ctx> {
-            let result = apply_address_of(operand, &mut DefaultProjExprReadResolver);
-            const ADDRESS_OF_VALUES_PREFIX: &str = "address_of";
-            self.translate_symbolic_proj_result(&result, Some(ADDRESS_OF_VALUES_PREFIX))
-        }
-
         fn translate_len_expr(&mut self, of: SymbolicProjResult) -> AstNode<'ctx> {
-            let result = apply_len(of, &mut DefaultProjExprReadResolver);
-            const LEN_VALUES_PREFIX: &str = "len";
-            self.translate_symbolic_proj_result(&result, Some(LEN_VALUES_PREFIX))
-        }
-
-        fn translate_projection_expr(&mut self, proj_expr: &ProjExpr) -> AstNode<'ctx> {
-            if let ProjExpr::SymHost(sym_host) = proj_expr {
-                if let (
-                    SymValue::Expression(Expr::Binary(BinaryExpr { operator, operands })),
-                    ProjKind::Field(FieldAccessKind::Index(field_index)),
-                ) = (sym_host.host.as_ref(), &sym_host.kind)
-                {
-                    assert!(
-                        operator.is_with_overflow(),
-                        "Projection on binary expression is only expected for the ones with an overflow flag."
-                    );
-                    return self.translate_field_on_binary_expression_with_overflow(
-                        *operator,
-                        operands,
-                        *field_index,
-                    );
-                }
-            }
-
-            let proj_result = self.resolve_proj_expression(proj_expr);
-            self.translate_symbolic_proj_result(&proj_result, None)
+            // let result = apply_len(of, &mut DefaultProjExprReadResolver);
+            // const LEN_VALUES_PREFIX: &str = "len";
+            // self.translate_symbolic_proj_result(&result, Some(LEN_VALUES_PREFIX))
+            unreachable!()
         }
 
         fn translate_select(
@@ -693,10 +668,6 @@ pub(crate) mod z3 {
                 }
             };
             ast::Bool::not(&no_overflow).into()
-        }
-
-        fn resolve_proj_expression(&mut self, proj: &ProjExpr) -> SymbolicProjResult {
-            ProjExprResolver::resolve(&mut DefaultProjExprReadResolver, proj)
         }
     }
 

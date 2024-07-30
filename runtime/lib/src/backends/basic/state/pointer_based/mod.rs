@@ -480,8 +480,30 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
                     self.retrieve_select_proj_result(&mut select, type_id);
                     Into::<Expr>::into(select).to_value_ref()
                 }
-                Expr::Ref(..) | Expr::Len(..) => {
-                    unimplemented!("Not supported yet.")
+                Expr::Len(proj) => {
+                    let ProjExpr::SymHost(SymHostProj {
+                        host,
+                        kind: ProjKind::Deref,
+                        metadata,
+                    }) = proj.as_ref()
+                    else {
+                        panic!(
+                            "Expected a deref projection (over a slice reference) for len expression."
+                        );
+                    };
+                    // Equivalent to accessing the pointer's metadata.
+                    let value = Into::<Expr>::into(Into::<ProjExpr>::into(SymHostProj {
+                        host: host.clone(),
+                        kind: ProjKind::Field(FieldAccessKind::PtrMetadata),
+                        metadata: metadata.clone(),
+                    }))
+                    .to_value_ref();
+                    self.retrieve_sym_value(value, type_id)
+                }
+                Expr::Ref(..) => {
+                    /* NOTE: References will be dereferenced and their projection
+                     * will be retrieved then. */
+                    value
                 }
                 _ => value,
             },

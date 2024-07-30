@@ -24,7 +24,7 @@ where
 {
     type HostRef<'a> = ConcreteValueRef;
     type Metadata<'a> = ProjMetadata;
-    type FieldAccessor = FieldIndex;
+    type FieldAccessor = FieldAccessKind;
     type HIRefPair<'a> = (ConcreteValueRef, ValueRef);
     type DowncastTarget = VariantIndex;
     type Proj<'a> = Result<ValueRef, ConcreteValueRef>;
@@ -39,6 +39,10 @@ where
         match host.as_ref() {
             ConcreteValue::Ref(RefValue::Immut(value)) => Ok(value.clone()),
             ConcreteValue::Ref(RefValue::Mut(place)) => Ok((self.get_place)(place)),
+            // For fat pointers we return the whole pointer again to carry metadata.
+            ConcreteValue::Pointer(PtrValue {
+                metadata: Some(_), ..
+            }) => Ok(host.into()),
             _ => Err(host),
         }
     }
@@ -46,15 +50,24 @@ where
     fn field<'a>(
         &mut self,
         host: Self::HostRef<'a>,
-        field: FieldIndex,
+        field: Self::FieldAccessor,
         _metadata: Self::Metadata<'a>,
     ) -> Self::Proj<'a> {
-        match host.as_ref() {
-            ConcreteValue::Adt(AdtValue { fields, .. }) => Ok(fields[field as usize]
-                .value
-                .as_ref()
-                .unwrap_or_else(|| panic!("Field should not be moved before. {field}"))
-                .clone()),
+        match (host.as_ref(), field) {
+            (ConcreteValue::Adt(AdtValue { fields, .. }), FieldAccessKind::Index(field)) => {
+                Ok(fields[field as usize]
+                    .value
+                    .as_ref()
+                    .unwrap_or_else(|| panic!("Field should not be moved before. {field}"))
+                    .clone())
+            }
+            (ConcreteValue::Pointer(PtrValue { metadata, .. }), FieldAccessKind::PtrMetadata) => {
+                Ok(metadata
+                    .as_ref()
+                    .cloned()
+                    .map(Into::into)
+                    .unwrap_or_else(|| ConstValue::Zst.to_value_ref()))
+            }
             _ => Err(host),
         }
     }
