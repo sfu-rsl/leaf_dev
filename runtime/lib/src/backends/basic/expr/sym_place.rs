@@ -129,8 +129,9 @@ pub(super) fn apply_address_of(
     mut host: SymbolicProjResult,
     resolver: &mut impl ProjExprResolver,
 ) -> SymbolicProjResult {
+    use implementation::SymbolicProjResultValueMutator::Mutator;
     host.mutate_values(
-        &mut |value| {
+        Mutator(&mut |value: &mut SingleProjResult| {
             *value = match value {
                 SingleProjResult::Transmuted(_) => todo!("Transmutation is not supported yet."),
                 SingleProjResult::Value(value) => {
@@ -146,7 +147,7 @@ pub(super) fn apply_address_of(
                         .into()
                 }
             }
-        },
+        }),
         resolver,
     );
     host
@@ -158,8 +159,9 @@ pub(super) fn apply_len(
     mut host: SymbolicProjResult,
     resolver: &mut impl ProjExprResolver,
 ) -> SymbolicProjResult {
+    use implementation::SymbolicProjResultValueMutator::Mutator;
     host.mutate_values(
-        &mut |value| {
+        Mutator(&mut |value: &mut SingleProjResult| {
             *value = match value {
                 SingleProjResult::Transmuted(_) => todo!("Transmutation is not supported yet."),
                 SingleProjResult::Value(value) => {
@@ -175,7 +177,7 @@ pub(super) fn apply_len(
                         .into()
                 }
             }
-        },
+        }),
         resolver,
     );
     host
@@ -281,6 +283,10 @@ mod implementation {
         pub fn value(&self) -> &ValueRef {
             &self.value
         }
+
+        pub fn value_mut(&mut self) -> &mut ValueRef {
+            &mut self.value
+        }
     }
 
     impl DefaultProjExprReadResolver<'_> {
@@ -307,7 +313,7 @@ mod implementation {
                 current = self.project_one_to_ones(current, &projs[last_index..i]);
                 last_index = i + 1;
 
-                current.mutate_values(&mut |v| *v = self.expand(v).into_single(), self);
+                current.mutate_values(Replacer(&mut |v| self.expand(v)), self);
 
                 if let SymbolicProjResult::Single(single @ SingleProjResult::Value(value)) =
                     &current
@@ -401,10 +407,10 @@ mod implementation {
     }
 
     impl Select {
-        pub(super) fn mutate_leaf_nodes(
+        pub(super) fn mutate_leaf_nodes<'m>(
             &mut self,
             expected_dim: usize,
-            f: &mut impl FnMut(&mut SingleProjResult),
+            f: &mut SymbolicProjResultValueMutator<'m>,
             resolver: &impl ProjExprResolver,
         ) {
             match &mut self.target {
@@ -420,37 +426,29 @@ mod implementation {
         }
     }
 
-    impl SymbolicProjResult {
-        pub(super) fn into_single(self) -> SingleProjResult {
-            match self {
-                SymbolicProjResult::SymRead(select) => {
-                    SingleProjResult::Value(Expr::Multi(select).to_value_ref().into())
-                }
-                SymbolicProjResult::Array(values) => SingleProjResult::Value(
-                    ArrayValue {
-                        elements: values
-                            .into_iter()
-                            .map(SymbolicProjResult::into_single)
-                            .map(SingleProjResult::into_value)
-                            .collect(),
-                    }
-                    .to_value_ref(),
-                ),
-                SymbolicProjResult::Single(single) => single,
-            }
-        }
+    pub(super) enum SymbolicProjResultValueMutator<'m> {
+        Mutator(&'m mut dyn FnMut(&mut SingleProjResult)),
+        Replacer(&'m mut dyn FnMut(&mut SingleProjResult) -> SymbolicProjResult),
+    }
+    use SymbolicProjResultValueMutator::*;
 
-        pub(super) fn mutate_values(
+    impl SymbolicProjResult {
+        pub(super) fn mutate_values<'m>(
             &mut self,
-            f: &mut impl FnMut(&mut SingleProjResult),
+            mut f: SymbolicProjResultValueMutator<'m>,
             resolver: &impl ProjExprResolver,
         ) {
             match self {
-                SymbolicProjResult::SymRead(select) => select.mutate_leaf_nodes(1, f, resolver),
+                SymbolicProjResult::SymRead(select) => {
+                    select.mutate_leaf_nodes(1, &mut f, resolver)
+                }
                 SymbolicProjResult::Array(values) => values
                     .iter_mut()
-                    .for_each(|v| v.internal_mutate_values(0, f, resolver)),
-                SymbolicProjResult::Single(value) => f(value),
+                    .for_each(|v| v.internal_mutate_values(0, &mut f, resolver)),
+                SymbolicProjResult::Single(value) => match f {
+                    Mutator(f) => f(value),
+                    Replacer(f) => *self = f(value),
+                },
             }
         }
 
@@ -472,10 +470,10 @@ mod implementation {
         /// - `f`: The function to apply on the value(s).
         /// - `resolver`: Used to resolve the inner symbolic values if they appear
         ///   in the traversal.
-        fn internal_mutate_values(
+        fn internal_mutate_values<'m>(
             &mut self,
             dim: usize,
-            f: &mut impl FnMut(&mut SingleProjResult),
+            f: &mut SymbolicProjResultValueMutator<'m>,
             resolver: &impl ProjExprResolver,
         ) {
             if let SymbolicProjResult::Single(SingleProjResult::Value(value)) = self {
@@ -497,13 +495,16 @@ mod implementation {
                 SymbolicProjResult::Array(values) => values
                     .iter_mut()
                     .for_each(|v| v.internal_mutate_values(dim - 1, f, resolver)),
-                SymbolicProjResult::Single(value) => f(value),
+                SymbolicProjResult::Single(value) => match f {
+                    Mutator(f) => f(value),
+                    Replacer(f) => *self = f(value),
+                },
             }
         }
     }
 
     impl SingleProjResult {
-        pub(super) fn into_value(self) -> ValueRef {
+        pub(crate) fn into_value(self) -> ValueRef {
             match self {
                 SingleProjResult::Transmuted(trans) => {
                     // FIXME: Destination type loss for concrete
@@ -553,7 +554,9 @@ mod implementation {
                     value_projector.project(proj.clone_with_host(single), metadata)
                 }
                 _ => host.mutate_values(
-                    &mut |v| value_projector.project(proj.clone_with_host(v), metadata.clone()),
+                    Mutator(&mut |v| {
+                        value_projector.project(proj.clone_with_host(v), metadata.clone())
+                    }),
                     resolver,
                 ),
             }
