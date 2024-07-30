@@ -8,6 +8,7 @@ Desugared
 discr
 krate
 nullary
+pointee
 RPATH
 rustc
 rustup

@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize, Serializer};
 
 use crate::{types::*, *};
 
-pub use crate::types::TypeId;
+pub use crate::types::{Alignment, TypeId, TypeSize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TypeInfo {
@@ -15,8 +15,19 @@ pub struct TypeInfo {
     // Variants of the ADT. If this is a struct or union, then there will be a single variant.
     pub variants: Vec<VariantInfo>,
 
+    pub pointee_ty: Option<TypeId>,
+
     pub align: Alignment,
     pub size: TypeSize,
+}
+
+impl TypeInfo {
+    pub const SIZE_UNSIZED: TypeSize = TypeSize::MAX;
+
+    #[inline(always)]
+    pub fn is_sized(&self) -> bool {
+        self.size != Self::SIZE_UNSIZED
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
