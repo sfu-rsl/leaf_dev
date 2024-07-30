@@ -219,6 +219,9 @@ mod implementation {
                     TransmutedValue::new(host.clone().into(), dst_ty_id).into(),
                     &projs,
                 ),
+                ProjBase::Multi(select) => {
+                    self.resolve_symbolic_projs(select.clone().into(), &projs)
+                }
             }
         }
 
@@ -676,6 +679,7 @@ mod implementation {
         pub(super) enum ProjBase<'a, M = ProjMetadata> {
             Concrete(&'a ConcreteHostProj<M>),
             Transmutation(&'a SymValueRef, TypeId, &'a M),
+            Multi(&'a Select),
         }
 
         impl ProjExpr {
@@ -704,10 +708,22 @@ mod implementation {
                         (ProjBase::Transmutation(host, *dst_ty_id, metadata), vec![])
                     }
                     _ => {
-                        let host = host.expect_proj();
-                        let (sym_index, mut projs) = host.flatten();
-                        projs.push((kind, metadata));
-                        (sym_index, projs)
+                        if let Some(host) = host.as_proj() {
+                            let (sym_index, mut projs) = host.flatten();
+                            projs.push((kind, metadata));
+                            (sym_index, projs)
+                        } else if let SymValue::Expression(Expr::Multi(select)) = host.as_ref() {
+                            (ProjBase::Multi(select), vec![(kind, metadata)])
+                        } else {
+                            panic!(
+                                concat!(
+                                    "Complex symbolic values are not supported by this resolver. ",
+                                    "The symbolic host is expected to be a projection expression.",
+                                    "Found: {:?}"
+                                ),
+                                self
+                            )
+                        }
                     }
                 }
             }

@@ -539,7 +539,7 @@ impl AdtValue {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, dm::From)]
 pub(crate) struct AdtField {
     pub value: Option<ValueRef>,
 }
@@ -822,17 +822,17 @@ impl<M> ProjExpr<M> {
 
 #[derive(Clone, Debug)]
 pub(crate) struct ConcreteHostProj<M = ProjMetadata> {
-    host: ConcreteValueRef,
-    index: SliceIndex<SymValueRef>,
-    metadata: M,
+    pub host: ConcreteValueRef,
+    pub index: SliceIndex<SymValueRef>,
+    pub metadata: M,
 }
 
 #[allow(unused)]
 #[derive(Clone, Debug)]
 pub(crate) struct SymHostProj<M = ProjMetadata> {
-    host: SymValueRef,
-    kind: ProjKind,
-    metadata: M,
+    pub host: SymValueRef,
+    pub kind: ProjKind,
+    pub metadata: M,
 }
 
 #[derive(Clone, Debug)]
