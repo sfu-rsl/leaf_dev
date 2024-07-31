@@ -3,7 +3,6 @@ mod call;
 mod concrete;
 mod config;
 pub(crate) mod expr;
-pub(crate) mod logger;
 pub(crate) mod operand;
 mod place;
 mod state;

@@ -1,3 +1,9 @@
+use std::fmt::Display;
+
+pub(crate) fn comma_separated<T: Display>(iter: impl Iterator<Item = T>) -> String {
+    iter.map(|t| format!("{t}")).collect::<Vec<_>>().join(", ")
+}
+
 pub(crate) fn init_logging() {
     use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
     use tracing_tree::{time::FormatTime, HierarchicalLayer};
@@ -36,7 +42,7 @@ pub(crate) fn init_logging() {
         .with_deferred_spans(false)
         .with_targets(true);
 
-    let default_directive = format!("pri=off,leafrt::backends=off,z3=off,{}", env);
+    let default_directive = format!("pri=off,z3=off,{}", env);
     let env_filter = EnvFilter::builder().parse_lossy(default_directive);
 
     tracing_subscriber::registry()

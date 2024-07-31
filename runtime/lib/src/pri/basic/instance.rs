@@ -12,7 +12,6 @@ use std::{
 };
 
 type BackendImpl = crate::backends::basic::BasicBackend;
-//type BackendImpl = crate::backends::basic::logger::LoggerBackend; // for DEBUG
 
 type PlaceImpl = <<BackendImpl as RuntimeBackend>::PlaceHandler<'static> as PlaceHandler>::Place;
 pub(super) type OperandImpl =

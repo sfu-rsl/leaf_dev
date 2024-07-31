@@ -1,6 +1,6 @@
 use std::fmt::{Display, Formatter, Result};
 
-use crate::backends::basic::logger::comma_separated;
+use crate::utils::logging::comma_separated;
 
 use super::{
     expr::sym_place::{Select, SelectTarget},
