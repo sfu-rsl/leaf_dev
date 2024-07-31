@@ -1,4 +1,4 @@
-use crate::pri::TypeId;
+use super::types::TypeId;
 
 #[cfg_attr(not(core_build), macro_export)]
 macro_rules! identity {
