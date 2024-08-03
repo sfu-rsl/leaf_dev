@@ -49,6 +49,7 @@ impl Display for ConstValue {
             ConstValue::Str(value) => write!(f, "\"{value}\""),
             ConstValue::Func(id) => write!(f, "_f@{id:p}"),
             ConstValue::Zst => write!(f, "_ZST_"),
+            ConstValue::Addr(addr) => write!(f, "ᴬ{addr:p}"),
         }
     }
 }
@@ -130,7 +131,7 @@ impl Display for RawConcreteValue {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(
             f,
-            "@({:x}:{})",
+            "@({:p}:{})",
             self.0,
             self.1
                 .as_ref()
@@ -146,6 +147,7 @@ impl Display for LazyTypeInfo {
             LazyTypeInfo::None => write!(f, "?"),
             LazyTypeInfo::Id(id) => write!(f, "T#{:x}", id),
             LazyTypeInfo::Fetched(ty) => write!(f, "T#{:x}", ty.id),
+            LazyTypeInfo::Forced(ty) => write!(f, "T#ᶠ{:x}", ty.id),
         }
     }
 }

@@ -92,7 +92,7 @@ pub(crate) struct TransmutedValue {
 }
 
 pub(crate) trait RawPointerRetriever {
-    fn retrieve(&self, addr: RawPointer, type_id: TypeId) -> ValueRef;
+    fn retrieve(&self, addr: RawAddress, type_id: TypeId) -> ValueRef;
 }
 
 pub(crate) trait ProjExprResolver {
@@ -377,26 +377,24 @@ mod implementation {
                 "Only slice pointers are expected as expandable pointers, got: {:?}",
                 slice_ty
             );
-            let addr = ptr
-                .address
-                .try_to_num(self.type_manager, self.retriever)
-                .unwrap();
+            let addr = ptr.address.expect_addr(self.type_manager, self.retriever);
             let len = ptr
                 .metadata
                 .as_ref()
                 .unwrap()
-                .try_to_num(self.type_manager, self.retriever)
+                .expect_int(self.type_manager, self.retriever)
+                .try_into()
                 .unwrap();
             let item_ty = self.type_manager.get_type(slice_ty.expect_array().item_ty);
             log_debug!(
-                "Expanding a slice at {addr} with len {len} and item type {}",
+                "Expanding a slice at {addr:p} with len {len} and item type {}",
                 item_ty.id
             );
             let array_ty =
                 TypeInfo::new_pseudo_array_from_slice(&slice_ty, len, item_ty.align, item_ty.size);
             self.expand_concrete(unsafe {
-                RawConcreteValue(addr, None, LazyTypeInfo::None)
-                    .retrieve_with_type(&array_ty, self.type_manager, self.retriever)
+                RawConcreteValue(addr, None, LazyTypeInfo::Forced(std::rc::Rc::new(array_ty)))
+                    .retrieve(self.type_manager, self.retriever)
                     .unwrap()
                     .as_ref()
             })
@@ -784,19 +782,35 @@ mod implementation {
         }
 
         impl ConcreteValue {
-            pub(super) fn try_to_num<T: TryFrom<u128>>(
+            pub(super) fn expect_int(
                 &self,
                 type_manager: &dyn TypeManager,
                 retriever: &dyn RawPointerRetriever,
-            ) -> Result<T, T::Error> {
+            ) -> u128 {
                 match self {
-                    ConcreteValue::Const(ConstValue::Int { bit_rep, .. }) => T::try_from(bit_rep.0),
+                    ConcreteValue::Const(ConstValue::Int { bit_rep, .. }) => bit_rep.0,
                     ConcreteValue::Unevaluated(UnevalValue::Lazy(raw)) => {
                         unsafe { raw.retrieve(type_manager, retriever) }
                             .unwrap()
-                            .try_to_num(type_manager, retriever)
+                            .expect_int(type_manager, retriever)
                     }
-                    _ => panic!("Unexpected value to be converted to a number: {:?}", self),
+                    _ => panic!("Not an integer: {:?}", self),
+                }
+            }
+
+            pub(super) fn expect_addr(
+                &self,
+                type_manager: &dyn TypeManager,
+                retriever: &dyn RawPointerRetriever,
+            ) -> RawAddress {
+                match self {
+                    ConcreteValue::Const(ConstValue::Addr(addr)) => *addr,
+                    ConcreteValue::Unevaluated(UnevalValue::Lazy(raw)) => {
+                        unsafe { raw.retrieve(type_manager, retriever) }
+                            .unwrap()
+                            .expect_addr(type_manager, retriever)
+                    }
+                    _ => panic!("Not an address: {:?}", self),
                 }
             }
         }

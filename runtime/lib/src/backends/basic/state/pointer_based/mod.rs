@@ -845,13 +845,14 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
 impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerRetriever
     for RawPointerVariableState<VS, SP>
 {
-    fn retrieve(&self, addr: RawPointer, type_id: TypeId) -> ValueRef {
+    fn retrieve(&self, addr: RawAddress, type_id: TypeId) -> ValueRef {
         log_debug!(
-            "Retrieving value at address: {:x} with type: {:?}",
+            "Retrieving value at address: {:p} with type: {:?}",
             addr,
             type_id
         );
 
+        let addr = addr as u64; // FIXME
         if let Some(sym_val) = self.get(&addr, type_id) {
             return self.retrieve_sym_value(sym_val.clone(), type_id).into();
         }
