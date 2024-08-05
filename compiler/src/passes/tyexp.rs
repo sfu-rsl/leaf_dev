@@ -156,7 +156,7 @@ struct PlaceVisitor<'tcx, 's, 'b> {
 }
 
 impl<'tcx, 's, 'b> Visitor<'tcx> for PlaceVisitor<'tcx, 's, 'b> {
-    fn visit_ty(&mut self, ty: Ty<'tcx>, _: mir::visit::TyContext) {
+    fn visit_ty(&mut self, ty: Ty<'tcx>, context: mir::visit::TyContext) {
         let normalized_ty = self.tcx.instantiate_and_normalize_erasing_regions(
             self.args,
             self.param_env,
@@ -172,6 +172,10 @@ impl<'tcx, 's, 'b> Visitor<'tcx> for PlaceVisitor<'tcx, 's, 'b> {
         }
 
         add_type_information_to_map(self.type_map, self.tcx, ty, self.param_env);
+
+        // For pointee
+        ty.builtin_deref(true)
+            .inspect(|t| self.visit_ty(*t, context));
     }
 
     fn visit_place(

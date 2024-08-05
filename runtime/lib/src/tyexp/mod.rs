@@ -17,6 +17,13 @@ pub(crate) trait TypeInfoExt {
     ) -> Self;
 }
 
+pub(crate) trait FieldsShapeInfoExt {
+    fn as_array(&self) -> Option<&ArrayShape>;
+    fn expect_array(&self) -> &ArrayShape;
+    fn as_struct(&self) -> Option<&StructShape>;
+    fn expect_struct(&self) -> &StructShape;
+}
+
 impl TypeInfoExt for TypeInfo {
     #[inline]
     fn as_single_variant(&self) -> Option<&VariantInfo> {
@@ -39,10 +46,7 @@ impl TypeInfoExt for TypeInfo {
     #[inline]
     fn as_array(&self) -> Option<&ArrayShape> {
         self.as_single_variant()
-            .and_then(|variant| match &variant.fields {
-                FieldsShapeInfo::Array(shape) => Some(shape),
-                _ => None,
-            })
+            .and_then(|variant| variant.fields.as_array())
     }
 
     #[inline]
@@ -102,6 +106,36 @@ impl TypeInfoExt for TypeInfo {
             align: item_align,
             size: item_size * len,
         }
+    }
+}
+
+impl FieldsShapeInfoExt for FieldsShapeInfo {
+    #[inline]
+    fn as_array(&self) -> Option<&ArrayShape> {
+        match self {
+            FieldsShapeInfo::Array(shape) => Some(shape),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    fn expect_array(&self) -> &ArrayShape {
+        self.as_array()
+            .unwrap_or_else(|| panic!("Expected the fields shape to be an array found {:?}", self))
+    }
+
+    #[inline]
+    fn as_struct(&self) -> Option<&StructShape> {
+        match self {
+            FieldsShapeInfo::Struct(shape) => Some(shape),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    fn expect_struct(&self) -> &StructShape {
+        self.as_struct()
+            .unwrap_or_else(|| panic!("Expected the fields shape to be a struct found {:?}", self))
     }
 }
 
