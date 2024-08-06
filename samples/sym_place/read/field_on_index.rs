@@ -3,7 +3,7 @@ use leaf::annotations::Symbolizable;
 fn main() {
     let array = [Point { x: 1, y: 2 }, Point { x: 3, y: 4 }];
     let i = 0.mark_symbolic();
-    if array[i].x == 3 {
+    if array[i].y == 4 {
         foo();
     }
 }
