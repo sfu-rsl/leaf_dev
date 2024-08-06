@@ -256,7 +256,7 @@ where
         }
 
         // Or it is pointing to an object embracing symbolic values.
-        if let Some(size) = place.metadata().size() {
+        if let Some(size) = self.get_type_size(place) {
             // FIXME: Double querying memory.
             if let Some(porter) = self.try_create_porter_for_copy(addr, size) {
                 return porter.to_value_ref();
@@ -288,7 +288,7 @@ where
         }
 
         // Or it is pointing to an object embracing symbolic values.
-        if let Some(size) = place.metadata().size() {
+        if let Some(size) = self.get_type_size(place) {
             // FIXME: Double querying memory.
             if let Some(porter) = Self::try_create_porter(
                 addr,
@@ -587,6 +587,15 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
         } else {
             None
         }
+    }
+
+    fn get_type_size(&self, place: &Place) -> Option<TypeSize> {
+        place.metadata().size().or_else(|| {
+            place.metadata().type_id().and_then(|type_id| {
+                let ty = self.type_manager.get_type(type_id);
+                ty.is_sized().then_some(ty.size)
+            })
+        })
     }
 }
 
