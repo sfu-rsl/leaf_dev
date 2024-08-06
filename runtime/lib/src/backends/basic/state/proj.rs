@@ -39,10 +39,9 @@ where
         match host.as_ref() {
             ConcreteValue::Ref(RefValue::Immut(value)) => Ok(value.clone()),
             ConcreteValue::Ref(RefValue::Mut(place)) => Ok((self.get_place)(place)),
-            // For fat pointers we return the whole pointer again to carry metadata.
-            ConcreteValue::Pointer(PtrValue {
-                metadata: Some(_), ..
-            }) => Ok(host.into()),
+            ConcreteValue::Const(ConstValue::Addr(addr)) => {
+                Ok(RawConcreteValue(*addr, None, LazyTypeInfo::None).to_value_ref())
+            }
             _ => Err(host),
         }
     }
@@ -61,13 +60,10 @@ where
                     .unwrap_or_else(|| panic!("Field should not be moved before. {field}"))
                     .clone())
             }
-            (ConcreteValue::Pointer(PtrValue { metadata, .. }), FieldAccessKind::PtrMetadata) => {
-                Ok(metadata
-                    .as_ref()
-                    .cloned()
-                    .map(Into::into)
-                    .unwrap_or_else(|| ConstValue::Zst.to_value_ref()))
-            }
+            (
+                ConcreteValue::FatPointer(FatPtrValue { metadata, .. }),
+                FieldAccessKind::PtrMetadata,
+            ) => Ok(metadata.clone().into()),
             _ => Err(host),
         }
     }

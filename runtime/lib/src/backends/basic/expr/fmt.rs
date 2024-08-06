@@ -23,7 +23,7 @@ impl Display for ConcreteValue {
             ConcreteValue::Adt(value) => write!(f, "{value}"),
             ConcreteValue::Array(value) => write!(f, "{value}"),
             ConcreteValue::Ref(value) => write!(f, "{value}"),
-            ConcreteValue::Pointer(value) => write!(f, "{value}"),
+            ConcreteValue::FatPointer(value) => write!(f, "{value}"),
             ConcreteValue::Unevaluated(value) => write!(f, "{value}"),
         }
     }
@@ -108,12 +108,9 @@ impl Display for RefValue {
     }
 }
 
-impl Display for PtrValue {
+impl Display for FatPtrValue {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        match &self.metadata {
-            Some(metadata) => write!(f, "({}, {})", self.address, metadata),
-            None => write!(f, "{}", self.address),
-        }
+        write!(f, "({}, {})", self.address, self.metadata)
     }
 }
 

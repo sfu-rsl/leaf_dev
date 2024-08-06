@@ -198,7 +198,10 @@ mod implementation {
             TypeId,
         },
         backends::basic::{
-            expr::LazyTypeInfo,
+            expr::{
+                lazy::{FatPtrValueProjector, RawConcreteValueProjector},
+                LazyTypeInfo,
+            },
             state::proj::{ConcreteProjector, ProjResultExt},
             FullPlace,
         },
@@ -355,7 +358,7 @@ mod implementation {
                 ConcreteValue::Array(array) => {
                     array.elements.iter().cloned().map(Into::into).collect()
                 }
-                ConcreteValue::Pointer(ptr) => {
+                ConcreteValue::FatPointer(ptr) => {
                     let ptr_ty = self.type_manager.get_type(ptr.ty);
                     let slice_ty = self.type_manager.get_type(ptr_ty.pointee_ty.unwrap());
                     self.expand_slice(slice_ty, ptr)
@@ -371,7 +374,7 @@ mod implementation {
             }
         }
 
-        fn expand_slice(&self, slice_ty: &TypeInfo, ptr: &PtrValue) -> Vec<SingleProjResult> {
+        fn expand_slice(&self, slice_ty: &TypeInfo, ptr: &FatPtrValue) -> Vec<SingleProjResult> {
             debug_assert!(
                 slice_ty.is_slice(),
                 "Only slice pointers are expected as expandable pointers, got: {:?}",
@@ -380,8 +383,6 @@ mod implementation {
             let addr = ptr.address.expect_addr(self.type_manager, self.retriever);
             let len = ptr
                 .metadata
-                .as_ref()
-                .unwrap()
                 .expect_int(self.type_manager, self.retriever)
                 .try_into()
                 .unwrap();
@@ -589,7 +590,7 @@ mod implementation {
         ) -> Self::Proj<'a> {
             let (host, proj) = proj_on.destruct();
             let resolver = self.resolver;
-            let mut value_projector = SingleValueInPlaceProjector;
+            let mut value_projector = SingleValueInPlaceProjector { resolver };
             match host {
                 SymbolicProjResult::Single(single) => {
                     value_projector.project(proj.clone_with_host(single), metadata)
@@ -606,9 +607,11 @@ mod implementation {
         impl_singular_projs_through_general!();
     }
 
-    struct SingleValueInPlaceProjector;
+    struct SingleValueInPlaceProjector<'r> {
+        resolver: &'r DefaultProjExprReadResolver<'r>,
+    }
 
-    impl Projector for SingleValueInPlaceProjector {
+    impl<'r> Projector for SingleValueInPlaceProjector<'r> {
         type HostRef<'a> = &'a mut SingleProjResult;
         type Metadata<'a> = ProjMetadata;
         type FieldAccessor = FieldAccessKind;
@@ -635,25 +638,8 @@ mod implementation {
                         "Symbolic value is not expected and has to be resolved before, got: {:?}",
                         value
                     );
-
-                    let projector = &mut ConcreteProjector {
-                        get_place: |_: &FullPlace| -> ValueRef { todo!("#234") },
-                        handle_sym_index: |_, _, _| unreachable!("Structurally impossible."),
-                    };
-
-                    let proj_on = proj
-                        .clone_with_host(ConcreteValueRef::new(value.clone()))
-                        .map(
-                            |h| h,
-                            |fa| fa,
-                            |(h, i)| (h, i.into()),
-                            |dc| match dc {
-                                DowncastKind::EnumVariant(variant_index) => variant_index,
-                                DowncastKind::Transmutation(..) => unreachable!(),
-                            },
-                        );
-
-                    *value = projector.project(proj_on, metadata).unwrap_result(&proj);
+                    *value =
+                        self.apply_proj_conc(ConcreteValueRef::new(value.clone()), proj, metadata);
                 }
             }
         }
@@ -684,6 +670,69 @@ mod implementation {
                 }
                 DowncastKind::EnumVariant(_) => {
                     self.project(ProjectionOn::Downcast(host, target), metadata)
+                }
+            }
+        }
+    }
+
+    impl<'r> SingleValueInPlaceProjector<'r> {
+        fn apply_proj_conc(
+            &mut self,
+            value: ConcreteValueRef,
+            proj: ProjectionOn<(), FieldAccessKind, ((), ConcreteValueRef), DowncastKind>,
+            metadata: ProjMetadata,
+        ) -> ValueRef {
+            log_debug!(
+                "Applying projection on a concrete value: {}, proj: {:?}",
+                value,
+                proj
+            );
+            match value.as_ref() {
+                ConcreteValue::Unevaluated(UnevalValue::Lazy(raw)) => {
+                    let projector = &mut RawConcreteValueProjector::new(
+                        self.resolver.type_manager,
+                        self.resolver.retriever,
+                    );
+                    let proj_on = proj.clone_with_host(raw).map(
+                        |h| h,
+                        |fa| fa,
+                        |(h, i)| {
+                            (
+                                h,
+                                i.expect_int(self.resolver.type_manager, self.resolver.retriever)
+                                    .try_into()
+                                    .unwrap(),
+                            )
+                        },
+                        |dc| dc,
+                    );
+                    projector.project(proj_on, metadata).to_value_ref()
+                }
+                ConcreteValue::FatPointer(fat_ptr) => {
+                    let projector = &mut FatPtrValueProjector::new(
+                        self.resolver.type_manager,
+                        self.resolver.retriever,
+                    );
+                    let proj_on = proj.clone_with_host(fat_ptr);
+                    projector.project(proj_on, metadata).into()
+                }
+                _ => {
+                    let projector = &mut ConcreteProjector {
+                        get_place: |_: &FullPlace| -> ValueRef { todo!("#234") },
+                        handle_sym_index: |_, _, _| unreachable!("Structurally impossible."),
+                    };
+
+                    let proj_on = proj.clone_with_host(value).map(
+                        |h| h,
+                        |fa| fa,
+                        |(h, i)| (h, i.into()),
+                        |dc| match dc {
+                            DowncastKind::EnumVariant(variant_index) => variant_index,
+                            DowncastKind::Transmutation(..) => unreachable!(),
+                        },
+                    );
+
+                    projector.project(proj_on, metadata).unwrap_result(&proj)
                 }
             }
         }
@@ -782,7 +831,7 @@ mod implementation {
         }
 
         impl ConcreteValue {
-            pub(super) fn expect_int(
+            pub(crate) fn expect_int(
                 &self,
                 type_manager: &dyn TypeManager,
                 retriever: &dyn RawPointerRetriever,
@@ -798,7 +847,7 @@ mod implementation {
                 }
             }
 
-            pub(super) fn expect_addr(
+            pub(crate) fn expect_addr(
                 &self,
                 type_manager: &dyn TypeManager,
                 retriever: &dyn RawPointerRetriever,

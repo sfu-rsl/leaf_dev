@@ -12,7 +12,7 @@ use common::tyexp::TypeInfo;
 use derive_more as dm;
 use sym_place::Select;
 
-use crate::abs::{
+pub(crate) use crate::abs::{
     self, FieldIndex, FloatType, FuncId, IntType, PointerOffset, RawAddress, TypeId, ValueType,
     VariantIndex,
 };
@@ -68,7 +68,7 @@ pub(crate) enum ConcreteValue {
     #[from]
     Ref(RefValue),
     #[from]
-    Pointer(PtrValue),
+    FatPointer(FatPtrValue),
     #[from(types(RawConcreteValue, PorterValue))]
     Unevaluated(UnevalValue),
 }
@@ -91,6 +91,8 @@ pub(crate) enum ConstValue {
     #[from(ignore)]
     Func(FuncId),
     Zst,
+    #[from(ignore)]
+    Addr(RawAddress),
 }
 
 impl ConstValue {
@@ -582,9 +584,9 @@ pub(crate) enum RefValue {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct PtrValue {
+pub(crate) struct FatPtrValue {
     pub address: ConcreteValueRef,
-    pub metadata: Option<ConcreteValueRef>,
+    pub metadata: ConcreteValueRef,
     pub ty: TypeId,
 }
 
@@ -616,11 +618,12 @@ pub(crate) struct RawConcreteValue(
     pub(crate) LazyTypeInfo,
 );
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub(crate) enum LazyTypeInfo {
     None,
     Id(TypeId),
     Fetched(&'static TypeInfo),
+    Forced(Rc<TypeInfo>),
 }
 
 impl LazyTypeInfo {
@@ -629,6 +632,7 @@ impl LazyTypeInfo {
             Self::None => None,
             Self::Id(id) => Some(*id),
             Self::Fetched(ty) => Some(ty.id),
+            Self::Forced(ty) => Some(ty.id),
         }
     }
 }
@@ -1113,6 +1117,7 @@ mod convert {
         ConstValue,
         AdtValue,
         ArrayValue,
+        FatPtrValue,
         UnevalValue,
         RawConcreteValue,
         PorterValue

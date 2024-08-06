@@ -154,7 +154,7 @@ mod symbolic {
             match operands.as_flat().1.as_ref() {
                 Value::Concrete(ConcreteValue::Unevaluated(UnevalValue::Lazy(lazy))) => {
                     let value = unsafe { 
-                        lazy.try_retrieve_as_primitive(None)
+                        lazy.try_retrieve_as_scalar(None)
                             .expect(
                                 concat!(
                                     "The value participating in a binary expression is expected to be a primitive.",

@@ -98,7 +98,7 @@ pub(crate) mod z3 {
                 }
                 ConcreteValue::Array(array) => AstNode::Array(self.translate_array(array)),
                 ConcreteValue::Ref(_) => todo!(),
-                ConcreteValue::Pointer(_) => {
+                ConcreteValue::FatPointer(_) => {
                     panic!("Pointer value should not exist at this phase.")
                 }
                 ConcreteValue::Unevaluated(_) => {
@@ -154,6 +154,11 @@ pub(crate) mod z3 {
                 ConstValue::Zst => unreachable!(
                     "Zero-sized-typed values are not supposed to appear in symbolic expressions."
                 ),
+                ConstValue::Addr(..) => {
+                    unreachable!(
+                        "Raw address values are not supposed to appear in symbolic expressions."
+                    )
+                }
             }
         }
 
