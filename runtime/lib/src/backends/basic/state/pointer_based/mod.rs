@@ -715,6 +715,22 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
                 }
                 .to_value_ref()
             }
+            ConcreteValue::FatPointer(fat_ptr) => {
+                debug_assert_eq!(fat_ptr.ty, type_id, "Type ids are not consistent.");
+                let field_type_ids = self.get_type(type_id).child_type_ids(None);
+                debug_assert_eq!(
+                    field_type_ids.len(),
+                    2,
+                    "A fat pointer is expected to have two fields."
+                );
+                // FIXME: Implicit assumption about the order of fields.
+                FatPtrValue {
+                    address: self.retrieve_conc_value(fat_ptr.address.clone(), field_type_ids[0]),
+                    metadata: self.retrieve_conc_value(fat_ptr.metadata.clone(), field_type_ids[1]),
+                    ty: fat_ptr.ty,
+                }
+                .to_value_ref()
+            }
             ConcreteValue::Unevaluated(UnevalValue::Lazy(raw)) => {
                 let raw = if let Some(id) = raw.2.id() {
                     debug_assert_eq!(id, type_id, "The type id is not consistent.");

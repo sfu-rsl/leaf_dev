@@ -69,18 +69,17 @@ mod retrieval {
                 ));
             }
 
-            let ty = if let LazyTypeInfo::Id(ty_id) = self.2 {
-                type_manager.get_type(ty_id)
-            } else if let LazyTypeInfo::Fetched(ty) = self.2 {
-                ty
-            } else {
-                return Err(&self.2);
+            let ty = match &self.2 {
+                LazyTypeInfo::Id(ty_id) => type_manager.get_type(*ty_id),
+                LazyTypeInfo::Fetched(ty) => ty,
+                LazyTypeInfo::Forced(ty) => ty.as_ref(),
+                LazyTypeInfo::None => return Err(&self.2),
             };
 
             Ok(self.retrieve_with_type(ty, type_manager, field_retriever))
         }
 
-        pub(crate) unsafe fn retrieve_with_type(
+        unsafe fn retrieve_with_type(
             &self,
             ty: &TypeInfo,
             type_manager: &dyn TypeManager,
@@ -519,16 +518,17 @@ mod proj {
         ) -> Self::Proj<'a> {
             match proj_on {
                 ProjectionOn::Deref(host) => self.deref(host, metadata),
+                ProjectionOn::Field(host, FieldAccessKind::PtrMetadata) => host.metadata.clone(),
                 ProjectionOn::Downcast(_, DowncastKind::Transmutation(..)) => {
                     unimplemented!(
                         "Transmutation of FatPtrValue is not supported but also not expected. {:?}",
                         proj_on,
                     )
                 }
-                ProjectionOn::Field(_, _)
-                | ProjectionOn::Index(_, _)
-                | ProjectionOn::Subslice(_, _, _, _)
-                | ProjectionOn::Downcast(_, _) => {
+                ProjectionOn::Field(_, FieldAccessKind::Index(..))
+                | ProjectionOn::Index(..)
+                | ProjectionOn::Subslice(..)
+                | ProjectionOn::Downcast(..) => {
                     unreachable!("Unexpected projection on a fat pointer. {:?}", proj_on)
                 }
             }
