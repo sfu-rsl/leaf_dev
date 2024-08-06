@@ -142,16 +142,17 @@ impl<VS, SP: SymbolicProjector> RawPointerVariableState<VS, SP> {
     }
 
     fn get<'a, 'b>(&'a self, addr: &'b RawPointer, type_id: TypeId) -> Option<&'a SymValueRef> {
+        let addr = *addr as memory::Address;
         log_debug!(
-            "Querying memory for address: {} with type: {:?}",
+            "Querying memory for address: {:p} with type: {:?}",
             addr,
             type_id
         );
 
-        let (obj_address, (obj_value, obj_type_id)) = self.get_object(*addr)?;
+        let (obj_address, (obj_value, obj_type_id)) = self.get_object(addr)?;
 
         log_debug!(
-            "Found value {} for address: {} with type: {:?}",
+            "Found value {} for address: {:p} with type: {:?}",
             obj_value,
             addr,
             type_id
@@ -159,7 +160,7 @@ impl<VS, SP: SymbolicProjector> RawPointerVariableState<VS, SP> {
 
         // FIXME: (*)
         debug_assert_eq!(
-            obj_address, addr,
+            *obj_address, addr,
             "Non-deterministic memory regions are not supported yet."
         );
 
@@ -180,12 +181,12 @@ impl<VS, SP: SymbolicProjector> RawPointerVariableState<VS, SP> {
     /// Returns the object that contains the given address.
     fn get_object<'a, 'b>(
         &'a self,
-        addr: RawPointer,
-    ) -> Option<(&'a RawPointer, &'a MemoryObject)> {
+        addr: memory::Address,
+    ) -> Option<(&'a memory::Address, &'a MemoryObject)> {
         let cursor = self.memory.before_or_at(&addr);
         if let entry @ Some((start, ..)) = cursor.peek_prev() {
             let size = 1;
-            let region = *start..(start + size);
+            let region = *start..(start.wrapping_byte_add(size));
             if region.contains(&addr) {
                 return entry;
             }
@@ -194,7 +195,10 @@ impl<VS, SP: SymbolicProjector> RawPointerVariableState<VS, SP> {
         None
     }
 
-    fn entry_object<'a, 'b>(&'a mut self, addr: RawPointer) -> Entry<'a, RawPointer, MemoryObject> {
+    fn entry_object<'a, 'b>(
+        &'a mut self,
+        addr: memory::Address,
+    ) -> Entry<'a, memory::Address, MemoryObject> {
         let key = self
             .get_object(addr)
             .map(|(start, _)| *start)
@@ -322,7 +326,12 @@ where
             }
         }
 
-        self.set_addr(addr, value, place.metadata().unwrap_type_id());
+        self.set_addr(
+            addr as memory::Address,
+            0,
+            value,
+            place.metadata().unwrap_type_id(),
+        );
     }
 }
 
@@ -562,11 +571,12 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
     fn try_create_porter<'a, C: 'a>(
         addr: RawPointer,
         size: TypeSize,
-        after_or_at: impl FnOnce(&RawPointer) -> C,
-        entry: impl Fn(&C) -> Option<(&RawPointer, &MemoryObject)>,
+        after_or_at: impl FnOnce(&memory::Address) -> C,
+        entry: impl Fn(&C) -> Option<(&memory::Address, &MemoryObject)>,
         move_next: impl Fn(&mut C),
     ) -> Option<PorterValue> {
-        let range = addr..addr + size;
+        let addr = addr as memory::Address;
+        let range = addr..(addr.wrapping_byte_add(size as usize));
         log_debug!("Checking to create a porter for range: {:?}", range);
 
         // TODO: What if the address is at the middle of a symbolic value?
@@ -577,7 +587,9 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
                 break;
             }
 
-            let offset: PointerOffset = sym_addr - addr;
+            let offset: PointerOffset = unsafe { sym_addr.byte_offset_from(addr) }
+                .try_into()
+                .unwrap();
             sym_values.push((offset, *sym_type_id, sym_value.clone()));
             move_next(&mut cursor);
         }
@@ -757,9 +769,20 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
 }
 
 impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<VS, SP> {
-    fn set_addr(&mut self, addr: RawPointer, value: ValueRef, type_id: TypeId) {
-        fn insert(entry: Entry<RawPointer, MemoryObject>, value: MemoryObject) {
-            log_debug!("Storing value: {:?} at address: {}", value, entry.key());
+    fn set_addr(
+        &mut self,
+        addr: memory::Address,
+        offset: PointerOffset,
+        value: ValueRef,
+        type_id: TypeId,
+    ) {
+        fn insert(entry: Entry<memory::Address, MemoryObject>, value: MemoryObject) {
+            log_debug!(
+                "Storing value: {} with type {} at address: {:p}",
+                value.0,
+                value.1,
+                *entry.key()
+            );
             match entry {
                 Entry::Occupied(mut entry) => {
                     entry.insert(value);
@@ -770,6 +793,7 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
             }
         }
 
+        let addr = addr.wrapping_byte_add(offset as usize);
         let entry = self.entry_object(addr);
 
         // FIXME: (*)
@@ -785,14 +809,14 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
             }
             #[cfg(place_addr)]
             Value::Concrete(ConcreteValue::Adt(adt)) => {
-                self.set_addr_adt(type_id, adt, addr);
+                self.set_addr_adt(addr, adt, type_id);
             }
             Value::Concrete(ConcreteValue::Array(array)) => {
                 self.set_addr_array(addr, array, type_id)
             }
             Value::Concrete(ConcreteValue::Unevaluated(UnevalValue::Porter(porter))) => {
                 for (offset, type_id, sym_value) in porter.sym_values.iter() {
-                    self.set_addr(addr + offset, sym_value.clone_to(), *type_id);
+                    self.set_addr(addr, *offset, sym_value.clone_to(), *type_id);
                 }
             }
             Value::Concrete(_) => {
@@ -804,7 +828,12 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
         }
     }
 
-    fn set_addr_adt(&mut self, type_id: TypeId, adt: &AdtValue, addr: u64) {
+    fn set_addr_adt(&mut self, addr: memory::Address, adt: &AdtValue, type_id: TypeId) {
+        log_debug!(
+            "Setting ADT at address: {:p} with type: {:?}",
+            addr,
+            type_id
+        );
         let ty = self.get_type(type_id);
         let variant = match adt.kind {
             AdtKind::Enum { variant } => &ty.variants[variant as usize],
@@ -819,7 +848,7 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
                             continue;
                         }
 
-                        self.set_addr(addr + info.offset, value.clone(), info.ty);
+                        self.set_addr(addr, info.offset, value.clone(), info.ty);
                     }
                 }
             }
@@ -841,7 +870,7 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
                  * - https://doc.rust-lang.org/nightly/nightly-rustc/rustc_target/abi/enum.FieldsShape.html#variant.Union
                  */
                 let offset = 0;
-                self.set_addr(addr + offset, value.clone(), fields[i].ty);
+                self.set_addr(addr, offset, value.clone(), fields[i].ty);
             }
             _ => panic!(
                 "Unexpected shape for fields of an ADT: {:?}",
@@ -850,7 +879,7 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
         };
     }
 
-    fn set_addr_array(&mut self, addr: RawPointer, array: &ArrayValue, type_id: TypeId) {
+    fn set_addr_array(&mut self, addr: memory::Address, array: &ArrayValue, type_id: TypeId) {
         let item_ty = {
             let item_ty_id = self.get_type(type_id).expect_array().item_ty;
             self.get_type(item_ty_id)
@@ -861,8 +890,12 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
                 continue;
             }
 
-            let item_addr = addr + item_ty.size * i as TypeSize;
-            self.set_addr(item_addr, element.clone(), item_ty.id);
+            self.set_addr(
+                addr,
+                item_ty.size * i as TypeSize,
+                element.clone(),
+                item_ty.id,
+            );
         }
     }
 }
