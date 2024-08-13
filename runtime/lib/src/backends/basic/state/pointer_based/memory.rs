@@ -20,33 +20,33 @@ impl Memory {
     /// # Remarks
     /// The `prev` node of the returned cursor is the last entry with an address
     /// less than or equal to `addr`.
+    #[tracing::instrument(level = "debug", skip(self))]
     pub(crate) fn before_or_at(&self, addr: &Address) -> Cursor<'_, Address, MemoryObject> {
-        log_debug!("Checking memory before or at address: {:p}", *addr);
         self.0.upper_bound(Bound::Included(addr))
     }
 
     /// # Remarks
     /// The `next` node of the returned cursor is greater than or equal to `addr`.
+    #[tracing::instrument(level = "debug", skip(self))]
     pub(crate) fn after_or_at(&self, addr: &Address) -> Cursor<'_, Address, MemoryObject> {
-        log_debug!("Checking memory after or at address: {:p}", *addr);
         self.0.lower_bound(Bound::Included(addr))
     }
 
+    #[tracing::instrument(level = "debug", skip(self))]
     pub(crate) fn after_or_at_mut(
         &mut self,
         addr: &Address,
     ) -> CursorMut<'_, Address, MemoryObject> {
-        log_debug!("Checking memory after or at address: {:p}", *addr);
         self.0.lower_bound_mut(Bound::Included(addr))
     }
 
+    #[tracing::instrument(level = "debug", skip(self))]
     pub(crate) fn entry_at(&mut self, addr: Address) -> Entry<'_, Address, MemoryObject> {
-        log_debug!("Getting memory entry at address: {:p}", addr);
         self.0.entry(addr)
     }
 
+    #[tracing::instrument(level = "debug", skip(self))]
     pub(crate) fn remove_at(&mut self, addr: &Address) {
-        log_debug!("Erasing memory at address: {:p}", *addr);
         self.0.remove(addr);
     }
 }

@@ -43,7 +43,7 @@ pub(crate) mod z3 {
     }
 
     impl<'ctx> Z3ValueTranslator<'ctx, DefaultProjExprReadResolver<'_>> {
-        pub(crate) fn new(context: &'ctx Context, type_manager: Rc<dyn TypeManager>) -> Self {
+        pub(crate) fn new(context: &'ctx Context) -> Self {
             Self {
                 context,
                 variables: Default::default(),

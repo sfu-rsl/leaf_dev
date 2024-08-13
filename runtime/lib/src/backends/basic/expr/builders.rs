@@ -157,7 +157,7 @@ mod symbolic {
                         lazy.try_retrieve_as_scalar(None)
                             .expect(
                                 concat!(
-                                    "The value participating in a binary expression is expected to be a primitive.",
+                                    "The value participating in a binary expression is expected to be a scalar. ",
                                     "Maybe the value type is not available?"
                                 ),
                             )
@@ -397,7 +397,8 @@ mod core {
                             ProjExpr::SymHost(SymHostProj {
                                 host: operand.into(),
                                 kind: ProjKind::Downcast(DowncastKind::Transmutation(dst_ty_id)),
-                                metadata: todo!("Check if we really need to provide this value."),
+                                // NOTE: We should see if we are going to use host's metadata at all.
+                                metadata: ProjMetadata::unknown(),
                             })
                             .into()
                         }

@@ -46,6 +46,7 @@ pub(super) mod sym_place;
 mod utils;
 
 use common::log_debug;
+use memory::*;
 use utils::*;
 
 type Local = LocalWithMetadata;
@@ -142,7 +143,7 @@ impl<VS, SP: SymbolicProjector> RawPointerVariableState<VS, SP> {
     }
 
     fn get<'a, 'b>(&'a self, addr: &'b RawPointer, type_id: TypeId) -> Option<&'a SymValueRef> {
-        let addr = *addr as memory::Address;
+        let addr = *addr as Address;
         log_debug!(
             "Querying memory for address: {:p} with type: {:?}",
             addr,
@@ -179,10 +180,7 @@ impl<VS, SP: SymbolicProjector> RawPointerVariableState<VS, SP> {
     }
 
     /// Returns the object that contains the given address.
-    fn get_object<'a, 'b>(
-        &'a self,
-        addr: memory::Address,
-    ) -> Option<(&'a memory::Address, &'a MemoryObject)> {
+    fn get_object<'a, 'b>(&'a self, addr: Address) -> Option<(&'a Address, &'a MemoryObject)> {
         let cursor = self.memory.before_or_at(&addr);
         if let entry @ Some((start, ..)) = cursor.peek_prev() {
             let size = 1;
@@ -195,10 +193,7 @@ impl<VS, SP: SymbolicProjector> RawPointerVariableState<VS, SP> {
         None
     }
 
-    fn entry_object<'a, 'b>(
-        &'a mut self,
-        addr: memory::Address,
-    ) -> Entry<'a, memory::Address, MemoryObject> {
+    fn entry_object<'a, 'b>(&'a mut self, addr: Address) -> Entry<'a, Address, MemoryObject> {
         let key = self
             .get_object(addr)
             .map(|(start, _)| *start)
@@ -223,6 +218,7 @@ where
         }
     }
 
+    #[tracing::instrument(level = "debug", skip(self))]
     fn ref_place(&self, place: &Place) -> Rc<Value> {
         let Some(addr) = place.address() else {
             return self.fallback.ref_place(place);
@@ -244,6 +240,7 @@ where
         create_lazy(addr, place.metadata().ty().cloned())
     }
 
+    #[tracing::instrument(level = "debug", skip(self))]
     fn copy_place(&self, place: &Place) -> ValueRef {
         let Some(addr) = place.address() else {
             return self.fallback.copy_place(place);
@@ -262,7 +259,7 @@ where
         // Or it is pointing to an object embracing symbolic values.
         if let Some(size) = self.get_type_size(place) {
             // FIXME: Double querying memory.
-            if let Some(porter) = self.try_create_porter_for_copy(addr, size) {
+            if let Some(porter) = self.try_create_porter_for_copy(addr as Address, size) {
                 return porter.to_value_ref();
             }
         }
@@ -270,6 +267,7 @@ where
         create_lazy(addr, place.metadata().ty().cloned())
     }
 
+    #[tracing::instrument(level = "debug", skip(self))]
     fn try_take_place(&mut self, place: &Place) -> Option<ValueRef> {
         let Some(addr) = place.address() else {
             return self.fallback.try_take_place(place);
@@ -295,7 +293,7 @@ where
         if let Some(size) = self.get_type_size(place) {
             // FIXME: Double querying memory.
             if let Some(porter) = Self::try_create_porter(
-                addr,
+                addr as Address,
                 size,
                 |start| self.memory.after_or_at_mut(start),
                 |c| c.as_cursor().peek_next(),
@@ -303,7 +301,8 @@ where
                     // FIXME: (*)
                     // Disabling removal because of possible use after move.
                     // https://github.com/rust-lang/unsafe-code-guidelines/issues/188
-                    c.remove_next();
+                    // c.remove_next();
+                    c.next();
                 },
             ) {
                 return Some(porter.to_value_ref());
@@ -326,12 +325,7 @@ where
             }
         }
 
-        self.set_addr(
-            addr as memory::Address,
-            0,
-            value,
-            place.metadata().unwrap_type_id(),
-        );
+        self.set_addr(addr as Address, 0, value, place.metadata().unwrap_type_id());
     }
 }
 
@@ -551,9 +545,9 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
         )
     }
 
-    fn try_create_porter_for_copy(&self, addr: RawPointer, size: TypeSize) -> Option<PorterValue> {
+    fn try_create_porter_for_copy(&self, addr: Address, size: TypeSize) -> Option<PorterValue> {
         Self::try_create_porter(
-            addr,
+            addr as Address,
             size,
             /* At this point, we are looking for inner values, effectively
              * located at the same address or after it. */
@@ -568,16 +562,15 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
     /// Looks in the region indicated by `addr` and `size` and picks all
     /// symbolic values that are residing in that region. If there is no
     /// symbolic value in that region, returns `None`.
-    fn try_create_porter<'a, C: 'a>(
-        addr: RawPointer,
+    #[tracing::instrument(level = "debug", skip(after_or_at, entry, move_next))]
+    fn try_create_porter<'a, C: 'a + core::fmt::Debug>(
+        addr: Address,
         size: TypeSize,
-        after_or_at: impl FnOnce(&memory::Address) -> C,
-        entry: impl Fn(&C) -> Option<(&memory::Address, &MemoryObject)>,
+        after_or_at: impl FnOnce(&Address) -> C,
+        entry: impl Fn(&C) -> Option<(&Address, &MemoryObject)>,
         move_next: impl Fn(&mut C),
     ) -> Option<PorterValue> {
-        let addr = addr as memory::Address;
         let range = addr..(addr.wrapping_byte_add(size as usize));
-        log_debug!("Checking to create a porter for range: {:?}", range);
 
         // TODO: What if the address is at the middle of a symbolic value?
         let mut cursor = after_or_at(&range.start);
@@ -769,14 +762,8 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
 }
 
 impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<VS, SP> {
-    fn set_addr(
-        &mut self,
-        addr: memory::Address,
-        offset: PointerOffset,
-        value: ValueRef,
-        type_id: TypeId,
-    ) {
-        fn insert(entry: Entry<memory::Address, MemoryObject>, value: MemoryObject) {
+    fn set_addr(&mut self, addr: Address, offset: PointerOffset, value: ValueRef, type_id: TypeId) {
+        fn insert(entry: Entry<Address, MemoryObject>, value: MemoryObject) {
             log_debug!(
                 "Storing value: {} with type {} at address: {:p}",
                 value.0,
@@ -828,7 +815,7 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
         }
     }
 
-    fn set_addr_adt(&mut self, addr: memory::Address, adt: &AdtValue, type_id: TypeId) {
+    fn set_addr_adt(&mut self, addr: Address, adt: &AdtValue, type_id: TypeId) {
         log_debug!(
             "Setting ADT at address: {:p} with type: {:?}",
             addr,
@@ -844,10 +831,6 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
             FieldsShapeInfo::Struct(StructShape { fields }) => {
                 for (field, info) in adt.fields.iter().zip(fields) {
                     if let Some(value) = &field.value {
-                        if !value.is_symbolic() {
-                            continue;
-                        }
-
                         self.set_addr(addr, info.offset, value.clone(), info.ty);
                     }
                 }
@@ -879,17 +862,13 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
         };
     }
 
-    fn set_addr_array(&mut self, addr: memory::Address, array: &ArrayValue, type_id: TypeId) {
+    fn set_addr_array(&mut self, addr: Address, array: &ArrayValue, type_id: TypeId) {
         let item_ty = {
             let item_ty_id = self.get_type(type_id).expect_array().item_ty;
             self.get_type(item_ty_id)
         };
 
         for (i, element) in array.elements.iter().enumerate() {
-            if !element.is_symbolic() {
-                continue;
-            }
-
             self.set_addr(
                 addr,
                 item_ty.size * i as TypeSize,
@@ -917,7 +896,9 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerRetriever
 
         // Or it is pointing to an object embracing symbolic values.
         // FIXME: Double querying memory.
-        if let Some(porter) = self.try_create_porter_for_copy(addr, self.get_type(type_id).size) {
+        if let Some(porter) =
+            self.try_create_porter_for_copy(addr as Address, self.get_type(type_id).size)
+        {
             return porter.to_value_ref();
         }
 

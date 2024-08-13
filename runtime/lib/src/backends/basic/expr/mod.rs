@@ -853,16 +853,22 @@ pub(crate) struct SymHostProj<M = ProjMetadata> {
 
 #[derive(Clone, Debug)]
 pub(crate) struct ProjMetadata {
-    host_type_id: TypeId,
+    host_type_id: Option<TypeId>,
 }
 
 impl ProjMetadata {
     pub fn new(host_type_id: TypeId) -> Self {
-        Self { host_type_id }
+        Self {
+            host_type_id: Some(host_type_id),
+        }
+    }
+
+    pub fn unknown() -> Self {
+        Self { host_type_id: None }
     }
 
     pub fn host_type_id(&self) -> TypeId {
-        self.host_type_id
+        self.host_type_id.expect("Host type id is not set.")
     }
 }
 

@@ -42,7 +42,6 @@ impl ProgramRuntimeInterface for BasicPri {
     fn ref_place_local(local_index: LocalIndex) -> PlaceRef {
         push_place_ref(|p| p.of_local(Local::Normal(local_index)))
     }
-    #[tracing::instrument]
     fn ref_place_deref(place: PlaceRef) {
         mut_place_ref(place, |p, place| p.project_on(place).deref())
     }

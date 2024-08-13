@@ -554,7 +554,7 @@ mod implementation {
                         ProjExpr::SymHost(SymHostProj {
                             host: SymValueRef::new(trans.value),
                             kind: ProjKind::Downcast(DowncastKind::Transmutation(trans.dst_ty_id)),
-                            metadata: todo!("Unknown transmutation base type."),
+                            metadata: ProjMetadata::unknown(),
                         })
                         .to_value_ref()
                         .into()

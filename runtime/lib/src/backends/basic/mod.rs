@@ -26,8 +26,8 @@ use crate::{
     tyexp::{self, TypeInfoExt},
     utils::alias::RRef,
 };
-use common::tyexp::{FieldsShapeInfo, StructShape, TypeExport, TypeInfo};
 use common::log_info;
+use common::tyexp::{FieldsShapeInfo, StructShape, TypeExport, TypeInfo};
 
 use self::{
     alias::{
@@ -93,9 +93,7 @@ impl BasicBackend {
             u32,
             ValueRef,
         >::new_basic(Box::new(
-            Z3Solver::new_in_global_context(|ctx| {
-                Z3ValueTranslator::new(ctx, type_manager_ref.clone())
-            }),
+            Z3Solver::new_in_global_context(|ctx| Z3ValueTranslator::new(ctx)),
         ))));
         let trace_manager = trace_manager_ref.clone();
         Self {
@@ -262,13 +260,8 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
     }
 
     fn len_of(mut self, place: Self::Place) {
-        /* FIXME: Len should be retrieved eagerly.
-         * However, it requires working with slice types which is feasible.
-         * But as len is supposed to be removed from the Runtime MIR,
-         * we are not implementing it now.
-         */
-        let value = self.vars_state.ref_place(&place);
-        let len_value = self.expr_builder().len(value.into());
+        let place_value = self.get_place_value(place);
+        let len_value = self.expr_builder().len(place_value.into());
         self.set(len_value.into())
     }
 
@@ -855,6 +848,12 @@ fn try_const_operand_value(operand: Operand) -> Option<ValueRef> {
 
 trait VariablesState<P = Place, V = ValueRef> {
     fn id(&self) -> usize;
+
+    /// Returns a value that corresponds to the place itself.
+    /// The returned value does not necessarily access the actual value but
+    /// should be dereferenceable to get the actual value.
+    /// Used for creating references, addresses, etc.
+    fn ref_place(&self, place: &P) -> V;
 
     /// Returns a copy of the value stored at the given place. May not physically copy the value
     /// but the returned value should be independently usable from the original value.

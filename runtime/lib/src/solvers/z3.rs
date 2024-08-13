@@ -1,13 +1,13 @@
-use std::{borrow::Borrow, collections::HashMap, hash::Hash};
-
-use crate::{abs::backend, utils::UnsafeSync};
-use common::log_debug;
 use lazy_static::lazy_static;
 use z3::{
     self,
     ast::{self, Ast},
     Config, Context, SatResult, Solver,
 };
+
+use std::{borrow::Borrow, collections::HashMap, hash::Hash};
+
+use common::log_debug;
 
 use crate::{abs::backend, utils::UnsafeSync};
 
