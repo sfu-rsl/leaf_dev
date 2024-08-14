@@ -716,14 +716,12 @@ mod implementation {
                     projector.project(proj_on, metadata).into()
                 }
                 _ => {
-                    let projector = &mut ConcreteProjector {
-                        handle_sym_index: |_, _, _| unreachable!("Structurally impossible."),
-                    };
+                    let projector = &mut ConcreteProjector;
 
                     let proj_on = proj.clone_with_host(value).map(
                         |h| h,
                         |fa| fa,
-                        |(h, i)| (h, i.into()),
+                        |(h, i)| (h, i),
                         |dc| match dc {
                             DowncastKind::EnumVariant(variant_index) => variant_index,
                             DowncastKind::Transmutation(..) => unreachable!(),

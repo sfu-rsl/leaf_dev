@@ -5,18 +5,13 @@ use crate::abs::{
 };
 use std::fmt::Debug;
 
-pub(crate) struct ConcreteProjector<I> {
-    pub handle_sym_index: I,
-}
+pub(crate) struct ConcreteProjector;
 
-impl<I> Projector for ConcreteProjector<I>
-where
-    I: Fn(ConcreteValueRef, SymValueRef, bool) -> ValueRef,
-{
+impl Projector for ConcreteProjector {
     type HostRef<'a> = ConcreteValueRef;
     type Metadata<'a> = ProjMetadata;
     type FieldAccessor = FieldAccessKind;
-    type HIRefPair<'a> = (ConcreteValueRef, ValueRef);
+    type HIRefPair<'a> = (ConcreteValueRef, ConcreteValueRef);
     type DowncastTarget = VariantIndex;
     type Proj<'a> = Result<ValueRef, ConcreteValueRef>;
 
@@ -59,29 +54,22 @@ where
 
     fn index<'a>(
         &mut self,
-        (host, index): (ConcreteValueRef, ValueRef),
+        (host, index): (ConcreteValueRef, ConcreteValueRef),
         from_end: bool,
         _metadata: Self::Metadata<'a>,
     ) -> Self::Proj<'a> {
         match index.as_ref() {
-            Value::Concrete(ConcreteValue::Const(ConstValue::Int { bit_rep, .. })) => {
-                match host.as_ref() {
-                    ConcreteValue::Array(ArrayValue { elements }) => {
-                        let index = bit_rep.0 as usize;
-                        Ok(if !from_end {
-                            elements[index].clone()
-                        } else {
-                            elements[elements.len() - index].clone()
-                        })
-                    }
-                    _ => Err(host),
+            ConcreteValue::Const(ConstValue::Int { bit_rep, .. }) => match host.as_ref() {
+                ConcreteValue::Array(ArrayValue { elements }) => {
+                    let index = bit_rep.0 as usize;
+                    Ok(if !from_end {
+                        elements[index].clone()
+                    } else {
+                        elements[elements.len() - index].clone()
+                    })
                 }
-            }
-            Value::Symbolic(_) => Ok((self.handle_sym_index)(
-                host,
-                SymValueRef::new(index),
-                from_end,
-            )),
+                _ => Err(host),
+            },
             _ => panic!("Index should be an integer."),
         }
     }
