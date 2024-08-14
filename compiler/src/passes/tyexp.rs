@@ -171,7 +171,7 @@ impl<'tcx, 's, 'b> Visitor<'tcx> for PlaceVisitor<'tcx, 's, 'b> {
             return;
         }
 
-        add_type_information_to_map(self.type_map, self.tcx, ty, self.param_env);
+        add_type_information_to_map(self.type_map, self.tcx, normalized_ty, self.param_env);
 
         // For pointee
         ty.builtin_deref(true)
