@@ -11,7 +11,7 @@ use super::{
     CallStackManager, Place, UntupleHelper, ValueRef, VariablesState,
 };
 
-use common::{log_debug, log_warn};
+use common::{log_debug, log_warn, pri::RawPointer};
 
 type VariablesStateFactory<VS> = Box<dyn Fn(usize) -> VS>;
 
@@ -163,7 +163,9 @@ impl<VS: VariablesState + SelfHierarchical> BasicCallStackManager<VS> {
         let tupled_local = {
             let metadata = untuple_helper.make_tupled_arg_pseudo_place_meta(
                 /* NOTE: The address should not really matter, but let's keep it realistic. */
-                tupled_arg_metadata.and_then(|m| m.address()).unwrap_or(1),
+                tupled_arg_metadata
+                    .map(|m| m.address() as RawPointer)
+                    .unwrap_or(1),
             );
             ArgLocal::from((tupled_local, metadata))
         };

@@ -1,7 +1,10 @@
 use std::{
     fmt::Display,
     ops::{Deref, DerefMut},
+    ptr::NonNull,
 };
+
+use common::types::RawAddress;
 
 use crate::abs::{
     backend::{
@@ -14,11 +17,9 @@ use crate::abs::{
 
 use super::Projection;
 
-const NONE_ADDRESS: RawPointer = 0;
-
 #[derive(Debug, Clone)]
 pub(crate) struct PlaceMetadata {
-    address: RawPointer,
+    address: Option<NonNull<()>>,
     type_id: Option<TypeId>,
     // FIXME: Temporary until merged with type system
     ty: Option<ValueType>,
@@ -28,7 +29,7 @@ pub(crate) struct PlaceMetadata {
 impl Default for PlaceMetadata {
     fn default() -> Self {
         Self {
-            address: NONE_ADDRESS,
+            address: None,
             type_id: None,
             ty: None,
             size: None,
@@ -38,17 +39,13 @@ impl Default for PlaceMetadata {
 
 impl PlaceMetadata {
     #[inline]
-    pub(crate) fn address(&self) -> Option<RawPointer> {
-        if self.address != NONE_ADDRESS {
-            Some(self.address)
-        } else {
-            None
-        }
+    pub(crate) fn address(&self) -> RawAddress {
+        self.address.unwrap().as_ptr()
     }
 
     #[inline]
     pub(crate) fn set_address(&mut self, address: RawPointer) {
-        self.address = address;
+        self.address = Some(NonNull::new(address as *mut ()).unwrap());
     }
 
     #[inline]
@@ -91,11 +88,11 @@ pub(crate) type PlaceWithMetadata = crate::abs::place::PlaceWithMetadata<
 >;
 
 impl PlaceWithMetadata {
-    pub(crate) fn address(&self) -> Option<RawPointer> {
+    pub(crate) fn address(&self) -> RawAddress {
         self.metadata().address()
     }
 
-    pub(crate) fn proj_addresses(&self) -> impl Iterator<Item = Option<RawPointer>> + '_ {
+    pub(crate) fn proj_addresses(&self) -> impl Iterator<Item = RawAddress> + '_ {
         self.projs_metadata().map(|m| m.address())
     }
 }
@@ -164,7 +161,7 @@ impl BasicPlaceMetadataHandler<'_> {
     pub(crate) fn set_address(&mut self, address: RawPointer) {
         if self.0.has_projection() {
             let last = &mut self.0.projs_metadata_mut().last().unwrap();
-            debug_assert!(last.address().is_none());
+            debug_assert!(last.address.is_none());
             last.set_address(address);
         } else {
             self.0.local_mut().set_address(address);
@@ -192,26 +189,12 @@ impl BasicPlaceMetadataHandler<'_> {
 
 impl Display for LocalWithMetadata {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}@{}",
-            AsRef::<Local>::as_ref(self),
-            self.address()
-                .map(|a| format!("{:x}", a))
-                .unwrap_or("-".to_owned())
-        )
+        write!(f, "{}@{:p}", AsRef::<Local>::as_ref(self), self.address())
     }
 }
 
 impl Display for PlaceWithMetadata {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}@{}",
-            self.deref(),
-            self.address()
-                .map(|addr| format!("{:x}", addr))
-                .unwrap_or_else(|| "-".to_owned())
-        )
+        write!(f, "{}@{:p}", self.deref(), self.address())
     }
 }

@@ -6,8 +6,6 @@ use std::{
     rc::Rc,
 };
 
-use delegate::delegate;
-
 use crate::{
     abs::{
         expr::{
@@ -136,8 +134,7 @@ impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
         }
     }
 
-    fn get<'a, 'b>(&'a self, addr: &'b RawPointer, type_id: TypeId) -> Option<&'a SymValueRef> {
-        let addr = *addr as Address;
+    fn get<'a, 'b>(&'a self, addr: Address, type_id: TypeId) -> Option<&'a SymValueRef> {
         log_debug!(
             "Querying memory for address: {:p} with type: {:?}",
             addr,
@@ -212,7 +209,7 @@ where
 
     #[tracing::instrument(level = "debug", skip(self))]
     fn ref_place(&self, place: &Place) -> Rc<Value> {
-        let addr = place.address().unwrap();
+        let addr = place.address();
 
         // If the place is pointing to a symbolic value.
         if let Some((sym_val, host_metadata, sym_projs, projs_metadata)) =
@@ -232,7 +229,7 @@ where
 
     #[tracing::instrument(level = "debug", skip(self))]
     fn copy_place(&self, place: &Place) -> ValueRef {
-        let addr = place.address().unwrap();
+        let addr = place.address();
 
         let place_val = self.ref_place(place);
         if place_val.is_symbolic() {
@@ -257,7 +254,7 @@ where
 
     #[tracing::instrument(level = "debug", skip(self))]
     fn try_take_place(&mut self, place: &Place) -> Option<ValueRef> {
-        let addr = place.address().unwrap();
+        let addr = place.address();
 
         // If the place is pointing to a symbolic value.
         let place_val = self.ref_place(place);
@@ -299,7 +296,7 @@ where
     }
 
     fn set_place(&mut self, place: &Place, value: ValueRef) {
-        let addr = place.address().unwrap();
+        let addr = place.address();
 
         if let Some((_sym_val, _, sym_projs, _)) =
             self.try_find_sym_value(place, self.sym_write_handler.borrow_mut())
@@ -349,10 +346,7 @@ impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
         Self: IndexResolver<Local>,
     {
         /* NOTE: We probably can reverse the iteration order for faster hits. */
-        if let Some(sym_val) = self.get(
-            local_metadata.address().as_ref()?,
-            local_metadata.unwrap_type_id(),
-        ) {
+        if let Some(sym_val) = self.get(local_metadata.address(), local_metadata.unwrap_type_id()) {
             if let Some(Projection::Deref) = projs.first() {
                 let ref_val = sym_place_handler.handle(sym_val.clone(), local_metadata);
 
@@ -402,8 +396,7 @@ impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
                     }
 
                     // Default behavior for any projection.
-                    meta.address()
-                        .and_then(|addr| self.get(&addr, meta.unwrap_type_id()))
+                    self.get(meta.address(), meta.unwrap_type_id())
                         .map(|sym_val| (i, sym_val.clone(), meta))
                 })
                 // Returning the remaining projections.
@@ -431,9 +424,7 @@ impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
         // If the index is still symbolic, we need to project it.
         index_val.is_symbolic().then(|| {
             debug_assert!(
-                host_metadata
-                    .address()
-                    .and_then(|addr| self.get(&addr, host_metadata.unwrap_type_id()))
+                self.get(host_metadata.address(), host_metadata.unwrap_type_id())
                     .is_none(),
                 "The host is expected to be concrete for the first symbolic index."
             );
@@ -441,7 +432,7 @@ impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
                 .borrow_mut()
                 .index(
                     SymIndexPair::SymIndex {
-                        host: lazy_from_meta(&host_metadata).unwrap(),
+                        host: lazy_from_meta(host_metadata),
                         index: SymValueRef::new(index_val),
                     }
                     .into(),
@@ -870,8 +861,7 @@ impl<SP: SymbolicProjector> RawPointerRetriever for RawPointerVariableState<SP> 
             type_id
         );
 
-        let addr = addr as u64; // FIXME
-        if let Some(sym_val) = self.get(&addr, type_id) {
+        if let Some(sym_val) = self.get(addr, type_id) {
             return self.retrieve_sym_value(sym_val.clone(), type_id).into();
         }
 
@@ -885,7 +875,7 @@ impl<SP: SymbolicProjector> RawPointerRetriever for RawPointerVariableState<SP> 
 
         RawConcreteValue::try_from(&{
             let mut metadata = PlaceMetadata::default();
-            metadata.set_address(addr);
+            metadata.set_address(addr as RawPointer /* FIXME */);
             metadata.set_type_id(type_id);
             metadata
         })
@@ -896,11 +886,11 @@ impl<SP: SymbolicProjector> RawPointerRetriever for RawPointerVariableState<SP> 
 
 impl<SP: SymbolicProjector> IndexResolver<Local> for RawPointerVariableState<SP> {
     fn get(&self, local: &Local) -> Option<ValueRef> {
-        let addr = local.address().unwrap();
+        let addr = local.address();
 
         Some(
             if let Some(sym_val) = self.get(
-                &addr,
+                addr,
                 // FIXME: As runtime library is compiled independently,
                 // this id is not guaranteed to be the same as the id used in the program.
                 common::utils::type_id_of::<usize>(),

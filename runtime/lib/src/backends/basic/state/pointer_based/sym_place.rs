@@ -7,7 +7,7 @@ use crate::{
 };
 
 use super::{create_lazy, ConcreteValueRef, SymValueRef};
-use common::{log_debug, log_info, log_warn};
+use common::log_debug;
 
 pub(crate) fn make_sym_place_handler(
     config: SymbolicPlaceStrategy,
@@ -66,9 +66,7 @@ impl SymPlaceHandler<PlaceMetadata> for StamperSymPlaceHandler {
 }
 
 fn get_concrete_value(place_meta: &PlaceMetadata, ty: Option<ValueType>) -> ValueRef {
-    let addr = place_meta
-        .address()
-        .expect("Cannot concretize a place without the raw address.");
+    let addr = place_meta.address();
     let ty = ty.or_else(|| place_meta.ty().cloned());
     create_lazy(addr, ty)
 }

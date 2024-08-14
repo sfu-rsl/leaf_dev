@@ -1,5 +1,3 @@
-use common::types::RawAddress;
-
 use crate::{
     abs::ValueType,
     backends::basic::{
@@ -8,30 +6,25 @@ use crate::{
     },
 };
 
-use super::ValueRef;
+use super::{Address, ValueRef};
 
 #[inline]
-pub(super) fn create_lazy(addr: u64, ty: Option<ValueType>) -> ValueRef {
-    let addr = addr as RawAddress; // FIXME
+pub(super) fn create_lazy(addr: Address, ty: Option<ValueType>) -> ValueRef {
     RawConcreteValue(addr, ty, LazyTypeInfo::None).to_value_ref()
 }
 
 #[inline]
-pub(super) fn lazy_from_meta(metadata: &PlaceMetadata) -> Result<ValueRef, &'static str> {
-    RawConcreteValue::try_from(metadata).map(RawConcreteValue::to_value_ref)
+pub(super) fn lazy_from_meta(metadata: &PlaceMetadata) -> ValueRef {
+    RawConcreteValue::from(metadata).to_value_ref()
 }
 
-impl<'a> TryFrom<&'a PlaceMetadata> for RawConcreteValue {
-    type Error = &'static str;
-
+impl<'a> From<&'a PlaceMetadata> for RawConcreteValue {
     #[inline]
-    fn try_from(metadata: &'a PlaceMetadata) -> Result<Self, Self::Error> {
-        let addr = metadata.address().ok_or("Address is not available")?;
-        let addr = addr as RawAddress; // FIXME
-        Ok(RawConcreteValue(
-            addr,
+    fn from(metadata: &'a PlaceMetadata) -> Self {
+        RawConcreteValue(
+            metadata.address(),
             metadata.ty().cloned(),
             metadata.type_id().into(),
-        ))
+        )
     }
 }

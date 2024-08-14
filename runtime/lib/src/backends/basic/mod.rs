@@ -726,7 +726,7 @@ impl UntupleHelper for BasicUntupleHelper<'_> {
             let field_type = self.get_type(field_info.ty);
             Self::set_metadata_from_type_info(base.metadata_mut(), &field_type);
             base.metadata_mut()
-                .set_address(base_addr.unwrap() + field_info.offset);
+                .set_address(base_addr.wrapping_byte_add(field_info.offset as usize) as RawPointer);
         }
         base
     }
