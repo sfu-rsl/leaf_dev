@@ -626,19 +626,10 @@ mod concrete {
                     },
                     _ => unreachable!("Numeric casts are supposed to happen on a constant."),
                 },
-                PointerUnsize => match operand {
-                    Ref(_) => {
-                        /* Currently, the effect of this operation is at a lower level than our
-                         * symbolic state. So we don't need to do anything special.
-                         */
-                        operand.clone()
-                    }
-                    _ => unreachable!("Unsize cast is supposed to happen on a reference."),
-                },
                 ExposeProvenance | ToPointer(_) => {
                     todo!("#313: Add support for raw pointers in concrete values domain")
                 }
-                SizedDynamize | Transmute(_) => {
+                PointerUnsize | SizedDynamize | Transmute(_) => {
                     unimplemented!(concat!(
                         "Add support for these types of casts of concrete values if necessary.",
                         "Presumably, this case does not happen with abstract value concretization, ",

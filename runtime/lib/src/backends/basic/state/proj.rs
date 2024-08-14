@@ -28,7 +28,6 @@ where
         _metadata: Self::Metadata<'a>,
     ) -> Self::Proj<'a> {
         match host.as_ref() {
-            ConcreteValue::Ref(RefValue::Immut(value)) => Ok(value.clone()),
             ConcreteValue::Const(ConstValue::Addr(addr)) => {
                 Ok(RawConcreteValue(*addr, None, LazyTypeInfo::None).to_value_ref())
             }

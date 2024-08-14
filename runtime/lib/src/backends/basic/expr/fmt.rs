@@ -22,7 +22,6 @@ impl Display for ConcreteValue {
             ConcreteValue::Const(value) => write!(f, "{value}"),
             ConcreteValue::Adt(value) => write!(f, "{value}"),
             ConcreteValue::Array(value) => write!(f, "{value}"),
-            ConcreteValue::Ref(value) => write!(f, "{value}"),
             ConcreteValue::FatPointer(value) => write!(f, "{value}"),
             ConcreteValue::Unevaluated(value) => write!(f, "{value}"),
         }
@@ -46,9 +45,7 @@ impl Display for ConstValue {
                 write!(f, "{ty}")
             }
             ConstValue::Float { .. } => write!(f, "{self:?}"),
-            ConstValue::Str(value) => write!(f, "\"{value}\""),
             ConstValue::Func(id) => write!(f, "_f@{id:p}"),
-            ConstValue::Zst => write!(f, "_ZST_"),
             ConstValue::Addr(addr) => write!(f, "ᴬ{addr:p}"),
         }
     }
@@ -89,14 +86,6 @@ impl Display for ArrayValue {
             write!(f, "{}, ", value)?;
         }
         write!(f, "]")
-    }
-}
-
-impl Display for RefValue {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        match self {
-            RefValue::Immut(value) => write!(f, "&{value}"),
-        }
     }
 }
 

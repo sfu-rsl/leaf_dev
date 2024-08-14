@@ -21,7 +21,6 @@ use crate::utils::meta::define_reversible_pair;
 
 pub(crate) type ValueRef = Rc<Value>;
 pub(crate) type ConcreteValueRef = ConcreteValueGuard<ValueRef>;
-pub(crate) type ConcreteValueMutRef<'a> = ConcreteValueGuard<&'a mut ValueRef>;
 pub(crate) type SymValueRef = SymValueGuard<ValueRef>;
 pub(crate) type ProjExprRef = ProjExprGuard<ValueRef>;
 
@@ -64,8 +63,6 @@ pub(crate) enum ConcreteValue {
     #[from]
     Array(ArrayValue),
     #[from]
-    Ref(RefValue),
-    #[from]
     FatPointer(FatPtrValue),
     #[from(types(RawConcreteValue, PorterValue))]
     Unevaluated(UnevalValue),
@@ -85,10 +82,8 @@ pub(crate) enum ConstValue {
         bit_rep: u128,
         ty: FloatType,
     },
-    Str(&'static str),
     #[from(ignore)]
     Func(FuncId),
-    Zst,
     #[from(ignore)]
     Addr(RawAddress),
 }
@@ -554,30 +549,6 @@ impl ArrayValue {
     pub fn len(&self) -> usize {
         self.elements.len()
     }
-}
-
-#[derive(Clone, Debug)]
-pub(crate) enum RefValue {
-    /* NOTE:
-     * Is it possible to omit Ref?
-     * Immutable references can be directly represented as ValueRefs (with no recursive indirection).
-     * Because as long as they are alive, mutations are not possible and the same value
-     * can be circulated.
-     * So, basically they will act like copied values and the copy-on-write mechanism (in Rc)
-     * guarantees that value is not changed.
-     * Also, from another point of view, ValueRef is a reference itself so should fit well
-     * in a reference representation.
-     *
-     * Is it also possible to omit this MutRef?
-     * It is, but it looks like it requires taking care of the lifetime of the
-     * mutable reference. In that case we can move the value (instead of copy)
-     * and then return to its place when the mutable reference is dropped. This
-     * is because the actual place cannot be used while the mutable reference is
-     * alive. So, it is basically a move. A note to mention here is that the
-     * lifetime doesn't need to be handled explicitly, because on the first
-     * usage of the original place, the mutable reference should be dead.
-     */
-    Immut(ValueRef),
 }
 
 #[derive(Clone, Debug)]
@@ -1051,19 +1022,8 @@ mod convert {
         fn from(val: abs::Constant) -> Self {
             use abs::Constant::*;
             match val {
-                ByteStr(bytes) => Self::Ref(RefValue::Immut(
-                    Self::Array(ArrayValue {
-                        elements: bytes
-                            .iter()
-                            .copied()
-                            .map(ConstValue::from)
-                            .map(ConstValue::to_value_ref)
-                            .collect(),
-                    })
-                    .to_value_ref(),
-                )),
                 #[cfg(abs_concrete)]
-                Some => UnevalValue::Some.into(),
+                Zst | Str(..) | ByteStr(..) | Some => UnevalValue::Some.into(),
                 _ => Self::Const(match val {
                     Bool(value) => value.into(),
                     Char(value) => value.into(),
@@ -1072,12 +1032,9 @@ mod convert {
                         ty,
                     },
                     Float { bit_rep, ty } => ConstValue::Float { bit_rep, ty },
-                    Str(value) => ConstValue::Str(value),
                     Func(value) => ConstValue::Func(value),
-                    Zst => ConstValue::Zst,
-                    ByteStr(_) => unreachable!(),
                     #[cfg(abs_concrete)]
-                    Some => unreachable!(),
+                    Zst | Str(..) | ByteStr(..) | Some => unreachable!(),
                 }),
             }
         }

@@ -400,7 +400,7 @@ mod proj {
                 FieldAccessKind::PtrMetadata => {
                     let pointee_ty = self.type_manager.get_type(ty.pointee_ty.unwrap());
                     if pointee_ty.is_sized() {
-                        ConstValue::Zst.into()
+                        UnevalValue::Some.into()
                     } else {
                         // FIXME: There is no guarantee for this structure.
                         self.field(host, FieldAccessKind::Index(1), metadata)
