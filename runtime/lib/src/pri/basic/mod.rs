@@ -140,7 +140,6 @@ impl ProgramRuntimeInterface for BasicPri {
     fn ref_operand_const_zst() -> OperandRef {
         push_operand_ref(|o| o.const_from().zst())
     }
-    #[cfg(abs_concrete)]
     fn ref_operand_const_some() -> OperandRef {
         push_operand_ref(|o| o.const_from().some())
     }

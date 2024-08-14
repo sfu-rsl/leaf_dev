@@ -138,7 +138,6 @@ pub(crate) trait ConstantHandler {
 
     fn zst(self) -> Self::Operand;
 
-    #[cfg(abs_concrete)]
     fn some(self) -> Self::Operand;
 }
 
@@ -423,7 +422,6 @@ pub(crate) mod implementation {
             Constant::Zst.into()
         }
 
-        #[cfg(abs_concrete)]
         fn some(self) -> Self::Operand {
             Constant::Some.into()
         }

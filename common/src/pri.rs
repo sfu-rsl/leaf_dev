@@ -303,7 +303,6 @@ pub mod macros {
               #[allow(unused_parens)]
               { fn ref_operand_const_byte_str(value: ($byte_str_ty)) -> OperandRef }
               { fn ref_operand_const_zst() -> OperandRef }
-              #[cfg(abs_concrete)]
               { fn ref_operand_const_some() -> OperandRef }
 
               { fn new_sym_value_bool() -> OperandRef }
@@ -612,7 +611,7 @@ pub mod macros {
             }$modifier!{
                 fn ref_operand_const_zst()->OperandRef;
             }$modifier!{
-                #[cfg(abs_concrete)]fn ref_operand_const_some()->OperandRef;
+                fn ref_operand_const_some()->OperandRef;
             }$modifier!{
                 fn new_sym_value_bool()->OperandRef;
             }$modifier!{

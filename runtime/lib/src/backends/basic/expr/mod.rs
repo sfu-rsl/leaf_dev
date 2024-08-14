@@ -1022,7 +1022,6 @@ mod convert {
         fn from(val: abs::Constant) -> Self {
             use abs::Constant::*;
             match val {
-                #[cfg(abs_concrete)]
                 Zst | Str(..) | ByteStr(..) | Some => UnevalValue::Some.into(),
                 _ => Self::Const(match val {
                     Bool(value) => value.into(),
@@ -1033,7 +1032,6 @@ mod convert {
                     },
                     Float { bit_rep, ty } => ConstValue::Float { bit_rep, ty },
                     Func(value) => ConstValue::Func(value),
-                    #[cfg(abs_concrete)]
                     Zst | Str(..) | ByteStr(..) | Some => unreachable!(),
                 }),
             }

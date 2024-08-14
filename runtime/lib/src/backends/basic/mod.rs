@@ -221,7 +221,6 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
         let value = self.expect_sym_place_as_proj(place_value).map_or_else(
             |_value| {
                 // No use case for the reference value at the moment.
-                #[cfg(abs_concrete)]
                 UnevalValue::Some.into()
             },
             |proj| Expr::Ref(proj).into(),
@@ -246,13 +245,6 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
 
     fn cast_of(mut self, operand: Self::Operand, target: CastKind) {
         let value = self.get_operand_value(operand);
-
-        #[cfg(abs_concrete)]
-        if !value.is_symbolic() {
-            let value = self.get_operand_value(abs::Constant::Some.into());
-            return self.set(value);
-        }
-
         let cast_value = self.expr_builder().cast(value.into(), target);
         self.set(cast_value.into())
     }

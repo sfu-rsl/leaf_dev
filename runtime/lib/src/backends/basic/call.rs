@@ -137,15 +137,10 @@ impl<VS: VariablesState + SelfHierarchical> BasicCallStackManager<VS> {
             }
         };
         match action {
-            Concretize => {
-                #[cfg(abs_concrete)]
-                let value = ConcreteValue::from(abs::Constant::Some).to_value_ref();
-                #[cfg(not(abs_concrete))]
-                let value = unimplemented!(
-                    "Abstract concrete values are not supported in this configuration."
-                );
-                self.top().set_place(&result_dest, value)
-            }
+            Concretize => self.top().set_place(
+                &result_dest,
+                ConcreteValue::from(abs::Constant::Some).to_value_ref(),
+            ),
             OverApproximate => {
                 todo!("#306: Over-approximated symbolic values are not supported.")
             }
