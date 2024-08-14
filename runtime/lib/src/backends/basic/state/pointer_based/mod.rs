@@ -112,29 +112,23 @@ type MemoryObject = (SymValueRef, TypeId);
 /// Provides a mapping for raw pointers to symbolic values.
 /// All places that have a valid address are handled by this state, otherwise
 /// they will be sent to the `fallback` state to be handled.
-pub(in super::super) struct RawPointerVariableState<VS, SP: SymbolicProjector> {
+pub(in super::super) struct RawPointerVariableState<SP: SymbolicProjector> {
     memory: memory::Memory,
-    fallback: VS,
     sym_projector: RRef<SP>,
     type_manager: Rc<dyn TypeManager>,
     sym_read_handler: RefCell<SymPlaceHandlerObject>,
     sym_write_handler: RefCell<SymPlaceHandlerObject>,
 }
 
-impl<VS, SP: SymbolicProjector> RawPointerVariableState<VS, SP> {
+impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
     pub fn new(
-        fallback: VS,
         sym_projector: RRef<SP>,
         type_manager: Rc<dyn TypeManager>,
         sym_place_handler_factory: impl Fn(SymbolicPlaceStrategy) -> SymPlaceHandlerObject,
         sym_place_config: &SymbolicPlaceConfig,
-    ) -> Self
-    where
-        VS: VariablesState<Place>,
-    {
+    ) -> Self {
         Self {
             memory: Default::default(),
-            fallback,
             sym_projector,
             type_manager,
             sym_read_handler: RefCell::new(sym_place_handler_factory(sym_place_config.read)),
@@ -207,22 +201,18 @@ impl<VS, SP: SymbolicProjector> RawPointerVariableState<VS, SP> {
     }
 }
 
-impl<VS: VariablesState<Place>, SP: SymbolicProjector> VariablesState<Place>
-    for RawPointerVariableState<VS, SP>
+impl<SP: SymbolicProjector> VariablesState<Place> for RawPointerVariableState<SP>
 where
     Self: IndexResolver<Local>,
 {
-    delegate! {
-        to self.fallback {
-            fn id(&self) -> usize;
-        }
+    fn id(&self) -> usize {
+        // FIXME
+        0
     }
 
     #[tracing::instrument(level = "debug", skip(self))]
     fn ref_place(&self, place: &Place) -> Rc<Value> {
-        let Some(addr) = place.address() else {
-            return self.fallback.ref_place(place);
-        };
+        let addr = place.address().unwrap();
 
         // If the place is pointing to a symbolic value.
         if let Some((sym_val, host_metadata, sym_projs, projs_metadata)) =
@@ -242,9 +232,7 @@ where
 
     #[tracing::instrument(level = "debug", skip(self))]
     fn copy_place(&self, place: &Place) -> ValueRef {
-        let Some(addr) = place.address() else {
-            return self.fallback.copy_place(place);
-        };
+        let addr = place.address().unwrap();
 
         let place_val = self.ref_place(place);
         if place_val.is_symbolic() {
@@ -269,9 +257,7 @@ where
 
     #[tracing::instrument(level = "debug", skip(self))]
     fn try_take_place(&mut self, place: &Place) -> Option<ValueRef> {
-        let Some(addr) = place.address() else {
-            return self.fallback.try_take_place(place);
-        };
+        let addr = place.address().unwrap();
 
         // If the place is pointing to a symbolic value.
         let place_val = self.ref_place(place);
@@ -313,9 +299,7 @@ where
     }
 
     fn set_place(&mut self, place: &Place, value: ValueRef) {
-        let Some(addr) = place.address() else {
-            return self.fallback.set_place(place, value);
-        };
+        let addr = place.address().unwrap();
 
         if let Some((_sym_val, _, sym_projs, _)) =
             self.try_find_sym_value(place, self.sym_write_handler.borrow_mut())
@@ -329,7 +313,7 @@ where
     }
 }
 
-impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<VS, SP> {
+impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
     /// Finds the first symbolic value in the chain of projections (hosts) leading to the place.
     /// # Returns
     /// The first symbolic value and the remaining projections to be applied on it.
@@ -604,7 +588,7 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
     }
 }
 
-impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<VS, SP> {
+impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
     fn resolve_sym_proj(&self, proj: &ProjExpr, type_id: TypeId) -> SymValueRef {
         log_debug!("Resolving and retrieving symbolic projection expression: {proj}");
 
@@ -761,7 +745,7 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
     }
 }
 
-impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<VS, SP> {
+impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
     fn set_addr(&mut self, addr: Address, offset: PointerOffset, value: ValueRef, type_id: TypeId) {
         fn insert(entry: Entry<Address, MemoryObject>, value: MemoryObject) {
             log_debug!(
@@ -879,9 +863,7 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerVariableState<V
     }
 }
 
-impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerRetriever
-    for RawPointerVariableState<VS, SP>
-{
+impl<SP: SymbolicProjector> RawPointerRetriever for RawPointerVariableState<SP> {
     fn retrieve(&self, addr: RawAddress, type_id: TypeId) -> ValueRef {
         log_debug!(
             "Retrieving value at address: {:p} with type: {:?}",
@@ -913,14 +895,9 @@ impl<VS: VariablesState<Place>, SP: SymbolicProjector> RawPointerRetriever
     }
 }
 
-impl<VS, SP: SymbolicProjector> IndexResolver<Local> for RawPointerVariableState<VS, SP>
-where
-    VS: IndexResolver<Local>,
-{
+impl<SP: SymbolicProjector> IndexResolver<Local> for RawPointerVariableState<SP> {
     fn get(&self, local: &Local) -> Option<ValueRef> {
-        let Some(addr) = local.address() else {
-            return self.fallback.get(local);
-        };
+        let addr = local.address().unwrap();
 
         Some(
             if let Some(sym_val) = self.get(
@@ -937,22 +914,13 @@ where
     }
 }
 
-impl<VS, SP: SymbolicProjector> SelfHierarchical for RawPointerVariableState<VS, SP>
-where
-    VS: SelfHierarchical,
-{
+impl<SP: SymbolicProjector> SelfHierarchical for RawPointerVariableState<SP> {
     fn add_layer(self) -> Self {
-        Self {
-            fallback: self.fallback.add_layer(),
-            ..self
-        }
+        self
     }
 
     fn drop_layer(self) -> Option<Self> {
-        self.fallback.drop_layer().map(|f| Self {
-            fallback: f,
-            ..self
-        })
+        Some(self)
     }
 }
 

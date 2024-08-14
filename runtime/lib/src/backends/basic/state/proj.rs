@@ -1,16 +1,12 @@
 use super::{
     super::{expr::prelude::*, FullPlace, ValueRef},
-    PlaceError, ResolvedProjection, SymbolicProjector,
+    ResolvedProjection, SymbolicProjector,
 };
 use crate::abs::{
     expr::proj::{macros::impl_general_proj_through_singulars, Projector},
     FieldIndex, VariantIndex,
 };
 use std::fmt::Debug;
-
-pub(crate) trait MutRefResolver {
-    fn get_full_place(&self, place: &FullPlace) -> Result<ValueRef, PlaceError>;
-}
 
 pub(crate) struct ConcreteProjector<F, I> {
     pub get_place: F,

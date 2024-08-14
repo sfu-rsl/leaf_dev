@@ -42,16 +42,13 @@ use self::{
     },
     operand::BasicOperandHandler,
     place::{BasicPlaceHandler, PlaceMetadata},
-    state::{make_sym_place_handler, RawPointerVariableState, StackedLocalIndexVariablesState},
+    state::{make_sym_place_handler, RawPointerVariableState},
 };
 
 type TraceManager = dyn abs::backend::TraceManager<BasicBlockIndex, ValueRef>;
 
 #[cfg(place_addr)]
-type BasicVariablesState =
-    RawPointerVariableState<StackedLocalIndexVariablesState<SymProjector>, SymProjector>;
-#[cfg(not(place_addr))]
-type BasicVariablesState = StackedLocalIndexVariablesState<SymProjector>;
+type BasicVariablesState = RawPointerVariableState<SymProjector>;
 
 type BasicCallStackManager = call::BasicCallStackManager<BasicVariablesState>;
 
@@ -101,7 +98,6 @@ impl BasicBackend {
                 Box::new(move |id| {
                     #[cfg(place_addr)]
                     let vars_state = RawPointerVariableState::new(
-                        StackedLocalIndexVariablesState::new(id, sym_projector.clone()),
                         sym_projector.clone(),
                         type_manager_ref.clone(),
                         |s| {
@@ -862,14 +858,8 @@ trait VariablesState<P = Place, V = ValueRef> {
 
     /// Returns the value stored at the given place.
     /// Conceptually, it is required that the place will not contain the value right after this operation.
-    fn take_place(&mut self, place: &P) -> V
-    where
-        P: self::state::PlaceRef,
-        P::Local: std::fmt::Display,
-    {
-        self.try_take_place(place)
-            .ok_or(self::state::PlaceError::LocalNotFound(place.local()))
-            .unwrap()
+    fn take_place(&mut self, place: &P) -> V {
+        self.try_take_place(place).unwrap()
     }
 
     /// Tries to take the value of a place if available.
