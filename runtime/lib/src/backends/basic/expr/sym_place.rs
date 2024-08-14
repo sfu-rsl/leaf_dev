@@ -203,7 +203,6 @@ mod implementation {
                 LazyTypeInfo,
             },
             state::proj::{ConcreteProjector, ProjResultExt},
-            FullPlace,
         },
         tyexp::TypeInfoExt,
     };
@@ -718,7 +717,6 @@ mod implementation {
                 }
                 _ => {
                     let projector = &mut ConcreteProjector {
-                        get_place: |_: &FullPlace| -> ValueRef { todo!("#234") },
                         handle_sym_index: |_, _, _| unreachable!("Structurally impossible."),
                     };
 

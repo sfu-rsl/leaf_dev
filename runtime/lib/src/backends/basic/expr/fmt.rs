@@ -96,14 +96,6 @@ impl Display for RefValue {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
             RefValue::Immut(value) => write!(f, "&{value}"),
-            RefValue::Mut(full_place) => {
-                write!(
-                    f,
-                    "&mut ({} in {})",
-                    AsRef::<crate::backends::basic::Place>::as_ref(full_place),
-                    full_place.state_id()
-                )
-            }
         }
     }
 }

@@ -1,21 +1,16 @@
-use super::{
-    super::{expr::prelude::*, FullPlace, ValueRef},
-    ResolvedProjection, SymbolicProjector,
-};
+use super::{super::expr::prelude::*, ResolvedProjection, SymbolicProjector};
 use crate::abs::{
     expr::proj::{macros::impl_general_proj_through_singulars, Projector},
     FieldIndex, VariantIndex,
 };
 use std::fmt::Debug;
 
-pub(crate) struct ConcreteProjector<F, I> {
-    pub get_place: F,
+pub(crate) struct ConcreteProjector<I> {
     pub handle_sym_index: I,
 }
 
-impl<F, I> Projector for ConcreteProjector<F, I>
+impl<I> Projector for ConcreteProjector<I>
 where
-    F: Fn(&FullPlace) -> ValueRef,
     I: Fn(ConcreteValueRef, SymValueRef, bool) -> ValueRef,
 {
     type HostRef<'a> = ConcreteValueRef;
@@ -34,7 +29,6 @@ where
     ) -> Self::Proj<'a> {
         match host.as_ref() {
             ConcreteValue::Ref(RefValue::Immut(value)) => Ok(value.clone()),
-            ConcreteValue::Ref(RefValue::Mut(place)) => Ok((self.get_place)(place)),
             ConcreteValue::Const(ConstValue::Addr(addr)) => {
                 Ok(RawConcreteValue(*addr, None, LazyTypeInfo::None).to_value_ref())
             }

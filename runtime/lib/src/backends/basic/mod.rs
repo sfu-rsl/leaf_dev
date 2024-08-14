@@ -61,7 +61,6 @@ type Projection<L> = crate::abs::Projection<L>;
 type PlaceHandler = place::BasicPlaceHandler;
 #[cfg(not(place_addr))]
 type PlaceHandler = crate::abs::backend::implementation::DefaultPlaceHandler;
-type FullPlace = place::FullPlace<Place>;
 type Operand<S = SymValueRef> = operand::Operand<Place, S>;
 #[cfg(place_addr)]
 type OperandHandler<'a, SymValue> = operand::BasicOperandHandler<'a, Place, SymValue>;

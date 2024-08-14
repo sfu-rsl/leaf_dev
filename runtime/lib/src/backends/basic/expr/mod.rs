@@ -19,8 +19,6 @@ pub(crate) use crate::abs::{
 
 use crate::utils::meta::define_reversible_pair;
 
-use super::FullPlace;
-
 pub(crate) type ValueRef = Rc<Value>;
 pub(crate) type ConcreteValueRef = ConcreteValueGuard<ValueRef>;
 pub(crate) type ConcreteValueMutRef<'a> = ConcreteValueGuard<&'a mut ValueRef>;
@@ -580,7 +578,6 @@ pub(crate) enum RefValue {
      * usage of the original place, the mutable reference should be dead.
      */
     Immut(ValueRef),
-    Mut(FullPlace),
 }
 
 #[derive(Clone, Debug)]

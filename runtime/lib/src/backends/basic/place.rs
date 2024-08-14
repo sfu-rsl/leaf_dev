@@ -124,29 +124,6 @@ impl TryFrom<PlaceWithMetadata> for LocalWithMetadata {
     }
 }
 
-#[derive(Debug, Clone)]
-pub(crate) struct FullPlace<P, I = usize> {
-    place: P,
-    state_id: I,
-}
-
-impl<P, I> FullPlace<P, I> {
-    pub(crate) fn new(place: P, state_id: I) -> Self {
-        Self { place, state_id }
-    }
-
-    pub(crate) fn state_id(&self) -> &I {
-        &self.state_id
-    }
-}
-
-/* NOTE: We use [`AsRef`] instead of [`Deref`] to prevent accidental uses of local place. */
-impl<P, I> AsRef<P> for FullPlace<P, I> {
-    fn as_ref(&self) -> &P {
-        &self.place
-    }
-}
-
 #[derive(Default)]
 pub(crate) struct BasicPlaceHandler;
 
