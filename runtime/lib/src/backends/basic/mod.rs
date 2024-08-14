@@ -47,26 +47,14 @@ use self::{
 
 type TraceManager = dyn abs::backend::TraceManager<BasicBlockIndex, ValueRef>;
 
-#[cfg(place_addr)]
 type BasicVariablesState = RawPointerVariableState<SymProjector>;
 
 type BasicCallStackManager = call::BasicCallStackManager<BasicVariablesState>;
 
-#[cfg(place_addr)]
 type Place = place::PlaceWithMetadata;
-#[cfg(not(place_addr))]
-type Place = crate::abs::Place;
+
 type Projection<L> = crate::abs::Projection<L>;
-#[cfg(place_addr)]
-type PlaceHandler = place::BasicPlaceHandler;
-#[cfg(not(place_addr))]
-type PlaceHandler = crate::abs::backend::implementation::DefaultPlaceHandler;
 type Operand<S = SymValueRef> = operand::Operand<Place, S>;
-#[cfg(place_addr)]
-type OperandHandler<'a, SymValue> = operand::BasicOperandHandler<'a, Place, SymValue>;
-#[cfg(not(place_addr))]
-type OperandHandler<'a, SymValue> =
-    crate::abs::backend::implementation::DefaultOperandHandler<'a, Place, SymValue>;
 pub(crate) type Field<S = SymValueRef> = Operand<S>;
 
 pub struct BasicBackend {
@@ -95,7 +83,6 @@ impl BasicBackend {
         Self {
             call_stack_manager: BasicCallStackManager::new(
                 Box::new(move |id| {
-                    #[cfg(place_addr)]
                     let vars_state = RawPointerVariableState::new(
                         sym_projector.clone(),
                         type_manager_ref.clone(),
@@ -109,9 +96,6 @@ impl BasicBackend {
                         },
                         &config.sym_place,
                     );
-                    #[cfg(not(place_addr))]
-                    let vars_state =
-                        StackedLocalIndexVariablesState::new(id, sym_projector.clone());
 
                     vars_state
                 }),
@@ -126,7 +110,7 @@ impl BasicBackend {
 }
 
 impl RuntimeBackend for BasicBackend {
-    type PlaceHandler<'a> = PlaceHandler
+    type PlaceHandler<'a> = BasicPlaceHandler
     where
         Self: 'a;
 
@@ -674,7 +658,6 @@ pub(crate) struct BasicFunctionMetadataHandler<'a> {
 }
 
 impl BasicFunctionMetadataHandler<'_> {
-    #[cfg(place_addr)]
     pub(crate) fn preserve_metadata(&mut self, place: Place) {
         let local = place.local();
         let metadata = local.metadata();
@@ -703,7 +686,6 @@ struct BasicUntupleHelper<'a> {
 }
 
 impl UntupleHelper for BasicUntupleHelper<'_> {
-    #[cfg(place_addr)]
     fn make_tupled_arg_pseudo_place_meta(&mut self, addr: RawPointer) -> PlaceMetadata {
         let mut metadata = PlaceMetadata::default();
         metadata.set_address(addr);
@@ -732,14 +714,12 @@ impl UntupleHelper for BasicUntupleHelper<'_> {
     fn field_place(&mut self, mut base: Place, field: FieldIndex) -> Place {
         use abs::backend::PlaceHandler;
 
-        #[cfg(place_addr)]
         let base_addr = base.address();
 
         BasicPlaceHandler::default()
             .project_on(&mut base)
             .for_field(field);
 
-        #[cfg(place_addr)]
         if self.type_info.is_some() {
             // FIXME: Repeated checks
             let field_info = &self.fields_info().fields[field as usize];
@@ -783,7 +763,6 @@ impl<'a> BasicUntupleHelper<'a> {
             })
     }
 
-    #[cfg(place_addr)]
     fn set_metadata_from_type_info(metadata: &mut PlaceMetadata, type_info: &TypeInfo) {
         metadata.set_type_id(type_info.id);
         metadata.set_size(type_info.size);
@@ -825,10 +804,7 @@ fn get_operand_value(vars_state: &mut dyn VariablesState, operand: Operand) -> V
     match operand {
         // copy and move are the same, but only for now. see: https://github.com/rust-lang/unsafe-code-guidelines/issues/188
         Operand::Place(place, PlaceUsage::Copy) => vars_state.copy_place(&place),
-        #[cfg(place_addr)]
         Operand::Place(place, PlaceUsage::Move) => vars_state.take_place(&place),
-        #[cfg(not(place_addr))]
-        Operand::Place(place, PlaceUsage::Move) => vars_state.copy_place(&place),
         Operand::Const(constant) => Into::<ConcreteValue>::into(constant).to_value_ref(),
         Operand::Symbolic(sym) => sym.into(),
     }
@@ -877,7 +853,6 @@ trait CallStackManager {
      */
     fn prepare_for_call(&mut self, func: ValueRef, args: Vec<ValueRef>, are_args_tupled: bool);
 
-    #[cfg(place_addr)]
     fn set_local_metadata(&mut self, local: &Local, metadata: PlaceMetadata);
 
     fn try_untuple_argument<'a, 'b>(
@@ -898,7 +873,6 @@ trait CallStackManager {
 }
 
 trait UntupleHelper {
-    #[cfg(place_addr)]
     fn make_tupled_arg_pseudo_place_meta(&mut self, addr: RawPointer) -> PlaceMetadata;
 
     fn num_fields(&self, tupled_value: &ValueRef) -> FieldIndex;

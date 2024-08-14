@@ -23,9 +23,7 @@ pub(super) struct BasicCallStackManager<VS: VariablesState> {
     /// The data passed between from the call point (in the caller)
     /// to the entrance point (in the callee).
     latest_call: Option<CallInfo>,
-    #[cfg(place_addr)]
     args_metadata: Vec<Option<PlaceMetadata>>,
-    #[cfg(place_addr)]
     return_val_metadata: Option<PlaceMetadata>,
     /// The data (return value) passed between the exit point (in the callee)
     /// to the return point (in the caller).
@@ -48,13 +46,9 @@ pub(super) struct CallStackFrame {
     /// destination variable.
     overridden_return_val: Option<ValueRef>,
     arg_locals: Vec<ArgLocal>,
-    #[cfg(place_addr)]
     return_val_metadata: Option<PlaceMetadata>,
 }
 
-#[cfg(not(place_addr))]
-type ArgLocal = Local;
-#[cfg(place_addr)]
 type ArgLocal = LocalWithMetadata;
 pub(super) struct CallInfo {
     expected_func: ValueRef,
@@ -68,9 +62,7 @@ impl<VS: VariablesState> BasicCallStackManager<VS> {
             stack: vec![],
             vars_state_factory,
             latest_call: None,
-            #[cfg(place_addr)]
             args_metadata: vec![],
-            #[cfg(place_addr)]
             return_val_metadata: None,
             latest_returned_val: None,
             vars_state: None,
@@ -162,13 +154,12 @@ impl<VS: VariablesState + SelfHierarchical> BasicCallStackManager<VS> {
 
     fn untuple(
         tupled_value: ValueRef,
-        #[cfg(place_addr)] tupled_arg_metadata: Option<&PlaceMetadata>,
+        tupled_arg_metadata: Option<&PlaceMetadata>,
         untuple_helper: &mut dyn UntupleHelper,
         isolated_vars_state: VS,
     ) -> Vec<ValueRef> {
         // Make a pseudo place for the tupled argument
         let tupled_local = Local::Argument(1);
-        #[cfg(place_addr)]
         let tupled_local = {
             let metadata = untuple_helper.make_tupled_arg_pseudo_place_meta(
                 /* NOTE: The address should not really matter, but let's keep it realistic. */
@@ -176,8 +167,6 @@ impl<VS: VariablesState + SelfHierarchical> BasicCallStackManager<VS> {
             );
             ArgLocal::from((tupled_local, metadata))
         };
-        #[cfg(not(place_addr))]
-        let tupled_local = ArgLocal::from(tupled_local);
         let tupled_pseudo_place = Place::from(tupled_local);
 
         // Write the value to the pseudo place in an isolated state, then read the fields
@@ -207,7 +196,7 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
         debug_assert_eq!(self.args_metadata.len(), 0);
         debug_assert_eq!(self.return_val_metadata.is_none(), true);
     }
-    #[cfg(place_addr)]
+
     fn set_local_metadata(&mut self, local: &Local, metadata: super::place::PlaceMetadata) {
         match local {
             Local::ReturnValue => self.return_val_metadata = Some(metadata),
@@ -247,7 +236,6 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
         let tupled_value = args.remove(arg_index);
         let untupled_args = Self::untuple(
             tupled_value,
-            #[cfg(place_addr)]
             self.args_metadata.get(arg_index).and_then(|m| m.as_ref()),
             untuple_helper().as_mut(),
             (self.vars_state_factory)(usize::MAX),
@@ -257,7 +245,6 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
     }
 
     fn notify_enter(&mut self, current_func: ValueRef) {
-        #[cfg(place_addr)]
         let arg_locals = self
             .args_metadata
             .drain(..)
@@ -266,14 +253,9 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
             .enumerate()
             .map(|(i, metadata)| ArgLocal::new(Local::Argument((i + 1) as LocalIndex), metadata))
             .collect::<Vec<_>>();
-        #[cfg(not(place_addr))]
-        let arg_locals = (1..=args.len())
-            .map(|i| Local::Argument(i as LocalIndex))
-            .collect::<Vec<_>>();
 
         let call_stack_frame = CallStackFrame {
             arg_locals: arg_locals.clone(),
-            #[cfg(place_addr)]
             return_val_metadata: self.return_val_metadata.take(),
             ..Default::default()
         };
@@ -327,9 +309,6 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
             self.top().take_place(&Place::from(local));
         });
 
-        #[cfg(not(place_addr))]
-        let ret_local = Some(Local::ReturnValue);
-        #[cfg(place_addr)]
         let ret_local = popped_frame
             .return_val_metadata
             // When return type is unit, metadata may be removed.

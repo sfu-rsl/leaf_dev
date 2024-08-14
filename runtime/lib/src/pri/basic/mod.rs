@@ -78,32 +78,25 @@ impl ProgramRuntimeInterface for BasicPri {
     fn ref_place_subtype(place: PlaceRef /*, type */) {
         mut_place_ref(place, |p, place| p.project_on(place).subtype())
     }
-    #[cfg(place_addr)]
     fn set_place_address(place: PlaceRef, raw_ptr: RawPointer) {
         mut_place_ref(place, |p, place| p.metadata(place).set_address(raw_ptr));
     }
-    #[cfg(place_addr)]
     fn set_place_type_id(place: PlaceRef, type_id: Self::TypeId) {
         mut_place_ref(place, |h, p| h.metadata(p).set_type_id(type_id))
     }
-    #[cfg(place_addr)]
     fn set_place_type_bool(place: PlaceRef) {
         Self::set_place_type(place, ValueType::Bool)
     }
-    #[cfg(place_addr)]
     fn set_place_type_char(place: PlaceRef) {
         Self::set_place_type(place, ValueType::Char)
     }
-    #[cfg(place_addr)]
     fn set_place_type_int(place: PlaceRef, bit_size: u64, is_signed: bool) {
         Self::set_place_type(place, ValueType::new_int(bit_size, is_signed))
     }
-    #[cfg(place_addr)]
     fn set_place_type_float(place: PlaceRef, e_bits: u64, s_bits: u64) {
         Self::set_place_type(place, ValueType::new_float(e_bits, s_bits))
     }
 
-    #[cfg(place_addr)]
     fn set_place_size(place: PlaceRef, byte_size: TypeSize) {
         mut_place_ref(place, |h, p| h.metadata(p).set_size(byte_size))
     }
@@ -270,12 +263,7 @@ impl ProgramRuntimeInterface for BasicPri {
     }
 
     // We use slice to simplify working with the interface.
-    fn assign_aggregate_array(
-        dest: PlaceRef,
-        items: &[OperandRef],
-        #[cfg(place_addr)] align: Alignment,
-    ) {
-        #[cfg(place_addr)]
+    fn assign_aggregate_array(dest: PlaceRef, items: &[OperandRef], align: Alignment) {
         log_warn!(
             "Align is going to be supported based on types. Ignoring it {}.",
             align
@@ -392,7 +380,6 @@ impl ProgramRuntimeInterface for BasicPri {
         });
     }
 
-    #[cfg(place_addr)]
     fn preserve_special_local_metadata(place: PlaceRef) {
         func_control(|h| h.metadata().preserve_metadata(take_back_place_ref(place)))
     }
@@ -473,7 +460,6 @@ impl ProgramRuntimeInterface for BasicPri {
 }
 
 impl BasicPri {
-    #[cfg(place_addr)]
     fn set_place_type(place: PlaceRef, ty: ValueType) {
         mut_place_ref(place, |p, place| p.metadata(place).set_primitive_type(ty));
     }

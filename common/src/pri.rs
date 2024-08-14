@@ -278,21 +278,13 @@ pub mod macros {
               { fn ref_place_opaque_cast(place: PlaceRef /*, type */) }
               { fn ref_place_subtype(place: PlaceRef /*, type */) }
 
-              #[cfg(place_addr)]
               { fn set_place_address(place: PlaceRef, raw_ptr: RawPointer) }
               #[allow(unused_parens)]
-              #[cfg(place_addr)]
               { fn set_place_type_id(place: PlaceRef, type_id: ($type_id_ty)) }
-              #[cfg(place_addr)]
               { fn set_place_type_bool(place: PlaceRef) }
-              #[cfg(place_addr)]
               { fn set_place_type_char(place: PlaceRef) }
-              #[cfg(place_addr)]
               { fn set_place_type_int(place: PlaceRef, bit_size: u64, is_signed: bool) }
-              #[cfg(place_addr)]
               { fn set_place_type_float(place: PlaceRef, e_bits: u64, s_bits: u64) }
-
-              #[cfg(place_addr)]
               { fn set_place_size(place: PlaceRef, byte_size: TypeSize) }
 
               { fn ref_operand_copy(place: PlaceRef) -> OperandRef }
@@ -357,7 +349,7 @@ pub mod macros {
               { fn assign_aggregate_array(
                   dest: PlaceRef,
                   items: ($slice_ty!(OperandRef)),
-                  #[cfg(place_addr)] align: Alignment,
+                  align: Alignment,
               ) }
               #[allow(unused_parens)]
               { fn assign_aggregate_tuple(dest: PlaceRef, fields: ($slice_ty!(OperandRef))) }
@@ -414,7 +406,6 @@ pub mod macros {
               #[allow(unused_parens)]
               { fn before_call_func(func: OperandRef, args: ($slice_ty!(OperandRef)), are_args_tupled: bool) }
 
-              #[cfg(place_addr)]
               { fn preserve_special_local_metadata(place: PlaceRef) }
 
               #[allow(unused_parens)]
@@ -587,19 +578,19 @@ pub mod macros {
             }$modifier!{
                 fn ref_place_subtype(place:PlaceRef);
             }$modifier!{
-                #[cfg(place_addr)]fn set_place_address(place:PlaceRef,raw_ptr:RawPointer);
+                fn set_place_address(place:PlaceRef,raw_ptr:RawPointer);
             }$modifier!{
-                #[allow(unused_parens)]#[cfg(place_addr)]fn set_place_type_id(place:PlaceRef,type_id:($type_id_ty));
+                #[allow(unused_parens)]fn set_place_type_id(place:PlaceRef,type_id:($type_id_ty));
             }$modifier!{
-                #[cfg(place_addr)]fn set_place_type_bool(place:PlaceRef);
+                fn set_place_type_bool(place:PlaceRef);
             }$modifier!{
-                #[cfg(place_addr)]fn set_place_type_char(place:PlaceRef);
+                fn set_place_type_char(place:PlaceRef);
             }$modifier!{
-                #[cfg(place_addr)]fn set_place_type_int(place:PlaceRef,bit_size:u64,is_signed:bool);
+                fn set_place_type_int(place:PlaceRef,bit_size:u64,is_signed:bool);
             }$modifier!{
-                #[cfg(place_addr)]fn set_place_type_float(place:PlaceRef,e_bits:u64,s_bits:u64);
+                fn set_place_type_float(place:PlaceRef,e_bits:u64,s_bits:u64);
             }$modifier!{
-                #[cfg(place_addr)]fn set_place_size(place:PlaceRef,byte_size:TypeSize);
+                fn set_place_size(place:PlaceRef,byte_size:TypeSize);
             }$modifier!{
                 fn ref_operand_copy(place:PlaceRef)->OperandRef;
             }$modifier!{
@@ -669,7 +660,7 @@ pub mod macros {
             }$modifier!{
                 fn assign_discriminant(dest:PlaceRef,place:PlaceRef);
             }$modifier!{
-                #[allow(unused_parens)]fn assign_aggregate_array(dest:PlaceRef,items:($slice_ty!(OperandRef)), #[cfg(place_addr)]align:Alignment,);
+                #[allow(unused_parens)]fn assign_aggregate_array(dest:PlaceRef,items:($slice_ty!(OperandRef)), align:Alignment,);
             }$modifier!{
                 #[allow(unused_parens)]fn assign_aggregate_tuple(dest:PlaceRef,fields:($slice_ty!(OperandRef)));
             }$modifier!{
@@ -709,7 +700,7 @@ pub mod macros {
             }$modifier!{
                 #[allow(unused_parens)]fn before_call_func(func:OperandRef,args:($slice_ty!(OperandRef)),are_args_tupled:bool);
             }$modifier!{
-                #[cfg(place_addr)]fn preserve_special_local_metadata(place:PlaceRef);
+                fn preserve_special_local_metadata(place:PlaceRef);
             }$modifier!{
                 #[allow(unused_parens)]fn try_untuple_argument(arg_index:LocalIndex,tuple_type_id:($type_id_ty));
             }$modifier!{

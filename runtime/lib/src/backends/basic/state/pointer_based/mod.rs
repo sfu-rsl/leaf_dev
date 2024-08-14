@@ -778,7 +778,6 @@ impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
             Value::Symbolic(_) => {
                 insert(entry, (SymValueRef::new(value), type_id));
             }
-            #[cfg(place_addr)]
             Value::Concrete(ConcreteValue::Adt(adt)) => {
                 self.set_addr_adt(addr, adt, type_id);
             }

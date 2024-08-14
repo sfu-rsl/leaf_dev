@@ -41,7 +41,6 @@ pub fn mark_as_nctfe() {}
  */
 
 #[used]
-#[cfg(place_addr)]
 static _SET_PLACE_ADDR_TYPED_REFERENCER: fn(PlaceRef, *const u32) -> () =
     set_place_address_typed::<u32>;
 
