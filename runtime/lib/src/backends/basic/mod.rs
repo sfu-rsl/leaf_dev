@@ -356,7 +356,8 @@ impl<EB: OperationalExprBuilder> BasicAssignmentHandler<'_, EB> {
         if place_value.is_symbolic() {
             debug_assert!(
                 place_value.as_proj().is_some(),
-                "A symbolic place should correspond to a symbolic projection."
+                "A symbolic place should correspond to a symbolic projection. Found: {:?}",
+                place_value,
             );
             Ok(ProjExprRef::new(place_value))
         } else {

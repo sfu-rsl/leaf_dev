@@ -16,7 +16,7 @@ const ENV_RUST_BACKTRACE: &str = "RUST_BACKTRACE";
 const LOG_CONFIG: &str = "off";
 
 // Disable warnings to avoid polluting the output
-const RUST_FLAGS: &str = "-Awarnings";
+const RUST_FLAGS: [&str; 2] = ["-Awarnings", "-Coverflow-checks=off"];
 
 const PATH_LEAFC: &str = env!("CARGO_BIN_EXE_leafc");
 
@@ -60,7 +60,7 @@ fn test_compile_toml(source_dir: &str) {
     cmd.arg("build")
         .env("CARGO_TARGET_DIR", &output_dir)
         .env(ENV_RUSTC, env!("CARGO_BIN_EXE_leafc"))
-        .env(ENV_RUST_FLAGS, RUST_FLAGS)
+        .env(ENV_RUST_FLAGS, RUST_FLAGS.join(" "))
         .current_dir(path_in_proj_root(source_dir));
 
     let status = cmd
@@ -149,7 +149,7 @@ fn run_compilation(src_file: &Path) -> CompilationResult {
 
     const EXE_NAME: &str = "program";
     cmd.current_dir(&work_dir)
-        .arg(RUST_FLAGS)
+        .args(RUST_FLAGS)
         .arg("--edition=2021");
 
     let out_file = work_dir.join(EXE_NAME);
