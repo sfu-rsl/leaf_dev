@@ -1,23 +1,32 @@
 use ignore::WalkBuilder;
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
+use regex::Regex;
 use std::path::{Path, MAIN_SEPARATOR};
 use syn::{parse_macro_input, Attribute, ImplItem, ItemFn, ItemImpl, LitStr};
 
 #[proc_macro_attribute]
 pub fn gen_tests_rs(input_path: TokenStream, input_fn: TokenStream) -> TokenStream {
+    let re = Regex::new(r"folder=([^,]+),ignore_files=\[([^)]+)\]").unwrap();
+    let binding = input_path.to_string();
+    let caps = re.captures(binding.as_str()).unwrap();
+
+    //caps[1] = folder name
+    //caps[2] = ignore file names
     let mut tests = proc_macro2::TokenStream::new();
     let test_fn = parse_macro_input!(input_fn as ItemFn);
     let test_name_fn = &test_fn.sig.ident;
 
-    let ignore_filename = format!(".{}.ignore", test_name_fn);
-    for entry in WalkBuilder::new(Path::new(&parse_macro_input!(input_path as LitStr).value()))
-        .hidden(false)
-        .ignore(false)
-        .add_custom_ignore_filename(ignore_filename.clone())
-        .build()
-        .filter_map(|entry| entry.ok())
-    {
+    let mut binding = WalkBuilder::new(Path::new(&caps[1]));
+
+    let mut file_walker = binding.hidden(false).ignore(false);
+    file_walker = caps[2].split(',').fold(file_walker, |walker, file| {
+        walker.add_custom_ignore_filename(file.trim())
+    });
+
+    let file_walker = file_walker.build().filter_map(|entry| entry.ok());
+
+    for entry in file_walker {
         let path = entry.path();
         if !path.extension().is_some_and(|ext| ext == "rs") {
             continue;
@@ -25,6 +34,7 @@ pub fn gen_tests_rs(input_path: TokenStream, input_fn: TokenStream) -> TokenStre
 
         let test_name = format_ident!("{}", get_test_name(path));
         let test_path = &path.display().to_string();
+
         tests.extend(quote! {
             #[test]
             fn #test_name() {

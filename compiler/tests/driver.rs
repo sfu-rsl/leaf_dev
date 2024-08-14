@@ -25,7 +25,7 @@ const FILENAME_TYPES: &str = "types.json";
 const FILENAME_EXECUTION_IGNORE: &str = ".test_execution_rs.ignore";
 const FILENAME_COMPILE_IGNORE: &str = ".test_compile_rs.ignore";
 
-#[gen_tests_rs("samples")]
+#[gen_tests_rs("folder=samples,ignore_files=[.test_compile_rs.ignore]")]
 fn test_compile_rs(fic: &str) {
     let result = run_compilation(&path_in_proj_root(fic));
 
@@ -79,28 +79,7 @@ fn test_compile_toml(source_dir: &str) {
     }
 }
 
-#[test]
-fn test_executions_rs() {
-    // TODO: #427
-
-    for entry in WalkBuilder::new(path_in_proj_root(DIR_SAMPLES_ROOT))
-        .hidden(false)
-        .ignore(false)
-        .add_custom_ignore_filename(FILENAME_COMPILE_IGNORE)
-        .add_custom_ignore_filename(FILENAME_EXECUTION_IGNORE)
-        .build()
-        .filter_map(|entry| entry.ok())
-    {
-        let path = entry.path();
-        if !path.extension().is_some_and(|ext| ext == "rs") {
-            continue;
-        }
-
-        let fic = path.display().to_string();
-        test_execution_rs(&fic);
-    }
-}
-
+#[gen_tests_rs("folder=samples,ignore_files=[.test_compile_rs.ignore,.test_execution_rs.ignore]")]
 fn test_execution_rs(fic: &str) {
     let compilation_result = run_compilation(&path_in_proj_root(fic));
     assert!(
