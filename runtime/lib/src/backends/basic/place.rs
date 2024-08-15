@@ -91,10 +91,6 @@ impl PlaceWithMetadata {
     pub(crate) fn address(&self) -> RawAddress {
         self.metadata().address()
     }
-
-    pub(crate) fn proj_addresses(&self) -> impl Iterator<Item = RawAddress> + '_ {
-        self.projs_metadata().map(|m| m.address())
-    }
 }
 
 impl From<Local> for PlaceWithMetadata {

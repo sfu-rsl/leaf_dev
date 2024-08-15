@@ -7,8 +7,7 @@ use std::{
     ops::Bound,
 };
 
-use crate::abs::RawPointer;
-use common::{log_debug, types::RawAddress};
+use common::types::RawAddress;
 
 use super::MemoryObject;
 

@@ -82,7 +82,7 @@ impl BasicBackend {
         let trace_manager = trace_manager_ref.clone();
         Self {
             call_stack_manager: BasicCallStackManager::new(
-                Box::new(move |id| {
+                Box::new(move |_id| {
                     let vars_state = RawPointerVariableState::new(
                         sym_projector.clone(),
                         type_manager_ref.clone(),

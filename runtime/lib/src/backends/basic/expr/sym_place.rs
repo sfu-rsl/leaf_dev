@@ -23,7 +23,6 @@
  * symbolic read, which may be resolved on demand.
  */
 
-use common::pri::RawPointer;
 use derive_more::From;
 
 use crate::abs::TypeId;
@@ -679,21 +678,6 @@ mod implementation {
     pub(super) mod utils {
         use super::{RawPointerRetriever, Select, SliceIndex, TypeId, TypeManager};
         use crate::{abs::expr::proj::ProjectionOn, backends::basic::expr::prelude::*};
-
-        impl SymValue {
-            pub(super) fn expect_proj(&self) -> &ProjExpr {
-                self.as_proj().unwrap_or_else(|| {
-                    panic!(
-                        concat!(
-                            "Complex symbolic values are not supported by this resolver. ",
-                            "The symbolic host is expected to be a projection expression.",
-                            "Found: {:?}"
-                        ),
-                        self
-                    )
-                })
-            }
-        }
 
         pub(super) enum ProjBase<'a, M = ProjMetadata> {
             Concrete(&'a ConcreteHostProj<M>),

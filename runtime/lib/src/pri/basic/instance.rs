@@ -125,18 +125,6 @@ pub(super) fn push_operand_ref(
     let operand = perform_on_backend(|r| get_operand(r.operand()));
     perform_on_operand_ref_manager(|rm| rm.push(operand))
 }
-pub(super) fn mut_operand_ref(
-    operand_ref: OperandRef,
-    mut_operand: impl FnOnce(<BackendImpl as RuntimeBackend>::OperandHandler<'_>, &mut OperandImpl),
-) {
-    perform_on_operand_ref_manager(|rm| {
-        let operand = rm.get_mut(operand_ref);
-        perform_on_backend(|r| {
-            let handler = r.operand();
-            mut_operand(handler, operand);
-        });
-    });
-}
 pub(super) fn take_back_operand_ref(reference: OperandRef) -> OperandImpl {
     perform_on_operand_ref_manager(|rm| rm.take(reference))
 }

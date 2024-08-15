@@ -27,7 +27,7 @@ use crate::{
     tyexp::TypeInfoExt,
     utils::SelfHierarchical,
 };
-use common::tyexp::{ArrayShape, FieldsShapeInfo, StructShape, TypeInfo, UnionShape};
+use common::tyexp::{FieldsShapeInfo, StructShape, TypeInfo, UnionShape};
 
 use super::{
     super::{
