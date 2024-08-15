@@ -27,11 +27,8 @@ impl ExprBuilder<ValueRef> for DefaultExprBuilder {
 
 impl ValueRefBinaryExprBuilder for DefaultExprBuilder {}
 
-pub(super) use adapters::ConcreteBuilder;
-
 mod toplevel {
-
-    use super::{adapters::ConcreteBuilder, symbolic::SymbolicBuilder, *};
+    use super::{concrete::ConcreteAbstractorBuilder, symbolic::SymbolicBuilder, *};
 
     /// An expression builder that separates the path for expressions that involve symbolic values,
     /// or the ones that are fully based on concrete values.
@@ -40,7 +37,7 @@ mod toplevel {
     #[derive(Default)]
     pub(crate) struct TopLevelBuilder {
         sym_builder: SymbolicBuilder,
-        conc_builder: ConcreteBuilder,
+        conc_builder: ConcreteAbstractorBuilder,
     }
 
     impl BinaryExprBuilder for TopLevelBuilder {
@@ -187,33 +184,6 @@ mod adapters {
     impl From<Expr> for ValueRef {
         fn from(expr: Expr) -> Self {
             Into::<Value>::into(expr).to_value_ref()
-        }
-    }
-
-    #[derive(Default, Deref, DerefMut)]
-    pub(crate) struct ConcreteBuilder(concrete::ConcreteBuilder);
-
-    impl BinaryExprBuilderAdapter for ConcreteBuilder {
-        type TargetExprRefPair<'a> = (ConcreteValueRef, ConcreteValueRef);
-        type TargetExpr<'a> = ValueRef;
-
-        fn adapt<'t, F>(operands: Self::TargetExprRefPair<'t>, build: F) -> Self::TargetExpr<'t>
-        where
-            F: for<'s> FnH<<Self::Target as BEB>::ExprRefPair<'s>, <Self::Target as BEB>::Expr<'s>>,
-        {
-            ValueRef::new(build((operands.0.as_ref(), operands.1.as_ref())).into())
-        }
-    }
-
-    impl UnaryExprBuilderAdapter for ConcreteBuilder {
-        type TargetExprRef<'a> = ConcreteValueRef;
-        type TargetExpr<'a> = ValueRef;
-
-        fn adapt<'t, F>(operand: Self::TargetExprRef<'t>, build: F) -> Self::TargetExpr<'t>
-        where
-            F: for<'s> FnH<<Self::Target as UEB>::ExprRef<'s>, <Self::Target as UEB>::Expr<'s>>,
-        {
-            ValueRef::new(build(operand.as_ref()).into())
         }
     }
 
@@ -509,200 +479,49 @@ mod core {
 
 mod concrete {
     use super::*;
-    use ConcreteValue::*;
-
-    pub(crate) type ConcreteBuilder =
-        Chained<UnevalShortCircuiterBuilder, CoreConcreteBuilder, ConcreteValue, UnevalValue>;
 
     #[derive(Default)]
-    pub(crate) struct CoreConcreteBuilder;
+    pub(crate) struct ConcreteAbstractorBuilder;
 
-    impl BinaryExprBuilder for CoreConcreteBuilder {
-        type ExprRefPair<'a> = (&'a ConcreteValue, &'a ConcreteValue);
-        type Expr<'a> = ConcreteValue;
+    impl BinaryExprBuilder for ConcreteAbstractorBuilder {
+        type ExprRefPair<'a> = (ConcreteValueRef, ConcreteValueRef);
+        type Expr<'a> = ValueRef;
 
         fn binary_op<'a>(
             &mut self,
-            operands: Self::ExprRefPair<'a>,
-            op: BinaryOp,
-        ) -> Self::Expr<'a> {
-            match operands {
-                (Const(first_c), Const(second_c)) => ConstValue::binary_op(first_c, second_c, op),
-                _ => unreachable!(
-                    "Binary operations for concrete values are only supposed to be called on constants."
-                ),
-            }
-        }
-
-        impl_singular_binary_ops_through_general!();
-    }
-
-    impl UnaryExprBuilder for CoreConcreteBuilder {
-        type ExprRef<'a> = &'a ConcreteValue;
-        type Expr<'a> = ConcreteValue;
-
-        fn unary_op<'a>(&mut self, operand: Self::ExprRef<'a>, op: UnaryOp) -> Self::Expr<'a> {
-            match operand {
-                Const(c) => match BasicUnaryOp::try_from(op) {
-                    Ok(op) => ConstValue::unary_op(c, op).into(),
-                    Err(_) => {
-                        unreachable!("Unexpected unary operation {:?} on a concrete value.", op)
-                    }
-                },
-                _ => unreachable!(
-                    "Unary operations for concrete values are only supposed to be called on constants."
-                ),
-            }
-        }
-
-        impl_singular_unary_ops_through_general!();
-
-        fn address_of<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
-            match operand {
-                Unevaluated(UnevalValue::Lazy(RawConcreteValue(addr, ..))) => ConstValue::new_int(
-                    *addr as u128,
-                    IntType {
-                        bit_size: std::mem::size_of_val(&addr) as u64 * 8,
-                        is_signed: false,
-                    },
-                )
-                .into(),
-                _ => unreachable!("Address information is not available."),
-            }
-        }
-
-        fn len<'a>(&mut self, of: Self::ExprRef<'a>) -> Self::Expr<'a> {
-            match of {
-                Array(arr) => {
-                    let len = arr.len();
-                    ConstValue::new_int(
-                        len as u128,
-                        IntType {
-                            bit_size: std::mem::size_of_val(&len) as u64 * 8,
-                            is_signed: false,
-                        },
-                    )
-                    .into()
-                }
-                _ => unreachable!(
-                    "Length operation for concrete values is supposed to be called on arrays."
-                ),
-            }
-        }
-
-        fn discriminant<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
-            match operand {
-                /* FIXME: #87 */
-                Adt(AdtValue {
-                    kind: AdtKind::Enum { variant },
-                    ..
-                }) => ConstValue::from(*variant).into(),
-                _ => {
-                    unreachable!("Discriminant is only supposed to be called on (concrete) enums.",)
-                }
-            }
-        }
-
-        fn cast<'a>(
-            &mut self,
-            operand: Self::ExprRef<'a>,
-            target: crate::abs::CastKind,
-        ) -> Self::Expr<'a> {
-            use CastKind::*;
-            match target {
-                ToChar | ToInt(_) | ToFloat(_) => match operand {
-                    Const(c) => match target {
-                        ToChar => match c {
-                            ConstValue::Int { bit_rep, .. } => {
-                                ConstValue::Char(bit_rep.0 as u8 as char).into()
-                            }
-                            _ => unreachable!(
-                                "Casting to char is supposed to happen only on an unsigned byte."
-                            ),
-                        },
-                        ToInt(to) => ConstValue::integer_cast(c, to).into(),
-                        ToFloat(to) => todo!("Support casting to float {to:?}"),
-                        _ => unreachable!(),
-                    },
-                    _ => unreachable!("Numeric casts are supposed to happen on a constant."),
-                },
-                ExposeProvenance | ToPointer(_) => {
-                    todo!("#313: Add support for raw pointers in concrete values domain")
-                }
-                PointerUnsize | SizedDynamize | Transmute(_) => {
-                    unimplemented!(concat!(
-                        "Add support for these types of casts of concrete values if necessary.",
-                        "Presumably, this case does not happen with abstract value concretization, ",
-                        "unless it is an item in an array which is accessed by a symbolic index."
-                    ))
-                }
-            }
-        }
-    }
-
-    /// This expression builder checks for unevaluated operands and if there are
-    /// any, it returns a general unevaluated result for any operation on them.
-    /// In some sense, it overapproximates the result and avoids real evaluations.
-    /// # Remarks
-    /// This is based on the assumption that the result is only used as an
-    /// r-value (of an assignment), and we can fetch the concrete value later
-    /// using the l-value. Thus an expression known to generate a concrete value
-    /// does not need to be evaluated.
-    #[derive(Default)]
-    pub(crate) struct UnevalShortCircuiterBuilder;
-
-    impl BinaryExprBuilder for UnevalShortCircuiterBuilder {
-        type ExprRefPair<'a> = (&'a ConcreteValue, &'a ConcreteValue);
-        type Expr<'a> = Result<UnevalValue, Self::ExprRefPair<'a>>;
-
-        fn binary_op<'a>(
-            &mut self,
-            operands: Self::ExprRefPair<'a>,
+            _operands: Self::ExprRefPair<'a>,
             _op: BinaryOp,
         ) -> Self::Expr<'a> {
-            /* If either of the operands is unevaluated, the result will not be evaluated.
-             * (the other operator is also concrete, so the result is concrete.) */
-            Self::some_if_uneval(operands.0)
-                .or_else(|_| Self::some_if_uneval(operands.1))
-                .map_err(|_| operands)
+            UnevalValue::Some.to_value_ref()
         }
 
         impl_singular_binary_ops_through_general!();
     }
 
-    impl UnaryExprBuilder for UnevalShortCircuiterBuilder {
-        type ExprRef<'a> = &'a ConcreteValue;
-        type Expr<'a> = Result<UnevalValue, Self::ExprRef<'a>>;
+    impl UnaryExprBuilder for ConcreteAbstractorBuilder {
+        type ExprRef<'a> = ConcreteValueRef;
+        type Expr<'a> = ValueRef;
 
-        fn unary_op<'a>(&mut self, operand: Self::ExprRef<'a>, _op: UnaryOp) -> Self::Expr<'a> {
-            Self::some_if_uneval(operand)
-        }
-
-        fn address_of<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
-            Self::some_if_uneval(operand)
-        }
-
-        fn len<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
-            Self::some_if_uneval(operand)
-        }
-
-        fn discriminant<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
-            Self::some_if_uneval(operand)
-        }
-
-        fn cast<'a>(&mut self, operand: Self::ExprRef<'a>, _target: CastKind) -> Self::Expr<'a> {
-            Self::some_if_uneval(operand)
+        fn unary_op<'a>(&mut self, _operand: Self::ExprRef<'a>, _op: UnaryOp) -> Self::Expr<'a> {
+            UnevalValue::Some.to_value_ref()
         }
 
         impl_singular_unary_ops_through_general!();
-    }
 
-    impl UnevalShortCircuiterBuilder {
-        fn some_if_uneval(operand: &ConcreteValue) -> Result<UnevalValue, &ConcreteValue> {
-            match operand {
-                Unevaluated(..) => Ok(UnevalValue::Some),
-                _ => Err(operand),
-            }
+        fn address_of<'a>(&mut self, _operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
+            UnevalValue::Some.to_value_ref()
+        }
+
+        fn len<'a>(&mut self, _operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
+            UnevalValue::Some.to_value_ref()
+        }
+
+        fn discriminant<'a>(&mut self, _operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
+            UnevalValue::Some.to_value_ref()
+        }
+
+        fn cast<'a>(&mut self, _operand: Self::ExprRef<'a>, ـtarget: CastKind) -> Self::Expr<'a> {
+            UnevalValue::Some.to_value_ref()
         }
     }
 }

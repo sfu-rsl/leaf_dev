@@ -125,64 +125,6 @@ impl<'a> DefaultProjExprReadResolver<'a> {
     }
 }
 
-pub(super) fn apply_address_of(
-    mut host: SymbolicProjResult,
-    resolver: &mut impl ProjExprResolver,
-) -> SymbolicProjResult {
-    use implementation::SymbolicProjResultValueMutator::Mutator;
-    host.mutate_values(
-        Mutator(&mut |value: &mut SingleProjResult| {
-            *value = match value {
-                SingleProjResult::Transmuted(_) => todo!("Transmutation is not supported yet."),
-                SingleProjResult::Value(value) => {
-                    assert!(
-                        !value.is_symbolic(),
-                        "A symbolic value is not expected, got: {:?}",
-                        value
-                    );
-                    use crate::abs::expr::UnaryExprBuilder;
-                    use crate::backends::basic::expr::builders::ConcreteBuilder;
-                    ConcreteBuilder::default()
-                        .address_of(ConcreteValueRef::new(value.clone()))
-                        .into()
-                }
-            }
-        }),
-        resolver,
-    );
-    host
-}
-
-/// Applies the length operator on the given `Select` value, i.e. the result `Select` leaf values
-/// correspond to the lengths of the host leaf values.
-pub(super) fn apply_len(
-    mut host: SymbolicProjResult,
-    resolver: &mut impl ProjExprResolver,
-) -> SymbolicProjResult {
-    use implementation::SymbolicProjResultValueMutator::Mutator;
-    host.mutate_values(
-        Mutator(&mut |value: &mut SingleProjResult| {
-            *value = match value {
-                SingleProjResult::Transmuted(_) => todo!("Transmutation is not supported yet."),
-                SingleProjResult::Value(value) => {
-                    assert!(
-                        !value.is_symbolic(),
-                        "A symbolic value is not expected, got: {:?}",
-                        value
-                    );
-                    use crate::abs::expr::UnaryExprBuilder;
-                    use crate::backends::basic::expr::builders::ConcreteBuilder;
-                    ConcreteBuilder::default()
-                        .len(ConcreteValueRef::new(value.clone()))
-                        .into()
-                }
-            }
-        }),
-        resolver,
-    );
-    host
-}
-
 mod implementation {
     use crate::{
         abs::{

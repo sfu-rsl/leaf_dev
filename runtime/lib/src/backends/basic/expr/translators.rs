@@ -4,7 +4,6 @@ pub(crate) mod z3 {
         default::Default,
         mem::{discriminant, size_of},
         ops::Not,
-        rc::Rc,
     };
 
     use z3::{
@@ -14,16 +13,13 @@ pub(crate) mod z3 {
 
     use crate::{
         abs::{expr::sym_place::SelectTarget, FieldIndex, IntType, ValueType},
-        backends::basic::{
-            alias::TypeManager,
-            expr::{
-                prelude::*,
-                sym_place::{
-                    apply_address_of, apply_len, DefaultProjExprReadResolver, ProjExprResolver,
-                    Select, SingleProjResult, SymbolicProjResult, TransmutedValue,
-                },
-                SymBinaryOperands, SymVarId,
+        backends::basic::expr::{
+            prelude::*,
+            sym_place::{
+                DefaultProjExprReadResolver, ProjExprResolver, Select, SingleProjResult,
+                SymbolicProjResult, TransmutedValue,
             },
+            SymBinaryOperands, SymVarId,
         },
         solvers::z3::{ArrayNode, ArraySort, BVNode, BVSort},
     };
