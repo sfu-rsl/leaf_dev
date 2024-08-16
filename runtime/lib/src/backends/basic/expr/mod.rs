@@ -1,6 +1,7 @@
 pub(super) mod builders;
 mod fmt;
 pub(crate) mod lazy;
+pub(super) mod place;
 pub(crate) mod prelude;
 pub(super) mod proj;
 pub(super) mod sym_place;
@@ -10,6 +11,7 @@ use std::{num::Wrapping, rc::Rc};
 
 use common::tyexp::TypeInfo;
 use derive_more as dm;
+use place::SymPlaceValueRef;
 use sym_place::Select;
 
 pub(crate) use crate::abs::{
@@ -64,7 +66,7 @@ pub(crate) enum ConcreteValue {
     Array(ArrayValue),
     #[from]
     FatPointer(FatPtrValue),
-    #[from(types(RawConcreteValue, PorterValue))]
+    #[from(forward)]
     Unevaluated(UnevalValue),
 }
 
@@ -772,10 +774,10 @@ pub(crate) enum Expr {
      * converted to pointers. So, we should also have the same behavior for both.
      */
     #[from(ignore)]
-    Ref(ProjExprRef),
+    Ref(SymPlaceValueRef),
 
     #[from(ignore)]
-    Len(ProjExprRef),
+    Len(SymPlaceValueRef),
 
     Projection(ProjExpr),
 }

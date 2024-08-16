@@ -12,7 +12,7 @@ use common::log_debug;
 pub(crate) fn make_sym_place_handler(
     config: SymbolicPlaceStrategy,
     concretizer_factory: impl FnOnce() -> Box<dyn Concretizer>,
-) -> Box<dyn SymPlaceHandler<PlaceMetadata>> {
+) -> Box<dyn SymPlaceHandler<PlaceMetadata, SymPlaceValue = SymValueRef, PlaceValue = ValueRef>> {
     log_debug!(
         "Creating a symbolic place handler for strategy {:?}",
         config
@@ -29,6 +29,9 @@ pub(crate) fn make_sym_place_handler(
 
 struct ProjExprSymPlaceHandler;
 impl<M> SymPlaceHandler<M> for ProjExprSymPlaceHandler {
+    type SymPlaceValue = SymValueRef;
+    type PlaceValue = ValueRef;
+
     fn handle(&mut self, place_value: SymValueRef, _metadata: &M) -> ValueRef {
         // NOTE: Later we might want to handle more parts here.
         place_value.into()
@@ -37,6 +40,9 @@ impl<M> SymPlaceHandler<M> for ProjExprSymPlaceHandler {
 
 struct ConcretizerSymPlaceHandler;
 impl SymPlaceHandler<PlaceMetadata> for ConcretizerSymPlaceHandler {
+    type SymPlaceValue = SymValueRef;
+    type PlaceValue = ValueRef;
+
     fn handle(&mut self, place_value: SymValueRef, place_meta: &PlaceMetadata) -> ValueRef {
         let conc_val = get_concrete_value(&place_meta, place_value.as_ref().try_into().ok());
         log_debug!(
@@ -52,6 +58,9 @@ struct StamperSymPlaceHandler {
     concretizer: Box<dyn Concretizer>,
 }
 impl SymPlaceHandler<PlaceMetadata> for StamperSymPlaceHandler {
+    type SymPlaceValue = SymValueRef;
+    type PlaceValue = ValueRef;
+
     fn handle(&mut self, place_value: SymValueRef, place_meta: &PlaceMetadata) -> ValueRef {
         let conc_val = get_concrete_value(&place_meta, place_value.as_ref().try_into().ok());
         log_debug!(

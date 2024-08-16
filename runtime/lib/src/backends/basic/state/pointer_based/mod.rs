@@ -51,7 +51,9 @@ type Local = LocalWithMetadata;
 type Place = PlaceWithMetadata;
 type Projection = crate::abs::Projection<Local>;
 
-type SymPlaceHandlerObject = Box<dyn super::SymPlaceHandler<PlaceMetadata>>;
+type SymPlaceHandlerObject = Box<
+    dyn super::SymPlaceHandler<PlaceMetadata, SymPlaceValue = SymValueRef, PlaceValue = ValueRef>,
+>;
 
 /* NOTE: Memory structure
  * How does this state tries to store (symbolic) objects?
@@ -198,7 +200,8 @@ impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
     }
 }
 
-impl<SP: SymbolicProjector> VariablesState<Place> for RawPointerVariableState<SP>
+impl<SP: SymbolicProjector> VariablesState<Place, ValueRef, ValueRef>
+    for RawPointerVariableState<SP>
 where
     Self: IndexResolver<Local>,
 {
@@ -459,24 +462,7 @@ impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
                     Into::<Expr>::into(select).to_value_ref()
                 }
                 Expr::Len(proj) => {
-                    let ProjExpr::SymHost(SymHostProj {
-                        host,
-                        kind: ProjKind::Deref,
-                        metadata,
-                    }) = proj.as_ref()
-                    else {
-                        panic!(
-                            "Expected a deref projection (over a slice reference) for len expression."
-                        );
-                    };
-                    // Equivalent to accessing the pointer's metadata.
-                    let value = Into::<Expr>::into(Into::<ProjExpr>::into(SymHostProj {
-                        host: host.clone(),
-                        kind: ProjKind::Field(FieldAccessKind::PtrMetadata),
-                        metadata: metadata.clone(),
-                    }))
-                    .to_value_ref();
-                    self.retrieve_sym_value(value, type_id)
+                    todo!()
                 }
                 Expr::Ref(..) => {
                     /* NOTE: References will be dereferenced and their projection

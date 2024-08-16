@@ -34,7 +34,7 @@ mod core {
         ) -> Self::Proj<'a> {
             // Peel off the reference.
             if let SymValue::Expression(Expr::Ref(proj)) = host.as_ref() {
-                proj.as_ref().clone()
+                todo!()
             } else {
                 ProjExpr::SymHost(SymHostProj {
                     host,

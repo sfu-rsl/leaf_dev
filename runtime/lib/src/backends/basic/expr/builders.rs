@@ -325,11 +325,11 @@ mod core {
         }
 
         fn address_of<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
-            Expr::Ref(ProjExprRef::new(operand.into()))
+            todo!()
         }
 
         fn len<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
-            Expr::Len(ProjExprRef::new(operand.into()))
+            todo!()
         }
 
         fn discriminant<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {

@@ -3,8 +3,12 @@ use std::fmt::{Display, Formatter, Result};
 use crate::utils::logging::comma_separated;
 
 use super::{
+    place::{
+        DerefSymHostPlace, DeterministicProjection, ExpandedSymPlace, PlaceValue, SymIndexedPlace,
+        SymbolicPlaceBase, SymbolicPlaceValue,
+    },
     sym_place::{SingleProjResult, SymbolicProjResult, TransmutedValue},
-    PorterValue, RawConcreteValue, *,
+    *,
 };
 
 impl Display for Value {
@@ -309,5 +313,57 @@ impl Display for super::UnaryOp {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         let op: abs::UnaryOp = (*self).into();
         op.fmt(f)
+    }
+}
+
+impl Display for PlaceValue {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        match self {
+            PlaceValue::Deterministic(value) => write!(f, "{:?}", value.as_ref()),
+            PlaceValue::Symbolic(value) => write!(f, "{value}"),
+        }
+    }
+}
+
+impl Display for SymbolicPlaceValue {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        write!(f, "{}", self.base)?;
+        if let Some(proj) = &self.proj {
+            write!(f, ".{{{}}}", proj)?;
+        }
+        Ok(())
+    }
+}
+impl Display for SymbolicPlaceBase {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        match self {
+            SymbolicPlaceBase::Deref(host) => write!(f, "*{host}"),
+            SymbolicPlaceBase::SymIndex(indexed) => write!(f, "{indexed}"),
+            SymbolicPlaceBase::Expanded(expanded) => write!(f, "↳{{{expanded}}}"),
+        }
+    }
+}
+
+impl Display for DerefSymHostPlace {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        write!(f, "{}", self.host)
+    }
+}
+
+impl Display for SymIndexedPlace {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        write!(f, "{}[{}]", self.base, self.index)
+    }
+}
+
+impl Display for ExpandedSymPlace {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        write!(f, "{}", self)
+    }
+}
+
+impl Display for DeterministicProjection {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        write!(f, "{}=..{}", self.offset, self.size)
     }
 }

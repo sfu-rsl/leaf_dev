@@ -218,13 +218,11 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
 
     fn ref_to(mut self, place: Self::Place, _is_mutable: bool) {
         let place_value = self.get_place_value(place);
-        let value = self.expect_sym_place_as_proj(place_value).map_or_else(
-            |_value| {
-                // No use case for the reference value at the moment.
-                UnevalValue::Some.into()
-            },
-            |proj| Expr::Ref(proj).into(),
-        );
+        let value = if place_value.is_symbolic() {
+            Expr::Ref(SymPlaceValueRef::new(place_value)).into()
+        } else {
+            UnevalValue::Some.into()
+        };
         self.set_value(value)
     }
 
@@ -239,8 +237,12 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
 
     fn len_of(mut self, place: Self::Place) {
         let place_value = self.get_place_value(place);
-        let len_value = self.expr_builder().len(place_value.into());
-        self.set(len_value.into())
+        let value = if place_value.is_symbolic() {
+            Expr::Len(SymPlaceValueRef::new(place_value)).into()
+        } else {
+            UnevalValue::Some.into()
+        };
+        self.set_value(value)
     }
 
     fn cast_of(mut self, operand: Self::Operand, target: CastKind) {
@@ -319,7 +321,8 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
 }
 
 impl<EB: OperationalExprBuilder> BasicAssignmentHandler<'_, EB> {
-    fn get_place_value(&mut self, place: Place) -> ValueRef {
+    #[inline]
+    fn get_place_value(&mut self, place: Place) -> PlaceValueRef {
         self.vars_state.ref_place(&place)
     }
 
@@ -336,10 +339,12 @@ impl<EB: OperationalExprBuilder> BasicAssignmentHandler<'_, EB> {
         }
     }
 
+    #[inline]
     fn set(&mut self, value: ValueRef) {
         self.vars_state.set_place(&self.dest, value);
     }
 
+    #[inline]
     fn set_value(&mut self, value: Value) {
         self.set(ValueRef::new(value));
     }
@@ -810,14 +815,14 @@ fn try_const_operand_value(operand: Operand) -> Option<ValueRef> {
     }
 }
 
-trait VariablesState<P = Place, V = ValueRef> {
+trait VariablesState<P = Place, V = ValueRef, PV = PlaceValueRef> {
     fn id(&self) -> usize;
 
     /// Returns a value that corresponds to the place itself.
     /// The returned value does not necessarily access the actual value but
     /// should be dereferenceable to get the actual value.
     /// Used for creating references, addresses, etc.
-    fn ref_place(&self, place: &P) -> V;
+    fn ref_place(&self, place: &P) -> PV;
 
     /// Returns a copy of the value stored at the given place. May not physically copy the value
     /// but the returned value should be independently usable from the original value.
