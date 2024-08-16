@@ -6,7 +6,7 @@ pub(super) mod proj;
 pub(super) mod sym_place;
 pub(super) mod translators;
 
-use std::{assert_matches::assert_matches, num::Wrapping, ops::Deref, rc::Rc};
+use std::{num::Wrapping, rc::Rc};
 
 use common::tyexp::TypeInfo;
 use derive_more as dm;
@@ -20,9 +20,9 @@ pub(crate) use crate::abs::{
 use crate::utils::meta::define_reversible_pair;
 
 pub(crate) type ValueRef = Rc<Value>;
-pub(crate) type ConcreteValueRef = ConcreteValueGuard<ValueRef>;
-pub(crate) type SymValueRef = SymValueGuard<ValueRef>;
-pub(crate) type ProjExprRef = ProjExprGuard<ValueRef>;
+pub(crate) type ConcreteValueRef = guards::ConcreteValueGuard<ValueRef>;
+pub(crate) type SymValueRef = guards::SymValueGuard<ValueRef>;
+pub(crate) type ProjExprRef = guards::ProjExprGuard<ValueRef>;
 
 pub(crate) type SymVarId = u32;
 
@@ -890,95 +890,111 @@ pub(crate) enum DowncastKind {
     Transmutation(TypeId),
 }
 
-macro_rules! define_value_guard {
-    ($guarded_type:ty, $name: ident, $pattern:pat, $value_name:ident) => {
-        #[derive(Clone, Debug)]
-        pub(crate) struct $name<V>(pub V);
+mod guards {
+    use super::*;
 
-        impl<V> $name<V>
-        where
-            V: AsRef<Value>,
-        {
-            pub fn new(value: V) -> Self {
-                #![allow(unused_variables)]
-                assert_matches!(
-                    value.as_ref(),
-                    $pattern,
-                    concat!("Value should be ", stringify!($guarded_type), ".")
-                );
-                Self(value)
-            }
-        }
+    macro_rules! define_guard {
+        ($base_type:ty, $ref_type:ty, $guarded_type:ty, $name: ident, $pattern:pat, $value_name:ident) => {
+            #[derive(Clone, Debug)]
+            pub(crate) struct $name<V>(pub V);
 
-        impl<V> Deref for $name<V>
-        where
-            V: AsRef<Value>,
-        {
-            type Target = $guarded_type;
+            impl<V> $name<V>
+            where
+                V: AsRef<$base_type>,
+            {
+                pub fn new(value: V) -> Self {
+                    #![allow(unused_variables)]
+                    core::assert_matches::assert_matches!(
+                        value.as_ref(),
+                        $pattern,
+                        concat!("Value should be ", stringify!($guarded_type), ".")
+                    );
+                    Self(value)
+                }
 
-            fn deref(&self) -> &Self::Target {
-                match self.0.as_ref() {
-                    $pattern => $value_name,
-                    _ => unreachable!(),
+                pub fn $value_name(&self) -> &$guarded_type {
+                    match self.0.as_ref() {
+                        $pattern => $value_name,
+                        _ => unreachable!(),
+                    }
                 }
             }
-        }
 
-        impl<V> AsRef<$guarded_type> for $name<V>
-        where
-            Self: Deref<Target = $guarded_type>,
-        {
-            fn as_ref(&self) -> &$guarded_type {
-                self
-            }
-        }
-
-        impl From<$name<ValueRef>> for ValueRef {
-            fn from(value: $name<ValueRef>) -> Self {
-                value.0
-            }
-        }
-
-        impl<'a> $name<&'a mut ValueRef> {
-            #[allow(unused)]
-            pub fn make_mut(self) -> &'a mut $guarded_type {
-                match ValueRef::make_mut(self.0) {
-                    $pattern => $value_name,
-                    _ => unreachable!(),
+            impl<'a> $name<&'a mut $ref_type> {
+                #[allow(unused)]
+                pub fn make_mut(self) -> &'a mut $guarded_type {
+                    match <$ref_type>::make_mut(self.0) {
+                        $pattern => $value_name,
+                        _ => unreachable!(),
+                    }
                 }
             }
-        }
 
-        impl<V: Clone> $name<V> {
-            pub fn clone_to(&self) -> V {
-                self.0.clone()
+            impl From<$name<$ref_type>> for $ref_type {
+                fn from(value: $name<$ref_type>) -> Self {
+                    value.0
+                }
             }
-        }
 
-        impl<V> std::fmt::Display for $name<V>
-        where
-            V: std::fmt::Display,
-        {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                self.0.fmt(f)
+            impl<V: Clone> $name<V> {
+                pub fn clone_to(&self) -> V {
+                    self.0.clone()
+                }
             }
-        }
-    };
+
+            impl<V> std::fmt::Display for $name<V>
+            where
+                V: std::fmt::Display,
+            {
+                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    self.0.fmt(f)
+                }
+            }
+        };
+    }
+    pub(crate) use define_guard;
+
+    macro_rules! define_value_guard {
+        ($guarded_type:ty, $name: ident, $pattern:pat, $value_name:ident) => {
+            define_guard!(Value, ValueRef, $guarded_type, $name, $pattern, $value_name);
+
+            impl<V> core::ops::Deref for $name<V>
+            where
+                V: AsRef<Value>,
+            {
+                type Target = $guarded_type;
+
+                fn deref(&self) -> &Self::Target {
+                    self.$value_name()
+                }
+            }
+
+            impl<V> AsRef<$guarded_type> for $name<V>
+            where
+                Self: core::ops::Deref<Target = $guarded_type>,
+            {
+                fn as_ref(&self) -> &$guarded_type {
+                    self
+                }
+            }
+        };
+    }
+
+    define_value_guard!(
+        ConcreteValue,
+        ConcreteValueGuard,
+        Value::Concrete(value),
+        value
+    );
+    define_value_guard!(SymValue, SymValueGuard, Value::Symbolic(value), value);
+    define_value_guard!(
+        ProjExpr,
+        ProjExprGuard,
+        Value::Symbolic(SymValue::Expression(Expr::Projection(proj))),
+        proj
+    );
 }
-
-define_value_guard!(
-    ConcreteValue,
-    ConcreteValueGuard,
-    Value::Concrete(value),
-    value
-);
-define_value_guard!(SymValue, SymValueGuard, Value::Symbolic(value), value);
-define_value_guard!(
-    ProjExpr,
-    ProjExprGuard,
-    Value::Symbolic(SymValue::Expression(Expr::Projection(proj))),
-    proj
-);
+use guards::define_guard;
 
 define_reversible_pair!(
     SymIndexPair {
