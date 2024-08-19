@@ -28,39 +28,19 @@ use derive_more::From;
 use crate::abs::TypeId;
 use common::log_debug;
 
-use super::{super::alias::TypeManager, prelude::*, SliceIndex};
+use super::{
+    super::alias::TypeManager, abs::expr::sym_place::SymbolicReadTree, prelude::*, SliceIndex,
+};
 
 type SymIndex = SliceIndex<SymValueRef>;
 pub(crate) type Select<V = SymbolicProjResult> = crate::abs::expr::sym_place::Select<SymIndex, V>;
 
-/// Represents a possible value of a symbolic projection.
-/// It can be either a symbolic read or a transmutation of a symbolic value.
-#[derive(Debug, Clone, From)]
-pub(crate) enum SymbolicProjResult {
-    /// A symbolic read, i.e. projection with symbolic index.
-    /// This one introduces multiple possible values.
-    #[from]
-    SymRead(Select),
-    /// An array of values, as the result of an expansion.
-    /// # Remarks
-    /// Although both `Select` and `SingleResult` can hold array of values, there are semantical
-    /// and operational differences between this variant and them. This is the result of
-    /// an expansion where we expect to see multiple values. This variant appears in nested
-    /// `Select`s. Let's consider `a[x][y].1` where `a` is an array of arrays.
-    /// We expect to see all the first field of a[_][_] as a possible value. This can be done either
-    /// by generating a `Select` for each possible value of `a[x]`, or having a nested select with a
-    /// 2D array of possible values. We choose the second one, which means a series of nested
-    /// `Select`s will be created with a last one having an array. However, the possible values
-    /// shape an n-D array which means the leaf nodes of a `Select` should be arrays.
-    /// Also, let's say we want to apply the last projection (the first field access). For a
-    /// consistent behavior, intermediate single values that are expected to be array need to be
-    /// resolved (expanded) to be able to iterate over their values. Again, this variant is
-    /// necessary to hold the expanded view.
-    Array(Vec<Self>),
-    /// A single value that is result of projections with no symbolic index.
-    /// For example, transmute(x).0 can generate such a value.
-    #[from(forward)]
-    Single(SingleProjResult),
+pub(crate) type SymbolicProjResult = SymbolicReadTree<SymIndex, SingleProjResult>;
+
+impl From<SingleProjResult> for SymbolicProjResult {
+    fn from(single: SingleProjResult) -> Self {
+        SymbolicReadTree::Single(single)
+    }
 }
 
 #[derive(Debug, Clone, From)]
@@ -162,11 +142,12 @@ mod implementation {
                     SymbolicReadResolver::resolve(self, (host, &projs)).into(),
                 ),
                 ProjBase::Transmutation(host, dst_ty_id, _metadata) => self.resolve_symbolic_projs(
-                    TransmutedValue::new(host.clone().into(), dst_ty_id).into(),
+                    SingleProjResult::from(TransmutedValue::new(host.clone().into(), dst_ty_id))
+                        .into(),
                     &projs,
                 ),
                 ProjBase::Multi(select) => {
-                    self.resolve_symbolic_projs(select.clone().into(), &projs)
+                    self.resolve_symbolic_projs(Select::from(select.clone()).into(), &projs)
                 }
             }
         }
@@ -209,7 +190,7 @@ mod implementation {
                 from_end: base.index.from_end,
             });
             let index = (&index, &base.metadata);
-            let base = base.host.0.clone().into();
+            let base = SingleProjResult::from(base.host.0.clone()).into();
             let projs = [&[index], projs].concat();
             let SymbolicProjResult::SymRead(select) = self.resolve_symbolic_projs(base, &projs)
             else {
@@ -676,13 +657,18 @@ mod implementation {
     }
 
     pub(super) mod utils {
-        use super::{RawPointerRetriever, Select, SliceIndex, TypeId, TypeManager};
-        use crate::{abs::expr::proj::ProjectionOn, backends::basic::expr::prelude::*};
+        use super::{
+            RawPointerRetriever, Select, SliceIndex, SymbolicProjResult, TypeId, TypeManager,
+        };
+        use crate::{
+            abs::expr::{proj::ProjectionOn, sym_place::SelectTarget},
+            backends::basic::expr::prelude::*,
+        };
 
         pub(super) enum ProjBase<'a, M = ProjMetadata> {
             Concrete(&'a ConcreteHostProj<M>),
             Transmutation(&'a SymValueRef, TypeId, &'a M),
-            Multi(&'a Select),
+            Multi(&'a MultiValue),
         }
 
         impl ProjExpr {
@@ -782,6 +768,34 @@ mod implementation {
                             .expect_addr(type_manager, retriever)
                     }
                     _ => panic!("Not an address: {:?}", self),
+                }
+            }
+        }
+
+        impl From<MultiValueTree> for SymbolicProjResult {
+            fn from(tree: MultiValueTree) -> Self {
+                match tree {
+                    MultiValueTree::SymRead(select) => SymbolicProjResult::SymRead(select.into()),
+                    MultiValueTree::Array(array) => {
+                        SymbolicProjResult::Array(array.into_iter().map(Into::into).collect())
+                    }
+                    MultiValueTree::Single(single) => SymbolicProjResult::Single(single.into()),
+                }
+            }
+        }
+
+        impl From<MultiValue> for Select {
+            fn from(value: MultiValue) -> Self {
+                Select {
+                    index: value.index.into(),
+                    target: match value.target {
+                        SelectTarget::Array(array) => {
+                            SelectTarget::Array(array.into_iter().map(Into::into).collect())
+                        }
+                        SelectTarget::Nested(select) => {
+                            SelectTarget::Nested(Box::new((*select).into()))
+                        }
+                    },
                 }
             }
         }

@@ -5,21 +5,23 @@ pub(super) mod place;
 pub(crate) mod prelude;
 pub(super) mod proj;
 pub(super) mod sym_place;
+pub(super) mod sym_placex;
 pub(super) mod translators;
 
 use std::{num::Wrapping, rc::Rc};
 
-use common::tyexp::TypeInfo;
 use derive_more as dm;
+
+use common::tyexp::TypeInfo;
+
+use crate::abs::expr::sym_place::{Select, SymbolicReadTree};
+use crate::utils::meta::define_reversible_pair;
 use place::SymPlaceValueRef;
-use sym_place::Select;
 
 pub(crate) use crate::abs::{
     self, FieldIndex, FloatType, FuncId, IntType, PointerOffset, RawAddress, TypeId, ValueType,
     VariantIndex,
 };
-
-use crate::utils::meta::define_reversible_pair;
 
 pub(crate) type ValueRef = Rc<Value>;
 pub(crate) type ConcreteValueRef = guards::ConcreteValueGuard<ValueRef>;
@@ -761,7 +763,7 @@ pub(crate) enum Expr {
         else_target: ValueRef,
     },
 
-    Multi(Select),
+    Multi(MultiValue),
 
     /// A reference or the address of a value.
     /* NOTE: Should not we have a separate variant for the address of a value?
@@ -788,6 +790,12 @@ pub(crate) struct BinaryExpr<Operands = SymBinaryOperands> {
     operator: BinaryOp,
     operands: Operands,
 }
+
+pub(crate) type SymIndex = SliceIndex<SymValueRef>;
+pub(crate) type MultiValueLeaf = ValueRef;
+pub(crate) type MultiValueTree = SymbolicReadTree<SymIndex, MultiValueLeaf>;
+pub(crate) type MultiValueArray = Vec<MultiValueTree>;
+pub(crate) type MultiValue = Select<SymIndex, MultiValueTree>;
 
 // FIXME: Remove this error suppression after adding support for symbolic projection.
 #[allow(unused)]
@@ -1219,6 +1227,18 @@ mod convert {
                 Neg => Self::Neg,
                 Not => Self::Not,
             }
+        }
+    }
+
+    impl From<MultiValueArray> for MultiValueTree {
+        fn from(value: MultiValueArray) -> Self {
+            Self::Array(value)
+        }
+    }
+
+    impl From<MultiValueLeaf> for MultiValueTree {
+        fn from(value: MultiValueLeaf) -> Self {
+            SymbolicReadTree::Single(value)
         }
     }
 }

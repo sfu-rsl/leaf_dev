@@ -458,7 +458,8 @@ impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
                 Expr::Projection(proj) => self.resolve_sym_proj(proj, type_id),
                 Expr::Multi(select) => {
                     let mut select = select.clone();
-                    self.retrieve_select_proj_result(&mut select, type_id);
+                    // self.retrieve_select_proj_result(&mut select, type_id);
+                    self.retrieve_select_proj_result(todo!(), type_id);
                     Into::<Expr>::into(select).to_value_ref()
                 }
                 Expr::Len(proj) => {
@@ -598,7 +599,10 @@ impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
                     .collect(),
             })
             .to_value_ref(),
-            SymbolicProjResult::SymRead(select) => Into::<Expr>::into(select).to_value_ref().into(),
+            SymbolicProjResult::SymRead(select) => {
+                //Into::<Expr>::into(select).to_value_ref().into()
+                todo!()
+            }
         }
     }
 

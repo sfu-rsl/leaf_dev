@@ -13,6 +13,28 @@ pub(crate) enum SelectTarget<V, S> {
     Nested(Box<S>),
 }
 
+#[derive(Debug, Clone)]
+pub(crate) enum SymbolicReadTree<I, V> {
+    /// A selection over a set of possible values using a symbolic index.
+    /// # Remarks
+    /// The root of a complete is expected to be from this variant.
+    SymRead(Select<I, Self>),
+    /// An array of possible values.
+    /// # Remarks
+    /// This variant is expected to appear as intermediate nodes as possible values for a selection.
+    Array(Vec<Self>),
+    /// A single value.
+    /// # Remarks
+    /// This variant is expected to appear as leaf nodes.
+    Single(V),
+}
+
+impl<I, V> From<Select<I, Self>> for SymbolicReadTree<I, V> {
+    fn from(select: Select<I, Self>) -> Self {
+        SymbolicReadTree::SymRead(select)
+    }
+}
+
 /// Resolves a symbolic read to a selection.
 /// It may recursively resolve the possible values of the selection.
 pub(crate) trait SymbolicReadResolver<I> {

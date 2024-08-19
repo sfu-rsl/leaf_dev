@@ -1,13 +1,11 @@
 use std::fmt::{Display, Formatter, Result};
 
-use crate::utils::logging::comma_separated;
-
 use super::{
     place::{
-        DerefSymHostPlace, DeterministicProjection, ExpandedSymPlace, PlaceValue, SymIndexedPlace,
-        SymbolicPlaceBase, SymbolicPlaceValue,
+        DerefSymHostPlace, DeterministicProjection, PlaceValue, SymIndexedPlace, SymbolicPlaceBase,
+        SymbolicPlaceValue,
     },
-    sym_place::{SingleProjResult, SymbolicProjResult, TransmutedValue},
+    sym_place::{SingleProjResult, TransmutedValue},
     *,
 };
 
@@ -284,16 +282,6 @@ impl Display for SliceIndex<SymValueRef> {
     }
 }
 
-impl Display for SymbolicProjResult {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        match self {
-            SymbolicProjResult::SymRead(select) => write!(f, "{select}"),
-            SymbolicProjResult::Array(values) => write!(f, "[{}]", comma_separated(values.iter())),
-            SymbolicProjResult::Single(value) => write!(f, "<{value}>"),
-        }
-    }
-}
-
 impl Display for SingleProjResult {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
@@ -339,31 +327,24 @@ impl Display for SymbolicPlaceBase {
         match self {
             SymbolicPlaceBase::Deref(host) => write!(f, "*{host}"),
             SymbolicPlaceBase::SymIndex(indexed) => write!(f, "{indexed}"),
-            SymbolicPlaceBase::Expanded(expanded) => write!(f, "↳{{{expanded}}}"),
         }
     }
 }
 
 impl Display for DerefSymHostPlace {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{}", self.host)
+        write!(f, "{}", self.value)
     }
 }
 
 impl Display for SymIndexedPlace {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{}[{}]", self.base, self.index)
-    }
-}
-
-impl Display for ExpandedSymPlace {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{}", self)
+        write!(f, "{}[{}]", self.host, self.index)
     }
 }
 
 impl Display for DeterministicProjection {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{}=..{}", self.offset, self.size)
+        write!(f, "↳{}T#{:x}", self.offset, self.ty_id)
     }
 }

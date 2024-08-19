@@ -15,10 +15,7 @@ pub(crate) mod z3 {
         abs::{expr::sym_place::SelectTarget, FieldIndex, IntType, ValueType},
         backends::basic::expr::{
             prelude::*,
-            sym_place::{
-                DefaultProjExprReadResolver, ProjExprResolver, Select, SingleProjResult,
-                SymbolicProjResult, TransmutedValue,
-            },
+            sym_place::{DefaultProjExprReadResolver, ProjExprResolver},
             SymBinaryOperands, SymVarId,
         },
         solvers::z3::{ArrayNode, ArraySort, BVNode, BVSort},
@@ -446,7 +443,7 @@ pub(crate) mod z3 {
             }
         }
 
-        fn translate_len_expr(&mut self, of: SymbolicProjResult) -> AstNode<'ctx> {
+        fn translate_len_expr(&mut self, of: MultiValueTree) -> AstNode<'ctx> {
             // let result = apply_len(of, &mut DefaultProjExprReadResolver);
             // const LEN_VALUES_PREFIX: &str = "len";
             // self.translate_symbolic_proj_result(&result, Some(LEN_VALUES_PREFIX))
@@ -455,7 +452,7 @@ pub(crate) mod z3 {
 
         fn translate_select(
             &mut self,
-            select: &Select,
+            select: &MultiValue,
             const_prefix: Option<&str>,
         ) -> AstNode<'ctx> {
             let index = self.translate_symbolic(&select.index.index);
@@ -495,7 +492,7 @@ pub(crate) mod z3 {
                     ) = self.translate_array_of_values(
                         const_prefix.unwrap_or(POSSIBLE_VALUES_PREFIX),
                         possible_values.iter(),
-                        |this, r| this.translate_symbolic_proj_result(r, const_prefix),
+                        |this, r| this.translate_multi_value_tree(r, const_prefix),
                     );
 
                     let result =
@@ -553,31 +550,25 @@ pub(crate) mod z3 {
             )
         }
 
-        fn translate_single_proj_result(&mut self, single: &SingleProjResult) -> AstNode<'ctx> {
-            match single {
-                SingleProjResult::Transmuted(TransmutedValue { value, .. }) => {
-                    // NOTE: As transmutation doesn't change the value, we can just translate the value.
-                    self.translate_value(value)
-                }
-                SingleProjResult::Value(value) => self.translate_value(value),
-            }
+        fn translate_multi_value_leaf(&mut self, leaf: &MultiValueLeaf) -> AstNode<'ctx> {
+            self.translate_value(leaf)
         }
 
-        fn translate_symbolic_proj_result(
+        fn translate_multi_value_tree(
             &mut self,
-            read_result: &SymbolicProjResult,
+            tree: &MultiValueTree,
             const_prefix: Option<&str>,
         ) -> AstNode<'ctx> {
-            match read_result {
-                SymbolicProjResult::Single(single) => self.translate_single_proj_result(single),
-                SymbolicProjResult::Array(values) => {
+            match tree {
+                MultiValueTree::Single(single) => self.translate_multi_value_leaf(single),
+                MultiValueTree::Array(values) => {
                     let const_prefix = const_prefix.unwrap_or(POSSIBLE_VALUES_PREFIX);
                     self.translate_array_of_values(const_prefix, values.iter(), |this, v| {
-                        this.translate_symbolic_proj_result(v, Some(const_prefix))
+                        this.translate_multi_value_tree(v, Some(const_prefix))
                     })
                     .into()
                 }
-                SymbolicProjResult::SymRead(select) => self.translate_select(select, const_prefix),
+                MultiValueTree::SymRead(select) => self.translate_select(select, const_prefix),
             }
         }
 

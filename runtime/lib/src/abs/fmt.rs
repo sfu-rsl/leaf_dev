@@ -3,7 +3,7 @@ use std::fmt::{Display, Formatter, Result};
 use crate::utils::logging::comma_separated;
 
 use super::{
-    expr::sym_place::{Select, SelectTarget},
+    expr::sym_place::{Select, SelectTarget, SymbolicReadTree},
     *,
 };
 
@@ -186,6 +186,20 @@ where
         match self {
             SelectTarget::Array(values) => write!(f, "[{}]", comma_separated(values.iter())),
             SelectTarget::Nested(box select) => write!(f, "{select}"),
+        }
+    }
+}
+
+impl<I, V> Display for SymbolicReadTree<I, V>
+where
+    I: Display,
+    V: Display,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        match self {
+            SymbolicReadTree::SymRead(select) => write!(f, "{select}"),
+            SymbolicReadTree::Array(values) => write!(f, "[{}]", comma_separated(values.iter())),
+            SymbolicReadTree::Single(value) => write!(f, "<{value}>"),
         }
     }
 }
