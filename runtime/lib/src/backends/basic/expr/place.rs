@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use derive_more as dm;
 
-use common::{pri::TypeSize, types::PointerOffset};
+use common::{pri::RawPointer, types::PointerOffset};
 
 use crate::backends::basic::place::PlaceMetadata;
 
@@ -11,6 +11,7 @@ use super::prelude::*;
 pub(crate) type PlaceValueRef = Rc<PlaceValue>;
 pub(crate) type DeterPlaceValueRef = guards::DeterPlaceValueGuard<PlaceValueRef>;
 pub(crate) type SymPlaceValueRef = guards::SymPlaceValueGuard<PlaceValueRef>;
+
 #[derive(Clone, Debug, dm::From)]
 pub(crate) enum PlaceValue {
     #[from]
@@ -33,6 +34,13 @@ impl DeterministicPlaceValue {
     pub(crate) fn new(metadata: PlaceMetadata) -> Self {
         Self(metadata)
     }
+
+    pub(crate) fn from_addr_type(addr: RawAddress, ty: TypeId) -> Self {
+        let mut metadata = PlaceMetadata::default();
+        metadata.set_address(addr as RawPointer);
+        metadata.set_type_id(ty);
+        Self(metadata)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -49,35 +57,41 @@ impl SymbolicPlaceValue {
         }
     }
 }
+
 #[derive(Clone, Debug, dm::From)]
 pub(crate) enum SymbolicPlaceBase {
     Deref(DerefSymHostPlace),
     SymIndex(SymIndexedPlace),
-    Expanded(ExpandedSymPlace),
 }
 
 #[derive(Clone, Debug)]
 pub(crate) struct DeterministicProjection {
     pub offset: PointerOffset,
-    pub size: TypeSize,
+    pub ty_id: TypeId,
+}
+
+impl DeterministicProjection {
+    pub(crate) fn on_deter(&self, base: &DeterministicPlaceValue) -> DeterministicPlaceValue {
+        DeterministicPlaceValue::from_addr_type(
+            base.address().wrapping_byte_add(self.offset as usize),
+            self.ty_id,
+        )
+    }
 }
 
 #[derive(Clone, Debug, dm::From)]
 pub(crate) struct DerefSymHostPlace {
-    pub host: SymValueRef,
-    pub host_metadata: PlaceMetadata,
+    pub value: SymValueRef,
+    pub metadata: PlaceMetadata,
 }
 
 #[derive(Clone, Debug)]
 pub(crate) struct SymIndexedPlace {
-    pub base: PlaceValueRef,
-    pub base_metadata: PlaceMetadata,
+    pub host: PlaceValueRef,
+    pub host_metadata: PlaceMetadata,
     pub index: SymValueRef,
     pub index_metadata: PlaceMetadata,
 }
-
-#[derive(Clone, Debug)]
-pub(crate) struct ExpandedSymPlace;
 
 mod guards {
     use super::super::define_guard;

@@ -1,11 +1,14 @@
 use std::{cell::RefCell, collections::btree_map::Entry, rc::Rc};
 
 use crate::{
-    abs::{PointerOffset, TypeId, TypeSize, USIZE_TYPE},
+    abs::{place::HasMetadata, PointerOffset, TypeId, TypeSize, USIZE_TYPE},
     backends::basic::{
         alias::TypeManager,
         config::{SymbolicPlaceConfig, SymbolicPlaceStrategy},
-        expr::place::DeterministicPlaceValue,
+        expr::{
+            place::{DeterministicPlaceValue, SymbolicPlaceValue},
+            sym_place::RawPointerRetriever,
+        },
         VariablesState,
     },
     tyexp::TypeInfoExt,
@@ -217,7 +220,9 @@ where
         let place_val = self.get_place(place, self.sym_read_handler.borrow_mut());
         match place_val.as_ref() {
             PlaceValue::Deterministic(ref place) => self.copy_deterministic_place(place),
-            PlaceValue::Symbolic(..) => todo!(),
+            PlaceValue::Symbolic(ref sym_place) => self
+                .copy_symbolic_place(sym_place, place.metadata().unwrap_type_id())
+                .into(),
         }
     }
 
@@ -357,6 +362,13 @@ impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
         } else {
             None
         }
+    }
+}
+
+// Symbolic Place
+impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
+    fn copy_symbolic_place(&self, place_val: &SymbolicPlaceValue, type_id: TypeId) -> SymValueRef {
+        self.resolve_and_retrieve_symbolic_place(place_val, type_id)
     }
 }
 
@@ -504,5 +516,15 @@ impl<SP: SymbolicProjector> SelfHierarchical for RawPointerVariableState<SP> {
 
     fn drop_layer(self) -> Option<Self> {
         Some(self)
+    }
+}
+
+impl<SP: SymbolicProjector> RawPointerRetriever for RawPointerVariableState<SP> {
+    fn retrieve(
+        &self,
+        addr: RawAddress,
+        type_id: TypeId,
+    ) -> crate::backends::basic::expr::ValueRef {
+        todo!()
     }
 }

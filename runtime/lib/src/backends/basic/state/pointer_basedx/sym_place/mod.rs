@@ -5,15 +5,15 @@ use core::{cell::RefMut, iter, ops::Bound};
 use common::log_debug;
 
 use crate::{
-    abs::place::HasMetadata,
+    abs::{
+        expr::sym_place::{SelectTarget, SymbolicReadResolver},
+        place::HasMetadata,
+    },
     backends::basic::{
-        alias::TypeManager,
         expr::{
-            place::{
-                DerefSymHostPlace, DeterministicPlaceValue, DeterministicProjection,
-                SymIndexedPlace, SymbolicPlaceValue,
-            },
-            prelude::*,
+            place::*,
+            sym_placex::{DefaultSymPlaceResolver, SinglePlaceResult, SymbolicPlaceResult},
+            MultiValueArray, SliceIndex,
         },
         place::PlaceMetadata,
         state::proj::IndexResolver,
@@ -21,6 +21,9 @@ use crate::{
 };
 
 use super::*;
+
+use crate::backends::basic::expr::sym_placex::Select as PlaceSelect;
+use crate::backends::basic::expr::MultiValue as ValueSelect;
 
 impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
     pub(super) fn get_place<'a, 'b>(
@@ -89,8 +92,8 @@ impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
                         if index_val.is_symbolic() {
                             log_debug!("Symbolic index observed: {}", index_val.as_ref());
                             return SymbolicPlaceValue::from_base(SymIndexedPlace {
-                                base: value,
-                                base_metadata: host_meta.clone(),
+                                host: value,
+                                host_metadata: host_meta.clone(),
                                 index: SymValueRef::new(index_val),
                                 index_metadata: index.metadata().clone(),
                             })
@@ -109,13 +112,201 @@ impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
                             proj,
                             host_meta,
                             meta,
-                            self.type_manager.as_ref(),
                         ));
                     }
                 }
 
                 value
             })
+    }
+}
+
+impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
+    pub(super) fn resolve_and_retrieve_symbolic_place(
+        &self,
+        place_val: &SymbolicPlaceValue,
+        type_id: TypeId,
+    ) -> SymValueRef {
+        let resolved = self.resolve_symbolic_place(place_val);
+        let mut copied = self.get_select_sym_place_result(&resolved);
+        self.retrieve_select_proj_result(&mut copied, type_id);
+        Expr::Multi(copied).to_value_ref()
+    }
+}
+
+// Getting Symbolic Place
+impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
+    fn resolve_symbolic_place(&self, place_val: &SymbolicPlaceValue) -> PlaceSelect {
+        let resolver = DefaultSymPlaceResolver::new(self.type_manager.as_ref(), self);
+        resolver.resolve(place_val)
+    }
+
+    fn get_sym_place_result(&self, resolved: &SymbolicPlaceResult) -> MultiValueTree {
+        match resolved {
+            SymbolicPlaceResult::SymRead(select) => {
+                MultiValueTree::SymRead(self.get_select_sym_place_result(select))
+            }
+            SymbolicPlaceResult::Array(array) => {
+                MultiValueTree::Array(self.get_array_sym_place_result(array))
+            }
+            SymbolicPlaceResult::Single(single) => {
+                MultiValueTree::Single(self.get_single_sym_place_result(single))
+            }
+        }
+    }
+
+    fn get_select_sym_place_result(&self, select: &PlaceSelect) -> ValueSelect {
+        use crate::abs::expr::sym_place::SelectTarget::*;
+        ValueSelect {
+            index: SliceIndex {
+                index: select.index.clone(),
+                // FIXME
+                from_end: false,
+            },
+            target: match &select.target {
+                Array(array) => Array(self.get_array_sym_place_result(array)),
+                Nested(nested) => Nested(Box::new(self.get_select_sym_place_result(nested))),
+            },
+        }
+    }
+
+    fn get_array_sym_place_result(&self, array: &Vec<SymbolicPlaceResult>) -> MultiValueArray {
+        array
+            .into_iter()
+            .map(|item| self.get_sym_place_result(item).into())
+            .collect()
+    }
+
+    fn get_single_sym_place_result(&self, single: &SinglePlaceResult) -> ValueRef {
+        self.copy_deterministic_place(single.0.as_ref())
+    }
+}
+
+// Retrieving (Raw) Values
+impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
+    fn retrieve_multi_value_tree(&self, result: &mut MultiValueTree, type_id: TypeId) {
+        log_debug!(
+            "Retrieving symbolic projection result: {} with type {type_id}",
+            result
+        );
+        match result {
+            MultiValueTree::SymRead(select) => self.retrieve_select_proj_result(select, type_id),
+            MultiValueTree::Array(items) => items
+                .iter_mut()
+                .for_each(|item| self.retrieve_multi_value_tree(item, type_id)),
+            MultiValueTree::Single(single) => self.retrieve_multi_value_leaf(single, type_id),
+        }
+    }
+
+    fn retrieve_select_proj_result(&self, select: &mut MultiValue, type_id: TypeId) {
+        log_debug!(
+            "Retrieving select projection result: {} with type {type_id}",
+            select
+        );
+        match &mut select.target {
+            SelectTarget::Array(possible_values) => possible_values
+                .iter_mut()
+                .for_each(|value| self.retrieve_multi_value_tree(value, type_id)),
+            SelectTarget::Nested(box inner) => self.retrieve_select_proj_result(inner, type_id),
+        };
+    }
+
+    fn retrieve_multi_value_leaf(&self, single: &mut MultiValueLeaf, type_id: TypeId) {
+        log_debug!(
+            "Retrieving single projection result: {} with type {type_id}",
+            single
+        );
+        *single = self.retrieve_value(single.clone(), type_id);
+    }
+
+    fn retrieve_value(&self, value: ValueRef, type_id: TypeId) -> ValueRef {
+        match value.as_ref() {
+            Value::Concrete(_) => self
+                .retrieve_conc_value(ConcreteValueRef::new(value), type_id)
+                .into(),
+            Value::Symbolic(_) => self
+                .retrieve_sym_value(SymValueRef::new(value), type_id)
+                .into(),
+        }
+    }
+
+    fn retrieve_conc_value(&self, value: ConcreteValueRef, type_id: TypeId) -> ConcreteValueRef {
+        ConcreteValueRef::new(match value.as_ref() {
+            ConcreteValue::Array(array) => {
+                let item_type_id = self.get_type(type_id).expect_array().item_ty;
+                ArrayValue {
+                    elements: array
+                        .elements
+                        .iter()
+                        .map(|element| self.retrieve_value(element.clone(), item_type_id))
+                        .collect(),
+                }
+                .to_value_ref()
+            }
+            ConcreteValue::Adt(adt) => {
+                let variant_index = match adt.kind {
+                    AdtKind::Enum { variant } => Some(variant),
+                    _ => None,
+                };
+                AdtValue {
+                    kind: adt.kind.clone(),
+                    fields: adt
+                        .fields
+                        .iter()
+                        .zip(self.get_type(type_id).child_type_ids(variant_index))
+                        .map(|(field, type_id)| AdtField {
+                            value: field
+                                .value
+                                .as_ref()
+                                .map(|value| self.retrieve_value(value.clone(), type_id)),
+                        })
+                        .collect(),
+                }
+                .to_value_ref()
+            }
+            ConcreteValue::FatPointer(fat_ptr) => {
+                debug_assert_eq!(fat_ptr.ty, type_id, "Type ids are not consistent.");
+                let field_type_ids = self.get_type(type_id).child_type_ids(None);
+                debug_assert_eq!(
+                    field_type_ids.len(),
+                    2,
+                    "A fat pointer is expected to have two fields."
+                );
+                // FIXME: Implicit assumption about the order of fields.
+                FatPtrValue {
+                    address: self.retrieve_conc_value(fat_ptr.address.clone(), field_type_ids[0]),
+                    metadata: self.retrieve_conc_value(fat_ptr.metadata.clone(), field_type_ids[1]),
+                    ty: fat_ptr.ty,
+                }
+                .to_value_ref()
+            }
+            ConcreteValue::Unevaluated(UnevalValue::Lazy(raw)) => {
+                let raw = if let Some(id) = raw.2.id() {
+                    debug_assert_eq!(id, type_id, "The type id is not consistent.");
+                    raw.clone()
+                } else {
+                    RawConcreteValue(raw.0, raw.1.clone(), LazyTypeInfo::Id(type_id))
+                };
+                let retrieved = unsafe { raw.retrieve(self.type_manager.as_ref(), self) }.unwrap();
+                // Possible to introduce retrievable values (e.g., arrays) again.
+                self.retrieve_conc_value(retrieved, type_id).into()
+            }
+            _ => value.into(),
+        })
+    }
+
+    fn retrieve_sym_value(&self, value: SymValueRef, type_id: TypeId) -> SymValueRef {
+        match value.as_ref() {
+            SymValue::Expression(expr) => match expr {
+                Expr::Multi(select) => {
+                    let mut select = select.clone();
+                    self.retrieve_select_proj_result(&mut select, type_id);
+                    Into::<Expr>::into(select).to_value_ref()
+                }
+                _ => value,
+            },
+            _ => value,
+        }
     }
 }
 
@@ -130,8 +321,8 @@ fn handle_deref(value: SymValueRef, meta: &PlaceMetadata) -> SymPlaceValueRef {
         Expr::Ref(place) => place.clone(),
         _ => SymPlaceValueRef::new(
             SymbolicPlaceValue::from_base(DerefSymHostPlace {
-                host: value,
-                host_metadata: meta.clone(),
+                value,
+                metadata: meta.clone(),
             })
             .to_value_ref(),
         ),
@@ -148,14 +339,13 @@ fn to_deterministic_proj<'a>(
     _proj: &'a Projection,
     host_meta: &PlaceMetadata,
     meta: &PlaceMetadata,
-    type_manager: &dyn TypeManager,
 ) -> DeterministicProjection {
     let offset = unsafe { meta.address().byte_offset_from(host_meta.address()) };
     let offset =
         current.map_or(0, |p| p.offset) + TryInto::<PointerOffset>::try_into(offset).unwrap();
 
-    let size = meta
-        .size()
-        .unwrap_or(type_manager.get_type(meta.unwrap_type_id()).size);
-    DeterministicProjection { offset, size }
+    DeterministicProjection {
+        offset,
+        ty_id: meta.unwrap_type_id(),
+    }
 }

@@ -67,24 +67,20 @@ impl SymPlaceHandler<PlaceMetadata> for StamperSymPlaceHandler {
     ) -> Self::PlaceValue {
         let (sym_value, meta) = match &place_value.base {
             SymbolicPlaceBase::Deref(DerefSymHostPlace {
-                host,
-                host_metadata,
+                value: host,
+                metadata: host_metadata,
             }) => (host, host_metadata),
             SymbolicPlaceBase::SymIndex(SymIndexedPlace {
                 index,
                 index_metadata,
-                base,
-                base_metadata,
+                host: base,
+                host_metadata: base_metadata,
             }) => {
                 if base.is_symbolic() {
                     self.handle(SymPlaceValueRef::new(base.clone()), base_metadata);
                 }
                 (index, index_metadata)
             }
-            SymbolicPlaceBase::Expanded(..) => unreachable!(
-                "Unexpected base for symbolic place for the strategy. Place value: {:?}",
-                place_value
-            ),
         };
         let conc_val = lazy_from_meta(meta);
 
