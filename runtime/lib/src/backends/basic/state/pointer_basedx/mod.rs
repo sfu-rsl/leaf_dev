@@ -254,7 +254,9 @@ impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
 
         // If the place is pointing to a symbolic value.
         if let Some(sym_val) = self.get(addr, place_val.unwrap_type_id()) {
-            return sym_val.clone().into();
+            return self
+                .retrieve_sym_value(sym_val.clone(), place_val.unwrap_type_id())
+                .into();
         }
 
         // Or it is pointing to an object embracing symbolic values.
@@ -278,7 +280,9 @@ impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
             // https://github.com/rust-lang/unsafe-code-guidelines/issues/188
             // self.memory.remove_at(&addr);
 
-            return sym_val.clone().into();
+            return self
+                .retrieve_sym_value(sym_val.clone(), place_val.unwrap_type_id())
+                .into();
         }
 
         // Or it is pointing to an object embracing symbolic values.
@@ -311,6 +315,7 @@ impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
                 c.next();
             },
         )
+        .map(|porter| self.retrieve_porter_value(&porter))
     }
 
     fn try_create_porter_for_move(&mut self, addr: Address, size: TypeSize) -> Option<PorterValue> {
@@ -327,6 +332,7 @@ impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
                 c.next();
             },
         )
+        .map(|porter| self.retrieve_porter_value(&porter))
     }
 
     /// Looks in the region indicated by `addr` and `size` and picks all
@@ -520,11 +526,8 @@ impl<SP: SymbolicProjector> SelfHierarchical for RawPointerVariableState<SP> {
 }
 
 impl<SP: SymbolicProjector> RawPointerRetriever for RawPointerVariableState<SP> {
-    fn retrieve(
-        &self,
-        addr: RawAddress,
-        type_id: TypeId,
-    ) -> crate::backends::basic::expr::ValueRef {
-        todo!()
+    #[tracing::instrument(level = "debug", skip(self))]
+    fn retrieve(&self, addr: RawAddress, type_id: TypeId) -> ValueRef {
+        self.copy_deterministic_place(&DeterministicPlaceValue::from_addr_type(addr, type_id))
     }
 }

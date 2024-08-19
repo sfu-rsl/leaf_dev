@@ -62,6 +62,9 @@ impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
         let addr = local_metadata.address();
         // 1. Dereferencing a symbolic value.
         let value = if let Some(Projection::Deref) = projs.first() {
+            projs = &projs[(Bound::Excluded(0), Bound::Unbounded)];
+            let proj_meta = projs_metadata.next().unwrap();
+
             if let Some(sym_value) = self.get(addr, local_metadata.unwrap_type_id()) {
                 let base = handle_deref(sym_value.clone(), local_metadata);
                 debug_assert!(
@@ -70,8 +73,7 @@ impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
                 );
                 base.into()
             } else {
-                projs = &projs[(Bound::Excluded(0), Bound::Unbounded)];
-                DeterministicPlaceValue::new(projs_metadata.next().unwrap().clone()).to_value_ref()
+                DeterministicPlaceValue::new(proj_meta.clone()).to_value_ref()
             }
         } else {
             // PlaceValue::from_base(DeterministicPlaceBase { addr }.into()).to_value_ref()
@@ -184,6 +186,25 @@ impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
 
 // Retrieving (Raw) Values
 impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
+    /// Retrieves the memory content for the given symbolic value.
+    /// It makes sure that the result value can live independently with no
+    /// lazily-evaluated parts.
+    /// In fact checks if the symbolic value is a multi expression then
+    /// retrieves all of its possible values recursively.
+    pub(super) fn retrieve_sym_value(&self, value: SymValueRef, type_id: TypeId) -> SymValueRef {
+        match value.as_ref() {
+            SymValue::Expression(expr) => match expr {
+                Expr::Multi(select) => {
+                    let mut select = select.clone();
+                    self.retrieve_select_proj_result(&mut select, type_id);
+                    Into::<Expr>::into(select).to_value_ref()
+                }
+                _ => value,
+            },
+            _ => value,
+        }
+    }
+
     fn retrieve_multi_value_tree(&self, result: &mut MultiValueTree, type_id: TypeId) {
         log_debug!(
             "Retrieving symbolic projection result: {} with type {type_id}",
@@ -291,21 +312,26 @@ impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
                 // Possible to introduce retrievable values (e.g., arrays) again.
                 self.retrieve_conc_value(retrieved, type_id).into()
             }
+            ConcreteValue::Unevaluated(UnevalValue::Porter(porter)) => {
+                self.retrieve_porter_value(porter).to_value_ref()
+            }
             _ => value.into(),
         })
     }
 
-    fn retrieve_sym_value(&self, value: SymValueRef, type_id: TypeId) -> SymValueRef {
-        match value.as_ref() {
-            SymValue::Expression(expr) => match expr {
-                Expr::Multi(select) => {
-                    let mut select = select.clone();
-                    self.retrieve_select_proj_result(&mut select, type_id);
-                    Into::<Expr>::into(select).to_value_ref()
-                }
-                _ => value,
-            },
-            _ => value,
+    pub(super) fn retrieve_porter_value(&self, porter: &PorterValue) -> PorterValue {
+        PorterValue {
+            sym_values: porter
+                .sym_values
+                .iter()
+                .map(|(index, type_id, sym_value)| {
+                    (
+                        *index,
+                        *type_id,
+                        self.retrieve_sym_value(sym_value.clone(), *type_id),
+                    )
+                })
+                .collect(),
         }
     }
 }
@@ -336,10 +362,12 @@ fn has_deref<'p>(mut projs: impl Iterator<Item = &'p Projection>) -> bool {
 
 fn to_deterministic_proj<'a>(
     current: Option<&DeterministicProjection>,
-    _proj: &'a Projection,
+    proj: &'a Projection,
     host_meta: &PlaceMetadata,
     meta: &PlaceMetadata,
 ) -> DeterministicProjection {
+    debug_assert!(!matches!(proj, Projection::Deref));
+
     let offset = unsafe { meta.address().byte_offset_from(host_meta.address()) };
     let offset =
         current.map_or(0, |p| p.offset) + TryInto::<PointerOffset>::try_into(offset).unwrap();
