@@ -46,7 +46,7 @@ impl CompilationPass for MonoItemInternalizer {
     }
 }
 
-fn should_be_internalized(tcx: TyCtxt, item: &MonoItem<'_>) -> bool {
+fn should_be_internalized<'tcx>(tcx: TyCtxt<'tcx>, item: &MonoItem<'tcx>) -> bool {
     // pub extern "C" functions. Example: `__rdl_alloc`
     let def_id = item.def_id();
     if matches!(tcx.def_kind(def_id), DefKind::Fn)
@@ -71,6 +71,16 @@ fn should_be_internalized(tcx: TyCtxt, item: &MonoItem<'_>) -> bool {
         .codegen_fn_attrs(def_id)
         .flags
         .contains(CodegenFnAttrFlags::RUSTC_STD_INTERNAL_SYMBOL)
+    {
+        false
+    }
+    /* Special case for exported symbols of proc-macro crates.
+     * Note: In an ideal workflow, proc-macro crates should not be compiled with leaf,
+     * but we make the compiler robust enough for this case. */
+    else if item.symbol_name(tcx).name
+        == tcx
+            .sess
+            .generate_proc_macro_decls_symbol(tcx.stable_crate_id(LOCAL_CRATE))
     {
         false
     }
