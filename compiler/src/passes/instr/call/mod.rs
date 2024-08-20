@@ -2163,6 +2163,7 @@ mod implementation {
 
         pub(super) use self::assignment::rvalue;
 
+        use super::super::super::utils::*;
         use super::*;
 
         pub(super) mod operand {
@@ -2747,7 +2748,7 @@ mod implementation {
                         unreachable!()
                     };
                     assert!(
-                        tcx.intrinsic(def_id).is_none(),
+                        !(tcx.intrinsic(def_id).is_some() || tcx.is_llvm_intrinsic(*def_id)),
                         "Cannot extract function pointer (as id) of intrinsic functions."
                     );
                     rvalue::cast_to_coerced(PointerCoercion::ReifyFnPointer, func.clone(), ptr_ty)

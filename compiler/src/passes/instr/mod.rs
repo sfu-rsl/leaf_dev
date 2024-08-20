@@ -1,7 +1,9 @@
 mod call;
 mod decision;
+mod utils;
 
 use const_format::concatcp;
+
 use rustc_index::IndexVec;
 use rustc_middle::{
     mir::{
@@ -10,7 +12,7 @@ use rustc_middle::{
     },
     ty::TyCtxt,
 };
-use rustc_span::source_map::Spanned;
+use rustc_span::{def_id::DefId, source_map::Spanned};
 use rustc_target::abi::{FieldIdx, VariantIdx};
 
 use common::{log_debug, log_info, log_warn};
@@ -31,6 +33,7 @@ use call::{
     InsertionLocation::*,
     OperandRef, OperandReferencer, PlaceReferencer, RuntimeCallAdder,
 };
+use utils::TyCtxtExt;
 
 const TAG_INSTRUMENTATION: &str = "instrumentation";
 use TAG_INSTRUMENTATION as TAG_INSTR;
@@ -413,19 +416,9 @@ where
         _call_source: &mir::CallSource,
         _fn_span: rustc_span::Span,
     ) {
-        if let rustc_middle::ty::TyKind::FnDef(def_id, ..) =
-            func.ty(&self.call_adder, self.call_adder.tcx()).kind()
-        {
-            if self.call_adder.tcx().intrinsic(def_id).is_some() {
-                // FIXME: #172
-                /* NOTE: This definitely causes the runtime to diverge from the
-                 * concrete execution, but unless we want to handle them by
-                 * replacing with our implementation, as most of them
-                 * are not actual functions, they will be replaced by
-                 * flat instructions at the code generation phase.
-                 * Thus, presumably they should not be instrumented like a
-                 * function call anyway.
-                 */
+        let tcx = self.call_adder.tcx();
+        if let rustc_middle::ty::TyKind::FnDef(def_id, ..) = func.ty(&self.call_adder, tcx).kind() {
+            if !is_function_call_supported(tcx, *def_id) {
                 return;
             }
         }
@@ -734,4 +727,21 @@ where
         let second_ref = self.call_adder.reference_operand(&operands.1);
         self.call_adder.by_binary_op(op, first_ref, second_ref)
     }
+}
+
+fn is_function_call_supported(tcx: TyCtxt, def_id: DefId) -> bool {
+    // FIXME: #172
+    /* NOTE: This definitely causes the runtime to diverge from the
+     * concrete execution, but unless we want to handle them by
+     * replacing with our implementation, as most of them
+     * are not actual functions, they will be replaced by
+     * flat instructions at the code generation phase.
+     * Thus, presumably they should not be instrumented like a
+     * function call anyway.
+     */
+    if tcx.intrinsic(def_id).is_some() || tcx.is_llvm_intrinsic(def_id) {
+        return false;
+    }
+
+    true
 }
