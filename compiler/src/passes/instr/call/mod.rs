@@ -2116,16 +2116,15 @@ mod implementation {
     impl<'tcx, C> RuntimeCallAdder<C>
     where
         Self: MirCallAdder<'tcx>,
-        C: PriItemsProvider<'tcx>,
+        C: TyContextProvider<'tcx> + PriItemsProvider<'tcx>,
     {
         fn make_type_id_of_bb(&mut self, ty: Ty<'tcx>) -> (BasicBlockData<'tcx>, Local) {
             /* NOTE: As `TypeId::of` requires static lifetime, do we need to clear lifetimes?
-             * No. As we are code generation phase, all regions should be erased. */
-            debug_assert!(
-                !ty.has_erasable_regions(),
-                "Region erasure assumption does not hold for TypeId call. {}",
-                ty
-            );
+             * Yes, as higher-ranked regions still appear here. Importantly, they are distinguished
+             * in the calculation of type id. However, as the types are used for runtime information
+             * (like layout) and also in type exportation, we perform erasing, we erase the regions
+             * to make sure the same type is used although over-approximated. */
+            let ty = self.context.tcx().erase_regions(ty);
 
             self.make_bb_for_helper_call_with_all(
                 self.context.pri_helper_funcs().type_id_of,
