@@ -80,6 +80,11 @@ fn init_logging() {
                 .parse()
                 .unwrap(),
         )
+        .with_default_directive(
+            format!("{}=off", constants::LOG_BB_JUMP_TAG)
+                .parse()
+                .unwrap(),
+        )
         .parse_lossy(&env);
 
     // Create a formatting layer with optional write style based on environment variable

@@ -3,6 +3,8 @@ mod instr;
 mod jump;
 mod split;
 
+pub(crate) use jump::TAG_BB_JUMP;
+
 use rustc_middle::mir::{BasicBlock, BasicBlockData, Local, LocalDecl};
 
 pub(crate) use self::instr::BodyInstrumentationUnit;

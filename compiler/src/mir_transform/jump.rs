@@ -6,6 +6,8 @@ use rustc_span::Span;
 
 use crate::visit::TerminatorKindMutVisitor;
 
+pub(crate) const TAG_BB_JUMP: &str = "bb_jump";
+
 pub(super) type JumpTargetAttribute = super::JumpModificationConstraint;
 
 pub(super) trait MapFunc:
@@ -162,7 +164,7 @@ where
     fn update_with_attr(&mut self, target: &mut BasicBlock, target_attr: JumpTargetAttribute) {
         let new_index = (self.index_mapping)(*target, &target_attr);
         let Some(new_index) = new_index else { return };
-        log_debug!("Updating jump target from {:?} to {:?}", target, new_index);
+        log_debug!(target: TAG_BB_JUMP, "Updating jump target from {:?} to {:?}", target, new_index);
         *target = new_index;
         self.count += 1;
         if self.recursive {
