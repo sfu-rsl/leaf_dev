@@ -1193,8 +1193,11 @@ mod implementation {
         }
 
         fn by_thread_local_ref(&mut self, _def_id: &DefId) {
-            // FIXME: #365
-            self.add_bb_for_assign_call(sym::assign_thread_local_ref, vec![])
+            if cfg!(abs_concrete) {
+                self.to_some_concrete()
+            } else {
+                self.add_bb_for_assign_call(sym::assign_thread_local_ref, vec![])
+            }
         }
 
         fn by_raw_ptr(&mut self, place: PlaceRef, is_mutable: bool) {

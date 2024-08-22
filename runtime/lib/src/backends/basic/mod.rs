@@ -225,8 +225,9 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
         self.set_value(value)
     }
 
-    fn thread_local_ref_to(self) {
-        todo!()
+    fn thread_local_ref_to(mut self) {
+        // Thread local references cannot refer to symbolic places, so the reference is concrete.
+        self.set_value(UnevalValue::Some.into())
     }
 
     fn address_of(self, place: Self::Place, is_mutable: bool) {
