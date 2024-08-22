@@ -452,7 +452,7 @@ impl RawPointerVariableState {
         );
         let ty = self.get_type(type_id);
         let variant = match adt.kind {
-            AdtKind::Enum { variant } => &ty.variants[variant as usize],
+            AdtKind::Enum { variant } => ty.get_variant(variant).unwrap(),
             _ => ty.expect_single_variant(),
         };
 

@@ -29,6 +29,11 @@ impl TypeInfo {
     pub fn is_sized(&self) -> bool {
         self.size != Self::SIZE_UNSIZED
     }
+
+    pub fn get_variant(&self, index: VariantIndex) -> Option<&VariantInfo> {
+        // There is no guarantee that the index field is as same as the item's index in the array.
+        self.variants.iter().find(|v| v.index == index)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

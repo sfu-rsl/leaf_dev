@@ -60,15 +60,10 @@ impl TypeInfoExt for TypeInfo {
     }
 
     fn child_type_ids(&self, variant: Option<VariantIndex>) -> Vec<TypeId> {
-        let fields = &self.variants[variant
-            .or_else(|| {
-                if self.variants.len() == 1 {
-                    Some(0)
-                } else {
-                    None
-                }
-            })
-            .unwrap() as usize]
+        let fields = &variant
+            .map(|v| self.get_variant(v).unwrap())
+            .or_else(|| self.as_single_variant())
+            .unwrap()
             .fields;
 
         use FieldsShapeInfo::*;

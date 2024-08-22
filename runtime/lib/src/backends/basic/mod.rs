@@ -23,7 +23,7 @@ use crate::{
     },
     solvers::z3::Z3Solver,
     trace::ImmediateTraceManager,
-    tyexp::{self, TypeInfoExt},
+    tyexp::{self, FieldsShapeInfoExt, TypeInfoExt},
     utils::alias::RRef,
 };
 use common::log_info;
@@ -697,11 +697,12 @@ impl UntupleHelper for BasicUntupleHelper<'_> {
 
     fn num_fields(&self, tupled_value: &ValueRef) -> FieldIndex {
         if let Some(ref type_info) = self.type_info {
-            let Some(FieldsShapeInfo::Struct(s)) = type_info.variants.first().map(|t| &t.fields)
-            else {
-                panic!("Expected tuple type info, got: {:?}", type_info)
-            };
-            s.fields.len() as FieldIndex
+            type_info
+                .as_single_variant()
+                .and_then(|s| s.fields.as_struct())
+                .unwrap_or_else(|| panic!("Expected tuple type info, got: {:?}", type_info))
+                .fields
+                .len() as FieldIndex
         } else if let Value::Concrete(ConcreteValue::Adt(AdtValue {
             kind: AdtKind::Struct,
             fields,
