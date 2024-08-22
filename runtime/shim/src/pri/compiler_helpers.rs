@@ -32,9 +32,6 @@ pub fn f64_to_bits(value: f64) -> u128 {
     unsafe { core::intrinsics::transmute::<f64, u64>(value) as u128 }
 }
 
-#[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
-pub fn mark_as_nctfe() {}
-
 /* NOTE:
  * This is a workaround to prevent the compiler from removing the generic
  * functions from the exported symbols as they are unused.

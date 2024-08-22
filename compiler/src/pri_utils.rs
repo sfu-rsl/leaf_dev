@@ -102,8 +102,6 @@ pub mod sym {
             f32_to_bits,
             f64_to_bits,
 
-            mark_as_nctfe,
-
             set_place_address_typed,
             type_id_of,
             size_of,
@@ -112,7 +110,7 @@ pub mod sym {
             const_unary_op_of,
         }
 
-        pub(crate) const ALL_HELPERS: [LS; 15] = [
+        pub(crate) const ALL_HELPERS: [LS; 14] = [
             CH_MODULE_MARKER,
             PLACE_REF_TYPE_HOLDER,
             OPERAND_REF_TYPE_HOLDER,
@@ -122,7 +120,6 @@ pub mod sym {
             FUNC_ID_TYPE_HOLDER,
             f32_to_bits,
             f64_to_bits,
-            mark_as_nctfe,
             set_place_address_typed,
             type_id_of,
             size_of,

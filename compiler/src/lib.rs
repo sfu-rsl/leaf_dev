@@ -113,25 +113,10 @@ mod driver_callbacks {
             config.runtime_shim.as_external,
         );
 
-        #[cfg(nctfe)]
-        let nctfe_pass = {
-            let ctfe_block_ids = {
-                let pass = chain!(prerequisites_pass.clone(), <CtfeScanner>,);
-                let mut callbacks = pass.to_callbacks();
-                run_pass(&mut callbacks);
-                let pass = callbacks.into_pass();
-                pass.second.into_result()
-            };
-            NctfeFunctionAdder::new(ctfe_block_ids.len())
-        };
-        #[cfg(not(nctfe))]
-        let nctfe_pass = NoOpPass;
-
         let passes = chain!(
             prerequisites_pass,
             <LeafToolAdder>,
             <TypeExporter>,
-            nctfe_pass,
             Instrumentor::new(true, None /* FIXME */),
         );
 

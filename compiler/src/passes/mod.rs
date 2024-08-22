@@ -1,6 +1,4 @@
 mod codegen;
-#[cfg(nctfe)]
-pub(crate) mod ctfe;
 mod instr;
 pub(crate) mod logger;
 mod noop;
@@ -25,8 +23,6 @@ use crate::config::LeafCompilerConfig;
 use crate::utils::Chain;
 
 pub(crate) use codegen::MonoItemInternalizer;
-#[cfg(nctfe)]
-pub(crate) use ctfe::{CtfeScanner, NctfeFunctionAdder};
 pub(crate) use instr::Instrumentor;
 pub(crate) use logger::CompilationPassLogExt;
 #[allow(unused)]

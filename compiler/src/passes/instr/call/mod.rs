@@ -221,8 +221,6 @@ mod implementation {
 
     use crate::mir_transform::*;
     use crate::passes::Storage;
-    #[cfg(nctfe)]
-    use crate::passes::{ctfe::CtfeId, instr};
     use crate::pri_utils::{
         sym::{self, LeafSymbol},
         FunctionInfo,
@@ -1060,43 +1058,6 @@ mod implementation {
             self.internal_reference_func(&Operand::Constant(constant.clone()))
         }
 
-        /// ## Remarks
-        /// In this case, instead of referencing the constant itself,
-        /// we pretend that it is replaced with calling the CTFE block, then
-        /// reference the result of calling the corresponding NCTFE.
-        /// Note that it is only about the instrumentation and the real
-        /// block remains intact.
-        /// For example, for the following assignment:
-        /// ```mir
-        /// _1 = const XYZ;
-        /// ```
-        /// will be instrumented as:
-        /// ```mir
-        /// // related instrumentations like before_call
-        /// _10 = nctfe_of_XYZ();
-        /// // related instrumentations like after_call
-        /// _11 = reference(10);
-        /// assign(_1, _11);
-        /// ```
-        #[cfg(nctfe)]
-        fn internal_reference_unevaluated_const_operand(
-            &mut self,
-            constant: &UnevaluatedConst,
-        ) -> BlocksAndResult<'tcx>
-        where
-            C: ForOperandRef<'tcx>,
-        {
-            let def_id = constant.def.expect_local();
-            let ctfe_id = if let Some(index) = constant.promoted {
-                CtfeId::Promoted(def_id, index)
-            } else {
-                CtfeId::Const(def_id)
-            };
-
-            let nctfe_result_local = self.call_nctfe(ctfe_id);
-            self.internal_reference_operand(&operand::move_for_local(nctfe_result_local))
-        }
-        #[cfg(not(nctfe))]
         fn internal_reference_unevaluated_const_operand(
             &mut self,
             _constant: &UnevaluatedConst,
@@ -1107,51 +1068,7 @@ mod implementation {
             panic!("Unevaluated constant is not supported by this configuration.")
         }
 
-        #[cfg(nctfe)]
-        fn internal_reference_static_ref_const_operand(
-            &mut self,
-            def_id: DefId,
-            ty: Ty<'tcx>,
-        ) -> BlocksAndResult<'tcx>
-        where
-            C: ForOperandRef<'tcx>,
-        {
-            let item_ty = match ty.kind() {
-                TyKind::Ref(_, ty, rustc_ast::Mutability::Not) => ty.clone(),
-                _ => unreachable!("Constant type should be an immutable reference."),
-            };
 
-            let tcx = self.tcx();
-            let ctfe_id = CtfeId::Const(def_id.expect_local());
-
-            assert!(
-                ty::is_ref_assignable(&item_ty, &ctfe_id.ty(tcx)),
-                concat!(
-                    "Constant type should be the reference of the init block's return type.",
-                    "Constant type: {:?}, init block return type: {:?}",
-                ),
-                ty,
-                ctfe_id.ty(tcx)
-            );
-
-            let nctfe_result_local = self.call_nctfe(ctfe_id);
-
-            // Simulate referencing the result of the NCTFE call.
-            let ref_local = self.context.add_local(ty);
-            {
-                // FIXME: Duplicate code with `LeafStatementVisitor::visit_assign`.
-                let ref_local_ref = self.reference_place(&ref_local.into());
-                instr::LeafAssignmentVisitor::instrument_ref(
-                    &mut self.assign(ref_local_ref, ty),
-                    &rustc_middle::mir::BorrowKind::Shared,
-                    &nctfe_result_local.into(),
-                );
-            }
-
-            self.internal_reference_operand(&operand::move_for_local(ref_local))
-        }
-
-        #[cfg(not(nctfe))]
         fn internal_reference_static_ref_const_operand(
             &mut self,
             _def_id: DefId,
@@ -1163,44 +1080,6 @@ mod implementation {
             panic!("Static reference constant is not supported by this configuration.")
         }
 
-        #[cfg(nctfe)]
-        fn call_nctfe(&mut self, id: CtfeId) -> Local
-        where
-            C: ForFunctionCalling<'tcx>,
-        {
-            use crate::passes::ctfe::get_nctfe_func;
-
-            let tcx = self.tcx();
-            let result_local = self.context.add_local(tcx.erase_regions(id.ty(tcx)));
-
-            let nctfe_id = get_nctfe_func(id, self.context.storage());
-            let call_block = BasicBlockData::new(Some(terminator::call(
-                tcx,
-                nctfe_id,
-                iter::empty(),
-                Vec::default(),
-                result_local.into(),
-                None,
-            )));
-            let call_block_index = self.insert_blocks([call_block])[0];
-
-            instr::LeafTerminatorKindVisitor::instrument_call(
-                &mut self.at(Before(call_block_index)),
-                |call_adder| {
-                    // NOTE: You cannot call reference operand here because of the infinite loop in types.
-                    let BlocksAndResult(blocks, func_ref) = call_adder
-                        .internal_reference_func(&operand::func(tcx, nctfe_id, iter::empty()));
-                    call_adder.insert_blocks(blocks);
-                    func_ref.into()
-                },
-                |_| Vec::default(),
-                false,
-                &result_local.into(),
-                &Some(NEXT_BLOCK),
-            );
-
-            result_local
-        }
 
         fn make_bb_for_some_const_ref_call(&mut self) -> (BasicBlockData<'tcx>, Local) {
             self.make_bb_for_operand_ref_call(sym::ref_operand_const_some, Vec::default())
