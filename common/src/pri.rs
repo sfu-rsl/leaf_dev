@@ -345,11 +345,7 @@ pub mod macros {
               { fn assign_discriminant(dest: PlaceRef, place: PlaceRef) }
 
               #[allow(unused_parens)]
-              { fn assign_aggregate_array(
-                  dest: PlaceRef,
-                  items: ($slice_ty!(OperandRef)),
-                  align: Alignment,
-              ) }
+              { fn assign_aggregate_array(dest: PlaceRef, items: ($slice_ty!(OperandRef))) }
               #[allow(unused_parens)]
               { fn assign_aggregate_tuple(dest: PlaceRef, fields: ($slice_ty!(OperandRef))) }
               #[allow(unused_parens)]
@@ -659,7 +655,7 @@ pub mod macros {
             }$modifier!{
                 fn assign_discriminant(dest:PlaceRef,place:PlaceRef);
             }$modifier!{
-                #[allow(unused_parens)]fn assign_aggregate_array(dest:PlaceRef,items:($slice_ty!(OperandRef)), align:Alignment,);
+                #[allow(unused_parens)]fn assign_aggregate_array(dest:PlaceRef,items:($slice_ty!(OperandRef)),);
             }$modifier!{
                 #[allow(unused_parens)]fn assign_aggregate_tuple(dest:PlaceRef,fields:($slice_ty!(OperandRef)));
             }$modifier!{

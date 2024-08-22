@@ -262,12 +262,7 @@ impl ProgramRuntimeInterface for BasicPri {
     }
 
     // We use slice to simplify working with the interface.
-    fn assign_aggregate_array(dest: PlaceRef, items: &[OperandRef], align: Alignment) {
-        log_warn!(
-            "Align is going to be supported based on types. Ignoring it {}.",
-            align
-        );
-
+    fn assign_aggregate_array(dest: PlaceRef, items: &[OperandRef]) {
         assign_to(dest, |h| {
             h.array_from(items.iter().map(|o| take_back_operand_ref(*o)))
         })
