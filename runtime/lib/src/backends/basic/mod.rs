@@ -866,9 +866,9 @@ trait CallStackManager {
 
     fn pop_stack_frame(&mut self);
 
-    fn finalize_call(&mut self, result_dest: Place);
-
     fn override_return_value(&mut self, value: ValueRef);
+
+    fn finalize_call(&mut self, result_dest: Place);
 
     fn top(&mut self) -> &mut dyn VariablesState;
 }

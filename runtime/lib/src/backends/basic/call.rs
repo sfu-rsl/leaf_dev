@@ -15,6 +15,67 @@ use common::{log_debug, log_warn, pri::RawPointer};
 
 type VariablesStateFactory<VS> = Box<dyn Fn(usize) -> VS>;
 
+/* Here is what happens during function calls:
+ * +---------------+---------------------------+
+ * | Caller        | Callee                    |
+ * +---------------+---------------------------+
+ * | before_call() |                           |
+ * |               | preserve_metadata()       |
+ * |               | [try_untuple_argument()]  |
+ * |               | enter()                   |
+ * |               | [override_return_value()] |
+ * |               | return()                  |
+ * | after_call()  |                           |
+ * +---------------+---------------------------+
+ * Or equivalently (names are changed to better reflect the current position of program):
+ * +--------------------+---------------------------+
+ * | Caller             | Callee                    |
+ * +--------------------+---------------------------+
+ * | prepare_for_call() |                           |
+ * |                    | set_local_metadata()      |
+ * |                    | [try_untuple_argument()]  |
+ * |                    | notify_enter()            |
+ * |                    | [override_return_value()] |
+ * |                    | pop_stack_frame()         |
+ * | finalize_call()    |                           |
+ * +--------------------+---------------------------+
+ */
+
+/* Functionality Specification:
+ * - `latest_call` holds the information from the caller sent to the callee.
+ *   It is set in `prepare_for_call` and consumed in `notify_enter()` or cleared in `finalize_external_call`.
+ * - `latest_returned_val` holds the latest returned value, not necessarily the called function's
+ *   return value (look at external functions).
+ * - `args_metadata` and `return_val_metadata` are expected to be set before `notify_enter`
+ *   and get consumed by it.
+ */
+/* How are external function calls detected/handled?
+ * (internal = instrumented, external = not instrumented)
+ * It is important to consider both scenarios where an external function is in the programs call stack.
+ * 1. When the external function is called from an internal one.
+ * 2. When the external function calls an internal one.
+ *
+ * Detection is handled by setting a function id on the caller side and comparing it with the current
+ * function id on the callee side.
+ * Specification:
+ * - Using `latest_call.expected_func` to store the information.
+ * - `is_callee_external` is stack-based and works in pessimistic mode, i.e., it is set to true if
+ *   the function id is the same as the expected function id, otherwise remains unset or is set to false.
+ * Scenarios:
+ * - internal -> external:
+ *   When returned to the caller, `is_callee_external` is unset.
+ * - external -> internal:
+ *   When entered the callee, the expected function id does not match and
+ *   `is_callee_external` is set to false.
+ *   - internal -> external -> internal
+ *   When returned to the first caller, `is_callee_external` is false.
+ *
+ * Return Value
+ * The return value is set based on the external call strategy.
+ * Any existing return value is from an internal function called by the external function
+ * and thus should be discarded.
+ */
+
 pub(super) struct BasicCallStackManager<VS: VariablesState> {
     /// The call stack. Each frame consists of the data that is held for the
     /// current function call and is preserved through calls and returns.
@@ -50,6 +111,8 @@ pub(super) struct CallStackFrame {
 }
 
 type ArgLocal = LocalWithMetadata;
+
+#[derive(Debug)]
 pub(super) struct CallInfo {
     expected_func: ValueRef,
     args: Vec<ValueRef>,
@@ -98,6 +161,14 @@ impl<VS: VariablesState + SelfHierarchical> BasicCallStackManager<VS> {
             .expect("Call stack should not be empty")
     }
 
+    fn finalize_internal_call(&mut self, result_dest: &Place) {
+        if let Some(returned_val) = self.latest_returned_val.take() {
+            self.top().set_place(&result_dest, returned_val)
+        } else {
+            // The unit return type
+        }
+    }
+
     fn finalize_external_call(&mut self, result_dest: &Place) {
         if let Some(overridden) = self.top_frame().overridden_return_val.take() {
             log_debug!(concat!(
@@ -108,7 +179,10 @@ impl<VS: VariablesState + SelfHierarchical> BasicCallStackManager<VS> {
             return;
         }
 
-        // FIXME: The configuration should be set dynamically.
+        // Clearing the data that is not cleared by the external function.
+        let latest_call = self.latest_call.take();
+        self.latest_returned_val = None;
+
         enum Action {
             Concretize,
             OverApproximate,
@@ -125,10 +199,8 @@ impl<VS: VariablesState + SelfHierarchical> BasicCallStackManager<VS> {
                  * pure function and no symbolic input results in no symbolic output. */
                 /* FIXME: With the current implementation, references to symbolic values
                  * skip this check. */
-                let all_concrete = self
-                    .latest_call
-                    .take()
-                    .is_some_and(|c| c.args.iter().all(|v| !v.is_symbolic()));
+                let all_concrete =
+                    latest_call.is_some_and(|c| c.args.iter().all(|v| !v.is_symbolic()));
                 if all_concrete {
                     Concretize
                 } else {
@@ -185,13 +257,27 @@ impl<VS: VariablesState + SelfHierarchical> BasicCallStackManager<VS> {
 
 impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackManager<VS> {
     fn prepare_for_call(&mut self, func: ValueRef, args: Vec<ValueRef>, are_args_tupled: bool) {
+        // Some sanity checks
+        let is_currently_clean = self.latest_call.is_none()
+            && self.args_metadata.is_empty()
+            && self.return_val_metadata.is_none();
+        debug_assert!(
+            is_currently_clean,
+            concat!(
+                "The call information is not consumed or cleaned correctly. ",
+                "This is due to a problem in external function handling or instrumentation. ",
+                "`latest_call`: {:?}, ",
+                "`args_metadata`: {:?}, ",
+                "`return_val_metadata`: {:?}",
+            ),
+            self.latest_call, self.args_metadata, self.return_val_metadata,
+        );
+
         self.latest_call = Some(CallInfo {
             expected_func: func,
             args,
             are_args_tupled,
         });
-        debug_assert_eq!(self.args_metadata.len(), 0);
-        debug_assert_eq!(self.return_val_metadata.is_none(), true);
     }
 
     fn set_local_metadata(&mut self, local: &Local, metadata: super::place::PlaceMetadata) {
@@ -286,10 +372,7 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
             );
         } else {
             if !self.stack.is_empty() {
-                log_warn!(concat!(
-                    "No call info was found for this entrance. ",
-                    "This means a mixture of external and internal call has happened."
-                ));
+                log_debug!("A mixture of external and internal call has happened.");
             }
 
             self.push_new_stack_frame(core::iter::empty(), call_stack_frame);
@@ -328,12 +411,10 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
 
     fn finalize_call(&mut self, result_dest: Place) {
         let is_external = self.top_frame().is_callee_external.take().unwrap_or(true);
-        if is_external {
-            self.finalize_external_call(&result_dest)
-        } else if let Some(returned_val) = self.latest_returned_val.take() {
-            self.top().set_place(&result_dest, returned_val)
+        if !is_external {
+            self.finalize_internal_call(&result_dest)
         } else {
-            // The unit return type
+            self.finalize_external_call(&result_dest)
         }
     }
 
