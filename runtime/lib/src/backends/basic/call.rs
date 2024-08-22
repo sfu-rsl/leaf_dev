@@ -170,6 +170,10 @@ impl<VS: VariablesState + SelfHierarchical> BasicCallStackManager<VS> {
     }
 
     fn finalize_external_call(&mut self, result_dest: &Place) {
+        // Clearing the data that is not cleared by the external function.
+        let latest_call = self.latest_call.take();
+        self.latest_returned_val = None;
+
         if let Some(overridden) = self.top_frame().overridden_return_val.take() {
             log_debug!(concat!(
                 "Consuming the overridden return value as the returned value ",
@@ -178,10 +182,6 @@ impl<VS: VariablesState + SelfHierarchical> BasicCallStackManager<VS> {
             self.top().set_place(result_dest, overridden);
             return;
         }
-
-        // Clearing the data that is not cleared by the external function.
-        let latest_call = self.latest_call.take();
-        self.latest_returned_val = None;
 
         enum Action {
             Concretize,
