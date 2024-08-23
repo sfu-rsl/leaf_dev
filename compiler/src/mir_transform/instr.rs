@@ -102,14 +102,15 @@ impl<'tcx> From<(Mutability, Ty<'tcx>, SourceInfo)> for NewLocalDecl<'tcx> {
     }
 }
 
+impl<'tcx> From<(Ty<'tcx>, SourceInfo)> for NewLocalDecl<'tcx> {
+    fn from(value: (Ty<'tcx>, SourceInfo)) -> Self {
+        (Mutability::Not, value.0, value.1).into()
+    }
+}
+
 impl<'tcx> From<Ty<'tcx>> for NewLocalDecl<'tcx> {
     fn from(value: Ty<'tcx>) -> Self {
-        (
-            Mutability::Not,
-            value,
-            SourceInfo::outermost(rustc_span::DUMMY_SP),
-        )
-            .into()
+        (value, SourceInfo::outermost(rustc_span::DUMMY_SP)).into()
     }
 }
 

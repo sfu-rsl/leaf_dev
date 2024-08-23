@@ -125,6 +125,7 @@ fn transform<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>, storage: &mut dyn S
     let _is_promoted_block = body.source.promoted.is_some();
     call_adder
         .at(Before(body.basic_blocks.indices().next().unwrap()))
+        .with_source_info(*body.source_info(Location::START))
         .enter_func();
 
     VisitorFactory::make_body_visitor(&mut call_adder).visit_body(body);
@@ -176,6 +177,7 @@ where
 {
     let mut call_adder = call_adder.in_entry_fn();
     let first_block = body.basic_blocks.indices().next().unwrap();
+    let mut call_adder = call_adder.with_source_info(*body.source_info(Location::START));
     let mut call_adder = call_adder.at(Before(first_block));
     call_adder.init_runtime_lib();
 }
@@ -188,8 +190,11 @@ where
     body.basic_blocks
         .iter_enumerated()
         .filter(|(_, bb)| bb.terminator().kind == mir::TerminatorKind::Return)
-        .for_each(|(index, _)| {
-            call_adder.at(Before(index)).shutdown_runtime_lib();
+        .for_each(|(index, bb)| {
+            call_adder
+                .at(Before(index))
+                .with_source_info(bb.terminator().source_info)
+                .shutdown_runtime_lib();
         });
 }
 
@@ -310,13 +315,23 @@ where
             statement.kind,
             location
         );
-        VisitorFactory::make_statement_kind_visitor(&mut self.call_adder.before())
-            .visit_statement_kind(&statement.kind);
+        VisitorFactory::make_statement_kind_visitor(
+            &mut self
+                .call_adder
+                .with_source_info(statement.source_info)
+                .before(),
+        )
+        .visit_statement_kind(&statement.kind);
     }
 
     fn visit_terminator(&mut self, terminator: &mir::Terminator<'tcx>, _location: Location) {
-        VisitorFactory::make_terminator_kind_visitor(&mut self.call_adder.before())
-            .visit_terminator_kind(&terminator.kind);
+        VisitorFactory::make_terminator_kind_visitor(
+            &mut self
+                .call_adder
+                .with_source_info(terminator.source_info)
+                .before(),
+        )
+        .visit_terminator_kind(&terminator.kind);
     }
 }
 

@@ -361,6 +361,13 @@ mod implementation {
             })
         }
 
+        pub fn with_source_info<'b>(
+            &'b mut self,
+            source_info: mir::SourceInfo,
+        ) -> RuntimeCallAdder<SourceInfoContext<'b, C>> {
+            self.with_context(|base| SourceInfoContext { base, source_info })
+        }
+
         pub fn assign<'b, 'tcx>(
             &'b mut self,
             dest_ref: PlaceRef,
@@ -493,7 +500,10 @@ mod implementation {
 
     impl<'tcx, C> MirCallAdder<'tcx> for RuntimeCallAdder<C>
     where
-        C: BodyLocalManager<'tcx> + TyContextProvider<'tcx> + PriItemsProvider<'tcx>,
+        C: BodyLocalManager<'tcx>
+            + TyContextProvider<'tcx>
+            + PriItemsProvider<'tcx>
+            + SourceInfoProvider,
     {
         fn make_bb_for_call_with_all(
             &mut self,
@@ -517,7 +527,9 @@ mod implementation {
             args: Vec<Operand<'tcx>>,
             target: Option<BasicBlock>,
         ) -> (BasicBlockData<'tcx>, Local) {
-            let result_local = self.context.add_local(func_info.ret_ty(self.tcx()));
+            let result_local = self
+                .context
+                .add_local((func_info.ret_ty(self.tcx()), self.context.source_info()));
             (
                 self.make_call_bb(
                     func_info.def_id,
@@ -532,7 +544,7 @@ mod implementation {
     }
     impl<'tcx, C> RuntimeCallAdder<C>
     where
-        C: TyContextProvider<'tcx> + PriItemsProvider<'tcx>,
+        C: TyContextProvider<'tcx> + PriItemsProvider<'tcx> + SourceInfoProvider,
     {
         fn make_call_bb(
             &self,
@@ -549,6 +561,7 @@ mod implementation {
                 args,
                 destination,
                 target,
+                self.context.source_info(),
             )))
         }
     }
@@ -843,7 +856,7 @@ mod implementation {
     impl<'tcx, C> RuntimeCallAdder<C>
     where
         Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
-        C: Basic<'tcx>,
+        C: Basic<'tcx> + SourceInfoProvider,
     {
         fn internal_reference_operand(&mut self, operand: &Operand<'tcx>) -> BlocksAndResult<'tcx>
         where
@@ -1860,7 +1873,7 @@ mod implementation {
     impl<'tcx, C> RuntimeCallAdder<C>
     where
         Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
-        C: Basic<'tcx>,
+        C: Basic<'tcx> + SourceInfoProvider,
     {
         fn make_bb_for_func_preserve_metadata(&mut self) -> Vec<BasicBlockData<'tcx>>
         where
@@ -2532,9 +2545,10 @@ mod implementation {
                 args: Vec<Operand<'tcx>>,
                 destination: Place<'tcx>,
                 target: Option<BasicBlock>,
+                source_info: SourceInfo,
             ) -> Terminator<'tcx> {
                 Terminator {
-                    source_info: SourceInfo::outermost(DUMMY_SP),
+                    source_info,
                     kind: TerminatorKind::Call {
                         /* NOTE: Check if it is supposed to be the same operand for each function definition,
                          * i.e. caching/lazy singleton. */
@@ -2643,7 +2657,7 @@ mod implementation {
         #[allow(clippy::borrowed_box)]
         pub(super) fn cast_float_to_bit_rep<'tcx>(
             tcx: TyCtxt<'tcx>,
-            context: &mut (impl BodyLocalManager<'tcx> + PriItemsProvider<'tcx>),
+            context: &mut (impl BodyLocalManager<'tcx> + PriItemsProvider<'tcx> + SourceInfoProvider),
             constant: &Box<ConstOperand<'tcx>>,
         ) -> (Local, BasicBlockData<'tcx>) {
             use rustc_middle::ty::FloatTy;
@@ -2661,6 +2675,7 @@ mod implementation {
                 vec![operand::const_from_existing(constant)],
                 bit_rep_local.into(),
                 None,
+                context.source_info(),
             )));
             (bit_rep_local, block)
         }
@@ -2833,10 +2848,13 @@ mod implementation {
         impl<'tcx, C> Basic<'tcx> for C where C: BaseContext<'tcx> + BodyProvider<'tcx> {}
 
         pub(crate) trait ForInsertion<'tcx>:
-            Basic<'tcx> + InsertionLocationProvider
+            Basic<'tcx> + InsertionLocationProvider + SourceInfoProvider
         {
         }
-        impl<'tcx, C> ForInsertion<'tcx> for C where C: Basic<'tcx> + InsertionLocationProvider {}
+        impl<'tcx, C> ForInsertion<'tcx> for C where
+            C: Basic<'tcx> + InsertionLocationProvider + SourceInfoProvider
+        {
+        }
 
         pub(crate) trait ForPlaceRef<'tcx>: ForInsertion<'tcx> {}
         impl<'tcx, C> ForPlaceRef<'tcx> for C where C: ForInsertion<'tcx> {}
