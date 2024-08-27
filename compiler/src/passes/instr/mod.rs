@@ -25,7 +25,7 @@ use crate::{
 use super::{CompilationPass, OverrideFlags, Storage};
 
 use call::{
-    context::{self, BlockIndexProvider, TyContextProvider},
+    context::{self, BlockIndexProvider, SourceInfoProvider, TyContextProvider},
     ctxtreqs, AssertionHandler, Assigner, BranchingHandler, BranchingReferencer, CastAssigner,
     EntryFunctionHandler, FunctionHandler,
     InsertionLocation::*,
@@ -438,7 +438,14 @@ where
             |call_adder| call_adder.reference_func(func),
             |call_adder| {
                 args.iter()
-                    .map(|arg| call_adder.reference_operand(&arg.node))
+                    .map(|arg| {
+                        call_adder
+                            .with_source_info(mir::SourceInfo {
+                                span: arg.span,
+                                ..call_adder.source_info()
+                            })
+                            .reference_operand(&arg.node)
+                    })
                     .collect::<Vec<_>>()
             },
             are_args_tupled,

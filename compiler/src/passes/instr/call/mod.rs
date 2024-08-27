@@ -497,6 +497,28 @@ mod implementation {
             }
         }
     }
+    impl<'tcx, C> PriItemsProvider<'tcx> for RuntimeCallAdder<C>
+    where
+        C: PriItemsProvider<'tcx>,
+    {
+        delegate! {
+            to self.context {
+                fn get_pri_func_info(&self, func_name: LeafSymbol) -> &FunctionInfo;
+                fn pri_types(&self) -> &crate::pri_utils::PriTypes;
+                fn pri_helper_funcs(&self) -> &crate::pri_utils::PriHelperFunctions;
+            }
+        }
+    }
+    impl<'tcx, C> SourceInfoProvider for RuntimeCallAdder<C>
+    where
+        C: SourceInfoProvider,
+    {
+        delegate! {
+            to self.context {
+                fn source_info(&self) -> mir::SourceInfo;
+            }
+        }
+    }
 
     impl<'tcx, C> MirCallAdder<'tcx> for RuntimeCallAdder<C>
     where
@@ -2344,6 +2366,9 @@ mod implementation {
 
             pub fn create<'tcx>(destination: Place<'tcx>, value: Rvalue<'tcx>) -> Statement<'tcx> {
                 Statement {
+                    /* NOTE: The source info can be propagated here too.
+                     * However, as these statements end with a function call which has source info,
+                     * we avoid the expense passing it around. */
                     source_info: SourceInfo::outermost(DUMMY_SP),
                     kind: StatementKind::Assign(Box::new((destination, value))),
                 }
