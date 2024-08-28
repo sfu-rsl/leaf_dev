@@ -15,6 +15,8 @@ use common::{log_debug, log_warn, pri::RawPointer};
 
 type VariablesStateFactory<VS> = Box<dyn Fn(usize) -> VS>;
 
+use self::logging::TAG;
+
 /* Here is what happens during function calls:
  * +---------------+---------------------------+
  * | Caller        | Callee                    |
@@ -91,6 +93,7 @@ pub(super) struct BasicCallStackManager<VS: VariablesState> {
     latest_returned_val: Option<ValueRef>,
     vars_state: Option<VS>,
     config: CallConfig,
+    log_span: tracing::span::EnteredSpan,
 }
 
 #[derive(Default)]
@@ -121,6 +124,7 @@ pub(super) struct CallInfo {
 
 impl<VS: VariablesState> BasicCallStackManager<VS> {
     pub(super) fn new(vars_state_factory: VariablesStateFactory<VS>, config: &CallConfig) -> Self {
+        let log_span = tracing::Span::none().entered();
         Self {
             stack: vec![],
             vars_state_factory,
@@ -130,6 +134,7 @@ impl<VS: VariablesState> BasicCallStackManager<VS> {
             latest_returned_val: None,
             vars_state: None,
             config: config.clone(),
+            log_span,
         }
     }
 }
@@ -153,6 +158,7 @@ impl<VS: VariablesState + SelfHierarchical> BasicCallStackManager<VS> {
         });
 
         self.stack.push(frame);
+        self.log_span_reset();
     }
 
     fn top_frame(&mut self) -> &mut CallStackFrame {
@@ -175,10 +181,13 @@ impl<VS: VariablesState + SelfHierarchical> BasicCallStackManager<VS> {
         self.latest_returned_val = None;
 
         if let Some(overridden) = self.top_frame().overridden_return_val.take() {
-            log_debug!(concat!(
+            log_debug!(
+                target: TAG,
+                concat!(
                 "Consuming the overridden return value as the returned value ",
                 "from the external function."
-            ));
+                ),
+            );
             self.top().set_place(result_dest, overridden);
             return;
         }
@@ -257,6 +266,8 @@ impl<VS: VariablesState + SelfHierarchical> BasicCallStackManager<VS> {
 
 impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackManager<VS> {
     fn prepare_for_call(&mut self, func: ValueRef, args: Vec<ValueRef>, are_args_tupled: bool) {
+        self.log_span_start_trans(logging::TransitionDirection::Call);
+
         // Some sanity checks
         let is_currently_clean = self.latest_call.is_none()
             && self.args_metadata.is_empty()
@@ -284,7 +295,7 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
         match local {
             Local::ReturnValue => self.return_val_metadata = Some(metadata),
             Local::Argument(local_index) => {
-                log_debug!("Setting metadata for argument {:?}.", local);
+                log_debug!(target: TAG, "Setting metadata for argument {:?}.", local);
                 let args_metadata = &mut self.args_metadata;
                 let index = *local_index as usize - 1;
                 if args_metadata.len() <= index {
@@ -315,7 +326,7 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
         }
 
         let arg_index = arg_index as usize - 1;
-        log_debug!("Untupling argument at index {}.", arg_index);
+        log_debug!(target: TAG, "Untupling argument at index {}.", arg_index);
         let tupled_value = args.remove(arg_index);
         let untupled_args = Self::untuple(
             tupled_value,
@@ -343,39 +354,45 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
             ..Default::default()
         };
 
-        if let Some(CallInfo {
+        let args_if_not_broken = if let Some(CallInfo {
             expected_func,
-            mut args,
+            args,
             are_args_tupled: _,
         }) = self.latest_call.take()
         {
-            let expected_func = &expected_func;
-            let broken_stack = current_func.unwrap_func_id() != expected_func.unwrap_func_id();
-
-            if let Some(parent_frame) = self.stack.last_mut() {
-                parent_frame.is_callee_external = Some(broken_stack);
-            }
-
-            if broken_stack {
-                args.clear()
-            } else {
+            if current_func.unwrap_func_id() == expected_func.unwrap_func_id() {
                 assert_eq!(
                     args.len(),
                     arg_locals.len(),
                     "Inconsistent number of passed arguments."
                 );
-            }
 
-            self.push_new_stack_frame(
-                arg_locals.into_iter().zip(args.into_iter()),
-                call_stack_frame,
-            );
+                Ok(arg_locals.into_iter().zip(args.into_iter()))
+            } else {
+                Err(Some(expected_func))
+            }
         } else {
-            if !self.stack.is_empty() {
-                log_debug!("A mixture of external and internal call has happened.");
-            }
+            // NOTE: An example of this case is when an external function calls multiple internal ones.
+            Err(None)
+        };
 
-            self.push_new_stack_frame(core::iter::empty(), call_stack_frame);
+        if let Some(parent_frame) = self.stack.last_mut() {
+            parent_frame.is_callee_external = Some(args_if_not_broken.is_err());
+        }
+
+        match args_if_not_broken {
+            Ok(args) => {
+                self.push_new_stack_frame(args, call_stack_frame);
+            }
+            Err(expected_func) => {
+                log_debug!(
+                    target: TAG,
+                    "External function call in between detected. Expected: {}, Current: {}",
+                    expected_func.map_or("None".to_string(), |f| f.to_string()),
+                    current_func,
+                );
+                self.push_new_stack_frame(core::iter::empty(), call_stack_frame);
+            }
         }
     }
 
@@ -383,6 +400,15 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
         self.latest_returned_val = None;
 
         let popped_frame = self.stack.pop().unwrap();
+
+        self.log_span_reset();
+        if self
+            .stack
+            .last()
+            .is_some_and(|f| !f.is_callee_external.unwrap())
+        {
+            self.log_span_start_trans(logging::TransitionDirection::Return);
+        }
 
         // Cleaning the arguments
         popped_frame.arg_locals.into_iter().for_each(|local| {
@@ -398,10 +424,13 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
             .and_then(|p| self.top().try_take_place(&p));
         if let Some(overridden) = popped_frame.overridden_return_val {
             if self.latest_returned_val.is_some() {
-                log_warn!(concat!(
-                    "The return value is overridden while an actual value was available. ",
-                    "This may not be intended."
-                ))
+                log_warn!(
+                    target: TAG,
+                    concat!(
+                        "The return value is overridden while an actual value was available. ",
+                        "This may not be intended."
+                    )
+                );
             }
             self.latest_returned_val = Some(overridden);
         }
@@ -410,20 +439,70 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
     }
 
     fn finalize_call(&mut self, result_dest: Place) {
+        self.log_span_reset();
+
         let is_external = self.top_frame().is_callee_external.take().unwrap_or(true);
         if !is_external {
+            log_debug!(target: TAG, "Finalizing an internal call.");
             self.finalize_internal_call(&result_dest)
         } else {
+            log_debug!(target: TAG, "Finalizing an external call.");
             self.finalize_external_call(&result_dest)
         }
     }
 
     fn override_return_value(&mut self, value: ValueRef) {
-        log_debug!("Overriding the return value with {:?}", value);
+        log_debug!(target: TAG, "Overriding the return value with {:?}", value);
         self.top_frame().overridden_return_val = Some(value);
     }
 
     fn top(&mut self) -> &mut dyn VariablesState {
         self.vars_state.as_mut().expect("Call stack is empty")
+    }
+}
+
+mod logging {
+    use super::*;
+
+    use const_format::concatcp;
+    use tracing::{debug_span, Span};
+
+    pub(super) const TAG: &str = "call_manager";
+    const TAG_STACK: &str = concatcp!(TAG, "::stack");
+    const SPAN_CALL: &str = "call";
+    const SPAN_TRANSITION: &str = "call_trans";
+    const FIELD_DEPTH: &str = "depth";
+    const FIELD_TRANS_DIR: &str = "dir";
+    #[derive(derive_more::Display)]
+    pub(super) enum TransitionDirection {
+        #[display(fmt = "call")]
+        Call,
+        #[display(fmt = "ret")]
+        Return,
+    }
+
+    impl<VS: VariablesState> BasicCallStackManager<VS> {
+        #[inline]
+        pub(super) fn log_span_reset(&mut self) {
+            // We avoid the hierarchical structure of log spans as they don't suit our purpose.
+            self.log_span = debug_span!(
+                target: TAG_STACK,
+                parent: Span::none(),
+                SPAN_CALL,
+                { FIELD_DEPTH } = self.stack.len(),
+            )
+            .entered();
+        }
+
+        #[inline]
+        pub(super) fn log_span_start_trans(&mut self, direction: TransitionDirection) {
+            self.log_span = debug_span!(
+                target: TAG_STACK,
+                parent: self.log_span.id(),
+                SPAN_TRANSITION,
+                { FIELD_TRANS_DIR } = direction.to_string(),
+            )
+            .entered();
+        }
     }
 }
