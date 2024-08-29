@@ -79,7 +79,7 @@ pub(crate) trait Assigner<'tcx> {
 
     fn by_thread_local_ref(&mut self, def_id: &DefId);
 
-    fn by_address_of(&mut self, place: PlaceRef, is_mutable: bool);
+    fn by_raw_ptr(&mut self, place: PlaceRef, is_mutable: bool);
 
     fn by_len(&mut self, place: PlaceRef);
 
@@ -1068,7 +1068,6 @@ mod implementation {
             panic!("Unevaluated constant is not supported by this configuration.")
         }
 
-
         fn internal_reference_static_ref_const_operand(
             &mut self,
             _def_id: DefId,
@@ -1079,7 +1078,6 @@ mod implementation {
         {
             panic!("Static reference constant is not supported by this configuration.")
         }
-
 
         fn make_bb_for_some_const_ref_call(&mut self) -> (BasicBlockData<'tcx>, Local) {
             self.make_bb_for_operand_ref_call(sym::ref_operand_const_some, Vec::default())
@@ -1163,9 +1161,9 @@ mod implementation {
             self.add_bb_for_assign_call(sym::assign_thread_local_ref, vec![])
         }
 
-        fn by_address_of(&mut self, place: PlaceRef, is_mutable: bool) {
+        fn by_raw_ptr(&mut self, place: PlaceRef, is_mutable: bool) {
             self.add_bb_for_assign_call(
-                sym::assign_address_of,
+                sym::assign_raw_ptr_of,
                 vec![
                     operand::copy_for_local(place.into()),
                     operand::const_from_bool(self.context.tcx(), is_mutable),
@@ -2497,7 +2495,7 @@ mod implementation {
             pub fn fn_ptr_sig<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>) -> mir_ty::PolyFnSig<'tcx> {
                 match ty.kind() {
                     TyKind::FnDef(..) => ty.fn_sig(tcx),
-                    TyKind::FnPtr(sig) => *sig,
+                    TyKind::FnPtr(tys, header) => tys.with(*header),
                     _ => unreachable!(
                         "Unexpected type to get function pointer directly from: {}",
                         ty
@@ -2676,7 +2674,7 @@ mod implementation {
             let ptr_local = local_manager.add_local(Ty::new_imm_ptr(tcx, place_ty));
             let ptr_assignment = assignment::create(
                 Place::from(ptr_local),
-                mir::Rvalue::AddressOf(rustc_ast::Mutability::Not, place.clone()),
+                mir::Rvalue::RawPtr(rustc_ast::Mutability::Not, place.clone()),
             );
 
             (ptr_assignment, ptr_local)

@@ -154,6 +154,7 @@ pub(crate) trait AssignmentHandler: Sized {
 
     fn thread_local_ref_to(self);
 
+    // FIXME: Rename
     fn address_of(self, place: Self::Place, is_mutable: bool);
 
     fn len_of(self, place: Self::Place);

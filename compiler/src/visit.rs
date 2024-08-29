@@ -356,7 +356,7 @@ macro_rules! make_rvalue_visitor {
                 Default::default()
             }
 
-            fn visit_address_of(
+            fn visit_raw_ptr(
                 &mut self,
                 mutability: & $($mutability)? Mutability,
                 place: & $($mutability)? Place<'tcx>,
@@ -425,8 +425,8 @@ macro_rules! make_rvalue_visitor {
                         self.visit_ref(region, borrow_kind, place)
                     }
                     Rvalue::ThreadLocalRef(def_id) => self.visit_thread_local_ref(def_id),
-                    Rvalue::AddressOf(mutability, place) => {
-                        self.visit_address_of(mutability, place)
+                    Rvalue::RawPtr(mutability, place) => {
+                        self.visit_raw_ptr(mutability, place)
                     }
                     Rvalue::Len(place) => self.visit_len(place),
                     Rvalue::Cast(kind, operand, ty) => self.visit_cast(kind, operand, ty),

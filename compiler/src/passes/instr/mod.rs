@@ -545,10 +545,9 @@ where
         self.call_adder.by_thread_local_ref(def_id);
     }
 
-    fn visit_address_of(&mut self, mutability: &rustc_ast::Mutability, place: &Place<'tcx>) {
+    fn visit_raw_ptr(&mut self, mutability: &rustc_ast::Mutability, place: &Place<'tcx>) {
         let place_ref = self.call_adder.reference_place(place);
-        self.call_adder
-            .by_address_of(place_ref, mutability.is_mut());
+        self.call_adder.by_raw_ptr(place_ref, mutability.is_mut());
     }
 
     fn visit_len(&mut self, place: &Place<'tcx>) {

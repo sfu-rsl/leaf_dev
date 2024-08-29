@@ -169,7 +169,7 @@ impl ProgramRuntimeInterface for BasicPri {
     fn assign_thread_local_ref(dest: PlaceRef /* TODO: #365 */) {
         assign_to(dest, |h| h.thread_local_ref_to())
     }
-    fn assign_address_of(dest: PlaceRef, place: PlaceRef, is_mutable: bool) {
+    fn assign_raw_ptr_of(dest: PlaceRef, place: PlaceRef, is_mutable: bool) {
         assign_to(dest, |h| {
             h.address_of(take_back_place_ref(place), is_mutable)
         })

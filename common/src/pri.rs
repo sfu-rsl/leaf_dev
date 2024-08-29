@@ -314,7 +314,7 @@ pub mod macros {
               { fn assign_repeat(dest: PlaceRef, operand: OperandRef, count: usize) }
               { fn assign_ref(dest: PlaceRef, place: PlaceRef, is_mutable: bool) }
               { fn assign_thread_local_ref(dest: PlaceRef) }
-              { fn assign_address_of(dest: PlaceRef, place: PlaceRef, is_mutable: bool) }
+              { fn assign_raw_ptr_of(dest: PlaceRef, place: PlaceRef, is_mutable: bool) }
               { fn assign_len(dest: PlaceRef, place: PlaceRef) }
 
               { fn assign_cast_char(dest: PlaceRef, operand: OperandRef) }
@@ -625,7 +625,7 @@ pub mod macros {
             }$modifier!{
                 fn assign_thread_local_ref(dest:PlaceRef);
             }$modifier!{
-                fn assign_address_of(dest:PlaceRef,place:PlaceRef,is_mutable:bool);
+                fn assign_raw_ptr_of(dest:PlaceRef,place:PlaceRef,is_mutable:bool);
             }$modifier!{
                 fn assign_len(dest:PlaceRef,place:PlaceRef);
             }$modifier!{
