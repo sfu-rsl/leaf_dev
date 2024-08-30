@@ -80,7 +80,8 @@ where
         );
         log_debug!(
             target: TAG_OBJECTS,
-            "MIR body:\n{}",
+            "MIR body of {:?} (before):\n{}",
+            body.source.def_id(),
             get_mir_pretty(tcx, body)
         );
         T::visit_mir_body_before(tcx, body, storage)
@@ -98,7 +99,8 @@ where
         );
         log_debug!(
             target: TAG_OBJECTS,
-            "MIR body:\n{}",
+            "MIR body {:?} (after):\n{}",
+            body.source.def_id(),
             get_mir_pretty(tcx, body)
         );
         T::visit_mir_body_after(tcx, body, storage)
