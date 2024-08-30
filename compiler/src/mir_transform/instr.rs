@@ -194,8 +194,23 @@ impl JumpTargetModifier for BodyInstrumentationUnit<'_> {
 type InsertionPair<'tcx> = (BasicBlock, Vec<NewBasicBlock<'tcx>>);
 impl<'tcx> BodyInstrumentationUnit<'tcx> {
     // No blocks actually get added to the MIR of the current body until this function gets called.
-    pub fn commit(mut self, body: &mut Body<'tcx>) {
+    pub fn commit(
+        mut self,
+        body: &mut Body<'tcx>,
+        check_bb_pre_insert: Option<impl Fn(&BasicBlockData<'tcx>)>,
+    ) {
         self.add_new_locals(&mut body.local_decls);
+
+        if let Some(check_bb_pre_insert) = check_bb_pre_insert {
+            for bb in self
+                .new_blocks_before
+                .values()
+                .chain(self.new_blocks_after.values())
+                .flatten()
+            {
+                check_bb_pre_insert(&bb.data);
+            }
+        }
 
         // this function applies any jump modifications to terminators of blocks as specified
         Self::update_jumps_pre_insert(

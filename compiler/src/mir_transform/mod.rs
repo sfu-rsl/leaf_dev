@@ -1,7 +1,7 @@
 mod instr;
 /// This module hosts general utilities for modifying MIR bodies.
 mod jump;
-mod split;
+mod misc;
 
 pub(crate) use jump::TAG_BB_JUMP;
 
@@ -9,7 +9,8 @@ use rustc_middle::mir::{BasicBlock, BasicBlockData, Local, LocalDecl};
 
 pub(crate) use self::instr::BodyInstrumentationUnit;
 use self::jump::JumpTargetAttribute;
-pub(crate) use self::split::split_blocks_with;
+pub(crate) use self::misc::noop_blocks_with;
+pub(crate) use self::misc::split_blocks_with;
 pub(crate) const NEXT_BLOCK: BasicBlock = BasicBlock::MAX;
 
 #[derive(derive_more::From)]

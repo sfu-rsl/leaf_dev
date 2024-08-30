@@ -506,6 +506,7 @@ mod implementation {
                 fn get_pri_func_info(&self, func_name: LeafSymbol) -> &FunctionInfo;
                 fn pri_types(&self) -> &crate::pri_utils::PriTypes;
                 fn pri_helper_funcs(&self) -> &crate::pri_utils::PriHelperFunctions;
+                fn all_pri_items(&self) -> &std::collections::HashSet<DefId>;
             }
         }
     }

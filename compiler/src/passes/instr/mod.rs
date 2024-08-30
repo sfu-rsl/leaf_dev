@@ -8,7 +8,7 @@ use rustc_index::IndexVec;
 use rustc_middle::{
     mir::{
         self, visit::Visitor, BasicBlock, BasicBlockData, Body, BorrowKind, CastKind,
-        HasLocalDecls, Location, Operand, Place, Rvalue, Statement, UnwindAction,
+        HasLocalDecls, Location, Operand, Place, Rvalue, Statement, TerminatorKind, UnwindAction,
     },
     ty::TyCtxt,
 };
@@ -16,7 +16,7 @@ use rustc_span::{def_id::DefId, source_map::Spanned};
 use rustc_target::abi::{FieldIdx, VariantIdx};
 
 use common::{log_debug, log_info, log_warn};
-use std::{num::NonZeroUsize, sync::atomic};
+use std::{collections::HashSet, num::NonZeroUsize, sync::atomic};
 
 use crate::{
     mir_transform::{self, BodyInstrumentationUnit, JumpTargetModifier},
@@ -27,7 +27,7 @@ use crate::{
 use super::{CompilationPass, OverrideFlags, Storage};
 
 use call::{
-    context::{self, BlockIndexProvider, SourceInfoProvider, TyContextProvider},
+    context::{self, BlockIndexProvider, PriItemsProvider, SourceInfoProvider, TyContextProvider},
     ctxtreqs, AssertionHandler, Assigner, BranchingHandler, BranchingReferencer, CastAssigner,
     EntryFunctionHandler, FunctionHandler,
     InsertionLocation::*,
@@ -108,11 +108,18 @@ fn transform<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>, storage: &mut dyn S
         body.span,
     );
 
-    mir_transform::split_blocks_with(body, requires_immediate_instr_after);
-
     let pri_items = storage
         .get_or_insert_with(KEY_PRI_ITEMS.to_owned(), || make_pri_items(tcx))
         .leak();
+
+    /* NOTE: Ideally this should not happen.
+     * However, it is observed that in some cases (presumably because of inlining),
+     * there are existing calls to our instrumentation functions, and they are
+     * treated as regular blocks.
+     * Clearing existing instrumentation (and redoing them) is not supposed to change
+     * the behavior, at least as long as the control flow is changed by the instrumentation. */
+    clear_existing_instrumentation(body, &pri_items.all_items);
+    mir_transform::split_blocks_with(body, requires_immediate_instr_after);
 
     let mut modification = BodyInstrumentationUnit::new(body.local_decls());
     let mut call_adder = RuntimeCallAdder::new(tcx, &mut modification, &pri_items, storage);
@@ -137,7 +144,10 @@ fn transform<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>, storage: &mut dyn S
         handle_entry_function_post(&mut call_adder, body);
     }
 
-    modification.commit(body);
+    modification.commit(
+        body,
+        Some(|bb: &BasicBlockData<'tcx>| sanity_check_inserted_block(bb, &pri_items.all_items)),
+    );
 
     pri_items.return_to(storage);
 }
@@ -171,6 +181,37 @@ fn make_pri_items(tcx: TyCtxt) -> PriItems {
         funcs: main_funcs,
         types: collect_helper_types(&helper_items),
         helper_funcs: collect_helper_funcs(&helper_items),
+        all_items: all_items.into_iter().collect(),
+    }
+}
+
+fn clear_existing_instrumentation(body: &mut Body<'_>, pri_funcs: &HashSet<DefId>) {
+    #[cfg(debug_assertions)]
+    let original_body = body.clone();
+
+    mir_transform::noop_blocks_with(body, |bb| is_instrumentation_block(bb, pri_funcs));
+
+    // Ensure that the control flow is not modified.
+    #[cfg(debug_assertions)]
+    {
+        assert_eq!(
+            original_body.basic_blocks.len(),
+            body.basic_blocks.len(),
+            "Blocks are not expected to be added or removed."
+        );
+
+        for (original_bb, bb) in original_body
+            .basic_blocks
+            .iter()
+            .zip(body.basic_blocks.iter())
+        {
+            assert!(
+                original_bb
+                    .terminator()
+                    .successors()
+                    .eq(bb.terminator().successors())
+            );
+        }
     }
 }
 
@@ -421,6 +462,11 @@ where
             if !is_function_call_supported(tcx, *def_id) {
                 return;
             }
+
+            assert!(
+                !self.call_adder.all_pri_items().contains(def_id),
+                "Instrumenting our own instrumentation."
+            );
         }
 
         let are_args_tupled = self
@@ -744,4 +790,39 @@ fn is_function_call_supported(tcx: TyCtxt, def_id: DefId) -> bool {
     }
 
     true
+}
+
+fn sanity_check_inserted_block<'tcx>(
+    bb: &BasicBlockData<'tcx>,
+    expected_called_funcs: &HashSet<DefId>,
+) {
+    if !is_instrumentation_block(bb, expected_called_funcs) {
+        panic!(
+            "Unexpected block inserted during instrumentation: {:#?}",
+            bb
+        );
+    }
+}
+
+fn is_instrumentation_block<'tcx>(
+    bb: &BasicBlockData<'tcx>,
+    all_pri_funcs: &HashSet<DefId>,
+) -> bool {
+    let terminator = bb.terminator.as_ref().unwrap();
+    match &terminator.kind {
+        TerminatorKind::Call { .. } => is_call_to_any_of(&terminator.kind, all_pri_funcs),
+        TerminatorKind::Goto { target } => {
+            bb.statements.is_empty() && *target == mir_transform::NEXT_BLOCK
+        }
+        _ => false,
+    }
+}
+
+#[inline]
+fn is_call_to_any_of<'tcx>(terminator: &TerminatorKind, all_funcs: &HashSet<DefId>) -> bool {
+    let TerminatorKind::Call { func, .. } = terminator else {
+        return false;
+    };
+    func.const_fn_def()
+        .is_some_and(|(def_id, _)| all_funcs.contains(&def_id))
 }

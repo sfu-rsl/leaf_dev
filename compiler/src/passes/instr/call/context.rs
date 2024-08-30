@@ -1,11 +1,12 @@
 use delegate::delegate;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use rustc_middle::{
     mir::{self, BasicBlock, BasicBlockData, HasLocalDecls, Local, LocalDecls, SourceInfo},
     ty::{Ty, TyCtxt},
 };
+use rustc_span::def_id::DefId;
 
 use crate::{
     mir_transform::{
@@ -32,6 +33,7 @@ pub(crate) trait PriItemsProvider<'tcx> {
     fn get_pri_func_info(&self, func_name: LeafSymbol) -> &FunctionInfo;
     fn pri_types(&self) -> &PriTypes;
     fn pri_helper_funcs(&self) -> &PriHelperFunctions;
+    fn all_pri_items(&self) -> &HashSet<DefId>;
 }
 
 pub(crate) trait StorageProvider {
@@ -101,6 +103,7 @@ pub(crate) struct PriItems {
     pub funcs: HashMap<LeafSymbol, FunctionInfo>,
     pub types: PriTypes,
     pub helper_funcs: PriHelperFunctions,
+    pub all_items: HashSet<DefId>,
 }
 
 impl<'tcx, 'm, 'p, 's> DefaultContext<'tcx, 'm, 'p, 's> {
@@ -192,6 +195,10 @@ impl<'tcx> PriItemsProvider<'tcx> for PriItems {
     fn pri_helper_funcs(&self) -> &PriHelperFunctions {
         &self.helper_funcs
     }
+
+    fn all_pri_items(&self) -> &HashSet<DefId> {
+        &self.all_items
+    }
 }
 
 impl<'tcx> PriItemsProvider<'tcx> for DefaultContext<'tcx, '_, '_, '_> {
@@ -200,6 +207,7 @@ impl<'tcx> PriItemsProvider<'tcx> for DefaultContext<'tcx, '_, '_, '_> {
             fn get_pri_func_info(&self, func_name: LeafSymbol) -> &FunctionInfo;
             fn pri_types(&self) -> &PriTypes;
             fn pri_helper_funcs(&self) -> &PriHelperFunctions;
+            fn all_pri_items(&self) -> &HashSet<DefId>;
         }
     }
 }
@@ -349,6 +357,7 @@ make_impl_macro! {
     fn get_pri_func_info(&self, func_name: LeafSymbol) -> &FunctionInfo;
     fn pri_types(&self) -> &PriTypes;
     fn pri_helper_funcs(&self) -> &PriHelperFunctions;
+    fn all_pri_items(&self) -> &HashSet<DefId>;
 }
 
 make_impl_macro! {

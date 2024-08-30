@@ -30,7 +30,7 @@ pub(crate) fn split_blocks_with(body: &mut Body, predicate: impl Fn(&Statement) 
     );
 }
 
-pub(crate) trait BasicBlockDataSplitExt<'tcx> {
+trait BasicBlockDataSplitExt<'tcx> {
     fn split_with(self, predicate: impl Fn(&Statement) -> bool) -> Vec<BasicBlockData<'tcx>>;
 }
 
@@ -62,5 +62,42 @@ impl<'tcx> BasicBlockDataSplitExt<'tcx> for BasicBlockData<'tcx> {
         result.push(new_block);
 
         result
+    }
+}
+
+pub(crate) fn noop_blocks_with<'tcx>(
+    body: &mut Body<'tcx>,
+    predicate: impl Fn(&BasicBlockData<'tcx>) -> bool,
+) {
+    for block in body.basic_blocks_mut().iter_mut() {
+        if predicate(block) {
+            block.retain_statements(|_| true);
+
+            let terminator = block.terminator.take().unwrap();
+
+            if terminator.successors().count() > 1 {
+                panic!(
+                    "Erasing a block with a terminator that has more than one successor: {:?}",
+                    terminator
+                );
+            }
+
+            let target = match terminator.kind {
+                TerminatorKind::Goto { target } => target,
+                TerminatorKind::Call {
+                    target: Some(target),
+                    ..
+                } => target,
+                _ => panic!(
+                    "Erasing a block with an unsupported/unexpected terminator: {:?}",
+                    terminator
+                ),
+            };
+
+            block.terminator = Some(Terminator {
+                kind: TerminatorKind::Goto { target },
+                ..terminator
+            });
+        }
     }
 }
