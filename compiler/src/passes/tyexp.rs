@@ -1,6 +1,6 @@
 use super::{CompilationPass, Storage, StorageExt};
 
-use rustc_abi::{FieldsShape, LayoutS, Variants};
+use rustc_abi::{FieldsShape, LayoutS, Scalar, TagEncoding, Variants};
 use rustc_middle::mir::{self, visit::Visitor};
 use rustc_middle::ty::EarlyBinder;
 use rustc_middle::ty::{
@@ -162,7 +162,9 @@ impl<'tcx, 's, 'b> Visitor<'tcx> for PlaceVisitor<'tcx, 's, 'b> {
             self.param_env,
             EarlyBinder::bind(ty),
         );
-        log_debug!(target: TAG_TYPE_EXPORT, "Normalized ty with param: {} -> {}", ty, normalized_ty);
+        if normalized_ty != ty {
+            log_debug!(target: TAG_TYPE_EXPORT, "Normalized ty with param: {} -> {}", ty, normalized_ty);
+        }
 
         if self
             .type_map
@@ -220,18 +222,26 @@ where
         /* FIXME: As all conversions now get TyAndLayout as definition,
          * we can move it inside `cx`. */
         let ty_layout = TyAndLayout { ty, layout: self };
-        let size = if ty.is_sized(tcx, cx.param_env()) {
+        let size = if self.is_sized() {
             self.size().bytes()
         } else {
             TypeInfo::SIZE_UNSIZED
         };
 
-        let variants = match &self.variants {
-            Variants::Single { .. } => vec![self.0.to_runtime(cx, ty_layout)],
-            Variants::Multiple { variants, .. } => variants
-                .iter_enumerated()
-                .map(|(i, v)| v.to_runtime(cx, ty_layout.for_variant(cx, i)))
-                .collect(),
+        let (variants, tag) = match &self.variants {
+            Variants::Single { .. } => (vec![self.0.to_runtime(cx, ty_layout)], None),
+            Variants::Multiple {
+                variants,
+                tag,
+                tag_encoding,
+                tag_field,
+            } => (
+                variants
+                    .iter_enumerated()
+                    .map(|(i, v)| v.to_runtime(cx, ty_layout.for_variant(cx, i)))
+                    .collect(),
+                Some((tag, tag_encoding, tag_field).to_runtime(cx, ty_layout)),
+            ),
         };
 
         TypeInfo {
@@ -240,6 +250,7 @@ where
             size,
             align: self.align().abi.bytes(),
             variants,
+            tag,
             // NOTE: This also includes `Box` which may not be desired.
             pointee_ty: ty.builtin_deref(true).map(|t| type_id(tcx, t)),
         }
@@ -268,6 +279,49 @@ where
     }
 }
 
+impl<'tcx, Cx> ToRuntimeInfo<'tcx, Cx, TagInfo> for (&Scalar, &TagEncoding<VariantIdx>, &usize)
+where
+    Cx: HasTyCtxt<'tcx> + HasParamEnv<'tcx>,
+{
+    type Def = TyAndLayout<'tcx>;
+
+    fn to_runtime(self, cx: &Cx, ty_layout: TyAndLayout<'tcx>) -> TagInfo
+    where
+        Cx: 'tcx,
+    {
+        let (tag, encoding, field) = self;
+        log_debug!(target: TAG_TYPE_EXPORT, "Tag info: {:?}, {:?}, {:?} ", tag, encoding, field);
+        TagInfo {
+            as_field: to_field_info(ty_layout, cx, FieldIdx::from_usize(*field)),
+            encoding: encoding.to_runtime(cx, ()),
+        }
+    }
+}
+
+impl<'tcx, Cx> ToRuntimeInfo<'tcx, Cx, TagEncodingInfo> for &TagEncoding<VariantIdx> {
+    type Def = ();
+
+    fn to_runtime(self, _cx: &Cx, _: ()) -> TagEncodingInfo
+    where
+        Cx: 'tcx,
+    {
+        match self {
+            TagEncoding::Direct => TagEncodingInfo::Direct,
+            TagEncoding::Niche {
+                untagged_variant,
+                niche_variants,
+                niche_start,
+            } => TagEncodingInfo::Niche {
+                // The variant index is implicitly used as the value for the discriminant.
+                non_niche_value: untagged_variant.as_u32() as u128,
+                niche_value_range: (niche_variants.start().as_u32() as u128)
+                    ..=(niche_variants.end().as_u32() as u128),
+                tag_value_start: *niche_start,
+            },
+        }
+    }
+}
+
 impl<'tcx, Cx> ToRuntimeInfo<'tcx, Cx, FieldsShapeInfo> for &FieldsShape<FieldIdx>
 where
     Cx: HasTyCtxt<'tcx> + HasParamEnv<'tcx>,
@@ -284,13 +338,7 @@ where
             FieldsShape::Union(count) => FieldsShapeInfo::Union(StructShape {
                 fields: (0..(*count).into())
                     .into_iter()
-                    .map(|idx| {
-                        let ty = field_ty(ty_layout, cx, FieldIdx::from_usize(idx));
-                        FieldInfo {
-                            ty: type_id(tcx, ty),
-                            offset: 0,
-                        }
-                    })
+                    .map(|idx| to_field_info(ty_layout, cx, FieldIdx::from_usize(idx)))
                     .collect(),
             }),
             FieldsShape::Array { count, .. } => FieldsShapeInfo::Array(ArrayShape {
@@ -302,17 +350,22 @@ where
                     offsets
                         .clone()
                         .into_iter_enumerated()
-                        .map(|(idx, offset)| {
-                            let ty = field_ty(ty_layout, cx, idx);
-                            FieldInfo {
-                                ty: type_id(tcx, ty),
-                                offset: offset.bytes(),
-                            }
-                        })
+                        .map(|(idx, _)| to_field_info(ty_layout, cx, idx))
                         .collect()
                 },
             }),
         }
+    }
+}
+
+fn to_field_info<'tcx, Cx>(ty_layout: TyAndLayout<'tcx>, cx: &Cx, index: FieldIdx) -> FieldInfo
+where
+    Cx: HasTyCtxt<'tcx> + HasParamEnv<'tcx>,
+{
+    let ty = field_ty(ty_layout, cx, index);
+    FieldInfo {
+        ty: type_id(cx.tcx(), ty),
+        offset: ty_layout.fields.offset(index.as_usize()).bytes(),
     }
 }
 

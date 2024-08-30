@@ -1,4 +1,4 @@
-use core::fmt::Display;
+use core::{fmt::Display, ops::RangeInclusive};
 use std::{collections::HashMap, error::Error, fs::OpenOptions};
 
 use serde::{Deserialize, Serialize, Serializer};
@@ -14,6 +14,7 @@ pub struct TypeInfo {
     pub name: String,
     // Variants of the ADT. If this is a struct or union, then there will be a single variant.
     pub variants: Vec<VariantInfo>,
+    pub tag: Option<TagInfo>,
 
     pub pointee_ty: Option<TypeId>,
 
@@ -62,6 +63,26 @@ pub type UnionShape = StructShape;
 pub struct FieldInfo {
     pub ty: TypeId,
     pub offset: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TagInfo {
+    pub as_field: FieldInfo,
+    pub encoding: TagEncodingInfo,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum TagEncodingInfo {
+    Direct,
+    Niche {
+        // The discriminant value when the variant is not a niche.
+        non_niche_value: u128,
+        // The range of values for the discriminant when the variant is a niche.
+        // NOTE: As the range check is wrapping, we need the end value.
+        niche_value_range: RangeInclusive<u128>,
+        // The value of the tag when the variant is at the start of the niche range.
+        tag_value_start: u128,
+    },
 }
 
 pub struct TypeExport;

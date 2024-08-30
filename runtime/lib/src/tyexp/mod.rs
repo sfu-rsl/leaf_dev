@@ -102,6 +102,7 @@ impl TypeInfoExt for TypeInfo {
             id: slice.id,
             name: slice.name.clone(),
             variants: vec![variant],
+            tag: slice.tag.clone(),
             pointee_ty: None,
             align: item_align,
             size: item_size * len,
