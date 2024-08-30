@@ -47,6 +47,7 @@ extern crate thin_vec;
 use rustc_driver::RunCompiler;
 
 use common::{log_debug, log_info, log_warn};
+
 use std::env;
 use std::path::PathBuf;
 
@@ -112,14 +113,30 @@ pub fn run_compiler(args: impl Iterator<Item = String>, input_path: Option<PathB
     let args = driver_args::set_up_args(args, input_path, &config);
     log_info!("Running compiler with args: {:?}", args);
 
-    let mut callbacks =
-        driver_callbacks::set_up_callbacks(config, driver_args::find_crate_name(&args));
+    let mut callbacks = driver_callbacks::set_up_callbacks(
+        config,
+        &driver_args::ArgsExt::parse_crate_options(&args),
+    );
 
     rustc_driver::catch_with_exit_code(|| RunCompiler::new(&args, callbacks.as_mut()).run())
 }
 
-fn should_do_nothing(crate_name: Option<&String>) -> bool {
-    if crate_name.is_some_and(|name| name == CRATE_BUILD_SCRIPT) {
+/// Returns `true` if the crate is ineffective for symbolic execution of the target.
+/// Examples include build scripts and procedural macro crates.
+fn is_ineffective_crate(opts: &driver_args::CrateOptions) -> bool {
+    if opts
+        .crate_name
+        .as_ref()
+        .is_some_and(|name| name == CRATE_NAME_BUILD_SCRIPT)
+    {
+        return true;
+    }
+
+    if opts
+        .crate_types
+        .as_ref()
+        .is_some_and(|types| types.len() == 1 && types[0] == driver_args::CrateType::ProcMacro)
+    {
         return true;
     }
 
@@ -134,13 +151,21 @@ mod driver_callbacks {
 
     pub(super) fn set_up_callbacks(
         config: LeafCompilerConfig,
-        crate_name: Option<String>,
+        crate_options: &driver_args::CrateOptions,
     ) -> Box<Callbacks> {
-        if super::should_do_nothing(crate_name.as_ref()) {
+        if (!config.codegen_all_mir || config.building_core)
+            && super::is_ineffective_crate(crate_options)
+        {
             log_info!("Leafc will work as the normal Rust compiler.");
             Box::new(NoOpPass.to_callbacks())
         } else {
-            let mut passes = if config.codegen_all_mir && is_dependency_crate(crate_name.as_ref()) {
+            let mut passes = if config.codegen_all_mir && super::is_ineffective_crate(crate_options)
+            {
+                log_info!("Setting up passes as for a primary package in codegen all mode.");
+                build_minimal_passes_in_codegen_all_mode()
+            } else if config.codegen_all_mir
+                && is_dependency_crate(crate_options.crate_name.as_ref())
+            {
                 log_info!("Setting up passes as for a dependency in codegen all mode.");
                 build_dep_passes_in_codegen_all_mode()
             } else {
@@ -206,6 +231,13 @@ mod driver_callbacks {
             )
             .to_callbacks(),
         )
+    }
+
+    fn build_minimal_passes_in_codegen_all_mode() -> Box<Callbacks> {
+        /* If we are using the version of the core library with internalized symbols,
+         * then we have to force codegen for all items so the internalized symbols
+         * will be found. */
+        Box::new(chain!(force_codegen_all_pass(),).to_callbacks())
     }
 
     const SHOULD_CODEGEN_FLAGS: u8 = OverrideFlags::SHOULD_CODEGEN.bits();
@@ -274,7 +306,7 @@ mod driver_callbacks {
 pub mod constants {
     use const_format::concatcp;
 
-    pub(super) const CRATE_BUILD_SCRIPT: &str = "build_script_build";
+    pub(super) const CRATE_NAME_BUILD_SCRIPT: &str = "build_script_build";
 
     // The instrumented code is going to call the shim.
     pub(super) const CRATE_RUNTIME: &str = "leafrtsh";
@@ -298,6 +330,8 @@ pub mod constants {
 }
 
 mod driver_args {
+    pub(super) use rustc_session::config::CrateType;
+
     use super::*;
 
     use std::path::{Path, PathBuf};
@@ -338,6 +372,7 @@ mod driver_args {
     const OPT_EXTERN: &str = "--extern";
     const OPT_CODEGEN: &str = "-C";
     const OPT_CRATE_NAME: &str = "--crate-name";
+    const OPT_CRATE_TYPE: &str = "--crate-type";
     const OPT_LINK_NATIVE: &str = "-l";
     const OPT_PRINT_SYSROOT: &str = "--print=sysroot";
     const OPT_SYSROOT: &str = "--sysroot";
@@ -357,13 +392,21 @@ mod driver_args {
         ($name:expr) => {{ env::var($name).ok() }};
     }
 
-    trait ArgsExt {
+    // FIXME: #467
+    pub(super) struct CrateOptions {
+        pub crate_name: Option<String>,
+        pub crate_types: Option<Vec<CrateType>>,
+    }
+
+    pub(super) trait ArgsExt {
         fn set_if_absent(&mut self, key: &str, get_value: impl FnOnce() -> String);
 
         fn add_pair(&mut self, key: &str, value: String);
+
+        fn parse_crate_options(&self) -> CrateOptions;
     }
 
-    impl<T: AsMut<Vec<String>>> ArgsExt for T {
+    impl<T: AsRef<Vec<String>> + AsMut<Vec<String>>> ArgsExt for T {
         fn set_if_absent(&mut self, key: &str, get_value: impl FnOnce() -> String) {
             if !self.as_mut().iter().any(|arg| arg.starts_with(key)) {
                 self.add_pair(key, get_value());
@@ -373,6 +416,30 @@ mod driver_args {
         fn add_pair(&mut self, key: &str, value: String) {
             self.as_mut().push(key.to_owned());
             self.as_mut().push(value);
+        }
+
+        fn parse_crate_options(&self) -> CrateOptions {
+            let find_crate_name = || -> Option<String> {
+                let index = self
+                    .as_ref()
+                    .iter()
+                    .rposition(|arg| arg == OPT_CRATE_NAME)?
+                    + 1;
+                self.as_ref().get(index).cloned()
+            };
+
+            let find_crate_types = || -> Option<Vec<CrateType>> {
+                let index = self.as_ref().iter().position(|arg| arg == OPT_CRATE_TYPE)? + 1;
+                let types = rustc_session::config::parse_crate_types_from_list(vec![
+                    self.as_ref().get(index).cloned()?,
+                ]);
+                types.ok()
+            };
+
+            CrateOptions {
+                crate_name: find_crate_name(),
+                crate_types: find_crate_types(),
+            }
         }
     }
 
@@ -391,7 +458,16 @@ mod driver_args {
         .chain(given_args);
         let mut args = given_args.collect::<Vec<_>>();
 
-        if should_do_nothing(find_crate_name(&args).as_ref()) {
+        let crate_options = args.parse_crate_options();
+
+        /* Add linking to the runtime dynamic library for all commands.
+         * As some crates might be built with the version of the core library
+         * with embedded runtime shim, we add it anyway. It won't be effective
+         * if there is no linking required.
+         * Related to #462. */
+        set_up_runtime_dylib(&mut args, &crate_options);
+
+        if is_ineffective_crate(&crate_options) {
             return args;
         }
 
@@ -415,8 +491,6 @@ mod driver_args {
             );
         }
 
-        set_up_runtime_dylib(&mut args);
-
         if let Some(input_path) = input_path {
             args.push(input_path.to_string_lossy().into_owned());
         }
@@ -424,13 +498,8 @@ mod driver_args {
         args
     }
 
-    fn set_up_runtime_dylib(args: &mut Vec<String>) {
-        // FIXME: Add better support for setting the runtime flavor.
-        // NOTE: If the compiled target is either a build script or a proc-macro crate type, we should use the noop runtime library.
-        let args_str = args.join(" ");
-        let use_noop_runtime = args_str.contains(&"--crate-name build_script_build".to_string())
-            || args_str.contains(&"feature=\\\"proc-macro\\\"".to_string())
-            || args_str.contains(&"--crate-type proc-macro ".to_string());
+    fn set_up_runtime_dylib(args: &mut Vec<String>, opts: &CrateOptions) {
+        let use_noop_runtime = is_ineffective_crate(opts);
 
         ensure_runtime_dylib_exists(use_noop_runtime);
         let runtime_dylib_dir = find_runtime_dylib_dir(use_noop_runtime);
@@ -451,11 +520,6 @@ mod driver_args {
             OPT_SEARCH_PATH,
             format!("{SEARCH_KIND_NATIVE}={}", runtime_dylib_dir),
         );
-    }
-
-    pub(super) fn find_crate_name(args: &[String]) -> Option<String> {
-        let index = args.iter().rposition(|arg| arg == OPT_CRATE_NAME)? + 1;
-        args.get(index).cloned()
     }
 
     fn find_sysroot() -> String {
