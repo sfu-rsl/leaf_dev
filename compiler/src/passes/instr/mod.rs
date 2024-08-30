@@ -1,6 +1,5 @@
 mod call;
 mod decision;
-mod utils;
 
 use const_format::concatcp;
 
@@ -21,6 +20,7 @@ use std::{collections::HashSet, num::NonZeroUsize, sync::atomic};
 use crate::{
     mir_transform::{self, BodyInstrumentationUnit, JumpTargetModifier},
     passes::{instr::call::context::PriItems, StorageExt},
+    utils::mir::TyCtxtExt,
     visit::*,
 };
 
@@ -33,7 +33,6 @@ use call::{
     InsertionLocation::*,
     OperandRef, OperandReferencer, PlaceReferencer, RuntimeCallAdder,
 };
-use utils::TyCtxtExt;
 
 const TAG_INSTRUMENTATION: &str = "instrumentation";
 use TAG_INSTRUMENTATION as TAG_INSTR;

@@ -5,6 +5,8 @@ use rustc_span::Symbol;
 
 use common::{log_info, log_warn};
 
+use crate::utils::mir::TyCtxtExt;
+
 pub(super) const TAG_INSTR_DECISION: &str = concatcp!(super::TAG_INSTRUMENTATION, "::skip");
 
 const TOOL_NAME: &str = crate::constants::TOOL_LEAF;
@@ -24,12 +26,62 @@ pub(super) fn should_instrument<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>) 
         return explicit;
     }
 
-    if tcx.lang_items().start_fn().is_some_and(|id| id == def_id) {
+    // It is in the module defining lang_start items (std rt module)
+    if tcx
+        .lang_items()
+        .start_fn()
+        .map(|id| tcx.module_of(id).collect::<Vec<_>>())
+        .zip(Some(tcx.module_of(def_id)))
+        .is_some_and(|(start_mod, this_mod)| {
+            let n = start_mod.len();
+            start_mod.into_iter().eq(this_mod.take(n))
+        })
+    {
+        return false;
+    }
+
+    // FIXME: Drops are important for bug detection, however we avoid instrumenting them for now.
+    let mut drop_fn_ids = {
+        use rustc_hir::LanguageItems as Items;
+        [
+            Items::drop_in_place_fn,
+            Items::async_drop_in_place_fn,
+            Items::surface_async_drop_in_place_fn,
+            Items::async_drop_surface_drop_in_place_fn,
+            Items::async_drop_slice_fn,
+            Items::async_drop_chain_fn,
+            Items::async_drop_noop_fn,
+            Items::async_drop_deferred_drop_in_place_fn,
+            Items::async_drop_fuse_fn,
+            Items::async_drop_defer_fn,
+            Items::async_drop_either_fn,
+        ]
+        .iter()
+        .filter_map(|item| item(tcx.lang_items()))
+    };
+    if drop_fn_ids.any(|id| id == def_id)
+        || tcx
+            .lang_items()
+            .drop_trait()
+            .zip(
+                tcx.impl_of_method(def_id)
+                    .and_then(|id| tcx.trait_id_of_impl(id)),
+            )
+            .is_some_and(|(t1, t2)| t1 == t2)
+    {
         return false;
     }
 
     // FIXME: To be replaced with a better-specified list.
-    if tcx.def_path_str(def_id).contains("panicking") || tcx.def_path_str(def_id).contains("sync") {
+    let def_path = &tcx.def_path_debug_str(def_id);
+    if def_path.contains("panicking")
+        || (def_path.contains("core_arch")
+            || (def_path.starts_with("core") && def_path.contains("arch::")))
+        || (def_path.starts_with("std")
+            && (def_path.contains("thread")
+                || def_path.contains("sync")
+                || def_path.contains("arch::")))
+    {
         return false;
     }
 

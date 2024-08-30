@@ -492,17 +492,11 @@ impl<'tcx, I: Iterator<Item = DefId>> DefIdIterExt<'tcx> for I {
         Self: 'a,
         'tcx: 'a,
     {
-        let module_of = move |def_id| {
-            use rustc_hir::definitions::DefPathData;
-            tcx.def_path(def_id)
-                .data
-                .into_iter()
-                .take_while(|p| matches!(p.data, DefPathData::TypeNs(_)))
-        };
+        use crate::utils::mir::TyCtxtExt;
 
-        let marker_module = module_of(marker).collect::<Vec<_>>();
+        let marker_module = tcx.module_of(marker).collect::<Vec<_>>();
         let result = self.filter(move |def_id| {
-            let module = module_of(*def_id);
+            let module = tcx.module_of(*def_id);
             if submodules {
                 module
                     .take(marker_module.len())

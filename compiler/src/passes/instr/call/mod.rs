@@ -2161,10 +2161,10 @@ mod implementation {
         use rustc_span::DUMMY_SP;
 
         use crate::mir_transform::{BodyLocalManager, NEXT_BLOCK};
+        use crate::utils::mir::TyCtxtExt;
 
         pub(super) use self::assignment::rvalue;
 
-        use super::super::super::utils::*;
         use super::*;
 
         pub(super) mod operand {
