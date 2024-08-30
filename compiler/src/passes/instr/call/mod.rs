@@ -652,8 +652,8 @@ mod implementation {
                     cum_place = cum_place.project_deeper(&[proj], tcx);
                     cum_ty = cum_ty.projection_ty(tcx, proj);
 
-                    blocks.push(self.set_place_addr(place_ref, &cum_place, cum_ty.ty));
                     blocks.extend(self.set_place_type(place_ref, cum_ty.ty));
+                    blocks.push(self.set_place_addr(place_ref, &cum_place, cum_ty.ty));
                 }
             }
 
@@ -678,8 +678,8 @@ mod implementation {
 
             if cfg!(place_addr) {
                 let ty = self.local_decls()[local].ty;
-                blocks.push(self.set_place_addr(place_ref, &local.into(), ty));
                 blocks.extend(self.set_place_type(place_ref, ty));
+                blocks.push(self.set_place_addr(place_ref, &local.into(), ty));
             }
 
             BlocksAndResult(blocks, place_ref)

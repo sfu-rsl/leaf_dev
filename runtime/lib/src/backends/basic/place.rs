@@ -4,7 +4,7 @@ use std::{
     ptr::NonNull,
 };
 
-use common::types::RawAddress;
+use common::{log_warn, types::RawAddress};
 
 use crate::abs::{
     backend::{
@@ -45,7 +45,10 @@ impl PlaceMetadata {
 
     #[inline]
     pub(crate) fn set_address(&mut self, address: RawPointer) {
-        self.address = Some(NonNull::new(address as *mut ()).unwrap());
+        self.address = NonNull::new(address as *mut ());
+        if self.address.is_none() {
+            log_warn!("Setting null address to place metadata. {:?}", self);
+        }
     }
 
     #[inline]
