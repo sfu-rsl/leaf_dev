@@ -1,24 +1,15 @@
-use std::{
-    collections::HashMap,
-    fmt::{Display, Write},
-    hash::Hash,
-};
+use std::fmt::{Display, Write};
 
-use crate::abs::backend::OutputGenerator;
 use common::log_info;
 
-pub(crate) struct LoggerOutputGenerator;
-
-impl<I: Display + Ord + Hash, V: Display> OutputGenerator<I, V> for LoggerOutputGenerator {
-    fn generate(&mut self, answers: HashMap<I, V>) {
-        let mut answers_str = String::new();
-        writeln!(answers_str, "{{").unwrap();
-        let mut ids = answers.keys().collect::<Vec<_>>();
-        ids.sort();
-        for i in ids {
-            writeln!(answers_str, "    \"{}\": {},", i, answers[i]).unwrap();
-        }
-        writeln!(answers_str, "}}").unwrap();
-        log_info!("Solver returned a solution:\n{answers_str}");
+pub(crate) fn log_json<'a, Id: 'a + Display, Val: 'a + Display>(
+    answers: impl Iterator<Item = (&'a Id, &'a Val)>,
+) {
+    let mut answers_str = String::new();
+    writeln!(answers_str, "{{").unwrap();
+    for (i, v) in answers {
+        writeln!(answers_str, "    \"{}\": {},", i, v).unwrap();
     }
+    writeln!(answers_str, "}}").unwrap();
+    log_info!("Found a solution:\n{answers_str}");
 }

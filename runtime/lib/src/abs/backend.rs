@@ -275,10 +275,6 @@ pub(crate) enum SolveResult<I, V> {
     Unknown,
 }
 
-pub(crate) trait OutputGenerator<I, V> {
-    fn generate(&mut self, answers: HashMap<I, V>);
-}
-
 pub(crate) trait TypeManager {
     type Key;
     type Value;

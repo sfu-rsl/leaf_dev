@@ -21,6 +21,8 @@ use crate::{
         CastKind, FieldIndex, IntType, Local, LocalIndex, PlaceUsage, RawPointer, TypeId, UnaryOp,
         VariantIndex,
     },
+    outgen,
+    pathics::AllPathInterestChecker,
     solvers::z3::Z3Solver,
     trace::ImmediateTraceManager,
     tyexp::{self, FieldsShapeInfoExt, TypeInfoExt},
@@ -76,9 +78,15 @@ impl BasicBackend {
             BasicBlockIndex,
             u32,
             ValueRef,
-        >::new_basic(Box::new(
-            Z3Solver::new_in_global_context(|ctx| Z3ValueTranslator::new(ctx)),
-        ))));
+            _,
+        >::new(
+            Box::new(AllPathInterestChecker),
+            Box::new(Z3Solver::new_in_global_context(|ctx| {
+                Z3ValueTranslator::new(ctx)
+            })),
+            true,
+            Box::new(|answers| outgen::log_json(answers.iter())),
+        )));
         let trace_manager = trace_manager_ref.clone();
         Self {
             call_stack_manager: BasicCallStackManager::new(

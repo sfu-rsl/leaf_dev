@@ -2,32 +2,28 @@ use std::ops::Index;
 use std::slice::SliceIndex;
 use std::{collections::HashMap, fmt::Display};
 
-use crate::{
-    abs::{
-        backend::{OutputGenerator, PathInterestChecker, SolveResult, Solver, TraceManager},
-        Constraint,
-    },
-    outgen::LoggerOutputGenerator,
-    pathics::AllPathInterestChecker,
+use crate::abs::{
+    backend::{PathInterestChecker, SolveResult, Solver, TraceManager},
+    Constraint,
 };
 
 use common::{log_debug, log_info};
 
-pub(crate) struct ImmediateTraceManager<Step, Id, Val> {
+pub(crate) struct ImmediateTraceManager<Step, Id, Val, Output> {
     trace: Vec<Step>,
     constraints: Vec<Constraint<Val>>,
     path_interest_checker: Box<dyn PathInterestChecker<Step>>,
     solver: Box<dyn Solver<Id, Val>>,
     check_optimistic: bool,
-    output_generator: Box<dyn OutputGenerator<Id, Val>>,
+    output_generator: Box<dyn FnMut(HashMap<Id, Val>) -> Output>,
 }
 
-impl<S, I, V> ImmediateTraceManager<S, I, V> {
+impl<S, I, V, O> ImmediateTraceManager<S, I, V, O> {
     pub fn new(
         path_interest_checker: Box<dyn PathInterestChecker<S>>,
         solver: Box<dyn Solver<I, V>>,
         check_optimistic: bool,
-        output_generator: Box<dyn OutputGenerator<I, V>>,
+        output_generator: Box<dyn FnMut(HashMap<I, V>) -> O>,
     ) -> Self {
         Self {
             trace: Vec::new(),
@@ -39,20 +35,10 @@ impl<S, I, V> ImmediateTraceManager<S, I, V> {
         }
     }
 }
-impl<S, I: Display + Ord + std::hash::Hash, V: Display> ImmediateTraceManager<S, I, V> {
-    pub fn new_basic(solver: Box<dyn Solver<I, V>>) -> Self {
-        Self::new(
-            Box::new(AllPathInterestChecker),
-            solver,
-            true,
-            Box::new(LoggerOutputGenerator),
-        )
-    }
-}
 
-impl<S: Display, I, V: Display> TraceManager<S, V> for ImmediateTraceManager<S, I, V> {
+impl<S: Display, I, V: Display, O> TraceManager<S, V> for ImmediateTraceManager<S, I, V, O> {
     fn notify_step(&mut self, step: S, new_constraints: Vec<Constraint<V>>) {
-        log_info!(
+        log_debug!(
             "Notified about constraints [{}] at step {}",
             &new_constraints
                 .iter()
@@ -77,14 +63,14 @@ impl<S: Display, I, V: Display> TraceManager<S, V> for ImmediateTraceManager<S, 
             return;
         }
 
-        log_info!("Checking for possible values diverging at the last step");
+        log_debug!("Checking for values diverging at the last step");
 
         log_debug!("Negating the last constraint");
         let last = self.constraints.pop().unwrap();
         self.constraints.push(last.not());
 
         if !self.check(..) {
-            log_info!("Checking optimistically for possible values diverging at the last step");
+            log_debug!("Checking optimistically for values diverging at the last step");
             /* NOTE: What is optimistic checking?
              * Consider two independent branch conditions at the same level
              * that the current execution has taken neither.
@@ -103,7 +89,7 @@ impl<S: Display, I, V: Display> TraceManager<S, V> for ImmediateTraceManager<S, 
     }
 }
 
-impl<S, I, V: Display> ImmediateTraceManager<S, I, V> {
+impl<S, I, V: Display, O> ImmediateTraceManager<S, I, V, O> {
     fn check(&mut self, range: impl SliceIndex<[Constraint<V>], Output = [Constraint<V>]>) -> bool {
         let constraints = self.constraints.index(range);
 
@@ -129,7 +115,7 @@ impl<S, I, V: Display> ImmediateTraceManager<S, I, V> {
         }
     }
 
-    fn generate_output(&mut self, values: HashMap<I, V>) {
-        self.output_generator.generate(values);
+    fn generate_output(&mut self, values: HashMap<I, V>) -> O {
+        (self.output_generator)(values)
     }
 }
