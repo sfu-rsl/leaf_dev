@@ -4,6 +4,7 @@ mod concrete;
 mod config;
 pub(crate) mod expr;
 pub(crate) mod operand;
+mod outgen;
 mod place;
 mod state;
 
@@ -21,8 +22,6 @@ use crate::{
         CastKind, FieldIndex, IntType, Local, LocalIndex, PlaceUsage, RawPointer, TypeId, UnaryOp,
         VariantIndex,
     },
-    outgen,
-    pathics::AllPathInterestChecker,
     solvers::z3::Z3Solver,
     trace::ImmediateTraceManager,
     tyexp::{self, FieldsShapeInfoExt, TypeInfoExt},
@@ -74,18 +73,19 @@ impl BasicBackend {
         )));
         let expr_builder = expr_builder_ref.clone();
         let type_manager = type_manager_ref.clone();
+        let mut output_generator = outgen::BasicOutputGenerator::new(&config.outputs);
         let trace_manager_ref = Rc::new(RefCell::new(ImmediateTraceManager::<
             BasicBlockIndex,
             u32,
             ValueRef,
             _,
         >::new(
-            Box::new(AllPathInterestChecker),
+            Box::new(crate::pathics::AllPathInterestChecker),
             Box::new(Z3Solver::new_in_global_context(|ctx| {
                 Z3ValueTranslator::new(ctx)
             })),
             true,
-            Box::new(|answers| outgen::log_json(answers.iter())),
+            Box::new(move |answers| output_generator.generate(&answers)),
         )));
         let trace_manager = trace_manager_ref.clone();
         Self {

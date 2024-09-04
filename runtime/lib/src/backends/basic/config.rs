@@ -18,6 +18,9 @@ pub(crate) struct BasicBackendConfig {
 
     #[serde(default)]
     pub sym_place: SymbolicPlaceConfig,
+
+    #[serde(default)]
+    pub outputs: Vec<OutputConfig>,
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
@@ -28,6 +31,7 @@ pub(crate) struct CallConfig {
 
 /* NOTE: Aliases don't work at the moment. */
 #[derive(Debug, Default, Clone, Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
 pub(crate) enum ExternalCallStrategy {
     #[serde(alias = "panic")]
     Panic,
@@ -65,4 +69,29 @@ pub(crate) enum SymbolicPlaceStrategy {
     #[default]
     #[serde(alias = "stamp")]
     Stamping,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "type")]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum OutputConfig {
+    File(FileOutputConfig),
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum OutputFileFormat {
+    #[default]
+    Json,
+    /// # Remarks
+    /// Requires all symbolic values to be byte (u8).
+    Binary,
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+pub(crate) struct FileOutputConfig {
+    /// The folder to write file outputs to.
+    pub directory: std::path::PathBuf,
+    /// The format to write the file outputs in.
+    pub format: OutputFileFormat,
 }

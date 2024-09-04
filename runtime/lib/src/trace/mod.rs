@@ -15,7 +15,7 @@ pub(crate) struct ImmediateTraceManager<Step, Id, Val, Output> {
     path_interest_checker: Box<dyn PathInterestChecker<Step>>,
     solver: Box<dyn Solver<Id, Val>>,
     check_optimistic: bool,
-    output_generator: Box<dyn FnMut(HashMap<Id, Val>) -> Output>,
+    answer_consumer: Box<dyn FnMut(HashMap<Id, Val>) -> Output>,
 }
 
 impl<S, I, V, O> ImmediateTraceManager<S, I, V, O> {
@@ -31,7 +31,7 @@ impl<S, I, V, O> ImmediateTraceManager<S, I, V, O> {
             path_interest_checker,
             solver,
             check_optimistic,
-            output_generator,
+            answer_consumer: output_generator,
         }
     }
 }
@@ -116,6 +116,6 @@ impl<S, I, V: Display, O> ImmediateTraceManager<S, I, V, O> {
     }
 
     fn generate_output(&mut self, values: HashMap<I, V>) -> O {
-        (self.output_generator)(values)
+        (self.answer_consumer)(values)
     }
 }

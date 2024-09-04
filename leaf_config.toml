@@ -1,8 +1,13 @@
 [call]
-# Panic, Concretization, OverApproximation, OptimisticConcretization
-external_call = "Concretization"
+# panic, concretization, over_approximation, optimistic_concretization
+external_call = "concretization"
 
 [sym_place]
-# ProjExpression, Concretization, Stamping
-read = "Stamping"
-write = "Stamping"
+# proj_expression, concretization, stamping
+read = "stamping"
+write = "stamping"
+
+[[outputs]]
+type = "file"
+directory = "output"
+format = "binary"
