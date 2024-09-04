@@ -1,0 +1,12 @@
+[package]
+name = "orchestrator"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "leafo"
+path = "src/main.rs"
+
+[dependencies]
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+sha2 = "0.10.8"

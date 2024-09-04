@@ -6,6 +6,7 @@ members = [
     "runtime/lib",
     "runtime/flavors/*",
     "macros",
+    "orchestrator",
 ]
 exclude = [
     "runtime/shim",
