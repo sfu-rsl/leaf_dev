@@ -570,7 +570,7 @@ macro_rules! impl_general_branch_taking_handler {
                         return;
                     }
 
-                    let expr = self.create_equality_expr(value as u128, true);
+                    let expr = self.create_equality_expr(value, true);
                     let constraint = Constraint::Bool(expr);
                     self.parent.notify_constraint(constraint);
                 }
