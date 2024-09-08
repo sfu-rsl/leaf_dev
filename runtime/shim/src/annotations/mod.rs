@@ -1,12 +1,12 @@
 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
 pub trait Symbolizable: Sized {
     #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
-    fn symbolize();
+    fn symbolize(&self);
 
     #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
-    #[leaf_attr::instrument(false)]    
+    #[leaf_attr::instrument(false)]
     fn mark_symbolic(self) -> Self {
-        Self::symbolize();
+        Self::symbolize(&self);
         self
     }
 }
@@ -16,16 +16,19 @@ mod implementation {
     use core::concat_idents;
     use core::mem::size_of;
 
+    use super::super::pri::{
+        compiler_helpers::{f32_to_bits, f64_to_bits},
+        *,
+    };
     use super::*;
-    use super::super::pri::*;
 
     macro_rules! impl_symbolizable_direct {
         ($($ty:ident),*) => {
             $(
                 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
                 impl Symbolizable for $ty {
-                    fn symbolize() {
-                        let operand_ref = concat_idents!(new_sym_value_, $ty)();
+                    fn symbolize(&self) {
+                        let operand_ref = concat_idents!(new_sym_value_, $ty)(*self);
                         override_return_value(operand_ref);
                     }
                 }
@@ -40,8 +43,12 @@ mod implementation {
             $(
                 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
                 impl Symbolizable for $ty {
-                    fn symbolize() {
-                        let operand_ref = new_sym_value_int(size_of::<$ty>() as u64 * 8, $signed);
+                    fn symbolize(&self) {
+                        let operand_ref = new_sym_value_int(
+                            *self as u128,
+                            size_of::<$ty>() as u64 * 8,
+                            $signed
+                        );
                         override_return_value(operand_ref);
                     }
                 }
@@ -53,14 +60,15 @@ mod implementation {
     impl_symbolizable_int!(u8, u16, u32, u64, u128, usize, false);
 
     macro_rules! impl_symbolizable_float {
-        ($($ty:ty),*) => {
+        ($($ty:ident),*) => {
             $(
                 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
                 impl Symbolizable for $ty {
-                    fn symbolize() {
+                    fn symbolize(&self) {
+                        let bit_rep = concat_idents!($ty, _to_bits)(*self);
                         let sbits = <$ty>::MANTISSA_DIGITS as u64;
                         let ebits = (<$ty>::MAX_EXP - <$ty>::MIN_EXP + 1) as u64;
-                        let operand_ref = new_sym_value_float(ebits, sbits);
+                        let operand_ref = new_sym_value_float(bit_rep, ebits, sbits);
                         override_return_value(operand_ref);
                     }
                 }

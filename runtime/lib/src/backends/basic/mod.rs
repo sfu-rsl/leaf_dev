@@ -61,12 +61,19 @@ pub struct BasicBackend {
     call_stack_manager: BasicCallStackManager,
     trace_manager: RRef<TraceManager>,
     expr_builder: RRef<ExprBuilder>,
-    sym_id_counter: u32,
+    sym_values: RRef<HashMap<u32, (SymValueRef, ConcreteValueRef)>>,
     type_manager: Rc<dyn TypeManager>,
 }
 
 impl BasicBackend {
     pub fn new(config: BasicBackendConfig) -> Self {
+        let expr_builder_ref = Rc::new(RefCell::new(expr::builders::new_expr_builder()));
+        let expr_builder = expr_builder_ref.clone();
+        let sym_projector = Rc::new(RefCell::new(expr::proj::new_sym_projector()));
+        let sym_values_ref = Rc::new(RefCell::new(
+            HashMap::<u32, (SymValueRef, ConcreteValueRef)>::new(),
+        ));
+        let all_sym_values = sym_values_ref.clone();
         let type_manager_ref = Rc::new(BasicTypeManager::default());
         let expr_builder_ref = Rc::new(RefCell::new(expr::builders::new_expr_builder(
             type_manager_ref.clone(),
@@ -85,7 +92,17 @@ impl BasicBackend {
                 Z3ValueTranslator::new(ctx)
             })),
             true,
-            Box::new(move |answers| output_generator.generate(&answers)),
+            Box::new(move |mut answers| {
+                // FIXME: Performance can be improved.
+                let all_sym_values = all_sym_values.borrow();
+                let missing_answers = all_sym_values
+                    .iter()
+                    .filter(|(id, _)| !answers.contains_key(id))
+                    .map(|(id, (_, conc))| (*id, conc.clone().0))
+                    .collect::<Vec<_>>();
+                answers.extend(missing_answers);
+                output_generator.generate(&answers)
+            }),
         )));
         let trace_manager = trace_manager_ref.clone();
         Self {
@@ -110,7 +127,7 @@ impl BasicBackend {
             ),
             trace_manager,
             expr_builder,
-            sym_id_counter: 0,
+            sym_values: sym_values_ref.clone(),
             type_manager,
         }
     }
@@ -146,7 +163,9 @@ impl RuntimeBackend for BasicBackend {
     }
 
     fn operand(&mut self) -> Self::OperandHandler<'_> {
-        BasicOperandHandler::new(Box::new(move |ty| self.new_symbolic_value(ty)))
+        BasicOperandHandler::new(Box::new(move |conc_val, ty| {
+            self.new_symbolic_value(conc_val, ty)
+        }))
     }
 
     fn assign_to<'a>(
@@ -174,14 +193,25 @@ impl RuntimeBackend for BasicBackend {
 }
 
 impl BasicBackend {
-    fn new_symbolic_value(&mut self, ty: abs::ValueType) -> SymValueRef {
-        self.sym_id_counter += 1;
+    fn new_symbolic_value(&mut self, conc_val: Operand, ty: abs::ValueType) -> SymValueRef {
+        let mut sym_values = self.sym_values.borrow_mut();
+        let id = sym_values.len() as u32 + 1;
+        let conc_val = match conc_val {
+            Operand::Const(c) => c,
+            _ => {
+                unreachable!("Only constant values are expected to be used as the concrete value.")
+            }
+        };
+        let sym_val = SymValue::Variable(SymbolicVar::new(id, ty)).to_value_ref();
+        let conc_val = ConcreteValueRef::new(ConcreteValue::from(conc_val).to_value_ref());
+
         log_info!(
-            "Introducing a new symbolic variable: {} : {}",
-            self.sym_id_counter,
-            ty
+            "Introducing a new symbolic variable: {} = {}",
+            sym_val,
+            conc_val,
         );
-        SymValue::Variable(SymbolicVar::new(self.sym_id_counter, ty)).to_value_ref()
+        sym_values.insert(id, (sym_val.clone(), conc_val));
+        sym_val
     }
 }
 

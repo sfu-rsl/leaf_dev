@@ -114,7 +114,7 @@ pub(crate) trait OperandHandler {
 
     fn const_from(self) -> Self::ConstantHandler;
 
-    fn new_symbolic(self, ty: ValueType) -> Self::Operand;
+    fn new_symbolic(self, conc_val: Self::Operand, ty: ValueType) -> Self::Operand;
 
     fn metadata<'a>(self, operand: &'a mut Self::Operand) -> Self::MetadataHandler<'a>;
 }
@@ -344,12 +344,14 @@ pub(crate) mod implementation {
     }
 
     pub(crate) struct DefaultOperandHandler<'a, P, S> {
-        create_symbolic: Box<dyn FnOnce(ValueType) -> S + 'a>,
+        create_symbolic: Box<dyn FnOnce(Operand<P, Constant, S>, ValueType) -> S + 'a>,
         _phantom: PhantomData<P>,
     }
 
     impl<'a, P, S> DefaultOperandHandler<'a, P, S> {
-        pub(crate) fn new(create_symbolic: Box<dyn FnOnce(ValueType) -> S + 'a>) -> Self {
+        pub(crate) fn new(
+            create_symbolic: Box<dyn FnOnce(Operand<P, Constant, S>, ValueType) -> S + 'a>,
+        ) -> Self {
             Self {
                 create_symbolic,
                 _phantom: Default::default(),
@@ -375,8 +377,8 @@ pub(crate) mod implementation {
             DefaultConstantHandler(PhantomData)
         }
 
-        fn new_symbolic(self, ty: ValueType) -> Self::Operand {
-            Operand::Symbolic((self.create_symbolic)(ty))
+        fn new_symbolic(self, conc_val: Self::Operand, ty: ValueType) -> Self::Operand {
+            Operand::Symbolic((self.create_symbolic)(conc_val, ty))
         }
 
         fn metadata<'a>(self, _operand: &'a mut Self::Operand) -> Self::MetadataHandler<'a> {}

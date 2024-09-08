@@ -305,10 +305,12 @@ pub mod macros {
               { fn ref_operand_const_zst() -> OperandRef }
               { fn ref_operand_const_some() -> OperandRef }
 
-              { fn new_sym_value_bool() -> OperandRef }
-              { fn new_sym_value_char() -> OperandRef }
-              { fn new_sym_value_int(bit_size: u64, is_signed: bool) -> OperandRef }
-              { fn new_sym_value_float(e_bits: u64, s_bits: u64) -> OperandRef }
+              { fn new_sym_value_bool(conc_val: bool) -> OperandRef }
+              { fn new_sym_value_char(conc_val: char) -> OperandRef }
+              #[allow(unused_parens)]
+              { fn new_sym_value_int(conc_val_bit_rep:($u128_ty), bit_size: u64, is_signed: bool) -> OperandRef }
+              #[allow(unused_parens)]
+              { fn new_sym_value_float(conc_val_bit_rep:($u128_ty), e_bits: u64, s_bits: u64) -> OperandRef }
 
               { fn assign_use(dest: PlaceRef, operand: OperandRef) }
               { fn assign_repeat(dest: PlaceRef, operand: OperandRef, count: usize) }
@@ -609,13 +611,13 @@ pub mod macros {
             }$modifier!{
                 fn ref_operand_const_some()->OperandRef;
             }$modifier!{
-                fn new_sym_value_bool()->OperandRef;
+                fn new_sym_value_bool(concrete_val: bool)->OperandRef;
             }$modifier!{
-                fn new_sym_value_char()->OperandRef;
+                fn new_sym_value_char(concrete_val: char)->OperandRef;
             }$modifier!{
-                fn new_sym_value_int(bit_size:u64,is_signed:bool)->OperandRef;
+                #[allow(unused_parens)]fn new_sym_value_int(bit_rep:($u128_ty),bit_size:u64,is_signed:bool)->OperandRef;
             }$modifier!{
-                fn new_sym_value_float(e_bits:u64,s_bits:u64)->OperandRef;
+                #[allow(unused_parens)]fn new_sym_value_float(bit_rep:($u128_ty),e_bits:u64,s_bits:u64)->OperandRef;
             }$modifier!{
                 fn assign_use(dest:PlaceRef,operand:OperandRef);
             }$modifier!{
