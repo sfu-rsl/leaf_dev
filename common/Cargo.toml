@@ -9,7 +9,7 @@ edition = "2021"
 std = []
 logging = ["dep:tracing"]
 tyexp = ["std", "dep:serde", "dep:serde_json", "logging"]
-config = ["dep:config", "logging"]
+config = ["std", "dep:config", "logging"]
 
 [dependencies]
 # No dependencies are supposed to be used by this crate in the mode that is used by the shim library.
