@@ -94,4 +94,6 @@ pub(crate) struct FileOutputConfig {
     pub directory: std::path::PathBuf,
     /// The format to write the file outputs in.
     pub format: OutputFileFormat,
+    /// The prefix to use for the name of the output files.
+    pub prefix: Option<String>,
 }

@@ -1,4 +1,8 @@
-use std::{collections::HashMap, io::Write};
+use std::{
+    collections::HashMap,
+    io::{self, Write},
+    path::PathBuf,
+};
 
 use common::{log_debug, log_info, log_warn};
 
@@ -20,9 +24,10 @@ impl BasicOutputGenerator {
         writers.extend(configs.iter().map(|c| match c {
             OutputConfig::File(file_config) => match file_config.format {
                 OutputFileFormat::Json => todo!("Not implemented yet"),
-                OutputFileFormat::Binary => {
-                    Box::new(BinaryFileAnswersWriter::new(file_config.directory.clone()))
-                }
+                OutputFileFormat::Binary => Box::new(BinaryFileAnswersWriter::new(
+                    file_config.directory.clone(),
+                    file_config.prefix.clone(),
+                )),
             },
         } as Box<dyn AnswersWriter>));
 
@@ -49,38 +54,54 @@ impl AnswersWriter for LoggingAnswersWriter {
 }
 
 struct BinaryFileAnswersWriter {
-    dir_path: std::path::PathBuf,
+    dir_path: PathBuf,
     counter: usize,
     enabled: bool,
+    prefix: String,
 }
 
 impl BinaryFileAnswersWriter {
-    fn new(dir_path: std::path::PathBuf) -> Self {
+    fn new(dir_path: PathBuf, file_prefix: Option<String>) -> Self {
         log_info!(
             "Setting up binary output writing to directory: {}",
             dir_path.display()
         );
         std::fs::create_dir_all(&dir_path).unwrap();
         let dir_path = std::fs::canonicalize(dir_path).unwrap();
-        if std::fs::read_dir(&dir_path).unwrap().next().is_some() {
-            log_warn!(
-                "Output directory is not empty which may cause files to be overwritten: {}",
-                dir_path.display(),
-            );
-        }
+        Self::check_out_dir(&dir_path, file_prefix.as_ref());
+
         Self {
             dir_path,
             counter: 0,
             enabled: true,
+            prefix: file_prefix.unwrap_or_default(),
         }
     }
 
     fn write(&mut self, values: &[u8]) {
-        let path = self.dir_path.join(format!("next-{}", self.counter));
+        let path = self
+            .dir_path
+            .join(format!("{}{}", self.prefix, self.counter));
         log_debug!("Writing values to file: {}.", path.display());
         let mut file = std::fs::File::create(path).unwrap();
         file.write(&values).unwrap();
         self.counter += 1;
+    }
+
+    fn check_out_dir(dir_path: &PathBuf, file_prefix: Option<&String>) {
+        if std::fs::read_dir(&dir_path)
+            .unwrap()
+            .filter_map(io::Result::ok)
+            .filter(|e| e.metadata().is_ok_and(|t| t.is_file()))
+            .any(|e| {
+                file_prefix.is_none_or(|prefix| e.file_name().to_string_lossy().starts_with(prefix))
+            })
+        {
+            log_warn!(
+                "Output directory has some previous answers, which may may be overwritten: {}",
+                dir_path.display(),
+            );
+        }
     }
 }
 
