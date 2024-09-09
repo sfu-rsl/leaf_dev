@@ -8,5 +8,7 @@ name = "leafo"
 path = "src/main.rs"
 
 [dependencies]
+common = { path = "../common", features = ["logging", "config"] }
+
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 sha2 = "0.10.8"
