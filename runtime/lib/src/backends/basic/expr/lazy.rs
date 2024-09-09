@@ -10,7 +10,10 @@ use crate::{
 use super::*;
 
 mod retrieval {
-    use common::tyexp::{FieldsShapeInfo, VariantInfo};
+    use common::{
+        log_warn,
+        tyexp::{FieldsShapeInfo, VariantInfo},
+    };
 
     use super::*;
 
@@ -181,6 +184,36 @@ mod retrieval {
                 ValueType::Char => ScalarType::Char,
                 ValueType::Int(ty) => ScalarType::Int(ty),
                 ValueType::Float(ty) => ScalarType::Float(ty),
+            }
+        }
+    }
+
+    impl From<ScalarType> for ValueType {
+        fn from(value: ScalarType) -> Self {
+            match value {
+                ScalarType::Bool => ValueType::Bool,
+                ScalarType::Char => ValueType::Char,
+                ScalarType::Int(ty) => ValueType::Int(ty),
+                ScalarType::Float(ty) => ValueType::Float(ty),
+                ScalarType::Address => {
+                    log_warn!("Converting address type to int type.");
+                    ValueType::Int(IntType {
+                        bit_size: std::mem::size_of::<usize>() as u64 * 8,
+                        is_signed: false,
+                    })
+                }
+            }
+        }
+    }
+
+    impl ScalarType {
+        fn bit_size(&self) -> u64 {
+            match self {
+                ScalarType::Bool => core::mem::size_of::<bool>() as u64 * 8,
+                ScalarType::Char => core::mem::size_of::<char>() as u64 * 8,
+                ScalarType::Int(ty) => ty.bit_size,
+                ScalarType::Float(ty) => ty.e_bits + ty.s_bits,
+                ScalarType::Address => core::mem::size_of::<*const ()>() as u64 * 8,
             }
         }
     }

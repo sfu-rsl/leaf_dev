@@ -87,8 +87,11 @@ pub(crate) mod z3 {
                 ConcreteValue::FatPointer(_) => {
                     panic!("Pointer value should not exist at this phase.")
                 }
-                ConcreteValue::Unevaluated(_) => {
-                    panic!("Unevaluated value should not exist at this phase.")
+                ConcreteValue::Unevaluated(unevaluated) => {
+                    panic!(
+                        "Unevaluated value should not exist at this phase. {:?}",
+                        unevaluated
+                    )
                 }
             }
         }
