@@ -600,7 +600,7 @@ impl LazyTypeInfo {
 impl From<Option<TypeId>> for LazyTypeInfo {
     fn from(ty_id: Option<TypeId>) -> Self {
         match ty_id {
-            Some(ty_id) => Self::Id(ty_id),
+            Some(ty_id) => ty_id.into(),
             None => Self::None,
         }
     }

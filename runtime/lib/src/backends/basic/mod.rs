@@ -67,18 +67,16 @@ pub struct BasicBackend {
 
 impl BasicBackend {
     pub fn new(config: BasicBackendConfig) -> Self {
-        let expr_builder_ref = Rc::new(RefCell::new(expr::builders::new_expr_builder()));
+        let type_manager_ref = Rc::new(BasicTypeManager::default());
+        let expr_builder_ref = Rc::new(RefCell::new(expr::builders::new_expr_builder(
+            type_manager_ref.clone(),
+        )));
         let expr_builder = expr_builder_ref.clone();
         let sym_projector = Rc::new(RefCell::new(expr::proj::new_sym_projector()));
         let sym_values_ref = Rc::new(RefCell::new(
             HashMap::<u32, (SymValueRef, ConcreteValueRef)>::new(),
         ));
         let all_sym_values = sym_values_ref.clone();
-        let type_manager_ref = Rc::new(BasicTypeManager::default());
-        let expr_builder_ref = Rc::new(RefCell::new(expr::builders::new_expr_builder(
-            type_manager_ref.clone(),
-        )));
-        let expr_builder = expr_builder_ref.clone();
         let type_manager = type_manager_ref.clone();
         let mut output_generator = outgen::BasicOutputGenerator::new(&config.outputs);
         let trace_manager_ref = Rc::new(RefCell::new(ImmediateTraceManager::<

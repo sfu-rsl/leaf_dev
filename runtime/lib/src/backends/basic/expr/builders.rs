@@ -37,6 +37,17 @@ mod toplevel {
     pub(crate) struct TopLevelBuilder {
         sym_builder: SymbolicBuilder,
         conc_builder: ConcreteAbstractorBuilder,
+        type_manager: Rc<dyn TypeManager>,
+    }
+
+    impl TopLevelBuilder {
+        pub(crate) fn new(type_manager: Rc<dyn TypeManager>) -> Self {
+            Self {
+                sym_builder: SymbolicBuilder::default(),
+                conc_builder: ConcreteAbstractorBuilder::default(),
+                type_manager,
+            }
+        }
     }
 
     impl TopLevelBuilder {
@@ -54,7 +65,7 @@ mod toplevel {
 
         fn binary_op<'a>(
             &mut self,
-            (first, second): Self::ExprRefPair<'a>,
+            (mut first, second): Self::ExprRefPair<'a>,
             op: BinaryOp,
         ) -> Self::Expr<'a> {
             if first.is_symbolic() {
@@ -66,6 +77,20 @@ mod toplevel {
                     op,
                 )
             } else if second.is_symbolic() {
+                // NOTE: Introducing a special case to avoid giving type manager to the finer structures.
+                if let BinaryOp::Offset = op {
+                    if let Value::Concrete(ConcreteValue::Unevaluated(UnevalValue::Lazy(
+                        RawConcreteValue(addr, None, LazyTypeInfo::Id(ty_id)),
+                    ))) = first.as_ref()
+                    {
+                        first = RawConcreteValue(
+                            *addr,
+                            None,
+                            self.type_manager.get_type(*ty_id).into(),
+                        )
+                        .to_value_ref();
+                    }
+                }
                 self.sym_builder.binary_op(
                     BinaryOperands::Rev {
                         first,
