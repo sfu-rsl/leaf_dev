@@ -1088,6 +1088,10 @@ mod convert {
                         if_ty
                     })
                     .ok_or(value),
+                    Expr::Projection(ProjExpr::SymHost(SymHostProj {
+                        kind: ProjKind::Downcast(DowncastKind::Transmutation(_, Some(value_ty))),
+                        ..
+                    })) => Ok(value_ty.clone()),
                     _ => Err(value),
                 },
             }

@@ -283,8 +283,28 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
 
     fn cast_of(mut self, operand: Self::Operand, target: CastKind) {
         let value = self.get_operand_value(operand);
-        let cast_value = self.expr_builder().cast(value.into(), target);
-        self.set(cast_value.into())
+        let mut cast_value: ValueRef = self.expr_builder().cast(value.into(), target).into();
+
+        // FIXME: Temporary solution as we might change projection expressions fundamentally.
+        if let Some(ProjExpr::SymHost(SymHostProj {
+            host,
+            kind: ProjKind::Downcast(DowncastKind::Transmutation(dst_ty_id, None)),
+            metadata,
+        })) = cast_value.as_ref().as_proj()
+        {
+            cast_value = ProjExpr::SymHost(SymHostProj {
+                host: host.clone(),
+                kind: ProjKind::Downcast(DowncastKind::Transmutation(
+                    *dst_ty_id,
+                    self.dest.metadata().ty().cloned(),
+                )),
+                metadata: metadata.clone(),
+            })
+            .to_value_ref()
+            .into();
+        };
+
+        self.set(cast_value)
     }
 
     fn binary_op_between(
