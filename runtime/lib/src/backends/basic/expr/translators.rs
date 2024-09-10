@@ -1,3 +1,5 @@
+const TAG: &str = "translators";
+
 pub(crate) mod z3 {
     use std::{
         collections::HashMap,
@@ -12,13 +14,16 @@ pub(crate) mod z3 {
     };
 
     use crate::{
-        abs::{expr::sym_place::SelectTarget, FieldIndex, IntType, ValueType},
+        abs::{expr::sym_place::SelectTarget, BinaryOp, FieldIndex, IntType, ValueType},
         backends::basic::expr::{prelude::*, SymBinaryOperands, SymVarId},
         solvers::z3::{ArrayNode, ArraySort, BVNode, BVSort},
     };
 
-    use crate::solvers::z3::{AstNode, TranslatedConstraint};
     use common::log_debug;
+
+    use crate::solvers::z3::{AstNode, TranslatedConstraint};
+
+    use super::TAG;
 
     const CHAR_BIT_SIZE: u32 = size_of::<char>() as u32 * 8;
     const USIZE_BIT_SIZE: u32 = size_of::<usize>() as u32 * 8;
@@ -56,7 +61,7 @@ pub(crate) mod z3 {
 
     impl<'ctx> Z3ValueTranslator<'ctx> {
         fn translate(&mut self, value: &ValueRef) -> TranslatedConstraint<'ctx, SymVarId> {
-            log_debug!("Translating value: {}", value);
+            log_debug!(target: TAG, "Translating value: {}", value);
             let ast = self.translate_value(value);
             match ast {
                 AstNode::Bool(ast) => TranslatedConstraint {
@@ -182,7 +187,7 @@ pub(crate) mod z3 {
         }
 
         fn translate_symbolic_expr(&mut self, expr: &Expr) -> AstNode<'ctx> {
-            log_debug!("Translating symbolic expression: {:?}", expr);
+            log_debug!(target: TAG, "Translating symbolic expression: {}", expr);
             use Expr::*;
             match expr {
                 Unary { operator, operand } => {
@@ -326,6 +331,19 @@ pub(crate) mod z3 {
                     let right_bv = right.as_bit_vector();
                     let is_signed = left_node.is_signed();
 
+                    let operator = if operator.is_unchecked() {
+                        // FIXME: #197
+                        match operator {
+                            BinaryOp::AddUnchecked => BinaryOp::Add,
+                            BinaryOp::SubUnchecked => BinaryOp::Sub,
+                            BinaryOp::MulUnchecked => BinaryOp::Mul,
+                            BinaryOp::ShlUnchecked => BinaryOp::Shl,
+                            BinaryOp::ShrUnchecked => BinaryOp::Shr,
+                            _ => unreachable!(),
+                        }
+                    } else {
+                        operator
+                    };
                     let handle_ar_op = || {
                         let f: Option<fn(&_, &_) -> ast::BV<'ctx>> = match (operator, is_signed) {
                             (BinaryOp::Add, _) => Some(ast::BV::bvadd),
@@ -345,12 +363,6 @@ pub(crate) mod z3 {
                             _ if operator.is_with_overflow() => {
                                 panic!(
                                     "Binary operation with overflow is expected to be broken down at this point. Operator: {:?}",
-                                    operator
-                                );
-                            }
-                            _ if operator.is_unchecked() => {
-                                todo!(
-                                    "#197: Unchecked binary operations are not supported yet. Operator: {:?}",
                                     operator
                                 );
                             }
