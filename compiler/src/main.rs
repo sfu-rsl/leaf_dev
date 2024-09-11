@@ -70,23 +70,10 @@ fn init_logging() {
     use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
     let env = env::var(constants::LOG_ENV).unwrap_or_default();
 
-    let custom_filter = EnvFilter::builder()
-        .with_default_directive(
-            format!("{}=off", constants::LOG_PASS_OBJECTS_TAG)
-                .parse()
-                .unwrap(),
-        )
-        .with_default_directive(
-            format!("{}=off", constants::LOG_PRI_DISCOVERY_TAG)
-                .parse()
-                .unwrap(),
-        )
-        .with_default_directive(
-            format!("{}=off", constants::LOG_BB_JUMP_TAG)
-                .parse()
-                .unwrap(),
-        )
-        .parse_lossy(&env);
+    let off_tags = [LOG_PASS_OBJECTS_TAG, LOG_PRI_DISCOVERY_TAG, LOG_BB_JUMP_TAG]
+        .map(|t| format!("{}=off", t))
+        .join(",");
+    let custom_filter = EnvFilter::builder().parse_lossy(format!("{},{}", off_tags, &env));
 
     // Create a formatting layer with optional write style based on environment variable
     let fmt_layer = fmt::layer()
