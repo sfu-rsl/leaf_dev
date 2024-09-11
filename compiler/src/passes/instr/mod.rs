@@ -403,6 +403,7 @@ where
     }
 
     fn visit_intrinsic(&mut self, _intrinsic: &rustc_middle::mir::NonDivergingIntrinsic<'tcx>) {
+        // TODO
         Default::default()
     }
 }
@@ -457,23 +458,31 @@ where
         _fn_span: rustc_span::Span,
     ) {
         let tcx = self.call_adder.tcx();
-        if let rustc_middle::ty::TyKind::FnDef(def_id, ..) = func.ty(&self.call_adder, tcx).kind() {
-            if !is_function_call_supported(tcx, *def_id) {
-                return;
-            }
-
+        let is_supported = if let rustc_middle::ty::TyKind::FnDef(def_id, ..) =
+            func.ty(&self.call_adder, tcx).kind()
+        {
             assert!(
                 !self.call_adder.all_pri_items().contains(def_id),
                 "Instrumenting our own instrumentation."
             );
-        }
+
+            is_function_call_supported(tcx, *def_id)
+        } else {
+            true
+        };
 
         let are_args_tupled = self
             .call_adder
             .are_args_tupled(func, args.iter().map(|a| &a.node));
         Self::instrument_call(
             &mut self.call_adder,
-            |call_adder| call_adder.reference_func(func),
+            |call_adder| {
+                if is_supported {
+                    call_adder.reference_func(func)
+                } else {
+                    call_adder.reference_special_func(func)
+                }
+            },
             |call_adder| {
                 args.iter()
                     .map(|arg| {

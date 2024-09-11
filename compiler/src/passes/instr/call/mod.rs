@@ -162,6 +162,8 @@ pub(crate) trait BranchingHandler {
 pub trait FunctionHandler<'tcx> {
     fn reference_func(&mut self, func: &Operand<'tcx>) -> OperandRef;
 
+    fn reference_special_func(&mut self, func: &Operand<'tcx>) -> OperandRef;
+
     fn before_call_func(
         &mut self,
         func: OperandRef,
@@ -1796,6 +1798,16 @@ mod implementation {
             let BlocksAndResult(new_blocks, ref_local) = self.internal_reference_func(func);
             self.insert_blocks(new_blocks);
             ref_local.into()
+        }
+
+        fn reference_special_func(&mut self, _func: &Operand<'tcx>) -> OperandRef {
+            // Use `special_func_placeholder` instead.
+            let func = operand::func(
+                self.tcx(),
+                *self.pri_helper_funcs().special_func_placeholder,
+                iter::empty(),
+            );
+            self.reference_func(&func)
         }
 
         fn before_call_func(

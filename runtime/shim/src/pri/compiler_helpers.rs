@@ -85,3 +85,8 @@ pub fn const_binary_op_of(raw: u8) -> BinaryOp {
 pub fn const_unary_op_of(raw: u8) -> UnaryOp {
     UnaryOp::from_raw(raw)
 }
+
+/* This function is used as a replacement for special functions like intrinsics
+ * that cannot be treated as ordinary ones. */
+#[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
+pub fn special_func_placeholder() {}
