@@ -145,17 +145,33 @@ impl ProgramRuntimeInterface for BasicPri {
         push_operand_ref(|o| o.const_from().some())
     }
 
-    fn new_sym_value_bool() -> OperandRef {
-        push_operand_ref(|o| o.new_symbolic(ValueType::Bool))
+    fn new_sym_value_bool(conc_val: bool) -> OperandRef {
+        // FIXME: Redundant referencing.
+        let conc_val = take_back_operand_ref(Self::ref_operand_const_bool(conc_val));
+        push_operand_ref(|o| o.new_symbolic(conc_val, ValueType::Bool))
     }
-    fn new_sym_value_char() -> OperandRef {
-        push_operand_ref(|o| o.new_symbolic(ValueType::Char))
+    fn new_sym_value_char(conc_val: char) -> OperandRef {
+        // FIXME: Redundant referencing.
+        let conc_val = take_back_operand_ref(Self::ref_operand_const_char(conc_val));
+        push_operand_ref(|o| o.new_symbolic(conc_val, ValueType::Char))
     }
-    fn new_sym_value_int(bit_size: u64, is_signed: bool) -> OperandRef {
-        push_operand_ref(|o| o.new_symbolic(ValueType::new_int(bit_size, is_signed)))
+    fn new_sym_value_int(conc_val_bit_rep: u128, bit_size: u64, is_signed: bool) -> OperandRef {
+        // FIXME: Redundant referencing.
+        let conc_val = take_back_operand_ref(Self::ref_operand_const_int(
+            conc_val_bit_rep,
+            bit_size,
+            is_signed,
+        ));
+        push_operand_ref(|o| o.new_symbolic(conc_val, ValueType::new_int(bit_size, is_signed)))
     }
-    fn new_sym_value_float(e_bits: u64, s_bits: u64) -> OperandRef {
-        push_operand_ref(|o| o.new_symbolic(ValueType::new_float(e_bits, s_bits)))
+    fn new_sym_value_float(conc_val_bit_rep: u128, e_bits: u64, s_bits: u64) -> OperandRef {
+        // FIXME: Redundant referencing.
+        let conc_val = take_back_operand_ref(Self::ref_operand_const_float(
+            conc_val_bit_rep,
+            e_bits,
+            s_bits,
+        ));
+        push_operand_ref(|o| o.new_symbolic(conc_val, ValueType::new_float(e_bits, s_bits)))
     }
 
     fn assign_use(dest: PlaceRef, operand: OperandRef) {
