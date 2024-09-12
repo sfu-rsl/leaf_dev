@@ -471,34 +471,37 @@ where
             true
         };
 
-        let are_args_tupled = self
-            .call_adder
-            .are_args_tupled(func, args.iter().map(|a| &a.node));
-        Self::instrument_call(
-            &mut self.call_adder,
-            |call_adder| {
-                if is_supported {
-                    call_adder.reference_func(func)
-                } else {
-                    call_adder.reference_special_func(func)
-                }
-            },
-            |call_adder| {
-                args.iter()
-                    .map(|arg| {
-                        call_adder
-                            .with_source_info(mir::SourceInfo {
-                                span: arg.span,
-                                ..call_adder.source_info()
-                            })
-                            .reference_operand(&arg.node)
+        let mut call_adder = self.call_adder.before();
+
+        let func_ref = if is_supported {
+            call_adder.reference_func(func)
+        } else {
+            call_adder.reference_special_func(func)
+        };
+
+        let arg_refs = args
+            .iter()
+            .map(|arg| {
+                call_adder
+                    .with_source_info(mir::SourceInfo {
+                        span: arg.span,
+                        ..call_adder.source_info()
                     })
-                    .collect::<Vec<_>>()
-            },
-            are_args_tupled,
-            destination,
-            target,
-        );
+                    .reference_operand(&arg.node)
+            })
+            .collect::<Vec<_>>();
+
+        let are_args_tupled = call_adder.are_args_tupled(func, args.iter().map(|a| &a.node));
+
+        call_adder.before_call_func(func_ref, arg_refs.into_iter(), are_args_tupled);
+
+        if target.is_some() {
+            call_adder.after().after_call_func(destination);
+        } else {
+            // This branch is only triggered by hitting a divergent function:
+            // https://doc.rust-lang.org/rust-by-example/fn/diverging.html
+            // (this means the program will exit immediately)
+        }
     }
 
     fn visit_tail_call(
@@ -550,33 +553,6 @@ where
         _unwind: &UnwindAction,
     ) {
         Default::default()
-    }
-}
-
-impl<'tcx, C> LeafTerminatorKindVisitor<C>
-where
-    C: ctxtreqs::ForFunctionCalling<'tcx>,
-{
-    fn instrument_call(
-        call_adder: &mut RuntimeCallAdder<C>,
-        ref_func: impl FnOnce(&mut RuntimeCallAdder<context::AtLocationContext<C>>) -> OperandRef,
-        ref_args: impl FnOnce(&mut RuntimeCallAdder<context::AtLocationContext<C>>) -> Vec<OperandRef>,
-        are_args_tupled: bool,
-        destination: &Place<'tcx>,
-        target: &Option<BasicBlock>,
-    ) {
-        let mut call_adder = call_adder.before();
-        let func = ref_func(&mut call_adder);
-        let args = ref_args(&mut call_adder);
-        call_adder.before_call_func(func, args.into_iter(), are_args_tupled);
-
-        if target.is_some() {
-            call_adder.after().after_call_func(destination);
-        } else {
-            // This branch is only triggered by hitting a divergent function:
-            // https://doc.rust-lang.org/rust-by-example/fn/diverging.html
-            // (this means the program will exit immediately)
-        }
     }
 }
 
