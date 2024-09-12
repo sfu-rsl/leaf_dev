@@ -1800,19 +1800,23 @@ mod implementation {
         C: ForFunctionCalling<'tcx>,
     {
         fn reference_func(&mut self, func: &Operand<'tcx>) -> OperandRef {
+            self.debug_info(&format!("{}", func.ty(self, self.tcx())));
             let BlocksAndResult(new_blocks, ref_local) = self.internal_reference_func(func);
             self.insert_blocks(new_blocks);
             ref_local.into()
         }
 
-        fn reference_special_func(&mut self, _func: &Operand<'tcx>) -> OperandRef {
+        fn reference_special_func(&mut self, func: &Operand<'tcx>) -> OperandRef {
+            self.debug_info(&format!("{}", func.ty(self, self.tcx())));
             // Use `special_func_placeholder` instead.
             let func = operand::func(
                 self.tcx(),
                 *self.pri_helper_funcs().special_func_placeholder,
                 iter::empty(),
             );
-            self.reference_func(&func)
+            let BlocksAndResult(new_blocks, ref_local) = self.internal_reference_func(&func);
+            self.insert_blocks(new_blocks);
+            ref_local.into()
         }
 
         fn before_call_func(

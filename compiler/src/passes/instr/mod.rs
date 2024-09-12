@@ -27,7 +27,7 @@ use crate::{
 use super::{CompilationPass, OverrideFlags, Storage};
 
 use call::{
-    context::{self, BlockIndexProvider, PriItemsProvider, SourceInfoProvider, TyContextProvider},
+    context::{BlockIndexProvider, PriItemsProvider, SourceInfoProvider, TyContextProvider},
     ctxtreqs, AssertionHandler, Assigner, BranchingHandler, BranchingReferencer, CastAssigner,
     EntryFunctionHandler, FunctionHandler,
     InsertionLocation::*,
