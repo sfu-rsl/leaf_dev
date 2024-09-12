@@ -14,6 +14,8 @@ use leaf_macros::trait_log_fn;
 pub struct BasicPri;
 
 const TAG: &str = "pri";
+
+#[trait_log_fn(target = "pri", level = "debug")]
 impl ProgramRuntimeInterface for BasicPri {
     type U128 = u128;
     type Char = char;
@@ -34,21 +36,27 @@ impl ProgramRuntimeInterface for BasicPri {
         log_warn!("Shutting down has no effect on the basic backend.");
     }
 
+    #[tracing::instrument(target = "pri::place", level = "debug", ret)]
     fn ref_place_return_value() -> PlaceRef {
         push_place_ref(|p| p.of_local(Local::ReturnValue))
     }
+    #[tracing::instrument(target = "pri::place", level = "debug", ret)]
     fn ref_place_argument(local_index: LocalIndex) -> PlaceRef {
         push_place_ref(|p| p.of_local(Local::Argument(local_index)))
     }
+    #[tracing::instrument(target = "pri::place", level = "debug", ret)]
     fn ref_place_local(local_index: LocalIndex) -> PlaceRef {
         push_place_ref(|p| p.of_local(Local::Normal(local_index)))
     }
+    #[tracing::instrument(target = "pri::place", level = "debug", ret)]
     fn ref_place_deref(place: PlaceRef) {
         mut_place_ref(place, |p, place| p.project_on(place).deref())
     }
+    #[tracing::instrument(target = "pri::place", level = "debug", ret)]
     fn ref_place_field(place: PlaceRef, field: FieldIndex /*, type */) {
         mut_place_ref(place, |p, place| p.project_on(place).for_field(field))
     }
+    #[tracing::instrument(target = "pri::place", level = "debug", ret)]
     fn ref_place_index(place: PlaceRef, index_place: PlaceRef) {
         let index = take_back_place_ref(index_place)
             .try_into()
@@ -57,61 +65,76 @@ impl ProgramRuntimeInterface for BasicPri {
             });
         mut_place_ref(place, |p, place| p.project_on(place).at_index(index))
     }
+    #[tracing::instrument(target = "pri::place", level = "debug", ret)]
     fn ref_place_constant_index(place: PlaceRef, offset: u64, min_length: u64, from_end: bool) {
         mut_place_ref(place, |p, place| {
             p.project_on(place)
                 .at_constant_index(offset, min_length, from_end)
         })
     }
+    #[tracing::instrument(target = "pri::place", level = "debug", ret)]
     fn ref_place_subslice(place: PlaceRef, from: u64, to: u64, from_end: bool) {
         mut_place_ref(place, |p, place| {
             p.project_on(place).subslice(from, to, from_end)
         })
     }
+    #[tracing::instrument(target = "pri::place", level = "debug", ret)]
     fn ref_place_downcast(place: PlaceRef, variant_index: u32 /*, type */) {
         mut_place_ref(place, |p, place| {
             p.project_on(place).downcast(variant_index)
         })
     }
+    #[tracing::instrument(target = "pri::place", level = "debug", ret)]
     fn ref_place_opaque_cast(place: PlaceRef /*, type */) {
         mut_place_ref(place, |p, place| p.project_on(place).opaque_cast())
     }
+    #[tracing::instrument(target = "pri::place", level = "debug", ret)]
     fn ref_place_subtype(place: PlaceRef /*, type */) {
         mut_place_ref(place, |p, place| p.project_on(place).subtype())
     }
+    #[tracing::instrument(target = "pri::place", level = "debug", ret)]
     fn set_place_address(place: PlaceRef, raw_ptr: RawPointer) {
         mut_place_ref(place, |p, place| p.metadata(place).set_address(raw_ptr));
     }
+    #[tracing::instrument(target = "pri::place", level = "debug", ret)]
     fn set_place_type_id(place: PlaceRef, type_id: Self::TypeId) {
         mut_place_ref(place, |h, p| h.metadata(p).set_type_id(type_id))
     }
+    #[tracing::instrument(target = "pri::place", level = "debug", ret)]
     fn set_place_type_bool(place: PlaceRef) {
         Self::set_place_type(place, ValueType::Bool)
     }
+    #[tracing::instrument(target = "pri::place", level = "debug", ret)]
     fn set_place_type_char(place: PlaceRef) {
         Self::set_place_type(place, ValueType::Char)
     }
+    #[tracing::instrument(target = "pri::place", level = "debug", ret)]
     fn set_place_type_int(place: PlaceRef, bit_size: u64, is_signed: bool) {
         Self::set_place_type(place, ValueType::new_int(bit_size, is_signed))
     }
+    #[tracing::instrument(target = "pri::place", level = "debug", ret)]
     fn set_place_type_float(place: PlaceRef, e_bits: u64, s_bits: u64) {
         Self::set_place_type(place, ValueType::new_float(e_bits, s_bits))
     }
-
+    #[tracing::instrument(target = "pri::place", level = "debug", ret)]
     fn set_place_size(place: PlaceRef, byte_size: TypeSize) {
         mut_place_ref(place, |h, p| h.metadata(p).set_size(byte_size))
     }
 
+    #[tracing::instrument(target = "pri::operand", level = "debug", ret)]
     fn ref_operand_copy(place: PlaceRef) -> OperandRef {
         push_operand_ref(|o| o.copy_of(take_back_place_ref(place)))
     }
+    #[tracing::instrument(target = "pri::operand", level = "debug", ret)]
     fn ref_operand_move(place: PlaceRef) -> OperandRef {
         push_operand_ref(|o| o.move_of(take_back_place_ref(place)))
     }
 
+    #[tracing::instrument(target = "pri::operand", level = "debug", ret)]
     fn ref_operand_const_bool(value: bool) -> OperandRef {
         push_operand_ref(|o| o.const_from().bool(value))
     }
+    #[tracing::instrument(target = "pri::operand", level = "debug", ret)]
     fn ref_operand_const_int(bit_rep: u128, bit_size: u64, is_signed: bool) -> OperandRef {
         push_operand_ref(|o| {
             o.const_from().int(
@@ -123,24 +146,31 @@ impl ProgramRuntimeInterface for BasicPri {
             )
         })
     }
+    #[tracing::instrument(target = "pri::operand", level = "debug", ret)]
     fn ref_operand_const_float(bit_rep: u128, e_bits: u64, s_bits: u64) -> OperandRef {
         push_operand_ref(|o| o.const_from().float(bit_rep, FloatType { e_bits, s_bits }))
     }
+    #[tracing::instrument(target = "pri::operand", level = "debug", ret)]
     fn ref_operand_const_char(value: char) -> OperandRef {
         push_operand_ref(|o| o.const_from().char(value))
     }
+    #[tracing::instrument(target = "pri::operand", level = "debug", ret)]
     fn ref_operand_const_func(id: FuncId) -> OperandRef {
         push_operand_ref(|o| o.const_from().func(id))
     }
+    #[tracing::instrument(target = "pri::operand", level = "debug", ret)]
     fn ref_operand_const_str(value: &'static str) -> OperandRef {
         push_operand_ref(|o| o.const_from().str(value))
     }
+    #[tracing::instrument(target = "pri::operand", level = "debug", ret)]
     fn ref_operand_const_byte_str(value: &'static [u8]) -> OperandRef {
         push_operand_ref(|o| o.const_from().byte_str(value))
     }
+    #[tracing::instrument(target = "pri::operand", level = "debug", ret)]
     fn ref_operand_const_zst() -> OperandRef {
         push_operand_ref(|o| o.const_from().zst())
     }
+    #[tracing::instrument(target = "pri::operand", level = "debug", ret)]
     fn ref_operand_const_some() -> OperandRef {
         push_operand_ref(|o| o.const_from().some())
     }
