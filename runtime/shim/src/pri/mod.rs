@@ -53,6 +53,7 @@ mod ffi {
         type TypeId = U128Pack<TypeId>;
         type BinaryOp = common::pri::BinaryOp;
         type UnaryOp = common::pri::UnaryOp;
+        type DebugInfo = common::ffi::DebugInfo;
 
         common::pri::list_func_decls!(modifier: delegate_to_leafrt, (from Self));
     }
@@ -105,5 +106,6 @@ common::pri::list_func_decls! {
         type_id: TypeId,
         binary_op: BinaryOp,
         unary_op: UnaryOp,
+        dbg_info: DebugInfo,
     )
 }

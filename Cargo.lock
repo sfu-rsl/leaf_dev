@@ -187,6 +187,7 @@ dependencies = [
  "ignore",
  "macros",
  "paste",
+ "ron",
  "serde",
  "tracing-subscriber",
 ]

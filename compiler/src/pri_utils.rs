@@ -70,7 +70,7 @@ pub mod sym {
                 ]
             };
         }
-        pub(crate) const ALL_MAINS: [LeafSymbol; 86] =
+        pub(crate) const ALL_MAINS: [LeafSymbol; 87] =
             common::pri::pass_func_names_to!(bracket, all_comma_separated);
     }
     pub(crate) use mains::*;

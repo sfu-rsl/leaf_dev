@@ -14,6 +14,7 @@ use rustc_target::abi::{FieldIdx, VariantIdx};
 
 use common::{log_debug, log_warn};
 use core::iter;
+use serde::Serialize;
 use std::vec;
 
 /*
@@ -191,6 +192,10 @@ pub(crate) trait AssertionHandler<'tcx> {
         expected: bool,
         msg: &rustc_middle::mir::AssertMessage<'tcx>,
     );
+}
+
+pub(crate) trait DebugInfoHandler {
+    fn debug_info<T: Serialize>(&mut self, info: &T);
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2151,6 +2156,24 @@ mod implementation {
         }
     }
 
+    impl<'tcx, C> DebugInfoHandler for RuntimeCallAdder<C>
+    where
+        Self: MirCallAdder<'tcx>,
+        C: ForInsertion<'tcx>,
+    {
+        fn debug_info<T: Serialize>(&mut self, info: &T) {
+            let serialized = ron::to_string(info).unwrap();
+            let block = self.make_bb_for_call(
+                sym::debug_info,
+                vec![operand::const_from_byte_str(
+                    self.context.tcx(),
+                    serialized.as_bytes(),
+                )],
+            );
+            self.insert_blocks([block]);
+        }
+    }
+
     struct BlocksAndResult<'tcx>(Vec<BasicBlockData<'tcx>>, Local);
 
     impl<'tcx> BlocksAndResult<'tcx> {
@@ -2249,6 +2272,27 @@ mod implementation {
                 ty: Ty<'tcx>,
             ) -> Operand<'tcx> {
                 Operand::const_from_scalar(tcx, ty, Scalar::Int(value), DUMMY_SP)
+            }
+
+            pub fn const_from_byte_str<'tcx>(tcx: TyCtxt<'tcx>, value: &[u8]) -> Operand<'tcx> {
+                let ty = Ty::new_imm_ref(
+                    tcx,
+                    tcx.lifetimes.re_static,
+                    Ty::new_slice(tcx, tcx.types.u8),
+                );
+                Operand::Constant(Box::new(ConstOperand {
+                    span: DUMMY_SP,
+                    user_ty: None,
+                    const_: Const::from_ty_const(
+                        mir_ty::Const::new_value(
+                            tcx,
+                            mir_ty::ValTree::from_raw_bytes(tcx, value),
+                            ty,
+                        ),
+                        ty,
+                        tcx,
+                    ),
+                }))
             }
 
             pub fn const_try_as_unevaluated<'tcx>(

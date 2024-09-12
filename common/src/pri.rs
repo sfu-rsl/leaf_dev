@@ -181,6 +181,9 @@ impl Default for BranchingInfo {
     }
 }
 
+#[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
+pub type DebugInfo = &'static [u8];
+
 /// The definition of the interface between the program and the runtime library.
 ///
 /// This trait provides a compile-time guarantee that the list of functions
@@ -198,6 +201,7 @@ pub trait ProgramRuntimeInterface {
     type TypeId;
     type BinaryOp;
     type UnaryOp;
+    type DebugInfo;
 
     list_func_decls! { modifier: utils::identity, (from Self) }
 }
@@ -402,18 +406,12 @@ pub mod macros {
 
               #[allow(unused_parens)]
               { fn before_call_func(func: OperandRef, args: ($slice_ty!(OperandRef)), are_args_tupled: bool) }
-
               { fn preserve_special_local_metadata(place: PlaceRef) }
-
               #[allow(unused_parens)]
               { fn try_untuple_argument(arg_index: LocalIndex, tuple_type_id: ($type_id_ty)) }
-
               { fn enter_func(func: OperandRef) }
-
               { fn return_from_func() }
-
               { fn override_return_value(operand: OperandRef) }
-
               { fn after_call_func(destination: PlaceRef) }
 
               { fn check_assert_bounds_check(
@@ -439,6 +437,9 @@ pub mod macros {
                   required: OperandRef,
                   found: OperandRef,
               ) }
+
+              #[allow(unused_parens)]
+              { fn debug_info(info: ($dbg_info_ty)) }
             }
         };
     }
@@ -479,7 +480,9 @@ pub mod macros {
                         branching_info: $$branching_info_ty:ty,
                         type_id: $$type_id_ty:ty,
                         binary_op: $$binary_op_ty:ty,
-                        unary_op: $$unary_op_ty:ty $$(,)?
+                        unary_op: $$unary_op_ty:ty,
+                        dbg_info: $$dbg_info_ty:ty
+                        $$(,)?
                     )
                 ) => {
                     $(
@@ -499,6 +502,7 @@ pub mod macros {
                             type_id: (),
                             binary_op:(),
                             unary_op:(),
+                            dbg_info:(),
                         )
                     }
                 };
@@ -515,6 +519,7 @@ pub mod macros {
                             type_id: Self::TypeId,
                             binary_op: Self::BinaryOp,
                             unary_op: Self::UnaryOp,
+                            dbg_info: Self::DebugInfo,
                         )
                     }
                 };
@@ -527,10 +532,11 @@ pub mod macros {
                             &str: ConstStrPack,
                             &[u8]: ConstByteStrPack,
                             slice: $crate::leaf::common::pri::macros::slice_pack_of,
-                            branching_info: BranchingInfo,
+                            branching_info: common::pri::BranchingInfo,
                             type_id: U128Pack<TypeId>,
                             binary_op: common::pri::BinaryOp,
                             unary_op: common::pri::UnaryOp,
+                            dbg_info: common::ffi::DebugInfo,
                         )
                     }
                 };
@@ -545,14 +551,12 @@ pub mod macros {
 
     #[cfg_attr(not(core_build), macro_export)]
     macro_rules! list_func_decls {
-        (modifier: $modifier:path,(u128: $u128_ty:ty,char: $char_ty:ty, &str: $str_ty:ty, &[u8]: $byte_str_ty:ty,slice: $slice_ty:path,branching_info: $branching_info_ty:ty,type_id: $type_id_ty:ty,binary_op: $binary_op_ty:ty,unary_op: $unary_op_ty:ty$(,)?)) => {
+        (modifier: $modifier:path,(u128: $u128_ty:ty,char: $char_ty:ty, &str: $str_ty:ty, &[u8]: $byte_str_ty:ty,slice: $slice_ty:path,branching_info: $branching_info_ty:ty,type_id: $type_id_ty:ty,binary_op: $binary_op_ty:ty,unary_op: $unary_op_ty:ty,dbg_info: $dbg_info_ty:ty$(,)?)) => {
             $modifier!{
                 fn init_runtime_lib();
-            }
-            $modifier!{
+            }$modifier!{
                 fn shutdown_runtime_lib();
-            }
-            $modifier!{
+            }$modifier!{
                 fn ref_place_return_value()->PlaceRef;
             }$modifier!{
                 fn ref_place_argument(local_index:LocalIndex)->PlaceRef;
@@ -611,13 +615,13 @@ pub mod macros {
             }$modifier!{
                 fn ref_operand_const_some()->OperandRef;
             }$modifier!{
-                fn new_sym_value_bool(concrete_val: bool)->OperandRef;
+                fn new_sym_value_bool(conc_val:bool)->OperandRef;
             }$modifier!{
-                fn new_sym_value_char(concrete_val: char)->OperandRef;
+                fn new_sym_value_char(conc_val:char)->OperandRef;
             }$modifier!{
-                #[allow(unused_parens)]fn new_sym_value_int(bit_rep:($u128_ty),bit_size:u64,is_signed:bool)->OperandRef;
+                #[allow(unused_parens)]fn new_sym_value_int(conc_val_bit_rep:($u128_ty),bit_size:u64,is_signed:bool)->OperandRef;
             }$modifier!{
-                #[allow(unused_parens)]fn new_sym_value_float(bit_rep:($u128_ty),e_bits:u64,s_bits:u64)->OperandRef;
+                #[allow(unused_parens)]fn new_sym_value_float(conc_val_bit_rep:($u128_ty),e_bits:u64,s_bits:u64)->OperandRef;
             }$modifier!{
                 fn assign_use(dest:PlaceRef,operand:OperandRef);
             }$modifier!{
@@ -657,7 +661,7 @@ pub mod macros {
             }$modifier!{
                 fn assign_discriminant(dest:PlaceRef,place:PlaceRef);
             }$modifier!{
-                #[allow(unused_parens)]fn assign_aggregate_array(dest:PlaceRef,items:($slice_ty!(OperandRef)),);
+                #[allow(unused_parens)]fn assign_aggregate_array(dest:PlaceRef,items:($slice_ty!(OperandRef)));
             }$modifier!{
                 #[allow(unused_parens)]fn assign_aggregate_tuple(dest:PlaceRef,fields:($slice_ty!(OperandRef)));
             }$modifier!{
@@ -673,7 +677,7 @@ pub mod macros {
             }$modifier!{
                 #[allow(unused_parens)]fn assign_aggregate_coroutine_closure(dest:PlaceRef,upvars:($slice_ty!(OperandRef)));
             }$modifier!{
-                fn assign_aggregate_raw_ptr(dest:PlaceRef,data_ptr:OperandRef,metadata:OperandRef,is_mutable: bool);
+                fn assign_aggregate_raw_ptr(dest:PlaceRef,data_ptr:OperandRef,metadata:OperandRef,is_mutable:bool);
             }$modifier!{
                 #[allow(unused_parens)]fn assign_shallow_init_box(_dest:PlaceRef,_operand:OperandRef,_dst_type_id:($type_id_ty));
             }$modifier!{
@@ -720,21 +724,23 @@ pub mod macros {
                 fn check_assert_rem_by_zero(cond:OperandRef,expected:bool,operand:OperandRef);
             }$modifier!{
                 fn check_assert_misaligned_ptr_deref(cond:OperandRef,expected:bool,required:OperandRef,found:OperandRef,);
+            }$modifier!{
+                #[allow(unused_parens)]fn debug_info(info:($dbg_info_ty));
             }
         };
         (modifier: $modifier:path) => {
             $crate::leaf::common::pri::macros::list_func_decls!{
-                modifier: $modifier,(u128:(),char:(), &str:(), &[u8]:(),slice:$crate::leaf::common::utils::identity,branching_info:(),type_id:(),binary_op:(),unary_op:(),)
+                modifier: $modifier,(u128:(),char:(), &str:(), &[u8]:(),slice:$crate::leaf::common::utils::identity,branching_info:(),type_id:(),binary_op:(),unary_op:(),dbg_info:(),)
             }
         };
         (modifier: $modifier:path,(from Self)) => {
             $crate::leaf::common::pri::macros::list_func_decls!{
-                modifier: $modifier,(u128:Self::U128,char:Self::Char, &str:Self::ConstStr, &[u8]:Self::ConstByteStr,slice:$crate::leaf::common::pri::macros::self_slice_of,branching_info:Self::BranchingInfo,type_id:Self::TypeId,binary_op:Self::BinaryOp,unary_op:Self::UnaryOp,)
+                modifier: $modifier,(u128:Self::U128,char:Self::Char, &str:Self::ConstStr, &[u8]:Self::ConstByteStr,slice:$crate::leaf::common::pri::macros::self_slice_of,branching_info:Self::BranchingInfo,type_id:Self::TypeId,binary_op:Self::BinaryOp,unary_op:Self::UnaryOp,dbg_info:Self::DebugInfo,)
             }
         };
         (modifier: $modifier:path,(from common::ffi)) => {
             $crate::leaf::common::pri::macros::list_func_decls!{
-                modifier: $modifier,(u128:U128Pack,char:CharPack, &str:ConstStrPack, &[u8]:ConstByteStrPack,slice:$crate::leaf::common::pri::macros::slice_pack_of,branching_info:BranchingInfo,type_id:U128Pack<TypeId>,binary_op:common::pri::BinaryOp,unary_op:common::pri::UnaryOp,)
+                modifier: $modifier,(u128:U128Pack,char:CharPack, &str:ConstStrPack, &[u8]:ConstByteStrPack,slice:$crate::leaf::common::pri::macros::slice_pack_of,branching_info:common::pri::BranchingInfo,type_id:U128Pack<TypeId>,binary_op:common::pri::BinaryOp,unary_op:common::pri::UnaryOp,dbg_info:common::ffi::DebugInfo,)
             }
         };
     }

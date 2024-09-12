@@ -2,7 +2,7 @@ mod ffi;
 mod instance;
 mod utils;
 
-use common::pri::*;
+use common::{log_info, pri::*};
 
 use self::instance::*;
 use crate::abs::{
@@ -13,7 +13,7 @@ use leaf_macros::trait_log_fn;
 
 pub struct BasicPri;
 
-#[trait_log_fn(target = "pri")]
+const TAG: &str = "pri";
 impl ProgramRuntimeInterface for BasicPri {
     type U128 = u128;
     type Char = char;
@@ -24,6 +24,7 @@ impl ProgramRuntimeInterface for BasicPri {
     type TypeId = TypeId;
     type BinaryOp = abs::BinaryOp;
     type UnaryOp = abs::UnaryOp;
+    type DebugInfo = DebugInfo;
 
     fn init_runtime_lib() {
         init_backend();
@@ -450,6 +451,18 @@ impl ProgramRuntimeInterface for BasicPri {
             found: take_back_operand_ref(found),
         };
         Self::check_assert(cond, expected, assert_kind)
+    }
+
+    #[tracing::instrument(target = "pri", skip_all, level = "trace")]
+    fn debug_info(info: Self::DebugInfo) {
+        let str_rep = String::from_utf8_lossy(info);
+        let str_rep = str_rep.trim_matches('"');
+        const MAX_LEN: usize = 100;
+        if str_rep.len() <= MAX_LEN {
+            log_info!(target: TAG, "{}", str_rep);
+        } else {
+            log_info!(target: TAG, "{}…", str_rep);
+        }
     }
 }
 

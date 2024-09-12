@@ -149,3 +149,6 @@ impl From<&'static [u8]> for ConstByteStrPack {
         }
     }
 }
+
+#[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
+pub type DebugInfo = ConstByteStrPack;
