@@ -96,4 +96,6 @@ pub(crate) struct FileOutputConfig {
     pub format: OutputFileFormat,
     /// The prefix to use for the name of the output files.
     pub prefix: Option<String>,
+    /// The extension to use for the name of the output files.
+    pub extension: Option<String>,
 }

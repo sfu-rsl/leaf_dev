@@ -93,6 +93,7 @@ fn execute_once(
         directory = "{dir}"
         format = "binary"
         prefix = "next_"
+        extension = ".bin"
         "#,
         dir = next_inputs_dir.display(),
     );
@@ -180,5 +181,5 @@ fn get_fingerprint(file: &Path) -> String {
 }
 
 fn get_standardized_file_name(index: usize, fingerprint: &str) -> String {
-    format!("input_{:03}_{}", index, &fingerprint[..8])
+    format!("input_{:03}_{}.bin", index, &fingerprint[..8])
 }

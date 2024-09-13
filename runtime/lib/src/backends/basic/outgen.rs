@@ -27,6 +27,7 @@ impl BasicOutputGenerator {
                 OutputFileFormat::Binary => Box::new(BinaryFileAnswersWriter::new(
                     file_config.directory.clone(),
                     file_config.prefix.clone(),
+                    file_config.extension.clone(),
                 )),
             },
         } as Box<dyn AnswersWriter>));
@@ -58,43 +59,50 @@ struct BinaryFileAnswersWriter {
     counter: usize,
     enabled: bool,
     prefix: String,
+    extension: String,
 }
 
 impl BinaryFileAnswersWriter {
-    fn new(dir_path: PathBuf, file_prefix: Option<String>) -> Self {
+    fn new(dir_path: PathBuf, file_prefix: Option<String>, file_ext: Option<String>) -> Self {
         log_info!(
             "Setting up binary output writing to directory: {}",
             dir_path.display()
         );
         std::fs::create_dir_all(&dir_path).unwrap();
         let dir_path = std::fs::canonicalize(dir_path).unwrap();
-        Self::check_out_dir(&dir_path, file_prefix.as_ref());
+
+        let file_ext = file_ext.unwrap_or_else(|| ".bin".to_string());
+
+        Self::check_out_dir(&dir_path, file_prefix.as_ref(), &file_ext);
 
         Self {
             dir_path,
             counter: 0,
             enabled: true,
             prefix: file_prefix.unwrap_or_default(),
+            extension: file_ext,
         }
     }
 
     fn write(&mut self, values: &[u8]) {
         let path = self
             .dir_path
-            .join(format!("{}{}", self.prefix, self.counter));
+            .join(format!("{}{}{}", self.prefix, self.counter, self.extension));
         log_debug!("Writing values to file: {}.", path.display());
         let mut file = std::fs::File::create(path).unwrap();
         file.write(&values).unwrap();
         self.counter += 1;
     }
 
-    fn check_out_dir(dir_path: &PathBuf, file_prefix: Option<&String>) {
+    fn check_out_dir(dir_path: &PathBuf, file_prefix: Option<&String>, file_ext: &str) {
         if std::fs::read_dir(&dir_path)
             .unwrap()
             .filter_map(io::Result::ok)
             .filter(|e| e.metadata().is_ok_and(|t| t.is_file()))
             .any(|e| {
-                file_prefix.is_none_or(|prefix| e.file_name().to_string_lossy().starts_with(prefix))
+                e.file_name().to_string_lossy().ends_with(file_ext)
+                    && file_prefix
+                        .is_none_or(|prefix| e.file_name().to_string_lossy().starts_with(prefix))
             })
         {
             log_warn!(
