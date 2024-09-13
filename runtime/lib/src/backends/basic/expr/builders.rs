@@ -150,7 +150,7 @@ mod symbolic {
         ) -> Self::Expr<'a> {
             match operands.as_flat().1.as_ref() {
                 Value::Concrete(ConcreteValue::Unevaluated(UnevalValue::Lazy(lazy))) => {
-                    let value = unsafe { 
+                    let value = unsafe {
                         lazy.try_retrieve_as_scalar(None)
                             .expect(
                                 concat!(

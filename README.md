@@ -242,6 +242,11 @@ With `rustfmt` Git Hook, if you try to commit code that is not well-formatted, t
 
 Also note that `.git/` is not cloned with the rest of the repo.
 
+### Profiling
+
+The workflow for profiling and how to get started can be found here [Profiler Docs](./scripts/profiler/README.md)
+   
+
 ### Project Wiki
 
 You can find more information (e.g. tips and tricks) under [project wiki](https://github.com/sfu-rsl/leaf/wiki) pages.
