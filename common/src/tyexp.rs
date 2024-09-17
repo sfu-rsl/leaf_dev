@@ -80,12 +80,12 @@ pub struct TagInfo {
 pub enum TagEncodingInfo {
     Direct,
     Niche {
-        // The discriminant value when the variant is not a niche.
+        /// The discriminant value when the variant is not a niche.
         non_niche_value: u128,
-        // The range of values for the discriminant when the variant is a niche.
+        /// The range of values for the discriminant when the variant is a niche.
         // NOTE: As the range check is wrapping, we need the end value.
         niche_value_range: RangeInclusive<u128>,
-        // The value of the tag when the variant is at the start of the niche range.
+        /// The value of the tag when the variant is at the start of the niche range.
         tag_value_start: u128,
     },
 }

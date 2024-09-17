@@ -173,6 +173,7 @@ impl RuntimeBackend for BasicBackend {
             dest,
             self.call_stack_manager.top(),
             self.expr_builder.clone(),
+            self.type_manager.as_ref(),
         )
     }
 
@@ -216,14 +217,21 @@ pub(crate) struct BasicAssignmentHandler<'s, EB: OperationalExprBuilder> {
     dest: Place,
     vars_state: &'s mut dyn VariablesState,
     expr_builder: RRef<EB>,
+    type_manager: &'s dyn TypeManager,
 }
 
 impl<'s, EB: OperationalExprBuilder> BasicAssignmentHandler<'s, EB> {
-    fn new(dest: Place, vars_state: &'s mut dyn VariablesState, expr_builder: RRef<EB>) -> Self {
+    fn new(
+        dest: Place,
+        vars_state: &'s mut dyn VariablesState,
+        expr_builder: RRef<EB>,
+        type_manager: &'s dyn TypeManager,
+    ) -> Self {
         Self {
             dest,
             vars_state,
             expr_builder,
+            type_manager,
         }
     }
 }
@@ -320,9 +328,20 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
     }
 
     fn discriminant_of(mut self, place: Self::Place) {
-        let value = self.vars_state.copy_place(&place);
-        let discr_value = self.expr_builder().discriminant(value.into());
-        self.set(discr_value.into())
+        let (tag_place, tag_info) = project_tag(place, self.type_manager);
+        let tag_value = self.vars_state.copy_place(&tag_place);
+        let discr_value = if tag_value.is_symbolic() {
+            self.build_discriminant_expr(
+                SymValueRef::new(tag_value),
+                &tag_info.encoding,
+                self.dest.metadata(),
+                tag_place.metadata(),
+            )
+            .into()
+        } else {
+            tag_value
+        };
+        self.set(discr_value)
     }
 
     fn array_from(mut self, items: impl Iterator<Item = Self::Operand>) {
@@ -406,6 +425,95 @@ impl<EB: OperationalExprBuilder> BasicAssignmentHandler<'_, EB> {
                 .collect(),
         }));
         self.set_value(value)
+    }
+
+    #[tracing::instrument(level = "debug", skip(self))]
+    fn build_discriminant_expr(
+        &self,
+        tag_value: SymValueRef,
+        tag_encoding: &common::tyexp::TagEncodingInfo,
+        discr_meta: &PlaceMetadata,
+        tag_ty: &PlaceMetadata,
+    ) -> SymValueRef {
+        use common::tyexp::TagEncodingInfo::*;
+        match tag_encoding {
+            Direct => tag_value,
+            Niche {
+                non_niche_value,
+                niche_value_range,
+                tag_value_start,
+            } => {
+                impl ValueType {
+                    #[inline]
+                    fn expect_int(&self) -> IntType {
+                        match self {
+                            ValueType::Int(ty) => *ty,
+                            _ => {
+                                // https://doc.rust-lang.org/reference/type-layout.html#primitive-representations
+                                panic!(
+                                    "Expected the type of the tag to be a int type. Found: {:?}",
+                                    self
+                                )
+                            }
+                        }
+                    }
+                }
+
+                let get_int_type = |meta: &PlaceMetadata| {
+                    meta.ty()
+                        .cloned()
+                        .unwrap_or_else(|| {
+                            self.type_manager
+                        .get_type(meta.unwrap_type_id())
+                        .try_into()
+                        .expect("Expected the type of the discriminant raw value to be a primitive")
+                        })
+                        .expect_int()
+                };
+
+                let discr_ty = get_int_type(discr_meta);
+                let tag_ty = get_int_type(tag_ty);
+
+                let into_tag_value = |v: u128| ConstValue::new_int(v, tag_ty).to_value_ref();
+                let into_discr_value = |v: u128| ConstValue::new_int(v, discr_ty).to_value_ref();
+
+                // Based on: `rustc_codegen_ssa::mir::place::PlaceRef::codegen_get_discr`
+                let tag_value: ValueRef = tag_value.into();
+                let relative_tag_value = self
+                    .expr_builder()
+                    .sub((tag_value.clone(), into_tag_value(*tag_value_start)).into())
+                    .into();
+                let is_niche = SymValueRef::new(
+                    self.expr_builder()
+                        .le((
+                            relative_tag_value.clone(),
+                            into_tag_value(niche_value_range.end() - niche_value_range.start()),
+                        )
+                            .into())
+                        .into(),
+                );
+                let niche_discr_value = self
+                    .expr_builder()
+                    .add(
+                        (
+                            relative_tag_value,
+                            into_discr_value(*niche_value_range.start()),
+                        )
+                            .into(),
+                    )
+                    .into();
+                let niche_discr_value = self
+                    .expr_builder()
+                    .cast(niche_discr_value.into(), CastKind::ToInt(discr_ty));
+                let discr_value = Expr::Ite {
+                    condition: is_niche,
+                    if_target: niche_discr_value.into(),
+                    else_target: into_discr_value(*non_niche_value),
+                }
+                .to_value_ref();
+                discr_value
+            }
+        }
     }
 }
 
@@ -867,6 +975,28 @@ fn try_const_operand_value(operand: Operand) -> Option<ValueRef> {
         Operand::Const(constant) => Some(Into::<ConcreteValue>::into(constant).to_value_ref()),
         _ => None,
     }
+}
+
+/// Simulates accessing the tag value of an enum as a field.
+fn project_tag(
+    mut place: Place,
+    type_manager: &dyn TypeManager,
+) -> (Place, &'static common::tyexp::TagInfo) {
+    let ty = type_manager.get_type(place.metadata().unwrap_type_id());
+    let tag_info = ty.tag.as_ref().unwrap();
+    let meta = {
+        let mut meta = PlaceMetadata::default();
+        meta.set_address(
+            place
+                .address()
+                .wrapping_byte_add(tag_info.as_field.offset as usize) as RawPointer,
+        );
+        meta.set_type_id(tag_info.as_field.ty);
+        meta
+    };
+    place.add_projection(Projection::Field(0));
+    place.push_metadata(meta);
+    (place, tag_info)
 }
 
 trait VariablesState<P = Place, V = ValueRef, PV = PlaceValueRef> {
