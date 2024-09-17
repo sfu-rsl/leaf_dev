@@ -1,14 +1,12 @@
 use crate::{
     abs::{self, Local, LocalIndex},
-    backends::basic::config::ExternalCallStrategy,
     utils::SelfHierarchical,
 };
 
 use super::{
-    config::CallConfig,
-    expr::ConcreteValue,
+    config::{CallConfig, ExternalCallStrategy},
     place::{LocalWithMetadata, PlaceMetadata},
-    CallStackManager, Place, UntupleHelper, ValueRef, VariablesState,
+    CallStackManager, ConcreteValue, Place, UntupleHelper, ValueRef, VariablesState,
 };
 
 use common::{log_debug, log_warn, pri::RawPointer};
@@ -295,7 +293,6 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
         match local {
             Local::ReturnValue => self.return_val_metadata = Some(metadata),
             Local::Argument(local_index) => {
-                log_debug!(target: TAG, "Setting metadata for argument {:?}.", local);
                 let args_metadata = &mut self.args_metadata;
                 let index = *local_index as usize - 1;
                 if args_metadata.len() <= index {
@@ -369,7 +366,7 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
 
                 Ok(arg_locals.into_iter().zip(args.into_iter()))
             } else {
-                Err(Some(expected_func))
+                Err(Some((expected_func, args)))
             }
         } else {
             // NOTE: An example of this case is when an external function calls multiple internal ones.
@@ -384,16 +381,29 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
             Ok(args) => {
                 self.push_new_stack_frame(args, call_stack_frame);
             }
-            Err(expected_func) => {
+            Err(expected) => {
+                let (expected_func, has_symbolic_args) = if let Some((func, args)) = expected {
+                    (func.to_string(), args.iter().any(|v| v.is_symbolic()))
+                } else {
+                    ("UNKNOWN".to_string(), false)
+                };
                 log_debug!(
                     target: TAG,
                     "External function call in between detected. Expected: {}, Current: {}",
-                    expected_func.map_or("None".to_string(), |f| f.to_string()),
+                    expected_func,
                     current_func,
                 );
+                if has_symbolic_args {
+                    log_warn!(
+                        target: TAG,
+                        "Possible loss of symbolic values in external function call",
+                    );
+                }
                 self.push_new_stack_frame(core::iter::empty(), call_stack_frame);
             }
         }
+
+        log_debug!(target: TAG, "Entered the function");
     }
 
     fn pop_stack_frame(&mut self) {
