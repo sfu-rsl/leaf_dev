@@ -131,6 +131,7 @@ impl RawPointerVariableState {
             obj_value,
             addr,
             obj_type_id,
+            obj_type_id,
         );
 
         // FIXME: (*)
