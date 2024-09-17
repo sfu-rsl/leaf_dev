@@ -132,12 +132,49 @@ mod symbolic {
 
     pub(crate) type SymbolicBuilder = Composite<
         /*Binary:*/
-        Chained<LazyEvaluatorBuilder, Chained<ConstSimplifier, Chained<ConstFolder, CoreBuilder>>>,
-        /*Unary:*/ CoreBuilder,
+        Chained<
+            UnevaluatedResolverBuilder,
+            Chained<ConstSimplifier, Chained<ConstFolder, CoreBuilder>>,
+        >,
+        /*Unary:*/ Chained<UnevaluatedResolverBuilder, CoreBuilder>,
     >;
 
-    #[derive(Default)]
-    pub(crate) struct LazyEvaluatorBuilder;
+    impl SymbolicBuilder {
+        pub(crate) fn new(type_manager: Rc<dyn TypeManager>) -> Self {
+            Self {
+                binary: Chained::new(
+                    UnevaluatedResolverBuilder {
+                        type_manager: type_manager.clone(),
+                    },
+                    Default::default(),
+                ),
+                unary: Chained::new(
+                    UnevaluatedResolverBuilder {
+                        type_manager: type_manager.clone(),
+                    },
+                    Default::default(),
+                ),
+            }
+        }
+    }
+
+    pub(crate) struct UnevaluatedResolverBuilder {
+        type_manager: Rc<dyn TypeManager>,
+    }
+
+    impl UnevaluatedResolverBuilder {
+        fn resolve_if_porter(&self, value: &mut ValueRef) {
+            if let Value::Symbolic(SymValue::Expression(Expr::Partial(porter))) = value.as_ref() {
+                *value = porter.try_to_masked_value(self.type_manager.as_ref())
+                .unwrap_or_else(|_| {
+                    unimplemented!(
+                        "Porter value participating in an expression is expected to be convertible to masked value {:?}",
+                        value
+                    )
+                }).into()
+            }
+        }
+    }
 
     impl BinaryExprBuilder for LazyEvaluatorBuilder {
         type ExprRefPair<'a> = SymBinaryOperands;
@@ -145,29 +182,71 @@ mod symbolic {
 
         fn binary_op<'a>(
             &mut self,
-            operands: Self::ExprRefPair<'a>,
+            mut operands: Self::ExprRefPair<'a>,
             _op: BinaryOp,
         ) -> Self::Expr<'a> {
-            match operands.as_flat().1.as_ref() {
+            let other = operands.as_flat_mut().1;
+            match other.as_ref() {
                 Value::Concrete(ConcreteValue::Unevaluated(UnevalValue::Lazy(lazy))) => {
-                    let value = unsafe {
-                        lazy.try_retrieve_as_scalar(None)
+                    *other = unsafe {
+                        lazy.try_retrieve_as_scalar(Some(self.type_manager.as_ref()))
                             .expect(
                                 concat!(
                                     "The value participating in a binary expression is expected to be a scalar. ",
                                     "Maybe the value type is not available?"
                                 ),
                             )
-                    }.to_value_ref();
-                    let mut operands = operands.flatten();
-                    operands.1 = value;
-                    Err(Self::ExprRefPair::from(operands))
+                    }.to_value_ref()
                 }
-                _ => Err(operands),
-            }
+                Value::Symbolic(..) => {
+                    self.resolve_if_porter(other)
+                }
+                _ => {},
+            };
+
+            let sym = operands.as_flat_mut().0;
+            self.resolve_if_porter(sym.as_mut());
+
+            Err(operands)
         }
 
         impl_singular_binary_ops_through_general!();
+    }
+
+    impl UnaryExprBuilder for UnevaluatedResolverBuilder {
+        type ExprRef<'a> = SymValueRef;
+        type Expr<'a> = Result<ValueRef, SymValueRef>;
+
+        fn unary_op<'a>(&mut self, mut operand: Self::ExprRef<'a>, _op: UnaryOp) -> Self::Expr<'a> {
+            self.resolve_if_porter(operand.as_mut());
+            Err(operand)
+        }
+
+        impl_singular_unary_ops_through_general!();
+
+        fn address_of<'a>(&mut self, mut operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
+            self.resolve_if_porter(operand.as_mut());
+            Err(operand)
+        }
+
+        fn len<'a>(&mut self, mut operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
+            self.resolve_if_porter(operand.as_mut());
+            Err(operand)
+        }
+
+        fn discriminant<'a>(&mut self, mut operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
+            self.resolve_if_porter(operand.as_mut());
+            Err(operand)
+        }
+
+        fn cast<'a>(
+            &mut self,
+            mut operand: Self::ExprRef<'a>,
+            _target: CastKind,
+        ) -> Self::Expr<'a> {
+            self.resolve_if_porter(operand.as_mut());
+            Err(operand)
+        }
     }
 }
 
@@ -520,7 +599,7 @@ mod concrete {
             UnevalValue::Some.to_value_ref()
         }
 
-        fn cast<'a>(&mut self, _operand: Self::ExprRef<'a>, ـtarget: CastKind) -> Self::Expr<'a> {
+        fn cast<'a>(&mut self, _operand: Self::ExprRef<'a>, _target: CastKind) -> Self::Expr<'a> {
             UnevalValue::Some.to_value_ref()
         }
     }

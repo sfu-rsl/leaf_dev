@@ -101,7 +101,6 @@ impl Display for UnevalValue {
         match self {
             UnevalValue::Some => write!(f, ".C."),
             UnevalValue::Lazy(raw) => write!(f, "{raw}"),
-            UnevalValue::Porter(PorterValue { .. }) => write!(f, "{{.S.}}"),
         }
     }
 }
@@ -168,6 +167,7 @@ impl Expr {
             Expr::Ref(_) => write!(f, "&"),
             Expr::Len(_) => write!(f, "Len"),
             Expr::Projection(_) => write!(f, "Proj"),
+            Expr::Partial(_) => write!(f, "Partial"),
         }
     }
 
@@ -202,6 +202,7 @@ impl Expr {
             Expr::Ref(operand) => write!(f, "{operand}"),
             Expr::Len(of) => write!(f, "{of}"),
             Expr::Projection(proj) => write!(f, "{proj}"),
+            Expr::Partial(_porter) => write!(f, "{{.S.}}"),
         }
     }
 }

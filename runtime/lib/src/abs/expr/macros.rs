@@ -14,39 +14,35 @@ macro_rules! impl_general_binary_op_through_singulars {
             op: BinaryOp,
         ) -> Self::Expr<'a> {
             use BinaryOp::*;
-            match op {
-                _ => {
-                    let binop = match op {
-                        Add => Self::add,
-                        AddUnchecked => Self::add_unchecked,
-                        AddWithOverflow => Self::add_with_overflow,
-                        Sub => Self::sub,
-                        SubUnchecked => Self::sub_unchecked,
-                        SubWithOverflow => Self::sub_with_overflow,
-                        Mul => Self::mul,
-                        MulUnchecked => Self::mul_unchecked,
-                        MulWithOverflow => Self::mul_with_overflow,
-                        Div => Self::div,
-                        Rem => Self::rem,
-                        BitXor => Self::xor,
-                        BitAnd => Self::and,
-                        BitOr => Self::or,
-                        Shl => Self::shl,
-                        ShlUnchecked => Self::shl_unchecked,
-                        Shr => Self::shr,
-                        ShrUnchecked => Self::shr_unchecked,
-                        Eq => Self::eq,
-                        Lt => Self::lt,
-                        Le => Self::le,
-                        Ne => Self::ne,
-                        Ge => Self::ge,
-                        Gt => Self::gt,
-                        Cmp => Self::cmp,
-                        Offset => Self::offset,
-                    };
-                    binop(self, operands)
-                }
-            }
+            let binop = match op {
+                Add => Self::add,
+                AddUnchecked => Self::add_unchecked,
+                AddWithOverflow => Self::add_with_overflow,
+                Sub => Self::sub,
+                SubUnchecked => Self::sub_unchecked,
+                SubWithOverflow => Self::sub_with_overflow,
+                Mul => Self::mul,
+                MulUnchecked => Self::mul_unchecked,
+                MulWithOverflow => Self::mul_with_overflow,
+                Div => Self::div,
+                Rem => Self::rem,
+                BitXor => Self::xor,
+                BitAnd => Self::and,
+                BitOr => Self::or,
+                Shl => Self::shl,
+                ShlUnchecked => Self::shl_unchecked,
+                Shr => Self::shr,
+                ShrUnchecked => Self::shr_unchecked,
+                Eq => Self::eq,
+                Lt => Self::lt,
+                Le => Self::le,
+                Ne => Self::ne,
+                Ge => Self::ge,
+                Gt => Self::gt,
+                Cmp => Self::cmp,
+                Offset => Self::offset,
+            };
+            binop(self, operands)
         }
     };
 }

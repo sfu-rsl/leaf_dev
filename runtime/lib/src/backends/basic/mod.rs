@@ -403,7 +403,13 @@ impl<'a, EB: BinaryExprBuilder> BranchingHandler for BasicBranchingHandler<'a, E
         // TODO: add a result: bool parameter to this function, and add support for it using a panic hook.
         let cond_val = get_operand_value(self.vars_state, cond);
         if cond_val.is_symbolic() {
-            let mut constraint = Constraint::Bool(cond_val.clone());
+            // NOTE: This is a trick to pass the value through the expression builder
+            // to ensure value resolving and simplifications.
+            let expr = self
+                .expr_builder
+                .borrow_mut()
+                .and((ConstValue::Bool(true).to_value_ref(), cond_val.clone()).into());
+            let mut constraint = Constraint::Bool(expr.into());
             if !expected {
                 constraint = constraint.not();
             }
@@ -500,7 +506,19 @@ impl<EB: BinaryExprBuilder> BranchTakingHandler<bool> for BasicBranchTakingHandl
             return;
         }
 
-        let mut constraint = Constraint::Bool(self.parent.discriminant.clone());
+        // NOTE: This is a trick to pass the value through the expression builder
+        // to ensure value resolving and simplifications.
+        let expr = self
+            .expr_builder()
+            .and(
+                (
+                    ConstValue::Bool(true).to_value_ref(),
+                    self.parent.discriminant.clone(),
+                )
+                    .into(),
+            )
+            .into();
+        let mut constraint = Constraint::Bool(expr);
         if !result {
             constraint = constraint.not();
         }

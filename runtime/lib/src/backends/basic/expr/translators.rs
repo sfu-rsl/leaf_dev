@@ -229,6 +229,11 @@ pub(crate) mod z3 {
                         "Projection expressions should be resolved before translation. Got: {expr}"
                     )
                 }
+                Partial(..) => {
+                    unreachable!(
+                        "Partial expressions are expected to be converted to masked values before translation."
+                    )
+                }
             }
         }
 

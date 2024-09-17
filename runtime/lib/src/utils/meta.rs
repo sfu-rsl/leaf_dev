@@ -42,6 +42,14 @@ macro_rules! define_reversible_pair {
                     Self::$rev { $second, $first } => ($second, $first, true),
                 }
             }
+
+            #[inline]
+            pub fn as_flat_mut(&mut self) -> (&mut $t_first, &mut $t_second, bool) {
+                match self {
+                    Self::$orig { $first, $second } => ($first, $second, false),
+                    Self::$rev { $second, $first } => ($second, $first, true),
+                }
+            }
         }
 
         impl$(<$($generic_type),*>)? From<($t_first, $t_second)> for $name$(<$($generic_type),*>)? {

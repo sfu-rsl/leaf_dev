@@ -136,7 +136,7 @@ impl RawPointerVariableState {
             "Found value {} for address: {:p} with type: {:?}",
             obj_value,
             addr,
-            type_id
+            obj_type_id,
         );
 
         // FIXME: (*)
@@ -447,11 +447,6 @@ impl RawPointerVariableState {
             }
             Value::Concrete(ConcreteValue::Array(array)) => {
                 self.set_addr_array(addr, array, type_id)
-            }
-            Value::Concrete(ConcreteValue::Unevaluated(UnevalValue::Porter(porter))) => {
-                for (offset, type_id, sym_value) in porter.sym_values.iter() {
-                    self.set_addr(addr, *offset, sym_value.clone_to(), *type_id);
-                }
             }
             Value::Concrete(_) => {
                 if let Entry::Occupied(entry) = entry {

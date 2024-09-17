@@ -236,9 +236,7 @@ mod implementation {
                 _ => unreachable!("Unexpected constant value to dereference: {:?}", host),
             }
         }
-    }
 
-    impl DefaultSymPlaceResolver<'_> {
         fn resolve_sym_indexed(&self, indexed: &SymIndexedPlace) -> Select {
             let target = match indexed.host.as_ref() {
                 PlaceValue::Deterministic(..) => self.expand(&SinglePlaceResult(

@@ -564,7 +564,6 @@ pub(crate) struct FatPtrValue {
 pub(crate) enum UnevalValue {
     Some,
     Lazy(RawConcreteValue),
-    Porter(PorterValue),
 }
 
 #[derive(Clone, Debug)]
@@ -617,7 +616,7 @@ impl From<Option<TypeId>> for LazyTypeInfo {
 }
 
 impl<'a> TryFrom<&'a TypeInfo> for ValueType {
-    type Error = ();
+    type Error = &'a TypeInfo;
 
     fn try_from(value: &'a TypeInfo) -> Result<Self, Self::Error> {
         use abs::USIZE_TYPE;
@@ -643,25 +642,20 @@ impl<'a> TryFrom<&'a TypeInfo> for ValueType {
                         }
                         .into())
                     } else {
-                        Err(())
+                        Err(value)
                     }
                 }),
             _ if name.starts_with("f") => unimplemented!(),
             "*mut ()" | "*const ()" => Ok(USIZE_TYPE.into()),
-            _ => Err(()),
+            _ => Err(value),
         }
     }
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct PorterValue {
-    pub(crate) sym_values: Vec<(PointerOffset, TypeId, SymValueRef)>,
 }
 
 #[derive(Clone, Debug, dm::From)]
 pub(crate) enum SymValue {
     Variable(SymbolicVar),
-    #[from(types(BinaryExpr, ProjExpr))]
+    #[from(forward)]
     Expression(Expr),
 }
 
@@ -780,6 +774,8 @@ pub(crate) enum Expr {
     Len(SymPlaceValueRef),
 
     Projection(ProjExpr),
+
+    Partial(PorterValue),
 }
 
 #[allow(unused)]
@@ -895,7 +891,19 @@ pub(crate) struct SliceIndex<I> {
 #[derive(Clone, Copy, Debug, dm::From)]
 pub(crate) enum DowncastKind {
     EnumVariant(VariantIndex),
-    Transmutation(TypeId),
+    Transmutation(TypeId, Option<ValueType>),
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct PorterValue {
+    pub(crate) as_concrete: RawConcreteValue,
+    pub(crate) sym_values: Vec<(PointerOffset, TypeId, SymValueRef)>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct PorterValue {
+    pub(crate) as_concrete: RawConcreteValue,
+    pub(crate) sym_values: Vec<(PointerOffset, TypeId, SymValueRef)>,
 }
 
 mod guards {
@@ -920,6 +928,7 @@ mod guards {
                     Self(value)
                 }
 
+                #[inline]
                 pub fn $value_name(&self) -> &$guarded_type {
                     match self.0.as_ref() {
                         $pattern => $value_name,
@@ -938,13 +947,22 @@ mod guards {
                 }
             }
 
+            impl<V> AsMut<V> for $name<V> {
+                #[inline]
+                fn as_mut(&mut self) -> &mut V {
+                    &mut self.0
+                }
+            }
+
             impl From<$name<$ref_type>> for $ref_type {
+                #[inline]
                 fn from(value: $name<$ref_type>) -> Self {
                     value.0
                 }
             }
 
             impl<V: Clone> $name<V> {
+                #[inline]
                 pub fn clone_to(&self) -> V {
                     self.0.clone()
                 }
@@ -1071,8 +1089,8 @@ mod convert {
         }
     }
 
-    macro_rules! impl_from_uint {
-        ($($ty:ty),*) => {
+    macro_rules! impl_from_int_type {
+        ($signed:expr, $($ty:ty),*) => {
             $(
                 impl From<$ty> for ConstValue {
                     fn from(value: $ty) -> Self {
@@ -1080,7 +1098,7 @@ mod convert {
                             bit_rep: Wrapping(value as u128),
                             ty: IntType {
                                 bit_size: std::mem::size_of::<$ty>() as u64 * 8,
-                                is_signed: false,
+                                is_signed: $signed,
                             },
                         }
                     }
@@ -1089,10 +1107,11 @@ mod convert {
         };
     }
 
-    impl_from_uint!(u8, u16, u32, u64, u128, usize);
+    impl_from_int_type!(false, u8, u16, u32, u64, u128, usize);
+    impl_from_int_type!(true, i8, i16, i32, i64, i128, isize);
 
     macro_rules! impl_conc_to_value_ref {
-        ($($ty: ty),*) => {
+        ($($ty: ty),* $(,)?) => {
             $(
                 impl $ty {
                     #[inline]
@@ -1111,7 +1130,6 @@ mod convert {
         FatPtrValue,
         UnevalValue,
         RawConcreteValue,
-        PorterValue
     );
 
     impl SymValue {
@@ -1121,26 +1139,20 @@ mod convert {
         }
     }
 
-    impl Expr {
-        #[inline]
-        pub fn to_value_ref(self) -> SymValueRef {
-            Into::<SymValue>::into(self).to_value_ref()
-        }
+    macro_rules! impl_sym_to_value_ref {
+        ($($ty: ty),* $(,)?) => {
+            $(
+                impl $ty {
+                    #[inline]
+                    pub(crate) fn to_value_ref(self) -> SymValueRef {
+                        Into::<SymValue>::into(self).to_value_ref()
+                    }
+                }
+            )*
+        };
     }
 
-    impl BinaryExpr {
-        #[inline]
-        pub fn to_value_ref(self) -> SymValueRef {
-            Into::<SymValue>::into(self).to_value_ref()
-        }
-    }
-
-    impl ProjExpr {
-        #[inline]
-        pub fn to_value_ref(self) -> SymValueRef {
-            Into::<SymValue>::into(self).to_value_ref()
-        }
-    }
+    impl_sym_to_value_ref!(Expr, BinaryExpr, ProjExpr, PorterValue,);
 
     impl<'a> TryFrom<&'a Value> for ValueType {
         type Error = &'a Value;
