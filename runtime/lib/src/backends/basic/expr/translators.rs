@@ -387,16 +387,27 @@ pub(crate) mod z3 {
                         f.map(|f| f(&left_node.0, right_bv).into())
                     };
                     let handle_other_func = || {
-                        let f: Option<fn(&_, &_) -> ast::BV<'ctx>> = match (operator, is_signed) {
-                            (BinaryOp::Cmp, _) => Some(|_, _| {
-                                unreachable!(concat!(
-                                    "Cmp is not expected to be translated directly. ",
-                                    "The discriminant operator should break it down."
-                                ))
-                            }),
+                        let f: Option<
+                            Box<dyn FnOnce(AstNode<'ctx>, AstNode<'ctx>) -> AstNode<'ctx>>,
+                        > = match (operator, is_signed) {
+                            (BinaryOp::Cmp, _) => Some(Box::new(|left, right| {
+                                use core::cmp::Ordering::*;
+                                let lt_check = self.translate_binary_expr(
+                                    BinaryOp::Lt,
+                                    left.clone(),
+                                    right.clone(),
+                                );
+                                let gt_check =
+                                    self.translate_binary_expr(BinaryOp::Gt, left, right);
+                                let less = self.translate_const(&(Less as i8).into());
+                                let greater = self.translate_const(&(Greater as i8).into());
+                                let equal = self.translate_const(&(Equal as i8).into());
+                                let gt = self.translate_ite_expr(gt_check, greater, equal);
+                                self.translate_ite_expr(lt_check, less, gt)
+                            })),
                             _ => None,
                         };
-                        f.map(|f| left_node.map(|left| f(left, right_bv)).into())
+                        f.map(|f| f(left.clone(), right.clone()))
                     };
 
                     None.or_else(handle_ar_op)
