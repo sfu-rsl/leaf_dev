@@ -2,7 +2,7 @@ mod ffi;
 mod instance;
 mod utils;
 
-use common::{log_info, pri::*};
+use common::{log_debug, log_info, pri::*};
 
 use self::instance::*;
 use crate::abs::{
@@ -411,6 +411,7 @@ impl ProgramRuntimeInterface for BasicPri {
         conditional(info, |h| h.on_enum().take_otherwise(non_indices))
     }
 
+    #[tracing::instrument(target = "pri::call", level = "debug")]
     fn before_call_func(func: OperandRef, args: &[OperandRef], are_args_tupled: bool) {
         func_control(|h| {
             h.before_call(
@@ -420,30 +421,30 @@ impl ProgramRuntimeInterface for BasicPri {
             )
         });
     }
-
+    #[tracing::instrument(target = "pri::place", level = "debug")]
     fn preserve_special_local_metadata(place: PlaceRef) {
         func_control(|h| h.metadata().preserve_metadata(take_back_place_ref(place)))
     }
-
+    #[tracing::instrument(target = "pri::call", level = "debug")]
     fn try_untuple_argument(arg_index: LocalIndex, tuple_type_id: TypeId) {
         func_control(|h| h.metadata().try_untuple_argument(arg_index, tuple_type_id))
     }
-
+    #[tracing::instrument(target = "pri::call", level = "debug")]
     fn enter_func(func: OperandRef) {
         func_control(|h| h.enter(take_back_operand_ref(func)))
     }
-
+    #[tracing::instrument(target = "pri::call", level = "debug")]
     fn return_from_func() {
         func_control(|h| h.ret())
     }
-
     /// Overrides (forces) the return value of a function.
     /// In an external call chain, the value will be kept as the return value
     /// until it is consumed at the point of return to an internal caller.
+    #[tracing::instrument(target = "pri::call", level = "debug")]
     fn override_return_value(operand: OperandRef) {
         func_control(|h| h.override_return_value(take_back_operand_ref(operand)))
     }
-
+    #[tracing::instrument(target = "pri::call", level = "debug")]
     fn after_call_func(destination: PlaceRef) {
         func_control(|h| h.after_call(take_back_place_ref(destination)))
     }
@@ -503,11 +504,12 @@ impl ProgramRuntimeInterface for BasicPri {
     fn debug_info(info: Self::DebugInfo) {
         let str_rep = String::from_utf8_lossy(info);
         let str_rep = str_rep.trim_matches('"');
-        const MAX_LEN: usize = 100;
+        const MAX_LEN: usize = 120;
         if str_rep.len() <= MAX_LEN {
             log_info!(target: TAG, "{}", str_rep);
         } else {
-            log_info!(target: TAG, "{}…", str_rep);
+            log_info!(target: TAG, "{}…", &str_rep[..MAX_LEN]);
+            log_debug!(target: TAG, "Full debug info: {}", str_rep);
         }
     }
 }
