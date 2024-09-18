@@ -5,8 +5,10 @@ use crate::{
 
 use super::{
     config::{CallConfig, ExternalCallStrategy},
+    expr::FuncId,
     place::{LocalWithMetadata, PlaceMetadata},
-    CallStackManager, ConcreteValue, Place, UntupleHelper, ValueRef, VariablesState,
+    CallStackManager, ConcreteValue, ConstValue, Place, UntupleHelper, Value, ValueRef,
+    VariablesState,
 };
 
 use common::{log_debug, log_warn, pri::RawPointer};
@@ -176,6 +178,9 @@ impl<VS: VariablesState + SelfHierarchical> BasicCallStackManager<VS> {
     fn finalize_external_call(&mut self, result_dest: &Place) {
         // Clearing the data that is not cleared by the external function.
         let latest_call = self.latest_call.take();
+        let symbolic_args = latest_call
+            .as_ref()
+            .map(|info| self.inspect_external_call_info(info));
         self.latest_returned_val = None;
 
         if let Some(overridden) = self.top_frame().overridden_return_val.take() {
@@ -206,9 +211,7 @@ impl<VS: VariablesState + SelfHierarchical> BasicCallStackManager<VS> {
                  * pure function and no symbolic input results in no symbolic output. */
                 /* FIXME: With the current implementation, references to symbolic values
                  * skip this check. */
-                let all_concrete =
-                    latest_call.is_some_and(|c| c.args.iter().all(|v| !v.is_symbolic()));
-                if all_concrete {
+                if !symbolic_args.map(|args| !args.is_empty()).unwrap_or(false) {
                     Concretize
                 } else {
                     OverApproximate
@@ -259,6 +262,33 @@ impl<VS: VariablesState + SelfHierarchical> BasicCallStackManager<VS> {
                 })
             })
             .collect()
+    }
+
+    fn inspect_external_call_info<'a>(&self, info: &'a CallInfo) -> Vec<(usize, &'a ValueRef)> {
+        log_debug!(
+            target: TAG,
+            "External function call detected. Expected: {}",
+            info.expected_func,
+        );
+
+        let symbolic_args: Vec<_> = info
+            .args
+            .iter()
+            .enumerate()
+            .filter(|(_, v)| v.is_symbolic())
+            .collect();
+        if !symbolic_args.is_empty() {
+            log_warn!(
+                target: TAG,
+                "Possible loss of symbolic values in external function call",
+            );
+            log_debug!(
+                target: TAG,
+                "Symbolic arguments passed to the function: {:?}",
+                symbolic_args,
+            );
+        }
+        symbolic_args
     }
 }
 
@@ -351,13 +381,9 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
             ..Default::default()
         };
 
-        let args_if_not_broken = if let Some(CallInfo {
-            expected_func,
-            args,
-            are_args_tupled: _,
-        }) = self.latest_call.take()
-        {
-            if current_func.unwrap_func_id() == expected_func.unwrap_func_id() {
+        let args_if_not_broken = if let Some(call_info) = self.latest_call.take() {
+            if current_func.unwrap_func_id() == call_info.expected_func.unwrap_func_id() {
+                let args = call_info.args;
                 assert_eq!(
                     args.len(),
                     arg_locals.len(),
@@ -366,7 +392,7 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
 
                 Ok(arg_locals.into_iter().zip(args.into_iter()))
             } else {
-                Err(Some((expected_func, args)))
+                Err(Some(call_info))
             }
         } else {
             // NOTE: An example of this case is when an external function calls multiple internal ones.
@@ -381,22 +407,12 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
             Ok(args) => {
                 self.push_new_stack_frame(args, call_stack_frame);
             }
-            Err(expected) => {
-                let (expected_func, has_symbolic_args) = if let Some((func, args)) = expected {
-                    (func.to_string(), args.iter().any(|v| v.is_symbolic()))
+            Err(call_info) => {
+                if let Some(call_info) = call_info {
+                    self.inspect_external_call_info(&call_info);
                 } else {
-                    ("UNKNOWN".to_string(), false)
-                };
-                log_debug!(
-                    target: TAG,
-                    "External function call in between detected. Expected: {}, Current: {}",
-                    expected_func,
-                    current_func,
-                );
-                if has_symbolic_args {
-                    log_warn!(
-                        target: TAG,
-                        "Possible loss of symbolic values in external function call",
+                    log_debug!(
+                        "External function call detected with no call information available"
                     );
                 }
                 self.push_new_stack_frame(core::iter::empty(), call_stack_frame);
@@ -468,6 +484,16 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
 
     fn top(&mut self) -> &mut dyn VariablesState {
         self.vars_state.as_mut().expect("Call stack is empty")
+    }
+}
+
+impl Value {
+    #[inline]
+    pub(crate) fn unwrap_func_id(&self) -> FuncId {
+        match self {
+            Value::Concrete(ConcreteValue::Const(ConstValue::Func(f))) => *f,
+            _ => panic!("Expected a function id, but got {:?}", self),
+        }
     }
 }
 
