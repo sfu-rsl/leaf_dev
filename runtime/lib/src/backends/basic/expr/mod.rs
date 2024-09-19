@@ -930,10 +930,10 @@ mod guards {
                 }
             }
 
-            impl<'a> $name<&'a mut $ref_type> {
+            impl $name<$ref_type> {
                 #[allow(unused)]
-                pub fn make_mut(self) -> &'a mut $guarded_type {
-                    match <$ref_type>::make_mut(self.0) {
+                pub fn make_mut(this: &mut Self) -> &mut $guarded_type {
+                    match <$ref_type>::make_mut(&mut this.0) {
                         $pattern => $value_name,
                         _ => unreachable!(),
                     }

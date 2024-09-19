@@ -409,6 +409,38 @@ impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
         );
 
         match value.as_ref() {
+            /* NOTE: This is a way of keeping symbolic place handling internal to this module.
+             * We rely on the fact that these expressions are stored right after creation.
+             * Ideally the creator of these expressions should take care of retrieval or even
+             * these expressions should not exist.
+             */
+            /* NOTE: Don't we need to resolve (the symbolic place) before retrieval?
+             * The only case that holds an unresolved symbolic place is Ref expression,
+             * which cannot appear as the target value.
+             * For Len, it is a deref over a slice pointer/ref, which cannot be
+             * a symbolic reference (o.w., it would be possible to have a standalone value
+             * from a slice type which is unsized. Also, ref over deref gets optimized.).
+             * For PtrMetadata, the reference is to an unsized type (o.w., it gets optimized),
+             * and the same as above holds.
+             */
+            Value::Symbolic(SymValue::Expression(
+                Expr::Len(..)
+                | Expr::Projection(ProjExpr::SymHost(SymHostProj {
+                    kind: ProjKind::Field(FieldAccessKind::PtrMetadata),
+                    ..
+                })),
+            )) => {
+                self.set_addr(
+                    addr,
+                    offset,
+                    self.retrieve_sym_value(SymValueRef::new(value), type_id)
+                        .into(),
+                    type_id,
+                );
+            }
+            Value::Symbolic(SymValue::Expression(Expr::Partial(porter))) => {
+                self.set_addr_porter(addr, porter, type_id)
+            }
             Value::Symbolic(_) => {
                 insert(entry, (SymValueRef::new(value), type_id));
             }

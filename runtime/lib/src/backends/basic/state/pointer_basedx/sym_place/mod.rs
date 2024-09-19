@@ -191,13 +191,34 @@ impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
     /// lazily-evaluated parts.
     /// In fact checks if the symbolic value is a multi expression then
     /// retrieves all of its possible values recursively.
-    pub(super) fn retrieve_sym_value(&self, value: SymValueRef, type_id: TypeId) -> SymValueRef {
+    pub(super) fn retrieve_sym_value(
+        &self,
+        mut value: SymValueRef,
+        type_id: TypeId,
+    ) -> SymValueRef {
         match value.as_ref() {
             SymValue::Expression(expr) => match expr {
-                Expr::Multi(select) => {
-                    let mut select = select.clone();
-                    self.retrieve_select_proj_result(&mut select, type_id);
-                    Into::<Expr>::into(select).to_value_ref()
+                Expr::Multi(..) => {
+                    let SymValue::Expression(Expr::Multi(select)) =
+                        SymValueRef::make_mut(&mut value)
+                    else {
+                        unreachable!()
+                    };
+                    self.retrieve_select_proj_result(select, type_id);
+                    value
+                }
+                Expr::Partial(porter) => self.retrieve_porter_value(porter).to_value_ref(),
+                Expr::Len(place) => self.retrieve_len_value(place),
+                Expr::Projection(proj) => {
+                    let ProjExpr::SymHost(SymHostProj {
+                        host,
+                        kind: ProjKind::Field(FieldAccessKind::PtrMetadata),
+                        metadata: _,
+                    }) = proj
+                    else {
+                        unreachable!("Unexpected projection expression for retrieval: {:?}", proj)
+                    };
+                    self.retrieve_ptr_metadata(host.clone())
                 }
                 _ => value,
             },
@@ -332,6 +353,45 @@ impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
                     )
                 })
                 .collect(),
+        }
+    }
+
+    fn retrieve_len_value(&self, place: &SymbolicPlaceValue) -> SymValueRef {
+        let SymbolicPlaceValue {
+            base: SymbolicPlaceBase::Deref(host),
+            proj: None,
+        } = place
+        else {
+            unreachable!(
+                "Len place is expected to be applied on a dereference of slice pointer. Got: {:?}",
+                place
+            )
+        };
+
+        // Equivalent to accessing the pointer's metadata.
+        self.retrieve_ptr_metadata(host.value.clone())
+    }
+
+    fn retrieve_ptr_metadata(&self, host: SymValueRef) -> SymValueRef {
+        match host.as_ref() {
+            SymValue::Expression(Expr::Multi(multi)) => {
+                Expr::from(multi.map_leaves(|value| match value.as_ref() {
+                    Value::Concrete(ConcreteValue::FatPointer(fat_ptr)) => {
+                        fat_ptr.metadata.0.clone()
+                    }
+                    _ => unreachable!(
+                        "Only (retrieved) fat pointers are expected to appear. Got: {:?}",
+                        value
+                    ),
+                }))
+                .to_value_ref()
+            }
+            _ => {
+                unreachable!(
+                    "Only retrieved multi values are expected to retrieve pointer metadata from. Got: {:?}",
+                    host
+                )
+            }
         }
     }
 }

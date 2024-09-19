@@ -51,6 +51,23 @@ pub(crate) enum SymbolicReadTreeLeafMutator<'m, I, V> {
 use SymbolicReadTreeLeafMutator::*;
 
 impl<I, V> Select<I, SymbolicReadTree<I, V>> {
+    pub(crate) fn map_leaves<'m, W>(&self, f: impl Fn(&V) -> W) -> Select<I, SymbolicReadTree<I, W>>
+    where
+        I: Clone,
+    {
+        Select {
+            index: self.index.clone(),
+            target: match &self.target {
+                SelectTarget::Array(values) => {
+                    SelectTarget::Array(values.iter().map(|v| v.map_leaves(&f)).collect())
+                }
+                SelectTarget::Nested(box nested) => {
+                    SelectTarget::Nested(Box::new(nested.map_leaves(f)))
+                }
+            },
+        }
+    }
+
     #[inline]
     pub(crate) fn mutate_leaves<'m>(
         &mut self,
@@ -80,6 +97,20 @@ impl<I, V> Select<I, SymbolicReadTree<I, V>> {
 }
 
 impl<I, V> SymbolicReadTree<I, V> {
+    pub(crate) fn map_leaves<'m, W>(&self, f: &dyn Fn(&V) -> W) -> SymbolicReadTree<I, W>
+    where
+        I: Clone,
+    {
+        match self {
+            SymbolicReadTree::SymRead(select) => SymbolicReadTree::SymRead(select.map_leaves(f)),
+            SymbolicReadTree::Array(values) => {
+                let values = values.iter().map(|v| v.map_leaves(f)).collect();
+                SymbolicReadTree::Array(values)
+            }
+            SymbolicReadTree::Single(value) => SymbolicReadTree::Single(f(value)),
+        }
+    }
+
     pub(crate) fn mutate_leaves<'m>(
         &mut self,
         mut f: SymbolicReadTreeLeafMutator<'m, I, V>,
