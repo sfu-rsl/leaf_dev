@@ -100,7 +100,9 @@ impl<'a> DefaultSymPlaceResolver<'a> {
 
 mod implementation {
     use crate::{
-        abs::expr::sym_place::{SelectTarget, SymbolicReadResolver},
+        abs::expr::sym_place::{
+            SelectTarget, SymbolicReadResolver, SymbolicReadTreeLeafMutator::*,
+        },
         tyexp::TypeInfoExt,
     };
 
@@ -136,7 +138,7 @@ mod implementation {
                     Mutator(&mut |p| {
                         p.0 = DeterPlaceValueRef::new(proj.on_deter(p.0.as_ref()).to_value_ref())
                     }),
-                    self,
+                    |v| self.expand(v),
                 );
             }
             base
@@ -169,7 +171,7 @@ mod implementation {
                 )),
                 PlaceValue::Symbolic(sym_host) => {
                     let mut resolved = self.resolve(sym_host);
-                    resolved.mutate_leaves(Replacer(&mut |p| self.expand(p)), self);
+                    resolved.mutate_leaves(Replacer(&mut |p| self.expand(p)), |v| self.expand(v));
                     resolved.into()
                 }
             };
@@ -216,105 +218,6 @@ mod implementation {
 
         pub(super) fn expand_symbolic(&self, value: &SymValue) -> SymbolicPlaceResult {
             todo!()
-        }
-    }
-
-    impl Select {
-        #[inline]
-        pub(super) fn mutate_leaves<'m>(
-            &mut self,
-            mut f: SymbolicPlaceResultValueMutator<'m>,
-            resolver: &impl SymbolicPlaceResolver,
-        ) {
-            self.internal_mutate_leaves(1, &mut f, resolver)
-        }
-
-        fn internal_mutate_leaves<'m>(
-            &mut self,
-            expected_dim: usize,
-            f: &mut SymbolicPlaceResultValueMutator<'m>,
-            resolver: &impl SymbolicPlaceResolver,
-        ) {
-            match &mut self.target {
-                SelectTarget::Array(ref mut values) => {
-                    values
-                        .iter_mut()
-                        .for_each(|v| v.internal_mutate_values(expected_dim - 1, f, resolver));
-                }
-                SelectTarget::Nested(box nested) => {
-                    Self::internal_mutate_leaves(nested, expected_dim + 1, f, resolver)
-                }
-            }
-        }
-    }
-
-    pub(super) enum SymbolicPlaceResultValueMutator<'m> {
-        Mutator(&'m mut dyn FnMut(&mut SinglePlaceResult)),
-        Replacer(&'m mut dyn FnMut(&mut SinglePlaceResult) -> SymbolicPlaceResult),
-    }
-    use SymbolicPlaceResultValueMutator::*;
-
-    impl SymbolicPlaceResult {
-        pub(super) fn mutate_values<'m>(
-            &mut self,
-            mut f: SymbolicPlaceResultValueMutator<'m>,
-            resolver: &impl SymbolicPlaceResolver,
-        ) {
-            match self {
-                SymbolicPlaceResult::SymRead(select) => select.mutate_leaves(f, resolver),
-                SymbolicPlaceResult::Array(values) => values
-                    .iter_mut()
-                    .for_each(|v| v.internal_mutate_values(0, &mut f, resolver)),
-                SymbolicPlaceResult::Single(value) => match f {
-                    Mutator(f) => f(value),
-                    Replacer(f) => *self = f(value),
-                },
-            }
-        }
-
-        /// Applies the given function on the concrete value(s) of this `SymReadResult`.
-        /// - Resolves the value if it is symbolic.
-        /// - Expands the value if the expected dimension is more than one.
-        /// - Recurses if self refers to a symbolic read.
-        /// - Iterates over the values if self is an array.
-        ///
-        /// # Remarks
-        /// This method is used to perform a mutation or extraction over concrete values.
-        /// In our case, it translates to projections. Thus, it suppose that symbolic values
-        /// are resolvable to symbolic reads and tries to resolve them if they are encountered.
-        ///
-        /// # Arguments
-        /// - `dim`: The expected dimension of the value(s) of this `SymReadResult`.
-        ///   Effectively this corresponds to one less than the number of `Select` values wrapping
-        ///   this `SymReadResult`.
-        /// - `f`: The function to apply on the value(s).
-        /// - `resolver`: Used to resolve the inner symbolic values if they appear
-        ///   in the traversal.
-        fn internal_mutate_values<'m>(
-            &mut self,
-            dim: usize,
-            f: &mut SymbolicPlaceResultValueMutator<'m>,
-            resolver: &impl SymbolicPlaceResolver,
-        ) {
-            // Expand if expected.
-            if dim > 0 {
-                if let SymbolicPlaceResult::Single(single) = self {
-                    *self = resolver.expand(single);
-                }
-            }
-
-            match self {
-                SymbolicPlaceResult::SymRead(select) => {
-                    select.internal_mutate_leaves(dim, f, resolver)
-                }
-                SymbolicPlaceResult::Array(values) => values
-                    .iter_mut()
-                    .for_each(|v| v.internal_mutate_values(dim - 1, f, resolver)),
-                SymbolicPlaceResult::Single(value) => match f {
-                    Mutator(f) => f(value),
-                    Replacer(f) => *self = f(value),
-                },
-            }
         }
     }
 

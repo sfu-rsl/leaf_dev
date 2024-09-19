@@ -114,7 +114,7 @@ mod implementation {
                     },
                     ProjectionOn, Projector,
                 },
-                sym_place::{SelectTarget, SymbolicReadResolver},
+                sym_place::{SelectTarget, SymbolicReadResolver, SymbolicReadTreeLeafMutator::*},
             },
             TypeId,
         },
@@ -243,7 +243,7 @@ mod implementation {
                 current = self.project_one_to_ones(current, &projs[last_index..i]);
                 last_index = i + 1;
 
-                current.mutate_values(Replacer(&mut |v| self.expand(v)), self);
+                current.mutate_leaves(Replacer(&mut |v| self.expand(v)), |v| self.expand(v));
 
                 if let SymbolicProjResult::Single(single @ SingleProjResult::Value(value)) =
                     &current
@@ -368,104 +368,6 @@ mod implementation {
             host
         }
     }
-
-    impl Select {
-        pub(super) fn mutate_leaf_nodes<'m>(
-            &mut self,
-            expected_dim: usize,
-            f: &mut SymbolicProjResultValueMutator<'m>,
-            resolver: &impl ProjExprResolver,
-        ) {
-            match &mut self.target {
-                SelectTarget::Array(ref mut values) => {
-                    values
-                        .iter_mut()
-                        .for_each(|v| v.internal_mutate_values(expected_dim - 1, f, resolver));
-                }
-                SelectTarget::Nested(box nested) => {
-                    Self::mutate_leaf_nodes(nested, expected_dim + 1, f, resolver)
-                }
-            }
-        }
-    }
-
-    pub(super) enum SymbolicProjResultValueMutator<'m> {
-        Mutator(&'m mut dyn FnMut(&mut SingleProjResult)),
-        Replacer(&'m mut dyn FnMut(&mut SingleProjResult) -> SymbolicProjResult),
-    }
-    use SymbolicProjResultValueMutator::*;
-
-    impl SymbolicProjResult {
-        pub(super) fn mutate_values<'m>(
-            &mut self,
-            mut f: SymbolicProjResultValueMutator<'m>,
-            resolver: &impl ProjExprResolver,
-        ) {
-            match self {
-                SymbolicProjResult::SymRead(select) => {
-                    select.mutate_leaf_nodes(1, &mut f, resolver)
-                }
-                SymbolicProjResult::Array(values) => values
-                    .iter_mut()
-                    .for_each(|v| v.internal_mutate_values(0, &mut f, resolver)),
-                SymbolicProjResult::Single(value) => match f {
-                    Mutator(f) => f(value),
-                    Replacer(f) => *self = f(value),
-                },
-            }
-        }
-
-        /// Applies the given function on the concrete value(s) of this `SymReadResult`.
-        /// - Resolves the value if it is symbolic.
-        /// - Expands the value if the expected dimension is more than one.
-        /// - Recurses if self refers to a symbolic read.
-        /// - Iterates over the values if self is an array.
-        ///
-        /// # Remarks
-        /// This method is used to perform a mutation or extraction over concrete values.
-        /// In our case, it translates to projections. Thus, it suppose that symbolic values
-        /// are resolvable to symbolic reads and tries to resolve them if they are encountered.
-        ///
-        /// # Arguments
-        /// - `dim`: The expected dimension of the value(s) of this `SymReadResult`.
-        ///   Effectively this corresponds to one less than the number of `Select` values wrapping
-        ///   this `SymReadResult`.
-        /// - `f`: The function to apply on the value(s).
-        /// - `resolver`: Used to resolve the inner symbolic values if they appear
-        ///   in the traversal.
-        fn internal_mutate_values<'m>(
-            &mut self,
-            dim: usize,
-            f: &mut SymbolicProjResultValueMutator<'m>,
-            resolver: &impl ProjExprResolver,
-        ) {
-            if let SymbolicProjResult::Single(SingleProjResult::Value(value)) = self {
-                // Resolve projections before the mutation.
-                if let Some(proj) = value.as_proj() {
-                    *self = ProjExprResolver::resolve(resolver, proj);
-                }
-            }
-
-            // Expand if expected.
-            if dim > 0 {
-                if let SymbolicProjResult::Single(single @ SingleProjResult::Value(..)) = self {
-                    *self = resolver.expand(&single);
-                }
-            }
-
-            match self {
-                SymbolicProjResult::SymRead(select) => select.mutate_leaf_nodes(dim, f, resolver),
-                SymbolicProjResult::Array(values) => values
-                    .iter_mut()
-                    .for_each(|v| v.internal_mutate_values(dim - 1, f, resolver)),
-                SymbolicProjResult::Single(value) => match f {
-                    Mutator(f) => f(value),
-                    Replacer(f) => *self = f(value),
-                },
-            }
-        }
-    }
-
     impl SingleProjResult {
         pub(crate) fn into_value(self) -> ValueRef {
             match self {
@@ -516,11 +418,11 @@ mod implementation {
                 SymbolicProjResult::Single(single) => {
                     value_projector.project(proj.clone_with_host(single), metadata)
                 }
-                _ => host.mutate_values(
+                _ => host.mutate_leaves(
                     Mutator(&mut |v| {
                         value_projector.project(proj.clone_with_host(v), metadata.clone())
                     }),
-                    resolver,
+                    |v| resolver.expand(v),
                 ),
             }
         }
