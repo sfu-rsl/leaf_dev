@@ -45,7 +45,7 @@ impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
 
     pub(super) fn get_place_iter_raw<'b, I: Iterator<Item = &'b PlaceMetadata>>(
         &self,
-        local_metadata: &'b PlaceMetadata,
+        mut host_metadata: &'b PlaceMetadata,
         mut projs: &'b [Projection],
         mut projs_metadata: I,
     ) -> PlaceValueRef {
@@ -59,66 +59,66 @@ impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
          * a symbolic value).
          */
 
-        let addr = local_metadata.address();
-        // 1. Dereferencing a symbolic value.
-        let value = if let Some(Projection::Deref) = projs.first() {
-            projs = &projs[(Bound::Excluded(0), Bound::Unbounded)];
-            let proj_meta = projs_metadata.next().unwrap();
+        let addr = host_metadata.address();
 
-            if let Some(sym_value) = self.get(addr, local_metadata.unwrap_type_id()) {
-                let base = handle_deref(sym_value.clone(), local_metadata);
-                debug_assert!(
-                    !has_deref(projs.iter().skip(1)),
-                    "Based on the documentation, Deref can only appear as the first projection after MIR optimizations."
-                );
-                base.into()
-            } else {
-                DeterministicPlaceValue::new(proj_meta.clone()).to_value_ref()
-            }
-        } else {
-            // PlaceValue::from_base(DeterministicPlaceBase { addr }.into()).to_value_ref()
-            DeterministicPlaceValue::new(local_metadata.clone()).to_value_ref()
-        };
+        // 1. Dereferencing a symbolic value.
+        let opt_sym_deref = projs.first().is_some_and(|p| matches!(p, Projection::Deref)).then(|| {
+            let opt_sym_value = self
+                .get(addr, host_metadata.unwrap_type_id())
+                .map(|sym_value| handle_deref(sym_value.clone(), host_metadata));
+
+            // Symbolic or not, pass the deref projection.
+            host_metadata = projs_metadata.next().unwrap();
+            projs = &projs[(Bound::Excluded(0), Bound::Unbounded)];
+            debug_assert!(
+                !has_deref(projs.iter().skip(1)),
+                "Based on the documentation, Deref can only appear as the first projection after MIR optimizations."
+            );
+
+            opt_sym_value
+        }).flatten();
+
+        let value = opt_sym_deref
+            .map(Into::into)
+            .unwrap_or_else(|| DeterministicPlaceValue::new(host_metadata.clone()).to_value_ref());
 
         projs
             .iter()
             .zip(
-                iter::once(local_metadata)
+                iter::once(host_metadata)
                     .chain(projs_metadata.by_ref())
                     .map_windows(|[a, b]| (*a, *b)),
             )
             .fold(value, |mut value, (proj, (host_meta, meta))| {
                 // 2. Indexing by a symbolic value.
-                if let Projection::Index(index) = proj {
-                    if let Some(index_val) = IndexResolver::get(self, index) {
-                        if index_val.is_symbolic() {
-                            log_debug!("Symbolic index observed: {}", index_val.as_ref());
-                            return SymbolicPlaceValue::from_base(SymIndexedPlace {
-                                host: value,
-                                host_metadata: host_meta.clone(),
-                                index: SymValueRef::new(index_val),
-                                index_metadata: index.metadata().clone(),
-                            })
-                            .to_value_ref();
+                let opt_sym_index = proj
+                    .as_index()
+                    .map(|index| (index, IndexResolver::get(self, index)))
+                    .take_if(|(_, index_val)| index_val.is_symbolic())
+                    .map(|(index, index_val)| {
+                        handle_index(value.clone(), host_meta, index_val, index.metadata())
+                    });
+
+                let project_further = || {
+                    match PlaceValueRef::make_mut(&mut value) {
+                        PlaceValue::Deterministic(deter) => {
+                            *deter = DeterministicPlaceValue::new(meta.clone());
+                        }
+                        PlaceValue::Symbolic(sym) => {
+                            sym.proj = Some(to_deterministic_proj(
+                                sym.proj.as_ref(),
+                                proj,
+                                host_meta,
+                                meta,
+                            ));
                         }
                     }
-                }
+                    value
+                };
 
-                match PlaceValueRef::make_mut(&mut value) {
-                    PlaceValue::Deterministic(deter) => {
-                        *deter = DeterministicPlaceValue::new(meta.clone());
-                    }
-                    PlaceValue::Symbolic(sym) => {
-                        sym.proj = Some(to_deterministic_proj(
-                            sym.proj.as_ref(),
-                            proj,
-                            host_meta,
-                            meta,
-                        ));
-                    }
-                }
-
-                value
+                opt_sym_index
+                    .map(Into::into)
+                    .unwrap_or_else(project_further)
             })
     }
 }
@@ -396,23 +396,53 @@ impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
     }
 }
 
-fn handle_deref(value: SymValueRef, meta: &PlaceMetadata) -> SymPlaceValueRef {
-    let unexpected = || unreachable!("Unexpected symbolic value to dereference: {:?}", value);
+impl Projection {
+    fn as_index(&self) -> Option<&LocalWithMetadata> {
+        match self {
+            Projection::Index(index) => Some(index),
+            _ => None,
+        }
+    }
+}
 
-    let SymValue::Expression(expr) = value.as_ref() else {
+fn handle_deref(host: SymValueRef, host_metadata: &PlaceMetadata) -> SymPlaceValueRef {
+    let unexpected = || unreachable!("Unexpected symbolic value to dereference: {:?}", host);
+
+    let SymValue::Expression(expr) = host.as_ref() else {
         unexpected()
     };
 
     match expr {
         Expr::Ref(place) => place.clone(),
-        _ => SymPlaceValueRef::new(
-            SymbolicPlaceValue::from_base(DerefSymHostPlace {
-                value,
-                metadata: meta.clone(),
-            })
-            .to_value_ref(),
-        ),
+        _ => {
+            log_debug!("Deref of symbolic value observed: {}", host);
+            SymPlaceValueRef::new(
+                SymbolicPlaceValue::from_base(DerefSymHostPlace {
+                    value: host,
+                    metadata: host_metadata.clone(),
+                })
+                .to_value_ref(),
+            )
+        }
     }
+}
+
+fn handle_index(
+    host: Rc<PlaceValue>,
+    host_metadata: &PlaceMetadata,
+    index_val: Rc<Value>,
+    index_metadata: &PlaceMetadata,
+) -> SymPlaceValueRef {
+    log_debug!("Symbolic index observed: {}", index_val.as_ref());
+    SymPlaceValueRef::new(
+        SymbolicPlaceValue::from_base(SymIndexedPlace {
+            host,
+            host_metadata: host_metadata.clone(),
+            index: SymValueRef::new(index_val),
+            index_metadata: index_metadata.clone(),
+        })
+        .to_value_ref(),
+    )
 }
 
 #[inline]
