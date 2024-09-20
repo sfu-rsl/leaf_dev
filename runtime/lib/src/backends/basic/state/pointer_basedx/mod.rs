@@ -529,21 +529,19 @@ impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
 }
 
 impl<SP: SymbolicProjector> IndexResolver<Local> for RawPointerVariableState<SP> {
-    fn get(&self, local: &Local) -> Option<ValueRef> {
+    fn get(&self, local: &Local) -> ValueRef {
         let addr = local.address();
 
-        Some(
-            if let Some(sym_val) = self.get(
-                addr,
-                // FIXME: As runtime library is compiled independently,
-                // this id is not guaranteed to be the same as the id used in the program.
-                common::utils::type_id_of::<usize>(),
-            ) {
-                sym_val.clone_to()
-            } else {
-                create_lazy(addr, Some(USIZE_TYPE.into()))
-            },
-        )
+        if let Some(sym_val) = self.get(
+            addr,
+            // FIXME: As runtime library is compiled independently,
+            // this id is not guaranteed to be the same as the id used in the program.
+            common::utils::type_id_of::<usize>(),
+        ) {
+            sym_val.clone_to()
+        } else {
+            create_lazy(addr, Some(USIZE_TYPE.into()))
+        }
     }
 }
 

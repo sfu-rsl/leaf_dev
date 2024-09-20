@@ -383,18 +383,17 @@ impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
                 .find_map(|(i, (proj, (host_meta, meta)))| {
                     // Index may be symbolic.
                     if let Projection::Index(index) = proj {
-                        if let Some(index_val) = IndexResolver::get(self, index) {
-                            if index_val.is_symbolic() {
-                                log_debug!("Symbolic index observed: {}", index_val.as_ref());
-                                return self
-                                    .handle_first_sym_index(
-                                        SymValueRef::new(index_val),
-                                        index.metadata(),
-                                        host_meta,
-                                        &mut sym_place_handler,
-                                    )
-                                    .map(|sym_val| (i, sym_val, meta));
-                            }
+                        let index_val = IndexResolver::get(self, index);
+                        if index_val.is_symbolic() {
+                            log_debug!("Symbolic index observed: {}", index_val.as_ref());
+                            return self
+                                .handle_first_sym_index(
+                                    SymValueRef::new(index_val),
+                                    index.metadata(),
+                                    host_meta,
+                                    &mut sym_place_handler,
+                                )
+                                .map(|sym_val| (i, sym_val, meta));
                         }
                     }
 
@@ -875,21 +874,18 @@ impl<SP: SymbolicProjector> RawPointerRetriever for RawPointerVariableState<SP> 
 }
 
 impl<SP: SymbolicProjector> IndexResolver<Local> for RawPointerVariableState<SP> {
-    fn get(&self, local: &Local) -> Option<ValueRef> {
+    fn get(&self, local: &Local) -> ValueRef {
         let addr = local.address();
-
-        Some(
-            if let Some(sym_val) = self.get(
-                addr,
-                // FIXME: As runtime library is compiled independently,
-                // this id is not guaranteed to be the same as the id used in the program.
-                common::utils::type_id_of::<usize>(),
-            ) {
-                sym_val.clone_to()
-            } else {
-                create_lazy(addr, Some(USIZE_TYPE.into()))
-            },
-        )
+        if let Some(sym_val) = self.get(
+            addr,
+            // FIXME: As runtime library is compiled independently,
+            // this id is not guaranteed to be the same as the id used in the program.
+            common::utils::type_id_of::<usize>(),
+        ) {
+            sym_val.clone_to()
+        } else {
+            create_lazy(addr, Some(USIZE_TYPE.into()))
+        }
     }
 }
 

@@ -193,7 +193,7 @@ where
 }
 
 pub(super) trait IndexResolver<L> {
-    fn get(&self, local: &L) -> Option<ValueRef>;
+    fn get(&self, local: &L) -> ValueRef;
 }
 
 pub(super) trait ProjectionResolutionExt<L> {
@@ -205,7 +205,7 @@ impl<L> ProjectionResolutionExt<L> for crate::abs::Projection<L> {
         match self {
             Field(field) => Field(*field),
             Deref => Deref,
-            Index(index) => Index(index_resolver.get(index).unwrap()),
+            Index(index) => Index(index_resolver.get(index)),
             ConstantIndex {
                 offset,
                 min_length,
