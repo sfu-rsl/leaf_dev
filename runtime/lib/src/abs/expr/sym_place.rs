@@ -44,6 +44,7 @@ pub(crate) trait SymbolicReadResolver<I> {
     fn resolve<'a>(&self, sym_value: Self::SymValue<'a>) -> Select<I, Self::PossibleValue<'a>>;
 }
 
+// FIXME: Should be replaced with separate expand/leaves functions.
 pub(crate) enum SymbolicReadTreeLeafMutator<'m, I, V> {
     Mutator(&'m mut dyn FnMut(&mut V)),
     Replacer(&'m mut dyn FnMut(&mut V) -> SymbolicReadTree<I, V>),
@@ -51,21 +52,43 @@ pub(crate) enum SymbolicReadTreeLeafMutator<'m, I, V> {
 use SymbolicReadTreeLeafMutator::*;
 
 impl<I, V> Select<I, SymbolicReadTree<I, V>> {
-    pub(crate) fn map_leaves<'m, W>(&self, f: impl Fn(&V) -> W) -> Select<I, SymbolicReadTree<I, W>>
-    where
-        I: Clone,
-    {
+    pub(crate) fn map<'m, J, W>(
+        &self,
+        f_index: impl (Fn(&I) -> J),
+        f: impl Fn(&SymbolicReadTree<I, V>) -> SymbolicReadTree<J, W>,
+    ) -> Select<J, SymbolicReadTree<J, W>> {
         Select {
-            index: self.index.clone(),
+            index: f_index(&self.index),
             target: match &self.target {
                 SelectTarget::Array(values) => {
-                    SelectTarget::Array(values.iter().map(|v| v.map_leaves(&f)).collect())
+                    SelectTarget::Array(values.iter().map(|v| f(v)).collect())
                 }
                 SelectTarget::Nested(box nested) => {
-                    SelectTarget::Nested(Box::new(nested.map_leaves(f)))
+                    SelectTarget::Nested(Box::new(nested.map(f_index, f)))
                 }
             },
         }
+    }
+
+    #[inline]
+    pub(crate) fn map_expand<'m, J, W>(
+        &self,
+        f_index: impl (Fn(&I) -> J),
+        f: impl Fn(&V) -> SymbolicReadTree<J, W>,
+    ) -> Select<J, SymbolicReadTree<J, W>> {
+        self.map(&f_index, |v| v.map_expand(&f_index, &f))
+    }
+
+    #[inline]
+    pub(crate) fn map_leaves<'m, J, W>(
+        &self,
+        f_index: impl (Fn(&I) -> J),
+        f: impl Fn(&V) -> W,
+    ) -> Select<J, SymbolicReadTree<J, W>>
+    where
+        I: Clone,
+    {
+        self.map(&f_index, |v| v.map_leaves(&f_index, &f))
     }
 
     #[inline]
@@ -77,9 +100,12 @@ impl<I, V> Select<I, SymbolicReadTree<I, V>> {
         self.internal_mutate_leaves(1, &mut f, &expander)
     }
 
+    /// # Arguments
+    /// - `expected_dim`: The expected dimension of the array this is selecting on.
+    /// Effectively this corresponds to one more than the number of `Select` values wrapping this.
     fn internal_mutate_leaves<'m>(
         &mut self,
-        expected_dim: usize,
+        array_dim: usize,
         f: &mut SymbolicReadTreeLeafMutator<'m, I, V>,
         expander: &dyn Fn(&V) -> SymbolicReadTree<I, V>,
     ) {
@@ -87,28 +113,59 @@ impl<I, V> Select<I, SymbolicReadTree<I, V>> {
             SelectTarget::Array(ref mut values) => {
                 values
                     .iter_mut()
-                    .for_each(|v| v.internal_mutate_leaves(expected_dim - 1, f, expander));
+                    .for_each(|v| v.internal_mutate_leaves(array_dim - 1, f, expander));
             }
             SelectTarget::Nested(box nested) => {
-                Self::internal_mutate_leaves(nested, expected_dim + 1, f, expander)
+                Self::internal_mutate_leaves(nested, array_dim + 1, f, expander)
             }
         }
     }
 }
 
 impl<I, V> SymbolicReadTree<I, V> {
-    pub(crate) fn map_leaves<'m, W>(&self, f: &dyn Fn(&V) -> W) -> SymbolicReadTree<I, W>
+    pub(crate) fn map<'m, J, W>(
+        &self,
+        f_index: &dyn (Fn(&I) -> J),
+        f: &dyn Fn(&Self) -> SymbolicReadTree<J, W>,
+    ) -> SymbolicReadTree<J, W> {
+        match self {
+            SymbolicReadTree::SymRead(select) => SymbolicReadTree::SymRead(select.map(f_index, f)),
+            SymbolicReadTree::Array(values) => {
+                let values = values.iter().map(|v| v.map(f_index, f)).collect();
+                SymbolicReadTree::Array(values)
+            }
+            SymbolicReadTree::Single(..) => f(self),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn map_expand<'m, J, W>(
+        &self,
+        f_index: &dyn (Fn(&I) -> J),
+        f: &dyn Fn(&V) -> SymbolicReadTree<J, W>,
+    ) -> SymbolicReadTree<J, W> {
+        self.map(f_index, &|v| match v {
+            SymbolicReadTree::SymRead(select) => {
+                SymbolicReadTree::SymRead(select.map_expand(f_index, f))
+            }
+            SymbolicReadTree::Array(values) => {
+                let values = values.iter().map(|v| v.map_expand(f_index, f)).collect();
+                SymbolicReadTree::Array(values)
+            }
+            SymbolicReadTree::Single(value) => f(value),
+        })
+    }
+
+    #[inline]
+    pub(crate) fn map_leaves<'m, J, W>(
+        &self,
+        f_index: impl (Fn(&I) -> J),
+        f: impl Fn(&V) -> W,
+    ) -> SymbolicReadTree<J, W>
     where
         I: Clone,
     {
-        match self {
-            SymbolicReadTree::SymRead(select) => SymbolicReadTree::SymRead(select.map_leaves(f)),
-            SymbolicReadTree::Array(values) => {
-                let values = values.iter().map(|v| v.map_leaves(f)).collect();
-                SymbolicReadTree::Array(values)
-            }
-            SymbolicReadTree::Single(value) => SymbolicReadTree::Single(f(value)),
-        }
+        self.map_expand(&f_index, &|v| SymbolicReadTree::Single(f(v)))
     }
 
     pub(crate) fn mutate_leaves<'m>(
@@ -153,7 +210,7 @@ impl<I, V> SymbolicReadTree<I, V> {
         }
 
         match self {
-            Self::SymRead(select) => select.internal_mutate_leaves(dim, f, expander),
+            Self::SymRead(select) => select.internal_mutate_leaves(dim + 1, f, expander),
             Self::Array(values) => values
                 .iter_mut()
                 .for_each(|v| v.internal_mutate_leaves(dim - 1, f, &expander)),
