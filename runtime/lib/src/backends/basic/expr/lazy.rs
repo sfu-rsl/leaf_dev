@@ -70,9 +70,9 @@ mod retrieval {
             }
 
             let ty = match &self.2 {
-                LazyTypeInfo::Id(ty_id) => type_manager.get_type(*ty_id),
-                LazyTypeInfo::Fetched(ty) => ty,
-                LazyTypeInfo::Forced(ty) => ty.as_ref(),
+                LazyTypeInfo::Id(..) | LazyTypeInfo::Fetched(..) | LazyTypeInfo::Forced(..) => {
+                    self.2.get_type(type_manager).unwrap()
+                }
                 LazyTypeInfo::None => return Err(&self.2),
             };
 
@@ -96,6 +96,18 @@ mod retrieval {
                 "RawConcreteValue should not be unevaluated after evaluation."
             );
             ConcreteValueRef::new(result.to_value_ref())
+        }
+    }
+
+    impl LazyTypeInfo {
+        #[inline]
+        pub(crate) fn get_type(&self, type_manager: &dyn TypeManager) -> Option<&TypeInfo> {
+            match self {
+                LazyTypeInfo::Id(ty_id) => Some(type_manager.get_type(*ty_id)),
+                LazyTypeInfo::Fetched(ty) => Some(*ty),
+                LazyTypeInfo::Forced(ty) => Some(ty.as_ref()),
+                LazyTypeInfo::None => None,
+            }
         }
     }
 
@@ -545,23 +557,7 @@ mod proj {
                 "Inconsistent type ids. Are you dereferencing a fat pointer multiple times?"
             );
 
-            let addr = host.address.expect_addr(self.type_manager, self.retriever);
-            let ty = self.type_manager.get_type(metadata.host_type_id());
-            let pointee_ty = self.type_manager.get_type(ty.pointee_ty.unwrap());
-            let value = if pointee_ty.is_slice() {
-                // Simulate an array.
-                let len = host
-                    .metadata
-                    .expect_int(self.type_manager, self.retriever)
-                    .try_into()
-                    .unwrap();
-                let array_ty = pseudo_array_ty_from_slice(pointee_ty, len, self.type_manager);
-                RawConcreteValue(addr, None, LazyTypeInfo::Forced(Rc::new(array_ty)))
-            } else {
-                // Do we need to worry about the loss of metadata? Is it going to be processed further?
-                RawConcreteValue(addr, None, LazyTypeInfo::Id(pointee_ty.id))
-            };
-            ConcreteValueRef::new(value.to_value_ref())
+            ConcreteValueRef::new(host.deref(self.type_manager, self.retriever).to_value_ref())
         }
 
         impl_singular_projs_through_general!(field, index, subslice, downcast);
@@ -578,6 +574,32 @@ mod proj {
             TypeInfo::new_pseudo_array_from_slice(&slice_ty, len, item_ty.align, item_ty.size);
         log_debug!("Pseudo array type: {:?}", array_ty);
         array_ty
+    }
+
+    impl FatPtrValue {
+        pub(crate) fn deref(
+            &self,
+            type_manager: &dyn TypeManager,
+            retriever: &dyn RawPointerRetriever,
+        ) -> RawConcreteValue {
+            let addr = self.address.expect_addr(type_manager, retriever);
+            let ty = type_manager.get_type(self.ty);
+            let pointee_ty = type_manager.get_type(ty.pointee_ty.unwrap());
+            let value = if pointee_ty.is_slice() {
+                // Simulate an array.
+                let len = self
+                    .metadata
+                    .expect_int(type_manager, retriever)
+                    .try_into()
+                    .unwrap();
+                let array_ty = pseudo_array_ty_from_slice(pointee_ty, len, type_manager);
+                RawConcreteValue(addr, None, LazyTypeInfo::Forced(Rc::new(array_ty)))
+            } else {
+                // Do we need to worry about the loss of metadata? Is it going to be processed further?
+                RawConcreteValue(addr, None, LazyTypeInfo::Id(pointee_ty.id))
+            };
+            value
+        }
     }
 }
 

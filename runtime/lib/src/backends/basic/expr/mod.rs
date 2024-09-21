@@ -905,7 +905,7 @@ mod guards {
 
     macro_rules! define_guard {
         ($base_type:ty, $ref_type:ty, $guarded_type:ty, $name: ident, $pattern:pat, $value_name:ident) => {
-            #[derive(Clone, Debug)]
+            #[derive(Clone)]
             pub(crate) struct $name<V>(pub V);
 
             impl<V> $name<V>
@@ -949,6 +949,15 @@ mod guards {
             impl<V: Clone> $name<V> {
                 pub fn clone_to(&self) -> V {
                     self.0.clone()
+                }
+            }
+
+            impl<V> std::fmt::Debug for $name<V>
+            where
+                V: std::fmt::Debug,
+            {
+                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    self.0.fmt(f)
                 }
             }
 

@@ -6,14 +6,14 @@ use common::log_debug;
 
 use crate::{
     abs::{
-        expr::sym_place::{SelectTarget, SymbolicReadResolver},
+        expr::sym_place::{SymbolicReadResolver, SymbolicReadTreeLeafMutator},
         place::HasMetadata,
     },
     backends::basic::{
         expr::{
             place::*,
-            sym_placex::{DefaultSymPlaceResolver, SinglePlaceResult, SymbolicPlaceResult},
-            MultiValueArray, SliceIndex,
+            sym_placex::{DefaultSymPlaceResolver, SinglePlaceResult},
+            SliceIndex,
         },
         place::PlaceMetadata,
         state::proj::IndexResolver,
@@ -131,7 +131,7 @@ impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
     ) -> SymValueRef {
         let resolved = self.resolve_symbolic_place(place_val);
         let mut copied = self.get_select_sym_place_result(&resolved);
-        self.retrieve_select_proj_result(&mut copied, type_id);
+        self.retrieve_multi_value(&mut copied, type_id);
         Expr::Multi(copied).to_value_ref()
     }
 }
@@ -143,40 +143,14 @@ impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
         resolver.resolve(place_val)
     }
 
-    fn get_sym_place_result(&self, resolved: &SymbolicPlaceResult) -> MultiValueTree {
-        match resolved {
-            SymbolicPlaceResult::SymRead(select) => {
-                MultiValueTree::SymRead(self.get_select_sym_place_result(select))
-            }
-            SymbolicPlaceResult::Array(array) => {
-                MultiValueTree::Array(self.get_array_sym_place_result(array))
-            }
-            SymbolicPlaceResult::Single(single) => {
-                MultiValueTree::Single(self.get_single_sym_place_result(single))
-            }
-        }
-    }
-
     fn get_select_sym_place_result(&self, select: &PlaceSelect) -> ValueSelect {
-        use crate::abs::expr::sym_place::SelectTarget::*;
-        ValueSelect {
-            index: SliceIndex {
-                index: select.index.clone(),
-                // FIXME
+        select.map_leaves(
+            |index| SliceIndex {
+                index: index.clone(),
                 from_end: false,
             },
-            target: match &select.target {
-                Array(array) => Array(self.get_array_sym_place_result(array)),
-                Nested(nested) => Nested(Box::new(self.get_select_sym_place_result(nested))),
-            },
-        }
-    }
-
-    fn get_array_sym_place_result(&self, array: &Vec<SymbolicPlaceResult>) -> MultiValueArray {
-        array
-            .into_iter()
-            .map(|item| self.get_sym_place_result(item).into())
-            .collect()
+            |place| self.get_single_sym_place_result(place),
+        )
     }
 
     fn get_single_sym_place_result(&self, single: &SinglePlaceResult) -> ValueRef {
@@ -204,61 +178,44 @@ impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
                     else {
                         unreachable!()
                     };
-                    self.retrieve_select_proj_result(select, type_id);
+                    self.retrieve_multi_value(select, type_id);
                     value
                 }
                 Expr::Partial(porter) => self.retrieve_porter_value(porter).to_value_ref(),
                 Expr::Len(place) => self.retrieve_len_value(place),
-                Expr::Projection(proj) => {
-                    let ProjExpr::SymHost(SymHostProj {
-                        host,
-                        kind: ProjKind::Field(FieldAccessKind::PtrMetadata),
-                        metadata: _,
-                    }) = proj
-                    else {
-                        unreachable!("Unexpected projection expression for retrieval: {:?}", proj)
-                    };
-                    self.retrieve_ptr_metadata(host.clone())
-                }
+                Expr::Projection(ProjExpr::SymHost(SymHostProj {
+                    host,
+                    kind: ProjKind::Field(FieldAccessKind::PtrMetadata),
+                    metadata: _,
+                })) => self.retrieve_ptr_metadata(host.as_ref()),
                 _ => value,
             },
             _ => value,
         }
     }
 
-    fn retrieve_multi_value_tree(&self, result: &mut MultiValueTree, type_id: TypeId) {
-        log_debug!(
-            "Retrieving symbolic projection result: {} with type {type_id}",
-            result
-        );
-        match result {
-            MultiValueTree::SymRead(select) => self.retrieve_select_proj_result(select, type_id),
-            MultiValueTree::Array(items) => items
-                .iter_mut()
-                .for_each(|item| self.retrieve_multi_value_tree(item, type_id)),
-            MultiValueTree::Single(single) => self.retrieve_multi_value_leaf(single, type_id),
-        }
-    }
-
-    fn retrieve_select_proj_result(&self, select: &mut MultiValue, type_id: TypeId) {
+    fn retrieve_multi_value(&self, select: &mut MultiValue, type_id: TypeId) {
         log_debug!(
             "Retrieving select projection result: {} with type {type_id}",
             select
         );
-        match &mut select.target {
-            SelectTarget::Array(possible_values) => possible_values
-                .iter_mut()
-                .for_each(|value| self.retrieve_multi_value_tree(value, type_id)),
-            SelectTarget::Nested(box inner) => self.retrieve_select_proj_result(inner, type_id),
-        };
-    }
-
-    fn retrieve_multi_value_leaf(&self, single: &mut MultiValueLeaf, type_id: TypeId) {
-        log_debug!(
-            "Retrieving single projection result: {} with type {type_id}",
-            single
-        );
-        *single = self.retrieve_value(single.clone(), type_id);
+        select.mutate_leaves(
+            SymbolicReadTreeLeafMutator::Replacer(&mut |value| {
+                let retrieved = self.retrieve_value(value.clone(), type_id);
+                match retrieved.as_ref() {
+                    Value::Symbolic(SymValue::Expression(Expr::Multi(..))) => {
+                        let Value::Symbolic(SymValue::Expression(Expr::Multi(multi))) =
+                            ValueRef::unwrap_or_clone(retrieved)
+                        else {
+                            unreachable!()
+                        };
+                        MultiValueTree::SymRead(multi)
+                    }
+                    _ => MultiValueTree::Single(retrieved),
+                }
+            }),
+            |_| unreachable!("No expansion is expected here."),
+        )
     }
 
     fn retrieve_value(&self, value: ValueRef, type_id: TypeId) -> ValueRef {
@@ -369,13 +326,15 @@ impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
         };
 
         // Equivalent to accessing the pointer's metadata.
-        self.retrieve_ptr_metadata(host.value.clone())
+        self.retrieve_ptr_metadata(host.value.as_ref())
     }
 
-    fn retrieve_ptr_metadata(&self, host: SymValueRef) -> SymValueRef {
-        match host.as_ref() {
-            SymValue::Expression(Expr::Multi(multi)) => {
-                Expr::from(multi.map_leaves(|value| match value.as_ref() {
+    fn retrieve_ptr_metadata(&self, host: &SymValue) -> SymValueRef {
+        match host {
+            SymValue::Expression(Expr::Multi(multi)) => Expr::from(multi.map_leaves(
+                Clone::clone,
+                |value| match value.as_ref() {
+                    Value::Symbolic(host) => self.retrieve_ptr_metadata(host).into(),
                     Value::Concrete(ConcreteValue::FatPointer(fat_ptr)) => {
                         fat_ptr.metadata.0.clone()
                     }
@@ -383,8 +342,14 @@ impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
                         "Only (retrieved) fat pointers are expected to appear. Got: {:?}",
                         value
                     ),
-                }))
-                .to_value_ref()
+                },
+            ))
+            .to_value_ref(),
+            SymValue::Expression(Expr::Projection(ProjExpr::SymHost(SymHostProj {
+                kind: ProjKind::Downcast(DowncastKind::Transmutation(..)),
+                ..
+            }))) => {
+                todo!("#443, #454: PtrMetadata from transmuted value is not supported yet.")
             }
             _ => {
                 unreachable!(
@@ -459,8 +424,7 @@ fn to_deterministic_proj<'a>(
     debug_assert!(!matches!(proj, Projection::Deref));
 
     let offset = unsafe { meta.address().byte_offset_from(host_meta.address()) };
-    let offset =
-        current.map_or(0, |p| p.offset) + TryInto::<PointerOffset>::try_into(offset).unwrap();
+    let offset = current.map_or(0, |p| p.offset) + PointerOffset::try_from(offset).unwrap();
 
     DeterministicProjection {
         offset,

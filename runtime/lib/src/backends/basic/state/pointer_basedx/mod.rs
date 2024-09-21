@@ -190,13 +190,9 @@ impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
         self.type_manager.get_type(type_id)
     }
 
-    fn get_type_size(&self, metadata: &PlaceMetadata) -> Option<TypeSize> {
-        metadata.size().or_else(|| {
-            metadata.type_id().and_then(|type_id| {
-                let ty = self.type_manager.get_type(type_id);
-                ty.is_sized().then_some(ty.size)
-            })
-        })
+    fn get_type_size(&self, place_val: &DeterministicPlaceValue) -> Option<TypeSize> {
+        let ty = self.type_manager.get_type(place_val.type_id());
+        ty.is_sized().then_some(ty.size)
     }
 }
 
@@ -253,21 +249,19 @@ impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
         let addr = place_val.address();
 
         // If the place is pointing to a symbolic value.
-        if let Some(sym_val) = self.get(addr, place_val.unwrap_type_id()) {
+        if let Some(sym_val) = self.get(addr, place_val.type_id()) {
             return self
-                .retrieve_sym_value(sym_val.clone(), place_val.unwrap_type_id())
+                .retrieve_sym_value(sym_val.clone(), place_val.type_id())
                 .into();
         }
 
         // Or it is pointing to an object embracing symbolic values.
-        if let Some(size) = self.get_type_size(place_val.as_ref()) {
-            // FIXME: Double querying memory.
-            if let Some(porter) = self.try_create_porter_for_copy(addr, size) {
-                return porter.to_value_ref();
-            }
+        // FIXME: Double querying memory.
+        if let Some(porter) = self.try_create_porter_for_copy(place_val) {
+            return porter.to_value_ref().into();
         }
 
-        create_lazy(addr, place_val.ty().cloned())
+        place_val.to_raw_value().to_value_ref()
     }
 
     fn take_deterministic_place(&mut self, place_val: &DeterministicPlaceValue) -> ValueRef {
@@ -275,81 +269,87 @@ impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
         let addr = place_val.address();
 
         // If the place is pointing to a symbolic value.
-        if let Some(sym_val) = self.get(addr, place_val.unwrap_type_id()) {
+        if let Some(sym_val) = self.get(addr, place_val.type_id()) {
             // Disabling removal because of possible use after move.
             // https://github.com/rust-lang/unsafe-code-guidelines/issues/188
             // self.memory.remove_at(&addr);
 
             return self
-                .retrieve_sym_value(sym_val.clone(), place_val.unwrap_type_id())
+                .retrieve_sym_value(sym_val.clone(), place_val.type_id())
                 .into();
         }
 
+        let lazy = place_val.to_raw_value();
         // Or it is pointing to an object embracing symbolic values.
-        if let Some(size) = self.get_type_size(place_val.as_ref()) {
-            // FIXME: Double querying memory.
-            if let Some(porter) = self.try_create_porter_for_move(addr, size) {
-                return porter.to_value_ref();
-            }
+        // FIXME: Double querying memory.
+        if let Some(porter) = self.try_create_porter_for_move(place_val) {
+            return porter.to_value_ref().into();
         }
 
-        create_lazy(addr, place_val.ty().cloned())
+        lazy.to_value_ref()
     }
 
     fn set_deterministic_place(&mut self, place_val: &DeterministicPlaceValue, value: ValueRef) {
-        self.set_addr(place_val.address(), 0, value, place_val.unwrap_type_id())
+        let size = self.get_type_size(place_val).unwrap();
+        self.memory.drain_range_and_apply(
+            place_val.address()..(place_val.address().wrapping_byte_add(size as usize)),
+            |_, _| {},
+        );
+        self.set_addr(place_val.address(), 0, value, place_val.type_id())
     }
 }
 
 // Porters
 impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
-    fn try_create_porter_for_copy(&self, addr: Address, size: TypeSize) -> Option<PorterValue> {
-        Self::try_create_porter(
-            addr,
-            size,
-            /* At this point, we are looking for inner values, effectively
-             * located at the same address or after it. */
-            |start| self.memory.after_or_at(start),
-            |c| c.peek_next(),
-            |c| {
-                c.next();
-            },
-        )
+    fn try_create_porter_for_copy(
+        &self,
+        place_val: &DeterministicPlaceValue,
+    ) -> Option<PorterValue> {
+        let size = self
+            .get_type_size(place_val)
+            .expect("Cannot copy unsized type.");
+        Self::try_create_porter(place_val, size, |range, f| {
+            self.memory.apply_in_range(range, f)
+        })
         .map(|porter| self.retrieve_porter_value(&porter))
     }
 
-    fn try_create_porter_for_move(&mut self, addr: Address, size: TypeSize) -> Option<PorterValue> {
-        Self::try_create_porter(
-            addr,
-            size,
-            |start| self.memory.after_or_at_mut(start),
-            |c| c.as_cursor().peek_next(),
-            |c| {
-                // FIXME: (*)
-                // Disabling removal because of possible use after move.
-                // https://github.com/rust-lang/unsafe-code-guidelines/issues/188
-                // c.remove_next();
-                c.next();
-            },
-        )
+    fn try_create_porter_for_move(
+        &mut self,
+        place_val: &DeterministicPlaceValue,
+    ) -> Option<PorterValue> {
+        let size = self
+            .get_type_size(place_val)
+            .expect("Cannot move unsized type.");
+        Self::try_create_porter(place_val, size, |range, mut f| {
+            // FIXME: (*)
+            // Disabling removal because of possible use after move.
+            // https://github.com/rust-lang/unsafe-code-guidelines/issues/188
+            // self.memory.drain_range(range, |addr, obj| f(&addr, &obj))
+            self.memory
+                .apply_in_range(range, |addr, obj| f(&addr, &obj))
+        })
         .map(|porter| self.retrieve_porter_value(&porter))
     }
 
     /// Looks in the region indicated by `addr` and `size` and picks all
     /// symbolic values that are residing in that region. If there is no
     /// symbolic value in that region, returns `None`.
-    #[tracing::instrument(level = "debug", skip(after_or_at, entry, move_next))]
-    fn try_create_porter<'a, C: 'a + core::fmt::Debug>(
-        addr: Address,
+    #[tracing::instrument(level = "debug", skip(apply_in_range))]
+    fn try_create_porter(
+        place_val: &DeterministicPlaceValue,
         size: TypeSize,
-        after_or_at: impl FnOnce(&Address) -> C,
-        entry: impl Fn(&C) -> Option<(&Address, &MemoryObject)>,
-        move_next: impl Fn(&mut C),
+        apply_in_range: impl for<'a> FnOnce(
+            Range<Address>,
+            Box<dyn FnMut(&Address, &MemoryObject) + 'a>,
+        ),
     ) -> Option<PorterValue> {
         let range = addr..(addr.wrapping_byte_add(size as usize));
 
         // TODO: What if the address is at the middle of a symbolic value?
-        let mut cursor = after_or_at(&range.start);
+
+        let addr = place_val.address();
+        let range = addr..(addr.wrapping_byte_add(size as usize));
         let mut sym_values = Vec::new();
         while let Some((sym_addr, (sym_value, sym_type_id))) = entry(&cursor) {
             if !range.contains(sym_addr) {
@@ -364,7 +364,10 @@ impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
         }
 
         if !sym_values.is_empty() {
-            Some(PorterValue { sym_values })
+            Some(PorterValue {
+                as_concrete: place_val.to_raw_value(),
+                sym_values,
+            })
         } else {
             None
         }

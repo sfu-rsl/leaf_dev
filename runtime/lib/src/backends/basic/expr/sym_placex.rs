@@ -107,7 +107,7 @@ mod implementation {
     };
 
     use super::*;
-    use common::tyexp::{ArrayShape, TypeInfo};
+    use common::{log_warn, tyexp::ArrayShape};
 
     impl SymbolicPlaceResolver for DefaultSymPlaceResolver<'_> {
         #[tracing::instrument(level = "debug", skip(self))]
@@ -128,6 +128,7 @@ mod implementation {
         type SymValue<'a> = &'a SymbolicPlaceValue;
         type PossibleValue<'a> = SymbolicPlaceResult;
 
+        #[tracing::instrument(level = "debug", skip(self))]
         fn resolve<'a>(&self, place_value: Self::SymValue<'a>) -> Select<Self::PossibleValue<'a>> {
             let mut base = match &place_value.base {
                 SymbolicPlaceBase::Deref(host) => self.resolve_deref_of_sym(host),
@@ -147,23 +148,98 @@ mod implementation {
 
     impl DefaultSymPlaceResolver<'_> {
         fn resolve_deref_of_sym(&self, host: &DerefSymHostPlace) -> Select {
+            let pointee_type_id = self
+                .type_manager
+                .get_type(host.metadata.unwrap_type_id())
+                .pointee_ty
+                .expect("Host type must be a pointer type.");
+
+            self.deref_symbolic(host.value.as_ref(), pointee_type_id)
+        }
+
+        fn deref_symbolic(&self, host: &SymValue, pointee_type_id: TypeId) -> Select {
             let unexpected = || unreachable!("Unexpected symbolic host to dereference: {:?}", host);
-            let SymValue::Expression(expr) = host.value.as_ref() else {
+            let SymValue::Expression(expr) = host else {
                 unexpected()
             };
             match expr {
-                Expr::Multi(_) => todo!(),
+                Expr::Multi(multi) => self.deref_multi(multi, pointee_type_id),
+                // Offset
                 Expr::Binary(_) => todo!(),
-                Expr::Ite { .. } => todo!(),
-                Expr::Extraction { .. } => todo!(),
-                Expr::Unary { .. }
-                | Expr::Extension { .. }
-                | Expr::Ref(_)
-                | Expr::Projection(_)
-                | Expr::Len(_) => unexpected(),
+                // Cast
+                Expr::Ite { .. } | Expr::Extraction { .. } | Expr::Extension { .. } => todo!(),
+                Expr::Partial(..) => todo!(),
+                Expr::Projection(ProjExpr::SymHost(SymHostProj {
+                    kind: ProjKind::Downcast(DowncastKind::Transmutation(..)),
+                    ..
+                })) => todo!(),
+                Expr::Unary { .. } | Expr::Ref(_) | Expr::Projection(_) | Expr::Len(_) => {
+                    unexpected()
+                }
             }
         }
 
+        fn deref_multi(&self, multi: &MultiValue, pointee_type_id: TypeId) -> Select {
+            multi.map_expand(
+                |index| {
+                    if index.from_end {
+                        todo!("Index from end is not supported yet.")
+                    }
+                    index.index.clone()
+                },
+                |value| match value.as_ref() {
+                    Value::Concrete(host) => SymbolicPlaceResult::Single(
+                        DeterPlaceValueRef::new(
+                            self.deref_concrete(host, pointee_type_id).to_value_ref(),
+                        )
+                        .into(),
+                    ),
+                    Value::Symbolic(host) => {
+                        SymbolicPlaceResult::SymRead(self.deref_symbolic(host, pointee_type_id))
+                    }
+                },
+            )
+        }
+
+        #[tracing::instrument(level = "debug", skip(self))]
+        fn deref_concrete(
+            &self,
+            host: &ConcreteValue,
+            pointee_type_id: TypeId,
+        ) -> DeterministicPlaceValue {
+            match host {
+                ConcreteValue::Const(host) => self.deref_const(host, pointee_type_id),
+                ConcreteValue::FatPointer(host) => {
+                    host.deref(self.type_manager, self.retriever).into()
+                }
+                ConcreteValue::Unevaluated(UnevalValue::Lazy(host)) => {
+                    panic!(
+                        "Lazy unevaluated value should be retrieved before: {:?}",
+                        host
+                    )
+                }
+                _ => {
+                    unreachable!("Unexpected concrete value to dereference: {:?}", host)
+                }
+            }
+        }
+
+        #[tracing::instrument(level = "debug", skip(self))]
+        fn deref_const(
+            &self,
+            host: &ConstValue,
+            pointee_type_id: TypeId,
+        ) -> DeterministicPlaceValue {
+            match host {
+                ConstValue::Addr(addr) => {
+                    DeterministicPlaceValue::from_addr_type(*addr, pointee_type_id)
+                }
+                _ => unreachable!("Unexpected constant value to dereference: {:?}", host),
+            }
+        }
+    }
+
+    impl DefaultSymPlaceResolver<'_> {
         fn resolve_sym_indexed(&self, indexed: &SymIndexedPlace) -> Select {
             let target = match indexed.host.as_ref() {
                 PlaceValue::Deterministic(..) => self.expand(&SinglePlaceResult(
@@ -171,7 +247,11 @@ mod implementation {
                 )),
                 PlaceValue::Symbolic(sym_host) => {
                     let mut resolved = self.resolve(sym_host);
-                    resolved.mutate_leaves(Replacer(&mut |p| self.expand(p)), |v| self.expand(v));
+                    resolved.mutate_leaves(Replacer(&mut |p| self.expand(p)), |v| {
+                        // This should not happen anymore in this algorithm
+                        log_warn!("Unexpanded value in the new algorithm: {:?}", v);
+                        self.expand(v)
+                    });
                     resolved.into()
                 }
             };
@@ -193,14 +273,16 @@ mod implementation {
             &self,
             place: &DeterministicPlaceValue,
         ) -> Vec<SinglePlaceResult> {
-            let ty = self.type_manager.get_type(place.unwrap_type_id());
-            if let Some(array) = ty.as_array() {
-                self.expand_array(place.address(), array)
-            } else {
-                todo!()
-            }
+            let ty = place.type_info().get_type(self.type_manager).unwrap();
+            let array = ty.expect_array();
+            debug_assert!(
+                !ty.is_slice(),
+                "Slice should be replaced by a pseudo-array."
+            );
+            self.expand_array(place.address(), array)
         }
 
+        #[tracing::instrument(level = "debug", skip(self))]
         fn expand_array(
             &self,
             base_address: RawAddress,
@@ -209,6 +291,11 @@ mod implementation {
             let item_ty = self.type_manager.get_type(shape.item_ty);
             let mut result = Vec::with_capacity(shape.len as usize);
             for i in 0..shape.len {
+                /* NOTE: Wait, shouldn't we pay attention to `align` here?
+                 * https://doc.rust-lang.org/reference/type-layout.html#size-and-alignment
+                 * > The size of a value is the offset in bytes between successive elements in an array
+                 * with that item type including alignment padding.
+                 */
                 let item_addr = base_address.wrapping_byte_offset((i * item_ty.size) as isize);
                 let place = DeterministicPlaceValue::from_addr_type(item_addr, item_ty.id);
                 result.push(DeterPlaceValueRef::new(place.to_value_ref()).into());

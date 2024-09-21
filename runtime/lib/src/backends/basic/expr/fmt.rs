@@ -307,7 +307,7 @@ impl Display for super::UnaryOp {
 impl Display for PlaceValue {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
-            PlaceValue::Deterministic(value) => write!(f, "{:?}", value.as_ref()),
+            PlaceValue::Deterministic(value) => write!(f, "{:?}", value),
             PlaceValue::Symbolic(value) => write!(f, "{value}"),
         }
     }

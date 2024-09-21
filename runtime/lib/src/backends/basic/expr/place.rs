@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use derive_more as dm;
 
-use common::{pri::RawPointer, types::PointerOffset};
+use common::types::PointerOffset;
 
 use crate::backends::basic::place::PlaceMetadata;
 
@@ -27,19 +27,37 @@ impl PlaceValue {
     }
 }
 
-#[derive(Clone, Debug, dm::Deref, dm::AsRef)]
-pub(crate) struct DeterministicPlaceValue(PlaceMetadata);
+#[derive(Clone, Debug /* , dm::Deref, dm::AsRef */)]
+pub(crate) struct DeterministicPlaceValue {
+    addr: RawAddress,
+    ty_info: LazyTypeInfo,
+}
 
 impl DeterministicPlaceValue {
     pub(crate) fn new(metadata: PlaceMetadata) -> Self {
-        Self(metadata)
+        Self::from_addr_type(metadata.address(), metadata.unwrap_type_id())
     }
 
     pub(crate) fn from_addr_type(addr: RawAddress, ty: TypeId) -> Self {
-        let mut metadata = PlaceMetadata::default();
-        metadata.set_address(addr as RawPointer);
-        metadata.set_type_id(ty);
-        Self(metadata)
+        Self {
+            addr,
+            ty_info: LazyTypeInfo::from(ty),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn address(&self) -> RawAddress {
+        self.addr
+    }
+
+    #[inline]
+    pub(crate) fn type_info(&self) -> &LazyTypeInfo {
+        &self.ty_info
+    }
+
+    #[inline]
+    pub(crate) fn type_id(&self) -> TypeId {
+        self.ty_info.id().unwrap()
     }
 }
 
@@ -169,4 +187,19 @@ mod convert {
     }
 
     impl_to_value_ref!(DeterministicPlaceValue, SymbolicPlaceValue);
+
+    impl DeterministicPlaceValue {
+        pub(crate) fn to_raw_value(&self) -> RawConcreteValue {
+            RawConcreteValue(self.addr, None, self.ty_info.clone())
+        }
+    }
+
+    impl From<RawConcreteValue> for DeterministicPlaceValue {
+        fn from(value: RawConcreteValue) -> Self {
+            Self {
+                addr: value.0,
+                ty_info: value.2,
+            }
+        }
+    }
 }
