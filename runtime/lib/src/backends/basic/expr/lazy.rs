@@ -7,7 +7,7 @@ use crate::{
     tyexp::TypeInfoExt,
 };
 
-use super::{sym_placex::RawPointerRetriever, *};
+use super::{sym_place::RawPointerRetriever, *};
 
 mod retrieval {
     use common::tyexp::{FieldsShapeInfo, VariantInfo};

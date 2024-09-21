@@ -12,7 +12,7 @@ use crate::{
     backends::basic::{
         expr::{
             place::*,
-            sym_placex::{DefaultSymPlaceResolver, SinglePlaceResult},
+            sym_place::{DefaultSymPlaceResolver, SinglePlaceResult},
             SliceIndex,
         },
         place::PlaceMetadata,
@@ -22,7 +22,7 @@ use crate::{
 
 use super::*;
 
-use crate::backends::basic::expr::sym_placex::Select as PlaceSelect;
+use crate::backends::basic::expr::sym_place::Select as PlaceSelect;
 use crate::backends::basic::expr::MultiValue as ValueSelect;
 
 impl RawPointerVariableState {

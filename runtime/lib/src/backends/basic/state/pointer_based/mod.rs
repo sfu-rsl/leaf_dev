@@ -7,7 +7,7 @@ use crate::{
         config::{SymbolicPlaceConfig, SymbolicPlaceStrategy},
         expr::{
             place::{DeterministicPlaceValue, SymbolicPlaceValue},
-            sym_placex::RawPointerRetriever,
+            sym_place::RawPointerRetriever,
         },
         VariablesState,
     },

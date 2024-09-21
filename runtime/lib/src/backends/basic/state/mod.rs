@@ -2,14 +2,14 @@ use super::{
     alias::SymValueRefProjector as SymbolicProjector, place::PlaceMetadata, Projection, ValueRef,
 };
 
-mod pointer_basedx;
+mod pointer_based;
 pub(super) mod proj;
 
 /// A projection that its possible index is resolved.
 type ResolvedProjection = Projection<ValueRef>;
 
-pub(super) use pointer_basedx::sym_place::strategies::make_sym_place_handler;
-pub(super) use pointer_basedx::RawPointerVariableState;
+pub(super) use pointer_based::sym_place::strategies::make_sym_place_handler;
+pub(super) use pointer_based::RawPointerVariableState;
 
 pub(crate) trait SymPlaceHandler<M = PlaceMetadata> {
     type SymPlaceValue;
