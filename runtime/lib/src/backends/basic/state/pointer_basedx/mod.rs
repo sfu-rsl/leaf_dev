@@ -103,24 +103,21 @@ type MemoryObject = (SymValueRef, TypeId);
 /// Provides a mapping for raw pointers to symbolic values.
 /// All places that have a valid address are handled by this state, otherwise
 /// they will be sent to the `fallback` state to be handled.
-pub(in super::super) struct RawPointerVariableState<SP: SymbolicProjector> {
+pub(in super::super) struct RawPointerVariableState {
     memory: memory::Memory,
-    sym_projector: RRef<SP>,
     type_manager: Rc<dyn TypeManager>,
     sym_read_handler: RefCell<SymPlaceHandlerObject>,
     sym_write_handler: RefCell<SymPlaceHandlerObject>,
 }
 
-impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
+impl RawPointerVariableState {
     pub fn new(
-        sym_projector: RRef<SP>,
         type_manager: Rc<dyn TypeManager>,
         sym_place_handler_factory: impl Fn(SymbolicPlaceStrategy) -> SymPlaceHandlerObject,
         sym_place_config: &SymbolicPlaceConfig,
     ) -> Self {
         Self {
             memory: Default::default(),
-            sym_projector,
             type_manager,
             sym_read_handler: RefCell::new(sym_place_handler_factory(sym_place_config.read)),
             sym_write_handler: RefCell::new(sym_place_handler_factory(sym_place_config.write)),
@@ -196,8 +193,7 @@ impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
     }
 }
 
-impl<SP: SymbolicProjector> VariablesState<Place, ValueRef, PlaceValueRef>
-    for RawPointerVariableState<SP>
+impl VariablesState<Place, ValueRef, PlaceValueRef> for RawPointerVariableState
 where
     Self: IndexResolver<Local>,
 {
@@ -243,7 +239,7 @@ where
 }
 
 // Deterministic Place
-impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
+impl RawPointerVariableState {
     fn copy_deterministic_place(&self, place_val: &DeterministicPlaceValue) -> ValueRef {
         // let addr = get_address(place_val, proj);
         let addr = place_val.address();
@@ -300,7 +296,7 @@ impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
 }
 
 // Porters
-impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
+impl RawPointerVariableState {
     fn try_create_porter_for_copy(
         &self,
         place_val: &DeterministicPlaceValue,
@@ -375,14 +371,14 @@ impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
 }
 
 // Symbolic Place
-impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
+impl RawPointerVariableState {
     fn copy_symbolic_place(&self, place_val: &SymbolicPlaceValue, type_id: TypeId) -> SymValueRef {
         self.resolve_and_retrieve_symbolic_place(place_val, type_id)
     }
 }
 
 // Setting (storing)
-impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
+impl RawPointerVariableState {
     fn set_addr(&mut self, addr: Address, offset: PointerOffset, value: ValueRef, type_id: TypeId) {
         fn insert(entry: Entry<Address, MemoryObject>, value: MemoryObject) {
             log_debug!(
@@ -531,7 +527,7 @@ impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
     }
 }
 
-impl<SP: SymbolicProjector> IndexResolver<Local> for RawPointerVariableState<SP> {
+impl IndexResolver<Local> for RawPointerVariableState {
     fn get(&self, local: &Local) -> ValueRef {
         let addr = local.address();
 
@@ -548,7 +544,7 @@ impl<SP: SymbolicProjector> IndexResolver<Local> for RawPointerVariableState<SP>
     }
 }
 
-impl<SP: SymbolicProjector> SelfHierarchical for RawPointerVariableState<SP> {
+impl SelfHierarchical for RawPointerVariableState {
     fn add_layer(self) -> Self {
         self
     }
@@ -558,7 +554,7 @@ impl<SP: SymbolicProjector> SelfHierarchical for RawPointerVariableState<SP> {
     }
 }
 
-impl<SP: SymbolicProjector> RawPointerRetriever for RawPointerVariableState<SP> {
+impl RawPointerRetriever for RawPointerVariableState {
     #[tracing::instrument(level = "debug", skip(self))]
     fn retrieve(&self, addr: RawAddress, type_id: TypeId) -> ValueRef {
         self.copy_deterministic_place(&DeterministicPlaceValue::from_addr_type(addr, type_id))

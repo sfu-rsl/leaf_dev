@@ -25,7 +25,7 @@ use super::*;
 use crate::backends::basic::expr::sym_placex::Select as PlaceSelect;
 use crate::backends::basic::expr::MultiValue as ValueSelect;
 
-impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
+impl RawPointerVariableState {
     pub(super) fn get_place<'a, 'b>(
         &'a self,
         place: &'b Place,
@@ -177,6 +177,9 @@ impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
     }
 
     fn opt_sym_index_val_from_end(&self, host: &PlaceValue, offset: u64) -> Option<SymValueRef> {
+        // FIXME: As indices from end refer to only one element, it is more reasonable
+        // to introduce a new symbolic place kind and handle them in the resolver properly.
+
         // NOTE: Only slices may show up here, which will be dereferenced before this projection.
         // https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/mir/enum.ProjectionElem.html#variant.ConstantIndex.field.from_end
         if let PlaceValue::Symbolic(
@@ -200,7 +203,7 @@ impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
     }
 }
 
-impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
+impl RawPointerVariableState {
     pub(super) fn resolve_and_retrieve_symbolic_place(
         &self,
         place_val: &SymbolicPlaceValue,
@@ -214,7 +217,7 @@ impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
 }
 
 // Getting Symbolic Place
-impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
+impl RawPointerVariableState {
     fn resolve_symbolic_place(&self, place_val: &SymbolicPlaceValue) -> PlaceSelect {
         let resolver = DefaultSymPlaceResolver::new(self.type_manager.as_ref(), self);
         resolver.resolve(place_val)
@@ -236,7 +239,7 @@ impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
 }
 
 // Retrieving (Raw) Values
-impl<SP: SymbolicProjector> RawPointerVariableState<SP> {
+impl RawPointerVariableState {
     /// Retrieves the memory content for the given symbolic value.
     /// It makes sure that the result value can live independently with no
     /// lazily-evaluated parts.

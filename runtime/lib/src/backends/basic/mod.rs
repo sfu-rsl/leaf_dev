@@ -37,8 +37,7 @@ use self::{
     concrete::BasicConcretizer,
     config::BasicBackendConfig,
     expr::{
-        builders::DefaultExprBuilder as ExprBuilder, prelude::*,
-        proj::DefaultSymProjector as SymProjector, translators::z3::Z3ValueTranslator,
+        builders::DefaultExprBuilder as ExprBuilder, prelude::*, translators::z3::Z3ValueTranslator,
     },
     operand::BasicOperandHandler,
     place::{BasicPlaceHandler, PlaceMetadata},
@@ -47,7 +46,7 @@ use self::{
 
 type TraceManager = dyn abs::backend::TraceManager<BasicBlockIndex, ValueRef>;
 
-type BasicVariablesState = RawPointerVariableState<SymProjector>;
+type BasicVariablesState = RawPointerVariableState;
 
 type BasicCallStackManager = call::BasicCallStackManager<BasicVariablesState>;
 
@@ -84,7 +83,6 @@ impl BasicBackend {
             call_stack_manager: BasicCallStackManager::new(
                 Box::new(move |_id| {
                     let vars_state = RawPointerVariableState::new(
-                        sym_projector.clone(),
                         type_manager_ref.clone(),
                         |s| {
                             make_sym_place_handler(s, || {
