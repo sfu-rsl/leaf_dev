@@ -7,7 +7,7 @@ use crate::{
     tyexp::TypeInfoExt,
 };
 
-use super::{sym_place::RawPointerRetriever, *};
+use super::*;
 
 mod retrieval {
     use common::tyexp::{FieldsShapeInfo, VariantInfo};
@@ -15,6 +15,10 @@ mod retrieval {
     use super::*;
 
     use core::num::Wrapping;
+
+    pub(crate) trait RawPointerRetriever {
+        fn retrieve(&self, addr: RawAddress, type_id: TypeId) -> ValueRef;
+    }
 
     impl RawConcreteValue {
         /// Tries to retrieve the value from a scalar type.
@@ -532,6 +536,7 @@ mod retrieval {
         }
     }
 }
+pub(crate) use retrieval::RawPointerRetriever;
 
 mod proj {
     use super::*;

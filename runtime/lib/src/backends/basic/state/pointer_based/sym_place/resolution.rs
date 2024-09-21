@@ -27,9 +27,9 @@ use derive_more::From;
 
 use common::log_debug;
 
-use super::{
-    super::alias::TypeManager, abs::expr::sym_place::SymbolicReadResolver, place::*, prelude::*,
-};
+use crate::abs::expr::sym_place::SymbolicReadResolver;
+
+use super::*;
 
 type SymIndex = SymValueRef;
 pub(crate) type Select<V = SymbolicPlaceResult> = crate::abs::expr::sym_place::Select<SymIndex, V>;
@@ -49,7 +49,7 @@ pub(crate) type Select<V = SymbolicPlaceResult> = crate::abs::expr::sym_place::S
 /// resolved (expanded) to be able to iterate over their values. Again, this variant is
 /// necessary to hold the expanded view.
 pub(crate) type SymbolicPlaceResult =
-    super::abs::expr::sym_place::SymbolicReadTree<SymIndex, SinglePlaceResult>;
+    crate::abs::expr::sym_place::SymbolicReadTree<SymIndex, SinglePlaceResult>;
 
 impl From<Vec<Self>> for SymbolicPlaceResult {
     fn from(value: Vec<Self>) -> Self {
@@ -78,10 +78,6 @@ trait SymbolicPlaceResolver:
     /// otherwise a `Select` will be returned to be expanded later.
     /// The returned value is guaranteed not to be a `Single`.
     fn expand<'a>(&self, value: &'a SinglePlaceResult) -> SymbolicPlaceResult;
-}
-
-pub(crate) trait RawPointerRetriever {
-    fn retrieve(&self, addr: RawAddress, type_id: TypeId) -> ValueRef;
 }
 
 pub(crate) struct DefaultSymPlaceResolver<'a> {

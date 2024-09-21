@@ -6,8 +6,8 @@ use crate::{
         alias::TypeManager,
         config::{SymbolicPlaceConfig, SymbolicPlaceStrategy},
         expr::{
+            lazy::RawPointerRetriever,
             place::{DeterministicPlaceValue, SymbolicPlaceValue},
-            sym_place::RawPointerRetriever,
         },
         VariablesState,
     },

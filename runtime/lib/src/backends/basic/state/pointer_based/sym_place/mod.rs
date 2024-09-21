@@ -1,3 +1,4 @@
+mod resolution;
 pub(crate) mod strategies;
 
 use core::{cell::RefMut, iter, ops::Bound};
@@ -10,11 +11,7 @@ use crate::{
         place::HasMetadata,
     },
     backends::basic::{
-        expr::{
-            place::*,
-            sym_place::{DefaultSymPlaceResolver, SinglePlaceResult},
-            SliceIndex,
-        },
+        expr::{place::*, SliceIndex},
         place::PlaceMetadata,
         state::proj::IndexResolver,
     },
@@ -22,8 +19,10 @@ use crate::{
 
 use super::*;
 
-use crate::backends::basic::expr::sym_place::Select as PlaceSelect;
+use self::resolution::Select as PlaceSelect;
 use crate::backends::basic::expr::MultiValue as ValueSelect;
+
+use self::resolution::{DefaultSymPlaceResolver, SinglePlaceResult};
 
 impl RawPointerVariableState {
     pub(super) fn get_place<'a, 'b>(

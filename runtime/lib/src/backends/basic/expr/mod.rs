@@ -4,7 +4,6 @@ pub(crate) mod lazy;
 pub(super) mod place;
 pub(crate) mod prelude;
 pub(super) mod proj;
-pub(super) mod sym_place;
 pub(super) mod translators;
 
 use std::{num::Wrapping, rc::Rc};
