@@ -29,7 +29,6 @@ use common::log_debug;
 
 use super::{
     super::alias::TypeManager, abs::expr::sym_place::SymbolicReadResolver, place::*, prelude::*,
-    sym_place::RawPointerRetriever,
 };
 
 type SymIndex = SymValueRef;
@@ -79,6 +78,10 @@ trait SymbolicPlaceResolver:
     /// otherwise a `Select` will be returned to be expanded later.
     /// The returned value is guaranteed not to be a `Single`.
     fn expand<'a>(&self, value: &'a SinglePlaceResult) -> SymbolicPlaceResult;
+}
+
+pub(crate) trait RawPointerRetriever {
+    fn retrieve(&self, addr: RawAddress, type_id: TypeId) -> ValueRef;
 }
 
 pub(crate) struct DefaultSymPlaceResolver<'a> {

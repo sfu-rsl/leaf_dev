@@ -13,11 +13,7 @@ pub(crate) mod z3 {
 
     use crate::{
         abs::{expr::sym_place::SelectTarget, FieldIndex, IntType, ValueType},
-        backends::basic::expr::{
-            prelude::*,
-            sym_place::{DefaultProjExprReadResolver, ProjExprResolver},
-            SymBinaryOperands, SymVarId,
-        },
+        backends::basic::expr::{prelude::*, SymBinaryOperands, SymVarId},
         solvers::z3::{ArrayNode, ArraySort, BVNode, BVSort},
     };
 
@@ -28,39 +24,37 @@ pub(crate) mod z3 {
     const USIZE_BIT_SIZE: u32 = size_of::<usize>() as u32 * 8;
     const POSSIBLE_VALUES_PREFIX: &str = "pvs";
 
-    pub(crate) struct Z3ValueTranslator<'ctx, R: ProjExprResolver> {
+    pub(crate) struct Z3ValueTranslator<'ctx> {
         context: &'ctx Context,
         variables: HashMap<SymVarId, AstNode<'ctx>>,
         constraints: Vec<ast::Bool<'ctx>>,
-        phantom: std::marker::PhantomData<R>,
     }
 
-    impl<'ctx> Z3ValueTranslator<'ctx, DefaultProjExprReadResolver<'_>> {
+    impl<'ctx> Z3ValueTranslator<'ctx> {
         pub(crate) fn new(context: &'ctx Context) -> Self {
             Self {
                 context,
                 variables: Default::default(),
                 // Additional constraints are not common.
                 constraints: Vec::with_capacity(0),
-                phantom: Default::default(),
             }
         }
     }
 
-    impl<'ctx, R: ProjExprResolver> FnOnce<(&ValueRef,)> for Z3ValueTranslator<'ctx, R> {
+    impl<'ctx> FnOnce<(&ValueRef,)> for Z3ValueTranslator<'ctx> {
         type Output = TranslatedConstraint<'ctx, SymVarId>;
         extern "rust-call" fn call_once(mut self, (value,): (&ValueRef,)) -> Self::Output {
             self.translate(value)
         }
     }
 
-    impl<'ctx, R: ProjExprResolver> FnMut<(&ValueRef,)> for Z3ValueTranslator<'_, R> {
+    impl<'ctx> FnMut<(&ValueRef,)> for Z3ValueTranslator<'_> {
         extern "rust-call" fn call_mut(&mut self, (value,): (&ValueRef,)) -> Self::Output {
             self.translate(value)
         }
     }
 
-    impl<'ctx, R: ProjExprResolver> Z3ValueTranslator<'ctx, R> {
+    impl<'ctx> Z3ValueTranslator<'ctx> {
         fn translate(&mut self, value: &ValueRef) -> TranslatedConstraint<'ctx, SymVarId> {
             log_debug!("Translating value: {}", value);
             let ast = self.translate_value(value);
@@ -75,7 +69,7 @@ pub(crate) mod z3 {
         }
     }
 
-    impl<'ctx, R: ProjExprResolver> Z3ValueTranslator<'ctx, R> {
+    impl<'ctx> Z3ValueTranslator<'ctx> {
         fn translate_value(&mut self, value: &ValueRef) -> AstNode<'ctx> {
             match value.as_ref() {
                 Value::Concrete(c) => self.translate_concrete(c),

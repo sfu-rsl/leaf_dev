@@ -3,10 +3,10 @@ use crate::backends::basic::{
     config::SymbolicPlaceStrategy,
     expr::place::{DerefSymHostPlace, DeterministicPlaceValue, SymIndexedPlace, SymbolicPlaceBase},
     place::PlaceMetadata,
-    state::{pointer_basedx::lazy_from_meta, SymPlaceHandler},
+    state::SymPlaceHandler,
 };
 
-use super::{ConcreteValueRef, PlaceValueRef, SymPlaceValueRef};
+use super::{ConcreteValueRef, PlaceValueRef, RawConcreteValue, SymPlaceValueRef};
 use common::log_debug;
 
 pub(crate) fn make_sym_place_handler(
@@ -82,7 +82,8 @@ impl SymPlaceHandler<PlaceMetadata> for StamperSymPlaceHandler {
                 (index, index_metadata)
             }
         };
-        let conc_val = lazy_from_meta(meta);
+        let conc_val = RawConcreteValue(meta.address(), meta.ty().cloned(), meta.type_id().into())
+            .to_value_ref();
 
         log_debug!(
             "Stamping symbolic value {} with concrete value {}",

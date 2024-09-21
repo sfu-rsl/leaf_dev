@@ -5,7 +5,6 @@ use super::{
         DerefSymHostPlace, DeterministicProjection, PlaceValue, SymIndexedPlace, SymbolicPlaceBase,
         SymbolicPlaceValue,
     },
-    sym_place::{SingleProjResult, TransmutedValue},
     *,
 };
 
@@ -279,21 +278,6 @@ fn end_symbol(from_end: &bool) -> &str {
 impl Display for SliceIndex<SymValueRef> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{}{}ˢ", self.index, if self.from_end { "^" } else { "" })
-    }
-}
-
-impl Display for SingleProjResult {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        match self {
-            SingleProjResult::Transmuted(value) => write!(f, "{value}"),
-            SingleProjResult::Value(value) => write!(f, "{value}"),
-        }
-    }
-}
-
-impl Display for TransmutedValue {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{} as T#{}", self.value, self.dst_ty_id)
     }
 }
 

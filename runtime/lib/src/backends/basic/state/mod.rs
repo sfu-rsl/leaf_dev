@@ -2,7 +2,6 @@ use super::{
     alias::SymValueRefProjector as SymbolicProjector, place::PlaceMetadata, Projection, ValueRef,
 };
 
-mod pointer_based;
 mod pointer_basedx;
 pub(super) mod proj;
 

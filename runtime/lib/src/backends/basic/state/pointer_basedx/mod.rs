@@ -7,7 +7,7 @@ use crate::{
         config::{SymbolicPlaceConfig, SymbolicPlaceStrategy},
         expr::{
             place::{DeterministicPlaceValue, SymbolicPlaceValue},
-            sym_place::RawPointerRetriever,
+            sym_placex::RawPointerRetriever,
         },
         VariablesState,
     },
@@ -18,7 +18,6 @@ use common::tyexp::{FieldsShapeInfo, StructShape, TypeInfo, UnionShape};
 
 use super::{
     super::{
-        alias::{RRef, SymValueRefProjector as SymbolicProjector},
         expr::prelude::*,
         place::{LocalWithMetadata, PlaceMetadata, PlaceWithMetadata},
         ValueRef,

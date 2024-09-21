@@ -7,7 +7,7 @@ use crate::{
     tyexp::{FieldsShapeInfoExt, TypeInfoExt},
 };
 
-use super::{sym_place::RawPointerRetriever, *};
+use super::{sym_placex::RawPointerRetriever, *};
 
 mod retrieval {
     use common::tyexp::{FieldsShapeInfo, VariantInfo};
@@ -312,6 +312,224 @@ mod retrieval {
             ty: type_id,
         }
         .into()
+    }
+
+    impl PorterValue {
+        pub(crate) fn try_to_masked_value(
+            &self,
+            type_manager: &dyn TypeManager,
+        ) -> Result<SymValueRef, &LazyTypeInfo> {
+            let whole_ty = self.as_concrete.type_as_scalar(Some(type_manager))?;
+
+            log_debug!(
+                "Making a masked value from {} symbolic values",
+                self.sym_values.len()
+            );
+
+            let whole_value = unsafe { retrieve_scalar(self.as_concrete.0, &whole_ty) };
+            let whole_value = Self::bit_rep_const(whole_value, &whole_ty);
+            let whole_bit_size = whole_ty.bit_size() as u32;
+            let whole_value_ty = ValueType::from(whole_ty);
+
+            let result = self.sym_values.iter().fold(
+                whole_value.to_value_ref(),
+                |value, (at, ty_id, sym_value)| {
+                    let ty = type_manager.get_type(*ty_id);
+                    let sym_value = if let Some(value_ty) = ValueType::try_from(sym_value.as_ref())
+                        .ok()
+                        .map(Into::into)
+                        .or_else(|| ScalarType::try_from(ty).ok())
+                    {
+                        Self::bit_rep_sym(sym_value.clone(), &value_ty)
+                    } else {
+                        sym_value.clone()
+                    };
+
+                    let value_bit_size = ty.size as u32 * u8::BITS;
+                    let at_bit = *at as u32 * u8::BITS;
+
+                    let sym_value = self.as_mask(
+                        sym_value,
+                        at_bit,
+                        value_bit_size,
+                        whole_bit_size,
+                        whole_value_ty.clone(),
+                    );
+
+                    if at_bit == 0 && value_bit_size >= whole_bit_size {
+                        return sym_value.into();
+                    }
+                    BinaryExpr {
+                        operator: BinaryOp::BitAnd,
+                        operands: SymBinaryOperands::Rev {
+                            second: sym_value,
+                            first: value,
+                        },
+                    }
+                    .to_value_ref()
+                    .into()
+                },
+            );
+
+            let result = SymValueRef::new(result);
+
+            let result = if let ScalarType::Bool = whole_ty {
+                Self::bit_rep_to_bool(result)
+            } else {
+                result
+            };
+
+            Ok(result)
+        }
+
+        fn bit_rep_const(value: ConstValue, ty: &ScalarType) -> ConstValue {
+            match (&value, ty) {
+                // FIXME: Duplication with expression builder for cast.
+                // FIXME: This might not be necessarily the bit representation.
+                // FIXME: The whole value is a single byte.
+                (ConstValue::Bool(value), ScalarType::Bool) => (*value as u8).into(),
+                (ConstValue::Char(value), ScalarType::Char) => (*value as u32).into(),
+                (ConstValue::Int { .. }, ScalarType::Int(..) | ScalarType::Address) => value,
+                (ConstValue::Float { .. }, ScalarType::Float(..)) => value,
+                _ => unreachable!("Unexpected value and type pair: {:?} {:?}", value, ty),
+            }
+        }
+
+        fn bit_rep_sym(value: SymValueRef, ty: &ScalarType) -> SymValueRef {
+            match ty {
+                // FIXME: Duplication with expression builder for cast.
+                ScalarType::Bool => Expr::Ite {
+                    condition: value,
+                    if_target: ConstValue::from(1_u8).to_value_ref(),
+                    else_target: ConstValue::from(0_u8).to_value_ref(),
+                }
+                .to_value_ref(),
+                ScalarType::Char
+                | ScalarType::Int(..)
+                | ScalarType::Float(..)
+                | ScalarType::Address => value,
+            }
+        }
+
+        /// Creates a mask from a symbolic value.
+        /// By mask, we mean a value that if bitwise ANDed with the whole value,
+        /// it will only keep the bits that are filled by the symbolic value at the specified locations.
+        /// # Example
+        /// If a symbolic u8 value at byte offset 1 in little-endian order is requested to be masked
+        /// for a u32 value, the mask will be 0x0000xx00, where xx is the symbolic value.
+        fn as_mask(
+            &self,
+            value: SymValueRef,
+            at_bit: u32,
+            value_bit_size: u32,
+            whole_bit_size: u32,
+            dst_ty: ValueType,
+        ) -> SymValueRef {
+            let mut result = value;
+
+            // Extract the first n bits of the value.
+            // (the equal case handles possible casting)
+            if at_bit + value_bit_size >= whole_bit_size {
+                let n = whole_bit_size - at_bit;
+                debug_assert!(n % u8::BITS as u32 == 0, "Not aligned by byte {:?}", self);
+                // We know want the first n bits of the value,
+                // but the order of the bytes is as same as the whole object.
+                #[cfg(target_endian = "big")]
+                let (high, low) = (value_bit_size, value_bit_size - n);
+                #[cfg(target_endian = "little")]
+                let (high, low) = (n, 0);
+                result = Expr::Extraction {
+                    source: result,
+                    high: high - 1,
+                    low,
+                    ty: IntType {
+                        bit_size: n as u64,
+                        is_signed: false,
+                    }
+                    .into(),
+                }
+                .to_value_ref();
+            }
+
+            if whole_bit_size > value_bit_size {
+                result = Expr::Extension {
+                    source: result,
+                    is_zero_ext: true,
+                    bits_to_add: (whole_bit_size - value_bit_size) as u32,
+                    ty: dst_ty,
+                }
+                .to_value_ref();
+
+                // We know that the value fills offset..offset+value_size,
+                // but the order of the bytes is as same as the whole object.
+                #[cfg(target_endian = "big")]
+                let shift_amount: u32 = whole_bit_size - at_bit as u32 - value_bit_size;
+                #[cfg(target_endian = "little")]
+                let shift_amount: u32 = at_bit as u32;
+                if shift_amount > 0 {
+                    result = BinaryExpr {
+                        operator: BinaryOp::Shl,
+                        operands: SymBinaryOperands::Orig {
+                            first: result,
+                            second: ConstValue::from(shift_amount).to_value_ref(),
+                        },
+                    }
+                    .to_value_ref();
+                }
+            }
+
+            result
+        }
+
+        fn bit_rep_to_bool(result: SymValueRef) -> SymValueRef {
+            Expr::Ite {
+                condition: BinaryExpr {
+                    operator: BinaryOp::Eq,
+                    operands: SymBinaryOperands::Orig {
+                        first: result,
+                        second: ConstValue::from(0_u8).to_value_ref(),
+                    },
+                }
+                .to_value_ref(),
+                if_target: ConstValue::from(false).to_value_ref(),
+                else_target: ConstValue::from(true).to_value_ref(),
+            }
+            .to_value_ref()
+        }
+    }
+
+    impl ConcreteValue {
+        pub(crate) fn expect_int(
+            &self,
+            type_manager: &dyn TypeManager,
+            retriever: &dyn RawPointerRetriever,
+        ) -> u128 {
+            match self {
+                ConcreteValue::Const(ConstValue::Int { bit_rep, .. }) => bit_rep.0,
+                ConcreteValue::Unevaluated(UnevalValue::Lazy(raw)) => {
+                    unsafe { raw.retrieve(type_manager, retriever) }
+                        .unwrap()
+                        .expect_int(type_manager, retriever)
+                }
+                _ => panic!("Not an integer: {:?}", self),
+            }
+        }
+
+        pub(crate) fn expect_addr(
+            &self,
+            type_manager: &dyn TypeManager,
+            retriever: &dyn RawPointerRetriever,
+        ) -> RawAddress {
+            match self {
+                ConcreteValue::Const(ConstValue::Addr(addr)) => *addr,
+                ConcreteValue::Unevaluated(UnevalValue::Lazy(raw)) => {
+                    unsafe { raw.retrieve(type_manager, retriever) }
+                        .unwrap()
+                        .expect_addr(type_manager, retriever)
+                }
+                _ => panic!("Not an address: {:?}", self),
+            }
+        }
     }
 }
 
