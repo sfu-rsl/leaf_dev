@@ -66,10 +66,11 @@ pub struct BasicBackend {
 
 impl BasicBackend {
     pub fn new(config: BasicBackendConfig) -> Self {
-        let expr_builder_ref = Rc::new(RefCell::new(expr::builders::new_expr_builder()));
-        let expr_builder = expr_builder_ref.clone();
-        let sym_projector = Rc::new(RefCell::new(expr::proj::new_sym_projector()));
         let type_manager_ref = Rc::new(BasicTypeManager::default());
+        let expr_builder_ref = Rc::new(RefCell::new(expr::builders::new_expr_builder(
+            type_manager_ref.clone(),
+        )));
+        let expr_builder = expr_builder_ref.clone();
         let type_manager = type_manager_ref.clone();
         let trace_manager_ref = Rc::new(RefCell::new(ImmediateTraceManager::<
             BasicBlockIndex,

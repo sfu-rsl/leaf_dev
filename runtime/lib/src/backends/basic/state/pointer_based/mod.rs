@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::btree_map::Entry, rc::Rc};
+use std::{cell::RefCell, collections::btree_map::Entry, ops::Range, rc::Rc};
 
 use crate::{
     abs::{place::HasMetadata, PointerOffset, TypeId, TypeSize, USIZE_TYPE},
@@ -339,24 +339,20 @@ impl RawPointerVariableState {
             Box<dyn FnMut(&Address, &MemoryObject) + 'a>,
         ),
     ) -> Option<PorterValue> {
-        let range = addr..(addr.wrapping_byte_add(size as usize));
-
         // TODO: What if the address is at the middle of a symbolic value?
 
         let addr = place_val.address();
         let range = addr..(addr.wrapping_byte_add(size as usize));
         let mut sym_values = Vec::new();
-        while let Some((sym_addr, (sym_value, sym_type_id))) = entry(&cursor) {
-            if !range.contains(sym_addr) {
-                break;
-            }
 
-            let offset: PointerOffset = unsafe { sym_addr.byte_offset_from(addr) }
-                .try_into()
-                .unwrap();
-            sym_values.push((offset, *sym_type_id, sym_value.clone()));
-            move_next(&mut cursor);
-        }
+        apply_in_range(
+            range,
+            Box::new(|addr, (sym_value, sym_type_id)| {
+                let offset: PointerOffset =
+                    unsafe { addr.byte_offset_from(addr) }.try_into().unwrap();
+                sym_values.push((offset, *sym_type_id, sym_value.clone()));
+            }),
+        );
 
         if !sym_values.is_empty() {
             Some(PorterValue {
@@ -517,6 +513,16 @@ impl RawPointerVariableState {
                 element.clone(),
                 item_ty.id,
             );
+        }
+    }
+
+    fn set_addr_porter(&mut self, addr: Address, porter: &PorterValue, type_id: TypeId) {
+        if let Ok(value) = porter.try_to_masked_value(self.type_manager.as_ref()) {
+            self.set_addr(addr, 0, value.into(), type_id)
+        } else {
+            for (offset, type_id, sym_value) in porter.sym_values.iter() {
+                self.set_addr(addr, *offset, sym_value.clone_to(), *type_id);
+            }
         }
     }
 }

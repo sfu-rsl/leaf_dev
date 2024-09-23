@@ -1,4 +1,4 @@
-use super::super::alias::ValueRefBinaryExprBuilder;
+use super::super::alias::{TypeManager, ValueRefBinaryExprBuilder};
 use super::{UnaryOp as BasicUnaryOp, *};
 use crate::abs::{
     expr::{
@@ -15,8 +15,8 @@ type Chained<Current, Next, Expr = ValueRef, CurrentExpr = Expr> =
 
 pub(crate) type DefaultExprBuilder = toplevel::TopLevelBuilder;
 
-pub(crate) fn new_expr_builder() -> DefaultExprBuilder {
-    DefaultExprBuilder::default()
+pub(crate) fn new_expr_builder(type_manager: Rc<dyn TypeManager>) -> DefaultExprBuilder {
+    DefaultExprBuilder::new(type_manager)
 }
 
 impl ExprBuilder<ValueRef> for DefaultExprBuilder {
@@ -34,10 +34,18 @@ mod toplevel {
     /// or the ones that are fully based on concrete values.
     /// NOTE: In an ideal case, fully concrete expressions should not be asked to created. So in
     /// the future, this top-level builder will be reduced to the symbolic builder.
-    #[derive(Default)]
     pub(crate) struct TopLevelBuilder {
         sym_builder: SymbolicBuilder,
         conc_builder: ConcreteAbstractorBuilder,
+    }
+
+    impl TopLevelBuilder {
+        pub(crate) fn new(type_manager: Rc<dyn TypeManager>) -> Self {
+            Self {
+                sym_builder: SymbolicBuilder::new(type_manager),
+                conc_builder: ConcreteAbstractorBuilder::default(),
+            }
+        }
     }
 
     impl BinaryExprBuilder for TopLevelBuilder {
@@ -176,7 +184,7 @@ mod symbolic {
         }
     }
 
-    impl BinaryExprBuilder for LazyEvaluatorBuilder {
+    impl BinaryExprBuilder for UnevaluatedResolverBuilder {
         type ExprRefPair<'a> = SymBinaryOperands;
         type Expr<'a> = Result<ValueRef, SymBinaryOperands>;
 
@@ -445,7 +453,9 @@ mod core {
                              * by the compiler. */
                             ProjExpr::SymHost(SymHostProj {
                                 host: operand.into(),
-                                kind: ProjKind::Downcast(DowncastKind::Transmutation(dst_ty_id)),
+                                kind: ProjKind::Downcast(DowncastKind::Transmutation(
+                                    dst_ty_id, None,
+                                )),
                                 // NOTE: We should see if we are going to use host's metadata at all.
                                 metadata: ProjMetadata::unknown(),
                             })

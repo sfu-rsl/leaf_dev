@@ -18,6 +18,16 @@ pub(crate) struct ChainedExprBuilder<Current, Next, Expr, CurrentExpr: Into<Expr
     _phantom: PhantomData<(Expr, CurrentExpr)>,
 }
 
+impl<C, N, E, CE: Into<E>> ChainedExprBuilder<C, N, E, CE> {
+    pub(crate) fn new(current: C, next: N) -> Self {
+        Self {
+            current,
+            next,
+            _phantom: Default::default(),
+        }
+    }
+}
+
 impl<C, N, E, CE> Default for ChainedExprBuilder<C, N, E, CE>
 where
     C: Default,

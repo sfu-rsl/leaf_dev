@@ -369,15 +369,13 @@ impl RawPointerVariableState {
                 // Possible to introduce retrievable values (e.g., arrays) again.
                 self.retrieve_conc_value(retrieved, type_id).into()
             }
-            ConcreteValue::Unevaluated(UnevalValue::Porter(porter)) => {
-                self.retrieve_porter_value(porter).to_value_ref()
-            }
             _ => value.into(),
         })
     }
 
     pub(super) fn retrieve_porter_value(&self, porter: &PorterValue) -> PorterValue {
         PorterValue {
+            as_concrete: porter.as_concrete.clone(),
             sym_values: porter
                 .sym_values
                 .iter()

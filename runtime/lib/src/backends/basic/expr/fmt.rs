@@ -266,7 +266,13 @@ impl Display for DowncastKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
             DowncastKind::EnumVariant(variant) => write!(f, "V#{}", variant),
-            DowncastKind::Transmutation(ty_id) => write!(f, "T#{}", ty_id),
+            DowncastKind::Transmutation(ty_id, value_ty) => {
+                write!(f, "T#{}", ty_id)?;
+                if let Some(value_ty) = value_ty {
+                    write!(f, " ({})", value_ty)?;
+                }
+                Ok(())
+            }
         }
     }
 }

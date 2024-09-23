@@ -587,11 +587,12 @@ pub(crate) struct RawConcreteValue(
     pub(crate) LazyTypeInfo,
 );
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, dm::From)]
 pub(crate) enum LazyTypeInfo {
     None,
     Id(TypeId),
     Fetched(&'static TypeInfo),
+    #[from(ignore)]
     Forced(Rc<TypeInfo>),
 }
 
@@ -892,12 +893,6 @@ pub(crate) struct SliceIndex<I> {
 pub(crate) enum DowncastKind {
     EnumVariant(VariantIndex),
     Transmutation(TypeId, Option<ValueType>),
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct PorterValue {
-    pub(crate) as_concrete: RawConcreteValue,
-    pub(crate) sym_values: Vec<(PointerOffset, TypeId, SymValueRef)>,
 }
 
 #[derive(Clone, Debug)]

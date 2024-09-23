@@ -1,5 +1,5 @@
-use common::log_debug;
 use common::tyexp::{FieldInfo, TypeInfo};
+use common::{log_debug, log_warn};
 
 use crate::{
     abs::{IntType, ValueType},
@@ -21,19 +21,11 @@ mod retrieval {
     }
 
     impl RawConcreteValue {
-        /// Tries to retrieve the value from a scalar type.
-        /// Scalar types have no fields and no risk of nested symbolic value.
-        /// Thus, they can be directly retrieved from memory.
-        /// Returns the value if the type information is available.
-        /// # Safety
-        /// The value must be retrieved within the period that the address is still
-        /// pointing to the desired memory location.
-        /// This should be ensured by the caller.
-        pub(crate) unsafe fn try_retrieve_as_scalar(
+        pub(crate) fn type_as_scalar(
             &self,
             type_manager: Option<&dyn TypeManager>,
-        ) -> Result<ConstValue, &LazyTypeInfo> {
-            let value_ty = if let Some(ty) = &self.1 {
+        ) -> Result<ScalarType, &LazyTypeInfo> {
+            if let Some(ty) = &self.1 {
                 Ok(ty.clone().into())
             } else {
                 let ty = if let (LazyTypeInfo::Id(ty_id), Some(type_manager)) =
@@ -49,9 +41,23 @@ mod retrieval {
                 };
                 ty.ok_or(&self.2)
                     .and_then(|ty| ty.try_into().map_err(|_| &self.2))
-            };
+            }
+        }
 
-            Ok(retrieve_scalar(self.0, &value_ty?))
+        /// Tries to retrieve the value from a scalar type.
+        /// Scalar types have no fields and no risk of nested symbolic value.
+        /// Thus, they can be directly retrieved from memory.
+        /// Returns the value if the type information is available.
+        /// # Safety
+        /// The value must be retrieved within the period that the address is still
+        /// pointing to the desired memory location.
+        /// This should be ensured by the caller.
+        pub(crate) unsafe fn try_retrieve_as_scalar(
+            &self,
+            type_manager: Option<&dyn TypeManager>,
+        ) -> Result<ConstValue, &LazyTypeInfo> {
+            self.type_as_scalar(type_manager)
+                .map(|ty| retrieve_scalar(self.0, &ty))
         }
 
         /// Retrieves the value from the raw pointer from a possibly structured type.
@@ -174,6 +180,36 @@ mod retrieval {
                 ValueType::Char => ScalarType::Char,
                 ValueType::Int(ty) => ScalarType::Int(ty),
                 ValueType::Float(ty) => ScalarType::Float(ty),
+            }
+        }
+    }
+
+    impl From<ScalarType> for ValueType {
+        fn from(value: ScalarType) -> Self {
+            match value {
+                ScalarType::Bool => ValueType::Bool,
+                ScalarType::Char => ValueType::Char,
+                ScalarType::Int(ty) => ValueType::Int(ty),
+                ScalarType::Float(ty) => ValueType::Float(ty),
+                ScalarType::Address => {
+                    log_warn!("Converting address type to int type.");
+                    ValueType::Int(IntType {
+                        bit_size: std::mem::size_of::<usize>() as u64 * 8,
+                        is_signed: false,
+                    })
+                }
+            }
+        }
+    }
+
+    impl ScalarType {
+        fn bit_size(&self) -> u64 {
+            match self {
+                ScalarType::Bool => core::mem::size_of::<bool>() as u64 * 8,
+                ScalarType::Char => core::mem::size_of::<char>() as u64 * 8,
+                ScalarType::Int(ty) => ty.bit_size,
+                ScalarType::Float(ty) => ty.e_bits + ty.s_bits,
+                ScalarType::Address => core::mem::size_of::<*const ()>() as u64 * 8,
             }
         }
     }
@@ -503,217 +539,6 @@ mod retrieval {
     }
 }
 
-mod proj {
-    use abs::expr::proj::{
-        macros::{
-            impl_general_proj_through_singulars, impl_singular_proj_through_general,
-            impl_singular_projs_through_general,
-        },
-        ProjectionOn, Projector,
-    };
-
-    use super::*;
-
-    pub(crate) struct RawConcreteValueProjector<'a> {
-        type_manager: &'a dyn TypeManager,
-        retriever: &'a dyn RawPointerRetriever,
-    }
-
-    impl<'a> RawConcreteValueProjector<'a> {
-        pub fn new(
-            type_manager: &'a dyn TypeManager,
-            retriever: &'a dyn RawPointerRetriever,
-        ) -> Self {
-            Self {
-                type_manager,
-                retriever,
-            }
-        }
-    }
-
-    impl<'t> Projector for RawConcreteValueProjector<'t> {
-        type HostRef<'a> = &'a RawConcreteValue;
-        type Metadata<'a> = ProjMetadata;
-        type FieldAccessor = FieldAccessKind;
-        type HIRefPair<'a> = (Self::HostRef<'a>, usize);
-        type DowncastTarget = DowncastKind;
-        type Proj<'a> = ConcreteValue;
-
-        impl_general_proj_through_singulars!();
-
-        fn deref<'a>(
-            &mut self,
-            host: Self::HostRef<'a>,
-            metadata: Self::Metadata<'a>,
-        ) -> Self::Proj<'a> {
-            /* NOTE: This shouldn't get called.
-             * As this projector is currently only used during resolution of symbolic projections,
-             * the ref/pointer value should be copied before this, thus will be retrieved as
-             * a FatPtrValue. */
-            let ty = self.get_type(host, metadata.host_type_id());
-            let pointee_ty = self.type_manager.get_type(ty.pointee_ty.unwrap());
-            if pointee_ty.is_sized() {
-                let host = RawConcreteValue(host.0, Some(USIZE_TYPE.into()), LazyTypeInfo::None);
-                let addr = Into::<ConcreteValue>::into(host.clone())
-                    .expect_addr(self.type_manager, self.retriever);
-                RawConcreteValue(addr, None, LazyTypeInfo::Fetched(pointee_ty)).into()
-            } else if pointee_ty.is_slice() {
-                let len = unsafe {
-                    /* NOTE: Hacky solution to avoid complications in the structures.
-                     * This is a slice pointer that holds the length next to it.
-                     * u8 should be replaceable with any type. It is just used to make a slice type. */
-                    let raw = *(host.0 as *const [u8; core::mem::size_of::<*const [u8]>()]);
-                    let slice_ptr: *const [u8] = core::mem::transmute(raw);
-                    slice_ptr.len() as u64
-                };
-                // Simulate an array.
-                let array_ty = pseudo_array_ty_from_slice(pointee_ty, len, self.type_manager);
-                RawConcreteValue(host.0, None, LazyTypeInfo::Forced(Rc::new(array_ty))).into()
-            } else {
-                unimplemented!("Unexpected deref over non-slice DST pointer.")
-            }
-        }
-
-        fn field<'a>(
-            &mut self,
-            host: Self::HostRef<'a>,
-            field: Self::FieldAccessor,
-            metadata: Self::Metadata<'a>,
-        ) -> Self::Proj<'a> {
-            let ty = self.get_type(host, metadata.host_type_id());
-            match field {
-                FieldAccessKind::Index(index) => {
-                    // TODO: Handle downcast
-                    let field = &ty
-                        .as_single_variant()
-                        .expect("Enums are not supported yet.")
-                        .fields
-                        .expect_struct()
-                        .fields[index as usize];
-                    RawConcreteValue(
-                        host.0.wrapping_byte_offset(field.offset as isize),
-                        None,
-                        LazyTypeInfo::Id(field.ty),
-                    )
-                    .into()
-                }
-                FieldAccessKind::PtrMetadata => {
-                    let pointee_ty = self.type_manager.get_type(ty.pointee_ty.unwrap());
-                    if pointee_ty.is_sized() {
-                        UnevalValue::Some.into()
-                    } else {
-                        // FIXME: There is no guarantee for this structure.
-                        self.field(host, FieldAccessKind::Index(1), metadata)
-                    }
-                }
-            }
-        }
-
-        fn index<'a>(
-            &mut self,
-            (host, index): Self::HIRefPair<'a>,
-            from_end: bool,
-            metadata: Self::Metadata<'a>,
-        ) -> Self::Proj<'a> {
-            let ty = self.get_type(host, metadata.host_type_id());
-            let ty_shape = ty.expect_array();
-            let item_ty = self.type_manager.get_type(ty_shape.item_ty);
-            let addr = host.0;
-            let index = if from_end {
-                assert!(
-                    ty.is_sized(),
-                    "Slice pointer is dereferenced without changing its type."
-                );
-                ty_shape.len as usize - index
-            } else {
-                index
-            };
-            RawConcreteValue(
-                addr.wrapping_byte_offset((item_ty.size * (index as TypeSize)) as isize),
-                None,
-                LazyTypeInfo::Fetched(item_ty),
-            )
-            .into()
-        }
-
-        fn subslice<'a>(
-            &mut self,
-            host: Self::HostRef<'a>,
-            from: u64,
-            to: u64,
-            from_end: bool,
-            metadata: Self::Metadata<'a>,
-        ) -> Self::Proj<'a> {
-            todo!("#128")
-        }
-
-        fn downcast<'a>(
-            &mut self,
-            host: Self::HostRef<'a>,
-            target: Self::DowncastTarget,
-            _metadata: Self::Metadata<'a>,
-        ) -> Self::Proj<'a> {
-            match target {
-                DowncastKind::EnumVariant(_) => todo!(),
-                DowncastKind::Transmutation(dst_type_id, value_ty) => {
-                    RawConcreteValue(host.0, value_ty, LazyTypeInfo::Id(dst_type_id)).into()
-                }
-            }
-
-            result
-        }
-
-        fn bit_rep_to_bool(result: SymValueRef) -> SymValueRef {
-            Expr::Ite {
-                condition: BinaryExpr {
-                    operator: BinaryOp::Eq,
-                    operands: SymBinaryOperands::Orig {
-                        first: result,
-                        second: ConstValue::from(0_u8).to_value_ref(),
-                    },
-                }
-                .to_value_ref(),
-                if_target: ConstValue::from(false).to_value_ref(),
-                else_target: ConstValue::from(true).to_value_ref(),
-            }
-            .to_value_ref()
-        }
-    }
-
-    impl ConcreteValue {
-        pub(crate) fn expect_int(
-            &self,
-            type_manager: &dyn TypeManager,
-            retriever: &dyn RawPointerRetriever,
-        ) -> u128 {
-            match self {
-                ConcreteValue::Const(ConstValue::Int { bit_rep, .. }) => bit_rep.0,
-                ConcreteValue::Unevaluated(UnevalValue::Lazy(raw)) => {
-                    unsafe { raw.retrieve(type_manager, retriever) }
-                        .unwrap()
-                        .expect_int(type_manager, retriever)
-                }
-                _ => panic!("Not an integer: {:?}", self),
-            }
-        }
-
-        pub(crate) fn expect_addr(
-            &self,
-            type_manager: &dyn TypeManager,
-            retriever: &dyn RawPointerRetriever,
-        ) -> RawAddress {
-            match self {
-                ConcreteValue::Const(ConstValue::Addr(addr)) => *addr,
-                ConcreteValue::Unevaluated(UnevalValue::Lazy(raw)) => {
-                    unsafe { raw.retrieve(type_manager, retriever) }
-                        .unwrap()
-                        .expect_addr(type_manager, retriever)
-                }
-                _ => panic!("Not an address: {:?}", self),
-            }
-        }
-    }
-}
 pub(crate) use retrieval::RawPointerRetriever;
 
 mod proj {
@@ -755,6 +580,40 @@ mod proj {
                 RawConcreteValue(addr, None, LazyTypeInfo::Id(pointee_ty.id))
             };
             value
+        }
+    }
+
+    impl ConcreteValue {
+        pub(crate) fn expect_int(
+            &self,
+            type_manager: &dyn TypeManager,
+            retriever: &dyn RawPointerRetriever,
+        ) -> u128 {
+            match self {
+                ConcreteValue::Const(ConstValue::Int { bit_rep, .. }) => bit_rep.0,
+                ConcreteValue::Unevaluated(UnevalValue::Lazy(raw)) => {
+                    unsafe { raw.retrieve(type_manager, retriever) }
+                        .unwrap()
+                        .expect_int(type_manager, retriever)
+                }
+                _ => panic!("Not an integer: {:?}", self),
+            }
+        }
+
+        pub(crate) fn expect_addr(
+            &self,
+            type_manager: &dyn TypeManager,
+            retriever: &dyn RawPointerRetriever,
+        ) -> RawAddress {
+            match self {
+                ConcreteValue::Const(ConstValue::Addr(addr)) => *addr,
+                ConcreteValue::Unevaluated(UnevalValue::Lazy(raw)) => {
+                    unsafe { raw.retrieve(type_manager, retriever) }
+                        .unwrap()
+                        .expect_addr(type_manager, retriever)
+                }
+                _ => panic!("Not an address: {:?}", self),
+            }
         }
     }
 }

@@ -152,7 +152,7 @@ impl<V> Constraint<V> {
     }
 }
 
-#[derive(Clone, Debug, derive_more::From, PartialEq)]
+#[derive(Clone, Copy, Debug, derive_more::From, PartialEq)]
 pub(crate) enum ValueType {
     Bool,
     Char,

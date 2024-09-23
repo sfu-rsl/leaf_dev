@@ -49,6 +49,7 @@ pub(crate) struct SymbolicPlaceConfig {
 }
 
 #[derive(Debug, Default, Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub(crate) enum SymbolicPlaceStrategy {
     /// Builds an expression with multiple possible values.
     #[serde(alias = "proj", alias = "expr")]

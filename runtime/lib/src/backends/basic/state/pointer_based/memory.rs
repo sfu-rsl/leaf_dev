@@ -3,8 +3,8 @@ use std::{
         btree_map::{Cursor, CursorMut, Entry},
         BTreeMap,
     },
-    fmt::{self, Display},
-    ops::Bound,
+    fmt::{self, Debug, Display},
+    ops::{Bound, Range},
 };
 
 use common::types::RawAddress;
@@ -47,6 +47,42 @@ impl Memory {
     #[tracing::instrument(level = "debug", skip(self))]
     pub(crate) fn remove_at(&mut self, addr: &Address) {
         self.0.remove(addr);
+    }
+
+    /// # Remarks
+    /// The `next` node of the given cursor is in the range.
+    #[tracing::instrument(level = "debug", skip(self, f))]
+    pub(crate) fn apply_in_range(
+        &self,
+        range: Range<Address>,
+        mut f: impl FnMut(&Address, &MemoryObject),
+    ) {
+        let mut cursor = self.after_or_at(&range.start);
+        while let Some((addr, obj)) = cursor.peek_next() {
+            if !range.contains(addr) {
+                break;
+            }
+            f(addr, obj);
+            cursor.next();
+        }
+    }
+
+    /// # Remarks
+    /// The `next` node of the given cursor is in the range.
+    #[tracing::instrument(level = "debug", skip(self, f))]
+    pub(crate) fn drain_range_and_apply(
+        &mut self,
+        range: Range<Address>,
+        mut f: impl FnMut(Address, MemoryObject),
+    ) {
+        let mut cursor = self.after_or_at_mut(&range.start);
+        while let Some((addr, _)) = cursor.peek_next() {
+            if !range.contains(addr) {
+                break;
+            }
+            let element = cursor.remove_next().unwrap();
+            f(element.0, element.1);
+        }
     }
 }
 
