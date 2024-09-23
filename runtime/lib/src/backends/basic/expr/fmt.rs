@@ -162,6 +162,7 @@ impl Expr {
             Expr::Len(_) => write!(f, "Len"),
             Expr::Projection(_) => write!(f, "Proj"),
             Expr::Partial(_) => write!(f, "Partial"),
+            Expr::PtrMetadata(..) => write!(f, ""),
         }
     }
 
@@ -198,6 +199,7 @@ impl Expr {
             Expr::Len(of) => write!(f, "{of}"),
             Expr::Projection(proj) => write!(f, "{proj}"),
             Expr::Partial(_porter) => write!(f, "{{.S.}}"),
+            Expr::PtrMetadata(operand) => write!(f, "{operand}.meta"),
         }
     }
 }
@@ -211,8 +213,7 @@ impl Display for ProjExpr {
                 metadata: _,
             }) => {
                 kind.fmt_pre(f)?;
-                write!(f, "({host})")?;
-                kind.fmt_post(f)
+                write!(f, "({host})")
             }
         }
     }
@@ -224,20 +225,6 @@ impl ProjKind {
     fn fmt_pre(&self, f: &mut Formatter<'_>) -> Result {
         match self {
             _ => Result::Ok(()),
-        }
-    }
-
-    fn fmt_post(&self, f: &mut Formatter<'_>) -> Result {
-        match self {
-            ProjKind::Field(index) => write!(f, ".{}", index),
-        }
-    }
-}
-
-impl Display for FieldAccessKind {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        match self {
-            FieldAccessKind::PtrMetadata => write!(f, "meta"),
         }
     }
 }

@@ -228,7 +228,7 @@ pub(crate) mod z3 {
                     self.translate_symbolic(source)
                 }
                 Multi(select) => self.translate_select(select, None),
-                Ref(..) | Len(..) | Projection(..) => {
+                Ref(..) | Len(..) | Projection(..) | PtrMetadata(..) => {
                     unreachable!(
                         "Projection expressions should be resolved before translation. Got: {expr}"
                     )

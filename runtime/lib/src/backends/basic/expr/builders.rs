@@ -401,14 +401,7 @@ mod core {
         }
 
         fn ptr_metadata<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
-            Expr::Projection(
-                ProjExpr::SymHost(SymHostProj {
-                    host: operand.into(),
-                    kind: ProjKind::Field(FieldAccessKind::PtrMetadata),
-                    metadata: ProjMetadata::unknown(),
-                })
-                .into(),
-            )
+            Expr::PtrMetadata(operand.into())
         }
 
         fn address_of<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {

@@ -410,13 +410,7 @@ impl RawPointerVariableState {
              * We rely on the fact that these expressions are stored right after creation.
              * Ideally the creator of these expressions should take care of retrieval or even
              * these expressions should not exist. */
-            Value::Symbolic(SymValue::Expression(
-                Expr::Len(..)
-                | Expr::Projection(ProjExpr::SymHost(SymHostProj {
-                    kind: ProjKind::Field(FieldAccessKind::PtrMetadata),
-                    ..
-                })),
-            )) => {
+            Value::Symbolic(SymValue::Expression(Expr::Len(..) | Expr::PtrMetadata(..))) => {
                 /* NOTE: Don't we need to resolve (the symbolic place) before retrieval?
                  * The only case that holds an unresolved symbolic place is Ref expression,
                  * which cannot appear as the target value.

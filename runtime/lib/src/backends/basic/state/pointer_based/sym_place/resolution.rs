@@ -169,9 +169,11 @@ mod implementation {
                 Expr::Ite { .. } | Expr::Extraction { .. } | Expr::Extension { .. } => todo!(),
                 Expr::Partial(..) => todo!(),
                 Expr::Transmutation { .. } => todo!(),
-                Expr::Unary { .. } | Expr::Ref(_) | Expr::Projection(_) | Expr::Len(_) => {
-                    unexpected()
-                }
+                Expr::Unary { .. }
+                | Expr::Ref(_)
+                | Expr::Projection(_)
+                | Expr::Len(_)
+                | Expr::PtrMetadata(..) => unexpected(),
             }
         }
 

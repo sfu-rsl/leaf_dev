@@ -277,11 +277,7 @@ impl RawPointerVariableState {
                 }
                 Expr::Partial(porter) => self.retrieve_porter_value(porter).to_value_ref(),
                 Expr::Len(place) => self.retrieve_len_value(place),
-                Expr::Projection(ProjExpr::SymHost(SymHostProj {
-                    host,
-                    kind: ProjKind::Field(FieldAccessKind::PtrMetadata),
-                    metadata: _,
-                })) => self.retrieve_ptr_metadata(host.as_ref()),
+                Expr::PtrMetadata(host) => self.retrieve_ptr_metadata(host.as_ref()),
                 _ => value,
             },
             _ => value,

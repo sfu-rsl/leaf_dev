@@ -788,6 +788,9 @@ pub(crate) enum Expr {
     Projection(ProjExpr),
 
     Partial(PorterValue),
+
+    #[from(ignore)]
+    PtrMetadata(SymValueRef),
 }
 
 #[allow(unused)]
@@ -842,14 +845,7 @@ impl ProjMetadata {
 // FIXME: Remove this error suppression after adding support for symbolic projection.
 #[allow(unused)]
 #[derive(Clone, Debug)]
-pub(crate) enum ProjKind {
-    Field(FieldAccessKind),
-}
-
-#[derive(Clone, Debug, dm::From)]
-pub(crate) enum FieldAccessKind {
-    PtrMetadata,
-}
+pub(crate) enum ProjKind {}
 
 #[derive(Clone, Debug)]
 pub(crate) struct SliceIndex<I> {
