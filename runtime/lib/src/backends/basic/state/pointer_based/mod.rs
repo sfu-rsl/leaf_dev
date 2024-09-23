@@ -19,7 +19,6 @@ use common::tyexp::{FieldsShapeInfo, StructShape, TypeInfo, UnionShape};
 use super::super::{
     expr::prelude::*,
     place::{LocalWithMetadata, PlaceMetadata, PlaceWithMetadata},
-    state::IndexResolver,
     ValueRef,
 };
 
@@ -187,10 +186,7 @@ impl RawPointerVariableState {
     }
 }
 
-impl VariablesState<Place, ValueRef, PlaceValueRef> for RawPointerVariableState
-where
-    Self: IndexResolver<Local>,
-{
+impl VariablesState<Place, ValueRef, PlaceValueRef> for RawPointerVariableState {
     fn id(&self) -> usize {
         // FIXME
         0
@@ -518,22 +514,6 @@ impl RawPointerVariableState {
             for (offset, type_id, sym_value) in porter.sym_values.iter() {
                 self.set_addr(addr, *offset, sym_value.clone_to(), *type_id);
             }
-        }
-    }
-}
-
-impl IndexResolver<Local> for RawPointerVariableState {
-    fn get(&self, local: &Local) -> ValueRef {
-        let addr = local.address();
-
-        // FIXME: As runtime library is compiled independently,
-        // this id is not guaranteed to be the same as the id used in the program.
-        let type_id = common::utils::type_id_of::<usize>();
-        if let Some(sym_val) = self.get(addr, type_id) {
-            sym_val.clone_to()
-        } else {
-            RawConcreteValue(addr, LazyTypeInfo::IdPrimitive(type_id, USIZE_TYPE.into()))
-                .to_value_ref()
         }
     }
 }

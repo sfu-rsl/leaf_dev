@@ -13,7 +13,6 @@ use crate::{
     backends::basic::{
         expr::{place::*, SliceIndex},
         place::PlaceMetadata,
-        state::IndexResolver,
     },
 };
 
@@ -140,13 +139,9 @@ impl RawPointerVariableState {
         proj: &'b Projection,
     ) -> Option<SymPlaceValueRef> {
         let opt_sym_index_val = match proj {
-            Projection::Index(index_local) => {
-                let index_val = IndexResolver::get(self, index_local);
-                index_val
-                    .is_symbolic()
-                    .then(|| SymValueRef::new(index_val))
-                    .map(|index_val| (index_val, index_local))
-            }
+            Projection::Index(index_local) => self
+                .get(index_local.address(), index_local.unwrap_type_id())
+                .map(|index_val| (index_val.clone(), index_local)),
             Projection::ConstantIndex {
                 offset,
                 min_length: _,

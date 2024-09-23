@@ -22,7 +22,3 @@ impl<M, SPV, PV> SymPlaceHandler<M>
         self.as_mut().handle(place_value, place_meta)
     }
 }
-
-trait IndexResolver<L> {
-    fn get(&self, local: &L) -> ValueRef;
-}
