@@ -795,24 +795,7 @@ pub(crate) type MultiValue = Select<SymIndex, MultiValueTree>;
 #[allow(unused)]
 #[derive(Clone, Debug, dm::From)]
 pub(crate) enum ProjExpr<M = ProjMetadata> {
-    SymIndex(ConcreteHostProj<M>),
     SymHost(SymHostProj<M>),
-}
-
-impl<M> ProjExpr<M> {
-    pub fn metadata(&self) -> &M {
-        match self {
-            ProjExpr::SymIndex(proj) => &proj.metadata,
-            ProjExpr::SymHost(proj) => &proj.metadata,
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct ConcreteHostProj<M = ProjMetadata> {
-    pub host: ConcreteValueRef,
-    pub index: SliceIndex<SymValueRef>,
-    pub metadata: M,
 }
 
 #[allow(unused)]
@@ -848,16 +831,12 @@ impl ProjMetadata {
 #[allow(unused)]
 #[derive(Clone, Debug)]
 pub(crate) enum ProjKind {
-    Deref,
     Field(FieldAccessKind),
-    Index(SliceIndex<ValueRef>),
-    Subslice { from: u64, to: u64, from_end: bool },
     Downcast(DowncastKind),
 }
 
 #[derive(Clone, Debug, dm::From)]
 pub(crate) enum FieldAccessKind {
-    Index(FieldIndex),
     PtrMetadata,
 }
 
@@ -890,7 +869,6 @@ pub(crate) struct SliceIndex<I> {
  */
 #[derive(Clone, Copy, Debug, dm::From)]
 pub(crate) enum DowncastKind {
-    EnumVariant(VariantIndex),
     Transmutation(TypeId, Option<ValueType>),
 }
 

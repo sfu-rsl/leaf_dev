@@ -210,11 +210,6 @@ impl Expr {
 impl Display for ProjExpr {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
-            ProjExpr::SymIndex(ConcreteHostProj {
-                host,
-                index: SliceIndex { index, from_end },
-                metadata: _,
-            }) => write!(f, "({host})[{index}{}]", end_symbol(from_end)),
             ProjExpr::SymHost(SymHostProj {
                 host,
                 kind,
@@ -233,21 +228,13 @@ impl ProjKind {
 
     fn fmt_pre(&self, f: &mut Formatter<'_>) -> Result {
         match self {
-            ProjKind::Deref => write!(f, "*"),
             _ => Result::Ok(()),
         }
     }
 
     fn fmt_post(&self, f: &mut Formatter<'_>) -> Result {
         match self {
-            ProjKind::Deref => Ok(()),
             ProjKind::Field(index) => write!(f, ".{}", index),
-            ProjKind::Index(SliceIndex { index, from_end }) => {
-                write!(f, "[{index}{}]", end_symbol(from_end))
-            }
-            ProjKind::Subslice { from, to, from_end } => {
-                write!(f, "[{from}..{to}{}]", end_symbol(from_end))
-            }
             ProjKind::Downcast(kind) => write!(f, " as {}", kind),
         }
     }
@@ -256,7 +243,6 @@ impl ProjKind {
 impl Display for FieldAccessKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
-            FieldAccessKind::Index(index) => write!(f, "{}", index),
             FieldAccessKind::PtrMetadata => write!(f, "meta"),
         }
     }
@@ -265,7 +251,6 @@ impl Display for FieldAccessKind {
 impl Display for DowncastKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
-            DowncastKind::EnumVariant(variant) => write!(f, "V#{}", variant),
             DowncastKind::Transmutation(ty_id, value_ty) => {
                 write!(f, "T#{}", ty_id)?;
                 if let Some(value_ty) = value_ty {
