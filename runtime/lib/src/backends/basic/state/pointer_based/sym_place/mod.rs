@@ -94,7 +94,7 @@ impl RawPointerVariableState {
                             *deter = DeterministicPlaceValue::new(meta.clone());
                         }
                         PlaceValue::Symbolic(sym) => {
-                            sym.proj = Some(to_deterministic_proj(
+                            sym.proj = Some(Self::to_deterministic_proj(
                                 sym.proj.as_ref(),
                                 proj,
                                 host_meta,
@@ -200,8 +200,26 @@ impl RawPointerVariableState {
 
         None
     }
+
+    fn to_deterministic_proj<'a>(
+        current: Option<&DeterministicProjection>,
+        proj: &'a Projection,
+        host_meta: &PlaceMetadata,
+        meta: &PlaceMetadata,
+    ) -> DeterministicProjection {
+        debug_assert!(!matches!(proj, Projection::Deref));
+
+        let offset = unsafe { meta.address().byte_offset_from(host_meta.address()) };
+        let offset = current.map_or(0, |p| p.offset) + PointerOffset::try_from(offset).unwrap();
+
+        DeterministicProjection {
+            offset,
+            ty_id: meta.unwrap_type_id(),
+        }
+    }
 }
 
+// Getting Symbolic Place
 impl RawPointerVariableState {
     pub(super) fn resolve_and_retrieve_symbolic_place(
         &self,
@@ -213,10 +231,7 @@ impl RawPointerVariableState {
         self.retrieve_multi_value(&mut copied, type_id);
         Expr::Multi(copied).to_value_ref()
     }
-}
 
-// Getting Symbolic Place
-impl RawPointerVariableState {
     fn resolve_symbolic_place(&self, place_val: &SymbolicPlaceValue) -> PlaceSelect {
         let resolver = DefaultSymPlaceResolver::new(self.type_manager.as_ref(), self);
         resolver.resolve(place_val)
@@ -232,6 +247,7 @@ impl RawPointerVariableState {
         )
     }
 
+    #[inline]
     fn get_single_sym_place_result(&self, single: &SinglePlaceResult) -> ValueRef {
         self.copy_deterministic_place(single.0.as_ref())
     }
@@ -441,21 +457,4 @@ impl RawPointerVariableState {
 #[inline]
 fn has_deref<'p>(mut projs: impl Iterator<Item = &'p Projection>) -> bool {
     projs.any(|p| matches!(p, Projection::Deref))
-}
-
-fn to_deterministic_proj<'a>(
-    current: Option<&DeterministicProjection>,
-    proj: &'a Projection,
-    host_meta: &PlaceMetadata,
-    meta: &PlaceMetadata,
-) -> DeterministicProjection {
-    debug_assert!(!matches!(proj, Projection::Deref));
-
-    let offset = unsafe { meta.address().byte_offset_from(host_meta.address()) };
-    let offset = current.map_or(0, |p| p.offset) + PointerOffset::try_from(offset).unwrap();
-
-    DeterministicProjection {
-        offset,
-        ty_id: meta.unwrap_type_id(),
-    }
 }

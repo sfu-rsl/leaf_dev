@@ -222,7 +222,10 @@ where
         let place_val = self.get_place(place, self.sym_write_handler.borrow_mut());
         match place_val.as_ref() {
             PlaceValue::Deterministic(ref place) => Some(self.take_deterministic_place(place)),
-            PlaceValue::Symbolic(..) => todo!(),
+            PlaceValue::Symbolic(ref sym_place) => Some(
+                self.take_symbolic_place(sym_place, place.metadata().unwrap_type_id())
+                    .into(),
+            ),
         }
     }
 
@@ -240,7 +243,6 @@ where
 // Deterministic Place
 impl RawPointerVariableState {
     fn copy_deterministic_place(&self, place_val: &DeterministicPlaceValue) -> ValueRef {
-        // let addr = get_address(place_val, proj);
         let addr = place_val.address();
 
         // If the place is pointing to a symbolic value.
@@ -260,7 +262,6 @@ impl RawPointerVariableState {
     }
 
     fn take_deterministic_place(&mut self, place_val: &DeterministicPlaceValue) -> ValueRef {
-        // let addr = get_address(place_val, proj);
         let addr = place_val.address();
 
         // If the place is pointing to a symbolic value.
@@ -367,8 +368,15 @@ impl RawPointerVariableState {
 
 // Symbolic Place
 impl RawPointerVariableState {
+    #[inline]
     fn copy_symbolic_place(&self, place_val: &SymbolicPlaceValue, type_id: TypeId) -> SymValueRef {
         self.resolve_and_retrieve_symbolic_place(place_val, type_id)
+    }
+
+    #[inline]
+    fn take_symbolic_place(&self, place_val: &SymbolicPlaceValue, type_id: TypeId) -> SymValueRef {
+        // Currently, no different behavior from copying unless needed.
+        self.copy_symbolic_place(place_val, type_id)
     }
 }
 
@@ -406,17 +414,7 @@ impl RawPointerVariableState {
             /* NOTE: This is a way of keeping symbolic place handling internal to this module.
              * We rely on the fact that these expressions are stored right after creation.
              * Ideally the creator of these expressions should take care of retrieval or even
-             * these expressions should not exist.
-             */
-            /* NOTE: Don't we need to resolve (the symbolic place) before retrieval?
-             * The only case that holds an unresolved symbolic place is Ref expression,
-             * which cannot appear as the target value.
-             * For Len, it is a deref over a slice pointer/ref, which cannot be
-             * a symbolic reference (o.w., it would be possible to have a standalone value
-             * from a slice type which is unsized. Also, ref over deref gets optimized.).
-             * For PtrMetadata, the reference is to an unsized type (o.w., it gets optimized),
-             * and the same as above holds.
-             */
+             * these expressions should not exist. */
             Value::Symbolic(SymValue::Expression(
                 Expr::Len(..)
                 | Expr::Projection(ProjExpr::SymHost(SymHostProj {
@@ -424,6 +422,14 @@ impl RawPointerVariableState {
                     ..
                 })),
             )) => {
+                /* NOTE: Don't we need to resolve (the symbolic place) before retrieval?
+                 * The only case that holds an unresolved symbolic place is Ref expression,
+                 * which cannot appear as the target value.
+                 * For Len, it is a deref over a slice pointer/ref, which cannot be
+                 * a symbolic reference (o.w., it would be possible to have a standalone value
+                 * from a slice type which is unsized. Also, ref over deref gets optimized.).
+                 * For PtrMetadata, the reference is to an unsized type (o.w., it gets optimized),
+                 * and the same as above holds. */
                 self.set_addr(
                     addr,
                     offset,
