@@ -156,6 +156,7 @@ impl Expr {
             Expr::Extension { .. } => write!(f, "Extend"),
             Expr::Extraction { .. } => write!(f, "Extract"),
             Expr::Ite { .. } => write!(f, "Ite"),
+            Expr::Transmutation { .. } => write!(f, "Trans"),
             Expr::Multi(_) => write!(f, "Multi"),
             Expr::Ref(_) => write!(f, "&"),
             Expr::Len(_) => write!(f, "Len"),
@@ -191,6 +192,7 @@ impl Expr {
                 if_target,
                 else_target,
             } => write!(f, "{condition} ? {if_target} : {else_target}"),
+            Expr::Transmutation { source, dst_ty } => write!(f, "{source} as {dst_ty}"),
             Expr::Multi(select) => write!(f, "{select}"),
             Expr::Ref(operand) => write!(f, "{operand}"),
             Expr::Len(of) => write!(f, "{of}"),
@@ -228,7 +230,6 @@ impl ProjKind {
     fn fmt_post(&self, f: &mut Formatter<'_>) -> Result {
         match self {
             ProjKind::Field(index) => write!(f, ".{}", index),
-            ProjKind::Downcast(kind) => write!(f, " as {}", kind),
         }
     }
 }
@@ -237,20 +238,6 @@ impl Display for FieldAccessKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
             FieldAccessKind::PtrMetadata => write!(f, "meta"),
-        }
-    }
-}
-
-impl Display for DowncastKind {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        match self {
-            DowncastKind::Transmutation(ty_id, value_ty) => {
-                write!(f, "T#{}", ty_id)?;
-                if let Some(value_ty) = value_ty {
-                    write!(f, " ({})", value_ty)?;
-                }
-                Ok(())
-            }
         }
     }
 }

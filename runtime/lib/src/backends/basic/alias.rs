@@ -1,9 +1,7 @@
-use super::expr::{
-    DowncastKind, FieldAccessKind, ProjExpr, ProjMetadata, SymIndexPair, SymValueRef, ValueRef,
-};
+use super::expr::ValueRef;
 use crate::abs::{
     self,
-    expr::{proj::Projector, BinaryExprBuilder, ExprBuilder},
+    expr::{BinaryExprBuilder, ExprBuilder},
 };
 use common::tyexp::TypeInfo;
 

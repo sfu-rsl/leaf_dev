@@ -223,6 +223,10 @@ pub(crate) mod z3 {
                     let else_target = self.translate_value(else_target);
                     self.translate_ite_expr(condition, if_target, else_target)
                 }
+                Transmutation { source, .. } => {
+                    // Transmutation is transparent at this level.
+                    self.translate_symbolic(source)
+                }
                 Multi(select) => self.translate_select(select, None),
                 Ref(..) | Len(..) | Projection(..) => {
                     unreachable!(

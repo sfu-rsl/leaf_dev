@@ -447,20 +447,10 @@ mod core {
                         SizedDynamize => {
                             todo!("#317: Add support for dyn* cast of symbolic values")
                         }
-                        Transmute(dst_ty_id) => {
-                            /* NOTE: Should we check for primitive types?
-                             * Probably not. Numeric types are converted to their actual cast type
-                             * by the compiler. */
-                            ProjExpr::SymHost(SymHostProj {
-                                host: operand.into(),
-                                kind: ProjKind::Downcast(DowncastKind::Transmutation(
-                                    dst_ty_id, None,
-                                )),
-                                // NOTE: We should see if we are going to use host's metadata at all.
-                                metadata: ProjMetadata::unknown(),
-                            })
-                            .into()
-                        }
+                        Transmute(dst_ty_id) => Expr::Transmutation {
+                            source: operand,
+                            dst_ty: dst_ty_id.into(),
+                        },
                         _ => unreachable!(),
                     }
                 }

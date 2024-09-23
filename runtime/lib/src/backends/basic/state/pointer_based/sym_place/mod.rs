@@ -437,10 +437,7 @@ impl RawPointerVariableState {
                 },
             ))
             .to_value_ref(),
-            SymValue::Expression(Expr::Projection(ProjExpr::SymHost(SymHostProj {
-                kind: ProjKind::Downcast(DowncastKind::Transmutation(..)),
-                ..
-            }))) => {
+            SymValue::Expression(Expr::Transmutation { .. }) => {
                 todo!("#443, #454: PtrMetadata from transmuted value is not supported yet.")
             }
             _ => {
