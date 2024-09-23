@@ -428,8 +428,11 @@ impl RawPointerVariableState {
                 },
             ))
             .to_value_ref(),
-            SymValue::Expression(Expr::Transmutation { .. }) => {
-                todo!("#443, #454: PtrMetadata from transmuted value is not supported yet.")
+            SymValue::Expression(Expr::Transmutation { .. })
+            | SymValue::Expression(Expr::Partial(..)) => {
+                todo!(
+                    "#443, #454: PtrMetadata from transmuted and partial values is not supported yet."
+                )
             }
             _ => {
                 unreachable!(
