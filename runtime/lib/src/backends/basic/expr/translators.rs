@@ -446,13 +446,6 @@ pub(crate) mod z3 {
             }
         }
 
-        fn translate_len_expr(&mut self, of: MultiValueTree) -> AstNode<'ctx> {
-            // let result = apply_len(of, &mut DefaultProjExprReadResolver);
-            // const LEN_VALUES_PREFIX: &str = "len";
-            // self.translate_symbolic_proj_result(&result, Some(LEN_VALUES_PREFIX))
-            unreachable!()
-        }
-
         fn translate_select(
             &mut self,
             select: &MultiValue,
@@ -460,18 +453,7 @@ pub(crate) mod z3 {
         ) -> AstNode<'ctx> {
             let index = self.translate_symbolic(&select.index.index);
             let index = if select.index.from_end {
-                let len = match &select.target {
-                    SelectTarget::Array(possible_values) => {
-                        self.translate_const(&possible_values.len().into())
-                    }
-                    SelectTarget::Nested(box select) => {
-                        self.translate_len_expr(
-                            /* FIXME: May be expensive */
-                            select.clone().into(),
-                        )
-                    }
-                };
-                self.translate_binary_expr(BinaryOp::Sub, len, index)
+                todo!("#485")
             } else {
                 index
             };

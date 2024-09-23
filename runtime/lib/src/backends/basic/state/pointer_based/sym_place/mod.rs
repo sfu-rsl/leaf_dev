@@ -188,7 +188,7 @@ impl RawPointerVariableState {
                 offset
             );
             let len = self.retrieve_len_value(sym_host);
-            let index: SymValueRef = todo!("Add expression builder");
+            let index: SymValueRef = todo!("#485");
             return Some(index);
         }
 
