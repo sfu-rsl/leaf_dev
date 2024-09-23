@@ -25,11 +25,8 @@ use super::super::{
 
 mod memory;
 pub(super) mod sym_place;
-mod utils;
-
 use common::log_debug;
 use memory::*;
-use utils::*;
 
 type Local = LocalWithMetadata;
 type Place = PlaceWithMetadata;
@@ -535,15 +532,14 @@ impl IndexResolver<Local> for RawPointerVariableState {
     fn get(&self, local: &Local) -> ValueRef {
         let addr = local.address();
 
-        if let Some(sym_val) = self.get(
-            addr,
-            // FIXME: As runtime library is compiled independently,
-            // this id is not guaranteed to be the same as the id used in the program.
-            common::utils::type_id_of::<usize>(),
-        ) {
+        // FIXME: As runtime library is compiled independently,
+        // this id is not guaranteed to be the same as the id used in the program.
+        let type_id = common::utils::type_id_of::<usize>();
+        if let Some(sym_val) = self.get(addr, type_id) {
             sym_val.clone_to()
         } else {
-            create_lazy(addr, Some(USIZE_TYPE.into()))
+            RawConcreteValue(addr, LazyTypeInfo::IdPrimitive(type_id, USIZE_TYPE.into()))
+                .to_value_ref()
         }
     }
 }

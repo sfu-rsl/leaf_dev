@@ -107,15 +107,7 @@ impl Display for UnevalValue {
 
 impl Display for RawConcreteValue {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(
-            f,
-            "@({:p}:{})",
-            self.0,
-            self.1
-                .as_ref()
-                .map(|t| format!("{}", t))
-                .unwrap_or_else(|| format!("{}", self.2))
-        )
+        write!(f, "@({:p}:{})", self.0, self.1)
     }
 }
 
@@ -124,6 +116,7 @@ impl Display for LazyTypeInfo {
         match self {
             LazyTypeInfo::None => write!(f, "?"),
             LazyTypeInfo::Id(id) => write!(f, "T#{:x}", id),
+            LazyTypeInfo::IdPrimitive(id, ty) => write!(f, "T#{:x} ({})", id, ty),
             LazyTypeInfo::Fetched(ty) => write!(f, "T#{:x}", ty.id),
             LazyTypeInfo::Forced(ty) => write!(f, "T#ᶠ{:x}", ty.id),
         }

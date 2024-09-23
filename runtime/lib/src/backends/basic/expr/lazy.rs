@@ -25,22 +25,22 @@ mod retrieval {
             &self,
             type_manager: Option<&dyn TypeManager>,
         ) -> Result<ScalarType, &LazyTypeInfo> {
-            if let Some(ty) = &self.1 {
-                Ok(ty.clone().into())
+            if let LazyTypeInfo::IdPrimitive(_, value_ty) = &self.1 {
+                Ok(value_ty.clone().into())
             } else {
                 let ty = if let (LazyTypeInfo::Id(ty_id), Some(type_manager)) =
-                    (&self.2, type_manager)
+                    (&self.1, type_manager)
                 {
                     Some(type_manager.get_type(*ty_id))
-                } else if let LazyTypeInfo::Fetched(ty) = &self.2 {
+                } else if let LazyTypeInfo::Fetched(ty) = &self.1 {
                     Some(*ty)
-                } else if let LazyTypeInfo::Forced(ty) = &self.2 {
+                } else if let LazyTypeInfo::Forced(ty) = &self.1 {
                     Some(ty.as_ref())
                 } else {
                     None
                 };
-                ty.ok_or(&self.2)
-                    .and_then(|ty| ty.try_into().map_err(|_| &self.2))
+                ty.ok_or(&self.1)
+                    .and_then(|ty| ty.try_into().map_err(|_| &self.1))
             }
         }
 
@@ -73,17 +73,16 @@ mod retrieval {
             type_manager: &dyn TypeManager,
             field_retriever: &dyn RawPointerRetriever,
         ) -> Result<ConcreteValueRef, &LazyTypeInfo> {
-            if let Some(ty) = &self.1 {
-                return Ok(ConcreteValueRef::new(
-                    retrieve_scalar(self.0, &ty.clone().into()).to_value_ref(),
-                ));
-            }
-
-            let ty = match &self.2 {
-                LazyTypeInfo::Id(..) | LazyTypeInfo::Fetched(..) | LazyTypeInfo::Forced(..) => {
-                    self.2.get_type(type_manager).unwrap()
+            let ty = match &self.1 {
+                LazyTypeInfo::IdPrimitive(_, ty) => {
+                    return Ok(ConcreteValueRef::new(
+                        retrieve_scalar(self.0, &ty.clone().into()).to_value_ref(),
+                    ));
                 }
-                LazyTypeInfo::None => return Err(&self.2),
+                LazyTypeInfo::Id(..) | LazyTypeInfo::Fetched(..) | LazyTypeInfo::Forced(..) => {
+                    self.1.get_type(type_manager).unwrap()
+                }
+                LazyTypeInfo::None => return Err(&self.1),
             };
 
             Ok(self.retrieve_with_type(ty, type_manager, field_retriever))
@@ -113,7 +112,9 @@ mod retrieval {
         #[inline]
         pub(crate) fn get_type(&self, type_manager: &dyn TypeManager) -> Option<&TypeInfo> {
             match self {
-                LazyTypeInfo::Id(ty_id) => Some(type_manager.get_type(*ty_id)),
+                LazyTypeInfo::Id(ty_id) | LazyTypeInfo::IdPrimitive(ty_id, _) => {
+                    Some(type_manager.get_type(*ty_id))
+                }
                 LazyTypeInfo::Fetched(ty) => Some(*ty),
                 LazyTypeInfo::Forced(ty) => Some(ty.as_ref()),
                 LazyTypeInfo::None => None,
@@ -574,10 +575,10 @@ mod proj {
                     .try_into()
                     .unwrap();
                 let array_ty = pseudo_array_ty_from_slice(pointee_ty, len, type_manager);
-                RawConcreteValue(addr, None, LazyTypeInfo::Forced(Rc::new(array_ty)))
+                RawConcreteValue(addr, LazyTypeInfo::Forced(Rc::new(array_ty)))
             } else {
                 // Do we need to worry about the loss of metadata? Is it going to be processed further?
-                RawConcreteValue(addr, None, LazyTypeInfo::Id(pointee_ty.id))
+                RawConcreteValue(addr, LazyTypeInfo::Id(pointee_ty.id))
             };
             value
         }

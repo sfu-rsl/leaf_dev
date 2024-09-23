@@ -4,6 +4,7 @@ use crate::backends::basic::{
     expr::place::{DerefSymHostPlace, DeterministicPlaceValue, SymIndexedPlace, SymbolicPlaceBase},
     place::PlaceMetadata,
     state::SymPlaceHandler,
+    LazyTypeInfo,
 };
 
 use super::{ConcreteValueRef, PlaceValueRef, RawConcreteValue, SymPlaceValueRef};
@@ -49,7 +50,7 @@ impl SymPlaceHandler<PlaceMetadata> for ConcretizerSymPlaceHandler {
         _place_value: Self::SymPlaceValue,
         place_meta: &PlaceMetadata,
     ) -> Self::PlaceValue {
-        DeterministicPlaceValue::new(place_meta.clone()).to_value_ref()
+        DeterministicPlaceValue::new(place_meta).to_value_ref()
     }
 }
 
@@ -82,8 +83,11 @@ impl SymPlaceHandler<PlaceMetadata> for StamperSymPlaceHandler {
                 (index, index_metadata)
             }
         };
-        let conc_val = RawConcreteValue(meta.address(), meta.ty().cloned(), meta.type_id().into())
-            .to_value_ref();
+        let conc_val = RawConcreteValue(
+            meta.address(),
+            LazyTypeInfo::from((meta.type_id(), meta.ty().copied())),
+        )
+        .to_value_ref();
 
         log_debug!(
             "Stamping symbolic value {} with concrete value {}",

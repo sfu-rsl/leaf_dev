@@ -566,8 +566,12 @@ pub(crate) enum UnevalValue {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct RawConcreteValue(
-    pub(crate) RawAddress,
+pub(crate) struct RawConcreteValue(pub(crate) RawAddress, pub(crate) LazyTypeInfo);
+
+#[derive(Clone, Debug, dm::From)]
+pub(crate) enum LazyTypeInfo {
+    None,
+    Id(TypeId),
     /* NOTE: Can we perform evaluation without storing the type separately?
      * It seems to be possible as we evaluate them only when we
      * are evaluating a operation which includes a symbolic value (otherwise
@@ -581,15 +585,7 @@ pub(crate) struct RawConcreteValue(
      * the type as an option to not pass the type in the future unless it is
      * necessary.
      */
-    pub(crate) Option<ValueType>,
-    /* At the moment, type info is not supposed to be filled by default. */
-    pub(crate) LazyTypeInfo,
-);
-
-#[derive(Clone, Debug, dm::From)]
-pub(crate) enum LazyTypeInfo {
-    None,
-    Id(TypeId),
+    IdPrimitive(TypeId, ValueType),
     Fetched(&'static TypeInfo),
     #[from(ignore)]
     Forced(Rc<TypeInfo>),
@@ -600,6 +596,7 @@ impl LazyTypeInfo {
         match self {
             Self::None => None,
             Self::Id(id) => Some(*id),
+            Self::IdPrimitive(id, _) => Some(*id),
             Self::Fetched(ty) => Some(ty.id),
             Self::Forced(ty) => Some(ty.id),
         }
@@ -611,6 +608,16 @@ impl From<Option<TypeId>> for LazyTypeInfo {
         match ty_id {
             Some(ty_id) => Self::Id(ty_id),
             None => Self::None,
+        }
+    }
+}
+
+impl From<(Option<TypeId>, Option<ValueType>)> for LazyTypeInfo {
+    fn from(pair: (Option<TypeId>, Option<ValueType>)) -> Self {
+        match pair {
+            (Some(ty_id), Some(value_ty)) => Self::IdPrimitive(ty_id, value_ty),
+            (Some(ty_id), None) => Self::Id(ty_id),
+            _ => Self::None,
         }
     }
 }
@@ -1190,9 +1197,10 @@ mod convert {
                     ConstValue::Float { bit_rep: _, ty } => Ok((*ty).into()),
                     _ => Err(value),
                 },
-                ConcreteValue::Unevaluated(UnevalValue::Lazy(value)) if value.1.is_some() => {
-                    Ok(value.1.clone().unwrap())
-                }
+                ConcreteValue::Unevaluated(UnevalValue::Lazy(RawConcreteValue(
+                    _,
+                    LazyTypeInfo::IdPrimitive(_, value_ty),
+                ))) => Ok(*value_ty),
                 _ => Err(value),
             }
         }

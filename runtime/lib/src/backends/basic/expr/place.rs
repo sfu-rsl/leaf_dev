@@ -34,8 +34,11 @@ pub(crate) struct DeterministicPlaceValue {
 }
 
 impl DeterministicPlaceValue {
-    pub(crate) fn new(metadata: PlaceMetadata) -> Self {
-        Self::from_addr_type(metadata.address(), metadata.unwrap_type_id())
+    pub(crate) fn new(metadata: &PlaceMetadata) -> Self {
+        Self {
+            addr: metadata.address(),
+            ty_info: LazyTypeInfo::from(metadata),
+        }
     }
 
     pub(crate) fn from_addr_type(addr: RawAddress, ty: TypeId) -> Self {
@@ -188,9 +191,15 @@ mod convert {
 
     impl_to_value_ref!(DeterministicPlaceValue, SymbolicPlaceValue);
 
+    impl<'a> From<&'a PlaceMetadata> for LazyTypeInfo {
+        fn from(metadata: &'a PlaceMetadata) -> Self {
+            LazyTypeInfo::from((metadata.type_id(), metadata.ty().copied()))
+        }
+    }
+
     impl DeterministicPlaceValue {
         pub(crate) fn to_raw_value(&self) -> RawConcreteValue {
-            RawConcreteValue(self.addr, None, self.ty_info.clone())
+            RawConcreteValue(self.addr, self.ty_info.clone())
         }
     }
 
@@ -198,7 +207,7 @@ mod convert {
         fn from(value: RawConcreteValue) -> Self {
             Self {
                 addr: value.0,
-                ty_info: value.2,
+                ty_info: value.1,
             }
         }
     }

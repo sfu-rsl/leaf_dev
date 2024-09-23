@@ -75,7 +75,7 @@ impl RawPointerVariableState {
 
         let value = opt_sym_deref
             .map(Into::into)
-            .unwrap_or_else(|| DeterministicPlaceValue::new(host_metadata.clone()).to_value_ref());
+            .unwrap_or_else(|| DeterministicPlaceValue::new(host_metadata).to_value_ref());
 
         projs
             .iter()
@@ -91,7 +91,7 @@ impl RawPointerVariableState {
                 let project_further = || {
                     match PlaceValueRef::make_mut(&mut value) {
                         PlaceValue::Deterministic(deter) => {
-                            *deter = DeterministicPlaceValue::new(meta.clone());
+                            *deter = DeterministicPlaceValue::new(meta);
                         }
                         PlaceValue::Symbolic(sym) => {
                             sym.proj = Some(Self::to_deterministic_proj(
@@ -112,8 +112,7 @@ impl RawPointerVariableState {
     }
 
     fn opt_sym_deref(&self, host_metadata: &PlaceMetadata) -> Option<SymPlaceValueRef> {
-        let host =
-            self.copy_deterministic_place(&DeterministicPlaceValue::new(host_metadata.clone()));
+        let host = self.copy_deterministic_place(&DeterministicPlaceValue::new(host_metadata));
 
         match host.as_ref() {
             Value::Concrete(_) => None,
@@ -375,11 +374,11 @@ impl RawPointerVariableState {
                 .to_value_ref()
             }
             ConcreteValue::Unevaluated(UnevalValue::Lazy(raw)) => {
-                let raw = if let Some(id) = raw.2.id() {
+                let raw = if let Some(id) = raw.1.id() {
                     debug_assert_eq!(id, type_id, "The type id is not consistent.");
                     raw.clone()
                 } else {
-                    RawConcreteValue(raw.0, raw.1.clone(), LazyTypeInfo::Id(type_id))
+                    RawConcreteValue(raw.0, LazyTypeInfo::Id(type_id))
                 };
                 let retrieved = unsafe { raw.retrieve(self.type_manager.as_ref(), self) }.unwrap();
                 // Possible to introduce retrievable values (e.g., arrays) again.
