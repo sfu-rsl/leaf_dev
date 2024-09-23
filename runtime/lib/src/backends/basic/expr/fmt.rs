@@ -160,7 +160,6 @@ impl Expr {
             Expr::Multi(_) => write!(f, "Multi"),
             Expr::Ref(_) => write!(f, "&"),
             Expr::Len(_) => write!(f, "Len"),
-            Expr::Projection(_) => write!(f, "Proj"),
             Expr::Partial(_) => write!(f, "Partial"),
             Expr::PtrMetadata(..) => write!(f, ""),
         }
@@ -197,34 +196,8 @@ impl Expr {
             Expr::Multi(select) => write!(f, "{select}"),
             Expr::Ref(operand) => write!(f, "{operand}"),
             Expr::Len(of) => write!(f, "{of}"),
-            Expr::Projection(proj) => write!(f, "{proj}"),
             Expr::Partial(_porter) => write!(f, "{{.S.}}"),
             Expr::PtrMetadata(operand) => write!(f, "{operand}.meta"),
-        }
-    }
-}
-
-impl Display for ProjExpr {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        match self {
-            ProjExpr::SymHost(SymHostProj {
-                host,
-                kind,
-                metadata: _,
-            }) => {
-                kind.fmt_pre(f)?;
-                write!(f, "({host})")
-            }
-        }
-    }
-}
-
-impl ProjKind {
-    // FIXME: Almost duplicate with the logger backend's display for Projection
-
-    fn fmt_pre(&self, f: &mut Formatter<'_>) -> Result {
-        match self {
-            _ => Result::Ok(()),
         }
     }
 }

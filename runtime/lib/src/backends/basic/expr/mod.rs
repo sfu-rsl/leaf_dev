@@ -23,7 +23,6 @@ pub(crate) use crate::abs::{
 pub(crate) type ValueRef = Rc<Value>;
 pub(crate) type ConcreteValueRef = guards::ConcreteValueGuard<ValueRef>;
 pub(crate) type SymValueRef = guards::SymValueGuard<ValueRef>;
-pub(crate) type ProjExprRef = guards::ProjExprGuard<ValueRef>;
 
 pub(crate) type SymVarId = u32;
 
@@ -31,7 +30,7 @@ pub(crate) type SymVarId = u32;
 pub(crate) enum Value {
     #[from(types(ConstValue, UnevalValue))]
     Concrete(ConcreteValue),
-    #[from(types(Expr, ProjExpr))]
+    #[from(types(Expr))]
     Symbolic(SymValue),
 }
 
@@ -47,11 +46,6 @@ impl Value {
             Value::Symbolic(sym) => Some(sym),
             _ => None,
         }
-    }
-
-    #[inline]
-    pub(crate) fn as_proj(&self) -> Option<&ProjExpr> {
-        self.as_sym().and_then(SymValue::as_proj)
     }
 }
 
@@ -666,16 +660,6 @@ pub(crate) enum SymValue {
     Expression(Expr),
 }
 
-impl SymValue {
-    #[inline]
-    pub(crate) fn as_proj(&self) -> Option<&ProjExpr> {
-        match self {
-            SymValue::Expression(Expr::Projection(host)) => Some(host),
-            _ => None,
-        }
-    }
-}
-
 #[derive(Clone, Debug)]
 pub(crate) struct SymbolicVar {
     pub id: SymVarId,
@@ -785,8 +769,6 @@ pub(crate) enum Expr {
     #[from(ignore)]
     Len(SymPlaceValueRef),
 
-    Projection(ProjExpr),
-
     Partial(PorterValue),
 
     #[from(ignore)]
@@ -805,47 +787,6 @@ pub(crate) type MultiValueLeaf = ValueRef;
 pub(crate) type MultiValueTree = SymbolicReadTree<SymIndex, MultiValueLeaf>;
 pub(crate) type MultiValueArray = Vec<MultiValueTree>;
 pub(crate) type MultiValue = Select<SymIndex, MultiValueTree>;
-
-// FIXME: Remove this error suppression after adding support for symbolic projection.
-#[allow(unused)]
-#[derive(Clone, Debug, dm::From)]
-pub(crate) enum ProjExpr<M = ProjMetadata> {
-    SymHost(SymHostProj<M>),
-}
-
-#[allow(unused)]
-#[derive(Clone, Debug)]
-pub(crate) struct SymHostProj<M = ProjMetadata> {
-    pub host: SymValueRef,
-    pub kind: ProjKind,
-    pub metadata: M,
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct ProjMetadata {
-    host_type_id: Option<TypeId>,
-}
-
-impl ProjMetadata {
-    pub fn new(host_type_id: TypeId) -> Self {
-        Self {
-            host_type_id: Some(host_type_id),
-        }
-    }
-
-    pub fn unknown() -> Self {
-        Self { host_type_id: None }
-    }
-
-    pub fn host_type_id(&self) -> TypeId {
-        self.host_type_id.expect("Host type id is not set.")
-    }
-}
-
-// FIXME: Remove this error suppression after adding support for symbolic projection.
-#[allow(unused)]
-#[derive(Clone, Debug)]
-pub(crate) enum ProjKind {}
 
 #[derive(Clone, Debug)]
 pub(crate) struct SliceIndex<I> {
@@ -975,12 +916,6 @@ mod guards {
         value
     );
     define_value_guard!(SymValue, SymValueGuard, Value::Symbolic(value), value);
-    define_value_guard!(
-        ProjExpr,
-        ProjExprGuard,
-        Value::Symbolic(SymValue::Expression(Expr::Projection(proj))),
-        proj
-    );
 }
 use guards::define_guard;
 
@@ -1105,7 +1040,7 @@ mod convert {
         };
     }
 
-    impl_sym_to_value_ref!(Expr, BinaryExpr, ProjExpr, PorterValue,);
+    impl_sym_to_value_ref!(Expr, BinaryExpr, PorterValue,);
 
     impl<'a> TryFrom<&'a Value> for ValueType {
         type Error = &'a Value;
