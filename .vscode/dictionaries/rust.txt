@@ -4,6 +4,7 @@ chrono
 clippy
 Deque
 dylib
+isize
 peekable
 repr
 rposition
