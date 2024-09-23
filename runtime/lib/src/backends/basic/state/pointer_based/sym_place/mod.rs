@@ -13,7 +13,7 @@ use crate::{
     backends::basic::{
         expr::{place::*, SliceIndex},
         place::PlaceMetadata,
-        state::proj::IndexResolver,
+        state::IndexResolver,
     },
 };
 

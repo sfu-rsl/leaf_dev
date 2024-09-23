@@ -16,13 +16,11 @@ use crate::{
 };
 use common::tyexp::{FieldsShapeInfo, StructShape, TypeInfo, UnionShape};
 
-use super::{
-    super::{
-        expr::prelude::*,
-        place::{LocalWithMetadata, PlaceMetadata, PlaceWithMetadata},
-        ValueRef,
-    },
-    proj::IndexResolver,
+use super::super::{
+    expr::prelude::*,
+    place::{LocalWithMetadata, PlaceMetadata, PlaceWithMetadata},
+    state::IndexResolver,
+    ValueRef,
 };
 
 mod memory;

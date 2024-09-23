@@ -1,12 +1,6 @@
-use super::{
-    alias::SymValueRefProjector as SymbolicProjector, place::PlaceMetadata, Projection, ValueRef,
-};
+use super::{place::PlaceMetadata, ValueRef};
 
 mod pointer_based;
-pub(super) mod proj;
-
-/// A projection that its possible index is resolved.
-type ResolvedProjection = Projection<ValueRef>;
 
 pub(super) use pointer_based::sym_place::strategies::make_sym_place_handler;
 pub(super) use pointer_based::RawPointerVariableState;
@@ -27,4 +21,8 @@ impl<M, SPV, PV> SymPlaceHandler<M>
     fn handle(&mut self, place_value: Self::SymPlaceValue, place_meta: &M) -> Self::PlaceValue {
         self.as_mut().handle(place_value, place_meta)
     }
+}
+
+trait IndexResolver<L> {
+    fn get(&self, local: &L) -> ValueRef;
 }
