@@ -618,7 +618,6 @@ impl From<(Option<TypeId>, Option<ValueType>)> for LazyTypeInfo {
 
 impl<'a> TryFrom<&'a TypeInfo> for ValueType {
     type Error = &'a TypeInfo;
-    type Error = &'a TypeInfo;
 
     fn try_from(value: &'a TypeInfo) -> Result<Self, Self::Error> {
         use abs::USIZE_TYPE;
@@ -645,7 +644,6 @@ impl<'a> TryFrom<&'a TypeInfo> for ValueType {
                         .into())
                     } else {
                         Err(value)
-                        Err(value)
                     }
                 }),
             _ if name.starts_with("f") => unimplemented!(),
@@ -659,7 +657,6 @@ impl<'a> TryFrom<&'a TypeInfo> for ValueType {
 #[derive(Clone, Debug, dm::From)]
 pub(crate) enum SymValue {
     Variable(SymbolicVar),
-    #[from(forward)]
     #[from(forward)]
     Expression(Expr),
 }
@@ -853,15 +850,7 @@ mod guards {
                 }
             }
 
-            impl<V> AsMut<V> for $name<V> {
-                #[inline]
-                fn as_mut(&mut self) -> &mut V {
-                    &mut self.0
-                }
-            }
-
             impl From<$name<$ref_type>> for $ref_type {
-                #[inline]
                 #[inline]
                 fn from(value: $name<$ref_type>) -> Self {
                     value.0
@@ -869,7 +858,6 @@ mod guards {
             }
 
             impl<V: Clone> $name<V> {
-                #[inline]
                 #[inline]
                 pub fn clone_to(&self) -> V {
                     self.0.clone()
@@ -993,8 +981,6 @@ mod convert {
 
     macro_rules! impl_from_int_type {
         ($signed:expr, $($ty:ty),*) => {
-    macro_rules! impl_from_int_type {
-        ($signed:expr, $($ty:ty),*) => {
             $(
                 impl From<$ty> for ConstValue {
                     fn from(value: $ty) -> Self {
@@ -1002,7 +988,6 @@ mod convert {
                             bit_rep: Wrapping(value as u128),
                             ty: IntType {
                                 bit_size: std::mem::size_of::<$ty>() as u64 * 8,
-                                is_signed: $signed,
                                 is_signed: $signed,
                             },
                         }
@@ -1014,11 +999,8 @@ mod convert {
 
     impl_from_int_type!(false, u8, u16, u32, u64, u128, usize);
     impl_from_int_type!(true, i8, i16, i32, i64, i128, isize);
-    impl_from_int_type!(false, u8, u16, u32, u64, u128, usize);
-    impl_from_int_type!(true, i8, i16, i32, i64, i128, isize);
 
     macro_rules! impl_conc_to_value_ref {
-        ($($ty: ty),* $(,)?) => {
         ($($ty: ty),* $(,)?) => {
             $(
                 impl $ty {
@@ -1047,17 +1029,6 @@ mod convert {
         }
     }
 
-    macro_rules! impl_sym_to_value_ref {
-        ($($ty: ty),* $(,)?) => {
-            $(
-                impl $ty {
-                    #[inline]
-                    pub(crate) fn to_value_ref(self) -> SymValueRef {
-                        Into::<SymValue>::into(self).to_value_ref()
-                    }
-                }
-            )*
-        };
     macro_rules! impl_sym_to_value_ref {
         ($($ty: ty),* $(,)?) => {
             $(
@@ -1119,10 +1090,10 @@ mod convert {
                         if_ty
                     })
                     .ok_or(value),
-                    Expr::Projection(ProjExpr::SymHost(SymHostProj {
-                        kind: ProjKind::Downcast(DowncastKind::Transmutation(_, Some(value_ty))),
+                    Expr::Transmutation {
+                        dst_ty: LazyTypeInfo::IdPrimitive(_, value_ty),
                         ..
-                    })) => Ok(value_ty.clone()),
+                    } => Ok(*value_ty),
                     _ => Err(value),
                 },
             }

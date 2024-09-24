@@ -72,7 +72,6 @@ impl BasicBackend {
             type_manager_ref.clone(),
         )));
         let expr_builder = expr_builder_ref.clone();
-        let sym_projector = Rc::new(RefCell::new(expr::proj::new_sym_projector()));
         let sym_values_ref = Rc::new(RefCell::new(
             HashMap::<u32, (SymValueRef, ConcreteValueRef)>::new(),
         ));
@@ -285,23 +284,16 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
         let value = self.get_operand_value(operand);
         let mut cast_value: ValueRef = self.expr_builder().cast(value.into(), target).into();
 
-        // FIXME: Temporary solution as we might change projection expressions fundamentally.
-        if let Some(ProjExpr::SymHost(SymHostProj {
-            host,
-            kind: ProjKind::Downcast(DowncastKind::Transmutation(dst_ty_id, None)),
-            metadata,
-        })) = cast_value.as_ref().as_proj()
+        // FIXME: Temporary solution as we might change expression builders.
+        if let Value::Symbolic(SymValue::Expression(Expr::Transmutation { .. })) =
+            cast_value.as_ref()
         {
-            cast_value = ProjExpr::SymHost(SymHostProj {
-                host: host.clone(),
-                kind: ProjKind::Downcast(DowncastKind::Transmutation(
-                    *dst_ty_id,
-                    self.dest.metadata().ty().cloned(),
-                )),
-                metadata: metadata.clone(),
-            })
-            .to_value_ref()
-            .into();
+            let Value::Symbolic(SymValue::Expression(Expr::Transmutation { dst_ty, .. })) =
+                ValueRef::make_mut(&mut cast_value)
+            else {
+                unreachable!()
+            };
+            *dst_ty = self.dest.metadata().into();
         };
 
         self.set(cast_value)

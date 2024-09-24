@@ -44,16 +44,6 @@ mod toplevel {
             Self {
                 sym_builder: SymbolicBuilder::new(type_manager),
                 conc_builder: ConcreteAbstractorBuilder::default(),
-                type_manager,
-            }
-        }
-    }
-
-    impl TopLevelBuilder {
-        pub(crate) fn new(type_manager: Rc<dyn TypeManager>) -> Self {
-            Self {
-                sym_builder: SymbolicBuilder::new(type_manager),
-                conc_builder: ConcreteAbstractorBuilder::default(),
             }
         }
     }
