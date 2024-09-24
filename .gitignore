@@ -44,3 +44,8 @@ scripts/**/venv
 
 # Profiling results
 *.folded
+
+# Leaf binary files (as a convention, add thes prefixes to the binary files)
+*-leaf
+*-rustc
+*-orig
