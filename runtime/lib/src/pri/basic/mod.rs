@@ -371,8 +371,10 @@ impl ProgramRuntimeInterface for BasicPri {
         })
     }
 
-    fn assign_shallow_init_box(_dest: PlaceRef, _operand: OperandRef, _dst_type_id: Self::TypeId) {
-        todo!("#351: Add support for ShallowInitBox in runtime")
+    fn assign_shallow_init_box(dest: PlaceRef, operand: OperandRef, _boxed_type_id: Self::TypeId) {
+        assign_to(dest, |h| {
+            h.shallow_init_box_from(take_back_operand_ref(operand))
+        })
     }
 
     fn new_branching_info(

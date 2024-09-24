@@ -372,7 +372,7 @@ pub mod macros {
               { fn assign_aggregate_raw_ptr(dest: PlaceRef, data_ptr: OperandRef, metadata: OperandRef, is_mutable: bool) }
 
               #[allow(unused_parens)]
-              { fn assign_shallow_init_box(_dest: PlaceRef, _operand: OperandRef, _dst_type_id: ($type_id_ty)) }
+              { fn assign_shallow_init_box(dest: PlaceRef, operand: OperandRef, boxed_type_id: ($type_id_ty)) }
 
               #[allow(unused_parens)]
               { fn new_branching_info(

@@ -385,6 +385,15 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
         }));
         self.set_value(value)
     }
+
+    fn shallow_init_box_from(self, value: Self::Operand) {
+        /* According to the Rust MIR documentation:
+         * https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/mir/enum.Rvalue.html#variant.ShallowInitBox
+         * > Transmutes a *mut u8 into shallow-initialized Box<T>.
+         * BTW, very improbable to have a symbolic value here. */
+        let dst_ty_id = self.dest.metadata().unwrap_type_id();
+        self.cast_of(value, CastKind::Transmute(dst_ty_id));
+    }
 }
 
 impl<EB: OperationalExprBuilder> BasicAssignmentHandler<'_, EB> {

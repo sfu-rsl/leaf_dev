@@ -192,6 +192,8 @@ pub(crate) trait AssignmentHandler: Sized {
     fn raw_ptr_from(self, data_ptr: Self::Operand, metadata: Self::Operand, is_mutable: bool);
 
     fn variant_index(self, variant_index: VariantIndex);
+
+    fn shallow_init_box_from(self, value: Self::Operand);
 }
 
 // https://en.wikipedia.org/wiki/Branch_(computer_science)
