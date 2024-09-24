@@ -649,7 +649,6 @@ impl<'a> TryFrom<&'a TypeInfo> for ValueType {
             _ if name.starts_with("f") => unimplemented!(),
             "*mut ()" | "*const ()" => Ok(USIZE_TYPE.into()),
             _ => Err(value),
-            _ => Err(value),
         }
     }
 }

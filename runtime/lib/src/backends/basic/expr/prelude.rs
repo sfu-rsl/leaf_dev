@@ -3,5 +3,5 @@ pub(crate) use super::{
     AdtField, AdtKind, AdtValue, ArrayValue, BinaryExpr, BinaryOp, ConcreteValue, ConcreteValueRef,
     ConstValue, Expr, FatPtrValue, LazyTypeInfo, MultiValue, MultiValueLeaf, MultiValueTree,
     PorterValue, RawAddress, RawConcreteValue, SymValue, SymValueRef, SymbolicVar, TypeId, UnaryOp,
-    UnevalValue, Value, ValueRef,
+    UnevalValue, Value, ValueRef, ValueType,
 };
