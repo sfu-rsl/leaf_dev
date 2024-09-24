@@ -220,6 +220,7 @@ impl VariablesState<Place, ValueRef, PlaceValueRef> for RawPointerVariableState 
         }
     }
 
+    #[tracing::instrument(level = "debug", skip(self))]
     fn set_place(&mut self, place: &Place, value: ValueRef) {
         let place_val = self.get_place(place, self.sym_write_handler.borrow_mut());
         match place_val.as_ref() {
@@ -333,15 +334,16 @@ impl RawPointerVariableState {
     ) -> Option<PorterValue> {
         // TODO: What if the address is at the middle of a symbolic value?
 
-        let addr = place_val.address();
-        let range = addr..(addr.wrapping_byte_add(size as usize));
+        let obj_addr = place_val.address();
+        let range = obj_addr..(obj_addr.wrapping_byte_add(size as usize));
         let mut sym_values = Vec::new();
 
         apply_in_range(
             range,
             Box::new(|addr, (sym_value, sym_type_id)| {
-                let offset: PointerOffset =
-                    unsafe { addr.byte_offset_from(addr) }.try_into().unwrap();
+                let offset: PointerOffset = unsafe { addr.byte_offset_from(obj_addr) }
+                    .try_into()
+                    .unwrap();
                 sym_values.push((offset, *sym_type_id, sym_value.clone()));
             }),
         );
@@ -444,14 +446,14 @@ impl RawPointerVariableState {
         }
     }
 
+    #[tracing::instrument(level = "debug", skip(self, adt), fields(value = %adt))]
     fn set_addr_adt(&mut self, addr: Address, adt: &AdtValue, type_id: TypeId) {
-        log_debug!(
-            "Setting ADT at address: {:p} with type: {:?}",
-            addr,
-            type_id
-        );
         let ty = self.get_type(type_id);
         let variant = match adt.kind {
+            /* NOTE: Don't we need to take care of tag value and possible symbolic value for it?
+             * No, because the tag is always concrete at the time of construction.
+             * Even if it it is niche, it will be calculated based on a field value which is
+             * taken care of. */
             AdtKind::Enum { variant } => ty.get_variant(variant).unwrap(),
             _ => ty.expect_single_variant(),
         };
@@ -491,6 +493,7 @@ impl RawPointerVariableState {
         };
     }
 
+    #[tracing::instrument(level = "debug", skip(self, array), fields(value = %array))]
     fn set_addr_array(&mut self, addr: Address, array: &ArrayValue, type_id: TypeId) {
         let item_ty = {
             let item_ty_id = self.get_type(type_id).expect_array().item_ty;
@@ -507,6 +510,7 @@ impl RawPointerVariableState {
         }
     }
 
+    #[tracing::instrument(level = "debug", skip(self, porter), fields(value = %porter))]
     fn set_addr_porter(&mut self, addr: Address, porter: &PorterValue, type_id: TypeId) {
         if let Ok(value) = porter.try_to_masked_value(self.type_manager.as_ref()) {
             self.set_addr(addr, 0, value.into(), type_id)

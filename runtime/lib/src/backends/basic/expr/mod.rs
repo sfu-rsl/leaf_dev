@@ -823,7 +823,6 @@ mod guards {
                 }
 
                 #[inline]
-                #[inline]
                 pub fn $value_name(&self) -> &$guarded_type {
                     match self.0.as_ref() {
                         $pattern => $value_name,

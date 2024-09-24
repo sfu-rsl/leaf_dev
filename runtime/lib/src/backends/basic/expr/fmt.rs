@@ -115,10 +115,10 @@ impl Display for LazyTypeInfo {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
             LazyTypeInfo::None => write!(f, "?"),
-            LazyTypeInfo::Id(id) => write!(f, "T#{:x}", id),
-            LazyTypeInfo::IdPrimitive(id, ty) => write!(f, "T#{:x} ({})", id, ty),
-            LazyTypeInfo::Fetched(ty) => write!(f, "T#{:x}", ty.id),
-            LazyTypeInfo::Forced(ty) => write!(f, "T#ᶠ{:x}", ty.id),
+            LazyTypeInfo::Id(id) => write!(f, "T#{}", id),
+            LazyTypeInfo::IdPrimitive(id, ty) => write!(f, "T#{} ({})", id, ty),
+            LazyTypeInfo::Fetched(ty) => write!(f, "T#{}", ty.id),
+            LazyTypeInfo::Forced(ty) => write!(f, "T#ᶠ{}", ty.id),
         }
     }
 }
@@ -196,7 +196,7 @@ impl Expr {
             Expr::Multi(select) => write!(f, "{select}"),
             Expr::Ref(operand) => write!(f, "{operand}"),
             Expr::Len(of) => write!(f, "{of}"),
-            Expr::Partial(_porter) => write!(f, "{{.S.}}"),
+            Expr::Partial(porter) => write!(f, "{porter}"),
             Expr::PtrMetadata(operand) => write!(f, "{operand}.meta"),
         }
     }
@@ -217,6 +217,12 @@ impl Display for super::UnaryOp {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         let op: abs::UnaryOp = (*self).into();
         op.fmt(f)
+    }
+}
+
+impl Display for PorterValue {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        write!(f, "{{S({})}}", self.sym_values.len())
     }
 }
 
