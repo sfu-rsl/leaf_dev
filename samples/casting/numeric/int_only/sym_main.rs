@@ -9,6 +9,11 @@ fn main() {
         foo(b);
     }
 
+    let b = 0.mark_symbolic();
+    if b == i128::MIN {
+        foo(b);
+    }
+
     let c = get_uint().mark_symbolic();
     let d = c as i64;
     if c < 24 {

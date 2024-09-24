@@ -17,7 +17,8 @@ config = { version = "0.14.0", features = ["toml", "json"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing = { version = "0.1", features = ["log"] }
 paste = "1.0"
-z3 = { version = "0.12.1" }
+z3 = { git = "https://github.com/prove-rs/z3.rs", rev = "b47f3af5ce4b7b3b47024533892735c3ffc0267b" }
+z3-sys = { git = "https://github.com/prove-rs/z3.rs", rev = "b47f3af5ce4b7b3b47024533892735c3ffc0267b" }
 lazy_static = "1.4.0"
 delegate = "0.12.0"
 derive_more = "0.99.11"

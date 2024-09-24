@@ -16,7 +16,7 @@ pub(crate) mod z3 {
     use crate::{
         abs::{expr::sym_place::SelectTarget, BinaryOp, FieldIndex, IntType, ValueType},
         backends::basic::expr::{prelude::*, SymBinaryOperands, SymVarId},
-        solvers::z3::{ArrayNode, ArraySort, BVNode, BVSort},
+        solvers::z3::{ArrayNode, ArraySort, BVExt, BVNode, BVSort},
     };
 
     use common::log_debug;
@@ -112,32 +112,20 @@ pub(crate) mod z3 {
                     ty:
                         IntType {
                             bit_size,
-                            is_signed: false,
+                            is_signed,
                         },
                 } => {
-                    // TODO: Add support for 128 bit integers.
-                    let ast = ast::BV::from_u64(
-                        self.context,
-                        bit_rep.0 as u64,
-                        (*bit_size).try_into().expect("Size is too large."),
-                    );
-                    BVNode::new(ast, false).into()
-                }
-                ConstValue::Int {
-                    bit_rep,
-                    ty:
-                        IntType {
-                            bit_size,
-                            is_signed: true,
-                        },
-                } => {
-                    // TODO: Add support for 128 bit integers.
-                    let ast = ast::BV::from_i64(
-                        self.context,
-                        bit_rep.0 as i64,
-                        (*bit_size).try_into().expect("Size is too large."),
-                    );
-                    BVNode::new(ast, true).into()
+                    let size = (*bit_size).try_into().unwrap();
+                    let ast = if *bit_size <= 64 {
+                        if !*is_signed {
+                            ast::BV::from_u64(self.context, bit_rep.0 as u64, size)
+                        } else {
+                            ast::BV::from_i64(self.context, bit_rep.0 as i64, size)
+                        }
+                    } else {
+                        ast::BV::from_str(&self.context, size, &bit_rep.to_string()).unwrap()
+                    };
+                    BVNode::new(ast, *is_signed).into()
                 }
                 ConstValue::Float { .. } => todo!(),
                 ConstValue::Func(_) => unreachable!(concat!(
@@ -674,17 +662,8 @@ pub(crate) mod z3 {
             match ast {
                 AstNode::Bool(ast) => super::super::ConstValue::Bool(ast.as_bool().unwrap()),
                 AstNode::BitVector(BVNode(ast, BVSort { is_signed })) => {
-                    // TODO: Add support for up to 128-bit integers.
-                    let value = if is_signed {
-                        let bytes = ast.as_i64().unwrap().to_be_bytes();
-                        let mut extended = [0_u8; 16];
-                        extended[8..].copy_from_slice(&bytes);
-                        u128::from_be_bytes(extended)
-                    } else {
-                        ast.as_u64().unwrap() as u128
-                    };
                     super::super::ConstValue::new_int(
-                        value,
+                        ast.as_u128().unwrap(),
                         IntType {
                             bit_size: ast.get_size() as u64,
                             is_signed,

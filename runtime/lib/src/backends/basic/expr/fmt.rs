@@ -36,10 +36,16 @@ impl Display for ConstValue {
             ConstValue::Char(value) => write!(f, "'{value}'"),
             ConstValue::Int {
                 bit_rep,
-                ty: ty @ IntType { is_signed, .. },
+                ty:
+                    ty @ IntType {
+                        is_signed,
+                        bit_size,
+                    },
             } => {
                 if *is_signed {
-                    write!(f, "{}", bit_rep.0 as i128)
+                    let signed_bit_rep =
+                        (bit_rep.0 as i128) << (128 - bit_size) >> (128 - bit_size);
+                    write!(f, "{}", signed_bit_rep)
                 } else {
                     write!(f, "{}", bit_rep.0)
                 }?;
