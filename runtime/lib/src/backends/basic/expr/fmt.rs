@@ -122,7 +122,7 @@ impl Display for LazyTypeInfo {
         match self {
             LazyTypeInfo::None => write!(f, "?"),
             LazyTypeInfo::Id(id) => write!(f, "T#{}", id),
-            LazyTypeInfo::IdPrimitive(id, ty) => write!(f, "T#{} ({})", id, ty),
+            LazyTypeInfo::IdPrimitive(_id, ty) => write!(f, "{}", ty),
             LazyTypeInfo::Fetched(ty) => write!(f, "T#{}", ty.id),
             LazyTypeInfo::Forced(ty) => write!(f, "T#ᶠ{}", ty.id),
         }

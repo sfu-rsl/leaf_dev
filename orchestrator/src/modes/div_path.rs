@@ -131,8 +131,8 @@ fn grab_new_next_inputs(
         next_files.sort_by(|(_, p1), (_, p2)| p1.cmp(p2));
         next_files
     };
+    log_debug!("Found {} next inputs", next_files.len());
     for (fingerprint, path) in next_files {
-        log_debug!("Found next input {}", path.display());
         if past_inputs.contains(&fingerprint) || current_inputs.contains_key(&fingerprint) {
             fs::remove_file(&path).expect("Could not remove file");
         } else {
@@ -153,6 +153,8 @@ fn grab_new_next_inputs(
     }
     if count_before == current_inputs.len() {
         log_debug!("No different next input was found");
+    } else {
+        log_debug!("Found {} new inputs", current_inputs.len() - count_before);
     }
     current_inputs
 }

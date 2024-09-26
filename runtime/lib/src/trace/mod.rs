@@ -38,7 +38,7 @@ impl<S, I, V, O> ImmediateTraceManager<S, I, V, O> {
 
 impl<S: Display, I, V: Display, O> TraceManager<S, V> for ImmediateTraceManager<S, I, V, O> {
     fn notify_step(&mut self, step: S, new_constraints: Vec<Constraint<V>>) {
-        log_debug!(
+        log_info!(
             "Notified about constraints [{}] at step {}",
             &new_constraints
                 .iter()
@@ -63,14 +63,11 @@ impl<S: Display, I, V: Display, O> TraceManager<S, V> for ImmediateTraceManager<
             return;
         }
 
-        log_debug!("Checking for values diverging at the last step");
-
         log_debug!("Negating the last constraint");
         let last = self.constraints.pop().unwrap();
         self.constraints.push(last.not());
 
         if !self.check(..) {
-            log_debug!("Checking optimistically for values diverging at the last step");
             /* NOTE: What is optimistic checking?
              * Consider two independent branch conditions at the same level
              * that the current execution has taken neither.
@@ -80,6 +77,7 @@ impl<S: Display, I, V: Display, O> TraceManager<S, V> for ImmediateTraceManager<
              * first one.
              */
             if self.check_optimistic {
+                log_debug!("Checking optimistically using the last constraint");
                 self.check(self.constraints.len() - 1..);
             }
         }
