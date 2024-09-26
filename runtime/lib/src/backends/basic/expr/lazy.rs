@@ -526,17 +526,12 @@ mod retrieval {
         }
 
         fn bit_rep_to_bool(result: SymValueRef) -> SymValueRef {
-            Expr::Ite {
-                condition: BinaryExpr {
-                    operator: BinaryOp::Eq,
-                    operands: SymBinaryOperands::Orig {
-                        first: result,
-                        second: ConstValue::from(0_u8).to_value_ref(),
-                    },
-                }
-                .to_value_ref(),
-                if_target: ConstValue::from(false).to_value_ref(),
-                else_target: ConstValue::from(true).to_value_ref(),
+            BinaryExpr {
+                operator: BinaryOp::Ne,
+                operands: SymBinaryOperands::Orig {
+                    first: result,
+                    second: ConstValue::from(0_u8).to_value_ref(),
+                },
             }
             .to_value_ref()
         }
