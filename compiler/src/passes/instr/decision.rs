@@ -85,11 +85,6 @@ pub(super) fn should_instrument<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>) 
         return false;
     }
 
-    // FIXME: A const function doesn't mean it won't be called at runtime.
-    if tcx.is_const_fn(def_id) {
-        return false;
-    }
-
     // Some intrinsic functions have body.
     if tcx.intrinsic(def_id).is_some() {
         return false;
