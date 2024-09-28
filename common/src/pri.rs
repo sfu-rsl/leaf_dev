@@ -440,6 +440,11 @@ pub mod macros {
 
               #[allow(unused_parens)]
               { fn debug_info(info: ($dbg_info_ty)) }
+
+              #[allow(unused_parens)]
+              { fn intrinsic_assign_rotate_left(dest: PlaceRef, x: OperandRef, shift: OperandRef) }
+              #[allow(unused_parens)]
+              { fn intrinsic_assign_rotate_right(dest: PlaceRef, x: OperandRef, shift: OperandRef) }
             }
         };
     }
@@ -514,7 +519,7 @@ pub mod macros {
                             char: Self::Char,
                             &str: Self::ConstStr,
                             &[u8]: Self::ConstByteStr,
-                            slice: $crate::leaf::common::pri::macros::self_slice_of,
+                            slice: $$crate::leaf::common::pri::macros::self_slice_of,
                             branching_info: Self::BranchingInfo,
                             type_id: Self::TypeId,
                             binary_op: Self::BinaryOp,
@@ -531,7 +536,7 @@ pub mod macros {
                             char: CharPack,
                             &str: ConstStrPack,
                             &[u8]: ConstByteStrPack,
-                            slice: $crate::leaf::common::pri::macros::slice_pack_of,
+                            slice: $$crate::leaf::common::pri::macros::slice_pack_of,
                             branching_info: common::pri::BranchingInfo,
                             type_id: U128Pack<TypeId>,
                             binary_op: common::pri::BinaryOp,
@@ -679,7 +684,7 @@ pub mod macros {
             }$modifier!{
                 fn assign_aggregate_raw_ptr(dest:PlaceRef,data_ptr:OperandRef,metadata:OperandRef,is_mutable:bool);
             }$modifier!{
-                #[allow(unused_parens)]fn assign_shallow_init_box(_dest:PlaceRef,_operand:OperandRef,_dst_type_id:($type_id_ty));
+                #[allow(unused_parens)]fn assign_shallow_init_box(dest:PlaceRef,operand:OperandRef,boxed_type_id:($type_id_ty));
             }$modifier!{
                 #[allow(unused_parens)]fn new_branching_info(node_location:BasicBlockIndex,discriminant:OperandRef,discr_bit_size:u64,discr_is_signed:bool,)->($branching_info_ty);
             }$modifier!{
@@ -726,25 +731,28 @@ pub mod macros {
                 fn check_assert_misaligned_ptr_deref(cond:OperandRef,expected:bool,required:OperandRef,found:OperandRef,);
             }$modifier!{
                 #[allow(unused_parens)]fn debug_info(info:($dbg_info_ty));
+            }$modifier!{
+                #[allow(unused_parens)]fn intrinsic_assign_rotate_left(dest:PlaceRef,x:OperandRef,shift:OperandRef);
+            }$modifier!{
+                #[allow(unused_parens)]fn intrinsic_assign_rotate_right(dest:PlaceRef,x:OperandRef,shift:OperandRef);
             }
         };
         (modifier: $modifier:path) => {
             $crate::leaf::common::pri::macros::list_func_decls!{
-                modifier: $modifier,(u128:(),char:(), &str:(), &[u8]:(),slice:$crate::leaf::common::utils::identity,branching_info:(),type_id:(),binary_op:(),unary_op:(),dbg_info:(),)
+                modifier: $modifier,(u128:(),char:(), &str:(), &[u8]:(),slice:crate::leaf::common::utils::identity,branching_info:(),type_id:(),binary_op:(),unary_op:(),dbg_info:(),)
             }
         };
         (modifier: $modifier:path,(from Self)) => {
             $crate::leaf::common::pri::macros::list_func_decls!{
-                modifier: $modifier,(u128:Self::U128,char:Self::Char, &str:Self::ConstStr, &[u8]:Self::ConstByteStr,slice:$crate::leaf::common::pri::macros::self_slice_of,branching_info:Self::BranchingInfo,type_id:Self::TypeId,binary_op:Self::BinaryOp,unary_op:Self::UnaryOp,dbg_info:Self::DebugInfo,)
+                modifier: $modifier,(u128:Self::U128,char:Self::Char, &str:Self::ConstStr, &[u8]:Self::ConstByteStr,slice: $crate::leaf::common::pri::macros::self_slice_of,branching_info:Self::BranchingInfo,type_id:Self::TypeId,binary_op:Self::BinaryOp,unary_op:Self::UnaryOp,dbg_info:Self::DebugInfo,)
             }
         };
         (modifier: $modifier:path,(from common::ffi)) => {
             $crate::leaf::common::pri::macros::list_func_decls!{
-                modifier: $modifier,(u128:U128Pack,char:CharPack, &str:ConstStrPack, &[u8]:ConstByteStrPack,slice:$crate::leaf::common::pri::macros::slice_pack_of,branching_info:common::pri::BranchingInfo,type_id:U128Pack<TypeId>,binary_op:common::pri::BinaryOp,unary_op:common::pri::UnaryOp,dbg_info:common::ffi::DebugInfo,)
+                modifier: $modifier,(u128:U128Pack,char:CharPack, &str:ConstStrPack, &[u8]:ConstByteStrPack,slice: $crate::leaf::common::pri::macros::slice_pack_of,branching_info:common::pri::BranchingInfo,type_id:U128Pack<TypeId>,binary_op:common::pri::BinaryOp,unary_op:common::pri::UnaryOp,dbg_info:common::ffi::DebugInfo,)
             }
         };
     }
-
     #[cfg(not(core_build))]
     pub use {list_func_decls, pass_func_names_to, self_slice_of, slice_pack_of};
     #[cfg(core_build)]

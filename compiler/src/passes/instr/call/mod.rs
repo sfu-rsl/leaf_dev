@@ -160,7 +160,7 @@ pub(crate) trait BranchingHandler {
         I::IntoIter: ExactSizeIterator<Item = u128>;
 }
 
-pub trait FunctionHandler<'tcx> {
+pub(crate) trait FunctionHandler<'tcx> {
     fn reference_func(&mut self, func: &Operand<'tcx>) -> OperandRef;
 
     fn reference_special_func(&mut self, func: &Operand<'tcx>) -> OperandRef;
@@ -177,6 +177,15 @@ pub trait FunctionHandler<'tcx> {
     fn return_from_func(&mut self);
 
     fn after_call_func(&mut self, destination: &Place<'tcx>);
+}
+
+pub(crate) trait IntrinsicHandler<'tcx> {
+    fn perform_intrinsic_by(
+        &mut self,
+        intrinsic_func: DefId,
+        pri_func: LeafIntrinsicSymbol,
+        args: impl Iterator<Item = OperandRef>,
+    );
 }
 
 pub(crate) trait EntryFunctionHandler {
@@ -1993,6 +2002,64 @@ mod implementation {
         }
     }
 
+    impl<'tcx, C> IntrinsicHandler<'tcx> for RuntimeCallAdder<C>
+    where
+        Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
+        C: ForAssignment<'tcx>,
+    {
+        fn perform_intrinsic_by(
+            &mut self,
+            intrinsic_func: DefId,
+            pri_func: LeafIntrinsicSymbol,
+            args: impl Iterator<Item = OperandRef>,
+        ) {
+            let has_return_value = !self.context.dest_ty().is_unit();
+            self.assert_pri_intrinsic_consistency(intrinsic_func, pri_func, has_return_value);
+
+            let pri_name = *pri_func;
+            let args = args.map(Into::into).map(operand::move_for_local).collect();
+            let block = if has_return_value {
+                self.make_bb_for_assign_call(pri_name, args)
+            } else {
+                self.make_bb_for_call(pri_name, args)
+            };
+            self.insert_blocks([block]);
+        }
+    }
+
+    impl<'tcx, C> RuntimeCallAdder<C>
+    where
+        C: Basic<'tcx>,
+    {
+        fn assert_pri_intrinsic_consistency(
+            &mut self,
+            intrinsic_func: DefId,
+            pri_func: LeafIntrinsicSymbol,
+            has_return_value: bool,
+        ) {
+            let tcx = self.tcx();
+            let arg_num = |def_id| {
+                tcx.fn_sig(def_id)
+                    .instantiate_identity()
+                    .inputs()
+                    .iter()
+                    .count()
+            };
+            let pri_func_info = self.get_pri_func_info(*pri_func);
+
+            let pri_func_arg_num = arg_num(pri_func_info.def_id);
+            let intrinsic_arg_num = arg_num(intrinsic_func);
+
+            assert_eq!(
+                pri_func_arg_num,
+                intrinsic_arg_num + if has_return_value { 1 } else { 0 },
+                "Inconsistent number of arguments between intrinsic and its corresponding PRI function. {:?} -x-> {:?}",
+                intrinsic_func,
+                pri_func_info.def_id
+            );
+        }
+    }
+
     impl<'tcx, C> AssertionHandler<'tcx> for RuntimeCallAdder<C>
     where
         Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
@@ -2990,3 +3057,5 @@ mod implementation {
 }
 
 pub(super) use implementation::context_requirements as ctxtreqs;
+
+use crate::pri_utils::sym::intrinsics::LeafIntrinsicSymbol;

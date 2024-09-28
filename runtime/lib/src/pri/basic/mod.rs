@@ -514,6 +514,14 @@ impl ProgramRuntimeInterface for BasicPri {
             log_debug!(target: TAG, "Full debug info: {}", str_rep);
         }
     }
+
+    fn intrinsic_assign_rotate_left(dest: PlaceRef, x: OperandRef, shift: OperandRef) {
+        todo!()
+    }
+
+    fn intrinsic_assign_rotate_right(dest: PlaceRef, x: OperandRef, shift: OperandRef) {
+        todo!()
+    }
 }
 
 impl BasicPri {

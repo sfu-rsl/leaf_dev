@@ -11,6 +11,7 @@
 #![feature(core_intrinsics)]
 #![feature(const_option)]
 #![feature(trait_upcasting)]
+#![feature(if_let_guard)]
 
 mod config;
 mod mir_transform;

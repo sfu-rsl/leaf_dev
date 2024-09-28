@@ -59,6 +59,8 @@ pub mod sym {
     }
 
     mod mains {
+        #![allow(non_upper_case_globals)]
+
         use super::*;
 
         common::pri::pass_func_names_to!(symbols_in_pri, all_comma_separated);
@@ -70,8 +72,30 @@ pub mod sym {
                 ]
             };
         }
-        pub(crate) const ALL_MAINS: [LeafSymbol; 87] =
+        pub(crate) const ALL_MAINS: [LeafSymbol; 89] =
             common::pri::pass_func_names_to!(bracket, all_comma_separated);
+
+        pub(crate) mod intrinsics {
+            #![allow(non_upper_case_globals)]
+            use super::*;
+
+            #[derive(
+                Clone, Copy, dm::Deref, Debug, dm::Display, Hash, PartialEq, Eq, PartialOrd, Ord,
+            )]
+            #[repr(transparent)]
+            pub struct LeafIntrinsicSymbol(LeafSymbol);
+
+            macro_rules! symbols_for_intrinsics {
+                ($($name: ident),* $(,)?) => {
+                    $(pub(crate) const $name: LeafIntrinsicSymbol = LeafIntrinsicSymbol(super::$name);)*
+                };
+            }
+
+            symbols_for_intrinsics! {
+                intrinsic_assign_rotate_left,
+                intrinsic_assign_rotate_right,
+            }
+        }
     }
     pub(crate) use mains::*;
 

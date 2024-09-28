@@ -7,9 +7,10 @@ use rustc_index::IndexVec;
 use rustc_middle::{
     mir::{
         self, visit::Visitor, BasicBlock, BasicBlockData, Body, BorrowKind, CastKind,
-        HasLocalDecls, Location, Operand, Place, Rvalue, Statement, TerminatorKind, UnwindAction,
+        HasLocalDecls, Location, Operand, Place, Rvalue, SourceInfo, Statement, TerminatorKind,
+        UnwindAction,
     },
-    ty::TyCtxt,
+    ty::{IntrinsicDef, TyCtxt},
 };
 use rustc_span::{def_id::DefId, source_map::Spanned};
 use rustc_target::abi::{FieldIdx, VariantIdx};
@@ -27,11 +28,14 @@ use crate::{
 use super::{CompilationPass, OverrideFlags, Storage};
 
 use call::{
-    context::{BlockIndexProvider, PriItemsProvider, SourceInfoProvider, TyContextProvider},
+    context::{
+        AtLocationContext, BlockIndexProvider, PriItemsProvider, SourceInfoProvider,
+        TyContextProvider,
+    },
     ctxtreqs, AssertionHandler, Assigner, BranchingHandler, BranchingReferencer, CastAssigner,
     EntryFunctionHandler, FunctionHandler,
     InsertionLocation::*,
-    OperandRef, OperandReferencer, PlaceReferencer, RuntimeCallAdder,
+    IntrinsicHandler, OperandRef, OperandReferencer, PlaceReferencer, RuntimeCallAdder,
 };
 
 const TAG_INSTRUMENTATION: &str = "instrumentation";
@@ -458,49 +462,33 @@ where
         _fn_span: rustc_span::Span,
     ) {
         let tcx = self.call_adder.tcx();
-        let is_supported = if let rustc_middle::ty::TyKind::FnDef(def_id, ..) =
+        let opt_def_id = if let rustc_middle::ty::TyKind::FnDef(def_id, ..) =
             func.ty(&self.call_adder, tcx).kind()
         {
             assert!(
                 !self.call_adder.all_pri_items().contains(def_id),
                 "Instrumenting our own instrumentation."
             );
-
-            is_function_call_supported(tcx, *def_id)
+            Some(*def_id)
         } else {
-            true
+            None
         };
 
-        let mut call_adder = self.call_adder.before();
-
-        let func_ref = if is_supported {
-            call_adder.reference_func(func)
-        } else {
-            call_adder.reference_special_func(func)
+        let params = CallParams {
+            func,
+            args,
+            destination,
+            target,
         };
 
-        let arg_refs = args
-            .iter()
-            .map(|arg| {
-                call_adder
-                    .with_source_info(mir::SourceInfo {
-                        span: arg.span,
-                        ..call_adder.source_info()
-                    })
-                    .reference_operand(&arg.node)
-            })
-            .collect::<Vec<_>>();
-
-        let are_args_tupled = call_adder.are_args_tupled(func, args.iter().map(|a| &a.node));
-
-        call_adder.before_call_func(func_ref, arg_refs.into_iter(), are_args_tupled);
-
-        if target.is_some() {
-            call_adder.after().after_call_func(destination);
-        } else {
-            // This branch is only triggered by hitting a divergent function:
-            // https://doc.rust-lang.org/rust-by-example/fn/diverging.html
-            // (this means the program will exit immediately)
+        match opt_def_id {
+            Some(def_id) if tcx.is_llvm_intrinsic(def_id) => {
+                self.instrument_llvm_intrinsic_call(params)
+            }
+            Some(def_id) if let Some(intrinsic) = tcx.intrinsic(def_id) => {
+                self.instrument_intrinsic_call((def_id, intrinsic), params)
+            }
+            _ => self.instrument_regular_call(params),
         }
     }
 
@@ -553,6 +541,139 @@ where
         _unwind: &UnwindAction,
     ) {
         Default::default()
+    }
+}
+
+struct CallParams<'a, 'tcx> {
+    func: &'a Operand<'tcx>,
+    args: &'a [Spanned<Operand<'tcx>>],
+    destination: &'a Place<'tcx>,
+    target: &'a Option<BasicBlock>,
+}
+
+impl<'tcx, C> LeafTerminatorKindVisitor<C>
+where
+    C: ctxtreqs::ForOperandRef<'tcx>
+        + ctxtreqs::ForPlaceRef<'tcx>
+        + ctxtreqs::ForFunctionCalling<'tcx>,
+{
+    fn instrument_intrinsic_call(
+        &mut self,
+        (def_id, def): (DefId, IntrinsicDef),
+        params: CallParams<'_, 'tcx>,
+    ) {
+        use decision::IntrinsicDecision::*;
+        match decision::decide_intrinsic_call(def) {
+            PriFunc(func_name) => {
+                let mut call_adder = self.call_adder.before();
+                let dest_ref = call_adder.reference_place(params.destination);
+                let dest_ty = params.destination.ty(&call_adder, call_adder.tcx()).ty;
+                let args = Self::ref_args(&mut call_adder, params.args);
+                self.call_adder
+                    .before()
+                    .assign(dest_ref, dest_ty)
+                    .perform_intrinsic_by(def_id, func_name, args.into_iter());
+            }
+            NoOp => {
+                // Currently, no instrumentation
+                Default::default()
+            }
+            ToDo => {
+                log_warn!(
+                    target: TAG_INSTR,
+                    "Intrinsic call to {:?} observed.",
+                    def.name
+                );
+                self.instrument_unsupported_call(params);
+            }
+            NotPlanned => {
+                log_warn!(
+                    target: TAG_INSTR,
+                    concat!(
+                        "Intrinsic call to {:?} observed, which is not planned to be supported.",
+                        "You might want to revise the target program.",
+                    ),
+                    def.name
+                );
+                self.instrument_unsupported_call(params);
+            }
+            Unsupported => {
+                log_info!(
+                    target: TAG_INSTR,
+                    "Intrinsic call to {:?} observed, which is not yet supported.",
+                    def.name
+                );
+                self.instrument_unsupported_call(params)
+            }
+            Unexpected => {
+                panic!("Unexpected intrinsic call to {:?} observed.", def.name);
+            }
+        }
+    }
+
+    fn instrument_llvm_intrinsic_call(&mut self, params: CallParams<'_, 'tcx>) {
+        // Currently, we do not support for LLVM intrinsics.
+        self.instrument_unsupported_call(params);
+    }
+
+    fn instrument_regular_call(&mut self, params: CallParams<'_, 'tcx>) {
+        self.instrument_call_general(|call_adder, func| call_adder.reference_func(func), params);
+    }
+
+    fn instrument_unsupported_call(&mut self, params: CallParams<'_, 'tcx>) {
+        self.instrument_call_general(
+            |call_adder, func| call_adder.reference_special_func(func),
+            params,
+        );
+    }
+
+    fn instrument_call_general(
+        &mut self,
+        ref_func: impl FnOnce(
+            &mut RuntimeCallAdder<call::context::AtLocationContext<C>>,
+            &'_ Operand<'tcx>,
+        ) -> OperandRef,
+        CallParams {
+            func,
+            args,
+            destination,
+            target,
+        }: CallParams<'_, 'tcx>,
+    ) {
+        let mut call_adder = self.call_adder.before();
+
+        let func_ref = ref_func(&mut call_adder, func);
+
+        let arg_refs = Self::ref_args(&mut call_adder, args);
+        let are_args_tupled = call_adder.are_args_tupled(func, args.iter().map(|a| &a.node));
+
+        call_adder.before_call_func(func_ref, arg_refs.into_iter(), are_args_tupled);
+
+        if target.is_some() {
+            call_adder.after().after_call_func(destination);
+        } else {
+            // This branch is only triggered by hitting a divergent function:
+            // https://doc.rust-lang.org/rust-by-example/fn/diverging.html
+            // (this means the program will exit immediately)
+        }
+    }
+
+    fn ref_args(
+        call_adder: &mut RuntimeCallAdder<AtLocationContext<C>>,
+        args: &[Spanned<Operand<'tcx>>],
+    ) -> Vec<OperandRef> {
+        let source_scope = call_adder.source_info().scope;
+        let mut call_adder = call_adder.before();
+        args.iter()
+            .map(|arg| {
+                call_adder
+                    .with_source_info(SourceInfo {
+                        span: arg.span,
+                        scope: source_scope,
+                    })
+                    .reference_operand(&arg.node)
+            })
+            .collect()
     }
 }
 
@@ -757,23 +878,6 @@ where
         let second_ref = self.call_adder.reference_operand(&operands.1);
         self.call_adder.by_binary_op(op, first_ref, second_ref)
     }
-}
-
-fn is_function_call_supported(tcx: TyCtxt, def_id: DefId) -> bool {
-    // FIXME: #172
-    /* NOTE: This definitely causes the runtime to diverge from the
-     * concrete execution, but unless we want to handle them by
-     * replacing with our implementation, as most of them
-     * are not actual functions, they will be replaced by
-     * flat instructions at the code generation phase.
-     * Thus, presumably they should not be instrumented like a
-     * function call anyway.
-     */
-    if tcx.intrinsic(def_id).is_some() || tcx.is_llvm_intrinsic(def_id) {
-        return false;
-    }
-
-    true
 }
 
 fn sanity_check_inserted_block<'tcx>(
