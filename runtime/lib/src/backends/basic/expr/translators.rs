@@ -296,13 +296,16 @@ pub(crate) mod z3 {
                 }
                 AstNode::BitVector(ref left_node) => {
                     let right = match operator {
-                        BinaryOp::Shl | BinaryOp::Shr if left.z3_sort() != right.z3_sort() => {
-                            // Z3 requires that the operands in a left or right shift operation are the same size.
-                            // Thus, if two operands are of different sizes, we cast the right operand to the same type of left operand.
-                            // Casting from a larger type to a smaller one will truncate, whereas the reverse will zero-extend
+                        // Z3 requires that the operands in a left or right shift operation are the same size.
+                        // Thus, if two operands are of different sizes, we cast the right operand to the same type of left operand.
+                        // Casting from a larger type to a smaller one will truncate, whereas the reverse will zero-extend
+                        BinaryOp::Shl | BinaryOp::Shr | BinaryOp::RotateL | BinaryOp::RotateR
+                            if left.z3_sort() != right.z3_sort() =>
+                        {
                             let left_size = left_node.size();
                             let right_size = right.as_bit_vector().get_size();
                             if right_size > left_size {
+                                // FIXME: This may cause problems with large numbers.
                                 self.translate_extraction_expr(right, left_size - 1, 0, false)
                             } else {
                                 self.translate_extension_expr(
@@ -327,6 +330,7 @@ pub(crate) mod z3 {
                             BinaryOp::MulUnchecked => BinaryOp::Mul,
                             BinaryOp::ShlUnchecked => BinaryOp::Shl,
                             BinaryOp::ShrUnchecked => BinaryOp::Shr,
+                            BinaryOp::DivExact => BinaryOp::Div,
                             _ => unreachable!(),
                         }
                     } else {
@@ -347,8 +351,10 @@ pub(crate) mod z3 {
                             (BinaryOp::Shl, _) => Some(ast::BV::bvshl),
                             (BinaryOp::Shr, true) => Some(ast::BV::bvashr),
                             (BinaryOp::Shr, false) => Some(ast::BV::bvlshr),
+                            (BinaryOp::RotateL, _) => Some(ast::BV::bvrotl),
+                            (BinaryOp::RotateR, _) => Some(ast::BV::bvrotr),
                             (BinaryOp::Offset, _) => Some(todo!()),
-                            _ if operator.is_with_overflow() => {
+                            _ if operator.is_with_overflow() || operator.is_saturating() => {
                                 panic!(
                                     "Binary operation with overflow is expected to be broken down at this point. Operator: {:?}",
                                     operator

@@ -516,11 +516,11 @@ impl ProgramRuntimeInterface for BasicPri {
     }
 
     fn intrinsic_assign_rotate_left(dest: PlaceRef, x: OperandRef, shift: OperandRef) {
-        todo!()
+        Self::assign_binary_op(dest, Self::BinaryOp::RotateL, x, shift)
     }
 
     fn intrinsic_assign_rotate_right(dest: PlaceRef, x: OperandRef, shift: OperandRef) {
-        todo!()
+        Self::assign_binary_op(dest, Self::BinaryOp::RotateR, x, shift)
     }
 
     fn intrinsic_assign_saturating_add(dest: PlaceRef, first: OperandRef, second: OperandRef) {
