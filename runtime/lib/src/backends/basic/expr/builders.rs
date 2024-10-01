@@ -136,7 +136,10 @@ mod toplevel {
 }
 
 mod symbolic {
-    use super::{adapters::ConstFolder, adapters::ConstSimplifier, core::CoreBuilder, *};
+    use super::{
+        adapters::{ConstFolder, ConstSimplifier, CoreBuilder},
+        *,
+    };
 
     pub(crate) type SymbolicBuilder = Composite<
         /*Binary:*/
@@ -144,7 +147,8 @@ mod symbolic {
             UnevaluatedResolverBuilder,
             Chained<ConstSimplifier, Chained<ConstFolder, CoreBuilder>>,
         >,
-        /*Unary:*/ Chained<UnevaluatedResolverBuilder, CoreBuilder>,
+        /*Unary:*/
+        Chained<UnevaluatedResolverBuilder, CoreBuilder>,
     >;
 
     impl SymbolicBuilder {
@@ -268,9 +272,32 @@ mod adapters {
     use BinaryExprBuilder as BEB;
     use UnaryExprBuilder as UEB;
 
-    impl From<Expr> for ValueRef {
-        fn from(expr: Expr) -> Self {
-            Into::<Value>::into(expr).to_value_ref()
+    #[derive(Default, Clone, Deref, DerefMut)]
+    pub(crate) struct CoreBuilder(core::CoreBuilder);
+
+    impl BinaryExprBuilderAdapter for CoreBuilder {
+        type TargetExprRefPair<'a> = SymBinaryOperands;
+        type TargetExpr<'a> = ValueRef;
+
+        #[inline]
+        fn adapt<'t, F>(operands: Self::TargetExprRefPair<'t>, build: F) -> Self::TargetExpr<'t>
+        where
+            F: for<'s> FnH<<Self::Target as BEB>::ExprRefPair<'s>, <Self::Target as BEB>::Expr<'s>>,
+        {
+            build(operands).to_value_ref()
+        }
+    }
+
+    impl UnaryExprBuilderAdapter for CoreBuilder {
+        type TargetExprRef<'a> = SymValueRef;
+        type TargetExpr<'a> = ValueRef;
+
+        #[inline]
+        fn adapt<'t, F>(operand: Self::TargetExprRef<'t>, build: F) -> Self::TargetExpr<'t>
+        where
+            F: for<'s> FnH<<Self::Target as UEB>::ExprRef<'s>, <Self::Target as UEB>::Expr<'s>>,
+        {
+            Value::from(build(operand)).to_value_ref()
         }
     }
 
@@ -364,17 +391,41 @@ mod core {
 
     impl BinaryExprBuilder for CoreBuilder {
         type ExprRefPair<'a> = SymBinaryOperands;
-        type Expr<'a> = Expr;
+        // NOTE: We have to generalize it to value because of overflow checks which generate a tuple.
+        type Expr<'a> = Value;
 
         fn binary_op<'a>(
             &mut self,
             operands: Self::ExprRefPair<'a>,
             op: BinaryOp,
         ) -> Self::Expr<'a> {
-            Expr::Binary(BinaryExpr {
-                operator: op,
-                operands,
-            })
+            if op.is_with_overflow() {
+                let normal_op = match op {
+                    BinaryOp::AddWithOverflow => BinaryOp::Add,
+                    BinaryOp::SubWithOverflow => BinaryOp::Sub,
+                    BinaryOp::MulWithOverflow => BinaryOp::Mul,
+                    _ => unreachable!(),
+                };
+                let normal_expr = self.binary_op(operands.clone(), normal_op);
+                let overflow_expr = Value::from(Expr::BinaryOverflow(BinaryExpr {
+                    operator: normal_op,
+                    operands,
+                }));
+                AdtValue {
+                    kind: AdtKind::Struct,
+                    fields: vec![
+                        Some(normal_expr.to_value_ref()).into(),
+                        Some(overflow_expr.to_value_ref()).into(),
+                    ],
+                }
+                .into()
+            } else {
+                Expr::Binary(BinaryExpr {
+                    operator: op,
+                    operands,
+                })
+                .into()
+            }
         }
 
         impl_singular_binary_ops_through_general!();
@@ -956,7 +1007,7 @@ mod simp {
     pub(crate) struct ConstFolder;
 
     type FoldableOperands<'a> =
-        WithConstOperand<'a, BinaryExpr<WithConstOperand<'a, &'a SymValueRef>>>;
+        WithConstOperand<'a, BinaryExpr<BinaryOp, WithConstOperand<'a, &'a SymValueRef>>>;
 
     impl<'a> FoldableOperands<'a> {
         #[inline]
@@ -972,7 +1023,7 @@ mod simp {
         }
 
         #[inline]
-        fn expr(&self) -> &BinaryExpr<WithConstOperand<'a, &'a SymValueRef>> {
+        fn expr(&self) -> &BinaryExpr<BinaryOp, WithConstOperand<'a, &'a SymValueRef>> {
             self.as_flat().0
         }
 

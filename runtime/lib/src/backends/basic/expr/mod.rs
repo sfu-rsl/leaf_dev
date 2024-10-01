@@ -28,7 +28,7 @@ pub(crate) type SymVarId = u32;
 
 #[derive(Clone, Debug, dm::From)]
 pub(crate) enum Value {
-    #[from(types(ConstValue, UnevalValue))]
+    #[from(types(ConstValue, AdtValue, ArrayValue, UnevalValue))]
     Concrete(ConcreteValue),
     #[from(types(Expr))]
     Symbolic(SymValue),
@@ -721,6 +721,8 @@ pub(crate) enum Expr {
     },
 
     Binary(BinaryExpr),
+    #[from(ignore)]
+    BinaryOverflow(BinaryExpr),
 
     Extension {
         source: SymValueRef,
@@ -777,8 +779,8 @@ pub(crate) enum Expr {
 
 #[allow(unused)]
 #[derive(Clone, Debug, dm::From)]
-pub(crate) struct BinaryExpr<Operands = SymBinaryOperands> {
-    operator: BinaryOp,
+pub(crate) struct BinaryExpr<Operator = BinaryOp, Operands = SymBinaryOperands> {
+    operator: Operator,
     operands: Operands,
 }
 

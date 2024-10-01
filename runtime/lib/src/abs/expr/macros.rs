@@ -13,7 +13,7 @@ macro_rules! impl_general_binary_op_through_singulars {
             operands: Self::ExprRefPair<'a>,
             op: BinaryOp,
         ) -> Self::Expr<'a> {
-            use BinaryOp::*;
+            use crate::abs::BinaryOp::*;
             let binop = match op {
                 Add => Self::add,
                 AddUnchecked => Self::add_unchecked,
@@ -117,7 +117,7 @@ macro_rules! impl_singular_binary_ops_through_general {
 macro_rules! impl_general_unary_op_through_singulars {
     () => {
         fn unary_op<'a>(&mut self, operand: Self::ExprRef<'a>, op: UnaryOp) -> Self::Expr<'a> {
-            use UnaryOp::*;
+            use crate::abs::UnaryOp::*;
             (match op {
                 Not => Self::not,
                 Neg => Self::neg,

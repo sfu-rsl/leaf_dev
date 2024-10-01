@@ -159,6 +159,7 @@ impl Expr {
         match self {
             Expr::Unary { operator, .. } => write!(f, "{operator}"),
             Expr::Binary(BinaryExpr { operator, .. }) => write!(f, "{operator}"),
+            Expr::BinaryOverflow(BinaryExpr { operator, .. }) => write!(f, "O{operator}?"),
             Expr::Extension { .. } => write!(f, "Extend"),
             Expr::Extraction { .. } => write!(f, "Extract"),
             Expr::Ite { .. } => write!(f, "Ite"),
@@ -174,7 +175,8 @@ impl Expr {
     fn fmt_params(&self, f: &mut Formatter<'_>) -> Result {
         match self {
             Expr::Unary { operand, .. } => write!(f, "{operand}"),
-            Expr::Binary(BinaryExpr { operands, .. }) => {
+            Expr::Binary(BinaryExpr { operands, .. })
+            | Expr::BinaryOverflow(BinaryExpr { operands, .. }) => {
                 write!(f, "{}, {}", operands.first(), operands.second())
             }
             Expr::Extension {
