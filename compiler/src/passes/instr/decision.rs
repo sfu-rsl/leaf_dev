@@ -484,14 +484,11 @@ mod intrinsics {
                 unaligned_volatile_load,
                 typed_swap,
                 select_unpredictable,
-                saturating_sub,
-                saturating_add,
                 raw_eq,
                 ptr_mask,
                 ptr_offset_from_unsigned,
                 ptr_offset_from,
                 nontemporal_store,
-                exact_div,
                 cttz_nonzero,
                 cttz,
                 ctpop,
@@ -515,7 +512,13 @@ mod intrinsics {
 
     macro_rules! of_supported_funcs {
         ($macro:ident) => {
-            $macro!(rotate_left, rotate_right,)
+            $macro!(
+                rotate_left,
+                rotate_right,
+                saturating_sub,
+                saturating_add,
+                exact_div,
+            )
         };
     }
 
@@ -571,6 +574,13 @@ mod intrinsics {
         match intrinsic.name {
             rsym::rotate_left => IntrinsicDecision::PriFunc(psym::intrinsic_assign_rotate_left),
             rsym::rotate_right => IntrinsicDecision::PriFunc(psym::intrinsic_assign_rotate_right),
+            rsym::saturating_add => {
+                IntrinsicDecision::PriFunc(psym::intrinsic_assign_saturating_add)
+            }
+            rsym::saturating_sub => {
+                IntrinsicDecision::PriFunc(psym::intrinsic_assign_saturating_sub)
+            }
+            rsym::exact_div => IntrinsicDecision::PriFunc(psym::intrinsic_assign_exact_div),
             of_noop_funcs!(any_of) => IntrinsicDecision::NoOp,
             of_to_be_supported_funcs!(any_of) => IntrinsicDecision::ToDo,
             of_float_arith_funcs!(any_of) => IntrinsicDecision::NotPlanned,

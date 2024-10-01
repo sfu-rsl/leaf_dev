@@ -522,6 +522,18 @@ impl ProgramRuntimeInterface for BasicPri {
     fn intrinsic_assign_rotate_right(dest: PlaceRef, x: OperandRef, shift: OperandRef) {
         todo!()
     }
+
+    fn intrinsic_assign_saturating_add(dest: PlaceRef, first: OperandRef, second: OperandRef) {
+        todo!()
+    }
+
+    fn intrinsic_assign_saturating_sub(dest: PlaceRef, first: OperandRef, second: OperandRef) {
+        todo!()
+    }
+
+    fn intrinsic_assign_exact_div(dest: PlaceRef, first: OperandRef, second: OperandRef) {
+        todo!()
+    }
 }
 
 impl BasicPri {

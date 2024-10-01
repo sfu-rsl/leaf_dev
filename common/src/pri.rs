@@ -441,10 +441,11 @@ pub mod macros {
               #[allow(unused_parens)]
               { fn debug_info(info: ($dbg_info_ty)) }
 
-              #[allow(unused_parens)]
               { fn intrinsic_assign_rotate_left(dest: PlaceRef, x: OperandRef, shift: OperandRef) }
-              #[allow(unused_parens)]
               { fn intrinsic_assign_rotate_right(dest: PlaceRef, x: OperandRef, shift: OperandRef) }
+              { fn intrinsic_assign_saturating_add(dest: PlaceRef, first: OperandRef, second: OperandRef) }
+              { fn intrinsic_assign_saturating_sub(dest: PlaceRef, first: OperandRef, second: OperandRef) }
+              { fn intrinsic_assign_exact_div(dest: PlaceRef, first: OperandRef, second: OperandRef) }
             }
         };
     }
@@ -732,9 +733,15 @@ pub mod macros {
             }$modifier!{
                 #[allow(unused_parens)]fn debug_info(info:($dbg_info_ty));
             }$modifier!{
-                #[allow(unused_parens)]fn intrinsic_assign_rotate_left(dest:PlaceRef,x:OperandRef,shift:OperandRef);
+                fn intrinsic_assign_rotate_left(dest:PlaceRef,x:OperandRef,shift:OperandRef);
             }$modifier!{
-                #[allow(unused_parens)]fn intrinsic_assign_rotate_right(dest:PlaceRef,x:OperandRef,shift:OperandRef);
+                fn intrinsic_assign_rotate_right(dest:PlaceRef,x:OperandRef,shift:OperandRef);
+            }$modifier!{
+                fn intrinsic_assign_saturating_add(dest:PlaceRef,first:OperandRef,second:OperandRef);
+            }$modifier!{
+                fn intrinsic_assign_saturating_sub(dest:PlaceRef,first:OperandRef,second:OperandRef);
+            }$modifier!{
+                fn intrinsic_assign_exact_div(dest:PlaceRef,first:OperandRef,second:OperandRef);
             }
         };
         (modifier: $modifier:path) => {
