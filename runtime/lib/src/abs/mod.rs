@@ -11,13 +11,16 @@ pub enum BinaryOp {
     Add = common::pri::BinaryOp::ADD.as_u8(),
     AddUnchecked = common::pri::BinaryOp::ADD_UNCHECKED.as_u8(),
     AddWithOverflow = common::pri::BinaryOp::ADD_WITH_OVERFLOW.as_u8(),
+    AddSaturating = common::pri::BinaryOp::ADD_SATURATING.as_u8(),
     Sub = common::pri::BinaryOp::SUB.as_u8(),
     SubUnchecked = common::pri::BinaryOp::SUB_UNCHECKED.as_u8(),
     SubWithOverflow = common::pri::BinaryOp::SUB_WITH_OVERFLOW.as_u8(),
+    SubSaturating = common::pri::BinaryOp::SUB_SATURATING.as_u8(),
     Mul = common::pri::BinaryOp::MUL.as_u8(),
     MulUnchecked = common::pri::BinaryOp::MUL_UNCHECKED.as_u8(),
     MulWithOverflow = common::pri::BinaryOp::MUL_WITH_OVERFLOW.as_u8(),
     Div = common::pri::BinaryOp::DIV.as_u8(),
+    DivExact = common::pri::BinaryOp::DIV_EXACT.as_u8(),
     Rem = common::pri::BinaryOp::REM.as_u8(),
 
     BitXor = common::pri::BinaryOp::BIT_XOR.as_u8(),
@@ -27,6 +30,8 @@ pub enum BinaryOp {
     ShlUnchecked = common::pri::BinaryOp::SHL_UNCHECKED.as_u8(),
     Shr = common::pri::BinaryOp::SHR.as_u8(),
     ShrUnchecked = common::pri::BinaryOp::SHR_UNCHECKED.as_u8(),
+    RotateL = common::pri::BinaryOp::ROT_L.as_u8(),
+    RotateR = common::pri::BinaryOp::ROT_R.as_u8(),
 
     Eq = common::pri::BinaryOp::EQ.as_u8(),
     Lt = common::pri::BinaryOp::LT.as_u8(),
@@ -40,20 +45,31 @@ pub enum BinaryOp {
 }
 
 impl BinaryOp {
+    #[inline]
     pub(crate) fn is_unchecked(&self) -> bool {
         match self {
             Self::AddUnchecked
             | Self::SubUnchecked
             | Self::MulUnchecked
             | Self::ShlUnchecked
-            | Self::ShrUnchecked => true,
+            | Self::ShrUnchecked
+            | Self::DivExact => true,
             _ => false,
         }
     }
 
+    #[inline]
     pub(crate) fn is_with_overflow(&self) -> bool {
         match self {
             Self::AddWithOverflow | Self::SubWithOverflow | Self::MulWithOverflow => true,
+            _ => false,
+        }
+    }
+
+    #[inline]
+    pub(crate) fn is_saturating(&self) -> bool {
+        match self {
+            Self::AddSaturating | Self::SubSaturating => true,
             _ => false,
         }
     }

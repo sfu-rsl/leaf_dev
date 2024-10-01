@@ -50,13 +50,13 @@ where
 
     delegate_binary_op!(binary_op + op: BinaryOp);
 
-    delegate_binary_op!(add add_unchecked add_with_overflow);
-    delegate_binary_op!(sub sub_unchecked sub_with_overflow);
+    delegate_binary_op!(add add_unchecked add_with_overflow add_saturating);
+    delegate_binary_op!(sub sub_unchecked sub_with_overflow sub_saturating);
     delegate_binary_op!(mul mul_unchecked mul_with_overflow);
-    delegate_binary_op!(div rem);
+    delegate_binary_op!(div div_exact rem);
     delegate_binary_op!(and or xor);
-    delegate_binary_op!(shl shl_unchecked);
-    delegate_binary_op!(shr shr_unchecked);
+    delegate_binary_op!(shl shl_unchecked shr shr_unchecked);
+    delegate_binary_op!(rotate_left rotate_right);
     delegate_binary_op!(eq ne lt le gt ge cmp);
     delegate_binary_op!(offset);
 }

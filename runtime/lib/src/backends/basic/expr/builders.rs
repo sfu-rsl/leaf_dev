@@ -732,7 +732,11 @@ mod simp {
         }
 
         fn add_with_overflow<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
-            self.add(operands)
+            Err(operands)
+        }
+
+        fn add_saturating<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            Err(operands)
         }
 
         fn sub<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
@@ -749,7 +753,11 @@ mod simp {
         }
 
         fn sub_with_overflow<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
-            self.sub(operands)
+            Err(operands)
+        }
+
+        fn sub_saturating<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            Err(operands)
         }
 
         fn mul<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
@@ -784,6 +792,10 @@ mod simp {
             } else {
                 Err(operands)
             }
+        }
+
+        fn div_exact<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            self.div(operands)
         }
 
         fn rem<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
@@ -859,6 +871,26 @@ mod simp {
 
         fn shr_unchecked<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
             self.shr(operands)
+        }
+
+        fn rotate_left<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            match operands {
+                // x _<_ 0 = x
+                BinaryOperands::Orig { first, second } if second.is_zero() => Ok(first.into()),
+                // 0 _<_ x = 0
+                BinaryOperands::Rev { first, .. } if first.is_zero() => Ok(first.into()),
+                _ => Err(operands),
+            }
+        }
+
+        fn rotate_right<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            match operands {
+                // x _>_ 0 = x
+                BinaryOperands::Orig { first, second } if second.is_zero() => Ok(first.into()),
+                // 0 _>_ x = 0
+                BinaryOperands::Rev { first, .. } if first.is_zero() => Ok(first.into()),
+                _ => Err(operands),
+            }
         }
 
         fn eq<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
@@ -1105,6 +1137,10 @@ mod simp {
             Err(operands)
         }
 
+        fn div_exact<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            Err(operands)
+        }
+
         fn rem<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
             Err(operands)
         }
@@ -1149,13 +1185,11 @@ mod simp {
         }
 
         fn shl<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
-            let (a, b) = (operands.a(), operands.b());
-
             match operands.expr().operator {
                 // (x << a) << b = x << (a + b)
                 BinaryOp::Shl => {
-                    let folded_value = ConstValue::binary_op_arithmetic(a, b, BinaryOp::Add);
-                    Ok(operands.fold_expr(folded_value))
+                    // TODO
+                    Err(operands)
                 }
                 _ => Err(operands),
             }
@@ -1166,13 +1200,11 @@ mod simp {
         }
 
         fn shr<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
-            let (a, b) = (operands.a(), operands.b());
-
             match operands.expr().operator {
                 // (x >> a) >> b = x >> (a + b)
                 BinaryOp::Shr => {
-                    let folded_value = ConstValue::binary_op_arithmetic(a, b, BinaryOp::Add);
-                    Ok(operands.fold_expr(folded_value))
+                    // TODO
+                    Err(operands)
                 }
                 _ => Err(operands),
             }
@@ -1182,11 +1214,51 @@ mod simp {
             self.shr(operands)
         }
 
+        fn rotate_left<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            match operands.expr().operator {
+                // (x _<_ a) _<_ b = x _<_ (a + b)
+                BinaryOp::RotateL => {
+                    // TODO
+                    Err(operands)
+                }
+                // (x _>_ a) _<_ b = x _<_ (b - a)
+                BinaryOp::RotateR => {
+                    // TODO
+                    Err(operands)
+                }
+                _ => Err(operands),
+            }
+        }
+
+        fn rotate_right<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            match operands.expr().operator {
+                // (x _>_ a) _>_ b = x _>_ (a + b)
+                BinaryOp::RotateR => {
+                    // TODO
+                    Err(operands)
+                }
+                // (x _<_ a) _>_ b = x _>_ (b - a)
+                BinaryOp::RotateL => {
+                    // TODO
+                    Err(operands)
+                }
+                _ => Err(operands),
+            }
+        }
+
         fn add_with_overflow<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
             Err(operands)
         }
 
+        fn add_saturating<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            Err(operands)
+        }
+
         fn sub_with_overflow<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
+            Err(operands)
+        }
+
+        fn sub_saturating<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
             Err(operands)
         }
 

@@ -107,13 +107,13 @@ where
         try_on_current_then_next!(self, binary_op, (operands, op), |operands|)
     }
 
-    impl_binary_expr_method!(add add_unchecked add_with_overflow);
-    impl_binary_expr_method!(sub sub_unchecked sub_with_overflow);
+    impl_binary_expr_method!(add add_unchecked add_with_overflow add_saturating);
+    impl_binary_expr_method!(sub sub_unchecked sub_with_overflow sub_saturating);
     impl_binary_expr_method!(mul mul_unchecked mul_with_overflow);
-    impl_binary_expr_method!(div rem);
+    impl_binary_expr_method!(div div_exact rem);
     impl_binary_expr_method!(and or xor);
-    impl_binary_expr_method!(shl shl_unchecked);
-    impl_binary_expr_method!(shr shr_unchecked);
+    impl_binary_expr_method!(shl shl_unchecked shr shr_unchecked);
+    impl_binary_expr_method!(rotate_left rotate_right);
     impl_binary_expr_method!(eq ne lt le gt ge cmp);
     impl_binary_expr_method!(offset);
 }

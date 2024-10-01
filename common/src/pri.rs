@@ -30,18 +30,23 @@ macro_rules! op_const {
 impl BinaryOp {
     const OVERFLOW: u8 = 0b01 << (core::mem::size_of::<u8>() * 8 - 2);
     const UNCHECKED: u8 = 0b10 << (core::mem::size_of::<u8>() * 8 - 2);
+    const SATURATING: u8 = 0b11 << (core::mem::size_of::<u8>() * 8 - 2);
 
     op_const! {
         ADD = 1;
         ADD_UNCHECKED = BinaryOp::ADD.0 | BinaryOp::UNCHECKED;
         ADD_WITH_OVERFLOW = BinaryOp::ADD.0 | BinaryOp::OVERFLOW;
+        ADD_SATURATING = BinaryOp::ADD.0 | BinaryOp::SATURATING;
         SUB = 2;
         SUB_UNCHECKED = BinaryOp::SUB.0 | BinaryOp::UNCHECKED;
         SUB_WITH_OVERFLOW = BinaryOp::SUB.0 | BinaryOp::OVERFLOW;
+        SUB_SATURATING = BinaryOp::SUB.0 | BinaryOp::SATURATING;
         MUL = 3;
         MUL_UNCHECKED = BinaryOp::MUL.0 | BinaryOp::UNCHECKED;
         MUL_WITH_OVERFLOW = BinaryOp::MUL.0 | BinaryOp::OVERFLOW;
         DIV = 4;
+        // It is almost the same thing as unchecked.
+        DIV_EXACT = BinaryOp::DIV.0 | BinaryOp::UNCHECKED;
         REM = 5;
         BIT_XOR = 6;
         BIT_AND = 7;
@@ -50,14 +55,16 @@ impl BinaryOp {
         SHL_UNCHECKED = BinaryOp::SHL.0 | BinaryOp::UNCHECKED;
         SHR = 10;
         SHR_UNCHECKED = BinaryOp::SHR.0 | BinaryOp::UNCHECKED;
-        EQ = 11;
-        LT = 12;
-        LE = 13;
-        NE = 14;
-        GE = 15;
-        GT = 16;
-        CMP = 17;
-        OFFSET = 18;
+        ROT_L = 11;
+        ROT_R = 12;
+        EQ = 21;
+        LT = 22;
+        LE = 23;
+        NE = 24;
+        GE = 25;
+        GT = 26;
+        CMP = 27;
+        OFFSET = 31;
     }
 
     #[cfg_attr(core_build, rustc_const_stable(feature = "rust1", since = "1.0.0"))]
@@ -69,12 +76,16 @@ impl BinaryOp {
             BinaryOp::ADD_UNCHECKED
         } else if raw == BinaryOp::ADD_WITH_OVERFLOW.as_u8() {
             BinaryOp::ADD_WITH_OVERFLOW
+        } else if raw == BinaryOp::ADD_SATURATING.as_u8() {
+            BinaryOp::ADD_SATURATING
         } else if raw == BinaryOp::SUB.as_u8() {
             BinaryOp::SUB
         } else if raw == BinaryOp::SUB_UNCHECKED.as_u8() {
             BinaryOp::SUB_UNCHECKED
         } else if raw == BinaryOp::SUB_WITH_OVERFLOW.as_u8() {
             BinaryOp::SUB_WITH_OVERFLOW
+        } else if raw == BinaryOp::SUB_SATURATING.as_u8() {
+            BinaryOp::SUB_SATURATING
         } else if raw == BinaryOp::MUL.as_u8() {
             BinaryOp::MUL
         } else if raw == BinaryOp::MUL_UNCHECKED.as_u8() {
@@ -83,6 +94,8 @@ impl BinaryOp {
             BinaryOp::MUL_WITH_OVERFLOW
         } else if raw == BinaryOp::DIV.as_u8() {
             BinaryOp::DIV
+        } else if raw == BinaryOp::DIV_EXACT.as_u8() {
+            BinaryOp::DIV_EXACT
         } else if raw == BinaryOp::REM.as_u8() {
             BinaryOp::REM
         } else if raw == BinaryOp::BIT_XOR.as_u8() {
@@ -99,6 +112,10 @@ impl BinaryOp {
             BinaryOp::SHR
         } else if raw == BinaryOp::SHR_UNCHECKED.as_u8() {
             BinaryOp::SHR_UNCHECKED
+        } else if raw == BinaryOp::ROT_L.as_u8() {
+            BinaryOp::ROT_L
+        } else if raw == BinaryOp::ROT_R.as_u8() {
+            BinaryOp::ROT_R
         } else if raw == BinaryOp::EQ.as_u8() {
             BinaryOp::EQ
         } else if raw == BinaryOp::LT.as_u8() {
@@ -122,6 +139,7 @@ impl BinaryOp {
 
     #[cfg_attr(core_build, rustc_const_stable(feature = "rust1", since = "1.0.0"))]
     #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
+    #[inline]
     pub const fn as_u8(self) -> u8 {
         self.0
     }
