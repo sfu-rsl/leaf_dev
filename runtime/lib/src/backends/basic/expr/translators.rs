@@ -14,7 +14,7 @@ pub(crate) mod z3 {
     };
 
     use crate::{
-        abs::{expr::sym_place::SelectTarget, BinaryOp, FieldIndex, IntType, ValueType},
+        abs::{expr::sym_place::SelectTarget, IntType, ValueType},
         backends::basic::expr::{prelude::*, SymBinaryOperands, SymVarId},
         solvers::z3::{ArrayNode, ArraySort, BVExt, BVNode, BVSort},
     };
@@ -326,20 +326,6 @@ pub(crate) mod z3 {
                     let right_bv = right.as_bit_vector();
                     let is_signed = left_node.is_signed();
 
-                    let operator = if operator.is_unchecked() {
-                        // FIXME: #197
-                        match operator {
-                            BinaryOp::AddUnchecked => BinaryOp::Add,
-                            BinaryOp::SubUnchecked => BinaryOp::Sub,
-                            BinaryOp::MulUnchecked => BinaryOp::Mul,
-                            BinaryOp::ShlUnchecked => BinaryOp::Shl,
-                            BinaryOp::ShrUnchecked => BinaryOp::Shr,
-                            BinaryOp::DivExact => BinaryOp::Div,
-                            _ => unreachable!(),
-                        }
-                    } else {
-                        operator
-                    };
                     let handle_ar_op = || {
                         let f: Option<fn(&_, &_) -> ast::BV<'ctx>> = match (operator, is_signed) {
                             (BinaryOp::Add, _) => Some(ast::BV::bvadd),
@@ -358,12 +344,6 @@ pub(crate) mod z3 {
                             (BinaryOp::RotateL, _) => Some(ast::BV::bvrotl),
                             (BinaryOp::RotateR, _) => Some(ast::BV::bvrotr),
                             (BinaryOp::Offset, _) => Some(todo!()),
-                            _ if operator.is_with_overflow() || operator.is_saturating() => {
-                                panic!(
-                                    "Binary operation with overflow is expected to be broken down at this point. Operator: {:?}",
-                                    operator
-                                );
-                            }
                             _ => None,
                         };
                         f.map(|f| left_node.map(|left| f(left, right_bv)).into())

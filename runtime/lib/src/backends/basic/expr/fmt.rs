@@ -228,6 +228,13 @@ impl Display for super::UnaryOp {
     }
 }
 
+impl Display for super::BinaryOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        let op: abs::BinaryOp = (*self).into();
+        op.fmt(f)
+    }
+}
+
 impl Display for PorterValue {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{{S({})}}", self.sym_values.len())

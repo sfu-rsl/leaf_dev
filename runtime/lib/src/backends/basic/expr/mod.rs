@@ -12,7 +12,7 @@ use derive_more as dm;
 use common::tyexp::TypeInfo;
 
 use crate::abs::expr::sym_place::{Select, SymbolicReadTree};
-use crate::utils::meta::define_reversible_pair;
+use crate::utils::meta::{define_reversible_pair, sub_enum};
 use place::SymPlaceValueRef;
 
 pub(crate) use crate::abs::{
@@ -136,37 +136,22 @@ impl ConstValue {
         }
     }
 
-    pub fn binary_op(first: &Self, second: &Self, operator: BinaryOp) -> ConcreteValue {
+    pub fn binary_op(first: &Self, second: &Self, operator: abs::BinaryOp) -> ConcreteValue {
+        use abs::BinaryOp::*;
         match operator {
-            BinaryOp::Add
-            | BinaryOp::Sub
-            | BinaryOp::Mul
-            | BinaryOp::Div
-            | BinaryOp::Rem
-            | BinaryOp::BitXor
-            | BinaryOp::BitAnd
-            | BinaryOp::BitOr => {
-                ConcreteValue::Const(Self::binary_op_arithmetic(first, second, operator))
-            }
-            BinaryOp::Shl | BinaryOp::Shr => {
-                ConcreteValue::Const(Self::binary_op_shift(first, second, operator))
-            }
-            BinaryOp::AddWithOverflow | BinaryOp::SubWithOverflow | BinaryOp::MulWithOverflow => {
-                ConcreteValue::Adt(Self::binary_op_with_overflow_arithmetic(
-                    first, second, operator,
-                ))
-            }
-            BinaryOp::AddUnchecked | BinaryOp::SubUnchecked | BinaryOp::MulUnchecked => {
+            Add | Sub | Mul | Div | Rem | BitXor | BitAnd | BitOr => ConcreteValue::Const(
+                Self::binary_op_arithmetic(first, second, operator.try_into().unwrap()),
+            ),
+            Shl | Shr => ConcreteValue::Const(Self::binary_op_shift(first, second, operator)),
+            AddWithOverflow | SubWithOverflow | MulWithOverflow => ConcreteValue::Adt(
+                Self::binary_op_with_overflow_arithmetic(first, second, operator),
+            ),
+            AddUnchecked | SubUnchecked | MulUnchecked => {
                 todo!("#197")
             }
-            BinaryOp::Eq
-            | BinaryOp::Lt
-            | BinaryOp::Le
-            | BinaryOp::Ne
-            | BinaryOp::Ge
-            | BinaryOp::Gt => ConcreteValue::Const(ConstValue::Bool(Self::binary_op_cmp(
-                first, second, operator,
-            ))),
+            Eq | Lt | Le | Ne | Ge | Gt => ConcreteValue::Const(ConstValue::Bool(
+                Self::binary_op_cmp(first, second, operator.try_into().unwrap()),
+            )),
             _ => unimplemented!("{:?} {:?} {:?}", first, second, operator),
         }
     }
@@ -252,11 +237,11 @@ impl ConstValue {
     fn binary_op_with_overflow_arithmetic(
         first: &Self,
         second: &Self,
-        operator: BinaryOp,
+        operator: abs::BinaryOp,
     ) -> AdtValue {
         /// use logic to determine whether the operation will overflow or underflow or be in bounds
         fn checked_op(
-            operator: BinaryOp,
+            operator: abs::BinaryOp,
             first: &Wrapping<u128>,
             second: &Wrapping<u128>,
             ty @ IntType { is_signed, .. }: IntType, // pattern matching in function args, cool!
@@ -269,9 +254,9 @@ impl ConstValue {
                 let second = second as i128;
 
                 let result = match operator {
-                    BinaryOp::Add => first.checked_add(second),
-                    BinaryOp::Sub => first.checked_sub(second),
-                    BinaryOp::Mul => first.checked_mul(second),
+                    abs::BinaryOp::Add => first.checked_add(second),
+                    abs::BinaryOp::Sub => first.checked_sub(second),
+                    abs::BinaryOp::Mul => first.checked_mul(second),
                     _ => unreachable!("unsupported by rust"),
                 };
 
@@ -288,9 +273,9 @@ impl ConstValue {
                 }
             } else {
                 let result = match operator {
-                    BinaryOp::Add => first.checked_add(second),
-                    BinaryOp::Sub => first.checked_sub(second),
-                    BinaryOp::Mul => first.checked_mul(second),
+                    abs::BinaryOp::Add => first.checked_add(second),
+                    abs::BinaryOp::Sub => first.checked_sub(second),
+                    abs::BinaryOp::Mul => first.checked_mul(second),
                     _ => unreachable!("unsupported by rust"),
                 };
 
@@ -337,7 +322,7 @@ impl ConstValue {
         }
     }
 
-    fn binary_op_shift(first: &Self, second: &Self, operator: BinaryOp) -> Self {
+    fn binary_op_shift(first: &Self, second: &Self, operator: abs::BinaryOp) -> Self {
         match (first, second) {
             (
                 Self::Int {
@@ -356,8 +341,8 @@ impl ConstValue {
 
                 let result = match operator {
                     // if second.0 is u128 or u64 & too big for usize, it will be usize::MAX
-                    BinaryOp::Shl => first << second.0 as usize,
-                    BinaryOp::Shr => first >> second.0 as usize,
+                    abs::BinaryOp::Shl => first << second.0 as usize,
+                    abs::BinaryOp::Shr => first >> second.0 as usize,
                     _ => unreachable!("invalid binop"),
                 };
 
@@ -702,14 +687,54 @@ impl SymBinaryOperands {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-#[repr(u8)]
-pub(crate) enum UnaryOp {
-    Neg = abs::UnaryOp::Neg as u8,
-    Not = abs::UnaryOp::Not as u8,
+sub_enum! {
+    #[repr(u8)]
+    #[derive(Clone, Copy, Debug)]
+    pub(crate) enum UnaryOp from abs::UnaryOp {
+        Neg,
+        Not,
+    }
 }
 
-pub(crate) type BinaryOp = crate::abs::BinaryOp;
+sub_enum! {
+    #[repr(u8)]
+    #[derive(Clone, Copy, Debug)]
+    pub(crate) enum BinaryOp from abs::BinaryOp {
+        Add,
+        Sub,
+        Mul,
+        Div,
+        Rem,
+
+        BitXor,
+        BitAnd,
+        BitOr,
+        Shl,
+        Shr,
+        RotateL,
+        RotateR,
+
+        Eq,
+        Lt,
+        Le,
+        Ne,
+        Ge,
+        Gt,
+        Cmp,
+
+        Offset,
+    }
+}
+
+sub_enum! {
+    #[repr(u8)]
+    #[derive(Clone, Copy, Debug)]
+    pub(crate) enum OverflowingBinaryOp from BinaryOp {
+        Add,
+        Sub,
+        Mul,
+    }
+}
 
 // FIXME: Remove this error suppression after adding support for more variants
 #[allow(unused)]
@@ -1059,7 +1084,7 @@ mod convert {
                         operand,
                     } => ValueType::try_from(operand.as_ref()),
                     Expr::Binary(BinaryExpr { operator, operands }) => {
-                        use abs::BinaryOp::*;
+                        use BinaryOp::*;
                         match operator {
                             Eq | Lt | Le | Ne | Ge | Gt => Ok(ValueType::Bool),
                             _ => ValueType::try_from(operands.first().as_ref()).map_err(|_| value),
@@ -1109,29 +1134,6 @@ mod convert {
                     LazyTypeInfo::IdPrimitive(_, value_ty),
                 ))) => Ok(*value_ty),
                 _ => Err(value),
-            }
-        }
-    }
-
-    impl TryFrom<abs::UnaryOp> for super::UnaryOp {
-        type Error = abs::UnaryOp;
-
-        fn try_from(value: abs::UnaryOp) -> Result<Self, Self::Error> {
-            use abs::UnaryOp::*;
-            match value {
-                Neg => Ok(Self::Neg),
-                Not => Ok(Self::Not),
-                _ => Err(value),
-            }
-        }
-    }
-
-    impl From<super::UnaryOp> for abs::UnaryOp {
-        fn from(value: super::UnaryOp) -> Self {
-            use super::UnaryOp::*;
-            match value {
-                Neg => Self::Neg,
-                Not => Self::Not,
             }
         }
     }

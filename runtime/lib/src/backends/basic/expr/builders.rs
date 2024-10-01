@@ -1,11 +1,11 @@
 use super::super::alias::{TypeManager, ValueRefBinaryExprBuilder};
-use super::{UnaryOp as BasicUnaryOp, *};
+use super::{BinaryOp as BasicBinaryOp, UnaryOp as BasicUnaryOp, *};
 use crate::abs::{
     expr::{
         macros::*, BinaryExprBuilder, ChainedExprBuilder, CompositeExprBuilder, ExprBuilder,
         UnaryExprBuilder,
     },
-    BinaryOp, CastKind, UnaryOp,
+    BinaryOp as AbsBinaryOp, CastKind, UnaryOp as AbsUnaryOp,
 };
 use common::log_debug;
 
@@ -55,7 +55,7 @@ mod toplevel {
         fn binary_op<'a>(
             &mut self,
             (first, second): Self::ExprRefPair<'a>,
-            op: BinaryOp,
+            op: AbsBinaryOp,
         ) -> Self::Expr<'a> {
             if first.is_symbolic() {
                 self.sym_builder.binary_op(
@@ -101,7 +101,7 @@ mod toplevel {
         type ExprRef<'a> = ValueRef;
         type Expr<'a> = ValueRef;
 
-        fn unary_op<'a>(&mut self, operand: Self::ExprRef<'a>, op: UnaryOp) -> Self::Expr<'a> {
+        fn unary_op<'a>(&mut self, operand: Self::ExprRef<'a>, op: AbsUnaryOp) -> Self::Expr<'a> {
             call_unary_method!(self, unary_op, operand, op)
         }
 
@@ -195,7 +195,7 @@ mod symbolic {
         fn binary_op<'a>(
             &mut self,
             mut operands: Self::ExprRefPair<'a>,
-            _op: BinaryOp,
+            _op: AbsBinaryOp,
         ) -> Self::Expr<'a> {
             let other = operands.as_flat_mut().1;
             match other.as_ref() {
@@ -229,7 +229,11 @@ mod symbolic {
         type ExprRef<'a> = SymValueRef;
         type Expr<'a> = Result<ValueRef, SymValueRef>;
 
-        fn unary_op<'a>(&mut self, mut operand: Self::ExprRef<'a>, _op: UnaryOp) -> Self::Expr<'a> {
+        fn unary_op<'a>(
+            &mut self,
+            mut operand: Self::ExprRef<'a>,
+            _op: AbsUnaryOp,
+        ) -> Self::Expr<'a> {
             self.resolve_if_porter(operand.as_mut());
             Err(operand)
         }
@@ -397,18 +401,18 @@ mod core {
         fn binary_op<'a>(
             &mut self,
             operands: Self::ExprRefPair<'a>,
-            op: BinaryOp,
+            op: AbsBinaryOp,
         ) -> Self::Expr<'a> {
             if op.is_with_overflow() {
                 let normal_op = match op {
-                    BinaryOp::AddWithOverflow => BinaryOp::Add,
-                    BinaryOp::SubWithOverflow => BinaryOp::Sub,
-                    BinaryOp::MulWithOverflow => BinaryOp::Mul,
+                    AbsBinaryOp::AddWithOverflow => AbsBinaryOp::Add,
+                    AbsBinaryOp::SubWithOverflow => AbsBinaryOp::Sub,
+                    AbsBinaryOp::MulWithOverflow => AbsBinaryOp::Mul,
                     _ => unreachable!(),
                 };
                 let normal_expr = self.binary_op(operands.clone(), normal_op);
                 let overflow_expr = Value::from(Expr::BinaryOverflow(BinaryExpr {
-                    operator: normal_op,
+                    operator: normal_op.try_into().unwrap(),
                     operands,
                 }));
                 AdtValue {
@@ -419,9 +423,20 @@ mod core {
                     ],
                 }
                 .into()
+            } else if op.is_unchecked() {
+                // FIXME: #197
+                let normal_op = match op {
+                    AbsBinaryOp::AddUnchecked => AbsBinaryOp::Add,
+                    AbsBinaryOp::SubUnchecked => AbsBinaryOp::Sub,
+                    AbsBinaryOp::MulUnchecked => AbsBinaryOp::Mul,
+                    _ => unreachable!(),
+                };
+                self.binary_op(operands, normal_op)
+            } else if op.is_saturating() {
+                todo!()
             } else {
                 Expr::Binary(BinaryExpr {
-                    operator: op,
+                    operator: op.try_into().unwrap(),
                     operands,
                 })
                 .into()
@@ -613,7 +628,7 @@ mod concrete {
         fn binary_op<'a>(
             &mut self,
             _operands: Self::ExprRefPair<'a>,
-            _op: BinaryOp,
+            _op: AbsBinaryOp,
         ) -> Self::Expr<'a> {
             UnevalValue::Some.to_value_ref()
         }
@@ -625,7 +640,7 @@ mod concrete {
         type ExprRef<'a> = ConcreteValueRef;
         type Expr<'a> = ValueRef;
 
-        fn unary_op<'a>(&mut self, _operand: Self::ExprRef<'a>, _op: UnaryOp) -> Self::Expr<'a> {
+        fn unary_op<'a>(&mut self, _operand: Self::ExprRef<'a>, _op: AbsUnaryOp) -> Self::Expr<'a> {
             UnevalValue::Some.to_value_ref()
         }
 
@@ -650,6 +665,7 @@ mod concrete {
 }
 
 mod simp {
+    use super::BasicBinaryOp::*;
     use super::*;
     use std::marker::PhantomData;
 
@@ -1007,7 +1023,7 @@ mod simp {
     pub(crate) struct ConstFolder;
 
     type FoldableOperands<'a> =
-        WithConstOperand<'a, BinaryExpr<BinaryOp, WithConstOperand<'a, &'a SymValueRef>>>;
+        WithConstOperand<'a, BinaryExpr<BasicBinaryOp, WithConstOperand<'a, &'a SymValueRef>>>;
 
     impl<'a> FoldableOperands<'a> {
         #[inline]
@@ -1023,7 +1039,7 @@ mod simp {
         }
 
         #[inline]
-        fn expr(&self) -> &BinaryExpr<BinaryOp, WithConstOperand<'a, &'a SymValueRef>> {
+        fn expr(&self) -> &BinaryExpr<BasicBinaryOp, WithConstOperand<'a, &'a SymValueRef>> {
             self.as_flat().0
         }
 
@@ -1046,7 +1062,12 @@ mod simp {
         /// Creates a new BinaryExpr from the existing symbolic value and the newly folded
         /// constant. Accepts a new operator and the `is_reversed` flag (true means x on the
         /// right).
-        fn new_expr(self, folded_value: ConstValue, op: BinaryOp, is_reversed: bool) -> BinaryExpr {
+        fn new_expr(
+            self,
+            folded_value: ConstValue,
+            op: BasicBinaryOp,
+            is_reversed: bool,
+        ) -> BinaryExpr {
             let expr = self.flatten().0;
             let x = expr.operands.flatten().0;
             BinaryExpr {
@@ -1077,22 +1098,20 @@ mod simp {
 
             match operands.expr().operator {
                 // (x + a) + b = x + (a + b)
-                BinaryOp::Add => {
-                    let folded_value = ConstValue::binary_op_arithmetic(a, b, BinaryOp::Add);
+                Add => {
+                    let folded_value = ConstValue::binary_op_arithmetic(a, b, Add);
                     Ok(operands.fold_expr(folded_value))
                 }
-                BinaryOp::Sub => {
+                Sub => {
                     match &operands.expr().operands {
                         // (x - a) + b = x - (a - b)
                         BinaryOperands::Orig { .. } => {
-                            let folded_value =
-                                ConstValue::binary_op_arithmetic(a, b, BinaryOp::Sub);
+                            let folded_value = ConstValue::binary_op_arithmetic(a, b, Sub);
                             Ok(operands.fold_expr(folded_value))
                         }
                         // (a - x) + b = (a + b) - x
                         BinaryOperands::Rev { .. } => {
-                            let folded_value =
-                                ConstValue::binary_op_arithmetic(a, b, BinaryOp::Add);
+                            let folded_value = ConstValue::binary_op_arithmetic(a, b, Add);
                             Ok(operands.fold_expr(folded_value))
                         }
                     }
@@ -1112,23 +1131,20 @@ mod simp {
                 BinaryOperands::Orig { .. } => {
                     match operands.expr().operator {
                         // (x + a) - b = x + (a - b)
-                        BinaryOp::Add => {
-                            let folded_value =
-                                ConstValue::binary_op_arithmetic(a, b, BinaryOp::Sub);
+                        Add => {
+                            let folded_value = ConstValue::binary_op_arithmetic(a, b, Sub);
                             Ok(operands.fold_expr(folded_value))
                         }
-                        BinaryOp::Sub => {
+                        Sub => {
                             match operands.expr().operands {
                                 // (x - a) - b = x - (a + b)
                                 BinaryOperands::Orig { .. } => {
-                                    let folded_value =
-                                        ConstValue::binary_op_arithmetic(a, b, BinaryOp::Add);
+                                    let folded_value = ConstValue::binary_op_arithmetic(a, b, Add);
                                     Ok(operands.fold_expr(folded_value))
                                 }
                                 // (a - x) - b = (a - b) - x
                                 BinaryOperands::Rev { .. } => {
-                                    let folded_value =
-                                        ConstValue::binary_op_arithmetic(a, b, BinaryOp::Sub);
+                                    let folded_value = ConstValue::binary_op_arithmetic(a, b, Sub);
                                     Ok(operands.fold_expr(folded_value))
                                 }
                             }
@@ -1138,23 +1154,21 @@ mod simp {
                 }
                 BinaryOperands::Rev { .. } => match operands.expr().operator {
                     // b - (x + a) = (b - a) - x
-                    BinaryOp::Add => {
-                        let folded_value = ConstValue::binary_op_arithmetic(b, a, BinaryOp::Sub);
-                        Ok(operands.new_expr(folded_value, BinaryOp::Sub, true))
+                    Add => {
+                        let folded_value = ConstValue::binary_op_arithmetic(b, a, Sub);
+                        Ok(operands.new_expr(folded_value, Sub, true))
                     }
-                    BinaryOp::Sub => {
+                    Sub => {
                         match operands.expr().operands {
                             // b - (x - a) = (b + a) - x
                             BinaryOperands::Orig { .. } => {
-                                let folded_value =
-                                    ConstValue::binary_op_arithmetic(b, a, BinaryOp::Add);
-                                Ok(operands.new_expr(folded_value, BinaryOp::Sub, true))
+                                let folded_value = ConstValue::binary_op_arithmetic(b, a, Add);
+                                Ok(operands.new_expr(folded_value, Sub, true))
                             }
                             // b - (a - x) = x + (b - a)
                             BinaryOperands::Rev { .. } => {
-                                let folded_value =
-                                    ConstValue::binary_op_arithmetic(b, a, BinaryOp::Sub);
-                                Ok(operands.new_expr(folded_value, BinaryOp::Add, false))
+                                let folded_value = ConstValue::binary_op_arithmetic(b, a, Sub);
+                                Ok(operands.new_expr(folded_value, Add, false))
                             }
                         }
                     }
@@ -1172,8 +1186,8 @@ mod simp {
 
             match operands.expr().operator {
                 // (x * a) * b = x * (a * b)
-                BinaryOp::Mul => {
-                    let folded_value = ConstValue::binary_op_arithmetic(a, b, BinaryOp::Mul);
+                Mul => {
+                    let folded_value = ConstValue::binary_op_arithmetic(a, b, Mul);
                     Ok(operands.fold_expr(folded_value))
                 }
                 _ => Err(operands),
@@ -1201,8 +1215,8 @@ mod simp {
 
             match operands.expr().operator {
                 // (x & a) & b = x & (a & b)
-                BinaryOp::BitAnd => {
-                    let folded_value = ConstValue::binary_op_arithmetic(a, b, BinaryOp::BitAnd);
+                BitAnd => {
+                    let folded_value = ConstValue::binary_op_arithmetic(a, b, BitAnd);
                     Ok(operands.fold_expr(folded_value))
                 }
                 _ => Err(operands),
@@ -1214,8 +1228,8 @@ mod simp {
 
             match operands.expr().operator {
                 // (x | a) | b = x | (a | b)
-                BinaryOp::BitOr => {
-                    let folded_value = ConstValue::binary_op_arithmetic(a, b, BinaryOp::BitOr);
+                BitOr => {
+                    let folded_value = ConstValue::binary_op_arithmetic(a, b, BitOr);
                     Ok(operands.fold_expr(folded_value))
                 }
                 _ => Err(operands),
@@ -1227,8 +1241,8 @@ mod simp {
 
             match operands.expr().operator {
                 // (x ^ a) ^ b = x ^ (a ^ b)
-                BinaryOp::BitXor => {
-                    let folded_value = ConstValue::binary_op_arithmetic(a, b, BinaryOp::BitXor);
+                BitXor => {
+                    let folded_value = ConstValue::binary_op_arithmetic(a, b, BitXor);
                     Ok(operands.fold_expr(folded_value))
                 }
                 _ => Err(operands),
@@ -1238,7 +1252,7 @@ mod simp {
         fn shl<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
             match operands.expr().operator {
                 // (x << a) << b = x << (a + b)
-                BinaryOp::Shl => {
+                Shl => {
                     // TODO
                     Err(operands)
                 }
@@ -1253,7 +1267,7 @@ mod simp {
         fn shr<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
             match operands.expr().operator {
                 // (x >> a) >> b = x >> (a + b)
-                BinaryOp::Shr => {
+                Shr => {
                     // TODO
                     Err(operands)
                 }
@@ -1268,12 +1282,12 @@ mod simp {
         fn rotate_left<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
             match operands.expr().operator {
                 // (x _<_ a) _<_ b = x _<_ (a + b)
-                BinaryOp::RotateL => {
+                RotateL => {
                     // TODO
                     Err(operands)
                 }
                 // (x _>_ a) _<_ b = x _<_ (b - a)
-                BinaryOp::RotateR => {
+                RotateR => {
                     // TODO
                     Err(operands)
                 }
@@ -1284,12 +1298,12 @@ mod simp {
         fn rotate_right<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
             match operands.expr().operator {
                 // (x _>_ a) _>_ b = x _>_ (a + b)
-                BinaryOp::RotateR => {
+                RotateR => {
                     // TODO
                     Err(operands)
                 }
                 // (x _<_ a) _>_ b = x _>_ (b - a)
-                BinaryOp::RotateL => {
+                RotateL => {
                     // TODO
                     Err(operands)
                 }

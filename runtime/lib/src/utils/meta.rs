@@ -79,3 +79,42 @@ macro_rules! define_reversible_pair {
     };
 }
 pub(crate) use define_reversible_pair;
+
+macro_rules! sub_enum {
+    (#[repr($repr_ty:ty)] $(#[$($attr: meta)*])* $vis:vis enum $name:ident from $src_name:ty { $($variant:ident),* $(,)? }) => {
+        #[repr($repr_ty)]
+        $(#[$($attr)*])*
+        $vis enum $name {
+            $(
+                $variant = <$src_name>::$variant as $repr_ty
+            ),*
+        }
+
+        impl From<$name> for $src_name {
+            #[inline]
+            fn from(value: $name) -> Self {
+                match value {
+                    $(
+                        $name::$variant => <$src_name>::$variant
+                    ),*
+                }
+            }
+        }
+
+        impl TryFrom<$src_name> for $name {
+            type Error = $src_name;
+
+            #[inline]
+            fn try_from(value: $src_name) -> Result<Self, Self::Error> {
+                match value {
+                    $(
+                        <$src_name>::$variant => Ok($name::$variant)
+                    ),*,
+                    _ => Err(value)
+                }
+            }
+        }
+    };
+
+}
+pub(crate) use sub_enum;

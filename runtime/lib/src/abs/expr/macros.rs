@@ -11,7 +11,7 @@ macro_rules! impl_general_binary_op_through_singulars {
         fn binary_op<'a>(
             &mut self,
             operands: Self::ExprRefPair<'a>,
-            op: BinaryOp,
+            op: crate::abs::BinaryOp,
         ) -> Self::Expr<'a> {
             use crate::abs::BinaryOp::*;
             let binop = match op {
@@ -78,37 +78,37 @@ macro_rules! impl_general_binary_op_for {
 macro_rules! impl_singular_binary_ops_through_general {
     () => {
         impl_general_binary_op_for!(
-            add = BinaryOp::Add
-            add_unchecked = BinaryOp::AddUnchecked
-            add_with_overflow = BinaryOp::AddWithOverflow
-            add_saturating = BinaryOp::AddSaturating
-            sub = BinaryOp::Sub
-            sub_unchecked = BinaryOp::SubUnchecked
-            sub_with_overflow = BinaryOp::SubWithOverflow
-            sub_saturating = BinaryOp::SubSaturating
-            mul = BinaryOp::Mul
-            mul_unchecked = BinaryOp::MulUnchecked
-            mul_with_overflow = BinaryOp::MulWithOverflow
-            div = BinaryOp::Div
-            div_exact = BinaryOp::DivExact
-            rem = BinaryOp::Rem
-            xor = BinaryOp::BitXor
-            and = BinaryOp::BitAnd
-            or = BinaryOp::BitOr
-            shl = BinaryOp::Shl
-            shl_unchecked = BinaryOp::ShlUnchecked
-            shr = BinaryOp::Shr
-            shr_unchecked = BinaryOp::ShrUnchecked
-            rotate_left = BinaryOp::RotateL
-            rotate_right = BinaryOp::RotateR
-            eq = BinaryOp::Eq
-            lt = BinaryOp::Lt
-            le = BinaryOp::Le
-            ne = BinaryOp::Ne
-            ge = BinaryOp::Ge
-            gt = BinaryOp::Gt
-            cmp = BinaryOp::Cmp
-            offset = BinaryOp::Offset
+            add = abs::BinaryOp::Add
+            add_unchecked = abs::BinaryOp::AddUnchecked
+            add_with_overflow = abs::BinaryOp::AddWithOverflow
+            add_saturating = abs::BinaryOp::AddSaturating
+            sub = abs::BinaryOp::Sub
+            sub_unchecked = abs::BinaryOp::SubUnchecked
+            sub_with_overflow = abs::BinaryOp::SubWithOverflow
+            sub_saturating = abs::BinaryOp::SubSaturating
+            mul = abs::BinaryOp::Mul
+            mul_unchecked = abs::BinaryOp::MulUnchecked
+            mul_with_overflow = abs::BinaryOp::MulWithOverflow
+            div = abs::BinaryOp::Div
+            div_exact = abs::BinaryOp::DivExact
+            rem = abs::BinaryOp::Rem
+            xor = abs::BinaryOp::BitXor
+            and = abs::BinaryOp::BitAnd
+            or = abs::BinaryOp::BitOr
+            shl = abs::BinaryOp::Shl
+            shl_unchecked = abs::BinaryOp::ShlUnchecked
+            shr = abs::BinaryOp::Shr
+            shr_unchecked = abs::BinaryOp::ShrUnchecked
+            rotate_left = abs::BinaryOp::RotateL
+            rotate_right = abs::BinaryOp::RotateR
+            eq = abs::BinaryOp::Eq
+            lt = abs::BinaryOp::Lt
+            le = abs::BinaryOp::Le
+            ne = abs::BinaryOp::Ne
+            ge = abs::BinaryOp::Ge
+            gt = abs::BinaryOp::Gt
+            cmp = abs::BinaryOp::Cmp
+            offset = abs::BinaryOp::Offset
         );
     };
 }
@@ -116,7 +116,11 @@ macro_rules! impl_singular_binary_ops_through_general {
 #[allow(unused_macros)]
 macro_rules! impl_general_unary_op_through_singulars {
     () => {
-        fn unary_op<'a>(&mut self, operand: Self::ExprRef<'a>, op: UnaryOp) -> Self::Expr<'a> {
+        fn unary_op<'a>(
+            &mut self,
+            operand: Self::ExprRef<'a>,
+            op: crate::abs::UnaryOp,
+        ) -> Self::Expr<'a> {
             use crate::abs::UnaryOp::*;
             (match op {
                 Not => Self::not,
@@ -138,9 +142,9 @@ macro_rules! impl_singular_unary_ops_through_general {
     () => {
         repeat_macro_for!(
             impl_singular_unary_op_through_general;
-            (not = UnaryOp::Not)
-            (neg = UnaryOp::Neg)
-            (ptr_metadata = UnaryOp::PtrMetadata)
+            (not = crate::abs::UnaryOp::Not)
+            (neg = crate::abs::UnaryOp::Neg)
+            (ptr_metadata = crate::abs::UnaryOp::PtrMetadata)
         );
     };
 }
