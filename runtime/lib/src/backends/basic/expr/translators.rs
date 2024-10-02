@@ -15,7 +15,7 @@ pub(crate) mod z3 {
 
     use crate::{
         abs::{expr::sym_place::SelectTarget, IntType, ValueType},
-        backends::basic::expr::{prelude::*, SymBinaryOperands, SymVarId},
+        backends::basic::expr::{prelude::*, OverflowingBinaryOp, SymBinaryOperands, SymVarId},
         solvers::z3::{ArrayNode, ArraySort, BVExt, BVNode, BVSort},
     };
 
@@ -186,9 +186,12 @@ pub(crate) mod z3 {
                     let (left, right) = self.translate_binary_operands(operands);
                     self.translate_binary_expr(*operator, left, right)
                 }
-                BinaryOverflow(BinaryExpr { operator, operands }) => {
+                BinaryBoundCheck {
+                    bin_expr: BinaryExpr { operator, operands },
+                    is_overflow,
+                } => {
                     let (left, right) = self.translate_binary_operands(operands);
-                    self.translate_binary_overflow(*operator, left, right)
+                    self.translate_binary_bound_check(*operator, left, right, *is_overflow)
                 }
                 Extension {
                     source,
@@ -561,11 +564,12 @@ pub(crate) mod z3 {
             }
         }
 
-        fn translate_binary_overflow(
+        fn translate_binary_bound_check(
             &mut self,
-            operator: BinaryOp,
+            operator: OverflowingBinaryOp,
             left: AstNode<'ctx>,
             right: AstNode<'ctx>,
+            is_overflow: bool,
         ) -> AstNode<'ctx> {
             // debug_assert!(operator.is_with_overflow());
             let AstNode::BitVector(BVNode(_, BVSort { is_signed })) = left else {
@@ -574,44 +578,21 @@ pub(crate) mod z3 {
 
             let left = left.as_bit_vector();
             let right = right.as_bit_vector();
-            let no_overflow = if is_signed {
-                let (overflow, underflow) = match operator {
-                    BinaryOp::Add => (
-                        ast::BV::bvadd_no_overflow(left, right, true),
-                        ast::BV::bvadd_no_underflow(left, right),
-                    ),
-                    BinaryOp::Sub => (
-                        ast::BV::bvsub_no_overflow(left, right),
-                        ast::BV::bvsub_no_underflow(left, right, true),
-                    ),
-                    BinaryOp::Mul => (
-                        ast::BV::bvmul_no_overflow(left, right, true),
-                        ast::BV::bvmul_no_underflow(left, right),
-                    ),
-                    _ => unreachable!(),
-                };
-                ast::Bool::and(overflow.get_ctx(), &[&overflow, &underflow])
-            } else {
-                match operator {
-                    BinaryOp::Add => {
-                        // note: in unsigned addition, underflow is impossible because there
-                        //       are no negative numbers. 0 + 0 is the smallest expression
-                        ast::BV::bvadd_no_overflow(left, right, false)
-                    }
-                    BinaryOp::Sub => {
-                        // note: in unsigned subtraction, overflow is impossible because there
-                        //       are no negative numbers. max - 0 is the largest expression
-                        ast::BV::bvsub_no_underflow(left, right, false)
-                    }
-                    BinaryOp::Mul => {
-                        // note: in unsigned multiplication, underflow is impossible because there
-                        //       are no negative numbers. x * 0 is the smallest expression
-                        ast::BV::bvmul_no_overflow(left, right, false)
-                    }
-                    _ => unreachable!(),
-                }
+
+            use OverflowingBinaryOp::*;
+            let in_bounds = match (is_overflow, operator, is_signed) {
+                (true, Add, _) => ast::BV::bvadd_no_overflow(left, right, is_signed),
+                (true, Sub, true) => ast::BV::bvsub_no_overflow(left, right),
+                // Impossible. Largest case: MAX - 0
+                (true, Sub, false) => ast::Bool::from_bool(left.get_ctx(), true),
+                (true, Mul, _) => ast::BV::bvmul_no_overflow(left, right, is_signed),
+                (false, Add, true) => ast::BV::bvadd_no_underflow(left, right),
+                // Impossible. Smallest case: 0 . 0
+                (false, Add | Mul, false) => ast::Bool::from_bool(left.get_ctx(), true),
+                (false, Sub, _) => ast::BV::bvsub_no_underflow(left, right, is_signed),
+                (false, Mul, true) => ast::BV::bvmul_no_underflow(left, right),
             };
-            ast::Bool::not(&no_overflow).into()
+            ast::Bool::not(&in_bounds).into()
         }
     }
 

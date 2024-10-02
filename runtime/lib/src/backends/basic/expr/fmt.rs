@@ -47,7 +47,8 @@ impl Display for ConstValue {
                         (bit_rep.0 as i128) << (128 - bit_size) >> (128 - bit_size);
                     write!(f, "{}", signed_bit_rep)
                 } else {
-                    write!(f, "{}", bit_rep.0)
+                    let masked_bit_rep = bit_rep.0 & (u128::MAX >> (u128::BITS - *bit_size as u32));
+                    write!(f, "{}", masked_bit_rep)
                 }?;
                 write!(f, "{ty}")
             }
@@ -159,7 +160,10 @@ impl Expr {
         match self {
             Expr::Unary { operator, .. } => write!(f, "{operator}"),
             Expr::Binary(BinaryExpr { operator, .. }) => write!(f, "{operator}"),
-            Expr::BinaryOverflow(BinaryExpr { operator, .. }) => write!(f, "O{operator}?"),
+            Expr::BinaryBoundCheck {
+                bin_expr: BinaryExpr { operator, .. },
+                is_overflow,
+            } => write!(f, "{}{operator}?", if *is_overflow { "O" } else { "U" }),
             Expr::Extension { .. } => write!(f, "Extend"),
             Expr::Extraction { .. } => write!(f, "Extract"),
             Expr::Ite { .. } => write!(f, "Ite"),
@@ -176,7 +180,10 @@ impl Expr {
         match self {
             Expr::Unary { operand, .. } => write!(f, "{operand}"),
             Expr::Binary(BinaryExpr { operands, .. })
-            | Expr::BinaryOverflow(BinaryExpr { operands, .. }) => {
+            | Expr::BinaryBoundCheck {
+                bin_expr: BinaryExpr { operands, .. },
+                is_overflow: _,
+            } => {
                 write!(f, "{}, {}", operands.first(), operands.second())
             }
             Expr::Extension {
@@ -231,6 +238,13 @@ impl Display for super::UnaryOp {
 impl Display for super::BinaryOp {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         let op: abs::BinaryOp = (*self).into();
+        op.fmt(f)
+    }
+}
+
+impl Display for super::OverflowingBinaryOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        let op: super::BinaryOp = (*self).into();
         op.fmt(f)
     }
 }

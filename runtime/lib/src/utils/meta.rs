@@ -76,8 +76,21 @@ macro_rules! define_reversible_pair {
                 }
             }
         }
+
+        impl$(<$($generic_type),*>)? core::fmt::Display for $name$(<$($generic_type),*>)?
+            where $t_first: core::fmt::Display,
+                  $t_second: core::fmt::Display,
+        {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                match self {
+                    Self::$orig { $first, $second } => write!(f, "({}, {})", $first, $second),
+                    Self::$rev { $second, $first } => write!(f, "({}, {})", $second, $first),
+                }
+            }
+        }
     };
 }
+
 pub(crate) use define_reversible_pair;
 
 macro_rules! sub_enum {

@@ -385,7 +385,7 @@ mod adapters {
 
 mod core {
     use super::*;
-    use std::mem::size_of;
+    use std::{mem::size_of, ops::Not};
 
     /// This is the base expression builder. It implements the lowest level for
     /// all the binary and unary functions. At this point all optimizations are
@@ -398,42 +398,36 @@ mod core {
         // NOTE: We have to generalize it to value because of overflow checks which generate a tuple.
         type Expr<'a> = Value;
 
+        #[tracing::instrument(level = "debug", skip_all, fields(operands = %operands, op = %op), ret(Display))]
         fn binary_op<'a>(
             &mut self,
             operands: Self::ExprRefPair<'a>,
             op: AbsBinaryOp,
         ) -> Self::Expr<'a> {
             if op.is_with_overflow() {
-                let normal_op = match op {
-                    AbsBinaryOp::AddWithOverflow => AbsBinaryOp::Add,
-                    AbsBinaryOp::SubWithOverflow => AbsBinaryOp::Sub,
-                    AbsBinaryOp::MulWithOverflow => AbsBinaryOp::Mul,
+                let wrapping_op = match op {
+                    AbsBinaryOp::AddWithOverflow => BasicBinaryOp::Add,
+                    AbsBinaryOp::SubWithOverflow => BasicBinaryOp::Sub,
+                    AbsBinaryOp::MulWithOverflow => BasicBinaryOp::Mul,
                     _ => unreachable!(),
                 };
-                let normal_expr = self.binary_op(operands.clone(), normal_op);
-                let overflow_expr = Value::from(Expr::BinaryOverflow(BinaryExpr {
-                    operator: normal_op.try_into().unwrap(),
-                    operands,
-                }));
-                AdtValue {
-                    kind: AdtKind::Struct,
-                    fields: vec![
-                        Some(normal_expr.to_value_ref()).into(),
-                        Some(overflow_expr.to_value_ref()).into(),
-                    ],
-                }
-                .into()
+                self.with_overflow_op(operands, wrapping_op).into()
             } else if op.is_unchecked() {
-                // FIXME: #197
-                let normal_op = match op {
+                let wrapping_op = match op {
                     AbsBinaryOp::AddUnchecked => AbsBinaryOp::Add,
                     AbsBinaryOp::SubUnchecked => AbsBinaryOp::Sub,
                     AbsBinaryOp::MulUnchecked => AbsBinaryOp::Mul,
                     _ => unreachable!(),
                 };
-                self.binary_op(operands, normal_op)
+                // FIXME: #197
+                self.binary_op(operands, wrapping_op)
             } else if op.is_saturating() {
-                todo!()
+                let wrapping_op = match op {
+                    AbsBinaryOp::AddSaturating => BasicBinaryOp::Add,
+                    AbsBinaryOp::SubSaturating => BasicBinaryOp::Sub,
+                    _ => unreachable!(),
+                };
+                self.saturating_op(operands, wrapping_op).into()
             } else {
                 Expr::Binary(BinaryExpr {
                     operator: op.try_into().unwrap(),
@@ -444,6 +438,112 @@ mod core {
         }
 
         impl_singular_binary_ops_through_general!();
+    }
+
+    impl CoreBuilder {
+        fn with_overflow_op(
+            &mut self,
+            operands: SymBinaryOperands,
+            wrapping_op: BasicBinaryOp,
+        ) -> AdtValue {
+            let (make_check_expr_if_possible, wrapping_value, _) =
+                self.break_down_for_overflow(operands, wrapping_op);
+
+            let overflow_expr = make_check_expr_if_possible(true);
+            let underflow_expr = make_check_expr_if_possible(false);
+
+            let check_expr = match (overflow_expr, underflow_expr) {
+                (Some(overflow), Some(underflow)) => self.binary_op(
+                    (overflow.to_value_ref(), underflow.to_value_ref().0).into(),
+                    AbsBinaryOp::BitOr,
+                ),
+                (Some(overflow), None) => overflow.into(),
+                (None, Some(underflow)) => underflow.into(),
+                (None, None) => unreachable!(),
+            };
+
+            AdtValue {
+                kind: AdtKind::Struct,
+                fields: vec![
+                    Some(wrapping_value.to_value_ref().into()).into(),
+                    Some(check_expr.to_value_ref()).into(),
+                ],
+            }
+        }
+
+        fn saturating_op(
+            &mut self,
+            operands: SymBinaryOperands,
+            wrapping_op: BasicBinaryOp,
+        ) -> Expr {
+            let (make_check_expr_if_possible, wrapping_value, ty) =
+                self.break_down_for_overflow(operands, wrapping_op);
+            // (Sign-extended bit representation)
+            let min_of_ty = Wrapping(
+                u128::MAX.wrapping_shl(ty.bit_size as u32 - (if ty.is_signed { 1 } else { 0 })),
+            );
+
+            let value = wrapping_value;
+            let value = if let Some(overflow_expr) = make_check_expr_if_possible(true) {
+                let max_value = ConstValue::Int {
+                    bit_rep: min_of_ty.not(),
+                    ty,
+                };
+                Expr::Ite {
+                    condition: overflow_expr.to_value_ref(),
+                    if_target: max_value.to_value_ref(),
+                    else_target: value.to_value_ref().into(),
+                }
+            } else {
+                value
+            };
+
+            let value = if let Some(underflow_expr) = make_check_expr_if_possible(false) {
+                let min_value = ConstValue::Int {
+                    bit_rep: min_of_ty,
+                    ty,
+                };
+                Expr::Ite {
+                    condition: underflow_expr.to_value_ref(),
+                    if_target: min_value.to_value_ref(),
+                    else_target: value.to_value_ref().into(),
+                }
+            } else {
+                value
+            };
+
+            value
+        }
+
+        fn break_down_for_overflow(
+            &mut self,
+            operands: SymBinaryOperands,
+            wrapping_op: BasicBinaryOp,
+        ) -> (impl Fn(bool) -> Option<Expr>, Expr, IntType) {
+            let op: OverflowingBinaryOp = wrapping_op.try_into().unwrap();
+            let Ok(ValueType::Int(ty)) = ValueType::try_from(operands.as_flat().0.as_ref()) else {
+                unreachable!("Only integer types are expected for overflowing operations.")
+            };
+            let Value::Symbolic(SymValue::Expression(wrapping_expr)) =
+                self.binary_op(operands.clone(), wrapping_op.into())
+            else {
+                unreachable!()
+            };
+            let make_check_expr_if_possible = move |is_overflow| {
+                if op.is_possible(is_overflow, ty.is_signed) {
+                    Some(Expr::BinaryBoundCheck {
+                        bin_expr: BinaryExpr {
+                            operator: op,
+                            operands: operands.clone(),
+                        },
+                        is_overflow,
+                    })
+                } else {
+                    None
+                }
+            };
+            (make_check_expr_if_possible, wrapping_expr, ty)
+        }
     }
 
     impl UnaryExprBuilder for CoreBuilder {

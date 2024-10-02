@@ -170,7 +170,7 @@ mod implementation {
                 Expr::Partial(..) => todo!(),
                 Expr::Transmutation { .. } => todo!(),
                 Expr::Unary { .. }
-                | Expr::BinaryOverflow(..)
+                | Expr::BinaryBoundCheck { .. }
                 | Expr::Ref(_)
                 | Expr::Len(_)
                 | Expr::PtrMetadata(..) => unexpected(),

@@ -524,11 +524,11 @@ impl ProgramRuntimeInterface for BasicPri {
     }
 
     fn intrinsic_assign_saturating_add(dest: PlaceRef, first: OperandRef, second: OperandRef) {
-        todo!()
+        Self::assign_binary_op(dest, Self::BinaryOp::AddSaturating, first, second)
     }
 
     fn intrinsic_assign_saturating_sub(dest: PlaceRef, first: OperandRef, second: OperandRef) {
-        todo!()
+        Self::assign_binary_op(dest, Self::BinaryOp::SubSaturating, first, second)
     }
 
     fn intrinsic_assign_exact_div(dest: PlaceRef, first: OperandRef, second: OperandRef) {

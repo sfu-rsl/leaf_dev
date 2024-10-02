@@ -736,6 +736,20 @@ sub_enum! {
     }
 }
 
+impl OverflowingBinaryOp {
+    #[inline]
+    pub fn is_possible(&self, overflow: bool, is_signed: bool) -> bool {
+        use OverflowingBinaryOp::*;
+        match (overflow, self, is_signed) {
+            // Impossible. Largest case: MAX - 0
+            (true, Sub, false) => false,
+            // Impossible. Smallest case: 0 . 0
+            (false, Add | Mul, false) => false,
+            _ => true,
+        }
+    }
+}
+
 // FIXME: Remove this error suppression after adding support for more variants
 #[allow(unused)]
 #[derive(Clone, Debug, dm::From)]
@@ -747,7 +761,10 @@ pub(crate) enum Expr {
 
     Binary(BinaryExpr),
     #[from(ignore)]
-    BinaryOverflow(BinaryExpr),
+    BinaryBoundCheck {
+        bin_expr: BinaryExpr<OverflowingBinaryOp>,
+        is_overflow: bool,
+    },
 
     Extension {
         source: SymValueRef,
