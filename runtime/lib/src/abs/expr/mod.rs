@@ -1,5 +1,6 @@
 pub(crate) mod chained;
 pub(crate) mod composite;
+pub(crate) mod logger;
 pub(crate) mod macros;
 pub(crate) mod proj;
 pub(crate) mod sym_place;
@@ -76,4 +77,6 @@ where
     type Expr<'a>: Into<E>;
 }
 
-pub(crate) use {chained::ChainedExprBuilder, composite::CompositeExprBuilder};
+pub(crate) use {
+    chained::ChainedExprBuilder, composite::CompositeExprBuilder, logger::LoggerExprBuilder,
+};

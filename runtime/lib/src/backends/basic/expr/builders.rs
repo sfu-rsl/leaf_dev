@@ -3,15 +3,15 @@ use super::{BinaryOp as BasicBinaryOp, UnaryOp as BasicUnaryOp, *};
 use crate::abs::{
     expr::{
         macros::*, BinaryExprBuilder, ChainedExprBuilder, CompositeExprBuilder, ExprBuilder,
-        UnaryExprBuilder,
+        LoggerExprBuilder, UnaryExprBuilder,
     },
     BinaryOp as AbsBinaryOp, CastKind, UnaryOp as AbsUnaryOp,
 };
-use common::log_debug;
 
 type Composite<Binary, Unary> = CompositeExprBuilder<Binary, Unary>;
 type Chained<Current, Next, Expr = ValueRef, CurrentExpr = Expr> =
     ChainedExprBuilder<Current, Next, Expr, CurrentExpr>;
+type Logger<B> = LoggerExprBuilder<B>;
 
 pub(crate) type DefaultExprBuilder = toplevel::TopLevelBuilder;
 
@@ -141,31 +141,35 @@ mod symbolic {
         *,
     };
 
-    pub(crate) type SymbolicBuilder = Composite<
-        /*Binary:*/
-        Chained<
-            UnevaluatedResolverBuilder,
-            Chained<ConstSimplifier, Chained<ConstFolder, CoreBuilder>>,
+    pub(crate) type SymbolicBuilder = Logger<
+        Composite<
+            /*Binary:*/
+            Chained<
+                UnevaluatedResolverBuilder,
+                Chained<ConstSimplifier, Chained<ConstFolder, CoreBuilder>>,
+            >,
+            /*Unary:*/
+            Chained<UnevaluatedResolverBuilder, CoreBuilder>,
         >,
-        /*Unary:*/
-        Chained<UnevaluatedResolverBuilder, CoreBuilder>,
     >;
 
     impl SymbolicBuilder {
         pub(crate) fn new(type_manager: Rc<dyn TypeManager>) -> Self {
-            Self {
-                binary: Chained::new(
-                    UnevaluatedResolverBuilder {
-                        type_manager: type_manager.clone(),
-                    },
-                    Default::default(),
-                ),
-                unary: Chained::new(
-                    UnevaluatedResolverBuilder {
-                        type_manager: type_manager.clone(),
-                    },
-                    Default::default(),
-                ),
+            Logger {
+                builder: Composite {
+                    binary: Chained::new(
+                        UnevaluatedResolverBuilder {
+                            type_manager: type_manager.clone(),
+                        },
+                        Default::default(),
+                    ),
+                    unary: Chained::new(
+                        UnevaluatedResolverBuilder {
+                            type_manager: type_manager.clone(),
+                        },
+                        Default::default(),
+                    ),
+                },
             }
         }
     }
@@ -398,7 +402,6 @@ mod core {
         // NOTE: We have to generalize it to value because of overflow checks which generate a tuple.
         type Expr<'a> = Value;
 
-        #[tracing::instrument(level = "debug", skip_all, fields(operands = %operands, op = %op), ret(Display))]
         fn binary_op<'a>(
             &mut self,
             operands: Self::ExprRefPair<'a>,
@@ -584,7 +587,6 @@ mod core {
         }
 
         fn cast<'a>(&mut self, operand: Self::ExprRef<'a>, target: CastKind) -> Self::Expr<'a> {
-            log_debug!("Casting {:?} to {:?}", operand, target);
             let expr = match ValueType::try_from(target) {
                 Ok(value_type) => to_cast_expr(operand, value_type),
                 Err(target) => {
@@ -615,7 +617,6 @@ mod core {
                     }
                 }
             };
-            log_debug!("Cast expression for {:?}: {}", target, expr);
 
             expr
         }
