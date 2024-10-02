@@ -1,0 +1,1 @@
+../../../intrinsics/operators/binary/rotate.rs
