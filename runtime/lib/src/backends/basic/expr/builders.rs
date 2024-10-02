@@ -417,6 +417,7 @@ mod core {
                     AbsBinaryOp::AddUnchecked => AbsBinaryOp::Add,
                     AbsBinaryOp::SubUnchecked => AbsBinaryOp::Sub,
                     AbsBinaryOp::MulUnchecked => AbsBinaryOp::Mul,
+                    AbsBinaryOp::DivExact => AbsBinaryOp::Div,
                     _ => unreachable!(),
                 };
                 // FIXME: #197

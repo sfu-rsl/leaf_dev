@@ -532,7 +532,7 @@ impl ProgramRuntimeInterface for BasicPri {
     }
 
     fn intrinsic_assign_exact_div(dest: PlaceRef, first: OperandRef, second: OperandRef) {
-        todo!()
+        Self::assign_binary_op(dest, Self::BinaryOp::DivExact, first, second);
     }
 }
 
