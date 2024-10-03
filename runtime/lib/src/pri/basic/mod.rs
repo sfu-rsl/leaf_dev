@@ -534,6 +534,30 @@ impl ProgramRuntimeInterface for BasicPri {
     fn intrinsic_assign_exact_div(dest: PlaceRef, first: OperandRef, second: OperandRef) {
         Self::assign_binary_op(dest, Self::BinaryOp::DivExact, first, second);
     }
+
+    fn intrinsic_assign_bitreverse(dest: PlaceRef, x: OperandRef) {
+        todo!("Implement bitreverse intrinsic");
+    }
+
+    fn intrinsic_assign_cttz_nonzero(dest: PlaceRef, x: OperandRef) {
+        todo!("Implement cttz_nonzero intrinsic");
+    }
+
+    fn intrinsic_assign_cttz(dest: PlaceRef, x: OperandRef) {
+        todo!("Implement cttz intrinsic");
+    }
+
+    fn intrinsic_assign_ctpop(dest: PlaceRef, x: OperandRef) {
+        todo!("Implement ctpop intrinsic");
+    }
+
+    fn intrinsic_assign_ctlz_nonzero(dest: PlaceRef, x: OperandRef) {
+        todo!("Implement ctlz_nonzero intrinsic");
+    }
+
+    fn intrinsic_assign_ctlz(dest: PlaceRef, x: OperandRef) {
+        todo!("Implement ctlz intrinsic");
+    }
 }
 
 impl BasicPri {

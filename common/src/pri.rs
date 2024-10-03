@@ -464,6 +464,12 @@ pub mod macros {
               { fn intrinsic_assign_saturating_add(dest: PlaceRef, first: OperandRef, second: OperandRef) }
               { fn intrinsic_assign_saturating_sub(dest: PlaceRef, first: OperandRef, second: OperandRef) }
               { fn intrinsic_assign_exact_div(dest: PlaceRef, first: OperandRef, second: OperandRef) }
+              { fn intrinsic_assign_bitreverse(dest: PlaceRef, x: OperandRef) }
+              { fn intrinsic_assign_cttz_nonzero(dest: PlaceRef, x: OperandRef) }
+              { fn intrinsic_assign_cttz(dest: PlaceRef, x: OperandRef) }
+              { fn intrinsic_assign_ctpop(dest: PlaceRef, x: OperandRef) }
+              { fn intrinsic_assign_ctlz_nonzero(dest: PlaceRef, x: OperandRef) }
+              { fn intrinsic_assign_ctlz(dest: PlaceRef, x: OperandRef) }
             }
         };
     }
@@ -760,6 +766,18 @@ pub mod macros {
                 fn intrinsic_assign_saturating_sub(dest:PlaceRef,first:OperandRef,second:OperandRef);
             }$modifier!{
                 fn intrinsic_assign_exact_div(dest:PlaceRef,first:OperandRef,second:OperandRef);
+            }$modifier!{
+                fn intrinsic_assign_bitreverse(dest:PlaceRef,x:OperandRef);
+            }$modifier!{
+                fn intrinsic_assign_cttz_nonzero(dest:PlaceRef,x:OperandRef);
+            }$modifier!{
+                fn intrinsic_assign_cttz(dest:PlaceRef,x:OperandRef);
+            }$modifier!{
+                fn intrinsic_assign_ctpop(dest:PlaceRef,x:OperandRef);
+            }$modifier!{
+                fn intrinsic_assign_ctlz_nonzero(dest:PlaceRef,x:OperandRef);
+            }$modifier!{
+                fn intrinsic_assign_ctlz(dest:PlaceRef,x:OperandRef);
             }
         };
         (modifier: $modifier:path) => {
