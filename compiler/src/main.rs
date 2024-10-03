@@ -162,6 +162,9 @@ mod driver_callbacks {
             };
             passes.set_leaf_config(config);
             passes.add_config_callback(Box::new(move |rustc_config, leafc_config| {
+                /* Forcing inlining to happen as some compiler helper functions in the PRI use
+                 * generic functions from the core library which may cause infinite loops. */
+                rustc_config.opts.unstable_opts.inline_mir = Some(true);
                 if leafc_config.codegen_all_mir {
                     config_codegen_all_mode(rustc_config, leafc_config);
                 }

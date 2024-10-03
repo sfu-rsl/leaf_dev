@@ -173,6 +173,7 @@ mod intrinsics {
     pub(crate) enum IntrinsicDecision {
         PriFunc(LeafIntrinsicSymbol),
         NoOp,
+        ConstEvaluated,
         ToDo,
         NotPlanned,
         Unsupported,
@@ -191,10 +192,12 @@ mod intrinsics {
                 discriminant_value,
                 offset,
                 float_to_int_unchecked,
+                min_align_of,
                 add_with_overflow,
                 sub_with_overflow,
                 mul_with_overflow,
                 three_way_compare,
+                size_of,
                 unchecked_add,
                 unchecked_div,
                 unchecked_mul,
@@ -207,6 +210,7 @@ mod intrinsics {
                 wrapping_sub,
                 write_via_move,
                 read_via_copy,
+                ub_checks,
             )
         };
     }
@@ -217,15 +221,12 @@ mod intrinsics {
             // phase we perform the instrumentation.
             $macro!(
                 variant_count,
-                ub_checks,
                 type_name,
                 type_id,
-                size_of,
                 ptr_guaranteed_cmp,
                 pref_align_of,
                 needs_drop,
                 min_align_of_val,
-                min_align_of,
                 likely,
                 forget,
                 const_allocate,
@@ -582,10 +583,10 @@ mod intrinsics {
             }
             rsym::exact_div => IntrinsicDecision::PriFunc(psym::intrinsic_assign_exact_div),
             of_noop_funcs!(any_of) => IntrinsicDecision::NoOp,
+            of_const_evaluated_funcs!(any_of) => IntrinsicDecision::ConstEvaluated,
             of_to_be_supported_funcs!(any_of) => IntrinsicDecision::ToDo,
             of_float_arith_funcs!(any_of) => IntrinsicDecision::NotPlanned,
             of_mir_translated_funcs!(any_of) => IntrinsicDecision::Unexpected,
-            of_const_evaluated_funcs!(any_of) => IntrinsicDecision::Unexpected,
             other if matches!(other.as_str(), of_atomic_op_funcs!(str_any_of)) => {
                 IntrinsicDecision::Unsupported
             }

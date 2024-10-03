@@ -12,7 +12,7 @@ use rustc_middle::{
     },
     ty::{IntrinsicDef, TyCtxt},
 };
-use rustc_span::{def_id::DefId, source_map::Spanned};
+use rustc_span::{def_id::DefId, source_map::Spanned, Span};
 use rustc_target::abi::{FieldIdx, VariantIdx};
 
 use common::{log_debug, log_info, log_warn};
@@ -459,7 +459,7 @@ where
         target: &Option<BasicBlock>,
         _unwind: &UnwindAction,
         _call_source: &mir::CallSource,
-        _fn_span: rustc_span::Span,
+        fn_span: Span,
     ) {
         let tcx = self.call_adder.tcx();
         let opt_def_id = if let rustc_middle::ty::TyKind::FnDef(def_id, ..) =
@@ -479,6 +479,7 @@ where
             args,
             destination,
             target,
+            fn_span,
         };
 
         match opt_def_id {
@@ -496,7 +497,7 @@ where
         &mut self,
         _func: &Operand<'tcx>,
         _args: &[Spanned<Operand<'tcx>>],
-        _fn_span: rustc_span::Span,
+        _fn_span: Span,
     ) -> () {
         // NOTE: https://github.com/rust-lang/rust/issues/112788
         unimplemented!(
@@ -536,7 +537,7 @@ where
         _template: &[rustc_ast::InlineAsmTemplatePiece],
         _operands: &[mir::InlineAsmOperand<'tcx>],
         _options: &rustc_ast::InlineAsmOptions,
-        _line_spans: &'tcx [rustc_span::Span],
+        _line_spans: &'tcx [Span],
         _destination: &Box<[BasicBlock]>,
         _unwind: &UnwindAction,
     ) {
@@ -549,6 +550,7 @@ struct CallParams<'a, 'tcx> {
     args: &'a [Spanned<Operand<'tcx>>],
     destination: &'a Place<'tcx>,
     target: &'a Option<BasicBlock>,
+    fn_span: Span,
 }
 
 impl<'tcx, C> LeafTerminatorKindVisitor<C>
@@ -574,7 +576,7 @@ where
                     .assign(dest_ref, dest_ty)
                     .perform_intrinsic_by(def_id, func_name, args.into_iter());
             }
-            NoOp => {
+            NoOp | ConstEvaluated => {
                 // Currently, no instrumentation
                 Default::default()
             }
@@ -606,7 +608,10 @@ where
                 self.instrument_unsupported_call(params)
             }
             Unexpected => {
-                panic!("Unexpected intrinsic call to {:?} observed.", def.name);
+                panic!(
+                    "Unexpected intrinsic call to {:?} observed at {:?}.",
+                    def.name, params.fn_span,
+                );
             }
         }
     }
@@ -638,6 +643,7 @@ where
             args,
             destination,
             target,
+            fn_span: _,
         }: CallParams<'_, 'tcx>,
     ) {
         let mut call_adder = self.call_adder.before();
