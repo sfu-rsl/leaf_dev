@@ -54,8 +54,6 @@ pub(crate) trait UnaryExprBuilder {
     fn unary_op<'a>(&mut self, operand: Self::ExprRef<'a>, op: UnaryOp) -> Self::Expr<'a>;
 
     unary_fn_signature!(not neg ptr_metadata);
-    unary_fn_signature!(address_of len discriminant);
-
     unary_fn_signature!(cast + target: CastKind);
 }
 

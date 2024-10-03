@@ -117,18 +117,6 @@ mod toplevel {
             call_unary_method!(self, ptr_metadata, operand)
         }
 
-        fn address_of<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
-            call_unary_method!(self, address_of, operand)
-        }
-
-        fn len<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
-            call_unary_method!(self, len, operand)
-        }
-
-        fn discriminant<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
-            call_unary_method!(self, discriminant, operand)
-        }
-
         fn cast<'a>(&mut self, operand: Self::ExprRef<'a>, target: CastKind) -> Self::Expr<'a> {
             call_unary_method!(self, cast, operand, target)
         }
@@ -243,21 +231,6 @@ mod symbolic {
         }
 
         impl_singular_unary_ops_through_general!();
-
-        fn address_of<'a>(&mut self, mut operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
-            self.resolve_if_porter(operand.as_mut());
-            Err(operand)
-        }
-
-        fn len<'a>(&mut self, mut operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
-            self.resolve_if_porter(operand.as_mut());
-            Err(operand)
-        }
-
-        fn discriminant<'a>(&mut self, mut operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
-            self.resolve_if_porter(operand.as_mut());
-            Err(operand)
-        }
 
         fn cast<'a>(
             &mut self,
@@ -574,18 +547,6 @@ mod core {
             Expr::PtrMetadata(operand.into())
         }
 
-        fn address_of<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
-            todo!()
-        }
-
-        fn len<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
-            todo!()
-        }
-
-        fn discriminant<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
-            todo!("#233: Add support for discriminant operator {:?}", operand)
-        }
-
         fn cast<'a>(&mut self, operand: Self::ExprRef<'a>, target: CastKind) -> Self::Expr<'a> {
             let expr = match ValueType::try_from(target) {
                 Ok(value_type) => to_cast_expr(operand, value_type),
@@ -747,18 +708,6 @@ mod concrete {
         }
 
         impl_singular_unary_ops_through_general!();
-
-        fn address_of<'a>(&mut self, _operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
-            UnevalValue::Some.to_value_ref()
-        }
-
-        fn len<'a>(&mut self, _operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
-            UnevalValue::Some.to_value_ref()
-        }
-
-        fn discriminant<'a>(&mut self, _operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
-            UnevalValue::Some.to_value_ref()
-        }
 
         fn cast<'a>(&mut self, _operand: Self::ExprRef<'a>, _target: CastKind) -> Self::Expr<'a> {
             UnevalValue::Some.to_value_ref()
