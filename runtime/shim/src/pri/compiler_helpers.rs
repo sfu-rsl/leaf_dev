@@ -55,34 +55,49 @@ static _CONST_UNARY_OP_OF_REFERENCER: fn(u8) -> UnaryOp = const_unary_op_of;
 
 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
 pub fn set_place_address_typed<T>(place: PlaceRef, address: *const T) {
-    super::set_place_address(place, address.cast::<()>() as RawPointer)
+    super::set_place_address(place, address as *const () as RawPointer)
 }
 
 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
+#[cfg_attr(
+    core_build,
+    rustc_const_unstable(feature = "const_eval_select", issue = "124625")
+)]
 #[inline(always)]
-pub fn type_id_of<T: ?Sized + 'static>() -> TypeId {
+pub const fn type_id_of<T: ?Sized + 'static>() -> TypeId {
     /* NOTE: Once this function is const in stable build, we can mark this
      * function as constant as well. */
     /* NOTE: Do we need to bother about inlining?
      * Based on the last checks, LLVM is smart enough to inline this function
-     * automatically and even replace everything with u128.
-     * Also, giving this function the `inline` attribute will cause it to
-     * not be exported. */
-    common::utils::type_id_of::<T>()
+     * automatically and even replace everything with u128. */
+    fn rt<T: ?Sized + 'static>() -> TypeId {
+        super::run_rec_guarded(
+            /* If we are recursing, the value doesn't matter (although unsafe) */
+            unsafe { core::intrinsics::transmute([0u8; core::intrinsics::size_of::<TypeId>()]) },
+            || common::utils::type_id_of::<T>(),
+        )
+    }
+    core::intrinsics::const_eval_select((), common::utils::type_id_of::<T>, rt::<T>)
 }
 
 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
-pub fn size_of<T>() -> TypeSize {
+#[cfg_attr(core_build, rustc_const_stable(feature = "rust1", since = "1.0.0"))]
+#[inline(always)]
+pub const fn size_of<T>() -> TypeSize {
     core::intrinsics::size_of::<T>() as TypeSize
 }
 
 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
-pub fn const_binary_op_of(raw: u8) -> BinaryOp {
+#[cfg_attr(core_build, rustc_const_stable(feature = "rust1", since = "1.0.0"))]
+#[inline(always)]
+pub const fn const_binary_op_of(raw: u8) -> BinaryOp {
     BinaryOp::from_raw(raw)
 }
 
 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
-pub fn const_unary_op_of(raw: u8) -> UnaryOp {
+#[cfg_attr(core_build, rustc_const_stable(feature = "rust1", since = "1.0.0"))]
+#[inline(always)]
+pub const fn const_unary_op_of(raw: u8) -> UnaryOp {
     UnaryOp::from_raw(raw)
 }
 

@@ -63,6 +63,20 @@ mod ffi {
 
 static mut REC_GUARD: bool = false;
 
+pub(crate) fn run_rec_guarded<T>(default: T, f: impl FnOnce() -> T) -> T {
+    if core::intrinsics::unlikely(unsafe { REC_GUARD }) {
+        return default;
+    }
+    unsafe {
+        REC_GUARD = true;
+    }
+    let result = f();
+    unsafe {
+        REC_GUARD = false;
+    }
+    result
+}
+
 macro_rules! export_to_rust_abi {
     ($(#[$($attr: meta)*])* fn $name:ident ($($(#[$($arg_attr: meta)*])* $arg:ident : $arg_type:ty),* $(,)?) $(-> $ret_ty:ty)?;) => {
         $(#[$($attr)*])*
@@ -80,9 +94,13 @@ macro_rules! export_to_rust_abi {
             if core::intrinsics::unlikely(unsafe { REC_GUARD }) {
                 return Default::default();
             }
-            unsafe { REC_GUARD = true; }
+            unsafe {
+                REC_GUARD = true;
+            }
             let result = ffi::ForeignPri::$name($($arg.into()),*).into();
-            unsafe { REC_GUARD = false; }
+            unsafe {
+                REC_GUARD = false;
+            }
             result
         }
     };
