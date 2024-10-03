@@ -501,11 +501,15 @@ impl<EB: OperationalExprBuilder> BasicAssignmentHandler<'_, EB> {
                             .into())
                         .into(),
                 );
+                let relative_discr_value = self
+                    .expr_builder()
+                    .cast(relative_tag_value.into(), CastKind::ToInt(discr_ty))
+                    .into();
                 let niche_discr_value = self
                     .expr_builder()
                     .add(
                         (
-                            relative_tag_value,
+                            relative_discr_value,
                             into_discr_value(*niche_value_range.start()),
                         )
                             .into(),
