@@ -995,22 +995,40 @@ mod simp {
         }
 
         fn and<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
-            // x & 0 = 0 & x = 0
-            if operands.konst().is_zero() {
-                Ok(operands.konst_into())
-            // TODO: All ones case
-            } else {
-                Err(operands)
+            match operands.konst() {
+                // x & false = false & x = false
+                ConstValue::Bool(false) => Ok(operands.konst_into()),
+                // x & true = true & x = x
+                ConstValue::Bool(true) => Ok(operands.other_into()),
+                // x & 0 = 0 & x = 0
+                ConstValue::Int {
+                    bit_rep: Wrapping(0),
+                    ..
+                } => Ok(operands.konst_into()),
+                // x & 1...1 = 1...1 & x = x
+                ConstValue::Int { bit_rep, ty } if ty.all_one() == ty.masked(bit_rep.0) => {
+                    Ok(operands.other_into())
+                }
+                _ => Err(operands),
             }
         }
 
         fn or<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
-            // x | 0 = 0 | x = x
-            if operands.konst().is_zero() {
-                Ok(operands.other_into())
-            // TODO: All ones case
-            } else {
-                Err(operands)
+            match operands.konst() {
+                // x | false = false | x = x
+                ConstValue::Bool(false) => Ok(operands.other_into()),
+                // x | true = true | x = true
+                ConstValue::Bool(true) => Ok(operands.konst_into()),
+                // x | 0 = 0 | x = x
+                ConstValue::Int {
+                    bit_rep: Wrapping(0),
+                    ..
+                } => Ok(operands.other_into()),
+                // x | 1...1 = 1...1 | x = 1...1
+                ConstValue::Int { bit_rep, ty } if ty.all_one() == ty.masked(bit_rep.0) => {
+                    Ok(operands.konst_into())
+                }
+                _ => Err(operands),
             }
         }
 

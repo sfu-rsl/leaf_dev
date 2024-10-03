@@ -4,6 +4,7 @@ pub(crate) mod lazy;
 pub(super) mod place;
 pub(crate) mod prelude;
 pub(super) mod translators;
+mod utils;
 
 use std::{num::Wrapping, rc::Rc};
 
@@ -91,6 +92,7 @@ impl ConstValue {
         }
     }
 
+    #[inline]
     pub fn is_zero(&self) -> bool {
         match self {
             Self::Bool(value) => !value,
@@ -100,6 +102,7 @@ impl ConstValue {
         }
     }
 
+    #[inline]
     pub fn is_one(&self) -> bool {
         match self {
             Self::Bool(value) => *value,

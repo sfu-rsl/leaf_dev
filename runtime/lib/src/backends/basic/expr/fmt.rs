@@ -36,19 +36,12 @@ impl Display for ConstValue {
             ConstValue::Char(value) => write!(f, "'{value}'"),
             ConstValue::Int {
                 bit_rep,
-                ty:
-                    ty @ IntType {
-                        is_signed,
-                        bit_size,
-                    },
+                ty: ty @ IntType { is_signed, .. },
             } => {
                 if *is_signed {
-                    let signed_bit_rep =
-                        (bit_rep.0 as i128) << (128 - bit_size) >> (128 - bit_size);
-                    write!(f, "{}", signed_bit_rep)
+                    write!(f, "{}", ty.signed_masked(bit_rep.0))
                 } else {
-                    let masked_bit_rep = bit_rep.0 & (u128::MAX >> (u128::BITS - *bit_size as u32));
-                    write!(f, "{}", masked_bit_rep)
+                    write!(f, "{}", ty.masked(bit_rep.0))
                 }?;
                 write!(f, "{ty}")
             }
