@@ -771,22 +771,9 @@ pub(crate) enum Expr {
         is_overflow: bool,
     },
 
-    Extension {
-        source: SymValueRef,
-        is_zero_ext: bool,
-        bits_to_add: NonZeroU32,
-        /* NOTE: Currently, extension is only used for casting,
-         * thus we include the destination type in the expression. */
-        ty: ValueType,
-    },
+    Extension(ExtensionExpr),
 
-    Truncation {
-        source: SymValueRef,
-        high: u32,
-        /* NOTE: Currently, extraction is only used for casting,
-         * thus we include the destination type in the expression. */
-        ty: ValueType,
-    },
+    Truncation(TruncationExpr),
 
     Ite {
         condition: SymValueRef,
@@ -828,6 +815,23 @@ pub(crate) enum Expr {
 pub(crate) struct BinaryExpr<Operator = BinaryOp, Operands = SymBinaryOperands> {
     operator: Operator,
     operands: Operands,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct ExtensionExpr {
+    pub(crate) source: SymValueRef,
+    pub(crate) is_zero_ext: bool,
+    pub(crate) bits_to_add: NonZeroU32,
+    // The destination type can be an integer or a pointer type, or char.
+    pub(crate) ty: ValueType,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct TruncationExpr {
+    pub(crate) source: SymValueRef,
+    // https://doc.rust-lang.org/reference/expressions/operator-expr.html#type-cast-expressions
+    // A truncation only happens with a destination type that is an integer.
+    pub(crate) ty: IntType,
 }
 
 pub(crate) type SymIndex = SliceIndex<SymValueRef>;
@@ -1080,7 +1084,7 @@ mod convert {
         };
     }
 
-    impl_sym_to_value_ref!(Expr, BinaryExpr, PorterValue,);
+    impl_sym_to_value_ref!(Expr, BinaryExpr, ExtensionExpr, TruncationExpr, PorterValue,);
 
     impl<'a> TryFrom<&'a Value> for ValueType {
         type Error = &'a Value;
@@ -1112,7 +1116,8 @@ mod convert {
                         }
                     }
                     Expr::BinaryBoundCheck { .. } => Ok(ValueType::Bool),
-                    Expr::Extension { ty, .. } | Expr::Truncation { ty, .. } => Ok(ty.clone()),
+                    Expr::Extension(ExtensionExpr { ty, .. }) => Ok(ty.clone()),
+                    Expr::Truncation(TruncationExpr { ty, .. }) => Ok((*ty).into()),
                     Expr::Ite {
                         condition: _,
                         if_target,

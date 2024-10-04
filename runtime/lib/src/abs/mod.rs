@@ -5,6 +5,8 @@ pub(crate) mod place;
 
 pub(crate) use common::types::*;
 
+use core::num::NonZeroU64;
+
 #[derive(Clone, Copy, Debug)]
 #[repr(u8)]
 pub enum BinaryOp {
@@ -197,6 +199,15 @@ impl ValueType {
             Self::Float(_) => true,
         }
     }
+
+    pub(crate) fn bit_size(&self) -> Option<NonZeroU64> {
+        match self {
+            Self::Bool => None,
+            Self::Char => NonZeroU64::new(core::mem::size_of::<char>() as u64),
+            Self::Int(IntType { bit_size, .. }) => NonZeroU64::new(*bit_size),
+            Self::Float(FloatType { e_bits, s_bits }) => NonZeroU64::new(e_bits + s_bits),
+        }
+    }
 }
 
 /* FIXME: These types will have a limited set of possible values. Thus they can be
@@ -213,6 +224,10 @@ pub(crate) struct IntType {
 impl IntType {
     pub(crate) const USIZE: Self = Self {
         bit_size: std::mem::size_of::<usize>() as u64 * 8,
+        is_signed: false,
+    };
+    pub(crate) const U32: Self = Self {
+        bit_size: 32,
         is_signed: false,
     };
 }

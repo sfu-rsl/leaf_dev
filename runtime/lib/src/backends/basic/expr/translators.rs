@@ -193,12 +193,12 @@ pub(crate) mod z3 {
                     let (left, right) = self.translate_binary_operands(operands);
                     self.translate_binary_bound_check(*operator, left, right, *is_overflow)
                 }
-                Extension {
+                Extension(ExtensionExpr {
                     source,
                     is_zero_ext,
                     bits_to_add,
                     ty,
-                } => {
+                }) => {
                     let source = self.translate_symbolic(source);
                     self.translate_extension_expr(
                         source,
@@ -207,9 +207,9 @@ pub(crate) mod z3 {
                         ty.is_signed(),
                     )
                 }
-                Truncation { source, high, ty } => {
+                Truncation(TruncationExpr { source, ty }) => {
                     let source = self.translate_symbolic(source);
-                    self.translate_extraction_expr(source, *high, 0, ty.is_signed())
+                    self.translate_truncation_expr(source, ty.bit_size as u32 - 1, ty.is_signed)
                 }
                 Ite {
                     condition,
@@ -308,7 +308,11 @@ pub(crate) mod z3 {
                             let right_size = right.as_bit_vector().get_size();
                             if right_size > left_size {
                                 // FIXME: This may cause problems with large numbers.
-                                self.translate_extraction_expr(right, left_size - 1, 0, false)
+                                self.translate_truncation_expr(
+                                    right,
+                                    left_size - 1,
+                                    left_node.is_signed(),
+                                )
                             } else {
                                 self.translate_extension_expr(
                                     right,
@@ -415,16 +419,15 @@ pub(crate) mod z3 {
             }
         }
 
-        fn translate_extraction_expr(
+        fn translate_truncation_expr(
             &mut self,
             source: AstNode<'ctx>,
-            high: u32,
-            low: u32,
+            high_exclusive: u32,
             is_signed: bool,
         ) -> AstNode<'ctx> {
             match source {
                 AstNode::BitVector(BVNode(ast, _)) => {
-                    BVNode::new(ast.extract(high, low), is_signed).into()
+                    BVNode::new(ast.extract(high_exclusive - 1, 0), is_signed).into()
                 }
                 _ => unreachable!("Invalid extraction expression for {:?}.", source),
             }

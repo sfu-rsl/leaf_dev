@@ -611,12 +611,13 @@ mod core {
                 // https://doc.rust-lang.org/reference/expressions/operator-expr.html#type-cast-expressions
                 "Cast to char is only expected from u8."
             );
-            Expr::Extension {
+            ExtensionExpr {
                 source: operand,
                 is_zero_ext: true,
                 bits_to_add: NonZeroU32::new(CHAR_BIT_SIZE - U8_BIT_SIZE).unwrap(),
                 ty: ValueType::Char,
             }
+            .into()
         }
 
         fn to_int<'a, 'b>(
@@ -655,10 +656,7 @@ mod core {
                         operand,
                         // FIXME: This is not necessarily the correct type id as the runtime library is built separately.
                         type_id_of::<u32>(),
-                        LazyTypeInfo::IdPrimitive(
-                            type_id_of::<u32>(),
-                            ValueType::new_int(CHAR_BIT_SIZE as u64, false),
-                        ),
+                        LazyTypeInfo::IdPrimitive(type_id_of::<u32>(), IntType::U32.into()),
                     );
                     self.to_int(numeric_rep.to_value_ref(), ty, metadata)
                 }
@@ -666,22 +664,23 @@ mod core {
                     bit_size: from_bit_size,
                     is_signed: is_from_signed,
                 }) => {
-                    if bit_size == from_bit_size && metadata.id().is_some() {
+                    if bit_size == from_bit_size {
                         self.transmute(operand, metadata.id().unwrap(), metadata)
                     } else if bit_size > from_bit_size {
-                        Expr::Extension {
+                        ExtensionExpr {
                             source: operand,
                             is_zero_ext: !is_from_signed,
                             bits_to_add: NonZeroU32::new((bit_size - from_bit_size) as u32)
                                 .unwrap(),
                             ty: ty.into(),
                         }
+                        .into()
                     } else {
-                        Expr::Truncation {
+                        TruncationExpr {
                             source: operand,
-                            high: bit_size as u32 - 1,
-                            ty: ty.into(),
+                            ty,
                         }
+                        .into()
                     }
                 }
                 ValueType::Float { .. } => todo!(),

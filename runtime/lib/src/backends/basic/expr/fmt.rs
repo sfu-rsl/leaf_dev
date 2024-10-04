@@ -157,8 +157,8 @@ impl Expr {
                 bin_expr: BinaryExpr { operator, .. },
                 is_overflow,
             } => write!(f, "{}{operator}?", if *is_overflow { "O" } else { "U" }),
-            Expr::Extension { .. } => write!(f, "Extend"),
-            Expr::Truncation { .. } => write!(f, "Truncate"),
+            Expr::Extension(..) => write!(f, "Extend"),
+            Expr::Truncation(..) => write!(f, "Truncate"),
             Expr::Ite { .. } => write!(f, "Ite"),
             Expr::Transmutation { .. } => write!(f, "Trans"),
             Expr::Multi(_) => write!(f, "Multi"),
@@ -179,17 +179,17 @@ impl Expr {
             } => {
                 write!(f, "{}, {}", operands.first(), operands.second())
             }
-            Expr::Extension {
+            Expr::Extension(ExtensionExpr {
                 source,
                 is_zero_ext,
                 bits_to_add,
                 ty,
-            } => write!(
+            }) => write!(
                 f,
                 "{source}, {}{bits_to_add} as {ty}",
                 if *is_zero_ext { "0" } else { "S" }
             ),
-            Expr::Truncation { source, high, ty } => write!(f, "{source}, |{high}.. as {ty}"),
+            Expr::Truncation(TruncationExpr { source, ty }) => write!(f, "{source}, |- as {ty}"),
             Expr::Ite {
                 condition,
                 if_target,

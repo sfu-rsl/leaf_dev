@@ -391,13 +391,7 @@ mod retrieval {
                     let value_bit_size = ty.size as u32 * u8::BITS;
                     let at_bit = *at as u32 * u8::BITS;
 
-                    let sym_value = self.as_mask(
-                        sym_value,
-                        at_bit,
-                        value_bit_size,
-                        whole_bit_size,
-                        whole_value_ty.clone(),
-                    );
+                    let sym_value = self.as_mask(sym_value, at_bit, value_bit_size, whole_bit_size);
 
                     if at_bit == 0 && value_bit_size >= whole_bit_size {
                         return sym_value.into();
@@ -466,7 +460,6 @@ mod retrieval {
             at_bit: u32,
             value_bit_size: u32,
             whole_bit_size: u32,
-            dst_ty: ValueType,
         ) -> SymValueRef {
             let mut result = value;
 
@@ -478,9 +471,9 @@ mod retrieval {
                 // We know want the first n bits of the value,
                 // but the order of the bytes is as same as the whole object.
                 #[cfg(target_endian = "big")]
-                let (high, low) = (value_bit_size, value_bit_size - n);
+                let low = value_bit_size - n;
                 #[cfg(target_endian = "little")]
-                let (high, low) = (n, 0u32);
+                let low = 0u32;
                 if low > 0 {
                     result = BinaryExpr {
                         operator: BinaryOp::Shr,
@@ -491,24 +484,22 @@ mod retrieval {
                     }
                     .to_value_ref();
                 }
-                result = Expr::Truncation {
+                result = TruncationExpr {
                     source: result,
-                    high: high - 1,
                     ty: IntType {
                         bit_size: n as u64,
                         is_signed: false,
-                    }
-                    .into(),
+                    },
                 }
                 .to_value_ref();
             }
 
             if whole_bit_size > value_bit_size {
-                result = Expr::Extension {
+                result = ExtensionExpr {
                     source: result,
                     is_zero_ext: true,
                     bits_to_add: NonZeroU32::new(whole_bit_size - value_bit_size).unwrap(),
-                    ty: dst_ty,
+                    ty: ValueType::new_int(whole_bit_size.into(), false),
                 }
                 .to_value_ref();
 
@@ -529,6 +520,13 @@ mod retrieval {
                     .to_value_ref();
                 }
             }
+
+            // FIXME: Possible unnecessary cast.
+            result = Expr::Transmutation {
+                source: result,
+                dst_ty: self.as_concrete.1.clone(),
+            }
+            .to_value_ref();
 
             result
         }
