@@ -4,11 +4,17 @@ use std::fmt::Display;
 
 use common::log_debug;
 
-use super::{macros::macro_rules_method_with_optional_args, BinaryExprBuilder, UnaryExprBuilder};
+use crate::abs::CastKind;
+
+use super::{
+    macros::macro_rules_method_with_optional_args, BinaryExprBuilder, CastExprBuilder,
+    UnaryExprBuilder,
+};
 
 pub(crate) const TAG: &str = "expr_builder";
 const SPAN_BINARY: &str = "binary_op";
 const SPAN_UNARY: &str = "unary_op";
+const SPAN_CAST: &str = "cast_op";
 
 pub(crate) struct LoggerExprBuilder<B> {
     pub(crate) builder: B,
@@ -50,6 +56,29 @@ macro_rules_method_with_optional_args!(impl_unary_expr_method {
             .entered();
 
             let result = self.builder.$method(operand, $($arg),*);
+
+            log_debug!(target: TAG, expr = %result);
+            span.exit();
+            result
+        }
+    };
+});
+
+macro_rules_method_with_optional_args!(impl_cast_expr_method {
+    ($method: ident + $($arg: ident : $arg_type: ty),* $(,)?) => {
+        fn $method<'a, 'b>(
+            &mut self,
+            operand: Self::ExprRef<'a>,
+            $($arg: $arg_type,)*
+            metadata: Self::Metadata<'b>,
+        ) -> Self::Expr<'a>
+        {
+            let span = debug_span!(
+                target: TAG, SPAN_CAST,
+                op = stringify!($method), operand = %operand)
+            .entered();
+
+            let result = self.builder.$method(operand, $($arg,)* metadata,);
 
             log_debug!(target: TAG, expr = %result);
             span.exit();
@@ -107,5 +136,31 @@ where
     impl_unary_expr_method!(unary_op + op: crate::abs::UnaryOp);
 
     impl_unary_expr_method!(not neg ptr_metadata);
-    impl_unary_expr_method!(cast + target: crate::abs::CastKind);
+}
+
+impl<B> CastExprBuilder for LoggerExprBuilder<B>
+where
+    B: CastExprBuilder,
+    for<'a> B::ExprRef<'a>: Display,
+    for<'a> B::Expr<'a>: Display,
+{
+    type ExprRef<'a> = B::ExprRef<'a>;
+    type Expr<'a> = B::Expr<'a>;
+    type Metadata<'a> = B::Metadata<'a>;
+
+    type IntType = B::IntType;
+    type FloatType = B::FloatType;
+    type PtrType = B::PtrType;
+    type GenericType = B::GenericType;
+
+    impl_cast_expr_method!(
+        cast + target: CastKind<Self::IntType, Self::FloatType, Self::PtrType, Self::GenericType>
+    );
+
+    impl_cast_expr_method!(to_char);
+    impl_cast_expr_method!(to_int + ty: Self::IntType);
+    impl_cast_expr_method!(to_float + ty: Self::FloatType);
+    impl_cast_expr_method!(to_ptr + ty: Self::PtrType);
+    impl_cast_expr_method!(ptr_unsize expose_prov sized_dyn);
+    impl_cast_expr_method!(transmute + ty: Self::GenericType);
 }

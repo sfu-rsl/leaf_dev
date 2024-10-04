@@ -90,6 +90,23 @@ macro_rules_method_with_optional_args!(impl_unary_expr_method {
     };
 });
 
+macro_rules_method_with_optional_args!(impl_cast_expr_method {
+    ($method: ident + $($arg: ident : $arg_type: ty),* $(,)?) => {
+        impl_cast_expr_method!($method + ($($arg : $arg_type { $arg }),*));
+    };
+    /* Gives the ability to give a custom expression passed to the builders. */
+    ($method: ident + ($($arg: ident : $arg_type: ty { $arg_expr:expr }),*) $(,)?) => {
+        fn $method<'a, 'b>(
+            &mut self,
+            operand: Self::ExprRef<'a>,
+            $($arg: $arg_type,)*
+            metadata: Self::Metadata<'b>,
+        ) -> Self::Expr<'a> {
+            try_on_current_then_next!(self, $method, (operand$(, $arg_expr)*, metadata), |operand|)
+        }
+    };
+});
+
 impl<C, N, E, CE> BinaryExprBuilder for ChainedExprBuilder<C, N, E, CE>
 where
     N: BinaryExprBuilder,
@@ -132,5 +149,45 @@ where
     impl_unary_expr_method!(unary_op + op: UnaryOp);
 
     impl_unary_expr_method!(not neg ptr_metadata);
-    impl_unary_expr_method!(cast + target: CastKind);
+}
+
+impl<C, N, E, CE> CastExprBuilder for ChainedExprBuilder<C, N, E, CE>
+where
+    N: CastExprBuilder,
+    for<'a> C: CastExprBuilder<
+            ExprRef<'a> = N::ExprRef<'a>,
+            Expr<'a> = Result<CE, N::ExprRef<'a>>,
+            Metadata<'a> = N::Metadata<'a>,
+            IntType = N::IntType,
+            FloatType = N::FloatType,
+            PtrType = N::PtrType,
+            GenericType = N::GenericType,
+        >,
+    CE: Into<E>,
+    for<'a> N::Expr<'a>: Into<E>,
+    for<'a> N::Metadata<'a>: Copy,
+    N::IntType: Copy,
+    N::FloatType: Copy,
+    N::PtrType: Copy,
+    N::GenericType: Copy,
+{
+    type ExprRef<'a> = N::ExprRef<'a>;
+    type Expr<'a> = E;
+    type Metadata<'a> = N::Metadata<'a>;
+
+    type IntType = N::IntType;
+    type FloatType = N::FloatType;
+    type PtrType = N::PtrType;
+    type GenericType = N::GenericType;
+
+    impl_cast_expr_method!(
+        cast + target: CastKind<Self::IntType, Self::FloatType, Self::PtrType, Self::GenericType>
+    );
+
+    impl_cast_expr_method!(to_char);
+    impl_cast_expr_method!(to_int + ty: Self::IntType);
+    impl_cast_expr_method!(to_float + ty: Self::FloatType);
+    impl_cast_expr_method!(to_ptr + ty: Self::PtrType);
+    impl_cast_expr_method!(ptr_unsize expose_prov sized_dyn);
+    impl_cast_expr_method!(transmute + ty: Self::GenericType);
 }

@@ -1,11 +1,15 @@
 /// This module provides some traits to make it easier to implement expression builders for wrappers
 /// that work as adapters. Most of the adapters provide non-trivial covariance and contravariance
 /// over the input and output types of the wrapped expression builder.
-use super::{macros::macro_rules_method_with_optional_args, BinaryExprBuilder, UnaryExprBuilder};
+use super::{
+    macros::macro_rules_method_with_optional_args, BinaryExprBuilder, CastExprBuilder,
+    UnaryExprBuilder,
+};
 use crate::abs::{BinaryOp, CastKind, UnaryOp};
 use std::ops::DerefMut;
 
 use BinaryExprBuilder as BEB;
+use CastExprBuilder as CEB;
 use UnaryExprBuilder as UEB;
 
 pub(crate) trait FnH<I, O>: FnOnce(I) -> O {}
@@ -100,5 +104,59 @@ where
 
     delegate_singular_unary_op!(unary_op + op: UnaryOp);
     delegate_singular_unary_op!(not neg ptr_metadata);
-    delegate_singular_unary_op!(cast + target: CastKind);
+}
+
+pub(crate) trait CastExprBuilderAdapter: DerefMut
+where
+    Self::Target: Sized,
+    Self::Target: CastExprBuilder,
+{
+    type TargetExprRef<'a> = <Self::Target as CEB>::ExprRef<'a>;
+    type TargetExpr<'a> = <Self::Target as CEB>::Expr<'a>;
+
+    /// Takes the input from the type of the adapted operand, passes it to the wrapped builder,
+    /// then converts and returns the output to the type of the adapted expression.
+    /// [`build`] is the method in the wrapped builder that corresponds to the one called currently
+    /// on this builder.
+    fn adapt<'t, F>(operand: Self::TargetExprRef<'t>, build: F) -> Self::TargetExpr<'t>
+    where
+        F: for<'s> FnH<<Self::Target as CEB>::ExprRef<'s>, <Self::Target as CEB>::Expr<'s>>;
+}
+
+macro_rules_method_with_optional_args!(delegate_singular_cast_op {
+    ($method: ident + $($arg: ident : $arg_type: ty),* $(,)?) => {
+        fn $method<'a, 'b>(
+            &mut self,
+            operand: Self::ExprRef<'a>,
+            $($arg: $arg_type,)*
+            metadata: Self::Metadata<'b>,
+        ) -> Self::Expr<'a> {
+            Self::adapt(operand, |operand| self.deref_mut().$method(operand, $($arg,)* metadata,))
+        }
+    };
+});
+
+impl<T: CastExprBuilderAdapter> CastExprBuilder for T
+where
+    T::Target: Sized,
+    T::Target: CastExprBuilder,
+{
+    type ExprRef<'a> = T::TargetExprRef<'a>;
+    type Expr<'a> = T::TargetExpr<'a>;
+    type Metadata<'a> = <T::Target as CEB>::Metadata<'a>;
+
+    type IntType = <T::Target as CEB>::IntType;
+    type FloatType = <T::Target as CEB>::FloatType;
+    type PtrType = <T::Target as CEB>::PtrType;
+    type GenericType = <T::Target as CEB>::GenericType;
+
+    delegate_singular_cast_op!(
+        cast + target: CastKind<Self::IntType, Self::FloatType, Self::PtrType, Self::GenericType>
+    );
+    delegate_singular_cast_op!(to_char);
+    delegate_singular_cast_op!(to_int + ty: Self::IntType);
+    delegate_singular_cast_op!(to_float + ty: Self::FloatType);
+    delegate_singular_cast_op!(to_ptr + ty: Self::PtrType);
+    delegate_singular_cast_op!(ptr_unsize expose_prov sized_dyn);
+    delegate_singular_cast_op!(transmute + ty: Self::GenericType);
 }

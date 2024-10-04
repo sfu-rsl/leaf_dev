@@ -149,6 +149,63 @@ macro_rules! impl_singular_unary_ops_through_general {
     };
 }
 
+#[allow(unused_macros)]
+macro_rules! impl_general_cast_through_singulars {
+    () => {
+        fn cast<'a>(
+            &mut self,
+            operand: Self::ExprRef<'a>,
+            target: crate::abs::CastKind<
+                Self::IntType,
+                Self::FloatType,
+                Self::PtrType,
+                Self::GenericType,
+            >,
+            metadata: Self::Metadata<'a>,
+        ) -> Self::Expr<'a> {
+            use crate::abs::CastKind::*;
+            match target {
+                ToChar => self.to_char(operand, metadata),
+                ToInt(ty) => self.to_int(operand, ty, metadata),
+                ToFloat(ty) => self.to_float(operand, ty, metadata),
+                ToPointer(ty) => self.to_ptr(operand, ty, metadata),
+                PointerUnsize => self.ptr_unsize(operand, metadata),
+                ExposeProvenance => self.expose_prov(operand, metadata),
+                SizedDynamize => self.sized_dyn(operand, metadata),
+                Transmute(ty) => self.transmute(operand, ty, metadata),
+            }
+        }
+    };
+}
+
+macro_rules! impl_singular_cast_through_general {
+    (($method:ident $(+ $($arg: ident : $arg_type: ty),*)? = $op:expr)) => {
+        fn $method<'a, 'b>(
+            &mut self,
+            operand: Self::ExprRef<'a>,
+            $($($arg: $arg_type,)*)?
+            metadata: Self::Metadata<'b>,
+        ) -> Self::Expr<'a> {
+            self.cast(operand, $op, metadata)
+        }
+    };
+}
+macro_rules! impl_singular_casts_through_general {
+    () => {
+        repeat_macro_for!(
+            impl_singular_cast_through_general;
+            (to_char = crate::abs::CastKind::ToChar)
+            (to_int + ty: Self::IntType = crate::abs::CastKind::ToInt(ty))
+            (to_float + ty: Self::FloatType = crate::abs::CastKind::ToFloat(ty))
+            (to_ptr + ty: Self::PtrType = crate::abs::CastKind::ToPointer(ty))
+            (ptr_unsize = crate::abs::CastKind::PointerUnsize)
+            (expose_prov = crate::abs::CastKind::ExposeProvenance)
+            (sized_dyn = crate::abs::CastKind::SizedDynamize)
+            (transmute + ty: Self::GenericType = crate::abs::CastKind::Transmute(ty))
+        );
+    };
+}
+
 /// Takes a macro rule with the input of a single method name and many arguments
 /// and extends it with two additional patterns for multiple method names and
 /// respectively zero and one extra arguments.
@@ -169,7 +226,9 @@ macro_rules! macro_rules_method_with_optional_args {
 #[allow(unused_imports)]
 pub(crate) use {
     impl_general_binary_op_for, impl_general_binary_op_through_singulars,
-    impl_general_unary_op_through_singulars, impl_singular_binary_ops_through_general,
-    impl_singular_unary_op_through_general, impl_singular_unary_ops_through_general,
-    macro_rules_method_with_optional_args, repeat_macro_for,
+    impl_general_cast_through_singulars, impl_general_unary_op_through_singulars,
+    impl_singular_binary_ops_through_general, impl_singular_cast_through_general,
+    impl_singular_casts_through_general, impl_singular_unary_op_through_general,
+    impl_singular_unary_ops_through_general, macro_rules_method_with_optional_args,
+    repeat_macro_for,
 };

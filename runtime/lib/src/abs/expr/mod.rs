@@ -8,7 +8,7 @@ pub(crate) mod variance;
 
 use self::macros::macro_rules_method_with_optional_args;
 
-use super::{BinaryOp, CastKind, UnaryOp};
+use super::{BinaryOp, CastKind, FloatType, IntType, TypeId, UnaryOp};
 
 macro_rules_method_with_optional_args! (bin_fn_signature {
     ($method: ident + $($arg: ident : $arg_type: ty),* $(,)?) => {
@@ -26,6 +26,17 @@ macro_rules_method_with_optional_args! (unary_fn_signature {
             &mut self,
             operand: Self::ExprRef<'a>,
             $($arg: $arg_type),*
+        ) -> Self::Expr<'a>;
+    };
+});
+
+macro_rules_method_with_optional_args! (cast_fn_signature {
+    ($method: ident + $($arg: ident : $arg_type: ty),* $(,)?) => {
+        fn $method<'a, 'b>(
+            &mut self,
+            operand: Self::ExprRef<'a>,
+            $($arg: $arg_type,)*
+            metadata: Self::Metadata<'b>,
         ) -> Self::Expr<'a>;
     };
 });
@@ -54,25 +65,27 @@ pub(crate) trait UnaryExprBuilder {
     fn unary_op<'a>(&mut self, operand: Self::ExprRef<'a>, op: UnaryOp) -> Self::Expr<'a>;
 
     unary_fn_signature!(not neg ptr_metadata);
-    unary_fn_signature!(cast + target: CastKind);
 }
 
-// NOTE: Because of an internal compiler bug, the blanket impl can't be added.
+pub(crate) trait CastExprBuilder {
+    type ExprRef<'a>;
+    type Expr<'a> = Self::ExprRef<'a>;
+    type Metadata<'a> = ();
 
-use ExprBuilder as EB;
-pub(crate) trait ExprBuilder<R, E = R>
-where
-    Self: for<'a> BinaryExprBuilder<
-            ExprRefPair<'a> = <Self as EB<R, E>>::ExprRefPair<'a>,
-            Expr<'a> = <Self as EB<R, E>>::Expr<'a>,
-        > + for<'a> UnaryExprBuilder<
-            ExprRef<'a> = <Self as EB<R, E>>::ExprRef<'a>,
-            Expr<'a> = <Self as EB<R, E>>::Expr<'a>,
-        >,
-{
-    type ExprRef<'a>: From<R>;
-    type ExprRefPair<'a>: From<(R, R)>;
-    type Expr<'a>: Into<E>;
+    type IntType = IntType;
+    type FloatType = FloatType;
+    type PtrType = TypeId;
+    type GenericType = TypeId;
+
+    cast_fn_signature!(
+        cast + target: CastKind<Self::IntType, Self::FloatType, Self::PtrType, Self::GenericType>
+    );
+    cast_fn_signature!(to_char);
+    cast_fn_signature!(to_int + ty: Self::IntType);
+    cast_fn_signature!(to_float + ty: Self::FloatType);
+    cast_fn_signature!(to_ptr + ty: Self::PtrType);
+    cast_fn_signature!(ptr_unsize expose_prov sized_dyn);
+    cast_fn_signature!(transmute + ty: Self::GenericType);
 }
 
 pub(crate) use {

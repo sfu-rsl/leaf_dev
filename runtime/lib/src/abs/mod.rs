@@ -222,15 +222,15 @@ pub(crate) static USIZE_TYPE: IntType = IntType {
 };
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum CastKind {
+pub(crate) enum CastKind<I = IntType, F = FloatType, P = TypeId, T = TypeId> {
     ToChar,
-    ToInt(IntType),
-    ToFloat(FloatType),
+    ToInt(I),
+    ToFloat(F),
+    ToPointer(P),
     PointerUnsize,
     ExposeProvenance,
-    ToPointer(TypeId),
     SizedDynamize, // dyn*
-    Transmute(TypeId),
+    Transmute(T),
 }
 
 impl TryFrom<CastKind> for ValueType {
