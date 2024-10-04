@@ -677,10 +677,9 @@ mod core {
                             ty: ty.into(),
                         }
                     } else {
-                        Expr::Extraction {
+                        Expr::Truncation {
                             source: operand,
                             high: bit_size as u32 - 1,
-                            low: 0,
                             ty: ty.into(),
                         }
                     }

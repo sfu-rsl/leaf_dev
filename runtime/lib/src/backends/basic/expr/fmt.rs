@@ -158,7 +158,7 @@ impl Expr {
                 is_overflow,
             } => write!(f, "{}{operator}?", if *is_overflow { "O" } else { "U" }),
             Expr::Extension { .. } => write!(f, "Extend"),
-            Expr::Extraction { .. } => write!(f, "Extract"),
+            Expr::Truncation { .. } => write!(f, "Truncate"),
             Expr::Ite { .. } => write!(f, "Ite"),
             Expr::Transmutation { .. } => write!(f, "Trans"),
             Expr::Multi(_) => write!(f, "Multi"),
@@ -189,12 +189,7 @@ impl Expr {
                 "{source}, {}{bits_to_add} as {ty}",
                 if *is_zero_ext { "0" } else { "S" }
             ),
-            Expr::Extraction {
-                source,
-                high,
-                low,
-                ty,
-            } => write!(f, "{source}, {high}=..={low} as {ty}"),
+            Expr::Truncation { source, high, ty } => write!(f, "{source}, |{high}.. as {ty}"),
             Expr::Ite {
                 condition,
                 if_target,

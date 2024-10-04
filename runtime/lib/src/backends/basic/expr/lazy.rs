@@ -480,11 +480,20 @@ mod retrieval {
                 #[cfg(target_endian = "big")]
                 let (high, low) = (value_bit_size, value_bit_size - n);
                 #[cfg(target_endian = "little")]
-                let (high, low) = (n, 0);
-                result = Expr::Extraction {
+                let (high, low) = (n, 0u32);
+                if low > 0 {
+                    result = BinaryExpr {
+                        operator: BinaryOp::Shr,
+                        operands: SymBinaryOperands::Orig {
+                            first: result,
+                            second: ConstValue::from(low).to_value_ref(),
+                        },
+                    }
+                    .to_value_ref();
+                }
+                result = Expr::Truncation {
                     source: result,
                     high: high - 1,
-                    low,
                     ty: IntType {
                         bit_size: n as u64,
                         is_signed: false,

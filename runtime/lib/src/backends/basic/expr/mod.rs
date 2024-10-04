@@ -777,10 +777,9 @@ pub(crate) enum Expr {
         ty: ValueType,
     },
 
-    Extraction {
+    Truncation {
         source: SymValueRef,
         high: u32,
-        low: u32,
         /* NOTE: Currently, extraction is only used for casting,
          * thus we include the destination type in the expression. */
         ty: ValueType,
@@ -1110,7 +1109,7 @@ mod convert {
                         }
                     }
                     Expr::BinaryBoundCheck { .. } => Ok(ValueType::Bool),
-                    Expr::Extension { ty, .. } | Expr::Extraction { ty, .. } => Ok(ty.clone()),
+                    Expr::Extension { ty, .. } | Expr::Truncation { ty, .. } => Ok(ty.clone()),
                     Expr::Ite {
                         condition: _,
                         if_target,

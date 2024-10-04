@@ -207,14 +207,9 @@ pub(crate) mod z3 {
                         ty.is_signed(),
                     )
                 }
-                Extraction {
-                    source,
-                    high,
-                    low,
-                    ty,
-                } => {
+                Truncation { source, high, ty } => {
                     let source = self.translate_symbolic(source);
-                    self.translate_extraction_expr(source, *high, *low, ty.is_signed())
+                    self.translate_extraction_expr(source, *high, 0, ty.is_signed())
                 }
                 Ite {
                     condition,

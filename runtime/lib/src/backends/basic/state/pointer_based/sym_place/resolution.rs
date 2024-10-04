@@ -166,7 +166,7 @@ mod implementation {
                 // Offset
                 Expr::Binary(_) => todo!(),
                 // Cast
-                Expr::Ite { .. } | Expr::Extraction { .. } | Expr::Extension { .. } => todo!(),
+                Expr::Ite { .. } | Expr::Truncation { .. } | Expr::Extension { .. } => todo!(),
                 Expr::Partial(..) => todo!(),
                 Expr::Transmutation { .. } => todo!(),
                 Expr::Unary { .. }
