@@ -507,7 +507,7 @@ mod retrieval {
                 result = Expr::Extension {
                     source: result,
                     is_zero_ext: true,
-                    bits_to_add: (whole_bit_size - value_bit_size) as u32,
+                    bits_to_add: NonZeroU32::new(whole_bit_size - value_bit_size).unwrap(),
                     ty: dst_ty,
                 }
                 .to_value_ref();

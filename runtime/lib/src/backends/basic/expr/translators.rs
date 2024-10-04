@@ -203,7 +203,7 @@ pub(crate) mod z3 {
                     self.translate_extension_expr(
                         source,
                         *is_zero_ext,
-                        *bits_to_add,
+                        (*bits_to_add).into(),
                         ty.is_signed(),
                     )
                 }

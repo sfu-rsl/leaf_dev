@@ -614,7 +614,7 @@ mod core {
             Expr::Extension {
                 source: operand,
                 is_zero_ext: true,
-                bits_to_add: CHAR_BIT_SIZE - U8_BIT_SIZE,
+                bits_to_add: NonZeroU32::new(CHAR_BIT_SIZE - U8_BIT_SIZE).unwrap(),
                 ty: ValueType::Char,
             }
         }
@@ -669,11 +669,11 @@ mod core {
                     if bit_size == from_bit_size && metadata.id().is_some() {
                         self.transmute(operand, metadata.id().unwrap(), metadata)
                     } else if bit_size > from_bit_size {
-                        let bits_to_add = bit_size - from_bit_size;
                         Expr::Extension {
                             source: operand,
                             is_zero_ext: !is_from_signed,
-                            bits_to_add: bits_to_add as u32,
+                            bits_to_add: NonZeroU32::new((bit_size - from_bit_size) as u32)
+                                .unwrap(),
                             ty: ty.into(),
                         }
                     } else {

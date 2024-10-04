@@ -6,7 +6,10 @@ pub(crate) mod prelude;
 pub(super) mod translators;
 mod utils;
 
-use std::{num::Wrapping, rc::Rc};
+use std::{
+    num::{NonZeroU32, Wrapping},
+    rc::Rc,
+};
 
 use derive_more as dm;
 
@@ -771,7 +774,7 @@ pub(crate) enum Expr {
     Extension {
         source: SymValueRef,
         is_zero_ext: bool,
-        bits_to_add: u32,
+        bits_to_add: NonZeroU32,
         /* NOTE: Currently, extension is only used for casting,
          * thus we include the destination type in the expression. */
         ty: ValueType,
