@@ -52,6 +52,13 @@ pub(crate) enum SymbolicReadTreeLeafMutator<'m, I, V> {
 use SymbolicReadTreeLeafMutator::*;
 
 impl<I, V> Select<I, SymbolicReadTree<I, V>> {
+    pub(crate) fn first_leaf(&self) -> &V {
+        match &self.target {
+            SelectTarget::Array(values) => values.first().unwrap().first_leaf(),
+            SelectTarget::Nested(box nested) => nested.first_leaf(),
+        }
+    }
+
     pub(crate) fn map<'m, J, W>(
         &self,
         f_index: impl (Fn(&I) -> J),
@@ -123,6 +130,14 @@ impl<I, V> Select<I, SymbolicReadTree<I, V>> {
 }
 
 impl<I, V> SymbolicReadTree<I, V> {
+    pub(crate) fn first_leaf(&self) -> &V {
+        match self {
+            SymbolicReadTree::SymRead(select) => select.first_leaf(),
+            SymbolicReadTree::Array(values) => values.first().unwrap().first_leaf(),
+            SymbolicReadTree::Single(value) => value,
+        }
+    }
+
     pub(crate) fn map<'m, J, W>(
         &self,
         f_index: &dyn (Fn(&I) -> J),

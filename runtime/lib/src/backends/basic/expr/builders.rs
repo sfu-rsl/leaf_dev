@@ -1,17 +1,19 @@
-use super::super::alias::{TypeManager, ValueRefBinaryExprBuilder};
+use super::super::alias::{TypeManager, ValueRefBinaryExprBuilder, ValueRefExprBuilder};
 use super::{BinaryOp as BasicBinaryOp, UnaryOp as BasicUnaryOp, *};
 use crate::abs::{
     expr::{
-        macros::*, BinaryExprBuilder, ChainedExprBuilder, CompositeExprBuilder, ExprBuilder,
+        macros::*, BinaryExprBuilder, CastExprBuilder, ChainedExprBuilder, CompositeExprBuilder,
         LoggerExprBuilder, UnaryExprBuilder,
     },
     BinaryOp as AbsBinaryOp, CastKind, UnaryOp as AbsUnaryOp,
 };
 
-type Composite<Binary, Unary> = CompositeExprBuilder<Binary, Unary>;
+type Composite<Binary, Unary, Cast> = CompositeExprBuilder<Binary, Unary, Cast>;
 type Chained<Current, Next, Expr = ValueRef, CurrentExpr = Expr> =
     ChainedExprBuilder<Current, Next, Expr, CurrentExpr>;
 type Logger<B> = LoggerExprBuilder<B>;
+
+type CastMetadata = LazyTypeInfo;
 
 pub(crate) type DefaultExprBuilder = toplevel::TopLevelBuilder;
 
@@ -19,7 +21,7 @@ pub(crate) fn new_expr_builder(type_manager: Rc<dyn TypeManager>) -> DefaultExpr
     DefaultExprBuilder::new(type_manager)
 }
 
-impl ExprBuilder<ValueRef> for DefaultExprBuilder {
+impl ValueRefExprBuilder for DefaultExprBuilder {
     type ExprRef<'a> = ValueRef;
     type ExprRefPair<'a> = (ValueRef, ValueRef);
     type Expr<'a> = ValueRef;
@@ -116,10 +118,30 @@ mod toplevel {
         fn ptr_metadata<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
             call_unary_method!(self, ptr_metadata, operand)
         }
+    }
 
-        fn cast<'a>(&mut self, operand: Self::ExprRef<'a>, target: CastKind) -> Self::Expr<'a> {
-            call_unary_method!(self, cast, operand, target)
+    impl CastExprBuilder for TopLevelBuilder {
+        type ExprRef<'a> = ValueRef;
+        type Expr<'a> = ValueRef;
+        type Metadata<'a> = CastMetadata;
+
+        fn cast<'a, 'b>(
+            &mut self,
+            operand: Self::ExprRef<'a>,
+            target: CastKind<Self::IntType, Self::FloatType, Self::PtrType, Self::GenericType>,
+            metadata: Self::Metadata<'b>,
+        ) -> Self::Expr<'a> {
+            if operand.is_symbolic() {
+                self.sym_builder
+                    .cast(SymValueRef::new(operand).into(), target, metadata)
+                    .into()
+            } else {
+                self.conc_builder
+                    .cast(ConcreteValueRef::new(operand).into(), target, metadata)
+            }
         }
+
+        impl_singular_casts_through_general!();
     }
 }
 
@@ -138,6 +160,8 @@ mod symbolic {
             >,
             /*Unary:*/
             Chained<UnevaluatedResolverBuilder, CoreBuilder>,
+            /*Cast:*/
+            CoreBuilder,
         >,
     >;
 
@@ -157,6 +181,7 @@ mod symbolic {
                         },
                         Default::default(),
                     ),
+                    cast: Default::default(),
                 },
             }
         }
@@ -231,15 +256,6 @@ mod symbolic {
         }
 
         impl_singular_unary_ops_through_general!();
-
-        fn cast<'a>(
-            &mut self,
-            mut operand: Self::ExprRef<'a>,
-            _target: CastKind,
-        ) -> Self::Expr<'a> {
-            self.resolve_if_porter(operand.as_mut());
-            Err(operand)
-        }
     }
 }
 
@@ -251,6 +267,7 @@ mod adapters {
     use super::*;
 
     use BinaryExprBuilder as BEB;
+    use CastExprBuilder as CEB;
     use UnaryExprBuilder as UEB;
 
     #[derive(Default, Clone, Deref, DerefMut)]
@@ -277,6 +294,19 @@ mod adapters {
         fn adapt<'t, F>(operand: Self::TargetExprRef<'t>, build: F) -> Self::TargetExpr<'t>
         where
             F: for<'s> FnH<<Self::Target as UEB>::ExprRef<'s>, <Self::Target as UEB>::Expr<'s>>,
+        {
+            Value::from(build(operand)).to_value_ref()
+        }
+    }
+
+    impl CastExprBuilderAdapter for CoreBuilder {
+        type TargetExprRef<'a> = SymValueRef;
+        type TargetExpr<'a> = ValueRef;
+
+        #[inline]
+        fn adapt<'t, F>(operand: Self::TargetExprRef<'t>, build: F) -> Self::TargetExpr<'t>
+        where
+            F: for<'s> FnH<<Self::Target as CEB>::ExprRef<'s>, <Self::Target as CEB>::Expr<'s>>,
         {
             Value::from(build(operand)).to_value_ref()
         }
@@ -361,6 +391,9 @@ mod adapters {
 }
 
 mod core {
+    use abs::expr::CastExprBuilder;
+    use common::utils::type_id_of;
+
     use super::*;
     use std::{mem::size_of, ops::Not};
 
@@ -546,75 +579,60 @@ mod core {
         fn ptr_metadata<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
             Expr::PtrMetadata(operand.into())
         }
-
-        fn cast<'a>(&mut self, operand: Self::ExprRef<'a>, target: CastKind) -> Self::Expr<'a> {
-            let expr = match ValueType::try_from(target) {
-                Ok(value_type) => to_cast_expr(operand, value_type),
-                Err(target) => {
-                    use CastKind::*;
-                    match target {
-                        PointerUnsize => {
-                            match operand.as_ref() {
-                                SymValue::Expression(expr) => {
-                                    // Nothing special to do currently. Refer to the comment for concrete values.
-                                    expr.clone()
-                                }
-                                SymValue::Variable(_) => unreachable!(
-                                    "Symbolic variables are not currently supposed to appear at a pointer/reference position."
-                                ),
-                            }
-                        }
-                        ExposeProvenance | ToPointer(_) => {
-                            todo!("#331: Add support for casting symbolic pointers")
-                        }
-                        SizedDynamize => {
-                            todo!("#317: Add support for dyn* cast of symbolic values")
-                        }
-                        Transmute(dst_ty_id) => Expr::Transmutation {
-                            source: operand,
-                            dst_ty: dst_ty_id.into(),
-                        },
-                        _ => unreachable!(),
-                    }
-                }
-            };
-
-            expr
-        }
     }
 
     const CHAR_BIT_SIZE: u32 = size_of::<char>() as u32 * 8;
-    const TO_CHAR_BIT_SIZE: u32 = size_of::<u8>() as u32 * 8; // Can only cast to a char from a u8
 
-    fn to_cast_expr(from: SymValueRef, to: ValueType) -> Expr {
-        let from_type = match ValueType::try_from(from.as_ref()) {
-            Ok(value_type) => value_type,
-            Err(value) => unimplemented!("Casting from {} to {} is not supported.", value, to),
-        };
+    impl CastExprBuilder for CoreBuilder {
+        type ExprRef<'a> = SymValueRef;
+        type Expr<'a> = Expr;
+        type Metadata<'a> = CastMetadata;
 
-        match to {
-            ValueType::Char => {
-                debug_assert_eq!(
-                    from_type,
-                    ValueType::Int(IntType {
+        type IntType = IntType;
+        type FloatType = FloatType;
+        type PtrType = TypeId;
+        type GenericType = TypeId;
+
+        impl_general_cast_through_singulars!();
+
+        fn to_char<'a, 'b>(
+            &mut self,
+            operand: Self::ExprRef<'a>,
+            _metadata: Self::Metadata<'b>,
+        ) -> Self::Expr<'a> {
+            const U8_BIT_SIZE: u32 = size_of::<u8>() as u32 * 8;
+
+            debug_assert!(
+                ValueType::try_from(operand.as_ref()).map_or(true, |ty| ty
+                    == ValueType::Int(IntType {
                         bit_size: 8,
                         is_signed: false
-                    }),
-                    "Casting from {from_type} to char is not supported."
-                );
-                Expr::Extension {
-                    source: from,
-                    is_zero_ext: true,
-                    bits_to_add: CHAR_BIT_SIZE - TO_CHAR_BIT_SIZE,
-                    ty: to,
-                }
+                    }),),
+                // https://doc.rust-lang.org/reference/expressions/operator-expr.html#type-cast-expressions
+                "Cast to char is only expected from u8."
+            );
+            Expr::Extension {
+                source: operand,
+                is_zero_ext: true,
+                bits_to_add: CHAR_BIT_SIZE - U8_BIT_SIZE,
+                ty: ValueType::Char,
             }
-            ValueType::Int(IntType {
+        }
+
+        fn to_int<'a, 'b>(
+            &mut self,
+            operand: Self::ExprRef<'a>,
+            ty @ IntType {
                 bit_size,
                 is_signed,
-            }) => match from_type {
+            }: Self::IntType,
+            metadata: Self::Metadata<'b>,
+        ) -> Self::Expr<'a> {
+            let from_type = ValueType::try_from(operand.as_ref())
+                .expect("Could not determine the type of the operand for int cast.");
+            match from_type {
                 ValueType::Bool => Expr::Ite {
-                    condition: from,
+                    condition: operand,
                     if_target: ConstValue::new_int(
                         1 as u128,
                         IntType {
@@ -633,47 +651,96 @@ mod core {
                     .to_value_ref(),
                 },
                 ValueType::Char => {
-                    if bit_size as u32 > CHAR_BIT_SIZE {
-                        return Expr::Extension {
-                            source: from,
-                            is_zero_ext: true,
-                            bits_to_add: bit_size as u32 - CHAR_BIT_SIZE,
-                            ty: to,
-                        };
-                    } else {
-                        return Expr::Extraction {
-                            source: from,
-                            high: bit_size as u32 - 1,
-                            low: 0,
-                            ty: to,
-                        };
-                    }
+                    let numeric_rep = self.transmute(
+                        operand,
+                        // FIXME: This is not necessarily the correct type id as the runtime library is built separately.
+                        type_id_of::<u32>(),
+                        LazyTypeInfo::IdPrimitive(
+                            type_id_of::<u32>(),
+                            ValueType::new_int(CHAR_BIT_SIZE as u64, false),
+                        ),
+                    );
+                    self.to_int(numeric_rep.to_value_ref(), ty, metadata)
                 }
                 ValueType::Int(IntType {
                     bit_size: from_bit_size,
                     is_signed: is_from_signed,
                 }) => {
-                    if bit_size > from_bit_size {
+                    if bit_size == from_bit_size && metadata.id().is_some() {
+                        self.transmute(operand, metadata.id().unwrap(), metadata)
+                    } else if bit_size > from_bit_size {
                         let bits_to_add = bit_size - from_bit_size;
-                        return Expr::Extension {
-                            source: from,
+                        Expr::Extension {
+                            source: operand,
                             is_zero_ext: !is_from_signed,
                             bits_to_add: bits_to_add as u32,
-                            ty: to,
-                        };
+                            ty: ty.into(),
+                        }
                     } else {
-                        return Expr::Extraction {
-                            source: from,
+                        Expr::Extraction {
+                            source: operand,
                             high: bit_size as u32 - 1,
                             low: 0,
-                            ty: to,
-                        };
+                            ty: ty.into(),
+                        }
                     }
                 }
                 ValueType::Float { .. } => todo!(),
-            },
-            ValueType::Float { .. } => todo!(),
-            _ => unreachable!("Casting from {from_type} to {to} is not supported."),
+            }
+        }
+
+        fn to_float<'a, 'b>(
+            &mut self,
+            _operand: Self::ExprRef<'a>,
+            _ty: Self::FloatType,
+            _metadata: Self::Metadata<'b>,
+        ) -> Self::Expr<'a> {
+            todo!()
+        }
+
+        fn to_ptr<'a, 'b>(
+            &mut self,
+            _operand: Self::ExprRef<'a>,
+            _ty: Self::PtrType,
+            _metadata: Self::Metadata<'b>,
+        ) -> Self::Expr<'a> {
+            todo!()
+        }
+
+        fn ptr_unsize<'a, 'b>(
+            &mut self,
+            _operand: Self::ExprRef<'a>,
+            _metadata: Self::Metadata<'b>,
+        ) -> Self::Expr<'a> {
+            todo!("#331: Add support for casting symbolic pointers")
+        }
+
+        fn expose_prov<'a, 'b>(
+            &mut self,
+            _operand: Self::ExprRef<'a>,
+            _metadata: Self::Metadata<'b>,
+        ) -> Self::Expr<'a> {
+            todo!("#331: Add support for casting symbolic pointers")
+        }
+
+        fn sized_dyn<'a, 'b>(
+            &mut self,
+            _operand: Self::ExprRef<'a>,
+            _metadata: Self::Metadata<'b>,
+        ) -> Self::Expr<'a> {
+            todo!("#331: Add support for casting symbolic pointers")
+        }
+
+        fn transmute<'a, 'b>(
+            &mut self,
+            operand: Self::ExprRef<'a>,
+            _ty: Self::GenericType,
+            metadata: Self::Metadata<'b>,
+        ) -> Self::Expr<'a> {
+            Expr::Transmutation {
+                source: operand,
+                dst_ty: metadata,
+            }
         }
     }
 }
@@ -708,10 +775,23 @@ mod concrete {
         }
 
         impl_singular_unary_ops_through_general!();
+    }
 
-        fn cast<'a>(&mut self, _operand: Self::ExprRef<'a>, _target: CastKind) -> Self::Expr<'a> {
+    impl CastExprBuilder for ConcreteAbstractorBuilder {
+        type ExprRef<'a> = ConcreteValueRef;
+        type Expr<'a> = ValueRef;
+        type Metadata<'a> = CastMetadata;
+
+        fn cast<'a, 'b>(
+            &mut self,
+            _operand: Self::ExprRef<'a>,
+            _target: CastKind<Self::IntType, Self::FloatType, Self::PtrType, Self::GenericType>,
+            _metadata: Self::Metadata<'b>,
+        ) -> Self::Expr<'a> {
             UnevalValue::Some.to_value_ref()
         }
+
+        impl_singular_casts_through_general!();
     }
 }
 

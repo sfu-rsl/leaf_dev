@@ -138,7 +138,6 @@ mod retrieval {
         type Error = ();
 
         fn try_from(ty: &'a TypeInfo) -> Result<Self, Self::Error> {
-            use abs::USIZE_TYPE;
             // TODO: To be replaced with a well-cached implementation
             let name = ty.name.as_str();
             match name {
@@ -157,7 +156,7 @@ mod retrieval {
                         if name[1..] == *"size" {
                             Ok(IntType {
                                 is_signed: name.starts_with('i'),
-                                ..USIZE_TYPE
+                                ..IntType::USIZE
                             }
                             .into())
                         } else {

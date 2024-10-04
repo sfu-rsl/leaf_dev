@@ -1,14 +1,37 @@
-use super::expr::ValueRef;
+use super::{expr::ValueRef, LazyTypeInfo};
 use crate::abs::{
     self,
-    expr::{BinaryExprBuilder, ExprBuilder},
+    expr::{BinaryExprBuilder, CastExprBuilder, UnaryExprBuilder},
+    FloatType, IntType, TypeId,
 };
 use common::tyexp::TypeInfo;
 
 pub(crate) use crate::utils::alias::*;
 
-pub(crate) trait ValueRefExprBuilder: ExprBuilder<ValueRef> {}
-impl<T> ValueRefExprBuilder for T where T: ExprBuilder<ValueRef> {}
+pub(crate) trait ValueRefExprBuilder
+where
+    Self: for<'a> BinaryExprBuilder<
+            ExprRefPair<'a> = <Self as EB>::ExprRefPair<'a>,
+            Expr<'a> = <Self as EB>::Expr<'a>,
+        > + for<'a> UnaryExprBuilder<
+            ExprRef<'a> = <Self as EB>::ExprRef<'a>,
+            Expr<'a> = <Self as EB>::Expr<'a>,
+        > + for<'a> CastExprBuilder<
+            ExprRef<'a> = <Self as EB>::ExprRef<'a>,
+            Expr<'a> = <Self as EB>::Expr<'a>,
+            Metadata<'a> = LazyTypeInfo,
+            IntType = IntType,
+            FloatType = FloatType,
+            PtrType = TypeId,
+            GenericType = TypeId,
+        >,
+{
+    type ExprRef<'a>: From<ValueRef>;
+    type ExprRefPair<'a>: From<(ValueRef, ValueRef)>;
+    type Expr<'a>: Into<ValueRef>;
+}
+
+use ValueRefExprBuilder as EB;
 
 /* NOTE: Because of an internal compiler bug, the blanket impl can't be added
  * for these alias traits. See: https://github.com/rust-lang/rust/issues/112097

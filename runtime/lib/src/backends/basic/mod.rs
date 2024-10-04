@@ -290,19 +290,10 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
 
     fn cast_of(mut self, operand: Self::Operand, target: CastKind) {
         let value = self.get_operand_value(operand);
-        let mut cast_value: ValueRef = self.expr_builder().cast(value.into(), target).into();
-
-        // FIXME: Temporary solution as we might change expression builders.
-        if let Value::Symbolic(SymValue::Expression(Expr::Transmutation { .. })) =
-            cast_value.as_ref()
-        {
-            let Value::Symbolic(SymValue::Expression(Expr::Transmutation { dst_ty, .. })) =
-                ValueRef::make_mut(&mut cast_value)
-            else {
-                unreachable!()
-            };
-            *dst_ty = self.dest.metadata().into();
-        };
+        let cast_value: ValueRef = self
+            .expr_builder()
+            .cast(value.into(), target, self.dest.metadata().into())
+            .into();
 
         self.set(cast_value)
     }
@@ -481,6 +472,7 @@ impl<EB: OperationalExprBuilder> BasicAssignmentHandler<'_, EB> {
                 };
 
                 let discr_ty = get_int_type(discr_meta);
+                let discr_ty_info = LazyTypeInfo::from(discr_meta);
                 let tag_ty = get_int_type(tag_ty);
 
                 let into_tag_value = |v: u128| ConstValue::new_int(v, tag_ty).to_value_ref();
@@ -503,7 +495,11 @@ impl<EB: OperationalExprBuilder> BasicAssignmentHandler<'_, EB> {
                 );
                 let relative_discr_value = self
                     .expr_builder()
-                    .cast(relative_tag_value.into(), CastKind::ToInt(discr_ty))
+                    .cast(
+                        relative_tag_value.into(),
+                        CastKind::ToInt(discr_ty),
+                        discr_ty_info.clone(),
+                    )
                     .into();
                 let niche_discr_value = self
                     .expr_builder()
@@ -515,9 +511,11 @@ impl<EB: OperationalExprBuilder> BasicAssignmentHandler<'_, EB> {
                             .into(),
                     )
                     .into();
-                let niche_discr_value = self
-                    .expr_builder()
-                    .cast(niche_discr_value.into(), CastKind::ToInt(discr_ty));
+                let niche_discr_value = self.expr_builder().cast(
+                    niche_discr_value.into(),
+                    CastKind::ToInt(discr_ty),
+                    discr_ty_info,
+                );
                 let discr_value = Expr::Ite {
                     condition: is_niche,
                     if_target: niche_discr_value.into(),

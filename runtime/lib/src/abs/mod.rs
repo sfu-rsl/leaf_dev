@@ -210,16 +210,18 @@ pub(crate) struct IntType {
     pub is_signed: bool,
 }
 
+impl IntType {
+    pub(crate) const USIZE: Self = Self {
+        bit_size: std::mem::size_of::<usize>() as u64 * 8,
+        is_signed: false,
+    };
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub(crate) struct FloatType {
     pub e_bits: u64,
     pub s_bits: u64,
 }
-
-pub(crate) static USIZE_TYPE: IntType = IntType {
-    bit_size: std::mem::size_of::<usize>() as u64 * 8,
-    is_signed: false,
-};
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum CastKind<I = IntType, F = FloatType, P = TypeId, T = TypeId> {

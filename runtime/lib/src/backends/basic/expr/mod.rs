@@ -608,7 +608,6 @@ impl<'a> TryFrom<&'a TypeInfo> for ValueType {
     type Error = &'a TypeInfo;
 
     fn try_from(value: &'a TypeInfo) -> Result<Self, Self::Error> {
-        use abs::USIZE_TYPE;
         // TODO: To be replaced with a well-cached implementation
         let name = value.name.as_str();
         match name {
@@ -627,7 +626,7 @@ impl<'a> TryFrom<&'a TypeInfo> for ValueType {
                     if name[1..] == *"size" {
                         Ok(IntType {
                             is_signed: name.starts_with('i'),
-                            ..USIZE_TYPE
+                            ..IntType::USIZE
                         }
                         .into())
                     } else {
@@ -635,7 +634,7 @@ impl<'a> TryFrom<&'a TypeInfo> for ValueType {
                     }
                 }),
             _ if name.starts_with("f") => unimplemented!(),
-            "*mut ()" | "*const ()" => Ok(USIZE_TYPE.into()),
+            "*mut ()" | "*const ()" => Ok(IntType::USIZE.into()),
             _ => Err(value),
         }
     }
@@ -1110,6 +1109,7 @@ mod convert {
                             _ => ValueType::try_from(operands.first().as_ref()).map_err(|_| value),
                         }
                     }
+                    Expr::BinaryBoundCheck { .. } => Ok(ValueType::Bool),
                     Expr::Extension { ty, .. } | Expr::Extraction { ty, .. } => Ok(ty.clone()),
                     Expr::Ite {
                         condition: _,
@@ -1127,11 +1127,17 @@ mod convert {
                         if_ty
                     })
                     .ok_or(value),
-                    Expr::Transmutation {
-                        dst_ty: LazyTypeInfo::IdPrimitive(_, value_ty),
+                    Expr::Transmutation { dst_ty, .. } => dst_ty.try_into().map_err(|_| value),
+                    Expr::Len(..) => Ok(IntType::USIZE.into()),
+                    Expr::Multi(select) => {
+                        ValueType::try_from(select.first_leaf().as_ref()).map_err(|_| value)
+                    }
+                    Expr::Partial(PorterValue {
+                        as_concrete: RawConcreteValue(_, ty),
                         ..
-                    } => Ok(*value_ty),
-                    _ => Err(value),
+                    }) => ty.try_into().map_err(|_| value),
+                    Expr::Ref(..) => Err(value),
+                    Expr::PtrMetadata(..) => Err(value),
                 },
             }
         }
@@ -1153,6 +1159,17 @@ mod convert {
                     _,
                     LazyTypeInfo::IdPrimitive(_, value_ty),
                 ))) => Ok(*value_ty),
+                _ => Err(value),
+            }
+        }
+    }
+
+    impl<'a> TryFrom<&'a LazyTypeInfo> for ValueType {
+        type Error = &'a LazyTypeInfo;
+
+        fn try_from(value: &'a LazyTypeInfo) -> Result<Self, Self::Error> {
+            match value {
+                LazyTypeInfo::IdPrimitive(_, value_ty) => Ok(value_ty.clone()),
                 _ => Err(value),
             }
         }

@@ -1,7 +1,7 @@
 use std::{cell::RefCell, collections::btree_map::Entry, ops::Range, rc::Rc};
 
 use crate::{
-    abs::{place::HasMetadata, PointerOffset, TypeId, TypeSize, USIZE_TYPE},
+    abs::{place::HasMetadata, PointerOffset, TypeId, TypeSize},
     backends::basic::{
         alias::TypeManager,
         config::{SymbolicPlaceConfig, SymbolicPlaceStrategy},
