@@ -16,6 +16,7 @@ const SPAN_BINARY: &str = "binary_op";
 const SPAN_UNARY: &str = "unary_op";
 const SPAN_CAST: &str = "cast_op";
 
+#[derive(Clone, Default)]
 pub(crate) struct LoggerExprBuilder<B> {
     pub(crate) builder: B,
 }

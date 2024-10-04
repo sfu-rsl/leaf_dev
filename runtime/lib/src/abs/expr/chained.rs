@@ -12,6 +12,7 @@ use super::*;
 /// containing the transformed version.
 ///
 /// This struct is useful for overriding certain functions with optimizations, for example.
+#[derive(Clone)]
 pub(crate) struct ChainedExprBuilder<Current, Next, Expr, CurrentExpr: Into<Expr> = Expr> {
     pub(crate) current: Current,
     pub(crate) next: Next,
@@ -102,7 +103,7 @@ macro_rules_method_with_optional_args!(impl_cast_expr_method {
             $($arg: $arg_type,)*
             metadata: Self::Metadata<'b>,
         ) -> Self::Expr<'a> {
-            try_on_current_then_next!(self, $method, (operand$(, $arg_expr)*, metadata), |operand|)
+            try_on_current_then_next!(self, $method, (operand$(, $arg_expr)*, metadata.clone()), |operand|)
         }
     };
 });
@@ -165,7 +166,7 @@ where
         >,
     CE: Into<E>,
     for<'a> N::Expr<'a>: Into<E>,
-    for<'a> N::Metadata<'a>: Copy,
+    for<'a> N::Metadata<'a>: Clone,
     N::IntType: Copy,
     N::FloatType: Copy,
     N::PtrType: Copy,

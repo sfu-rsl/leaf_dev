@@ -161,32 +161,24 @@ mod symbolic {
             /*Unary:*/
             Chained<UnevaluatedResolverBuilder, CoreBuilder>,
             /*Cast:*/
-            CoreBuilder,
+            Chained<UnevaluatedResolverBuilder, CoreBuilder>,
         >,
     >;
 
     impl SymbolicBuilder {
         pub(crate) fn new(type_manager: Rc<dyn TypeManager>) -> Self {
+            let uneval_resolver = UnevaluatedResolverBuilder { type_manager };
             Logger {
                 builder: Composite {
-                    binary: Chained::new(
-                        UnevaluatedResolverBuilder {
-                            type_manager: type_manager.clone(),
-                        },
-                        Default::default(),
-                    ),
-                    unary: Chained::new(
-                        UnevaluatedResolverBuilder {
-                            type_manager: type_manager.clone(),
-                        },
-                        Default::default(),
-                    ),
-                    cast: Default::default(),
+                    binary: Chained::new(uneval_resolver.clone(), Default::default()),
+                    unary: Chained::new(uneval_resolver.clone(), Default::default()),
+                    cast: Chained::new(uneval_resolver.clone(), Default::default()),
                 },
             }
         }
     }
 
+    #[derive(Clone)]
     pub(crate) struct UnevaluatedResolverBuilder {
         type_manager: Rc<dyn TypeManager>,
     }
@@ -256,6 +248,24 @@ mod symbolic {
         }
 
         impl_singular_unary_ops_through_general!();
+    }
+
+    impl CastExprBuilder for UnevaluatedResolverBuilder {
+        type ExprRef<'a> = SymValueRef;
+        type Expr<'a> = Result<ValueRef, SymValueRef>;
+        type Metadata<'a> = CastMetadata;
+
+        fn cast<'a, 'b>(
+            &mut self,
+            mut operand: Self::ExprRef<'a>,
+            _target: CastKind<Self::IntType, Self::FloatType, Self::PtrType, Self::GenericType>,
+            _metadata: Self::Metadata<'b>,
+        ) -> Self::Expr<'a> {
+            self.resolve_if_porter(operand.as_mut());
+            Err(operand)
+        }
+
+        impl_singular_casts_through_general!();
     }
 }
 

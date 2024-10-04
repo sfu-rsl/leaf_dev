@@ -6,7 +6,7 @@ use super::*;
 
 /// This is the main expression builder, which is simply an interface for the
 /// binary & unary expression builders.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(crate) struct CompositeExprBuilder<
     B: BinaryExprBuilder,
     U: UnaryExprBuilder,
