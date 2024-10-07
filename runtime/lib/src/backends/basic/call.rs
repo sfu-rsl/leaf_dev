@@ -181,7 +181,9 @@ impl<VS: VariablesState + SelfHierarchical> BasicCallStackManager<VS> {
         let symbolic_args = latest_call
             .as_ref()
             .map(|info| self.inspect_external_call_info(info));
-        self.latest_returned_val = None;
+        self.latest_returned_val
+            .take()
+            .inspect(|val| self.inspect_returned_value(val));
 
         if let Some(overridden) = self.top_frame().overridden_return_val.take() {
             log_debug!(
@@ -289,6 +291,20 @@ impl<VS: VariablesState + SelfHierarchical> BasicCallStackManager<VS> {
             );
         }
         symbolic_args
+    }
+
+    fn inspect_returned_value<'a>(&self, returned_value: &ValueRef) {
+        if returned_value.is_symbolic() {
+            log_warn!(
+                target: TAG,
+                "Possible loss of symbolic values in external function call",
+            );
+            log_debug!(
+                target: TAG,
+                "Symbolic returned value from a function: {:?}",
+                returned_value,
+            );
+        }
     }
 }
 
@@ -423,7 +439,9 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
     }
 
     fn pop_stack_frame(&mut self) {
-        self.latest_returned_val = None;
+        self.latest_returned_val
+            .take()
+            .inspect(|val| self.inspect_returned_value(val));
 
         let popped_frame = self.stack.pop().unwrap();
 
