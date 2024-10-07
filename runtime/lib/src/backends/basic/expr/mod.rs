@@ -30,7 +30,7 @@ pub(crate) type SymValueRef = guards::SymValueGuard<ValueRef>;
 
 pub(crate) type SymVarId = u32;
 
-#[derive(Clone, Debug, dm::From)]
+#[derive(Clone, Debug, PartialEq, Eq, dm::From)]
 pub(crate) enum Value {
     #[from(types(ConstValue, AdtValue, ArrayValue, UnevalValue))]
     Concrete(ConcreteValue),
@@ -53,7 +53,7 @@ impl Value {
     }
 }
 
-#[derive(Clone, Debug, dm::From)]
+#[derive(Clone, Debug, PartialEq, Eq, dm::From)]
 pub(crate) enum ConcreteValue {
     #[from]
     Const(ConstValue),
@@ -69,7 +69,7 @@ pub(crate) enum ConcreteValue {
 
 // FIXME: Remove this error suppression after adding support for floats.
 #[allow(unused)]
-#[derive(Clone, Debug, Eq, PartialEq, dm::From)]
+#[derive(Clone, Debug, PartialEq, Eq, dm::From)]
 pub(crate) enum ConstValue {
     Bool(bool),
     Char(char),
@@ -471,7 +471,7 @@ impl ConstValue {
 
 // FIXME: Remove this error suppression after adding support for more variants
 #[allow(unused)]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum AdtKind {
     Struct,
     Enum {
@@ -482,7 +482,7 @@ pub(crate) enum AdtKind {
     },
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct AdtValue {
     pub kind: AdtKind,
     pub fields: Vec<AdtField>,
@@ -520,12 +520,12 @@ impl AdtValue {
     }
 }
 
-#[derive(Clone, Debug, dm::From)]
+#[derive(Clone, Debug, PartialEq, Eq, dm::From)]
 pub(crate) struct AdtField {
     pub value: Option<ValueRef>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ArrayValue {
     pub elements: Vec<ValueRef>,
 }
@@ -537,23 +537,23 @@ impl ArrayValue {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct FatPtrValue {
     pub address: ConcreteValueRef,
     pub metadata: ConcreteValueRef,
     pub ty: TypeId,
 }
 
-#[derive(Clone, Debug, dm::From)]
+#[derive(Clone, Debug, PartialEq, Eq, dm::From)]
 pub(crate) enum UnevalValue {
     Some,
     Lazy(RawConcreteValue),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct RawConcreteValue(pub(crate) RawAddress, pub(crate) LazyTypeInfo);
 
-#[derive(Clone, Debug, dm::From)]
+#[derive(Clone, Debug, PartialEq, Eq, dm::From)]
 pub(crate) enum LazyTypeInfo {
     None,
     Id(TypeId),
@@ -643,14 +643,14 @@ impl<'a> TryFrom<&'a TypeInfo> for ValueType {
     }
 }
 
-#[derive(Clone, Debug, dm::From)]
+#[derive(Clone, Debug, PartialEq, Eq, dm::From)]
 pub(crate) enum SymValue {
     Variable(SymbolicVar),
     #[from(forward)]
     Expression(Expr),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct SymbolicVar {
     pub id: SymVarId,
     pub ty: ValueType,
@@ -663,7 +663,7 @@ impl SymbolicVar {
 }
 
 define_reversible_pair!(
-    #[derive(Clone, Debug)]
+    #[derive(Clone, Debug, PartialEq, Eq)]
     BinaryOperands<F, S> {
         (Orig, Rev) {
             first: F,
@@ -694,7 +694,7 @@ impl SymBinaryOperands {
 
 sub_enum! {
     #[repr(u8)]
-    #[derive(Clone, Copy, Debug)]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     pub(crate) enum UnaryOp from abs::UnaryOp {
         Neg,
         Not,
@@ -703,7 +703,7 @@ sub_enum! {
 
 sub_enum! {
     #[repr(u8)]
-    #[derive(Clone, Copy, Debug)]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     pub(crate) enum BinaryOp from abs::BinaryOp {
         Add,
         Sub,
@@ -733,7 +733,7 @@ sub_enum! {
 
 sub_enum! {
     #[repr(u8)]
-    #[derive(Clone, Copy, Debug)]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     pub(crate) enum OverflowingBinaryOp from BinaryOp {
         Add,
         Sub,
@@ -757,7 +757,7 @@ impl OverflowingBinaryOp {
 
 // FIXME: Remove this error suppression after adding support for more variants
 #[allow(unused)]
-#[derive(Clone, Debug, dm::From)]
+#[derive(Clone, Debug, PartialEq, Eq, dm::From)]
 pub(crate) enum Expr {
     Unary {
         operator: UnaryOp,
@@ -811,13 +811,13 @@ pub(crate) enum Expr {
 }
 
 #[allow(unused)]
-#[derive(Clone, Debug, dm::From)]
+#[derive(Clone, Debug, PartialEq, Eq, dm::From)]
 pub(crate) struct BinaryExpr<Operator = BinaryOp, Operands = SymBinaryOperands> {
     operator: Operator,
     operands: Operands,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ExtensionExpr {
     pub(crate) source: SymValueRef,
     pub(crate) is_zero_ext: bool,
@@ -826,7 +826,7 @@ pub(crate) struct ExtensionExpr {
     pub(crate) ty: ValueType,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct TruncationExpr {
     pub(crate) source: SymValueRef,
     // https://doc.rust-lang.org/reference/expressions/operator-expr.html#type-cast-expressions
@@ -840,13 +840,13 @@ pub(crate) type MultiValueTree = SymbolicReadTree<SymIndex, MultiValueLeaf>;
 pub(crate) type MultiValueArray = Vec<MultiValueTree>;
 pub(crate) type MultiValue = Select<SymIndex, MultiValueTree>;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct SliceIndex<I> {
     pub index: I,
     pub from_end: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct PorterValue {
     pub(crate) as_concrete: RawConcreteValue,
     pub(crate) sym_values: Vec<(PointerOffset, TypeId, SymValueRef)>,
@@ -857,7 +857,7 @@ mod guards {
 
     macro_rules! define_guard {
         ($base_type:ty, $ref_type:ty, $guarded_type:ty, $name: ident, $pattern:pat, $value_name:ident) => {
-            #[derive(Clone)]
+            #[derive(Clone, PartialEq, Eq)]
             pub(crate) struct $name<V>(pub V);
 
             impl<V> $name<V>

@@ -1,5 +1,5 @@
 /// Represents a selection over a `target` using an `index`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Select<I, V> {
     pub index: I,
     pub target: SelectTarget<V, Self>,
@@ -7,13 +7,13 @@ pub(crate) struct Select<I, V> {
 
 /// Represents the possible targets of a selection, which can be an array of
 /// values or recursively the result of another selection.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum SelectTarget<V, S> {
     Array(Vec<V>),
     Nested(Box<S>),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum SymbolicReadTree<I, V> {
     /// A selection over a set of possible values using a symbolic index.
     /// # Remarks

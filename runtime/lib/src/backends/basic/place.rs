@@ -17,7 +17,7 @@ use crate::abs::{
 
 use super::Projection;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PlaceMetadata {
     address: Option<NonNull<()>>,
     type_id: Option<TypeId>,

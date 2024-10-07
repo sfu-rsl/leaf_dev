@@ -12,7 +12,7 @@ pub(crate) type PlaceValueRef = Rc<PlaceValue>;
 pub(crate) type DeterPlaceValueRef = guards::DeterPlaceValueGuard<PlaceValueRef>;
 pub(crate) type SymPlaceValueRef = guards::SymPlaceValueGuard<PlaceValueRef>;
 
-#[derive(Clone, Debug, dm::From)]
+#[derive(Clone, Debug, PartialEq, Eq, dm::From)]
 pub(crate) enum PlaceValue {
     #[from]
     Deterministic(DeterministicPlaceValue),
@@ -27,7 +27,7 @@ impl PlaceValue {
     }
 }
 
-#[derive(Clone, Debug /* , dm::Deref, dm::AsRef */)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct DeterministicPlaceValue {
     addr: RawAddress,
     ty_info: LazyTypeInfo,
@@ -64,7 +64,7 @@ impl DeterministicPlaceValue {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct SymbolicPlaceValue {
     pub base: SymbolicPlaceBase,
     pub proj: Option<DeterministicProjection>,
@@ -79,13 +79,13 @@ impl SymbolicPlaceValue {
     }
 }
 
-#[derive(Clone, Debug, dm::From)]
+#[derive(Clone, Debug, PartialEq, Eq, dm::From)]
 pub(crate) enum SymbolicPlaceBase {
     Deref(DerefSymHostPlace),
     SymIndex(SymIndexedPlace),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct DeterministicProjection {
     pub offset: PointerOffset,
     pub ty_id: TypeId,
@@ -100,13 +100,13 @@ impl DeterministicProjection {
     }
 }
 
-#[derive(Clone, Debug, dm::From)]
+#[derive(Clone, Debug, PartialEq, Eq, dm::From)]
 pub(crate) struct DerefSymHostPlace {
     pub value: SymValueRef,
     pub metadata: PlaceMetadata,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct SymIndexedPlace {
     pub host: PlaceValueRef,
     pub host_metadata: PlaceMetadata,

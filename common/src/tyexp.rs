@@ -7,7 +7,7 @@ use crate::{types::*, *};
 
 pub use crate::types::{Alignment, TypeId, TypeSize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TypeInfo {
     pub id: TypeId,
     // Type name.
@@ -36,13 +36,13 @@ impl TypeInfo {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VariantInfo {
     pub index: VariantIndex,
     pub fields: FieldsShapeInfo,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FieldsShapeInfo {
     NoFields,
     Array(ArrayShape),
@@ -50,13 +50,13 @@ pub enum FieldsShapeInfo {
     Union(UnionShape),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ArrayShape {
     pub len: u64,
     pub item_ty: TypeId,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StructShape {
     pub fields: Vec<FieldInfo>,
 }
@@ -64,19 +64,19 @@ pub struct StructShape {
 // We use the same struct to avoid redundancy. Offset is not used for unions.
 pub type UnionShape = StructShape;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FieldInfo {
     pub ty: TypeId,
     pub offset: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TagInfo {
     pub as_field: FieldInfo,
     pub encoding: TagEncodingInfo,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TagEncodingInfo {
     Direct,
     Niche {
