@@ -479,46 +479,45 @@ impl<EB: OperationalExprBuilder> BasicAssignmentHandler<'_, EB> {
                 let into_discr_value = |v: u128| ConstValue::new_int(v, discr_ty).to_value_ref();
 
                 // Based on: `rustc_codegen_ssa::mir::place::PlaceRef::codegen_get_discr`
+                let niche_start = *niche_value_range.start();
                 let tag_value: ValueRef = tag_value.into();
-                let relative_tag_value = self
-                    .expr_builder()
-                    .sub((tag_value.clone(), into_tag_value(*tag_value_start)).into())
-                    .into();
-                let is_niche = SymValueRef::new(
-                    self.expr_builder()
-                        .le((
-                            relative_tag_value.clone(),
-                            into_tag_value(niche_value_range.end() - niche_value_range.start()),
-                        )
-                            .into())
-                        .into(),
-                );
-                let relative_discr_value = self
-                    .expr_builder()
-                    .cast(
-                        relative_tag_value.into(),
-                        CastKind::ToInt(discr_ty),
-                        discr_ty_info.clone(),
-                    )
-                    .into();
-                let niche_discr_value = self
-                    .expr_builder()
-                    .add(
-                        (
-                            relative_discr_value,
-                            into_discr_value(*niche_value_range.start()),
-                        )
+                let relative_max = niche_value_range.end() - niche_start;
+                let (is_niche, tagged_discr) = if relative_max == 0 {
+                    let is_niche = SymValueRef::new(
+                        self.expr_builder()
+                            .eq((tag_value.clone(), into_tag_value(*tag_value_start)).into())
                             .into(),
-                    )
-                    .into();
-                let niche_discr_value = self.expr_builder().cast(
-                    niche_discr_value.into(),
-                    CastKind::ToInt(discr_ty),
-                    discr_ty_info,
-                );
+                    );
+                    let tagged_discr = into_discr_value(niche_start);
+                    (is_niche, tagged_discr)
+                } else {
+                    let relative_tag_value: ValueRef = self
+                        .expr_builder()
+                        .sub((tag_value.clone(), into_tag_value(*tag_value_start)).into())
+                        .into();
+                    let is_niche = SymValueRef::new(
+                        self.expr_builder()
+                            .le((relative_tag_value.clone(), into_tag_value(relative_max)).into())
+                            .into(),
+                    );
+                    let relative_discr_value = self
+                        .expr_builder()
+                        .to_int(relative_tag_value.into(), discr_ty, discr_ty_info.clone())
+                        .into();
+                    let tagged_discr = self
+                        .expr_builder()
+                        .add((relative_discr_value, into_discr_value(niche_start)).into())
+                        .into();
+                    let tagged_discr =
+                        self.expr_builder()
+                            .to_int(tagged_discr, discr_ty, discr_ty_info);
+                    debug_assert!(tagged_discr.is_symbolic());
+                    (is_niche, tagged_discr)
+                };
+
                 let discr_value = Expr::Ite {
                     condition: is_niche,
-                    if_target: niche_discr_value.into(),
+                    if_target: tagged_discr.into(),
                     else_target: into_discr_value(*non_niche_value),
                 }
                 .to_value_ref();
@@ -995,18 +994,23 @@ fn project_tag(
 ) -> (Place, &'static common::tyexp::TagInfo) {
     let ty = type_manager.get_type(place.metadata().unwrap_type_id());
     let tag_info = ty.tag.as_ref().unwrap();
-    let meta = {
+    let metadata = {
         let mut meta = PlaceMetadata::default();
         meta.set_address(
             place
                 .address()
                 .wrapping_byte_add(tag_info.as_field.offset as usize) as RawPointer,
         );
-        meta.set_type_id(tag_info.as_field.ty);
+        let tag_ty = type_manager.get_type(tag_info.as_field.ty);
+        meta.set_type_id(tag_ty.id);
+        if let Ok(value_ty) = tag_ty.try_into() {
+            meta.set_ty(value_ty);
+        }
+        meta.set_size(tag_ty.size);
         meta
     };
     place.add_projection(Projection::Field(0));
-    place.push_metadata(meta);
+    place.push_metadata(metadata);
     (place, tag_info)
 }
 

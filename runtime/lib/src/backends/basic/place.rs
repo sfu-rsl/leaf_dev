@@ -72,6 +72,11 @@ impl PlaceMetadata {
     }
 
     #[inline]
+    pub(crate) fn set_ty(&mut self, ty: ValueType) {
+        self.ty = Some(ty);
+    }
+
+    #[inline]
     pub(crate) fn size(&self) -> Option<TypeSize> {
         self.size.as_ref().copied()
     }
@@ -178,7 +183,7 @@ impl BasicPlaceMetadataHandler<'_> {
     }
 
     pub(crate) fn set_primitive_type(&mut self, ty: ValueType) {
-        self.0.metadata_mut().ty = Some(ty);
+        self.0.metadata_mut().set_ty(ty);
     }
 
     pub(crate) fn set_size(self, byte_size: crate::abs::TypeSize) {
