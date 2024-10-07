@@ -32,14 +32,13 @@ use common::tyexp::{FieldsShapeInfo, StructShape, TypeExport, TypeInfo};
 
 use self::{
     alias::{
-        TypeManager, ValueRefBinaryExprBuilder as BinaryExprBuilder,
+        BasicExprBuilder, BasicSymExprBuilder, TypeManager,
+        ValueRefBinaryExprBuilder as BinaryExprBuilder,
         ValueRefExprBuilder as OperationalExprBuilder,
     },
     concrete::BasicConcretizer,
     config::BasicBackendConfig,
-    expr::{
-        builders::DefaultExprBuilder as ExprBuilder, prelude::*, translators::z3::Z3ValueTranslator,
-    },
+    expr::{prelude::*, translators::z3::Z3ValueTranslator},
     operand::BasicOperandHandler,
     place::{BasicPlaceHandler, PlaceMetadata},
     state::{make_sym_place_handler, RawPointerVariableState},
@@ -47,7 +46,7 @@ use self::{
 
 type TraceManager = dyn abs::backend::TraceManager<BasicBlockIndex, ValueRef>;
 
-type BasicVariablesState = RawPointerVariableState;
+type BasicVariablesState = RawPointerVariableState<BasicSymExprBuilder>;
 
 type BasicCallStackManager = call::BasicCallStackManager<BasicVariablesState>;
 
@@ -60,7 +59,7 @@ pub(crate) type Field<S = SymValueRef> = Operand<S>;
 pub struct BasicBackend {
     call_stack_manager: BasicCallStackManager,
     trace_manager: RRef<TraceManager>,
-    expr_builder: RRef<ExprBuilder>,
+    expr_builder: RRef<BasicExprBuilder>,
     sym_values: RRef<HashMap<u32, (SymValueRef, ConcreteValueRef)>>,
     type_manager: Rc<dyn TypeManager>,
 }
@@ -139,11 +138,11 @@ impl RuntimeBackend for BasicBackend {
     where
         Self: 'a;
 
-    type AssignmentHandler<'a> = BasicAssignmentHandler<'a, ExprBuilder>
+    type AssignmentHandler<'a> = BasicAssignmentHandler<'a, BasicExprBuilder>
     where
         Self: 'a;
 
-    type BranchingHandler<'a> = BasicBranchingHandler<'a, ExprBuilder>
+    type BranchingHandler<'a> = BasicBranchingHandler<'a, BasicExprBuilder>
     where
         Self: 'a;
 

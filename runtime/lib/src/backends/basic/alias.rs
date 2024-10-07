@@ -1,4 +1,7 @@
-use super::{expr::ValueRef, LazyTypeInfo};
+use super::{
+    expr::{SymBinaryOperands, SymValueRef, ValueRef},
+    LazyTypeInfo,
+};
 use crate::abs::{
     self,
     expr::{BinaryExprBuilder, CastExprBuilder, UnaryExprBuilder},
@@ -8,17 +11,13 @@ use common::tyexp::TypeInfo;
 
 pub(crate) use crate::utils::alias::*;
 
-pub(crate) trait ValueRefExprBuilder
+pub(crate) trait SymValueRefExprBuilder
 where
-    Self: for<'a> BinaryExprBuilder<
-            ExprRefPair<'a> = <Self as EB>::ExprRefPair<'a>,
-            Expr<'a> = <Self as EB>::Expr<'a>,
-        > + for<'a> UnaryExprBuilder<
-            ExprRef<'a> = <Self as EB>::ExprRef<'a>,
-            Expr<'a> = <Self as EB>::Expr<'a>,
-        > + for<'a> CastExprBuilder<
-            ExprRef<'a> = <Self as EB>::ExprRef<'a>,
-            Expr<'a> = <Self as EB>::Expr<'a>,
+    Self: for<'a> BinaryExprBuilder<ExprRefPair<'a> = SymBinaryOperands, Expr<'a> = ValueRef>
+        + for<'a> UnaryExprBuilder<ExprRef<'a> = SymValueRef, Expr<'a> = ValueRef>
+        + for<'a> CastExprBuilder<
+            ExprRef<'a> = SymValueRef,
+            Expr<'a> = ValueRef,
             Metadata<'a> = LazyTypeInfo,
             IntType = IntType,
             FloatType = FloatType,
@@ -26,27 +25,32 @@ where
             GenericType = TypeId,
         >,
 {
-    type ExprRef<'a>: From<ValueRef>;
-    type ExprRefPair<'a>: From<(ValueRef, ValueRef)>;
-    type Expr<'a>: Into<ValueRef>;
 }
 
-use ValueRefExprBuilder as EB;
-
-/* NOTE: Because of an internal compiler bug, the blanket impl can't be added
- * for these alias traits. See: https://github.com/rust-lang/rust/issues/112097
- */
-use ValueRefBinaryExprBuilder as VBEB;
-pub(crate) trait ValueRefBinaryExprBuilder
+pub(crate) trait ValueRefExprBuilder
 where
-    Self: for<'a> BinaryExprBuilder<
-            ExprRefPair<'a> = <Self as VBEB>::ExprRefPair<'a>,
-            Expr<'a> = <Self as VBEB>::Expr<'a>,
+    Self: for<'a> BinaryExprBuilder<ExprRefPair<'a> = (ValueRef, ValueRef), Expr<'a> = ValueRef>
+        + for<'a> UnaryExprBuilder<ExprRef<'a> = ValueRef, Expr<'a> = ValueRef>
+        + for<'a> CastExprBuilder<
+            ExprRef<'a> = ValueRef,
+            Expr<'a> = ValueRef,
+            Metadata<'a> = LazyTypeInfo,
+            IntType = IntType,
+            FloatType = FloatType,
+            PtrType = TypeId,
+            GenericType = TypeId,
         >,
 {
-    type ExprRefPair<'a>: From<(ValueRef, ValueRef)> = (ValueRef, ValueRef);
-    type Expr<'a>: Into<ValueRef> = ValueRef;
 }
+
+pub(crate) trait ValueRefBinaryExprBuilder
+where
+    Self: for<'a> BinaryExprBuilder<ExprRefPair<'a> = (ValueRef, ValueRef), Expr<'a> = ValueRef>,
+{
+}
+
+pub(crate) use super::expr::builders::DefaultExprBuilder as BasicExprBuilder;
+pub(crate) use super::expr::builders::DefaultSymExprBuilder as BasicSymExprBuilder;
 
 pub(crate) trait TypeManager:
     abs::backend::TypeManager<Key = abs::TypeId, Value = &'static TypeInfo>

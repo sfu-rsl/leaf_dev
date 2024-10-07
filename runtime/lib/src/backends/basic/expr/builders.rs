@@ -1,4 +1,6 @@
-use super::super::alias::{TypeManager, ValueRefBinaryExprBuilder, ValueRefExprBuilder};
+use super::super::alias::{
+    SymValueRefExprBuilder, TypeManager, ValueRefBinaryExprBuilder, ValueRefExprBuilder,
+};
 use super::{BinaryOp as BasicBinaryOp, UnaryOp as BasicUnaryOp, *};
 use crate::abs::{
     expr::{
@@ -7,6 +9,7 @@ use crate::abs::{
     },
     BinaryOp as AbsBinaryOp, CastKind, UnaryOp as AbsUnaryOp,
 };
+use crate::utils::alias::RRef;
 
 type Composite<Binary, Unary, Cast> = CompositeExprBuilder<Binary, Unary, Cast>;
 type Chained<Current, Next, Expr = ValueRef, CurrentExpr = Expr> =
@@ -16,16 +19,18 @@ type Logger<B> = LoggerExprBuilder<B>;
 type CastMetadata = LazyTypeInfo;
 
 pub(crate) type DefaultExprBuilder = toplevel::TopLevelBuilder;
+pub(crate) type DefaultSymExprBuilder =
+    adapters::SymValueRefExprBuilderAdapter<toplevel::TopLevelBuilder>;
 
 pub(crate) fn new_expr_builder(type_manager: Rc<dyn TypeManager>) -> DefaultExprBuilder {
     DefaultExprBuilder::new(type_manager)
 }
 
-impl ValueRefExprBuilder for DefaultExprBuilder {
-    type ExprRef<'a> = ValueRef;
-    type ExprRefPair<'a> = (ValueRef, ValueRef);
-    type Expr<'a> = ValueRef;
+pub(crate) fn to_sym_expr_builder(expr_builder: RRef<DefaultExprBuilder>) -> DefaultSymExprBuilder {
+    adapters::SymValueRefExprBuilderAdapter(expr_builder)
 }
+
+impl ValueRefExprBuilder for DefaultExprBuilder {}
 
 impl ValueRefBinaryExprBuilder for DefaultExprBuilder {}
 
@@ -146,47 +151,50 @@ mod toplevel {
 }
 
 mod symbolic {
+    use crate::backends::basic::alias::SymValueRefExprBuilder;
+
     use super::{
         adapters::{ConstFolder, ConstSimplifier, CoreBuilder},
         *,
     };
 
+    pub(crate) type BaseSymbolicBuilder = Composite<
+        /*Binary:*/
+        Chained<ConstSimplifier, Chained<ConstFolder, CoreBuilder>>,
+        /*Unary:*/
+        CoreBuilder,
+        /*Cast:*/
+        CoreBuilder,
+    >;
+
+    impl SymValueRefExprBuilder for Logger<BaseSymbolicBuilder> {}
+
     pub(crate) type SymbolicBuilder = Logger<
-        Composite<
-            /*Binary:*/
-            Chained<
-                UnevaluatedResolverBuilder,
-                Chained<ConstSimplifier, Chained<ConstFolder, CoreBuilder>>,
-            >,
-            /*Unary:*/
-            Chained<UnevaluatedResolverBuilder, CoreBuilder>,
-            /*Cast:*/
-            Chained<UnevaluatedResolverBuilder, CoreBuilder>,
-        >,
+        Chained<UnevaluatedResolverBuilder<Logger<BaseSymbolicBuilder>>, BaseSymbolicBuilder>,
     >;
 
     impl SymbolicBuilder {
         pub(crate) fn new(type_manager: Rc<dyn TypeManager>) -> Self {
-            let uneval_resolver = UnevaluatedResolverBuilder { type_manager };
+            let uneval_resolver = UnevaluatedResolverBuilder {
+                type_manager,
+                sym_builder: Logger::<BaseSymbolicBuilder>::default(),
+            };
             Logger {
-                builder: Composite {
-                    binary: Chained::new(uneval_resolver.clone(), Default::default()),
-                    unary: Chained::new(uneval_resolver.clone(), Default::default()),
-                    cast: Chained::new(uneval_resolver.clone(), Default::default()),
-                },
+                builder: Chained::new(uneval_resolver, BaseSymbolicBuilder::default()),
             }
         }
     }
 
     #[derive(Clone)]
-    pub(crate) struct UnevaluatedResolverBuilder {
+    pub(crate) struct UnevaluatedResolverBuilder<EB: SymValueRefExprBuilder> {
         type_manager: Rc<dyn TypeManager>,
+        sym_builder: EB,
     }
 
-    impl UnevaluatedResolverBuilder {
-        fn resolve_if_porter(&self, value: &mut ValueRef) {
+    impl<EB: SymValueRefExprBuilder> UnevaluatedResolverBuilder<EB> {
+        fn resolve_if_porter(&mut self, value: &mut ValueRef) {
             if let Value::Symbolic(SymValue::Expression(Expr::Partial(porter))) = value.as_ref() {
-                *value = porter.try_to_masked_value(self.type_manager.as_ref())
+                *value = porter.try_to_masked_value(self.type_manager.as_ref(), &mut self.sym_builder)
                 .unwrap_or_else(|_| {
                     unimplemented!(
                         "Porter value participating in an expression is expected to be convertible to masked value {:?}",
@@ -197,7 +205,7 @@ mod symbolic {
         }
     }
 
-    impl BinaryExprBuilder for UnevaluatedResolverBuilder {
+    impl<EB: SymValueRefExprBuilder> BinaryExprBuilder for UnevaluatedResolverBuilder<EB> {
         type ExprRefPair<'a> = SymBinaryOperands;
         type Expr<'a> = Result<ValueRef, SymBinaryOperands>;
 
@@ -234,7 +242,7 @@ mod symbolic {
         impl_singular_binary_ops_through_general!();
     }
 
-    impl UnaryExprBuilder for UnevaluatedResolverBuilder {
+    impl<EB: SymValueRefExprBuilder> UnaryExprBuilder for UnevaluatedResolverBuilder<EB> {
         type ExprRef<'a> = SymValueRef;
         type Expr<'a> = Result<ValueRef, SymValueRef>;
 
@@ -250,7 +258,7 @@ mod symbolic {
         impl_singular_unary_ops_through_general!();
     }
 
-    impl CastExprBuilder for UnevaluatedResolverBuilder {
+    impl<EB: SymValueRefExprBuilder> CastExprBuilder for UnevaluatedResolverBuilder<EB> {
         type ExprRef<'a> = SymValueRef;
         type Expr<'a> = Result<ValueRef, SymValueRef>;
         type Metadata<'a> = CastMetadata;
@@ -318,7 +326,7 @@ mod adapters {
         where
             F: for<'s> FnH<<Self::Target as CEB>::ExprRef<'s>, <Self::Target as CEB>::Expr<'s>>,
         {
-            Value::from(build(operand)).to_value_ref()
+            build(operand).into()
         }
     }
 
@@ -398,6 +406,58 @@ mod adapters {
             Err(operands)
         }
     }
+
+    #[derive(Default, Clone, Deref, DerefMut)]
+    pub(crate) struct SymValueRefExprBuilderAdapter<T: ValueRefExprBuilder>(pub(super) RRef<T>);
+
+    impl<T: ValueRefExprBuilder> BinaryExprBuilder for SymValueRefExprBuilderAdapter<T> {
+        type ExprRefPair<'a> = SymBinaryOperands;
+        type Expr<'a> = ValueRef;
+
+        fn binary_op<'a>(
+            &mut self,
+            operands: Self::ExprRefPair<'a>,
+            op: AbsBinaryOp,
+        ) -> Self::Expr<'a> {
+            let operands = match operands {
+                BinaryOperands::Orig { first, second } => (first.into(), second),
+                BinaryOperands::Rev { first, second } => (first, second.into()),
+            };
+            self.0.borrow_mut().binary_op(operands, op)
+        }
+
+        impl_singular_binary_ops_through_general!();
+    }
+
+    impl<T: ValueRefExprBuilder> UnaryExprBuilder for SymValueRefExprBuilderAdapter<T> {
+        type ExprRef<'a> = SymValueRef;
+        type Expr<'a> = ValueRef;
+
+        fn unary_op<'a>(&mut self, operand: Self::ExprRef<'a>, op: AbsUnaryOp) -> Self::Expr<'a> {
+            self.0.borrow_mut().unary_op(operand.into(), op)
+        }
+
+        impl_singular_unary_ops_through_general!();
+    }
+
+    impl<T: ValueRefExprBuilder> CastExprBuilder for SymValueRefExprBuilderAdapter<T> {
+        type ExprRef<'a> = SymValueRef;
+        type Expr<'a> = ValueRef;
+        type Metadata<'a> = CastMetadata;
+
+        fn cast<'a, 'b>(
+            &mut self,
+            operand: Self::ExprRef<'a>,
+            target: CastKind<Self::IntType, Self::FloatType, Self::PtrType, Self::GenericType>,
+            metadata: Self::Metadata<'b>,
+        ) -> Self::Expr<'a> {
+            self.0.borrow_mut().cast(operand.into(), target, metadata)
+        }
+
+        impl_singular_casts_through_general!();
+    }
+
+    impl<T: ValueRefExprBuilder> SymValueRefExprBuilder for SymValueRefExprBuilderAdapter<T> {}
 }
 
 mod core {
