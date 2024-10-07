@@ -16,7 +16,7 @@ pub(crate) mod z3 {
     use crate::{
         abs::{expr::sym_place::SelectTarget, IntType, ValueType},
         backends::basic::expr::{prelude::*, OverflowingBinaryOp, SymBinaryOperands, SymVarId},
-        solvers::z3::{ArrayNode, ArraySort, BVExt, BVNode, BVSort},
+        solvers::z3::{ArrayNode, ArraySort, AstNodeSort, BVExt, BVNode, BVSort},
     };
 
     use common::log_debug;
@@ -209,7 +209,7 @@ pub(crate) mod z3 {
                 }
                 Truncation(TruncationExpr { source, ty }) => {
                     let source = self.translate_symbolic(source);
-                    self.translate_truncation_expr(source, ty.bit_size as u32 - 1, ty.is_signed)
+                    self.translate_truncation_expr(source, ty.bit_size as u32, ty.is_signed)
                 }
                 Ite {
                     condition,
@@ -221,9 +221,17 @@ pub(crate) mod z3 {
                     let else_target = self.translate_value(else_target);
                     self.translate_ite_expr(condition, if_target, else_target)
                 }
-                Transmutation { source, .. } => {
-                    // Transmutation is transparent at this level.
-                    self.translate_symbolic(source)
+                Transmutation { source, dst_ty } => {
+                    let ast = self.translate_symbolic(source);
+                    let ast = if let Some(bv_sort) = ValueType::try_from(dst_ty)
+                        .ok()
+                        .and_then(|value_ty| BVSort::try_from(value_ty).ok())
+                    {
+                        ast.transmute(bv_sort)
+                    } else {
+                        ast
+                    };
+                    ast
                 }
                 Multi(select) => self.translate_select(select, None),
                 Ref(..) | Len(..) | PtrMetadata(..) => {
@@ -310,7 +318,7 @@ pub(crate) mod z3 {
                                 // FIXME: This may cause problems with large numbers.
                                 self.translate_truncation_expr(
                                     right,
-                                    left_size - 1,
+                                    left_size,
                                     left_node.is_signed(),
                                 )
                             } else {
@@ -591,6 +599,41 @@ pub(crate) mod z3 {
                 (false, Mul, true) => ast::BV::bvmul_no_underflow(left, right),
             };
             ast::Bool::not(&in_bounds).into()
+        }
+    }
+
+    impl<'ctx> AstNode<'ctx> {
+        fn transmute(mut self, to_sort: BVSort) -> Self {
+            match &mut self {
+                AstNode::BitVector(BVNode(_, sort)) => *sort = to_sort,
+                AstNode::Array(ArrayNode(_, sort)) => *sort.range = sort.range.transmute(to_sort),
+                AstNode::Bool(..) => panic!("Transmutation of boolean sort is not expected."),
+            };
+            self
+        }
+    }
+
+    impl AstNodeSort {
+        fn transmute(&self, to_sort: BVSort) -> Self {
+            match self {
+                Self::BitVector(_) => to_sort.into(),
+                Self::Array(arr) => Self::Array(Box::new(arr.range.transmute(to_sort)).into()),
+                Self::Bool => panic!("Transmutation of boolean sort is not expected."),
+            }
+        }
+    }
+
+    impl TryFrom<ValueType> for BVSort {
+        type Error = ValueType;
+
+        fn try_from(value_type: ValueType) -> Result<Self, Self::Error> {
+            match value_type {
+                ValueType::Int(IntType {
+                    bit_size: _,
+                    is_signed,
+                }) => Ok(Self { is_signed }),
+                _ => Err(value_type),
+            }
         }
     }
 

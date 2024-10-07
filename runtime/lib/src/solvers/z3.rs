@@ -1,3 +1,4 @@
+use derive_more as dm;
 use lazy_static::lazy_static;
 use z3::{
     self,
@@ -64,7 +65,7 @@ impl<'ctx> BVNode<'ctx> {
 #[derive(Debug, Clone)]
 pub(crate) struct ArrayNode<'ctx>(pub ast::Array<'ctx>, pub ArraySort);
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, dm::From)]
 pub(crate) enum AstNodeSort {
     Bool,
     BitVector(BVSort),
@@ -76,7 +77,7 @@ pub(crate) struct BVSort {
     pub is_signed: bool,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, dm::From)]
 pub(crate) struct ArraySort {
     pub range: Box<AstNodeSort>,
 }
