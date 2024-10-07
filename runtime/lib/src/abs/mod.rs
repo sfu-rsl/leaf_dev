@@ -170,7 +170,7 @@ impl<V> Constraint<V> {
     }
 }
 
-#[derive(Clone, Copy, Debug, derive_more::From, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, derive_more::From)]
 pub(crate) enum ValueType {
     Bool,
     Char,
@@ -203,7 +203,7 @@ impl ValueType {
     pub(crate) fn bit_size(&self) -> Option<NonZeroU64> {
         match self {
             Self::Bool => None,
-            Self::Char => NonZeroU64::new(core::mem::size_of::<char>() as u64),
+            Self::Char => NonZeroU64::new((core::mem::size_of::<char>() * 8) as u64),
             Self::Int(IntType { bit_size, .. }) => NonZeroU64::new(*bit_size),
             Self::Float(FloatType { e_bits, s_bits }) => NonZeroU64::new(e_bits + s_bits),
         }
@@ -228,6 +228,10 @@ impl IntType {
     };
     pub(crate) const U32: Self = Self {
         bit_size: 32,
+        is_signed: false,
+    };
+    pub(crate) const U8: Self = Self {
+        bit_size: 8,
         is_signed: false,
     };
 }

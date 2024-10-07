@@ -674,7 +674,7 @@ define_reversible_pair!(
     impl
 );
 
-type SymBinaryOperands = BinaryOperands<SymValueRef, ValueRef>;
+pub(crate) type SymBinaryOperands = BinaryOperands<SymValueRef, ValueRef>;
 
 impl SymBinaryOperands {
     pub fn first(&self) -> &ValueRef {

@@ -403,9 +403,10 @@ mod adapters {
 mod core {
     use abs::expr::CastExprBuilder;
     use common::utils::type_id_of;
+    use simp::CastSimplifier;
 
     use super::*;
-    use std::{mem::size_of, ops::Not};
+    use std::ops::Not;
 
     /// This is the base expression builder. It implements the lowest level for
     /// all the binary and unary functions. At this point all optimizations are
@@ -591,11 +592,9 @@ mod core {
         }
     }
 
-    const CHAR_BIT_SIZE: u32 = size_of::<char>() as u32 * 8;
-
     impl CastExprBuilder for CoreBuilder {
         type ExprRef<'a> = SymValueRef;
-        type Expr<'a> = Expr;
+        type Expr<'a> = SymValueRef;
         type Metadata<'a> = CastMetadata;
 
         type IntType = IntType;
@@ -610,24 +609,12 @@ mod core {
             operand: Self::ExprRef<'a>,
             _metadata: Self::Metadata<'b>,
         ) -> Self::Expr<'a> {
-            const U8_BIT_SIZE: u32 = size_of::<u8>() as u32 * 8;
-
             debug_assert!(
-                ValueType::try_from(operand.as_ref()).map_or(true, |ty| ty
-                    == ValueType::Int(IntType {
-                        bit_size: 8,
-                        is_signed: false
-                    }),),
+                ValueType::try_from(operand.as_ref()).map_or(true, |ty| ty == IntType::U8.into(),),
                 // https://doc.rust-lang.org/reference/expressions/operator-expr.html#type-cast-expressions
                 "Cast to char is only expected from u8."
             );
-            ExtensionExpr {
-                source: operand,
-                is_zero_ext: true,
-                bits_to_add: NonZeroU32::new(CHAR_BIT_SIZE - U8_BIT_SIZE).unwrap(),
-                ty: ValueType::Char,
-            }
-            .into()
+            self.extend(operand, IntType::U8, ValueType::Char)
         }
 
         fn to_int<'a, 'b>(
@@ -660,37 +647,33 @@ mod core {
                         },
                     )
                     .to_value_ref(),
-                },
+                }
+                .to_value_ref(),
                 ValueType::Char => {
-                    let numeric_rep = self.transmute(
+                    let code_point = self.transmute(
                         operand,
                         // FIXME: This is not necessarily the correct type id as the runtime library is built separately.
                         type_id_of::<u32>(),
                         LazyTypeInfo::IdPrimitive(type_id_of::<u32>(), IntType::U32.into()),
                     );
-                    self.to_int(numeric_rep.to_value_ref(), ty, metadata)
+                    self.to_int(code_point, ty, metadata)
                 }
-                ValueType::Int(IntType {
-                    bit_size: from_bit_size,
-                    is_signed: is_from_signed,
-                }) => {
+                ValueType::Int(
+                    from_ty @ IntType {
+                        bit_size: from_bit_size,
+                        ..
+                    },
+                ) => {
                     if bit_size == from_bit_size {
-                        self.transmute(operand, metadata.id().unwrap(), metadata)
+                        if ::core::intrinsics::likely(from_ty != ty) {
+                            self.transmute(operand, metadata.id().unwrap(), metadata)
+                        } else {
+                            operand
+                        }
                     } else if bit_size > from_bit_size {
-                        ExtensionExpr {
-                            source: operand,
-                            is_zero_ext: !is_from_signed,
-                            bits_to_add: NonZeroU32::new((bit_size - from_bit_size) as u32)
-                                .unwrap(),
-                            ty: ty.into(),
-                        }
-                        .into()
+                        self.extend(operand, from_ty, ty.into())
                     } else {
-                        TruncationExpr {
-                            source: operand,
-                            ty,
-                        }
-                        .into()
+                        self.truncate(operand, ty)
                     }
                 }
                 ValueType::Float { .. } => todo!(),
@@ -745,9 +728,55 @@ mod core {
             _ty: Self::GenericType,
             metadata: Self::Metadata<'b>,
         ) -> Self::Expr<'a> {
-            Expr::Transmutation {
-                source: operand,
-                dst_ty: metadata,
+            self.trans(operand, metadata)
+        }
+    }
+
+    impl CoreBuilder {
+        fn extend(
+            &mut self,
+            operand: SymValueRef,
+            from_ty: IntType,
+            dst_ty: ValueType,
+        ) -> SymValueRef {
+            let is_zero_extension = !from_ty.is_signed;
+            let bits_to_add =
+                NonZeroU32::new((dst_ty.bit_size().unwrap().get() - from_ty.bit_size) as u32)
+                    .unwrap();
+
+            CastSimplifier::extend(
+                CastSimplifier::peel_transmute(&operand),
+                is_zero_extension,
+                bits_to_add,
+                dst_ty,
+            )
+            .to_value_ref()
+        }
+
+        fn truncate(&mut self, operand: SymValueRef, dst_ty: IntType) -> SymValueRef {
+            CastSimplifier::truncate(CastSimplifier::peel_transmute(&operand), dst_ty)
+        }
+
+        fn trans(&mut self, operand: SymValueRef, dst_ty: LazyTypeInfo) -> SymValueRef {
+            if Option::zip(
+                ValueType::try_from(&dst_ty).ok(),
+                ValueType::try_from(operand.as_ref()).ok(),
+            )
+            .is_some_and(|(dst_ty, src_ty)| dst_ty == src_ty)
+            {
+                return operand;
+            }
+
+            let peeled = CastSimplifier::peel_transmute(&operand).clone();
+            // NOTE: Non-equality is more efficient than equality.
+            if peeled.ne(&operand) {
+                self.trans(peeled, dst_ty)
+            } else {
+                Expr::Transmutation {
+                    source: peeled,
+                    dst_ty,
+                }
+                .to_value_ref()
             }
         }
     }
@@ -1518,6 +1547,82 @@ mod simp {
 
         fn offset<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
             Err(operands)
+        }
+    }
+
+    pub(crate) struct CastSimplifier;
+
+    impl CastSimplifier {
+        #[inline]
+        pub(crate) fn peel_transmute<'a>(source: &SymValueRef) -> &SymValueRef {
+            // NOTE: Only a single layer is expected and nested ones should not be constructed.
+            match source.as_ref() {
+                SymValue::Expression(Expr::Transmutation { source, .. }) => &source,
+                _ => source,
+            }
+        }
+
+        pub(crate) fn truncate(source: &SymValueRef, dst_ty: IntType) -> SymValueRef {
+            match source.as_ref() {
+                SymValue::Expression(Expr::Extension(ext)) => {
+                    let bits_to_truncate: u32 =
+                        (ext.ty.bit_size().unwrap().get() - dst_ty.bit_size) as u32;
+                    let bits_to_add = ext.bits_to_add.get();
+                    if bits_to_truncate == bits_to_add {
+                        ext.source.clone()
+                    } else if bits_to_truncate < bits_to_add {
+                        ExtensionExpr {
+                            source: ext.source.clone(),
+                            is_zero_ext: ext.is_zero_ext,
+                            bits_to_add: NonZeroU32::new(bits_to_add - bits_to_truncate).unwrap(),
+                            ty: dst_ty.into(),
+                        }
+                        .to_value_ref()
+                    } else {
+                        TruncationExpr {
+                            source: ext.source.clone(),
+                            ty: dst_ty.into(),
+                        }
+                        .to_value_ref()
+                    }
+                }
+                SymValue::Expression(Expr::Truncation(truncation)) => TruncationExpr {
+                    source: truncation.source.clone(),
+                    ty: dst_ty.into(),
+                }
+                .to_value_ref(),
+                _ => TruncationExpr {
+                    source: source.clone(),
+                    ty: dst_ty.into(),
+                }
+                .to_value_ref(),
+            }
+        }
+
+        pub(crate) fn extend(
+            source: &SymValueRef,
+            is_zero_extension: bool,
+            bits_to_add: NonZeroU32,
+            dst_ty: ValueType,
+        ) -> ExtensionExpr {
+            let (source, bits_to_add) = match source.as_ref() {
+                SymValue::Expression(Expr::Extension(ext))
+                    if ext.is_zero_ext == is_zero_extension =>
+                {
+                    (
+                        &ext.source,
+                        NonZeroU32::new(ext.bits_to_add.get() + bits_to_add.get()).unwrap(),
+                    )
+                }
+                _ => (source, bits_to_add),
+            };
+
+            ExtensionExpr {
+                source: source.clone(),
+                is_zero_ext: is_zero_extension,
+                bits_to_add,
+                ty: dst_ty,
+            }
         }
     }
 }
