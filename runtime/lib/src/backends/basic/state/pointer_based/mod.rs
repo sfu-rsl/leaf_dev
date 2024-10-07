@@ -522,7 +522,11 @@ impl<EB: SymValueRefExprBuilder> RawPointerVariableState<EB> {
 
     #[tracing::instrument(level = "debug", skip(self, porter), fields(value = %porter))]
     fn set_addr_porter(&mut self, addr: Address, porter: &PorterValue, type_id: TypeId) {
-        if let Ok(value) = porter.try_to_masked_value(self.type_manager.as_ref()) {
+        let opt_masked_value = porter.try_to_masked_value(
+            self.type_manager.as_ref(),
+            self.expr_builder.borrow_mut().deref_mut(),
+        );
+        if let Ok(value) = opt_masked_value {
             self.set_addr(addr, 0, value.into(), type_id)
         } else {
             for (offset, type_id, sym_value) in porter.sym_values.iter() {

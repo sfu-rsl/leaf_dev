@@ -10,14 +10,12 @@ use crate::{
 use super::*;
 
 mod retrieval {
-    use common::{
-        log_warn,
-        tyexp::{FieldsShapeInfo, VariantInfo},
-    };
-
-    use super::*;
+    use common::tyexp::{FieldsShapeInfo, VariantInfo};
 
     use core::num::Wrapping;
+
+    use super::super::super::alias::SymValueRefExprBuilder;
+    use super::*;
 
     pub(crate) trait RawPointerRetriever {
         fn retrieve(&self, addr: RawAddress, type_id: TypeId) -> ValueRef;
@@ -358,21 +356,22 @@ mod retrieval {
     }
 
     impl PorterValue {
-        pub(crate) fn try_to_masked_value(
+        pub(crate) fn try_to_masked_value<'a, 'b, EB: SymValueRefExprBuilder>(
             &self,
-            type_manager: &dyn TypeManager,
+            type_manager: &'a dyn TypeManager,
+            expr_builder: &'b mut EB,
         ) -> Result<SymValueRef, &LazyTypeInfo> {
             let whole_ty = self.as_concrete.type_as_scalar(Some(type_manager))?;
 
             log_debug!(
-                "Making a masked value from {} symbolic values",
-                self.sym_values.len()
+                "Making a masked value from {} symbolic values for type {:?}",
+                self.sym_values.len(),
+                whole_ty,
             );
 
             let whole_value = unsafe { retrieve_scalar(self.as_concrete.0, &whole_ty) };
             let whole_value = Self::bit_rep_const(whole_value, &whole_ty);
             let whole_bit_size = whole_ty.bit_size() as u32;
-            let whole_value_ty = ValueType::from(whole_ty);
 
             let result = self.sym_values.iter().fold(
                 whole_value.to_value_ref(),
@@ -385,15 +384,35 @@ mod retrieval {
                     {
                         Self::bit_rep_sym(sym_value.clone(), &value_ty)
                     } else {
+                        // TODO: What if the value is porter again?
                         sym_value.clone()
                     };
 
                     let value_bit_size = ty.size as u32 * u8::BITS;
                     let at_bit = *at as u32 * u8::BITS;
 
-                    let sym_value = self.as_mask(sym_value, at_bit, value_bit_size, whole_bit_size);
+                    let sym_value = self.as_mask(
+                        expr_builder,
+                        sym_value,
+                        at_bit,
+                        value_bit_size,
+                        whole_bit_size,
+                    );
 
+                    // Covering the whole value
                     if at_bit == 0 && value_bit_size >= whole_bit_size {
+                        if core::intrinsics::unlikely(value_bit_size == whole_bit_size) {
+                            log_warn!(
+                                concat!(
+                                    "A transmutation is happening as a form of porter value. ",
+                                    "Either the program is unusually unsafe, or there is a problem ",
+                                    "with value storage and retrieval. ",
+                                    "Symbolic value: {:?}, Whole value: {:?}",
+                                ), 
+                                sym_value,
+                                value,
+                            );
+                        }
                         return sym_value.into();
                     }
                     BinaryExpr {
@@ -413,9 +432,15 @@ mod retrieval {
             let result = if let ScalarType::Bool = whole_ty {
                 Self::bit_rep_to_bool(result)
             } else {
-                result
+                let ty_info = self.as_concrete.1.clone();
+                SymValueRef::new(
+                    expr_builder
+                        .transmute(result.into(), ty_info.id().unwrap(), ty_info)
+                        .into(),
+                )
             };
 
+            log_debug!("Masked value: {}", result);
             Ok(result)
         }
 
@@ -454,79 +479,95 @@ mod retrieval {
         /// # Example
         /// If a symbolic u8 value at byte offset 1 in little-endian order is requested to be masked
         /// for a u32 value, the mask will be 0x0000xx00, where xx is the symbolic value.
-        fn as_mask(
+        fn as_mask<EB: SymValueRefExprBuilder>(
             &self,
-            value: SymValueRef,
+            expr_builder: &mut EB,
+            value_bit_rep: SymValueRef,
             at_bit: u32,
             value_bit_size: u32,
             whole_bit_size: u32,
         ) -> SymValueRef {
-            let mut result = value;
+            let ty_info = self.as_concrete.1.clone();
+            let mut result = value_bit_rep;
 
             // Extract the first n bits of the value.
             // (the equal case handles possible casting)
             if at_bit + value_bit_size >= whole_bit_size {
                 let n = whole_bit_size - at_bit;
                 debug_assert!(n % u8::BITS as u32 == 0, "Not aligned by byte {:?}", self);
-                // We know want the first n bits of the value,
-                // but the order of the bytes is as same as the whole object.
+                // We only need to worry about where the first n bits are located,
+                // the order of the bytes is as same as the whole object.
                 #[cfg(target_endian = "big")]
                 let low = value_bit_size - n;
                 #[cfg(target_endian = "little")]
                 let low = 0u32;
                 if low > 0 {
-                    result = BinaryExpr {
-                        operator: BinaryOp::Shr,
-                        operands: SymBinaryOperands::Orig {
-                            first: result,
-                            second: ConstValue::from(low).to_value_ref(),
-                        },
-                    }
-                    .to_value_ref();
+                    result = SymValueRef::new(
+                        expr_builder
+                            .shr(
+                                SymBinaryOperands::from((
+                                    result,
+                                    ConstValue::from(low).to_value_ref(),
+                                ))
+                                .into(),
+                            )
+                            .into(),
+                    );
                 }
-                result = TruncationExpr {
-                    source: result,
-                    ty: IntType {
-                        bit_size: n as u64,
-                        is_signed: false,
-                    },
+                if n < value_bit_size - low {
+                    // Truncation
+                    result = SymValueRef::new(
+                        expr_builder
+                            .to_int(
+                                result.into(),
+                                IntType {
+                                    bit_size: n as u64,
+                                    is_signed: false,
+                                },
+                                LazyTypeInfo::None,
+                            )
+                            .into(),
+                    );
                 }
-                .to_value_ref();
             }
 
+            // Add zero bits
             if whole_bit_size > value_bit_size {
-                result = ExtensionExpr {
-                    source: result,
-                    is_zero_ext: true,
-                    bits_to_add: NonZeroU32::new(whole_bit_size - value_bit_size).unwrap(),
-                    ty: ValueType::new_int(whole_bit_size.into(), false),
-                }
-                .to_value_ref();
+                // Extension
+                // TODO: Ensure the underlying type is unsigned.
+                result = SymValueRef::new(
+                    expr_builder
+                        .to_int(
+                            result.into(),
+                            IntType {
+                                bit_size: whole_bit_size.into(),
+                                is_signed: false,
+                            },
+                            ty_info.clone(),
+                        )
+                        .into(),
+                );
 
-                // We know that the value fills offset..offset+value_size,
-                // but the order of the bytes is as same as the whole object.
+                // We only need to worry about where offset..offset+value_size is located,
+                // the order of the bytes is as same as the whole object.
                 #[cfg(target_endian = "big")]
                 let shift_amount: u32 = whole_bit_size - at_bit as u32 - value_bit_size;
                 #[cfg(target_endian = "little")]
                 let shift_amount: u32 = at_bit as u32;
                 if shift_amount > 0 {
-                    result = BinaryExpr {
-                        operator: BinaryOp::Shl,
-                        operands: SymBinaryOperands::Orig {
-                            first: result,
-                            second: ConstValue::from(shift_amount).to_value_ref(),
-                        },
-                    }
-                    .to_value_ref();
+                    result = SymValueRef::new(
+                        expr_builder
+                            .shl(
+                                SymBinaryOperands::from((
+                                    result,
+                                    ConstValue::from(shift_amount).to_value_ref(),
+                                ))
+                                .into(),
+                            )
+                            .into(),
+                    );
                 }
             }
-
-            // FIXME: Possible unnecessary cast.
-            result = Expr::Transmutation {
-                source: result,
-                dst_ty: self.as_concrete.1.clone(),
-            }
-            .to_value_ref();
 
             result
         }
