@@ -91,38 +91,22 @@ mod toplevel {
         impl_singular_binary_ops_through_general!();
     }
 
-    macro_rules! call_unary_method {
-        ($self:ident, $method:ident, $operand:expr $(,$args:expr)* $(,)?) => {
-            if $operand.is_symbolic() {
-                $self.sym_builder
-                    .$method(SymValueRef::new($operand).into(), $($args),*)
-                    .into()
-            } else {
-                $self.conc_builder
-                    .$method(ConcreteValueRef::new($operand).into(), $($args),*)
-            }
-        };
-    }
-
     impl UnaryExprBuilder for TopLevelBuilder {
         type ExprRef<'a> = ValueRef;
         type Expr<'a> = ValueRef;
 
         fn unary_op<'a>(&mut self, operand: Self::ExprRef<'a>, op: AbsUnaryOp) -> Self::Expr<'a> {
-            call_unary_method!(self, unary_op, operand, op)
+            if operand.is_symbolic() {
+                self.sym_builder
+                    .unary_op(SymValueRef::new(operand).into(), op)
+                    .into()
+            } else {
+                self.conc_builder
+                    .unary_op(ConcreteValueRef::new(operand).into(), op)
+            }
         }
 
-        fn not<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
-            call_unary_method!(self, not, operand)
-        }
-
-        fn neg<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
-            call_unary_method!(self, neg, operand)
-        }
-
-        fn ptr_metadata<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
-            call_unary_method!(self, ptr_metadata, operand)
-        }
+        impl_singular_unary_ops_through_general!();
     }
 
     impl CastExprBuilder for TopLevelBuilder {
@@ -433,6 +417,7 @@ mod adapters {
         type ExprRef<'a> = SymValueRef;
         type Expr<'a> = ValueRef;
 
+        #[inline]
         fn unary_op<'a>(&mut self, operand: Self::ExprRef<'a>, op: AbsUnaryOp) -> Self::Expr<'a> {
             self.0.borrow_mut().unary_op(operand.into(), op)
         }
@@ -852,6 +837,7 @@ mod concrete {
         type ExprRefPair<'a> = (ConcreteValueRef, ConcreteValueRef);
         type Expr<'a> = ValueRef;
 
+        #[inline]
         fn binary_op<'a>(
             &mut self,
             _operands: Self::ExprRefPair<'a>,
@@ -867,6 +853,7 @@ mod concrete {
         type ExprRef<'a> = ConcreteValueRef;
         type Expr<'a> = ValueRef;
 
+        #[inline]
         fn unary_op<'a>(&mut self, _operand: Self::ExprRef<'a>, _op: AbsUnaryOp) -> Self::Expr<'a> {
             UnevalValue::Some.to_value_ref()
         }
@@ -879,6 +866,7 @@ mod concrete {
         type Expr<'a> = ValueRef;
         type Metadata<'a> = CastMetadata;
 
+        #[inline]
         fn cast<'a, 'b>(
             &mut self,
             _operand: Self::ExprRef<'a>,

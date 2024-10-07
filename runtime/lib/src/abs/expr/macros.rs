@@ -55,6 +55,7 @@ macro_rules! impl_general_binary_op_through_singulars {
 macro_rules! impl_general_binary_op_for {
     ($($method:ident = $op:expr)*) => {
         $(
+            #[inline(always)]
             fn $method<'a>(
                 &mut self,
                 operands: <Self as BinaryExprBuilder>::ExprRefPair<'a>,
@@ -65,6 +66,7 @@ macro_rules! impl_general_binary_op_for {
     };
     ($($method:ident = $op:expr)* , $arg: ident : $arg_type: ty) => {
         $(
+            #[inline(always)]
             fn $method<'a>(
                 &mut self,
                 operands: <Self as BinaryExprBuilder>::ExprRefPair<'a>,
@@ -133,6 +135,7 @@ macro_rules! impl_general_unary_op_through_singulars {
 
 macro_rules! impl_singular_unary_op_through_general {
     (($method:ident = $op:expr)) => {
+        #[inline(always)]
         fn $method<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
             self.unary_op(operand, $op)
         }
@@ -180,6 +183,7 @@ macro_rules! impl_general_cast_through_singulars {
 
 macro_rules! impl_singular_cast_through_general {
     (($method:ident $(+ $($arg: ident : $arg_type: ty),*)? = $op:expr)) => {
+        #[inline(always)]
         fn $method<'a, 'b>(
             &mut self,
             operand: Self::ExprRef<'a>,

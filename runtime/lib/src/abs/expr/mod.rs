@@ -45,7 +45,7 @@ pub(crate) trait BinaryExprBuilder {
     type ExprRefPair<'a>;
     type Expr<'a>;
 
-    fn binary_op<'a>(&mut self, operands: Self::ExprRefPair<'a>, op: BinaryOp) -> Self::Expr<'a>;
+    bin_fn_signature!(binary_op + op: BinaryOp);
 
     bin_fn_signature!(add add_unchecked add_with_overflow add_saturating);
     bin_fn_signature!(sub sub_unchecked sub_with_overflow sub_saturating);
@@ -62,7 +62,7 @@ pub(crate) trait UnaryExprBuilder {
     type ExprRef<'a>;
     type Expr<'a> = Self::ExprRef<'a>;
 
-    fn unary_op<'a>(&mut self, operand: Self::ExprRef<'a>, op: UnaryOp) -> Self::Expr<'a>;
+    unary_fn_signature!(unary_op + op: UnaryOp);
 
     unary_fn_signature!(not neg ptr_metadata);
 }
@@ -80,6 +80,7 @@ pub(crate) trait CastExprBuilder {
     cast_fn_signature!(
         cast + target: CastKind<Self::IntType, Self::FloatType, Self::PtrType, Self::GenericType>
     );
+
     cast_fn_signature!(to_char);
     cast_fn_signature!(to_int + ty: Self::IntType);
     cast_fn_signature!(to_float + ty: Self::FloatType);

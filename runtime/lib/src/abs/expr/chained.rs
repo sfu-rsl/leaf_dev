@@ -121,9 +121,7 @@ where
     type ExprRefPair<'a> = N::ExprRefPair<'a>;
     type Expr<'a> = E;
 
-    fn binary_op<'a>(&mut self, operands: Self::ExprRefPair<'a>, op: BinaryOp) -> Self::Expr<'a> {
-        try_on_current_then_next!(self, binary_op, (operands, op), |operands|)
-    }
+    impl_binary_expr_method!(binary_op + op: BinaryOp);
 
     impl_binary_expr_method!(add add_unchecked add_with_overflow add_saturating);
     impl_binary_expr_method!(sub sub_unchecked sub_with_overflow sub_saturating);
