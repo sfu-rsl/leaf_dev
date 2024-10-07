@@ -90,6 +90,8 @@ pub(crate) trait Assigner<'tcx> {
 
     fn by_unary_op(&mut self, operator: &UnOp, operand: OperandRef);
 
+    fn by_nullary_op(&mut self);
+
     fn by_discriminant(&mut self, place: PlaceRef);
 
     fn by_aggregate_array(&mut self, items: &[OperandRef]);
@@ -1287,6 +1289,14 @@ mod implementation {
                     operand::copy_for_local(operand.into()),
                 ],
             )
+        }
+
+        fn by_nullary_op(&mut self) {
+            if cfg!(abs_concrete) {
+                self.to_some_concrete()
+            } else {
+                unimplemented!()
+            }
         }
 
         fn by_discriminant(&mut self, place: PlaceRef) {

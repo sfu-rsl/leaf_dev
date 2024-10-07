@@ -775,8 +775,7 @@ where
         _op: &rustc_middle::mir::NullOp,
         _ty: &rustc_middle::ty::Ty<'tcx>,
     ) {
-        // Nothing to do as they get computed and converted to constants before this stage.
-        Default::default()
+        self.call_adder.by_nullary_op();
     }
 
     fn visit_unary_op(&mut self, op: &rustc_middle::mir::UnOp, operand: &Operand<'tcx>) {
