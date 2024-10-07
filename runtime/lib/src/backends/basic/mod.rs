@@ -115,6 +115,9 @@ impl BasicBackend {
                             })
                         },
                         &config.sym_place,
+                        Rc::new(RefCell::new(expr::builders::to_sym_expr_builder(
+                            expr_builder_ref.clone(),
+                        ))),
                     );
 
                     vars_state

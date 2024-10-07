@@ -1,9 +1,14 @@
-use std::{cell::RefCell, collections::btree_map::Entry, ops::Range, rc::Rc};
+use std::{
+    cell::RefCell,
+    collections::btree_map::Entry,
+    ops::{DerefMut, Range},
+    rc::Rc,
+};
 
 use crate::{
     abs::{place::HasMetadata, PointerOffset, TypeId, TypeSize},
     backends::basic::{
-        alias::TypeManager,
+        alias::{SymValueRefExprBuilder, TypeManager},
         config::{SymbolicPlaceConfig, SymbolicPlaceStrategy},
         expr::{
             lazy::RawPointerRetriever,
@@ -12,7 +17,7 @@ use crate::{
         VariablesState,
     },
     tyexp::TypeInfoExt,
-    utils::SelfHierarchical,
+    utils::{alias::RRef, SelfHierarchical},
 };
 use common::tyexp::{FieldsShapeInfo, StructShape, TypeInfo, UnionShape};
 
@@ -96,24 +101,27 @@ type MemoryObject = (SymValueRef, TypeId);
 /// Provides a mapping for raw pointers to symbolic values.
 /// All places that have a valid address are handled by this state, otherwise
 /// they will be sent to the `fallback` state to be handled.
-pub(in super::super) struct RawPointerVariableState {
+pub(in super::super) struct RawPointerVariableState<EB> {
     memory: memory::Memory,
     type_manager: Rc<dyn TypeManager>,
     sym_read_handler: RefCell<SymPlaceHandlerObject>,
     sym_write_handler: RefCell<SymPlaceHandlerObject>,
+    expr_builder: RRef<EB>,
 }
 
-impl RawPointerVariableState {
+impl<EB: SymValueRefExprBuilder> RawPointerVariableState<EB> {
     pub fn new(
         type_manager: Rc<dyn TypeManager>,
         sym_place_handler_factory: impl Fn(SymbolicPlaceStrategy) -> SymPlaceHandlerObject,
         sym_place_config: &SymbolicPlaceConfig,
+        expr_builder: RRef<EB>,
     ) -> Self {
         Self {
             memory: Default::default(),
             type_manager,
             sym_read_handler: RefCell::new(sym_place_handler_factory(sym_place_config.read)),
             sym_write_handler: RefCell::new(sym_place_handler_factory(sym_place_config.write)),
+            expr_builder,
         }
     }
 
@@ -186,7 +194,9 @@ impl RawPointerVariableState {
     }
 }
 
-impl VariablesState<Place, ValueRef, PlaceValueRef> for RawPointerVariableState {
+impl<EB: SymValueRefExprBuilder> VariablesState<Place, ValueRef, PlaceValueRef>
+    for RawPointerVariableState<EB>
+{
     fn id(&self) -> usize {
         // FIXME
         0
@@ -233,7 +243,7 @@ impl VariablesState<Place, ValueRef, PlaceValueRef> for RawPointerVariableState 
 }
 
 // Deterministic Place
-impl RawPointerVariableState {
+impl<EB: SymValueRefExprBuilder> RawPointerVariableState<EB> {
     fn copy_deterministic_place(&self, place_val: &DeterministicPlaceValue) -> ValueRef {
         let addr = place_val.address();
 
@@ -288,7 +298,7 @@ impl RawPointerVariableState {
 }
 
 // Porters
-impl RawPointerVariableState {
+impl<EB: SymValueRefExprBuilder> RawPointerVariableState<EB> {
     fn try_create_porter_for_copy(
         &self,
         place_val: &DeterministicPlaceValue,
@@ -360,7 +370,7 @@ impl RawPointerVariableState {
 }
 
 // Symbolic Place
-impl RawPointerVariableState {
+impl<EB: SymValueRefExprBuilder> RawPointerVariableState<EB> {
     #[inline]
     fn copy_symbolic_place(&self, place_val: &SymbolicPlaceValue, type_id: TypeId) -> SymValueRef {
         self.resolve_and_retrieve_symbolic_place(place_val, type_id)
@@ -374,7 +384,7 @@ impl RawPointerVariableState {
 }
 
 // Setting (storing)
-impl RawPointerVariableState {
+impl<EB: SymValueRefExprBuilder> RawPointerVariableState<EB> {
     fn set_addr(&mut self, addr: Address, offset: PointerOffset, value: ValueRef, type_id: TypeId) {
         fn insert(entry: Entry<Address, MemoryObject>, value: MemoryObject) {
             log_debug!(
@@ -522,7 +532,7 @@ impl RawPointerVariableState {
     }
 }
 
-impl SelfHierarchical for RawPointerVariableState {
+impl<EB> SelfHierarchical for RawPointerVariableState<EB> {
     fn add_layer(self) -> Self {
         self
     }
@@ -532,7 +542,7 @@ impl SelfHierarchical for RawPointerVariableState {
     }
 }
 
-impl RawPointerRetriever for RawPointerVariableState {
+impl<EB: SymValueRefExprBuilder> RawPointerRetriever for RawPointerVariableState<EB> {
     #[tracing::instrument(level = "debug", skip(self))]
     fn retrieve(&self, addr: RawAddress, type_id: TypeId) -> ValueRef {
         self.copy_deterministic_place(&DeterministicPlaceValue::from_addr_type(addr, type_id))

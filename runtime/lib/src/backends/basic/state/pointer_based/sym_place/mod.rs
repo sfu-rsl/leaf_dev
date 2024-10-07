@@ -23,7 +23,7 @@ use crate::backends::basic::expr::MultiValue as ValueSelect;
 
 use self::resolution::{DefaultSymPlaceResolver, SinglePlaceResult};
 
-impl RawPointerVariableState {
+impl<EB: SymValueRefExprBuilder> RawPointerVariableState<EB> {
     pub(super) fn get_place<'a, 'b>(
         &'a self,
         place: &'b Place,
@@ -214,7 +214,7 @@ impl RawPointerVariableState {
 }
 
 // Getting Symbolic Place
-impl RawPointerVariableState {
+impl<EB: SymValueRefExprBuilder> RawPointerVariableState<EB> {
     pub(super) fn resolve_and_retrieve_symbolic_place(
         &self,
         place_val: &SymbolicPlaceValue,
@@ -248,7 +248,7 @@ impl RawPointerVariableState {
 }
 
 // Retrieving (Raw) Values
-impl RawPointerVariableState {
+impl<EB: SymValueRefExprBuilder> RawPointerVariableState<EB> {
     /// Retrieves the memory content for the given symbolic value.
     /// It makes sure that the result value can live independently with no
     /// lazily-evaluated parts.
