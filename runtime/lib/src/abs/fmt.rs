@@ -172,6 +172,27 @@ impl Display for Local {
     }
 }
 
+impl<I, F, P, T> Display for CastKind<I, F, P, T>
+where
+    I: Display,
+    F: Display,
+    P: Display,
+    T: Display,
+{
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        match self {
+            CastKind::ToChar => write!(f, "as char"),
+            CastKind::ToInt(ty) => write!(f, "as {}", ty),
+            CastKind::ToFloat(ty) => write!(f, "as {}", ty),
+            CastKind::ToPointer(ty) => write!(f, "as {}", ty),
+            CastKind::PointerUnsize => write!(f, "unsize"),
+            CastKind::ExposeProvenance => write!(f, "expose_prov"),
+            CastKind::SizedDynamize => write!(f, "as dyn*"),
+            CastKind::Transmute(ty) => write!(f, "as {}", ty),
+        }
+    }
+}
+
 impl<I, V> Display for Select<I, V>
 where
     I: Display,

@@ -53,7 +53,7 @@ macro_rules_method_with_optional_args!(impl_unary_expr_method {
         {
             let span = debug_span!(
                 target: TAG, SPAN_UNARY,
-                op = stringify!($method), operand = %operand)
+                op = stringify!($method), operand = %operand, $($arg = %$arg,)*)
             .entered();
 
             let result = self.builder.$method(operand, $($arg),*);
@@ -76,7 +76,7 @@ macro_rules_method_with_optional_args!(impl_cast_expr_method {
         {
             let span = debug_span!(
                 target: TAG, SPAN_CAST,
-                op = stringify!($method), operand = %operand)
+                kind = stringify!($method), operand = %operand, $($arg = %$arg,)* metadata = %metadata)
             .entered();
 
             let result = self.builder.$method(operand, $($arg,)* metadata,);
@@ -144,6 +144,11 @@ where
     B: CastExprBuilder,
     for<'a> B::ExprRef<'a>: Display,
     for<'a> B::Expr<'a>: Display,
+    for<'a> B::Metadata<'a>: Display,
+    B::IntType: Display,
+    B::FloatType: Display,
+    B::PtrType: Display,
+    B::GenericType: Display,
 {
     type ExprRef<'a> = B::ExprRef<'a>;
     type Expr<'a> = B::Expr<'a>;
