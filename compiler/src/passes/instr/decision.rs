@@ -3,7 +3,7 @@ use const_format::concatcp;
 use rustc_hir::{def_id::DefId, definitions::DefPathData};
 use rustc_middle::{
     mir::Body,
-    ty::{IntrinsicDef, TyCtxt},
+    ty::{InstanceKind, IntrinsicDef, TyCtxt},
 };
 use rustc_span::Symbol;
 
@@ -18,6 +18,10 @@ const ATTR_NAME: &str = "instrument";
 
 pub(super) fn should_instrument<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>) -> bool {
     let def_id = body.source.def_id();
+
+    if !decide_instance_kind(&body.source.instance) {
+        return false;
+    }
 
     if let Some((explicit, item)) = opt_instrument_attr_inheritable(tcx, def_id) {
         log_info!(
@@ -95,6 +99,26 @@ pub(super) fn should_instrument<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>) 
     }
 
     true
+}
+
+fn decide_instance_kind(kind: &InstanceKind) -> bool {
+    use InstanceKind::*;
+    match kind {
+        Item(..) => true,
+        Intrinsic(..)
+        | VTableShim(..)
+        | ReifyShim(..)
+        | FnPtrShim(..)
+        | Virtual(..)
+        | ClosureOnceShim { .. }
+        | ConstructCoroutineInClosureShim { .. }
+        | CoroutineKindShim { .. }
+        | ThreadLocalShim(..)
+        | DropGlue(..)
+        | CloneShim(..)
+        | FnPtrAddrShim(..)
+        | AsyncDropGlueCtorShim(..) => false,
+    }
 }
 
 /// Returns the value of the `instrument` attribute if it is placed on the item or one of its ancestors.

@@ -63,7 +63,9 @@ impl Instrumentor {
 
 impl CompilationPass for Instrumentor {
     fn override_flags() -> OverrideFlags {
-        OverrideFlags::OPTIMIZED_MIR | OverrideFlags::EXTERN_OPTIMIZED_MIR
+        OverrideFlags::OPTIMIZED_MIR
+            | OverrideFlags::EXTERN_OPTIMIZED_MIR
+            | OverrideFlags::MIR_SHIMS
     }
 
     fn visit_ast_before(
@@ -99,7 +101,7 @@ fn transform<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>, storage: &mut dyn S
         log_info!(
             target: decision::TAG_INSTR_DECISION,
             "Skipping instrumentation for {:?}",
-            def_id
+            body.source.instance,
         );
         return;
     }
