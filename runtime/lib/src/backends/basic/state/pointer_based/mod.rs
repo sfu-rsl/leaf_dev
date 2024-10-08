@@ -309,6 +309,7 @@ impl<EB: SymValueRefExprBuilder> RawPointerVariableState<EB> {
         Self::try_create_porter(place_val, size, |range, f| {
             self.memory.apply_in_range(range, f)
         })
+        .inspect(|porter| self.inspect_porter_sym_values(porter, size))
         .map(|porter| self.retrieve_porter_value(&porter))
     }
 
@@ -327,6 +328,7 @@ impl<EB: SymValueRefExprBuilder> RawPointerVariableState<EB> {
             self.memory
                 .apply_in_range(range, |addr, obj| f(&addr, &obj))
         })
+        .inspect(|porter| self.inspect_porter_sym_values(porter, size))
         .map(|porter| self.retrieve_porter_value(&porter))
     }
 
@@ -365,6 +367,18 @@ impl<EB: SymValueRefExprBuilder> RawPointerVariableState<EB> {
             })
         } else {
             None
+        }
+    }
+
+    fn inspect_porter_sym_values(&self, porter: &PorterValue, porter_size: TypeSize) {
+        for (offset, type_id, _) in &porter.sym_values {
+            let value_size = self.type_manager.get_type(*type_id).size;
+            if offset + value_size > porter_size {
+                unimplemented!(
+                    "Overflowing symbolic values in a porter are not handled yet: {:?}",
+                    porter
+                );
+            }
         }
     }
 }

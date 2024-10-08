@@ -176,15 +176,18 @@ mod symbolic {
     }
 
     impl<EB: SymValueRefExprBuilder> UnevaluatedResolverBuilder<EB> {
-        fn resolve_if_porter(&mut self, value: &mut ValueRef) {
+        fn resolve_if_porter(&mut self, value: &mut ValueRef, expect: bool) {
             if let Value::Symbolic(SymValue::Expression(Expr::Partial(porter))) = value.as_ref() {
-                *value = porter.try_to_masked_value(self.type_manager.as_ref(), &mut self.sym_builder)
-                .unwrap_or_else(|_| {
-                    unimplemented!(
+                if let Ok(resolved) =
+                    porter.try_to_masked_value(self.type_manager.as_ref(), &mut self.sym_builder)
+                {
+                    *value = resolved.into();
+                } else if expect {
+                    panic!(
                         "Porter value participating in an expression is expected to be convertible to masked value {:?}",
                         value
-                    )
-                }).into()
+                    );
+                }
             }
         }
     }
@@ -212,13 +215,13 @@ mod symbolic {
                     }.to_value_ref()
                 }
                 Value::Symbolic(..) => {
-                    self.resolve_if_porter(other)
+                    self.resolve_if_porter(other, true)
                 }
                 _ => {},
             };
 
             let sym = operands.as_flat_mut().0;
-            self.resolve_if_porter(sym.as_mut());
+            self.resolve_if_porter(sym.as_mut(), true);
 
             Err(operands)
         }
@@ -235,7 +238,7 @@ mod symbolic {
             mut operand: Self::ExprRef<'a>,
             _op: AbsUnaryOp,
         ) -> Self::Expr<'a> {
-            self.resolve_if_porter(operand.as_mut());
+            self.resolve_if_porter(operand.as_mut(), true);
             Err(operand)
         }
 
@@ -250,10 +253,26 @@ mod symbolic {
         fn cast<'a, 'b>(
             &mut self,
             mut operand: Self::ExprRef<'a>,
-            _target: CastKind<Self::IntType, Self::FloatType, Self::PtrType, Self::GenericType>,
-            _metadata: Self::Metadata<'b>,
+            target: CastKind<Self::IntType, Self::FloatType, Self::PtrType, Self::GenericType>,
+            metadata: Self::Metadata<'b>,
         ) -> Self::Expr<'a> {
-            self.resolve_if_porter(operand.as_mut());
+            if let SymValue::Expression(Expr::Partial(..)) = operand.as_ref() {
+                match target {
+                    CastKind::Transmute(_dst_ty) => {
+                        let SymValue::Expression(Expr::Partial(porter)) =
+                            SymValueRef::make_mut(&mut operand)
+                        else {
+                            unreachable!()
+                        };
+                        porter.as_concrete.1 = metadata;
+                        return Ok(operand.into());
+                    }
+                    _ if ValueType::try_from(&metadata).is_ok() => {
+                        self.resolve_if_porter(operand.as_mut(), true);
+                    }
+                    _ => {}
+                }
+            }
             Err(operand)
         }
 
@@ -303,14 +322,14 @@ mod adapters {
 
     impl CastExprBuilderAdapter for CoreBuilder {
         type TargetExprRef<'a> = SymValueRef;
-        type TargetExpr<'a> = ValueRef;
+        type TargetExpr<'a> = SymValueRef;
 
         #[inline]
         fn adapt<'t, F>(operand: Self::TargetExprRef<'t>, build: F) -> Self::TargetExpr<'t>
         where
             F: for<'s> FnH<<Self::Target as CEB>::ExprRef<'s>, <Self::Target as CEB>::Expr<'s>>,
         {
-            build(operand).into()
+            build(operand)
         }
     }
 
@@ -427,7 +446,7 @@ mod adapters {
 
     impl<T: ValueRefExprBuilder> CastExprBuilder for SymValueRefExprBuilderAdapter<T> {
         type ExprRef<'a> = SymValueRef;
-        type Expr<'a> = ValueRef;
+        type Expr<'a> = SymValueRef;
         type Metadata<'a> = CastMetadata;
 
         fn cast<'a, 'b>(
@@ -436,7 +455,7 @@ mod adapters {
             target: CastKind<Self::IntType, Self::FloatType, Self::PtrType, Self::GenericType>,
             metadata: Self::Metadata<'b>,
         ) -> Self::Expr<'a> {
-            self.0.borrow_mut().cast(operand.into(), target, metadata)
+            SymValueRef::new(self.0.borrow_mut().cast(operand.into(), target, metadata))
         }
 
         impl_singular_casts_through_general!();
@@ -671,57 +690,67 @@ mod core {
             }: Self::IntType,
             metadata: Self::Metadata<'b>,
         ) -> Self::Expr<'a> {
-            let from_type = ValueType::try_from(operand.as_ref())
-                .expect("Could not determine the type of the operand for int cast.");
-            match from_type {
-                ValueType::Bool => Expr::Ite {
-                    condition: operand,
-                    if_target: ConstValue::new_int(
-                        1 as u128,
-                        IntType {
-                            bit_size,
-                            is_signed,
-                        },
-                    )
-                    .to_value_ref(),
-                    else_target: ConstValue::new_int(
-                        0 as u128,
-                        IntType {
-                            bit_size,
-                            is_signed,
-                        },
-                    )
-                    .to_value_ref(),
-                }
-                .to_value_ref(),
-                ValueType::Char => {
-                    let code_point = self.transmute(
-                        operand,
-                        // FIXME: This is not necessarily the correct type id as the runtime library is built separately.
-                        type_id_of::<u32>(),
-                        LazyTypeInfo::IdPrimitive(type_id_of::<u32>(), IntType::U32.into()),
-                    );
-                    self.to_int(code_point, ty, metadata)
-                }
-                ValueType::Int(
-                    from_ty @ IntType {
-                        bit_size: from_bit_size,
-                        ..
-                    },
-                ) => {
-                    if bit_size == from_bit_size {
-                        if ::core::intrinsics::likely(from_ty != ty) {
-                            self.transmute(operand, metadata.id().unwrap(), metadata)
-                        } else {
-                            operand
-                        }
-                    } else if bit_size > from_bit_size {
-                        self.extend(operand, from_ty, ty.into())
-                    } else {
-                        self.truncate(operand, ty)
+            let from_type = ValueType::try_from(operand.as_ref());
+            if let Ok(from_type) = from_type {
+                match from_type {
+                    ValueType::Bool => Expr::Ite {
+                        condition: operand,
+                        if_target: ConstValue::new_int(
+                            1 as u128,
+                            IntType {
+                                bit_size,
+                                is_signed,
+                            },
+                        )
+                        .to_value_ref(),
+                        else_target: ConstValue::new_int(
+                            0 as u128,
+                            IntType {
+                                bit_size,
+                                is_signed,
+                            },
+                        )
+                        .to_value_ref(),
                     }
+                    .to_value_ref(),
+                    ValueType::Char => {
+                        let code_point = self.transmute(
+                            operand,
+                            // FIXME: This is not necessarily the correct type id as the runtime library is built separately.
+                            type_id_of::<u32>(),
+                            LazyTypeInfo::IdPrimitive(type_id_of::<u32>(), IntType::U32.into()),
+                        );
+                        self.to_int(code_point, ty, metadata)
+                    }
+                    ValueType::Int(
+                        from_ty @ IntType {
+                            bit_size: from_bit_size,
+                            ..
+                        },
+                    ) => {
+                        if bit_size == from_bit_size {
+                            if ::core::intrinsics::likely(from_ty != ty) {
+                                self.transmute(operand, metadata.id().unwrap(), metadata)
+                            } else {
+                                operand
+                            }
+                        } else if bit_size > from_bit_size {
+                            self.extend(operand, from_ty, ty.into())
+                        } else {
+                            self.truncate(operand, ty)
+                        }
+                    }
+                    ValueType::Float { .. } => todo!(),
                 }
-                ValueType::Float { .. } => todo!(),
+            }
+            // Special case for u8 as we don't really need the source type for it.
+            else if ty == IntType::U8 {
+                self.truncate(operand, ty)
+            } else {
+                panic!(
+                    "Could not determine the type of the operand for int cast: {:?}",
+                    operand,
+                )
             }
         }
 

@@ -88,6 +88,7 @@ pub(crate) enum ConstValue {
 }
 
 impl ConstValue {
+    #[inline]
     pub fn new_int<T: Into<u128>>(value: T, ty: IntType) -> Self {
         Self::Int {
             bit_rep: Wrapping(value.into()),
@@ -464,6 +465,17 @@ impl ConstValue {
         let bits_to_shift = 128 - bit_size;
         let value = value as i128;
         ((value << bits_to_shift) >> bits_to_shift) as u128
+    }
+
+    fn try_to_bit_rep(&self) -> Result<u128, &Self> {
+        match self {
+            Self::Bool(value) => Ok(*value as u128),
+            Self::Char(value) => Ok(*value as u128),
+            Self::Int { bit_rep, .. } => Ok(bit_rep.0),
+            Self::Float { bit_rep, .. } => Ok(*bit_rep),
+            Self::Addr(value) => Ok((*value as usize) as u128),
+            _ => Err(self),
+        }
     }
 }
 

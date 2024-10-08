@@ -17,7 +17,7 @@ where
         + for<'a> UnaryExprBuilder<ExprRef<'a> = SymValueRef, Expr<'a> = ValueRef>
         + for<'a> CastExprBuilder<
             ExprRef<'a> = SymValueRef,
-            Expr<'a> = ValueRef,
+            Expr<'a> = SymValueRef,
             Metadata<'a> = LazyTypeInfo,
             IntType = IntType,
             FloatType = FloatType,

@@ -7,6 +7,7 @@ branching/assert/misaligned.rs
 casting/dyn_star/symbolic.rs
 casting/dyn_star/symbolic_inner.rs
 casting/pointer/expose/sym_ptr_to_usize.rs
+casting/transmute/sym_partial_mid.rs
 function/async/basic.rs
 function/coroutines/basic.rs
 sym_place/read/addr_of.rs
