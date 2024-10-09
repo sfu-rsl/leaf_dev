@@ -490,15 +490,9 @@ mod intrinsics {
                 ptr_offset_from_unsigned,
                 ptr_offset_from,
                 nontemporal_store,
-                cttz_nonzero,
-                cttz,
-                ctpop,
-                ctlz_nonzero,
-                ctlz,
                 compare_bytes,
                 bswap,
                 catch_unwind,
-                bitreverse,
                 abort,
                 drop_in_place,
                 write_bytes,
@@ -559,7 +553,7 @@ mod intrinsics {
             of_supported_funcs,
         );
         // Using count for compile-time check.
-        const _ALL_INTRINSICS: [u8; 295] = [0; TOTAL_COUNT];
+        const _ALL_INTRINSICS: [u8; 289] = [0; TOTAL_COUNT];
     }
 
     pub(crate) fn decide_intrinsic_call<'tcx>(intrinsic: IntrinsicDef) -> IntrinsicDecision {
