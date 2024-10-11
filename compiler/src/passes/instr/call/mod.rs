@@ -437,7 +437,7 @@ mod implementation {
     }
     impl<'tcx, C> RuntimeCallAdder<C>
     where
-        C: context::BodyProvider<'tcx> + context::TyContextProvider<'tcx>,
+        C: context::BodyProvider<'tcx> + context::TyContextProvider<'tcx> + HasLocalDecls<'tcx>,
     {
         fn current_func(&self) -> Operand<'tcx> {
             let source = self.context.body().source;
@@ -472,6 +472,14 @@ mod implementation {
                 }
                 FnPtrShim(fn_trait_fn_id, fn_ptr_ty) => {
                     ty::fn_def_of_fn_ptr_shim(tcx, fn_trait_fn_id, fn_ptr_ty)
+                }
+                ClosureOnceShim { call_once, .. } => {
+                    let arg_tys = self
+                        .body()
+                        .args_iter()
+                        .map(|local| self.local_decls()[local].ty)
+                        .collect::<Vec<_>>();
+                    ty::fn_def_of_closure_once_shim(tcx, call_once, &arg_tys)
                 }
                 instance @ _ => unreachable!("Unsupported instance: {:?}", instance),
             };
@@ -2677,6 +2685,21 @@ mod implementation {
                     .map_bound(|ts| Ty::new_tup(tcx, ts));
                 let inputs = tcx.instantiate_bound_regions_with_erased(inputs);
                 Ty::new_fn_def(tcx, fn_trait_fn_id, [fn_ty, inputs])
+            }
+
+            pub fn fn_def_of_closure_once_shim<'tcx>(
+                tcx: TyCtxt<'tcx>,
+                fn_trait_fn_id: DefId,
+                input_arg_tys: &[Ty<'tcx>],
+            ) -> Ty<'tcx> {
+                let [closure_ty, args_ty] = input_arg_tys else {
+                    panic!(
+                        "Expected two arguments for (Self, (Args)) but received: {:?}",
+                        input_arg_tys
+                    )
+                };
+
+                Ty::new_fn_def(tcx, fn_trait_fn_id, [*closure_ty, *args_ty])
             }
 
             fn def_id_of_single_func_of_trait(tcx: TyCtxt, trait_id: DefId) -> DefId {
