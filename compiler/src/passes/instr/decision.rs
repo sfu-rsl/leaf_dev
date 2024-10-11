@@ -471,6 +471,78 @@ mod intrinsics {
         };
     }
 
+    macro_rules! of_simd_op_funcs {
+        ($macro:ident) => {
+            $macro!(
+                simd_add,
+                simd_and,
+                simd_arith_offset,
+                simd_as,
+                simd_bitmask,
+                simd_bitreverse,
+                simd_bswap,
+                simd_cast,
+                simd_cast_ptr,
+                simd_ceil,
+                simd_ctlz,
+                simd_ctpop,
+                simd_cttz,
+                simd_div,
+                simd_eq,
+                simd_expose_provenance,
+                simd_extract,
+                simd_fabs,
+                simd_fcos,
+                simd_fexp,
+                simd_fexp2,
+                simd_flog,
+                simd_flog2,
+                simd_flog10,
+                simd_floor,
+                simd_fma,
+                simd_fmax,
+                simd_fmin,
+                simd_fsin,
+                simd_fsqrt,
+                simd_gather,
+                simd_ge,
+                simd_gt,
+                simd_insert,
+                simd_le,
+                simd_lt,
+                simd_masked_load,
+                simd_masked_store,
+                simd_mul,
+                simd_ne,
+                simd_neg,
+                simd_or,
+                simd_reduce_add_ordered,
+                simd_reduce_add_unordered,
+                simd_reduce_all,
+                simd_reduce_and,
+                simd_reduce_any,
+                simd_reduce_max,
+                simd_reduce_min,
+                simd_reduce_mul_ordered,
+                simd_reduce_xor,
+                simd_rem,
+                simd_round,
+                simd_saturating_add,
+                simd_saturating_sub,
+                simd_scatter,
+                simd_select,
+                simd_select_bitmask,
+                simd_shl,
+                simd_shr,
+                simd_shuffle,
+                simd_sub,
+                simd_trunc,
+                simd_with_exposed_provenance,
+                simd_xor,
+            )
+        };
+    }
+
     macro_rules! of_to_be_supported_funcs {
         ($macro:ident) => {
             $macro!(
@@ -549,11 +621,15 @@ mod intrinsics {
             of_noop_funcs,
             of_float_arith_funcs,
             of_atomic_op_funcs,
+            of_simd_op_funcs,
             of_to_be_supported_funcs,
             of_supported_funcs,
         );
-        // Using count for compile-time check.
-        const _ALL_INTRINSICS: [u8; 289] = [0; TOTAL_COUNT];
+
+        /* NTOE: This is used as a test to make sure that the list do not contain duplicates.
+         * Do not change the count unless some intrinsics are added or removed to Rust.
+         */
+        const _ALL_INTRINSICS: [u8; 354] = [0; TOTAL_COUNT];
     }
 
     pub(crate) fn decide_intrinsic_call<'tcx>(intrinsic: IntrinsicDef) -> IntrinsicDecision {
@@ -587,6 +663,7 @@ mod intrinsics {
             of_to_be_supported_funcs!(any_of) => IntrinsicDecision::ToDo,
             of_float_arith_funcs!(any_of) => IntrinsicDecision::NotPlanned,
             of_mir_translated_funcs!(any_of) => IntrinsicDecision::Unexpected,
+            of_simd_op_funcs!(any_of) => IntrinsicDecision::Unsupported,
             other if matches!(other.as_str(), of_atomic_op_funcs!(str_any_of)) => {
                 IntrinsicDecision::Unsupported
             }
