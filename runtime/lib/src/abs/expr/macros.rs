@@ -128,6 +128,7 @@ macro_rules! impl_general_unary_op_through_singulars {
                 Not => Self::not,
                 Neg => Self::neg,
                 PtrMetadata => Self::ptr_metadata,
+                BitReverse => Self::bit_reverse,
             })(self, operand)
         }
     };
@@ -148,6 +149,7 @@ macro_rules! impl_singular_unary_ops_through_general {
             (not = crate::abs::UnaryOp::Not)
             (neg = crate::abs::UnaryOp::Neg)
             (ptr_metadata = crate::abs::UnaryOp::PtrMetadata)
+            (bit_reverse = crate::abs::UnaryOp::BitReverse)
         );
     };
 }

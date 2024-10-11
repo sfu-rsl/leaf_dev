@@ -118,6 +118,7 @@ impl Display for UnaryOp {
             UnaryOp::Not => "!",
             UnaryOp::Neg => "-",
             UnaryOp::PtrMetadata => "m",
+            UnaryOp::BitReverse => "~",
         })
     }
 }

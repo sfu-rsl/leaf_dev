@@ -536,7 +536,7 @@ impl ProgramRuntimeInterface for BasicPri {
     }
 
     fn intrinsic_assign_bitreverse(dest: PlaceRef, x: OperandRef) {
-        todo!("Implement bitreverse intrinsic");
+        Self::assign_unary_op(dest, Self::UnaryOp::BitReverse, x);
     }
 
     fn intrinsic_assign_cttz_nonzero(dest: PlaceRef, x: OperandRef) {

@@ -136,7 +136,7 @@ where
 
     impl_unary_expr_method!(unary_op + op: crate::abs::UnaryOp);
 
-    impl_unary_expr_method!(not neg ptr_metadata);
+    impl_unary_expr_method!(not neg ptr_metadata bit_reverse);
 }
 
 impl<B> CastExprBuilder for LoggerExprBuilder<B>

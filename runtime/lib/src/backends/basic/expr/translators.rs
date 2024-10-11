@@ -264,6 +264,10 @@ pub(crate) mod z3 {
                     }
                     _ => unreachable!("Neg is not supported for this operand: {operand:#?}"),
                 },
+                UnaryOp::BitReverse => match operand {
+                    AstNode::BitVector(bv) => bv.reverse_bits().into(),
+                    _ => unreachable!("BitReverse is not supported for this operand: {operand:#?}"),
+                },
             }
         }
 

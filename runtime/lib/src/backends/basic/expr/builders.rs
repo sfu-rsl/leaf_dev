@@ -654,6 +654,13 @@ mod core {
         fn ptr_metadata<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
             Expr::PtrMetadata(operand.into())
         }
+
+        fn bit_reverse<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
+            Expr::Unary {
+                operator: BasicUnaryOp::BitReverse,
+                operand,
+            }
+        }
     }
 
     impl CastExprBuilder for CoreBuilder {
