@@ -140,13 +140,7 @@ impl ConstValue {
                 },
                 _ => unreachable!("Not operand only works on boolean and integers."),
             },
-            UnaryOp::BitReverse => match this {
-                Self::Int { bit_rep, ty } => Self::Int {
-                    bit_rep: std::num::Wrapping(bit_rep.0.reverse_bits()),
-                    ty: *ty,
-                },
-                _ => unreachable!("Bit reverse is only for integers."),
-            },
+            _ => unimplemented!("This function over constant values will be dropped soon."),
         }
     }
 

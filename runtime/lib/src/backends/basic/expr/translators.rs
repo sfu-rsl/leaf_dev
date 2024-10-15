@@ -265,7 +265,7 @@ pub(crate) mod z3 {
                     _ => unreachable!("Neg is not supported for this operand: {operand:#?}"),
                 },
                 UnaryOp::BitReverse => match operand {
-                    AstNode::BitVector(bv) => bv.reverse_bits().into(),
+                    AstNode::BitVector(bv) => self.translate_bitreverse_expr(bv),
                     _ => unreachable!("BitReverse is not supported for this operand: {operand:#?}"),
                 },
             }
@@ -603,6 +603,16 @@ pub(crate) mod z3 {
                 (false, Mul, true) => ast::BV::bvmul_no_underflow(left, right),
             };
             ast::Bool::not(&in_bounds).into()
+        }
+
+        fn translate_bitreverse_expr(&mut self, bv: BVNode<'ctx>) -> AstNode<'ctx> {
+            let size = bv.size();
+            // Reverse a bit vector expression by extracting and concatenating the bits in reverse order.
+            let mut reversed_bv = bv.0.extract(size - 1, size - 1);
+            for idx in (0..(size - 2)).rev() {
+                reversed_bv = reversed_bv.concat(&bv.0.extract(idx, idx));
+            }
+            BVNode::new(reversed_bv, bv.is_signed()).into()
         }
     }
 
