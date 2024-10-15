@@ -1569,7 +1569,8 @@ mod implementation {
 
         fn through_fn_ptr_coercion(&mut self) {
             if cfg!(abs_concrete) {
-                self.to_some_concrete()
+                // Effective only at compile time, no operational effect.
+                self.by_use(self.context.operand_ref())
             } else {
                 unimplemented!("Function pointer coercion is not supported in this configuration.")
             }
