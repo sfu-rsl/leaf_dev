@@ -9,6 +9,8 @@ use sha2::{Digest, Sha256};
 
 use common::{log_debug, log_info};
 
+use statistics::{measure_time, Statistics};
+
 pub(crate) struct Options {
     pub program: PathBuf,
     pub child_env: HashMap<String, String>,
@@ -27,12 +29,14 @@ pub(crate) fn run_loop(options: Options, target: impl Fn(&process::Output) -> bo
             err
         )
     });
+    let mut stats = Statistics::new();
     loop {
         current_inputs = grab_new_next_inputs(
             &options.next_inputs_dir,
             &options.current_inputs_dir,
             &past_inputs,
             current_inputs,
+            &mut stats,
         );
 
         let Some(input) = current_inputs
@@ -50,6 +54,7 @@ pub(crate) fn run_loop(options: Options, target: impl Fn(&process::Output) -> bo
             &options.child_env,
             &options.next_inputs_dir,
             &input.1,
+            &mut stats,
         );
         fs::rename(
             &input.1,
@@ -57,9 +62,8 @@ pub(crate) fn run_loop(options: Options, target: impl Fn(&process::Output) -> bo
         )
         .expect("Could not move file");
         past_inputs.insert(input.0);
-        if past_inputs.len() % 10 == 0 {
-            log_info!("Processed {} inputs", past_inputs.len());
-        }
+
+        stats.notify_iteration();
 
         if target(&output) {
             log_info!("Found the target output. Input: {}", input.1.display(),);
@@ -78,6 +82,7 @@ fn execute_once(
     env: &HashMap<String, String>,
     next_inputs_dir: &Path,
     input: &Path,
+    stats: &mut Statistics,
 ) -> process::Output {
     let input = OpenOptions::new()
         .read(true)
@@ -97,14 +102,19 @@ fn execute_once(
         "#,
         dir = next_inputs_dir.display(),
     );
-    Command::new(program)
-        .env(format!("{ENV_PREFIX}{CONFIG_STR}"), config_toml)
-        .env(format!("{ENV_PREFIX}{CONFIG_STR_FORMAT}"), "toml")
-        .envs(env)
-        .stdin(Stdio::from(input))
-        // .stderr(Stdio::inherit())
-        .output()
-        .expect("Could not execute the program")
+
+    let (result, elapsed) = measure_time(|| {
+        Command::new(program)
+            .env(format!("{ENV_PREFIX}{CONFIG_STR}"), config_toml)
+            .env(format!("{ENV_PREFIX}{CONFIG_STR_FORMAT}"), "toml")
+            .envs(env)
+            .stdin(Stdio::from(input))
+            // .stderr(Stdio::inherit())
+            .output()
+            .expect("Could not execute the program")
+    });
+    stats.notify_execution(elapsed);
+    result
 }
 
 fn collect_past_inputs(dir: &Path) -> HashSet<String> {
@@ -120,6 +130,7 @@ fn grab_new_next_inputs(
     current_dir: &Path,
     past_inputs: &HashSet<String>,
     mut current_inputs: HashMap<String, PathBuf>,
+    stats: &mut Statistics,
 ) -> HashMap<String, PathBuf> {
     // NOTE: We clean up the next directory for the next execution.
     let count_before = current_inputs.len();
@@ -131,7 +142,7 @@ fn grab_new_next_inputs(
         next_files.sort_by(|(_, p1), (_, p2)| p1.cmp(p2));
         next_files
     };
-    log_debug!("Found {} next inputs", next_files.len());
+    let next_count = next_files.len();
     for (fingerprint, path) in next_files {
         if past_inputs.contains(&fingerprint) || current_inputs.contains_key(&fingerprint) {
             fs::remove_file(&path).expect("Could not remove file");
@@ -151,11 +162,8 @@ fn grab_new_next_inputs(
             current_inputs.insert(fingerprint, new_path);
         }
     }
-    if count_before == current_inputs.len() {
-        log_debug!("No different next input was found");
-    } else {
-        log_debug!("Found {} new inputs", current_inputs.len() - count_before);
-    }
+
+    stats.notify_next_inputs_grabbed(next_count, current_inputs.len() - count_before);
     current_inputs
 }
 
@@ -184,4 +192,69 @@ fn get_fingerprint(file: &Path) -> String {
 
 fn get_standardized_file_name(index: usize, fingerprint: &str) -> String {
     format!("input_{:03}_{}.bin", index, &fingerprint[..8])
+}
+
+mod statistics {
+    use std::time::{Duration, Instant};
+
+    use common::{log_debug, log_info};
+
+    pub(super) struct Statistics {
+        start_time: Instant,
+        total_exe_time: Duration,
+        total_exe_count: usize,
+        total_generated_inputs: usize,
+        repeated_inputs: usize,
+    }
+
+    impl Statistics {
+        pub fn new() -> Self {
+            Self {
+                start_time: Instant::now(),
+                total_exe_time: Duration::default(),
+                total_exe_count: 0,
+                total_generated_inputs: 0,
+                repeated_inputs: 0,
+            }
+        }
+
+        pub fn notify_execution(&mut self, exe_time: Duration) {
+            self.total_exe_time += exe_time;
+            self.total_exe_count += 1;
+        }
+
+        pub fn notify_next_inputs_grabbed(&mut self, generated: usize, added: usize) {
+            self.total_generated_inputs += generated;
+            self.repeated_inputs += generated - added;
+            if added == 0 {
+                log_debug!("No different next input was found");
+            } else {
+                log_debug!("Found {} new inputs out of {}", added, generated);
+            }
+        }
+
+        pub fn notify_iteration(&self) {
+            if self.total_exe_count % 10 != 1 {
+                return;
+            }
+
+            let average_exe_time = self.total_exe_time / self.total_exe_count as u32;
+
+            log_info!(
+                "{} - Elapsed time (exe/total): {}/{}, Average execution time: {}, Inputs (distinct/total): {}/{}",
+                self.total_exe_count,
+                self.start_time.elapsed().as_secs(),
+                self.total_exe_time.as_secs(),
+                average_exe_time.as_secs_f32(),
+                self.total_generated_inputs - self.repeated_inputs,
+                self.total_generated_inputs,
+            )
+        }
+    }
+
+    pub(super) fn measure_time<T>(f: impl FnOnce() -> T) -> (T, Duration) {
+        let now = Instant::now();
+        let result = f();
+        (result, now.elapsed())
+    }
 }
