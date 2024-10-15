@@ -30,17 +30,31 @@ use self::logging::TAG;
  * | after_call()  |                           |
  * +---------------+---------------------------+
  * Or equivalently (names are changed to better reflect the current position of program):
- * +--------------------+---------------------------+
- * | Caller             | Callee                    |
- * +--------------------+---------------------------+
- * | prepare_for_call() |                           |
- * |                    | set_local_metadata()      |
- * |                    | [try_untuple_argument()]  |
- * |                    | notify_enter()            |
- * |                    | [override_return_value()] |
- * |                    | pop_stack_frame()         |
- * | finalize_call()    |                           |
- * +--------------------+---------------------------+
+ * +--------------------+---------------------------+--------------------------------+
+ * | Caller             | Callee                    | Log Span                       |
+ * +--------------------+---------------------------+--------------------------------+
+ * | prepare_for_call() |                           | depth = n, trans: dir = "call" |
+ * |                    | set_local_metadata()      |                                |
+ * |                    | [try_untuple_argument()]  |                                |
+ * |                    | notify_enter()            | __                             |
+ * |                    | [override_return_value()] | depth = n + 1                  |
+ * |                    | pop_stack_frame()         | depth = n, trans: dir = "ret"  |
+ * | finalize_call()    |                           | depth = n                      |
+ * +--------------------+---------------------------+--------------------------------+
+ * Log spans:
+ * +---------------------------+--------------------------------+
+ * | Function                  | Log Span                       |
+ * +---------------------------+--------------------------------+
+ * |                           | __ depth = n                   |
+ * | prepare_for_call()        | depth = n, trans: dir = "call" |
+ * | set_local_metadata()      |                                |
+ * | [try_untuple_argument()]  |                                |
+ * | notify_enter()            | __                             |
+ * |                           | depth = n + 1                  |
+ * | [override_return_value()] | __                             |
+ * | pop_stack_frame()         | depth = n, trans: dir = "ret"  |
+ * | finalize_call()           | depth = n                      |
+ * +---------------------------+--------------------------------+
  */
 
 /* Functionality Specification:
@@ -267,12 +281,6 @@ impl<VS: VariablesState + SelfHierarchical> BasicCallStackManager<VS> {
     }
 
     fn inspect_external_call_info<'a>(&self, info: &'a CallInfo) -> Vec<(usize, &'a ValueRef)> {
-        log_debug!(
-            target: TAG,
-            "External function call detected. Expected: {}",
-            info.expected_func,
-        );
-
         let symbolic_args: Vec<_> = info
             .args
             .iter()
@@ -282,7 +290,7 @@ impl<VS: VariablesState + SelfHierarchical> BasicCallStackManager<VS> {
         if !symbolic_args.is_empty() {
             log_warn!(
                 target: TAG,
-                "Possible loss of symbolic values in external function call",
+                "Possible loss of symbolic arguments in external function call",
             );
             log_debug!(
                 target: TAG,
@@ -297,7 +305,7 @@ impl<VS: VariablesState + SelfHierarchical> BasicCallStackManager<VS> {
         if returned_value.is_symbolic() {
             log_warn!(
                 target: TAG,
-                "Possible loss of symbolic values in external function call",
+                "Possible loss of symbolic return value in external function call",
             );
             log_debug!(
                 target: TAG,
@@ -408,10 +416,16 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
 
                 Ok(arg_locals.into_iter().zip(args.into_iter()))
             } else {
+                log_debug!(
+                    target: TAG,
+                    "External function call detected. Expected: {}",
+                    call_info.expected_func,
+                );
                 Err(Some(call_info))
             }
         } else {
             // NOTE: An example of this case is when an external function calls multiple internal ones.
+            log_debug!("External function call detected with no call information available");
             Err(None)
         };
 
@@ -424,13 +438,9 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
                 self.push_new_stack_frame(args, call_stack_frame);
             }
             Err(call_info) => {
-                if let Some(call_info) = call_info {
-                    self.inspect_external_call_info(&call_info);
-                } else {
-                    log_debug!(
-                        "External function call detected with no call information available"
-                    );
-                }
+                call_info.inspect(|info| {
+                    self.inspect_external_call_info(info);
+                });
                 self.push_new_stack_frame(core::iter::empty(), call_stack_frame);
             }
         }
@@ -439,10 +449,6 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
     }
 
     fn pop_stack_frame(&mut self) {
-        self.latest_returned_val
-            .take()
-            .inspect(|val| self.inspect_returned_value(val));
-
         let popped_frame = self.stack.pop().unwrap();
 
         self.log_span_reset();
@@ -453,6 +459,10 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
         {
             self.log_span_start_trans(logging::TransitionDirection::Return);
         }
+
+        self.latest_returned_val
+            .take()
+            .inspect(|val| self.inspect_returned_value(val));
 
         // Cleaning the arguments
         popped_frame.arg_locals.into_iter().for_each(|local| {
@@ -485,7 +495,14 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
     fn finalize_call(&mut self, result_dest: Place) {
         self.log_span_reset();
 
-        let is_external = self.top_frame().is_callee_external.take().unwrap_or(true);
+        let is_external = self
+            .top_frame()
+            .is_callee_external
+            .take()
+            .unwrap_or_else(|| {
+                log_debug!(target: TAG, "External function call detected with no acknowledged entrance.");
+                true
+            });
         if !is_external {
             log_debug!(target: TAG, "Finalizing an internal call.");
             self.finalize_internal_call(&result_dest)

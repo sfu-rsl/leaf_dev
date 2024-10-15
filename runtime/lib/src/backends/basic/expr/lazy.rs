@@ -408,7 +408,7 @@ mod retrieval {
                                 "Symbolic value: {:?}, Whole value: {:?}",
                             ),
                             padded,
-                            acc_value,
+                            self,
                         );
                         return (padded.into(), mask);
                     }

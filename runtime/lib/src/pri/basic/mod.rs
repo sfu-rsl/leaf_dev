@@ -507,11 +507,12 @@ impl ProgramRuntimeInterface for BasicPri {
         let str_rep = String::from_utf8_lossy(info);
         let str_rep = str_rep.trim_matches('"');
         const MAX_LEN: usize = 120;
+        const DB_TAG: &str = const_format::concatcp!(TAG, "::debug");
         if str_rep.len() <= MAX_LEN {
-            log_info!(target: TAG, "{}", str_rep);
+            log_info!(target: DB_TAG, "{}", str_rep);
         } else {
-            log_info!(target: TAG, "{}…", &str_rep[..MAX_LEN]);
-            log_debug!(target: TAG, "Full debug info: {}", str_rep);
+            log_info!(target: DB_TAG, "{}…", &str_rep[..MAX_LEN]);
+            log_debug!(target: DB_TAG, "Full debug info: {}", str_rep);
         }
     }
 

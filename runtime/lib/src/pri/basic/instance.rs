@@ -71,6 +71,7 @@ pub(super) fn init_backend() {
                 BACKEND = Some(backend);
             }
         }
+        log_info!("Basic backend initialized");
     });
 }
 
