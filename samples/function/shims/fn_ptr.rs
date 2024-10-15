@@ -12,7 +12,7 @@ fn main() {
     test_num(t);
 }
 
-fn test_num(x: i32) -> i32 {
+fn test_num(x: i32) {
     if x == 71 {
         foo();
     }

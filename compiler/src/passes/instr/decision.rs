@@ -104,7 +104,7 @@ pub(super) fn should_instrument<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>) 
 fn decide_instance_kind(kind: &InstanceKind) -> bool {
     use InstanceKind::*;
     match kind {
-        Item(..) | FnPtrShim(..) | ClosureOnceShim { .. } => true,
+        Item(..) | FnPtrShim(..) | ClosureOnceShim { .. } | CloneShim(..) => true,
         Intrinsic(..)
         | VTableShim(..)
         | ReifyShim(..)
@@ -113,7 +113,6 @@ fn decide_instance_kind(kind: &InstanceKind) -> bool {
         | CoroutineKindShim { .. }
         | ThreadLocalShim(..)
         | DropGlue(..)
-        | CloneShim(..)
         | FnPtrAddrShim(..)
         | AsyncDropGlueCtorShim(..) => false,
     }

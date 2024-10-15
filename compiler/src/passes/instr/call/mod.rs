@@ -481,6 +481,9 @@ mod implementation {
                         .collect::<Vec<_>>();
                     ty::fn_def_of_closure_once_shim(tcx, call_once, &arg_tys)
                 }
+                CloneShim(clone_fn_id, self_ty) => {
+                    ty::fn_def_of_clone_shim(tcx, clone_fn_id, self_ty)
+                }
                 instance @ _ => unreachable!("Unsupported instance: {:?}", instance),
             };
 
@@ -2700,6 +2703,19 @@ mod implementation {
                 };
 
                 Ty::new_fn_def(tcx, fn_trait_fn_id, [*closure_ty, *args_ty])
+            }
+
+            pub fn fn_def_of_clone_shim<'tcx>(
+                tcx: TyCtxt<'tcx>,
+                clone_fn_id: DefId,
+                ty: Ty<'tcx>,
+            ) -> Ty<'tcx> {
+                let mir_ty::TyKind::Ref(_, ty, _) = ty.kind() else {
+                    /* NOTE: It is not really obvious where or why,
+                     * but apparently a reference to the type is passed for the shim. */
+                    panic!("Expected reference type but received: {:?}", ty)
+                };
+                Ty::new_fn_def(tcx, clone_fn_id, [*ty])
             }
 
             fn def_id_of_single_func_of_trait(tcx: TyCtxt, trait_id: DefId) -> DefId {
