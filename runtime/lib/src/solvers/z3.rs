@@ -60,30 +60,6 @@ impl<'ctx> BVNode<'ctx> {
     pub(crate) fn size(&self) -> u32 {
         self.0.get_size()
     }
-
-    #[inline(always)]
-    pub(crate) fn reverse_bits(&self) -> Self {
-        let ast = if !self.is_signed() {
-            ast::BV::from_u64(
-                self.0.get_ctx(),
-                self.0
-                    .as_u64()
-                    .expect("Only numbers are supported for bit reverse")
-                    .reverse_bits(),
-                self.0.get_size(),
-            )
-        } else {
-            ast::BV::from_i64(
-                self.0.get_ctx(),
-                self.0
-                    .as_i64()
-                    .expect("Only numbers are supported for bit reverse")
-                    .reverse_bits(),
-                self.0.get_size(),
-            )
-        };
-        Self::new(ast, self.is_signed()).into()
-    }
 }
 
 #[derive(Debug, Clone)]
