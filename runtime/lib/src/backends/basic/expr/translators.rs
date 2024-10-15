@@ -268,16 +268,10 @@ pub(crate) mod z3 {
                     AstNode::BitVector(bv) => self.translate_bitreverse_expr(bv),
                     _ => unreachable!("BitReverse is not supported for this operand: {operand:#?}"),
                 },
-                UnaryOp::NonZeroTrailingZeros => match operand {
-                    AstNode::BitVector(bv) => self.translate_trailing_zeros_expr(bv, false),
+                UnaryOp::NonZeroTrailingZeros | UnaryOp::TrailingZeros => match operand {
+                    AstNode::BitVector(bv) => self.translate_trailing_zeros_expr(bv),
                     _ => unreachable!(
-                        "NonZeroTrailingZeros is not supported for this operand: {operand:#?}"
-                    ),
-                },
-                UnaryOp::TrailingZeros => match operand {
-                    AstNode::BitVector(bv) => self.translate_trailing_zeros_expr(bv, true),
-                    _ => unreachable!(
-                        "TrailingZeros is not supported for this operand: {operand:#?}"
+                        "NonZeroTrailingZeros and TrailingZeros are not supported for this operand: {operand:#?}"
                     ),
                 },
             }
@@ -627,41 +621,25 @@ pub(crate) mod z3 {
             BVNode::new(reversed_bv, bv.is_signed()).into()
         }
 
-        fn translate_trailing_zeros_expr(
-            &mut self,
-            bv: BVNode<'ctx>,
-            zero_allowed: bool,
-        ) -> AstNode<'ctx> {
+        fn translate_trailing_zeros_expr(&mut self, bv: BVNode<'ctx>) -> AstNode<'ctx> {
             let size = bv.size();
-            let zero_bit: ast::BV<'_> = ast::BV::from_u64(bv.0.get_ctx(), 0, 1);
-            let mut trailing_zeros = ast::BV::from_u64(bv.0.get_ctx(), 0, size);
+            let ctx = bv.0.get_ctx();
+            let zero_bit: ast::BV<'_> = ast::BV::from_u64(ctx, 0, 1);
+            let mut trailing_zeros = ast::BV::from_u64(ctx, 0, size);
 
             for idx in (0..size).rev() {
                 let bit = bv.0.extract(idx, idx);
-                if bit
-                    .bvugt(&zero_bit)
-                    .as_bool()
-                    .expect("Z3 bit vector comparison failed.")
-                {
-                    log_debug!(target: TAG, "Found a non-zero bit at index: {}. Stopping trailing zero count.", idx);
-                    break;
-                }
-
-                trailing_zeros = trailing_zeros.bvadd(&ast::BV::from_u64(bv.0.get_ctx(), 1, size));
-            }
-
-            if !zero_allowed
-                && !trailing_zeros
-                    .bvugt(&ast::BV::from_u64(bv.0.get_ctx(), size.into(), size))
-                    .as_bool()
-                    .expect("Z3 bit vector comparison failed.")
-                && !trailing_zeros
-                    .bvult(&ast::BV::from_u64(bv.0.get_ctx(), size.into(), size))
-                    .as_bool()
-                    .expect("Z3 bit vector comparison failed.")
-            {
-                todo!(
-                    "Handle the case where the input bitvector is zero (trailing zeros count equals to size)."
+                trailing_zeros = bit.bvugt(&zero_bit).ite(
+                    &trailing_zeros, // Current bit is 1
+                    &trailing_zeros // Current bit is 0
+                        /* If `trailing_zeros` is less than `(size - 1 -idx)`, bit 1 has already been encountered,
+                         * so regardless of the current bit, `trailing_zeros` will not change.
+                         */
+                        .bvult(&ast::BV::from_u64(ctx, (size - 1 - idx).into(), size))
+                        .ite(
+                            &trailing_zeros,
+                            &trailing_zeros.bvadd(&ast::BV::from_u64(ctx, 1, size)),
+                        ),
                 );
             }
             BVNode::new(trailing_zeros, false).into()
