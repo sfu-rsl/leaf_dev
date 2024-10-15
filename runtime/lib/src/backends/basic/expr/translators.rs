@@ -624,7 +624,6 @@ pub(crate) mod z3 {
         fn translate_trailing_zeros_expr(&mut self, bv: BVNode<'ctx>) -> AstNode<'ctx> {
             let size = bv.size();
             let ctx = bv.0.get_ctx();
-            let zero_bit: ast::BV<'_> = ast::BV::from_u64(ctx, 0, 1);
             let mut trailing_zeros = ast::BV::from_u64(ctx, 0, 32);
             let mut one_encountered = ast::Bool::from_bool(ctx, false);
 
@@ -632,7 +631,7 @@ pub(crate) mod z3 {
                 let bit = bv.0.extract(idx, idx);
                 one_encountered = one_encountered.ite(
                     &one_encountered,
-                    &bit.bvugt(&zero_bit)
+                    &bit._eq(&ast::BV::from_u64(ctx, 1, 1))
                         .ite(&ast::Bool::from_bool(ctx, true), &one_encountered),
                 );
                 trailing_zeros = one_encountered.ite(
