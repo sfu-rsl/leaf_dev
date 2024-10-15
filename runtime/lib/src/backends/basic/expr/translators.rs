@@ -268,10 +268,10 @@ pub(crate) mod z3 {
                     AstNode::BitVector(bv) => self.translate_bitreverse_expr(bv),
                     _ => unreachable!("BitReverse is not supported for this operand: {operand:#?}"),
                 },
-                UnaryOp::NonZeroTrailingZeros | UnaryOp::TrailingZeros => match operand {
+                UnaryOp::TrailingZeros => match operand {
                     AstNode::BitVector(bv) => self.translate_trailing_zeros_expr(bv),
                     _ => unreachable!(
-                        "NonZeroTrailingZeros and TrailingZeros are not supported for this operand: {operand:#?}"
+                        "TrailingZeros is not supported for this operand: {operand:#?}"
                     ),
                 },
             }

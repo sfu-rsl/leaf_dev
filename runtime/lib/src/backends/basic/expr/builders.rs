@@ -662,14 +662,11 @@ mod core {
             }
         }
 
-        fn non_zero_trailing_zeros<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
-            Expr::Unary {
-                operator: BasicUnaryOp::NonZeroTrailingZeros,
-                operand,
-            }
-        }
-
-        fn trailing_zeros<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
+        fn trailing_zeros<'a>(
+            &mut self,
+            operand: Self::ExprRef<'a>,
+            _non_zero: bool,
+        ) -> Self::Expr<'a> {
             Expr::Unary {
                 operator: BasicUnaryOp::TrailingZeros,
                 operand,

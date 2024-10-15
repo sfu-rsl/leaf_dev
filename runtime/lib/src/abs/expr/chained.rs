@@ -148,7 +148,8 @@ where
     impl_unary_expr_method!(unary_op + op: UnaryOp);
 
     impl_unary_expr_method!(not neg ptr_metadata);
-    impl_unary_expr_method!(bit_reverse non_zero_trailing_zeros trailing_zeros);
+    impl_unary_expr_method!(bit_reverse);
+    impl_unary_expr_method!(trailing_zeros + non_zero: bool);
 }
 
 impl<C, N, E, CE> CastExprBuilder for ChainedExprBuilder<C, N, E, CE>
