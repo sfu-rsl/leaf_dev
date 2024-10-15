@@ -609,7 +609,7 @@ pub(crate) mod z3 {
             let size = bv.size();
             // Reverse a bit vector expression by extracting and concatenating the bits in reverse order.
             let mut reversed_bv = bv.0.extract(size - 1, size - 1);
-            for idx in (0..(size - 2)).rev() {
+            for idx in (0..(size - 1)).rev() {
                 reversed_bv = reversed_bv.concat(&bv.0.extract(idx, idx));
             }
             BVNode::new(reversed_bv, bv.is_signed()).into()
