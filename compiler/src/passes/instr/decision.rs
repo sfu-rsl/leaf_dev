@@ -34,52 +34,21 @@ pub(super) fn should_instrument<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>) 
         return explicit;
     }
 
-    // It is in the module defining lang_start items (std rt module)
-    if tcx
-        .lang_items()
-        .start_fn()
-        .map(|id| tcx.module_of(id).collect::<Vec<_>>())
-        .zip(Some(tcx.module_of(def_id)))
-        .is_some_and(|(start_mod, this_mod)| {
-            let n = start_mod.len();
-            start_mod.into_iter().eq(this_mod.take(n))
-        })
-    {
+    if is_lang_start_item(tcx, def_id) {
         return false;
     }
 
     // FIXME: Drops are important for bug detection, however we avoid instrumenting them for now.
-    let mut drop_fn_ids = {
-        use rustc_hir::LanguageItems as Items;
-        [
-            Items::drop_in_place_fn,
-            Items::async_drop_in_place_fn,
-            Items::surface_async_drop_in_place_fn,
-            Items::async_drop_surface_drop_in_place_fn,
-            Items::async_drop_slice_fn,
-            Items::async_drop_chain_fn,
-            Items::async_drop_noop_fn,
-            Items::async_drop_deferred_drop_in_place_fn,
-            Items::async_drop_fuse_fn,
-            Items::async_drop_defer_fn,
-            Items::async_drop_either_fn,
-        ]
-        .iter()
-        .filter_map(|item| item(tcx.lang_items()))
-    };
-    if drop_fn_ids.any(|id| id == def_id)
-        || tcx
-            .lang_items()
-            .drop_trait()
-            .zip(
-                tcx.impl_of_method(def_id)
-                    .and_then(|id| tcx.trait_id_of_impl(id)),
-            )
-            .is_some_and(|(t1, t2)| t1 == t2)
-    {
+    if is_drop_fn(tcx, def_id) {
         return false;
     }
 
+    // Some intrinsic functions have body.
+    if tcx.intrinsic(def_id).is_some() {
+        return false;
+    }
+
+    // Some functions and modules found problematic to instrument.
     // FIXME: To be replaced with a better-specified list.
     let def_path = &tcx.def_path_debug_str(def_id);
     if def_path.contains("panicking")
@@ -90,11 +59,6 @@ pub(super) fn should_instrument<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>) 
                 || def_path.contains("sync")
                 || def_path.contains("arch::")))
     {
-        return false;
-    }
-
-    // Some intrinsic functions have body.
-    if tcx.intrinsic(def_id).is_some() {
         return false;
     }
 
@@ -184,6 +148,48 @@ fn opt_instrument_attr<'tcx>(tcx: TyCtxt<'tcx>, def_id: DefId) -> Option<bool> {
             }
         }
     })
+}
+
+fn is_lang_start_item(tcx: TyCtxt<'_>, def_id: DefId) -> bool {
+    // It is in the module defining lang_start items (std rt module)
+    tcx.lang_items()
+        .start_fn()
+        .map(|id| tcx.module_of(id).collect::<Vec<_>>())
+        .zip(Some(tcx.module_of(def_id)))
+        .is_some_and(|(start_mod, this_mod)| {
+            let n = start_mod.len();
+            start_mod.into_iter().eq(this_mod.take(n))
+        })
+}
+
+fn is_drop_fn(tcx: TyCtxt<'_>, def_id: DefId) -> bool {
+    let mut drop_fn_ids = {
+        use rustc_hir::LanguageItems as Items;
+        [
+            Items::drop_in_place_fn,
+            Items::async_drop_in_place_fn,
+            Items::surface_async_drop_in_place_fn,
+            Items::async_drop_surface_drop_in_place_fn,
+            Items::async_drop_slice_fn,
+            Items::async_drop_chain_fn,
+            Items::async_drop_noop_fn,
+            Items::async_drop_deferred_drop_in_place_fn,
+            Items::async_drop_fuse_fn,
+            Items::async_drop_defer_fn,
+            Items::async_drop_either_fn,
+        ]
+        .iter()
+        .filter_map(|item| item(tcx.lang_items()))
+    };
+    drop_fn_ids.any(|id| id == def_id)
+        || tcx
+            .lang_items()
+            .drop_trait()
+            .zip(
+                tcx.impl_of_method(def_id)
+                    .and_then(|id| tcx.trait_id_of_impl(id)),
+            )
+            .is_some_and(|(t1, t2)| t1 == t2)
 }
 
 mod intrinsics {
