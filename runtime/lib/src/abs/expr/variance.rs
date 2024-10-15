@@ -103,7 +103,8 @@ where
     type Expr<'a> = T::TargetExpr<'a>;
 
     delegate_singular_unary_op!(unary_op + op: UnaryOp);
-    delegate_singular_unary_op!(not neg ptr_metadata bit_reverse);
+    delegate_singular_unary_op!(not neg ptr_metadata);
+    delegate_singular_unary_op!(bit_reverse non_zero_trailing_zeros trailing_zeros);
 }
 
 pub(crate) trait CastExprBuilderAdapter: DerefMut

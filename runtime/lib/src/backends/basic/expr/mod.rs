@@ -712,6 +712,8 @@ sub_enum! {
         Neg,
         Not,
         BitReverse,
+        NonZeroTrailingZeros,
+        TrailingZeros,
     }
 }
 

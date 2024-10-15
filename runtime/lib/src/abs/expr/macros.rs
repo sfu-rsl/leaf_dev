@@ -129,6 +129,8 @@ macro_rules! impl_general_unary_op_through_singulars {
                 Neg => Self::neg,
                 PtrMetadata => Self::ptr_metadata,
                 BitReverse => Self::bit_reverse,
+                NonZeroTrailingZeros => Self::non_zero_trailing_zeros,
+                TrailingZeros => Self::trailing_zeros,
             })(self, operand)
         }
     };
@@ -150,6 +152,8 @@ macro_rules! impl_singular_unary_ops_through_general {
             (neg = crate::abs::UnaryOp::Neg)
             (ptr_metadata = crate::abs::UnaryOp::PtrMetadata)
             (bit_reverse = crate::abs::UnaryOp::BitReverse)
+            (non_zero_trailing_zeros = crate::abs::UnaryOp::NonZeroTrailingZeros)
+            (trailing_zeros = crate::abs::UnaryOp::TrailingZeros)
         );
     };
 }

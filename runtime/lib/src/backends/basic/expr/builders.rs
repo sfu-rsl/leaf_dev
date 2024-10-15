@@ -661,6 +661,20 @@ mod core {
                 operand,
             }
         }
+
+        fn non_zero_trailing_zeros<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
+            Expr::Unary {
+                operator: BasicUnaryOp::NonZeroTrailingZeros,
+                operand,
+            }
+        }
+
+        fn trailing_zeros<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
+            Expr::Unary {
+                operator: BasicUnaryOp::TrailingZeros,
+                operand,
+            }
+        }
     }
 
     impl CastExprBuilder for CoreBuilder {

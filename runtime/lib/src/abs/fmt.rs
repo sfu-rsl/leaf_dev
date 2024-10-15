@@ -119,6 +119,8 @@ impl Display for UnaryOp {
             UnaryOp::Neg => "-",
             UnaryOp::PtrMetadata => "m",
             UnaryOp::BitReverse => "↩",
+            UnaryOp::TrailingZeros => "cttz",
+            UnaryOp::NonZeroTrailingZeros => "cttz_nonzero",
         })
     }
 }

@@ -101,7 +101,8 @@ where
 
     impl_unary_expr_method!(unary_op + op: UnaryOp);
 
-    impl_unary_expr_method!(not neg ptr_metadata bit_reverse);
+    impl_unary_expr_method!(not neg ptr_metadata);
+    impl_unary_expr_method!(bit_reverse non_zero_trailing_zeros trailing_zeros);
 }
 
 impl<B, U, C> CastExprBuilder for CompositeExprBuilder<B, U, C>
