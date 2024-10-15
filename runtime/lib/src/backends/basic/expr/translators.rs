@@ -625,21 +625,19 @@ pub(crate) mod z3 {
             let size = bv.size();
             let ctx = bv.0.get_ctx();
             let zero_bit: ast::BV<'_> = ast::BV::from_u64(ctx, 0, 1);
-            let mut trailing_zeros = ast::BV::from_u64(ctx, 0, size);
+            let mut trailing_zeros = ast::BV::from_u64(ctx, 0, 32);
+            let mut one_encountered = ast::Bool::from_bool(ctx, false);
 
             for idx in (0..size).rev() {
                 let bit = bv.0.extract(idx, idx);
-                trailing_zeros = bit.bvugt(&zero_bit).ite(
-                    &trailing_zeros, // Current bit is 1
-                    &trailing_zeros // Current bit is 0
-                        /* If `trailing_zeros` is less than `(size - 1 -idx)`, bit 1 has already been encountered,
-                         * so regardless of the current bit, `trailing_zeros` will not change.
-                         */
-                        .bvult(&ast::BV::from_u64(ctx, (size - 1 - idx).into(), size))
-                        .ite(
-                            &trailing_zeros,
-                            &trailing_zeros.bvadd(&ast::BV::from_u64(ctx, 1, size)),
-                        ),
+                one_encountered = one_encountered.ite(
+                    &one_encountered,
+                    &bit.bvugt(&zero_bit)
+                        .ite(&ast::Bool::from_bool(ctx, true), &one_encountered),
+                );
+                trailing_zeros = one_encountered.ite(
+                    &trailing_zeros,
+                    &trailing_zeros.bvadd(&ast::BV::from_u64(ctx, 1, 32)),
                 );
             }
             BVNode::new(trailing_zeros, false).into()
