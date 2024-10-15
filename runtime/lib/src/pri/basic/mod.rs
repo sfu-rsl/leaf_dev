@@ -540,11 +540,11 @@ impl ProgramRuntimeInterface for BasicPri {
     }
 
     fn intrinsic_assign_cttz_nonzero(dest: PlaceRef, x: OperandRef) {
-        todo!("Implement cttz_nonzero intrinsic");
+        Self::assign_unary_op(dest, Self::UnaryOp::NonZeroTrailingZeros, x);
     }
 
     fn intrinsic_assign_cttz(dest: PlaceRef, x: OperandRef) {
-        todo!("Implement cttz intrinsic");
+        Self::assign_unary_op(dest, Self::UnaryOp::TrailingZeros, x);
     }
 
     fn intrinsic_assign_ctpop(dest: PlaceRef, x: OperandRef) {
