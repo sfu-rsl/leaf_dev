@@ -132,6 +132,8 @@ macro_rules! impl_general_unary_op_through_singulars {
                 NonZeroTrailingZeros => self.trailing_zeros(operand, true),
                 TrailingZeros => self.trailing_zeros(operand, false),
                 CountOnes => self.count_ones(operand),
+                NonZeroLeadingZeros => self.leading_zeros(operand, true),
+                LeadingZeros => self.leading_zeros(operand, false),
             }
         }
     };
@@ -164,6 +166,12 @@ macro_rules! impl_singular_unary_ops_through_general {
                     crate::abs::UnaryOp::TrailingZeros
                 })
             (count_ones = crate::abs::UnaryOp::CountOnes)
+            (leading_zeros + non_zero: bool =
+                if non_zero {
+                    crate::abs::UnaryOp::NonZeroLeadingZeros
+                } else {
+                    crate::abs::UnaryOp::LeadingZeros
+                })
         );
     };
 }

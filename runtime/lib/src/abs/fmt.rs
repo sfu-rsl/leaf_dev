@@ -122,6 +122,8 @@ impl Display for UnaryOp {
             UnaryOp::TrailingZeros => "cttz",
             UnaryOp::NonZeroTrailingZeros => "cttz_nonzero",
             UnaryOp::CountOnes => "ctpop",
+            UnaryOp::LeadingZeros => "ctlz",
+            UnaryOp::NonZeroLeadingZeros => "ctlz_nonzero",
         })
     }
 }

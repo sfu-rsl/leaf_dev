@@ -552,11 +552,11 @@ impl ProgramRuntimeInterface for BasicPri {
     }
 
     fn intrinsic_assign_ctlz_nonzero(dest: PlaceRef, x: OperandRef) {
-        todo!("Implement ctlz_nonzero intrinsic");
+        Self::assign_unary_op(dest, Self::UnaryOp::NonZeroLeadingZeros, x);
     }
 
     fn intrinsic_assign_ctlz(dest: PlaceRef, x: OperandRef) {
-        todo!("Implement ctlz intrinsic");
+        Self::assign_unary_op(dest, Self::UnaryOp::LeadingZeros, x);
     }
 }
 

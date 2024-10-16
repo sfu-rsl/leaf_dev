@@ -87,6 +87,8 @@ pub enum UnaryOp {
     NonZeroTrailingZeros = common::pri::UnaryOp::CTTZ_NONZERO.as_u8(),
     TrailingZeros = common::pri::UnaryOp::CTTZ.as_u8(),
     CountOnes = common::pri::UnaryOp::CTPOP.as_u8(),
+    NonZeroLeadingZeros = common::pri::UnaryOp::CTLZ_NONZERO.as_u8(),
+    LeadingZeros = common::pri::UnaryOp::CTLZ.as_u8(),
 }
 
 pub(crate) type Local = place::Local;

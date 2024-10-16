@@ -714,6 +714,7 @@ sub_enum! {
         BitReverse,
         TrailingZeros,
         CountOnes,
+        LeadingZeros,
     }
 }
 

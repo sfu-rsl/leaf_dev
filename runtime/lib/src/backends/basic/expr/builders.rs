@@ -679,6 +679,17 @@ mod core {
                 operand,
             }
         }
+
+        fn leading_zeros<'a>(
+            &mut self,
+            operand: Self::ExprRef<'a>,
+            _non_zero: bool,
+        ) -> Self::Expr<'a> {
+            Expr::Unary {
+                operator: BasicUnaryOp::LeadingZeros,
+                operand,
+            }
+        }
     }
 
     impl CastExprBuilder for CoreBuilder {

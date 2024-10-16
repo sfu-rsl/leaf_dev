@@ -269,7 +269,7 @@ pub(crate) mod z3 {
                     _ => unreachable!("BitReverse is not supported for this operand: {operand:#?}"),
                 },
                 UnaryOp::TrailingZeros => match operand {
-                    AstNode::BitVector(bv) => self.translate_trailing_zeros_expr(bv),
+                    AstNode::BitVector(bv) => self.translate_count_zeros_expr(bv, true),
                     _ => unreachable!(
                         "TrailingZeros is not supported for this operand: {operand:#?}"
                     ),
@@ -277,6 +277,12 @@ pub(crate) mod z3 {
                 UnaryOp::CountOnes => match operand {
                     AstNode::BitVector(bv) => self.translate_count_ones_expr(bv),
                     _ => unreachable!("CountOnes is not supported for this operand: {operand:#?}"),
+                },
+                UnaryOp::LeadingZeros => match operand {
+                    AstNode::BitVector(bv) => self.translate_count_zeros_expr(bv, false),
+                    _ => {
+                        unreachable!("LeadingZeros is not supported for this operand: {operand:#?}")
+                    }
                 },
             }
         }
@@ -625,13 +631,22 @@ pub(crate) mod z3 {
             BVNode::new(reversed_bv, bv.is_signed()).into()
         }
 
-        fn translate_trailing_zeros_expr(&mut self, bv: BVNode<'ctx>) -> AstNode<'ctx> {
+        fn translate_count_zeros_expr(
+            &mut self,
+            bv: BVNode<'ctx>,
+            is_trailing: bool,
+        ) -> AstNode<'ctx> {
             let size = bv.size();
             let ctx = bv.0.get_ctx();
             let mut trailing_zeros = ast::BV::from_u64(ctx, 0, 32);
             let mut one_encountered = ast::Bool::from_bool(ctx, false);
 
-            for idx in (0..size).rev() {
+            let range = if !is_trailing {
+                (0..size).collect::<Vec<_>>()
+            } else {
+                (0..size).rev().collect::<Vec<_>>()
+            };
+            for idx in range {
                 let bit = bv.0.extract(idx, idx);
                 one_encountered = one_encountered.ite(
                     &one_encountered,
