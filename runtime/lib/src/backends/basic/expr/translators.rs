@@ -274,6 +274,10 @@ pub(crate) mod z3 {
                         "TrailingZeros is not supported for this operand: {operand:#?}"
                     ),
                 },
+                UnaryOp::CountOnes => match operand {
+                    AstNode::BitVector(bv) => self.translate_count_ones_expr(bv),
+                    _ => unreachable!("CountOnes is not supported for this operand: {operand:#?}"),
+                },
             }
         }
 
@@ -640,6 +644,20 @@ pub(crate) mod z3 {
                 );
             }
             BVNode::new(trailing_zeros, false).into()
+        }
+
+        fn translate_count_ones_expr(&mut self, bv: BVNode<'ctx>) -> AstNode<'ctx> {
+            let size = bv.size();
+            let ctx = bv.0.get_ctx();
+            let mut count = ast::BV::from_u64(ctx, 0, 32);
+
+            for idx in 0..size {
+                let bit = bv.0.extract(idx, idx);
+                count = bit
+                    ._eq(&ast::BV::from_u64(ctx, 1, 1))
+                    .ite(&count.bvadd(&ast::BV::from_u64(ctx, 1, 32)), &count);
+            }
+            BVNode::new(count, false).into()
         }
     }
 

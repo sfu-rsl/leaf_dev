@@ -121,6 +121,7 @@ impl Display for UnaryOp {
             UnaryOp::BitReverse => "↩",
             UnaryOp::TrailingZeros => "cttz",
             UnaryOp::NonZeroTrailingZeros => "cttz_nonzero",
+            UnaryOp::CountOnes => "ctpop",
         })
     }
 }

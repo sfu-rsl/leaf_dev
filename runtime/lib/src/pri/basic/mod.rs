@@ -548,7 +548,7 @@ impl ProgramRuntimeInterface for BasicPri {
     }
 
     fn intrinsic_assign_ctpop(dest: PlaceRef, x: OperandRef) {
-        todo!("Implement ctpop intrinsic");
+        Self::assign_unary_op(dest, Self::UnaryOp::CountOnes, x);
     }
 
     fn intrinsic_assign_ctlz_nonzero(dest: PlaceRef, x: OperandRef) {

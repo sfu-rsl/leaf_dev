@@ -713,6 +713,7 @@ sub_enum! {
         Not,
         BitReverse,
         TrailingZeros,
+        CountOnes,
     }
 }
 

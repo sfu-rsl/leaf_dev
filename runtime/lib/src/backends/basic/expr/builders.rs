@@ -672,6 +672,13 @@ mod core {
                 operand,
             }
         }
+
+        fn count_ones<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
+            Expr::Unary {
+                operator: BasicUnaryOp::CountOnes,
+                operand,
+            }
+        }
     }
 
     impl CastExprBuilder for CoreBuilder {

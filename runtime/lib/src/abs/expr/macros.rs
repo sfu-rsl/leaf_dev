@@ -131,6 +131,7 @@ macro_rules! impl_general_unary_op_through_singulars {
                 BitReverse => self.bit_reverse(operand),
                 NonZeroTrailingZeros => self.trailing_zeros(operand, true),
                 TrailingZeros => self.trailing_zeros(operand, false),
+                CountOnes => self.count_ones(operand),
             }
         }
     };
@@ -162,6 +163,7 @@ macro_rules! impl_singular_unary_ops_through_general {
                 } else {
                     crate::abs::UnaryOp::TrailingZeros
                 })
+            (count_ones = crate::abs::UnaryOp::CountOnes)
         );
     };
 }
