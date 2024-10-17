@@ -124,19 +124,29 @@ macro_rules! impl_general_unary_op_through_singulars {
             op: crate::abs::UnaryOp,
         ) -> Self::Expr<'a> {
             use crate::abs::UnaryOp::*;
-            (match op {
-                Not => Self::not,
-                Neg => Self::neg,
-                PtrMetadata => Self::ptr_metadata,
-            })(self, operand)
+            match op {
+                Not => self.not(operand),
+                Neg => self.neg(operand),
+                PtrMetadata => self.ptr_metadata(operand),
+                BitReverse => self.bit_reverse(operand),
+                NonZeroTrailingZeros => self.trailing_zeros(operand, true),
+                TrailingZeros => self.trailing_zeros(operand, false),
+                CountOnes => self.count_ones(operand),
+                NonZeroLeadingZeros => self.leading_zeros(operand, true),
+                LeadingZeros => self.leading_zeros(operand, false),
+            }
         }
     };
 }
 
 macro_rules! impl_singular_unary_op_through_general {
-    (($method:ident = $op:expr)) => {
+    (($method:ident $(+ $($arg: ident : $arg_type: ty),*)? = $op:expr)) => {
         #[inline(always)]
-        fn $method<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
+        fn $method<'a>(
+            &mut self,
+            operand: Self::ExprRef<'a>,
+            $($($arg: $arg_type,)*)?
+        ) -> Self::Expr<'a> {
             self.unary_op(operand, $op)
         }
     };
@@ -148,6 +158,20 @@ macro_rules! impl_singular_unary_ops_through_general {
             (not = crate::abs::UnaryOp::Not)
             (neg = crate::abs::UnaryOp::Neg)
             (ptr_metadata = crate::abs::UnaryOp::PtrMetadata)
+            (bit_reverse = crate::abs::UnaryOp::BitReverse)
+            (trailing_zeros + non_zero: bool =
+                if non_zero {
+                    crate::abs::UnaryOp::NonZeroTrailingZeros
+                } else {
+                    crate::abs::UnaryOp::TrailingZeros
+                })
+            (count_ones = crate::abs::UnaryOp::CountOnes)
+            (leading_zeros + non_zero: bool =
+                if non_zero {
+                    crate::abs::UnaryOp::NonZeroLeadingZeros
+                } else {
+                    crate::abs::UnaryOp::LeadingZeros
+                })
         );
     };
 }

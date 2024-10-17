@@ -65,6 +65,9 @@ pub(crate) trait UnaryExprBuilder {
     unary_fn_signature!(unary_op + op: UnaryOp);
 
     unary_fn_signature!(not neg ptr_metadata);
+    unary_fn_signature!(bit_reverse count_ones);
+    unary_fn_signature!(trailing_zeros + non_zero: bool);
+    unary_fn_signature!(leading_zeros + non_zero: bool);
 }
 
 pub(crate) trait CastExprBuilder {

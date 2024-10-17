@@ -151,6 +151,12 @@ impl UnaryOp {
         NOT = 31;
         NEG = 32;
         PTR_METADATA = 33;
+        BIT_REVERSE = 34;
+        CTTZ_NONZERO = 35;
+        CTTZ = 36;
+        CTPOP = 37;
+        CTLZ_NONZERO = 38;
+        CTLZ = 39;
     }
 
     #[cfg_attr(core_build, rustc_const_stable(feature = "rust1", since = "1.0.0"))]
@@ -162,6 +168,18 @@ impl UnaryOp {
             UnaryOp::NEG
         } else if raw == UnaryOp::PTR_METADATA.as_u8() {
             UnaryOp::PTR_METADATA
+        } else if raw == UnaryOp::BIT_REVERSE.as_u8() {
+            UnaryOp::BIT_REVERSE
+        } else if raw == UnaryOp::CTTZ_NONZERO.as_u8() {
+            UnaryOp::CTTZ_NONZERO
+        } else if raw == UnaryOp::CTTZ.as_u8() {
+            UnaryOp::CTTZ
+        } else if raw == UnaryOp::CTPOP.as_u8() {
+            UnaryOp::CTPOP
+        } else if raw == UnaryOp::CTLZ_NONZERO.as_u8() {
+            UnaryOp::CTLZ_NONZERO
+        } else if raw == UnaryOp::CTLZ.as_u8() {
+            UnaryOp::CTLZ
         } else {
             unreachable!()
         }
@@ -464,6 +482,12 @@ pub mod macros {
               { fn intrinsic_assign_saturating_add(dest: PlaceRef, first: OperandRef, second: OperandRef) }
               { fn intrinsic_assign_saturating_sub(dest: PlaceRef, first: OperandRef, second: OperandRef) }
               { fn intrinsic_assign_exact_div(dest: PlaceRef, first: OperandRef, second: OperandRef) }
+              { fn intrinsic_assign_bitreverse(dest: PlaceRef, x: OperandRef) }
+              { fn intrinsic_assign_cttz_nonzero(dest: PlaceRef, x: OperandRef) }
+              { fn intrinsic_assign_cttz(dest: PlaceRef, x: OperandRef) }
+              { fn intrinsic_assign_ctpop(dest: PlaceRef, x: OperandRef) }
+              { fn intrinsic_assign_ctlz_nonzero(dest: PlaceRef, x: OperandRef) }
+              { fn intrinsic_assign_ctlz(dest: PlaceRef, x: OperandRef) }
             }
         };
     }
@@ -760,6 +784,18 @@ pub mod macros {
                 fn intrinsic_assign_saturating_sub(dest:PlaceRef,first:OperandRef,second:OperandRef);
             }$modifier!{
                 fn intrinsic_assign_exact_div(dest:PlaceRef,first:OperandRef,second:OperandRef);
+            }$modifier!{
+                fn intrinsic_assign_bitreverse(dest:PlaceRef,x:OperandRef);
+            }$modifier!{
+                fn intrinsic_assign_cttz_nonzero(dest:PlaceRef,x:OperandRef);
+            }$modifier!{
+                fn intrinsic_assign_cttz(dest:PlaceRef,x:OperandRef);
+            }$modifier!{
+                fn intrinsic_assign_ctpop(dest:PlaceRef,x:OperandRef);
+            }$modifier!{
+                fn intrinsic_assign_ctlz_nonzero(dest:PlaceRef,x:OperandRef);
+            }$modifier!{
+                fn intrinsic_assign_ctlz(dest:PlaceRef,x:OperandRef);
             }
         };
         (modifier: $modifier:path) => {

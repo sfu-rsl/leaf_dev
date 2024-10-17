@@ -94,7 +94,13 @@ macro_rules! define_reversible_pair {
 pub(crate) use define_reversible_pair;
 
 macro_rules! sub_enum {
-    (#[repr($repr_ty:ty)] $(#[$($attr: meta)*])* $vis:vis enum $name:ident from $src_name:ty { $($variant:ident),* $(,)? }) => {
+    (
+        #[repr($repr_ty:ty)]
+        $(#[$($attr: meta)*])*
+        $vis:vis enum $name:ident from $src_name:ty {
+            $($variant:ident $(+| $eq_variant:ident)*),* $(,)?
+        }
+    ) => {
         #[repr($repr_ty)]
         $(#[$($attr)*])*
         $vis enum $name {
@@ -121,7 +127,7 @@ macro_rules! sub_enum {
             fn try_from(value: $src_name) -> Result<Self, Self::Error> {
                 match value {
                     $(
-                        <$src_name>::$variant => Ok($name::$variant)
+                        <$src_name>::$variant $(| <$src_name>::$eq_variant)* => Ok($name::$variant)
                     ),*,
                     _ => Err(value)
                 }

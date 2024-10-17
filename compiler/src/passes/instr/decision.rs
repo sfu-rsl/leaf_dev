@@ -589,15 +589,9 @@ mod intrinsics {
                 ptr_offset_from_unsigned,
                 ptr_offset_from,
                 nontemporal_store,
-                cttz_nonzero,
-                cttz,
-                ctpop,
-                ctlz_nonzero,
-                ctlz,
                 compare_bytes,
                 bswap,
                 catch_unwind,
-                bitreverse,
                 abort,
                 drop_in_place,
                 write_bytes,
@@ -618,6 +612,12 @@ mod intrinsics {
                 saturating_sub,
                 saturating_add,
                 exact_div,
+                bitreverse,
+                cttz_nonzero,
+                cttz,
+                ctpop,
+                ctlz_nonzero,
+                ctlz,
             )
         };
     }
@@ -685,6 +685,12 @@ mod intrinsics {
                 IntrinsicDecision::PriFunc(psym::intrinsic_assign_saturating_sub)
             }
             rsym::exact_div => IntrinsicDecision::PriFunc(psym::intrinsic_assign_exact_div),
+            rsym::bitreverse => IntrinsicDecision::PriFunc(psym::intrinsic_assign_bitreverse),
+            rsym::cttz_nonzero => IntrinsicDecision::PriFunc(psym::intrinsic_assign_cttz_nonzero),
+            rsym::cttz => IntrinsicDecision::PriFunc(psym::intrinsic_assign_cttz),
+            rsym::ctpop => IntrinsicDecision::PriFunc(psym::intrinsic_assign_ctpop),
+            rsym::ctlz_nonzero => IntrinsicDecision::PriFunc(psym::intrinsic_assign_ctlz_nonzero),
+            rsym::ctlz => IntrinsicDecision::PriFunc(psym::intrinsic_assign_ctlz),
             of_noop_funcs!(any_of) => IntrinsicDecision::NoOp,
             of_const_evaluated_funcs!(any_of) => IntrinsicDecision::ConstEvaluated,
             of_to_be_supported_funcs!(any_of) => IntrinsicDecision::ToDo,

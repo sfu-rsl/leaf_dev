@@ -252,18 +252,20 @@ pub(crate) mod z3 {
             operator: &UnaryOp,
             operand: AstNode<'ctx>,
         ) -> AstNode<'ctx> {
-            match operator {
-                UnaryOp::Not => match operand {
-                    AstNode::Bool(ast) => ast.not().into(),
-                    AstNode::BitVector(bv) => bv.map(ast::BV::bvnot).into(),
-                    _ => unreachable!("Not is not supported for this operand: {operand:#?}"),
+            use UnaryOp::*;
+            match (operator, operand) {
+                (Not, AstNode::Bool(ast)) => ast.not().into(),
+                (_, AstNode::BitVector(bv)) => match operator {
+                    Not => bv.map(ast::BV::bvnot).into(),
+                    Neg => bv.map(ast::BV::bvneg).into(),
+                    BitReverse => self.translate_bitreverse_expr(bv),
+                    TrailingZeros => self.translate_count_zeros_expr::<true>(bv),
+                    LeadingZeros => self.translate_count_zeros_expr::<false>(bv),
+                    CountOnes => self.translate_count_ones_expr(bv),
                 },
-                UnaryOp::Neg => match operand {
-                    AstNode::BitVector(bv @ BVNode(_, BVSort { is_signed: true })) => {
-                        bv.map(ast::BV::bvneg).into()
-                    }
-                    _ => unreachable!("Neg is not supported for this operand: {operand:#?}"),
-                },
+                (operator, operand) => unreachable!(
+                    "Unary operator {operator:?} is not supported for the operand: {operand:?}"
+                ),
             }
         }
 
@@ -599,6 +601,56 @@ pub(crate) mod z3 {
                 (false, Mul, true) => ast::BV::bvmul_no_underflow(left, right),
             };
             ast::Bool::not(&in_bounds).into()
+        }
+
+        fn translate_bitreverse_expr(&mut self, bv: BVNode<'ctx>) -> AstNode<'ctx> {
+            let size = bv.size();
+            // Reverse a bit vector expression by extracting and concatenating the bits in reverse order.
+            let mut reversed_bv = bv.0.extract(size - 1, size - 1);
+            for idx in (0..(size - 1)).rev() {
+                reversed_bv = ast::BV::concat(&bv.0.extract(idx, idx), &reversed_bv);
+            }
+            BVNode::new(reversed_bv, bv.is_signed()).into()
+        }
+
+        fn translate_count_zeros_expr<const IS_TRAILING: bool>(
+            &mut self,
+            bv: BVNode<'ctx>,
+        ) -> AstNode<'ctx> {
+            const RESULT_SIZE: u32 = u32::BITS;
+            let size = bv.size();
+            let ctx = bv.0.get_ctx();
+            let mut trailing_zeros = ast::BV::from_u64(ctx, 0, RESULT_SIZE);
+            let mut all_zero = ast::Bool::from_bool(ctx, true);
+
+            for idx in 0..size {
+                let bit_idx = if IS_TRAILING { idx } else { size - 1 - idx };
+                let bit = bv.0.extract(bit_idx, bit_idx);
+                let is_zero = bit._eq(&ast::BV::from_u64(ctx, 0, 1));
+                all_zero = ast::Bool::and(ctx, &[all_zero, is_zero]);
+                trailing_zeros = all_zero.ite(
+                    &ast::BV::from_u64(ctx, idx as u64 + 1, RESULT_SIZE),
+                    &trailing_zeros,
+                )
+            }
+            BVNode::new(trailing_zeros, false).into()
+        }
+
+        fn translate_count_ones_expr(&mut self, bv: BVNode<'ctx>) -> AstNode<'ctx> {
+            const RESULT_SIZE: u32 = u32::BITS;
+            let size = bv.size();
+            let ctx = bv.0.get_ctx();
+            let mut count = ast::BV::from_u64(ctx, 0, RESULT_SIZE);
+
+            for idx in 0..size {
+                let bit = bv.0.extract(idx, idx);
+                let is_one = bit._eq(&ast::BV::from_u64(ctx, 1, 1));
+                count = count.bvadd(&is_one.ite(
+                    &ast::BV::from_u64(ctx, 1, RESULT_SIZE),
+                    &ast::BV::from_u64(ctx, 0, RESULT_SIZE),
+                ));
+            }
+            BVNode::new(count, false).into()
         }
     }
 

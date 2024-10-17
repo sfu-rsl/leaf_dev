@@ -140,6 +140,7 @@ impl ConstValue {
                 },
                 _ => unreachable!("Not operand only works on boolean and integers."),
             },
+            _ => unimplemented!("This function over constant values will be dropped soon."),
         }
     }
 
@@ -710,6 +711,10 @@ sub_enum! {
     pub(crate) enum UnaryOp from abs::UnaryOp {
         Neg,
         Not,
+        BitReverse,
+        TrailingZeros +| NonZeroTrailingZeros,
+        LeadingZeros +| NonZeroLeadingZeros,
+        CountOnes,
     }
 }
 

@@ -83,6 +83,12 @@ pub enum UnaryOp {
     Not = common::pri::UnaryOp::NOT.as_u8(),
     Neg = common::pri::UnaryOp::NEG.as_u8(),
     PtrMetadata = common::pri::UnaryOp::PTR_METADATA.as_u8(),
+    BitReverse = common::pri::UnaryOp::BIT_REVERSE.as_u8(),
+    NonZeroTrailingZeros = common::pri::UnaryOp::CTTZ_NONZERO.as_u8(),
+    TrailingZeros = common::pri::UnaryOp::CTTZ.as_u8(),
+    CountOnes = common::pri::UnaryOp::CTPOP.as_u8(),
+    NonZeroLeadingZeros = common::pri::UnaryOp::CTLZ_NONZERO.as_u8(),
+    LeadingZeros = common::pri::UnaryOp::CTLZ.as_u8(),
 }
 
 pub(crate) type Local = place::Local;

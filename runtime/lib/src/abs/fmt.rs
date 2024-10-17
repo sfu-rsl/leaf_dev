@@ -118,6 +118,12 @@ impl Display for UnaryOp {
             UnaryOp::Not => "!",
             UnaryOp::Neg => "-",
             UnaryOp::PtrMetadata => "m",
+            UnaryOp::BitReverse => "↩",
+            UnaryOp::TrailingZeros => "cttz",
+            UnaryOp::NonZeroTrailingZeros => "cttz_nonzero",
+            UnaryOp::CountOnes => "ctpop",
+            UnaryOp::LeadingZeros => "ctlz",
+            UnaryOp::NonZeroLeadingZeros => "ctlz_nonzero",
         })
     }
 }

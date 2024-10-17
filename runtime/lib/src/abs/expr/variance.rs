@@ -104,6 +104,9 @@ where
 
     delegate_singular_unary_op!(unary_op + op: UnaryOp);
     delegate_singular_unary_op!(not neg ptr_metadata);
+    delegate_singular_unary_op!(bit_reverse count_ones);
+    delegate_singular_unary_op!(trailing_zeros + non_zero: bool);
+    delegate_singular_unary_op!(leading_zeros + non_zero: bool);
 }
 
 pub(crate) trait CastExprBuilderAdapter: DerefMut
