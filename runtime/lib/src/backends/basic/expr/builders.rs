@@ -635,61 +635,19 @@ mod core {
         type ExprRef<'a> = SymValueRef;
         type Expr<'a> = Expr;
 
-        impl_general_unary_op_through_singulars!();
-
-        fn neg<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
-            Expr::Unary {
-                operator: BasicUnaryOp::Neg,
-                operand,
+        fn unary_op<'a>(&mut self, operand: Self::ExprRef<'a>, op: AbsUnaryOp) -> Self::Expr<'a> {
+            use AbsUnaryOp::*;
+            match op {
+                Neg | Not | BitReverse | TrailingZeros | NonZeroTrailingZeros | LeadingZeros
+                | NonZeroLeadingZeros | CountOnes => Expr::Unary {
+                    operator: op.try_into().unwrap(),
+                    operand: operand,
+                },
+                PtrMetadata => Expr::PtrMetadata(operand.into()),
             }
         }
 
-        fn not<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
-            Expr::Unary {
-                operator: BasicUnaryOp::Not,
-                operand,
-            }
-        }
-
-        fn ptr_metadata<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
-            Expr::PtrMetadata(operand.into())
-        }
-
-        fn bit_reverse<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
-            Expr::Unary {
-                operator: BasicUnaryOp::BitReverse,
-                operand,
-            }
-        }
-
-        fn trailing_zeros<'a>(
-            &mut self,
-            operand: Self::ExprRef<'a>,
-            _non_zero: bool,
-        ) -> Self::Expr<'a> {
-            Expr::Unary {
-                operator: BasicUnaryOp::TrailingZeros,
-                operand,
-            }
-        }
-
-        fn count_ones<'a>(&mut self, operand: Self::ExprRef<'a>) -> Self::Expr<'a> {
-            Expr::Unary {
-                operator: BasicUnaryOp::CountOnes,
-                operand,
-            }
-        }
-
-        fn leading_zeros<'a>(
-            &mut self,
-            operand: Self::ExprRef<'a>,
-            _non_zero: bool,
-        ) -> Self::Expr<'a> {
-            Expr::Unary {
-                operator: BasicUnaryOp::LeadingZeros,
-                operand,
-            }
-        }
+        impl_singular_unary_ops_through_general!();
     }
 
     impl CastExprBuilder for CoreBuilder {

@@ -252,38 +252,20 @@ pub(crate) mod z3 {
             operator: &UnaryOp,
             operand: AstNode<'ctx>,
         ) -> AstNode<'ctx> {
-            match operator {
-                UnaryOp::Not => match operand {
-                    AstNode::Bool(ast) => ast.not().into(),
-                    AstNode::BitVector(bv) => bv.map(ast::BV::bvnot).into(),
-                    _ => unreachable!("Not is not supported for this operand: {operand:#?}"),
+            use UnaryOp::*;
+            match (operator, operand) {
+                (Not, AstNode::Bool(ast)) => ast.not().into(),
+                (_, AstNode::BitVector(bv)) => match operator {
+                    Not => bv.map(ast::BV::bvnot).into(),
+                    Neg => bv.map(ast::BV::bvneg).into(),
+                    BitReverse => self.translate_bitreverse_expr(bv),
+                    TrailingZeros => self.translate_count_zeros_expr::<true>(bv),
+                    LeadingZeros => self.translate_count_zeros_expr::<false>(bv),
+                    CountOnes => self.translate_count_ones_expr(bv),
                 },
-                UnaryOp::Neg => match operand {
-                    AstNode::BitVector(bv @ BVNode(_, BVSort { is_signed: true })) => {
-                        bv.map(ast::BV::bvneg).into()
-                    }
-                    _ => unreachable!("Neg is not supported for this operand: {operand:#?}"),
-                },
-                UnaryOp::BitReverse => match operand {
-                    AstNode::BitVector(bv) => self.translate_bitreverse_expr(bv),
-                    _ => unreachable!("BitReverse is not supported for this operand: {operand:#?}"),
-                },
-                UnaryOp::TrailingZeros => match operand {
-                    AstNode::BitVector(bv) => self.translate_count_zeros_expr(bv, true),
-                    _ => unreachable!(
-                        "TrailingZeros is not supported for this operand: {operand:#?}"
-                    ),
-                },
-                UnaryOp::CountOnes => match operand {
-                    AstNode::BitVector(bv) => self.translate_count_ones_expr(bv),
-                    _ => unreachable!("CountOnes is not supported for this operand: {operand:#?}"),
-                },
-                UnaryOp::LeadingZeros => match operand {
-                    AstNode::BitVector(bv) => self.translate_count_zeros_expr(bv, false),
-                    _ => {
-                        unreachable!("LeadingZeros is not supported for this operand: {operand:#?}")
-                    }
-                },
+                (operator, operand) => unreachable!(
+                    "Unary operator {operator:?} is not supported for the operand: {operand:?}"
+                ),
             }
         }
 

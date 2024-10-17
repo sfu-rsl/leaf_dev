@@ -7,7 +7,7 @@ use leaf::annotations::Symbolizable;
 fn main() {
     let a = 20u8.mark_symbolic();
     let b = unsafe { core::intrinsics::bitreverse(a) };
-    if b == 5 {
+    if b == 0b00001001 {
         use_num(0);
     }
 }

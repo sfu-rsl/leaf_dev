@@ -547,16 +547,16 @@ impl ProgramRuntimeInterface for BasicPri {
         Self::assign_unary_op(dest, Self::UnaryOp::TrailingZeros, x);
     }
 
-    fn intrinsic_assign_ctpop(dest: PlaceRef, x: OperandRef) {
-        Self::assign_unary_op(dest, Self::UnaryOp::CountOnes, x);
-    }
-
     fn intrinsic_assign_ctlz_nonzero(dest: PlaceRef, x: OperandRef) {
         Self::assign_unary_op(dest, Self::UnaryOp::NonZeroLeadingZeros, x);
     }
 
     fn intrinsic_assign_ctlz(dest: PlaceRef, x: OperandRef) {
         Self::assign_unary_op(dest, Self::UnaryOp::LeadingZeros, x);
+    }
+
+    fn intrinsic_assign_ctpop(dest: PlaceRef, x: OperandRef) {
+        Self::assign_unary_op(dest, Self::UnaryOp::CountOnes, x);
     }
 }
 
