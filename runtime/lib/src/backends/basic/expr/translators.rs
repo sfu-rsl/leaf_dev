@@ -608,51 +608,47 @@ pub(crate) mod z3 {
             // Reverse a bit vector expression by extracting and concatenating the bits in reverse order.
             let mut reversed_bv = bv.0.extract(size - 1, size - 1);
             for idx in (0..(size - 1)).rev() {
-                reversed_bv = reversed_bv.concat(&bv.0.extract(idx, idx));
+                reversed_bv = ast::BV::concat(&bv.0.extract(idx, idx), &reversed_bv);
             }
             BVNode::new(reversed_bv, bv.is_signed()).into()
         }
 
-        fn translate_count_zeros_expr(
+        fn translate_count_zeros_expr<const IS_TRAILING: bool>(
             &mut self,
             bv: BVNode<'ctx>,
-            is_trailing: bool,
         ) -> AstNode<'ctx> {
+            const RESULT_SIZE: u32 = u32::BITS;
             let size = bv.size();
             let ctx = bv.0.get_ctx();
-            let mut trailing_zeros = ast::BV::from_u64(ctx, 0, 32);
-            let mut one_encountered = ast::Bool::from_bool(ctx, false);
+            let mut trailing_zeros = ast::BV::from_u64(ctx, 0, RESULT_SIZE);
+            let mut all_zero = ast::Bool::from_bool(ctx, true);
 
-            let range = if !is_trailing {
-                (0..size).collect::<Vec<_>>()
-            } else {
-                (0..size).rev().collect::<Vec<_>>()
-            };
-            for idx in range {
-                let bit = bv.0.extract(idx, idx);
-                one_encountered = one_encountered.ite(
-                    &one_encountered,
-                    &bit._eq(&ast::BV::from_u64(ctx, 1, 1))
-                        .ite(&ast::Bool::from_bool(ctx, true), &one_encountered),
-                );
-                trailing_zeros = one_encountered.ite(
+            for idx in 0..size {
+                let bit_idx = if IS_TRAILING { idx } else { size - 1 - idx };
+                let bit = bv.0.extract(bit_idx, bit_idx);
+                let is_zero = bit._eq(&ast::BV::from_u64(ctx, 0, 1));
+                all_zero = ast::Bool::and(ctx, &[all_zero, is_zero]);
+                trailing_zeros = all_zero.ite(
+                    &ast::BV::from_u64(ctx, idx as u64 + 1, RESULT_SIZE),
                     &trailing_zeros,
-                    &trailing_zeros.bvadd(&ast::BV::from_u64(ctx, 1, 32)),
-                );
+                )
             }
             BVNode::new(trailing_zeros, false).into()
         }
 
         fn translate_count_ones_expr(&mut self, bv: BVNode<'ctx>) -> AstNode<'ctx> {
+            const RESULT_SIZE: u32 = u32::BITS;
             let size = bv.size();
             let ctx = bv.0.get_ctx();
-            let mut count = ast::BV::from_u64(ctx, 0, 32);
+            let mut count = ast::BV::from_u64(ctx, 0, RESULT_SIZE);
 
             for idx in 0..size {
                 let bit = bv.0.extract(idx, idx);
-                count = bit
-                    ._eq(&ast::BV::from_u64(ctx, 1, 1))
-                    .ite(&count.bvadd(&ast::BV::from_u64(ctx, 1, 32)), &count);
+                let is_one = bit._eq(&ast::BV::from_u64(ctx, 1, 1));
+                count = count.bvadd(&is_one.ite(
+                    &ast::BV::from_u64(ctx, 1, RESULT_SIZE),
+                    &ast::BV::from_u64(ctx, 0, RESULT_SIZE),
+                ));
             }
             BVNode::new(count, false).into()
         }
