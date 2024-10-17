@@ -123,6 +123,7 @@ bitflags::bitflags! {
     pub(crate) struct OverrideFlags: u8 {
         const OPTIMIZED_MIR = 1;
         const EXTERN_OPTIMIZED_MIR = 1 << 1;
+        const MIR_SHIMS = 1 << 5;
 
         const SHOULD_CODEGEN = 1 << 2;
 
@@ -266,6 +267,9 @@ mod implementation {
          static ORIGINAL_EXTERN_OPTIMIZED_MIR: Cell<
              for<'tcx> fn(TyCtxt<'tcx>, DefId) -> &mir::Body<'tcx>
          > = Cell::new(|_, _| unreachable!());
+         static ORIGINAL_MIR_SHIMS: Cell<
+             for<'tcx> fn(TyCtxt<'tcx>, mir_ty::InstanceKind<'tcx>) -> mir::Body<'tcx>
+         > = Cell::new(|_, _| unreachable!());
          static ORIGINAL_SHOULD_CODEGEN: Cell<
              for<'tcx> fn(TyCtxtAt<'tcx>, mir_ty::Instance<'tcx>) -> bool
          > = Cell::new(|_, _| unreachable!());
@@ -346,6 +350,10 @@ mod implementation {
                     if overrides.contains(OverrideFlags::EXTERN_OPTIMIZED_MIR) {
                         ORIGINAL_EXTERN_OPTIMIZED_MIR.set(providers.extern_queries.optimized_mir);
                         providers.extern_queries.optimized_mir = Self::extern_optimized_mir;
+                    }
+                    if overrides.contains(OverrideFlags::MIR_SHIMS) {
+                        ORIGINAL_MIR_SHIMS.set(providers.mir_shims);
+                        providers.mir_shims = Self::mir_shims;
                     }
                     if overrides.contains(OverrideFlags::SHOULD_CODEGEN) {
                         /* Currently we only do forcing code generation in this override,
@@ -458,6 +466,23 @@ mod implementation {
             T::transform_mir_body(tcx, &mut body, &mut storage);
             T::visit_mir_body_after(tcx, &body, &mut storage);
             tcx.arena.alloc(body)
+        }
+
+        fn mir_shims<'tcx>(
+            tcx: TyCtxt<'tcx>,
+            instance: mir_ty::InstanceKind<'tcx>,
+        ) -> mir::Body<'tcx> {
+            // NOTE: It is possible that this function is called before the callbacks.
+            global::set_ctxt_id(tcx);
+
+            /* NOTE: Currently, it seems that there is no way to deallocate
+             * something from arena. So, we have to clone the body. */
+            let mut body = ORIGINAL_MIR_SHIMS.get()(tcx, instance);
+            let mut storage = global::get_storage();
+            T::visit_mir_body_before(tcx, &body, &mut storage);
+            T::transform_mir_body(tcx, &mut body, &mut storage);
+            T::visit_mir_body_after(tcx, &body, &mut storage);
+            body
         }
 
         fn collect_and_partition_mono_items(

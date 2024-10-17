@@ -3,7 +3,7 @@ use const_format::concatcp;
 use rustc_hir::{def_id::DefId, definitions::DefPathData};
 use rustc_middle::{
     mir::Body,
-    ty::{IntrinsicDef, TyCtxt},
+    ty::{InstanceKind, IntrinsicDef, TyCtxt},
 };
 use rustc_span::Symbol;
 
@@ -19,6 +19,10 @@ const ATTR_NAME: &str = "instrument";
 pub(super) fn should_instrument<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>) -> bool {
     let def_id = body.source.def_id();
 
+    if !decide_instance_kind(&body.source.instance) {
+        return false;
+    }
+
     if let Some((explicit, item)) = opt_instrument_attr_inheritable(tcx, def_id) {
         log_info!(
             target: TAG_INSTR_DECISION,
@@ -30,52 +34,21 @@ pub(super) fn should_instrument<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>) 
         return explicit;
     }
 
-    // It is in the module defining lang_start items (std rt module)
-    if tcx
-        .lang_items()
-        .start_fn()
-        .map(|id| tcx.module_of(id).collect::<Vec<_>>())
-        .zip(Some(tcx.module_of(def_id)))
-        .is_some_and(|(start_mod, this_mod)| {
-            let n = start_mod.len();
-            start_mod.into_iter().eq(this_mod.take(n))
-        })
-    {
+    if is_lang_start_item(tcx, def_id) {
         return false;
     }
 
     // FIXME: Drops are important for bug detection, however we avoid instrumenting them for now.
-    let mut drop_fn_ids = {
-        use rustc_hir::LanguageItems as Items;
-        [
-            Items::drop_in_place_fn,
-            Items::async_drop_in_place_fn,
-            Items::surface_async_drop_in_place_fn,
-            Items::async_drop_surface_drop_in_place_fn,
-            Items::async_drop_slice_fn,
-            Items::async_drop_chain_fn,
-            Items::async_drop_noop_fn,
-            Items::async_drop_deferred_drop_in_place_fn,
-            Items::async_drop_fuse_fn,
-            Items::async_drop_defer_fn,
-            Items::async_drop_either_fn,
-        ]
-        .iter()
-        .filter_map(|item| item(tcx.lang_items()))
-    };
-    if drop_fn_ids.any(|id| id == def_id)
-        || tcx
-            .lang_items()
-            .drop_trait()
-            .zip(
-                tcx.impl_of_method(def_id)
-                    .and_then(|id| tcx.trait_id_of_impl(id)),
-            )
-            .is_some_and(|(t1, t2)| t1 == t2)
-    {
+    if is_drop_fn(tcx, def_id) {
         return false;
     }
 
+    // Some intrinsic functions have body.
+    if tcx.intrinsic(def_id).is_some() {
+        return false;
+    }
+
+    // Some functions and modules found problematic to instrument.
     // FIXME: To be replaced with a better-specified list.
     let def_path = &tcx.def_path_debug_str(def_id);
     if def_path.contains("panicking")
@@ -89,12 +62,24 @@ pub(super) fn should_instrument<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>) 
         return false;
     }
 
-    // Some intrinsic functions have body.
-    if tcx.intrinsic(def_id).is_some() {
-        return false;
-    }
-
     true
+}
+
+fn decide_instance_kind(kind: &InstanceKind) -> bool {
+    use InstanceKind::*;
+    match kind {
+        Item(..) | FnPtrShim(..) | ClosureOnceShim { .. } | CloneShim(..) => true,
+        Intrinsic(..)
+        | VTableShim(..)
+        | ReifyShim(..)
+        | Virtual(..)
+        | ConstructCoroutineInClosureShim { .. }
+        | CoroutineKindShim { .. }
+        | ThreadLocalShim(..)
+        | DropGlue(..)
+        | FnPtrAddrShim(..)
+        | AsyncDropGlueCtorShim(..) => false,
+    }
 }
 
 /// Returns the value of the `instrument` attribute if it is placed on the item or one of its ancestors.
@@ -163,6 +148,48 @@ fn opt_instrument_attr<'tcx>(tcx: TyCtxt<'tcx>, def_id: DefId) -> Option<bool> {
             }
         }
     })
+}
+
+fn is_lang_start_item(tcx: TyCtxt<'_>, def_id: DefId) -> bool {
+    // It is in the module defining lang_start items (std rt module)
+    tcx.lang_items()
+        .start_fn()
+        .map(|id| tcx.module_of(id).collect::<Vec<_>>())
+        .zip(Some(tcx.module_of(def_id)))
+        .is_some_and(|(start_mod, this_mod)| {
+            let n = start_mod.len();
+            start_mod.into_iter().eq(this_mod.take(n))
+        })
+}
+
+fn is_drop_fn(tcx: TyCtxt<'_>, def_id: DefId) -> bool {
+    let mut drop_fn_ids = {
+        use rustc_hir::LanguageItems as Items;
+        [
+            Items::drop_in_place_fn,
+            Items::async_drop_in_place_fn,
+            Items::surface_async_drop_in_place_fn,
+            Items::async_drop_surface_drop_in_place_fn,
+            Items::async_drop_slice_fn,
+            Items::async_drop_chain_fn,
+            Items::async_drop_noop_fn,
+            Items::async_drop_deferred_drop_in_place_fn,
+            Items::async_drop_fuse_fn,
+            Items::async_drop_defer_fn,
+            Items::async_drop_either_fn,
+        ]
+        .iter()
+        .filter_map(|item| item(tcx.lang_items()))
+    };
+    drop_fn_ids.any(|id| id == def_id)
+        || tcx
+            .lang_items()
+            .drop_trait()
+            .zip(
+                tcx.impl_of_method(def_id)
+                    .and_then(|id| tcx.trait_id_of_impl(id)),
+            )
+            .is_some_and(|(t1, t2)| t1 == t2)
 }
 
 mod intrinsics {
@@ -471,6 +498,78 @@ mod intrinsics {
         };
     }
 
+    macro_rules! of_simd_op_funcs {
+        ($macro:ident) => {
+            $macro!(
+                simd_add,
+                simd_and,
+                simd_arith_offset,
+                simd_as,
+                simd_bitmask,
+                simd_bitreverse,
+                simd_bswap,
+                simd_cast,
+                simd_cast_ptr,
+                simd_ceil,
+                simd_ctlz,
+                simd_ctpop,
+                simd_cttz,
+                simd_div,
+                simd_eq,
+                simd_expose_provenance,
+                simd_extract,
+                simd_fabs,
+                simd_fcos,
+                simd_fexp,
+                simd_fexp2,
+                simd_flog,
+                simd_flog2,
+                simd_flog10,
+                simd_floor,
+                simd_fma,
+                simd_fmax,
+                simd_fmin,
+                simd_fsin,
+                simd_fsqrt,
+                simd_gather,
+                simd_ge,
+                simd_gt,
+                simd_insert,
+                simd_le,
+                simd_lt,
+                simd_masked_load,
+                simd_masked_store,
+                simd_mul,
+                simd_ne,
+                simd_neg,
+                simd_or,
+                simd_reduce_add_ordered,
+                simd_reduce_add_unordered,
+                simd_reduce_all,
+                simd_reduce_and,
+                simd_reduce_any,
+                simd_reduce_max,
+                simd_reduce_min,
+                simd_reduce_mul_ordered,
+                simd_reduce_xor,
+                simd_rem,
+                simd_round,
+                simd_saturating_add,
+                simd_saturating_sub,
+                simd_scatter,
+                simd_select,
+                simd_select_bitmask,
+                simd_shl,
+                simd_shr,
+                simd_shuffle,
+                simd_sub,
+                simd_trunc,
+                simd_with_exposed_provenance,
+                simd_xor,
+            )
+        };
+    }
+
     macro_rules! of_to_be_supported_funcs {
         ($macro:ident) => {
             $macro!(
@@ -549,11 +648,15 @@ mod intrinsics {
             of_noop_funcs,
             of_float_arith_funcs,
             of_atomic_op_funcs,
+            of_simd_op_funcs,
             of_to_be_supported_funcs,
             of_supported_funcs,
         );
-        // Using count for compile-time check.
-        const _ALL_INTRINSICS: [u8; 289] = [0; TOTAL_COUNT];
+
+        /* NTOE: This is used as a test to make sure that the list do not contain duplicates.
+         * Do not change the count unless some intrinsics are added or removed to Rust.
+         */
+        const _ALL_INTRINSICS: [u8; 354] = [0; TOTAL_COUNT];
     }
 
     pub(crate) fn decide_intrinsic_call<'tcx>(intrinsic: IntrinsicDef) -> IntrinsicDecision {
@@ -593,6 +696,7 @@ mod intrinsics {
             of_to_be_supported_funcs!(any_of) => IntrinsicDecision::ToDo,
             of_float_arith_funcs!(any_of) => IntrinsicDecision::NotPlanned,
             of_mir_translated_funcs!(any_of) => IntrinsicDecision::Unexpected,
+            of_simd_op_funcs!(any_of) => IntrinsicDecision::Unsupported,
             other if matches!(other.as_str(), of_atomic_op_funcs!(str_any_of)) => {
                 IntrinsicDecision::Unsupported
             }

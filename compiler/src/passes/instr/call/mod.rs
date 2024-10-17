@@ -230,10 +230,10 @@ pub(crate) struct RuntimeCallAdder<C> {
 
 mod implementation {
     use core::intrinsics::unlikely;
-    use std::assert_matches::{assert_matches, debug_assert_matches};
+    use std::assert_matches::debug_assert_matches;
 
     use rustc_middle::mir::{self, BasicBlock, BasicBlockData, HasLocalDecls, UnevaluatedConst};
-    use rustc_middle::ty::{self as mir_ty, TyKind, TypeVisitableExt};
+    use rustc_middle::ty::{self as mir_ty, TyKind};
 
     use delegate::delegate;
 
@@ -246,8 +246,7 @@ mod implementation {
 
     use self::ctxtreqs::*;
     use self::utils::ty::TyExt;
-    use super::context::*;
-    use super::*;
+    use super::{super::MirSourceExt, context::*, *};
 
     use utils::*;
     use InsertionLocation::*;
@@ -438,39 +437,56 @@ mod implementation {
     }
     impl<'tcx, C> RuntimeCallAdder<C>
     where
-        C: context::BodyProvider<'tcx> + context::TyContextProvider<'tcx>,
+        C: context::BodyProvider<'tcx> + context::TyContextProvider<'tcx> + HasLocalDecls<'tcx>,
     {
         fn current_func(&self) -> Operand<'tcx> {
-            let kind = self.context.body().source.instance;
-            let def_id = kind.def_id();
-            log_debug!("Creating operand of current function: {:?}", def_id);
-
-            assert_matches!(
-                kind,
-                rustc_middle::ty::InstanceKind::Item(..),
-                "Only user-defined items are expected."
+            let source = self.context.body().source;
+            log_debug!(
+                "Creating operand of current function: {}",
+                source.to_log_str(),
             );
 
             let tcx = self.tcx();
 
-            let ty = tcx.type_of(def_id).instantiate_identity();
-            let fn_def_ty = match ty.kind() {
-                TyKind::FnDef(..) => ty,
-                TyKind::Closure(..) => ty::fn_def_of_closure_call(tcx, ty),
-                TyKind::Coroutine(def_id, ..) => {
-                    use rustc_hir::{CoroutineDesugaring::*, CoroutineKind::*};
-                    match tcx.coroutine_kind(*def_id).unwrap() {
-                        Coroutine(..) => ty::fn_def_of_coroutine_resume(tcx, ty),
-                        Desugared(Async, ..) => ty::fn_def_of_coroutine_await(tcx, ty),
-                        Desugared(des, ..) => unimplemented!(
-                            "This type of coroutine is unstable and currently out of scope: {:?}, source: {:?}",
-                            des,
-                            ty,
-                        ),
+            use mir_ty::InstanceKind::*;
+            let fn_def_ty = match source.instance {
+                Item(def_id) => {
+                    let ty = tcx.type_of(def_id).instantiate_identity();
+                    match ty.kind() {
+                        TyKind::FnDef(..) => ty,
+                        TyKind::Closure(..) => ty::fn_def_of_closure_call(tcx, ty),
+                        TyKind::Coroutine(def_id, ..) => {
+                            use rustc_hir::{CoroutineDesugaring::*, CoroutineKind::*};
+                            match tcx.coroutine_kind(*def_id).unwrap() {
+                                Coroutine(..) => ty::fn_def_of_coroutine_resume(tcx, ty),
+                                Desugared(Async, ..) => ty::fn_def_of_coroutine_await(tcx, ty),
+                                Desugared(des, ..) => unimplemented!(
+                                    "This type of coroutine is unstable and currently out of scope: {:?}, source: {:?}",
+                                    des,
+                                    ty,
+                                ),
+                            }
+                        }
+                        _ => unreachable!("Unexpected type for body instance: {:?}", ty),
                     }
                 }
-                _ => unreachable!("Unexpected type for body instance: {:?}", ty),
+                FnPtrShim(fn_trait_fn_id, fn_ptr_ty) => {
+                    ty::fn_def_of_fn_ptr_shim(tcx, fn_trait_fn_id, fn_ptr_ty)
+                }
+                ClosureOnceShim { call_once, .. } => {
+                    let arg_tys = self
+                        .body()
+                        .args_iter()
+                        .map(|local| self.local_decls()[local].ty)
+                        .collect::<Vec<_>>();
+                    ty::fn_def_of_closure_once_shim(tcx, call_once, &arg_tys)
+                }
+                CloneShim(clone_fn_id, self_ty) => {
+                    ty::fn_def_of_clone_shim(tcx, clone_fn_id, self_ty)
+                }
+                instance @ _ => unreachable!("Unsupported instance: {:?}", instance),
             };
+
             debug_assert_matches!(fn_def_ty.kind(), TyKind::FnDef(..));
 
             Operand::Constant(Box::new(mir::ConstOperand {
@@ -2656,6 +2672,50 @@ mod implementation {
                 // NOTE: Currently, either zero or one parameters are supported for coroutines.
                 let inputs = args.sig().resume_ty;
                 Ty::new_fn_def(tcx, future_trait_fn_id, [ty, inputs])
+            }
+
+            /// Returns the corresponding FnDef type of calling a function through Fn* traits.
+            /// i.e. `<fn_ty as Fn*<I>>::call*()`
+            pub fn fn_def_of_fn_ptr_shim<'tcx>(
+                tcx: TyCtxt<'tcx>,
+                fn_trait_fn_id: DefId,
+                fn_ty: Ty<'tcx>,
+            ) -> Ty<'tcx> {
+                debug_assert_matches!(fn_ty.kind(), TyKind::FnPtr(..) | TyKind::FnDef(..));
+                let inputs = fn_ty
+                    .fn_sig(tcx)
+                    .inputs()
+                    .map_bound(|ts| Ty::new_tup(tcx, ts));
+                let inputs = tcx.instantiate_bound_regions_with_erased(inputs);
+                Ty::new_fn_def(tcx, fn_trait_fn_id, [fn_ty, inputs])
+            }
+
+            pub fn fn_def_of_closure_once_shim<'tcx>(
+                tcx: TyCtxt<'tcx>,
+                fn_trait_fn_id: DefId,
+                input_arg_tys: &[Ty<'tcx>],
+            ) -> Ty<'tcx> {
+                let [closure_ty, args_ty] = input_arg_tys else {
+                    panic!(
+                        "Expected two arguments for (Self, (Args)) but received: {:?}",
+                        input_arg_tys
+                    )
+                };
+
+                Ty::new_fn_def(tcx, fn_trait_fn_id, [*closure_ty, *args_ty])
+            }
+
+            pub fn fn_def_of_clone_shim<'tcx>(
+                tcx: TyCtxt<'tcx>,
+                clone_fn_id: DefId,
+                ty: Ty<'tcx>,
+            ) -> Ty<'tcx> {
+                let mir_ty::TyKind::Ref(_, ty, _) = ty.kind() else {
+                    /* NOTE: It is not really obvious where or why,
+                     * but apparently a reference to the type is passed for the shim. */
+                    panic!("Expected reference type but received: {:?}", ty)
+                };
+                Ty::new_fn_def(tcx, clone_fn_id, [*ty])
             }
 
             fn def_id_of_single_func_of_trait(tcx: TyCtxt, trait_id: DefId) -> DefId {

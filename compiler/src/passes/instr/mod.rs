@@ -7,8 +7,8 @@ use rustc_index::IndexVec;
 use rustc_middle::{
     mir::{
         self, visit::Visitor, BasicBlock, BasicBlockData, Body, BorrowKind, CastKind,
-        HasLocalDecls, Location, Operand, Place, Rvalue, SourceInfo, Statement, TerminatorKind,
-        UnwindAction,
+        HasLocalDecls, Location, MirSource, Operand, Place, Rvalue, SourceInfo, Statement,
+        TerminatorKind, UnwindAction,
     },
     ty::{IntrinsicDef, TyCtxt},
 };
@@ -63,7 +63,9 @@ impl Instrumentor {
 
 impl CompilationPass for Instrumentor {
     fn override_flags() -> OverrideFlags {
-        OverrideFlags::OPTIMIZED_MIR | OverrideFlags::EXTERN_OPTIMIZED_MIR
+        OverrideFlags::OPTIMIZED_MIR
+            | OverrideFlags::EXTERN_OPTIMIZED_MIR
+            | OverrideFlags::MIR_SHIMS
     }
 
     fn visit_ast_before(
@@ -98,16 +100,16 @@ fn transform<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>, storage: &mut dyn S
     if !decision::should_instrument(tcx, body) {
         log_info!(
             target: decision::TAG_INSTR_DECISION,
-            "Skipping instrumentation for {:?}",
-            def_id
+            "Skipping instrumentation for {:#?}",
+            body.source.to_log_str(),
         );
         return;
     }
 
     log_info!(
         target: TAG_INSTR,
-        "Running instrumentation pass on body of {:#?} at {:?}",
-        def_id,
+        "Running instrumentation pass on body of {} at {:?}",
+        body.source.to_log_str(),
         body.span,
     );
 
@@ -918,4 +920,19 @@ fn is_call_to_any_of<'tcx>(terminator: &TerminatorKind, all_funcs: &HashSet<DefI
     };
     func.const_fn_def()
         .is_some_and(|(def_id, _)| all_funcs.contains(&def_id))
+}
+
+trait MirSourceExt {
+    fn to_log_str(&self) -> String;
+}
+impl MirSourceExt for MirSource<'_> {
+    fn to_log_str(&self) -> String {
+        format!(
+            "{:?}{}",
+            self.instance,
+            self.promoted
+                .map(|p| format!("::promoted[{:?}]", p))
+                .unwrap_or_default()
+        )
+    }
 }
