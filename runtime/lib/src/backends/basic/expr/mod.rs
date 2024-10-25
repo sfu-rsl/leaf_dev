@@ -19,9 +19,9 @@ use crate::abs::expr::sym_place::{Select, SymbolicReadTree};
 use crate::utils::meta::{define_reversible_pair, sub_enum};
 use place::SymPlaceValueRef;
 
+use crate::abs;
 pub(crate) use crate::abs::{
-    self, FieldIndex, FloatType, FuncId, IntType, PointerOffset, RawAddress, TypeId, ValueType,
-    VariantIndex,
+    FloatType, FuncId, IntType, PointerOffset, RawAddress, TypeId, ValueType, VariantIndex,
 };
 
 pub(crate) type ValueRef = Rc<Value>;
@@ -910,6 +910,13 @@ mod guards {
                 }
             }
 
+            impl<V> AsRef<V> for $name<V> {
+                #[inline]
+                fn as_ref(&self) -> &V {
+                    &self.0
+                }
+            }
+
             impl<V> AsMut<V> for $name<V> {
                 #[inline]
                 fn as_mut(&mut self) -> &mut V {
@@ -962,6 +969,7 @@ mod guards {
             {
                 type Target = $guarded_type;
 
+                #[inline]
                 fn deref(&self) -> &Self::Target {
                     self.$value_name()
                 }
@@ -971,6 +979,7 @@ mod guards {
             where
                 Self: core::ops::Deref<Target = $guarded_type>,
             {
+                #[inline]
                 fn as_ref(&self) -> &$guarded_type {
                     self
                 }
@@ -1124,7 +1133,7 @@ mod convert {
                     Expr::Unary {
                         operator: _,
                         operand,
-                    } => ValueType::try_from(operand.as_ref()),
+                    } => ValueType::try_from(operand.value()),
                     Expr::Binary(BinaryExpr { operator, operands }) => {
                         use BinaryOp::*;
                         match operator {

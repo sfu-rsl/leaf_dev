@@ -91,19 +91,14 @@ pub enum UnaryOp {
     LeadingZeros = common::pri::UnaryOp::CTLZ.as_u8(),
 }
 
-pub(crate) type Local = place::Local;
+pub(crate) use place::Local;
 pub(crate) type Place<L = Local, P = Projection<L>> = place::Place<L, P>;
 pub(crate) type Projection<L> = place::Projection<L>;
-
-#[derive(Debug)]
-pub(crate) enum PlaceUsage {
-    Copy,
-    Move,
-}
+pub(crate) use place::{PlaceAsOperandUsage, PlaceUsage};
 
 #[derive(Debug)]
 pub(crate) enum Operand<P, C, S> {
-    Place(P, PlaceUsage),
+    Place(P, PlaceAsOperandUsage),
     Const(C),
     Symbolic(S),
 }
@@ -128,6 +123,11 @@ where
     fn from(value: Constant) -> Self {
         Self::Const(value.into())
     }
+}
+
+pub(crate) struct SymVariable<C> {
+    pub(crate) ty: ValueType,
+    pub(crate) conc_value: Option<C>,
 }
 
 #[derive(Debug)]

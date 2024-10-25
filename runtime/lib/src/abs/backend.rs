@@ -1,17 +1,19 @@
 use std::collections::HashMap;
 
 use super::{
-    AssertKind, BinaryOp, BranchingMetadata, CastKind, Constraint, FieldIndex, FloatType, IntType,
-    Local, Projection, UnaryOp, ValueType, VariantIndex,
+    AssertKind, BinaryOp, BranchingMetadata, CastKind, Constraint, FieldIndex, Local, PlaceUsage,
+    Projection, SymVariable, UnaryOp, VariantIndex,
 };
 
 pub(crate) trait RuntimeBackend {
-    type PlaceHandler<'a>: PlaceHandler<Place = Self::Place>
+    type PlaceHandler<'a>: for<'b> PlaceHandler<PlaceInfo<'b> = Self::PlaceInfo, Place = Self::Place>
     where
         Self: 'a;
-    type OperandHandler<'a>: OperandHandler<Place = Self::Place, Operand = Self::Operand>
+
+    type OperandHandler<'a>: OperandHandler
     where
         Self: 'a;
+
     type AssignmentHandler<'a>: AssignmentHandler<Place = Self::Place, Operand = Self::Operand>
     where
         Self: 'a;
@@ -22,10 +24,11 @@ pub(crate) trait RuntimeBackend {
     where
         Self: 'a;
 
+    type PlaceInfo;
     type Place;
     type Operand;
 
-    fn place(&mut self) -> Self::PlaceHandler<'_>;
+    fn place(&mut self, usage: PlaceUsage) -> Self::PlaceHandler<'_>;
 
     fn operand(&mut self) -> Self::OperandHandler<'_>;
 
@@ -40,6 +43,18 @@ pub(crate) trait RuntimeBackend {
 }
 
 pub(crate) trait PlaceHandler {
+    type PlaceInfo<'a>;
+    type Place;
+    type DiscriminablePlace = Self::Place;
+
+    fn from_info<'a>(self, info: Self::PlaceInfo<'a>) -> Self::Place;
+
+    /// # Remarks
+    /// Used for discriminant of enums.
+    fn tag_of<'a>(self, info: Self::PlaceInfo<'a>) -> Self::DiscriminablePlace;
+}
+
+pub(crate) trait PlaceBuilder {
     type Place;
     type ProjectionHandler<'a>;
     type MetadataHandler<'a>;
@@ -53,9 +68,9 @@ pub(crate) trait PlaceHandler {
 
 pub(crate) trait PlaceProjectionHandler: Sized {
     type Result = ();
-    type Local;
+    type Index;
 
-    fn by(self, projection: Projection<Self::Local>) -> Self::Result;
+    fn by(self, projection: Projection<Self::Index>) -> Self::Result;
 
     #[inline]
     fn deref(self) -> Self::Result {
@@ -68,7 +83,7 @@ pub(crate) trait PlaceProjectionHandler: Sized {
     }
 
     #[inline]
-    fn at_index(self, index: Self::Local) -> Self::Result {
+    fn at_index(self, index: Self::Index) -> Self::Result {
         self.by(Projection::Index(index))
     }
 
@@ -105,44 +120,20 @@ pub(crate) trait PlaceProjectionHandler: Sized {
 pub(crate) trait OperandHandler {
     type Operand;
     type Place;
-    type ConstantHandler: ConstantHandler<Operand = Self::Operand>;
-    type MetadataHandler<'a>;
+    type Constant = super::Constant;
 
     fn copy_of(self, place: Self::Place) -> Self::Operand;
 
     fn move_of(self, place: Self::Place) -> Self::Operand;
 
-    fn const_from(self) -> Self::ConstantHandler;
+    fn const_from(self, info: Self::Constant) -> Self::Operand;
 
-    fn new_symbolic(self, conc_val: Self::Operand, ty: ValueType) -> Self::Operand;
-
-    fn metadata<'a>(self, operand: &'a mut Self::Operand) -> Self::MetadataHandler<'a>;
-}
-
-pub(crate) trait ConstantHandler {
-    type Operand;
-
-    fn bool(self, value: bool) -> Self::Operand;
-
-    fn char(self, value: char) -> Self::Operand;
-
-    fn int(self, bit_rep: u128, ty: IntType) -> Self::Operand;
-
-    fn float(self, bit_rep: u128, ty: FloatType) -> Self::Operand;
-
-    fn str(self, value: &'static str) -> Self::Operand;
-
-    fn byte_str(self, value: &'static [u8]) -> Self::Operand;
-
-    fn func(self, id: u64) -> Self::Operand;
-
-    fn zst(self) -> Self::Operand;
-
-    fn some(self) -> Self::Operand;
+    fn new_symbolic(self, var: SymVariable<Self::Operand>) -> Self::Operand;
 }
 
 pub(crate) trait AssignmentHandler: Sized {
     type Place;
+    type DiscriminablePlace = Self::Place;
     type Operand;
     type Field = Self::Operand;
 
@@ -165,7 +156,7 @@ pub(crate) trait AssignmentHandler: Sized {
 
     fn unary_op_on(self, operator: UnaryOp, operand: Self::Operand);
 
-    fn discriminant_of(self, place: Self::Place);
+    fn discriminant_from(self, place: Self::DiscriminablePlace);
 
     fn array_from(self, items: impl Iterator<Item = Self::Operand>);
 
@@ -240,7 +231,13 @@ pub(crate) trait FunctionHandler {
         are_args_tupled: bool,
     );
 
-    fn enter(self, func: Self::Operand);
+    fn enter(
+        self,
+        func: Self::Operand,
+        arg_places: impl Iterator<Item = Self::Place>,
+        ret_val_place: Self::Place,
+        tupled_arg: Option<(Local, super::TypeId)>,
+    );
 
     fn override_return_value(self, value: Self::Operand);
 
@@ -290,11 +287,11 @@ pub(crate) mod implementation {
 
     use std::marker::PhantomData;
 
-    pub(crate) struct DefaultPlaceHandler<L = Local, P = Projection<Local>> {
+    pub(crate) struct DefaultPlaceBuilder<L = Local, P = Projection<Local>> {
         _phantom: PhantomData<(L, P)>,
     }
 
-    impl<L, P> Default for DefaultPlaceHandler<L, P> {
+    impl<L, P> Default for DefaultPlaceBuilder<L, P> {
         fn default() -> Self {
             Self {
                 _phantom: Default::default(),
@@ -302,7 +299,7 @@ pub(crate) mod implementation {
         }
     }
 
-    impl<L, P> PlaceHandler for DefaultPlaceHandler<L, P>
+    impl<L, P> PlaceBuilder for DefaultPlaceBuilder<L, P>
     where
         L: From<Local>,
         for<'a> L: 'a,
@@ -334,97 +331,11 @@ pub(crate) mod implementation {
         }
     }
 
-    impl<L, P> PlaceProjectionHandler for DefaultPlaceProjectionHandler<'_, Place<L, P>>
-    where
-        P: From<Projection<L>>,
-    {
-        type Local = L;
+    impl<L, I> PlaceProjectionHandler for DefaultPlaceProjectionHandler<'_, Place<L, Projection<I>>> {
+        type Index = I;
 
-        fn by(self, projection: Projection<Self::Local>) {
+        fn by(self, projection: Projection<Self::Index>) {
             self.place.add_projection(projection.into())
-        }
-    }
-
-    pub(crate) struct DefaultOperandHandler<'a, P, S> {
-        create_symbolic: Box<dyn FnOnce(Operand<P, Constant, S>, ValueType) -> S + 'a>,
-        _phantom: PhantomData<P>,
-    }
-
-    impl<'a, P, S> DefaultOperandHandler<'a, P, S> {
-        pub(crate) fn new(
-            create_symbolic: Box<dyn FnOnce(Operand<P, Constant, S>, ValueType) -> S + 'a>,
-        ) -> Self {
-            Self {
-                create_symbolic,
-                _phantom: Default::default(),
-            }
-        }
-    }
-
-    impl<Place, SymValue> OperandHandler for DefaultOperandHandler<'_, Place, SymValue> {
-        type Operand = Operand<Place, Constant, SymValue>;
-        type Place = Place;
-        type ConstantHandler = DefaultConstantHandler<Self::Operand>;
-        type MetadataHandler<'a> = ();
-
-        fn copy_of(self, place: Self::Place) -> Self::Operand {
-            Operand::Place(place, PlaceUsage::Copy)
-        }
-
-        fn move_of(self, place: Self::Place) -> Self::Operand {
-            Operand::Place(place, PlaceUsage::Move)
-        }
-
-        fn const_from(self) -> Self::ConstantHandler {
-            DefaultConstantHandler(PhantomData)
-        }
-
-        fn new_symbolic(self, conc_val: Self::Operand, ty: ValueType) -> Self::Operand {
-            Operand::Symbolic((self.create_symbolic)(conc_val, ty))
-        }
-
-        fn metadata<'a>(self, _operand: &'a mut Self::Operand) -> Self::MetadataHandler<'a> {}
-    }
-
-    pub(crate) struct DefaultConstantHandler<O>(PhantomData<O>);
-
-    impl<O: From<Constant>> ConstantHandler for DefaultConstantHandler<O> {
-        type Operand = O;
-
-        fn bool(self, value: bool) -> Self::Operand {
-            Constant::Bool(value).into()
-        }
-
-        fn char(self, value: char) -> Self::Operand {
-            Constant::Char(value).into()
-        }
-
-        fn int(self, bit_rep: u128, ty: IntType) -> Self::Operand {
-            Constant::Int { bit_rep, ty }.into()
-        }
-
-        fn float(self, bit_rep: u128, ty: FloatType) -> Self::Operand {
-            Constant::Float { bit_rep, ty }.into()
-        }
-
-        fn str(self, value: &'static str) -> Self::Operand {
-            Constant::Str(value).into()
-        }
-
-        fn byte_str(self, value: &'static [u8]) -> Self::Operand {
-            Constant::ByteStr(value).into()
-        }
-
-        fn func(self, id: u64) -> Self::Operand {
-            Constant::Func(id).into()
-        }
-
-        fn zst(self) -> Self::Operand {
-            Constant::Zst.into()
-        }
-
-        fn some(self) -> Self::Operand {
-            Constant::Some.into()
         }
     }
 }

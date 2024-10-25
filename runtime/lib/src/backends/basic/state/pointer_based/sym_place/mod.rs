@@ -59,10 +59,11 @@ impl<EB: SymValueRefExprBuilder> RawPointerVariableState<EB> {
 
         // 1. Dereferencing a symbolic value.
         let opt_sym_deref = projs.first().is_some_and(|p| matches!(p, Projection::Deref)).then(|| {
-            let opt_sym_deref = self.opt_sym_deref(host_metadata);
+            let dereferenced_meta = projs_metadata.next().unwrap();
+            let opt_sym_deref = self.opt_sym_deref(host_metadata, dereferenced_meta);
 
             // Symbolic or not, pass the deref projection.
-            host_metadata = projs_metadata.next().unwrap();
+            host_metadata = dereferenced_meta;
             projs = &projs[(Bound::Excluded(0), Bound::Unbounded)];
             debug_assert!(
                 !has_deref(projs.iter().skip(1)),
@@ -85,7 +86,7 @@ impl<EB: SymValueRefExprBuilder> RawPointerVariableState<EB> {
             )
             .fold(value, |mut value, (proj, (host_meta, meta))| {
                 // 2. Indexing by a symbolic value.
-                let opt_sym_index = self.opt_sym_index(&value, host_meta, proj);
+                let opt_sym_index = self.opt_sym_index(&value, host_meta, proj, meta);
 
                 let project_further = || {
                     match PlaceValueRef::make_mut(&mut value) {
@@ -110,7 +111,11 @@ impl<EB: SymValueRefExprBuilder> RawPointerVariableState<EB> {
             })
     }
 
-    fn opt_sym_deref(&self, host_metadata: &PlaceMetadata) -> Option<SymPlaceValueRef> {
+    fn opt_sym_deref(
+        &self,
+        host_metadata: &PlaceMetadata,
+        host_deref_metadata: &PlaceMetadata,
+    ) -> Option<SymPlaceValueRef> {
         let host = self.copy_deterministic_place(&DeterministicPlaceValue::new(host_metadata));
 
         match host.as_ref() {
@@ -122,10 +127,13 @@ impl<EB: SymValueRefExprBuilder> RawPointerVariableState<EB> {
             Value::Symbolic(SymValue::Expression(..)) => {
                 log_debug!("Deref of symbolic value observed: {}", host);
                 Some(SymPlaceValueRef::new(
-                    SymbolicPlaceValue::from_base(DerefSymHostPlace {
-                        value: SymValueRef::new(host),
-                        metadata: host_metadata.clone(),
-                    })
+                    SymbolicPlaceValue::from_base(
+                        DerefSymHostPlace {
+                            value: SymValueRef::new(host),
+                            metadata: host_metadata.clone(),
+                        },
+                        host_deref_metadata.into(),
+                    )
                     .to_value_ref(),
                 ))
             }
@@ -137,11 +145,12 @@ impl<EB: SymValueRefExprBuilder> RawPointerVariableState<EB> {
         host: &PlaceValueRef,
         host_meta: &PlaceMetadata,
         proj: &'b Projection,
+        proj_meta: &'b PlaceMetadata,
     ) -> Option<SymPlaceValueRef> {
         let opt_sym_index_val = match proj {
-            Projection::Index(index_local) => self
-                .get(index_local.address(), index_local.unwrap_type_id())
-                .map(|index_val| (index_val.clone(), index_local)),
+            Projection::Index(index_place) => Some(self.copy_deterministic_place(index_place))
+                .take_if(|index| index.is_symbolic())
+                .map(|index_val| (SymValueRef::new(index_val), index_place.clone())),
             Projection::ConstantIndex {
                 offset,
                 min_length: _,
@@ -149,21 +158,24 @@ impl<EB: SymValueRefExprBuilder> RawPointerVariableState<EB> {
             } => self
                 .opt_sym_index_val_from_end(host.as_ref(), *offset)
                 .map(|index_val| {
-                    let index_local = todo!("#480: Index metadata is required for concretization");
-                    (index_val, index_local)
+                    let index_place = todo!("#480: Index metadata is required for concretization");
+                    (index_val, index_place)
                 }),
             _ => None,
         };
 
-        opt_sym_index_val.map(|(index_val, index_local)| {
-            log_debug!("Symbolic index observed: {}", index_val.as_ref());
+        opt_sym_index_val.map(|(index_val, index_place)| {
+            log_debug!("Symbolic index observed: {}", &index_val);
             SymPlaceValueRef::new(
-                SymbolicPlaceValue::from_base(SymIndexedPlace {
-                    host: host.clone(),
-                    host_metadata: host_meta.clone(),
-                    index: index_val,
-                    index_metadata: index_local.metadata().clone(),
-                })
+                SymbolicPlaceValue::from_base(
+                    SymIndexedPlace {
+                        host: host.clone(),
+                        host_metadata: host_meta.clone(),
+                        index: index_val,
+                        index_place,
+                    },
+                    proj_meta.into(),
+                )
                 .to_value_ref(),
             )
         })
@@ -218,11 +230,10 @@ impl<EB: SymValueRefExprBuilder> RawPointerVariableState<EB> {
     pub(super) fn resolve_and_retrieve_symbolic_place(
         &self,
         place_val: &SymbolicPlaceValue,
-        type_id: TypeId,
     ) -> SymValueRef {
         let resolved = self.resolve_symbolic_place(place_val);
         let mut copied = self.get_select_sym_place_result(&resolved);
-        self.retrieve_multi_value(&mut copied, type_id);
+        self.retrieve_multi_value(&mut copied, place_val.type_id());
         Expr::Multi(copied).to_value_ref()
     }
 
@@ -400,6 +411,7 @@ impl<EB: SymValueRefExprBuilder> RawPointerVariableState<EB> {
         let SymbolicPlaceValue {
             base: SymbolicPlaceBase::Deref(host),
             proj: None,
+            ..
         } = place
         else {
             unreachable!(

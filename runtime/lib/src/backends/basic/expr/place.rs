@@ -22,8 +22,16 @@ pub(crate) enum PlaceValue {
 
 impl PlaceValue {
     #[inline]
-    pub fn is_symbolic(&self) -> bool {
+    pub(crate) fn is_symbolic(&self) -> bool {
         matches!(self, PlaceValue::Symbolic(..))
+    }
+
+    #[inline]
+    pub(crate) fn type_info(&self) -> &LazyTypeInfo {
+        match self {
+            PlaceValue::Deterministic(value) => value.type_info(),
+            PlaceValue::Symbolic(value) => value.type_info(),
+        }
     }
 }
 
@@ -68,14 +76,26 @@ impl DeterministicPlaceValue {
 pub(crate) struct SymbolicPlaceValue {
     pub base: SymbolicPlaceBase,
     pub proj: Option<DeterministicProjection>,
+    ty_info: LazyTypeInfo,
 }
 
 impl SymbolicPlaceValue {
-    pub(crate) fn from_base<B: Into<SymbolicPlaceBase>>(base: B) -> Self {
+    pub(crate) fn from_base<B: Into<SymbolicPlaceBase>>(base: B, ty_info: LazyTypeInfo) -> Self {
         Self {
             base: base.into(),
             proj: None,
+            ty_info,
         }
+    }
+
+    #[inline]
+    pub(crate) fn type_info(&self) -> &LazyTypeInfo {
+        &self.ty_info
+    }
+
+    #[inline]
+    pub(crate) fn type_id(&self) -> TypeId {
+        self.ty_info.id().unwrap()
     }
 }
 
@@ -111,7 +131,7 @@ pub(crate) struct SymIndexedPlace {
     pub host: PlaceValueRef,
     pub host_metadata: PlaceMetadata,
     pub index: SymValueRef,
-    pub index_metadata: PlaceMetadata,
+    pub index_place: DeterPlaceValueRef,
 }
 
 mod guards {

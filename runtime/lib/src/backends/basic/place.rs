@@ -8,14 +8,14 @@ use common::{log_warn, types::RawAddress};
 
 use crate::abs::{
     backend::{
-        implementation::{DefaultPlaceHandler, DefaultPlaceProjectionHandler},
-        PlaceHandler, PlaceProjectionHandler,
+        implementation::{DefaultPlaceBuilder, DefaultPlaceProjectionHandler},
+        PlaceBuilder, PlaceProjectionHandler,
     },
     place::HasMetadata,
     Local, RawPointer, TypeId, TypeSize, ValueType,
 };
 
-use super::Projection;
+use super::{expr::place::DeterPlaceValueRef, PlaceValueRef};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PlaceMetadata {
@@ -89,11 +89,10 @@ impl PlaceMetadata {
 
 pub(crate) type LocalWithMetadata = crate::abs::place::LocalWithMetadata<PlaceMetadata>;
 
-pub(crate) type PlaceWithMetadata = crate::abs::place::PlaceWithMetadata<
-    LocalWithMetadata,
-    Projection<LocalWithMetadata>,
-    PlaceMetadata,
->;
+pub(crate) type PlaceWithMetadata =
+    crate::abs::place::PlaceWithMetadata<LocalWithMetadata, Projection, PlaceMetadata>;
+
+pub(crate) type Projection = crate::abs::Projection<DeterPlaceValueRef>;
 
 impl PlaceWithMetadata {
     pub(crate) fn address(&self) -> RawAddress {
@@ -126,21 +125,21 @@ impl TryFrom<PlaceWithMetadata> for LocalWithMetadata {
 }
 
 #[derive(Default)]
-pub(crate) struct BasicPlaceHandler;
+pub(crate) struct BasicPlaceBuilder;
 
-impl PlaceHandler for BasicPlaceHandler {
+impl PlaceBuilder for BasicPlaceBuilder {
     type Place = PlaceWithMetadata;
 
-    type ProjectionHandler<'a> = BasicProjectionHandler<'a>;
+    type ProjectionHandler<'a> = BasicProjectionBuilder<'a>;
 
     type MetadataHandler<'a> = BasicPlaceMetadataHandler<'a>;
 
     fn of_local(self, local: Local) -> Self::Place {
-        PlaceWithMetadata::from(DefaultPlaceHandler::default().of_local(local))
+        PlaceWithMetadata::from(DefaultPlaceBuilder::default().of_local(local))
     }
 
     fn project_on<'a>(self, place: &'a mut Self::Place) -> Self::ProjectionHandler<'a> {
-        BasicProjectionHandler(place)
+        BasicProjectionBuilder(place)
     }
 
     fn metadata(self, place: &mut Self::Place) -> Self::MetadataHandler<'_> {
@@ -148,13 +147,14 @@ impl PlaceHandler for BasicPlaceHandler {
     }
 }
 
-pub(crate) struct BasicProjectionHandler<'a>(&'a mut PlaceWithMetadata);
+pub(crate) struct BasicProjectionBuilder<'a>(&'a mut PlaceWithMetadata);
 
-impl PlaceProjectionHandler for BasicProjectionHandler<'_> {
-    type Local = LocalWithMetadata;
+impl PlaceProjectionHandler for BasicProjectionBuilder<'_> {
+    type Index = PlaceValueRef;
 
-    fn by(self, projection: crate::abs::Projection<Self::Local>) {
+    fn by(self, proj: crate::abs::Projection<Self::Index>) {
         self.0.push_metadata(PlaceMetadata::default());
+        let projection = proj.map(|index| DeterPlaceValueRef::new(index));
         DefaultPlaceProjectionHandler::new(&mut self.0.deref_mut()).by(projection);
     }
 }

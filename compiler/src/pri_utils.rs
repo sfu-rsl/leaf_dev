@@ -72,7 +72,7 @@ pub mod sym {
                 ]
             };
         }
-        pub(crate) const ALL_MAINS: [LeafSymbol; 98] =
+        pub(crate) const ALL_MAINS: [LeafSymbol; 97] =
             common::pri::pass_func_names_to!(bracket, all_comma_separated);
 
         pub(crate) mod intrinsics {
@@ -220,6 +220,10 @@ pub(crate) struct PriTypes {
 }
 
 impl PriTypes {
+    pub(crate) fn place_ref<'tcx>(&self, tcx: TyCtxt<'tcx>) -> Ty<'tcx> {
+        self.place_ref.ty(tcx)
+    }
+
     pub(crate) fn operand_ref<'tcx>(&self, tcx: TyCtxt<'tcx>) -> Ty<'tcx> {
         // FIXME: Check if additional caching can be beneficial
         self.operand_ref.ty(tcx)

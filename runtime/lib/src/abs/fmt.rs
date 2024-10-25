@@ -7,22 +7,23 @@ use super::{
     *,
 };
 
-impl<L, P> Display for Place<L, P>
+impl<L, I> Display for Place<L, Projection<I>>
 where
     L: Display,
-    for<'a> &'a P: Into<&'a Projection<L>>,
+    I: Display,
 {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter) -> Result {
         PlaceFormatter::format(f, self)
     }
 }
 
 struct PlaceFormatter;
 impl PlaceFormatter {
-    fn format<L, P>(f: &mut std::fmt::Formatter, place: &Place<L, P>) -> std::fmt::Result
+    fn format<L, I, P>(f: &mut Formatter, place: &Place<L, P>) -> Result
     where
         L: Display,
-        for<'a> &'a P: Into<&'a Projection<L>>,
+        I: Display,
+        for<'a> &'a P: Into<&'a Projection<I>>,
     {
         place
             .projections()
@@ -38,16 +39,16 @@ impl PlaceFormatter {
             })
     }
 
-    fn pre<L>(proj: &Projection<L>, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+    fn pre<I>(proj: &Projection<I>, f: &mut Formatter) -> Result {
         match proj {
             Projection::Deref => f.write_str("*"),
             _ => Result::Ok(()),
         }
     }
 
-    fn post<L>(proj: &Projection<L>, f: &mut std::fmt::Formatter) -> std::fmt::Result
+    fn post<I>(proj: &Projection<I>, f: &mut Formatter) -> Result
     where
-        L: Display,
+        I: Display,
     {
         match proj {
             Projection::Field(field) => write!(f, ".{field}"),
@@ -75,7 +76,7 @@ impl PlaceFormatter {
 }
 
 impl Display for BinaryOp {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter) -> Result {
         f.write_str(match self {
             BinaryOp::Add => "+",
             BinaryOp::AddUnchecked => "+ᵁ",
@@ -113,7 +114,7 @@ impl Display for BinaryOp {
 }
 
 impl Display for UnaryOp {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter) -> Result {
         f.write_str(match self {
             UnaryOp::Not => "!",
             UnaryOp::Neg => "-",

@@ -1889,28 +1889,57 @@ mod implementation {
         }
 
         fn enter_func(&mut self) {
+            let tcx = self.tcx();
             let mut blocks = vec![];
 
-            if cfg!(place_addr) {
-                blocks.extend(self.make_bb_for_func_preserve_metadata());
-            }
+            let func_ref = self.reference_func(&self.current_func());
 
-            let tcx = self.tcx();
+            let (argument_places_local, additional_stmts) = {
+                let arg_places_refs = self
+                    .body()
+                    .args_iter()
+                    .map(|a| self.reference_place_local(a))
+                    .map(|BlocksAndResult(ref_blocks, place_ref)| {
+                        blocks.extend(ref_blocks);
+                        place_ref
+                    })
+                    .map(|place_ref| operand::move_for_local(place_ref))
+                    .collect();
+                let place_ref_ty = self.context.pri_types().place_ref(tcx);
+                prepare_operand_for_slice(tcx, &mut self.context, place_ref_ty, arg_places_refs)
+            };
 
-            if let TyKind::Closure(_, args) = tcx
+            let ret_val_place_local = {
+                let BlocksAndResult(ref_blocks, place_ref) =
+                    self.reference_place_local(Place::return_place().as_local().unwrap());
+                blocks.extend(ref_blocks);
+                place_ref
+            };
+
+            let base_args = vec![
+                operand::move_for_local(func_ref.into()),
+                operand::move_for_local(argument_places_local),
+                operand::move_for_local(ret_val_place_local),
+            ];
+
+            let mut block = if let TyKind::Closure(_, args) = tcx
                 .type_of(self.current_func_id())
                 .instantiate_identity()
                 .kind()
             {
-                blocks.extend(self.make_bb_for_try_untuple_args_in_closure(args.as_closure()));
-            }
+                let (arg_blocks, tupled_args) = self.make_enter_func_tupled_args(args.as_closure());
+                blocks.extend(arg_blocks);
+                self.make_bb_for_call(
+                    sym::enter_func_tupled,
+                    [base_args, tupled_args.to_vec()].concat(),
+                )
+            } else {
+                self.make_bb_for_call(sym::enter_func, base_args)
+            };
 
-            let func_ref = self.reference_func(&self.current_func());
+            block.statements.extend(additional_stmts);
+            blocks.push(block);
 
-            blocks.push(self.make_bb_for_call(
-                sym::enter_func,
-                vec![operand::copy_for_local(func_ref.into())],
-            ));
             self.insert_blocks(blocks);
         }
 
@@ -1958,42 +1987,10 @@ mod implementation {
         Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
         C: Basic<'tcx> + SourceInfoProvider,
     {
-        fn make_bb_for_func_preserve_metadata(&mut self) -> Vec<BasicBlockData<'tcx>>
-        where
-            C: ForPlaceRef<'tcx>,
-        {
-            let mut blocks = vec![];
-
-            let preserve = |this: &mut Self, place_ref: Local| {
-                this.make_bb_for_call(
-                    sym::preserve_special_local_metadata,
-                    vec![operand::move_for_local(place_ref)],
-                )
-            };
-
-            blocks.extend(self.body().args_iter().flat_map(|local| {
-                let BlocksAndResult(mut ref_blocks, place_ref) =
-                    self.internal_reference_place(&Place::from(local));
-                ref_blocks.push(preserve(self, place_ref));
-                ref_blocks
-            }));
-
-            let ret_ty = self.body().return_ty();
-            if !ret_ty.is_unit() {
-                let BlocksAndResult(mut ref_blocks, place_ref) =
-                    self.internal_reference_place(&Place::return_place());
-                ref_blocks.extend(self.set_place_size(place_ref, ret_ty));
-                ref_blocks.push(preserve(self, place_ref));
-                blocks.extend(ref_blocks);
-            }
-
-            blocks
-        }
-
-        fn make_bb_for_try_untuple_args_in_closure(
+        fn make_enter_func_tupled_args(
             &mut self,
             args: mir_ty::ClosureArgs<TyCtxt<'tcx>>,
-        ) -> Vec<BasicBlockData<'tcx>> {
+        ) -> (Vec<BasicBlockData<'tcx>>, [Operand<'tcx>; 2]) {
             let mut blocks = vec![];
 
             let tuple_id_local = {
@@ -2003,16 +2000,13 @@ mod implementation {
                 id_local
             };
 
-            let call_block = self.make_bb_for_call(
-                sym::try_untuple_argument,
-                vec![
+            (
+                blocks,
+                [
                     operand::const_from_uint(self.tcx(), 2 as common::types::LocalIndex),
                     operand::move_for_local(tuple_id_local),
                 ],
-            );
-            blocks.push(call_block);
-
-            blocks
+            )
         }
 
         fn internal_reference_func(&mut self, func: &Operand<'tcx>) -> BlocksAndResult<'tcx> {

@@ -6,7 +6,8 @@ use common::{log_debug, log_info, pri::*};
 
 use self::instance::*;
 use crate::abs::{
-    self, backend::*, AssertKind, BranchingMetadata, CastKind, FloatType, IntType, Local, ValueType,
+    self, backend::*, AssertKind, BranchingMetadata, CastKind, Constant, FloatType, IntType, Local,
+    SymVariable, ValueType,
 };
 use common::log_warn;
 use leaf_macros::trait_log_fn;
@@ -38,67 +39,63 @@ impl ProgramRuntimeInterface for BasicPri {
 
     #[tracing::instrument(target = "pri::place", level = "debug", ret)]
     fn ref_place_return_value() -> PlaceRef {
-        push_place_ref(|p| p.of_local(Local::ReturnValue))
+        push_place_info(|p| p.of_local(Local::ReturnValue))
     }
     #[tracing::instrument(target = "pri::place", level = "debug", ret)]
     fn ref_place_argument(local_index: LocalIndex) -> PlaceRef {
-        push_place_ref(|p| p.of_local(Local::Argument(local_index)))
+        push_place_info(|p| p.of_local(Local::Argument(local_index)))
     }
     #[tracing::instrument(target = "pri::place", level = "debug", ret)]
     fn ref_place_local(local_index: LocalIndex) -> PlaceRef {
-        push_place_ref(|p| p.of_local(Local::Normal(local_index)))
+        push_place_info(|p| p.of_local(Local::Normal(local_index)))
     }
     #[tracing::instrument(target = "pri::place", level = "debug", ret)]
     fn ref_place_deref(place: PlaceRef) {
-        mut_place_ref(place, |p, place| p.project_on(place).deref())
+        mut_place_info(place, |p, place| p.project_on(place).deref())
     }
     #[tracing::instrument(target = "pri::place", level = "debug", ret)]
     fn ref_place_field(place: PlaceRef, field: FieldIndex /*, type */) {
-        mut_place_ref(place, |p, place| p.project_on(place).for_field(field))
+        mut_place_info(place, |p, place| p.project_on(place).for_field(field))
     }
     #[tracing::instrument(target = "pri::place", level = "debug", ret)]
     fn ref_place_index(place: PlaceRef, index_place: PlaceRef) {
-        let index = take_back_place_ref(index_place)
-            .try_into()
-            .unwrap_or_else(|p| {
-                panic!("The place used as an index should be just a local. {:?}", p)
-            });
-        mut_place_ref(place, |p, place| p.project_on(place).at_index(index))
+        let index = take_place_info_to_read(index_place);
+        mut_place_info(place, |p, place| p.project_on(place).at_index(index))
     }
     #[tracing::instrument(target = "pri::place", level = "debug", ret)]
     fn ref_place_constant_index(place: PlaceRef, offset: u64, min_length: u64, from_end: bool) {
-        mut_place_ref(place, |p, place| {
+        mut_place_info(place, |p, place| {
             p.project_on(place)
                 .at_constant_index(offset, min_length, from_end)
         })
     }
     #[tracing::instrument(target = "pri::place", level = "debug", ret)]
     fn ref_place_subslice(place: PlaceRef, from: u64, to: u64, from_end: bool) {
-        mut_place_ref(place, |p, place| {
+        mut_place_info(place, |p, place| {
             p.project_on(place).subslice(from, to, from_end)
         })
     }
     #[tracing::instrument(target = "pri::place", level = "debug", ret)]
     fn ref_place_downcast(place: PlaceRef, variant_index: u32 /*, type */) {
-        mut_place_ref(place, |p, place| {
+        mut_place_info(place, |p, place| {
             p.project_on(place).downcast(variant_index)
         })
     }
     #[tracing::instrument(target = "pri::place", level = "debug", ret)]
     fn ref_place_opaque_cast(place: PlaceRef /*, type */) {
-        mut_place_ref(place, |p, place| p.project_on(place).opaque_cast())
+        mut_place_info(place, |p, place| p.project_on(place).opaque_cast())
     }
     #[tracing::instrument(target = "pri::place", level = "debug", ret)]
     fn ref_place_subtype(place: PlaceRef /*, type */) {
-        mut_place_ref(place, |p, place| p.project_on(place).subtype())
+        mut_place_info(place, |p, place| p.project_on(place).subtype())
     }
     #[tracing::instrument(target = "pri::place", level = "debug", ret)]
     fn set_place_address(place: PlaceRef, raw_ptr: RawPointer) {
-        mut_place_ref(place, |p, place| p.metadata(place).set_address(raw_ptr));
+        mut_place_info(place, |p, place| p.metadata(place).set_address(raw_ptr));
     }
     #[tracing::instrument(target = "pri::place", level = "debug", ret)]
     fn set_place_type_id(place: PlaceRef, type_id: Self::TypeId) {
-        mut_place_ref(place, |h, p| h.metadata(p).set_type_id(type_id))
+        mut_place_info(place, |h, p| h.metadata(p).set_type_id(type_id))
     }
     #[tracing::instrument(target = "pri::place", level = "debug", ret)]
     fn set_place_type_bool(place: PlaceRef) {
@@ -118,123 +115,151 @@ impl ProgramRuntimeInterface for BasicPri {
     }
     #[tracing::instrument(target = "pri::place", level = "debug", ret)]
     fn set_place_size(place: PlaceRef, byte_size: TypeSize) {
-        mut_place_ref(place, |h, p| h.metadata(p).set_size(byte_size))
+        mut_place_info(place, |h, p| h.metadata(p).set_size(byte_size))
     }
 
     #[tracing::instrument(target = "pri::operand", level = "debug", ret)]
     fn ref_operand_copy(place: PlaceRef) -> OperandRef {
-        push_operand_ref(|o| o.copy_of(take_back_place_ref(place)))
+        let place = take_place_info_to_read(place);
+        push_operand(|o| o.copy_of(place))
     }
     #[tracing::instrument(target = "pri::operand", level = "debug", ret)]
     fn ref_operand_move(place: PlaceRef) -> OperandRef {
-        push_operand_ref(|o| o.move_of(take_back_place_ref(place)))
+        let place = take_place_info_to_read(place);
+        push_operand(|o| o.move_of(place))
     }
 
     #[tracing::instrument(target = "pri::operand", level = "debug", ret)]
     fn ref_operand_const_bool(value: bool) -> OperandRef {
-        push_operand_ref(|o| o.const_from().bool(value))
+        push_operand(|o| o.const_from(Constant::Bool(value)))
     }
     #[tracing::instrument(target = "pri::operand", level = "debug", ret)]
     fn ref_operand_const_int(bit_rep: u128, bit_size: u64, is_signed: bool) -> OperandRef {
-        push_operand_ref(|o| {
-            o.const_from().int(
+        push_operand(|o| {
+            o.const_from(Constant::Int {
                 bit_rep,
-                IntType {
+                ty: IntType {
                     bit_size,
                     is_signed,
                 },
-            )
+            })
         })
     }
     #[tracing::instrument(target = "pri::operand", level = "debug", ret)]
     fn ref_operand_const_float(bit_rep: u128, e_bits: u64, s_bits: u64) -> OperandRef {
-        push_operand_ref(|o| o.const_from().float(bit_rep, FloatType { e_bits, s_bits }))
+        push_operand(|o| {
+            o.const_from(Constant::Float {
+                bit_rep,
+                ty: FloatType { e_bits, s_bits },
+            })
+        })
     }
     #[tracing::instrument(target = "pri::operand", level = "debug", ret)]
     fn ref_operand_const_char(value: char) -> OperandRef {
-        push_operand_ref(|o| o.const_from().char(value))
+        push_operand(|o| o.const_from(Constant::Char(value)))
     }
     #[tracing::instrument(target = "pri::operand", level = "debug", ret)]
     fn ref_operand_const_func(id: FuncId) -> OperandRef {
-        push_operand_ref(|o| o.const_from().func(id))
+        push_operand(|o| o.const_from(Constant::Func(id)))
     }
     #[tracing::instrument(target = "pri::operand", level = "debug", ret)]
     fn ref_operand_const_str(value: &'static str) -> OperandRef {
-        push_operand_ref(|o| o.const_from().str(value))
+        push_operand(|o| o.const_from(Constant::Str(value)))
     }
     #[tracing::instrument(target = "pri::operand", level = "debug", ret)]
     fn ref_operand_const_byte_str(value: &'static [u8]) -> OperandRef {
-        push_operand_ref(|o| o.const_from().byte_str(value))
+        push_operand(|o| o.const_from(Constant::ByteStr(value)))
     }
     #[tracing::instrument(target = "pri::operand", level = "debug", ret)]
     fn ref_operand_const_zst() -> OperandRef {
-        push_operand_ref(|o| o.const_from().zst())
+        push_operand(|o| o.const_from(Constant::Zst))
     }
     #[tracing::instrument(target = "pri::operand", level = "debug", ret)]
     fn ref_operand_const_some() -> OperandRef {
-        push_operand_ref(|o| o.const_from().some())
+        push_operand(|o| o.const_from(Constant::Some))
     }
 
     fn new_sym_value_bool(conc_val: bool) -> OperandRef {
         // FIXME: Redundant referencing.
-        let conc_val = take_back_operand_ref(Self::ref_operand_const_bool(conc_val));
-        push_operand_ref(|o| o.new_symbolic(conc_val, ValueType::Bool))
+        let conc_val = take_back_operand(Self::ref_operand_const_bool(conc_val));
+        push_operand(|o| {
+            o.new_symbolic(SymVariable {
+                ty: ValueType::Bool,
+                conc_value: Some(conc_val),
+            })
+        })
     }
     fn new_sym_value_char(conc_val: char) -> OperandRef {
         // FIXME: Redundant referencing.
-        let conc_val = take_back_operand_ref(Self::ref_operand_const_char(conc_val));
-        push_operand_ref(|o| o.new_symbolic(conc_val, ValueType::Char))
+        let conc_val = take_back_operand(Self::ref_operand_const_char(conc_val));
+        push_operand(|o| {
+            o.new_symbolic(SymVariable {
+                ty: ValueType::Char,
+                conc_value: Some(conc_val),
+            })
+        })
     }
     fn new_sym_value_int(conc_val_bit_rep: u128, bit_size: u64, is_signed: bool) -> OperandRef {
         // FIXME: Redundant referencing.
-        let conc_val = take_back_operand_ref(Self::ref_operand_const_int(
+        let conc_val = take_back_operand(Self::ref_operand_const_int(
             conc_val_bit_rep,
             bit_size,
             is_signed,
         ));
-        push_operand_ref(|o| o.new_symbolic(conc_val, ValueType::new_int(bit_size, is_signed)))
+        push_operand(|o| {
+            o.new_symbolic(SymVariable {
+                ty: ValueType::new_int(bit_size, is_signed),
+                conc_value: Some(conc_val),
+            })
+        })
     }
     fn new_sym_value_float(conc_val_bit_rep: u128, e_bits: u64, s_bits: u64) -> OperandRef {
         // FIXME: Redundant referencing.
-        let conc_val = take_back_operand_ref(Self::ref_operand_const_float(
+        let conc_val = take_back_operand(Self::ref_operand_const_float(
             conc_val_bit_rep,
             e_bits,
             s_bits,
         ));
-        push_operand_ref(|o| o.new_symbolic(conc_val, ValueType::new_float(e_bits, s_bits)))
+        push_operand(|o| {
+            o.new_symbolic(SymVariable {
+                ty: ValueType::new_float(e_bits, s_bits),
+                conc_value: Some(conc_val),
+            })
+        })
     }
 
     fn assign_use(dest: PlaceRef, operand: OperandRef) {
-        assign_to(dest, |h| h.use_of(take_back_operand_ref(operand)))
+        assign_to(dest, |h| h.use_of(take_back_operand(operand)))
     }
     fn assign_repeat(dest: PlaceRef, operand: OperandRef, count: usize) {
-        assign_to(dest, |h| h.repeat_of(take_back_operand_ref(operand), count))
+        assign_to(dest, |h| h.repeat_of(take_back_operand(operand), count))
     }
     fn assign_ref(dest: PlaceRef, place: PlaceRef, is_mutable: bool) {
-        assign_to(dest, |h| h.ref_to(take_back_place_ref(place), is_mutable))
+        let place = take_place_info_to_read(place);
+        assign_to(dest, |h| h.ref_to(place, is_mutable))
     }
     fn assign_thread_local_ref(dest: PlaceRef /* TODO: #365 */) {
         assign_to(dest, |h| h.thread_local_ref_to())
     }
     fn assign_raw_ptr_of(dest: PlaceRef, place: PlaceRef, is_mutable: bool) {
-        assign_to(dest, |h| {
-            h.address_of(take_back_place_ref(place), is_mutable)
-        })
+        let place = take_place_info_to_read(place);
+        assign_to(dest, |h| h.address_of(place, is_mutable))
     }
     fn assign_len(dest: PlaceRef, place: PlaceRef) {
         // To be investigated. Not obvious whether it appears at all in the later stages.
-        assign_to(dest, |h| h.len_of(take_back_place_ref(place)))
+        let place = take_place_info_to_read(place);
+        assign_to(dest, |h| h.len_of(place))
     }
 
     fn assign_cast_char(dest: PlaceRef, operand: OperandRef) {
         assign_to(dest, |h| {
-            h.cast_of(take_back_operand_ref(operand), CastKind::ToChar)
+            h.cast_of(take_back_operand(operand), CastKind::ToChar)
         })
     }
     fn assign_cast_integer(dest: PlaceRef, operand: OperandRef, bit_size: u64, is_signed: bool) {
         assign_to(dest, |h| {
             h.cast_of(
-                take_back_operand_ref(operand),
+                take_back_operand(operand),
                 CastKind::ToInt(IntType {
                     bit_size,
                     is_signed,
@@ -245,14 +270,14 @@ impl ProgramRuntimeInterface for BasicPri {
     fn assign_cast_float(dest: PlaceRef, operand: OperandRef, e_bits: u64, s_bits: u64) {
         assign_to(dest, |h| {
             h.cast_of(
-                take_back_operand_ref(operand),
+                take_back_operand(operand),
                 CastKind::ToFloat(FloatType { e_bits, s_bits }),
             )
         })
     }
     fn assign_cast_expose_prov(dest: PlaceRef, operand: OperandRef) {
         assign_to(dest, |h| {
-            h.cast_of(take_back_operand_ref(operand), CastKind::ExposeProvenance)
+            h.cast_of(take_back_operand(operand), CastKind::ExposeProvenance)
         })
     }
     fn assign_cast_with_exposed_prov(dest: PlaceRef, operand: OperandRef, dst_type_id: TypeId) {
@@ -264,20 +289,17 @@ impl ProgramRuntimeInterface for BasicPri {
 
     fn assign_cast_unsize(dest: PlaceRef, operand: OperandRef) {
         assign_to(dest, |h| {
-            h.cast_of(take_back_operand_ref(operand), CastKind::PointerUnsize)
+            h.cast_of(take_back_operand(operand), CastKind::PointerUnsize)
         })
     }
     fn assign_cast_sized_dyn(dest: PlaceRef, operand: OperandRef) {
         assign_to(dest, |h| {
-            h.cast_of(take_back_operand_ref(operand), CastKind::SizedDynamize)
+            h.cast_of(take_back_operand(operand), CastKind::SizedDynamize)
         })
     }
     fn assign_cast_transmute(dest: PlaceRef, operand: OperandRef, dst_type_id: Self::TypeId) {
         assign_to(dest, |h| {
-            h.cast_of(
-                take_back_operand_ref(operand),
-                CastKind::Transmute(dst_type_id),
-            )
+            h.cast_of(take_back_operand(operand), CastKind::Transmute(dst_type_id))
         })
     }
 
@@ -290,14 +312,14 @@ impl ProgramRuntimeInterface for BasicPri {
         assign_to(dest, |h| {
             h.binary_op_between(
                 operator,
-                take_back_operand_ref(first),
-                take_back_operand_ref(second),
+                take_back_operand(first),
+                take_back_operand(second),
             )
         })
     }
     fn assign_unary_op(dest: PlaceRef, operator: Self::UnaryOp, operand: OperandRef) {
         assign_to(dest, |h| {
-            h.unary_op_on(operator, take_back_operand_ref(operand))
+            h.unary_op_on(operator, take_back_operand(operand))
         })
     }
 
@@ -305,13 +327,15 @@ impl ProgramRuntimeInterface for BasicPri {
         assign_to(dest, |h| h.variant_index(variant_index))
     }
     fn assign_discriminant(dest: PlaceRef, place: PlaceRef) {
-        assign_to(dest, |h| h.discriminant_of(take_back_place_ref(place)))
+        let place_info = take_back_place_info(place);
+        let place = get_backend_place(abs::PlaceUsage::Read, |h| h.tag_of(place_info));
+        assign_to(dest, |h| h.discriminant_from(place))
     }
 
     // We use slice to simplify working with the interface.
     fn assign_aggregate_array(dest: PlaceRef, items: &[OperandRef]) {
         assign_to(dest, |h| {
-            h.array_from(items.iter().map(|o| take_back_operand_ref(*o)))
+            h.array_from(items.iter().map(|o| take_back_operand(*o)))
         })
     }
     fn assign_aggregate_tuple(dest: PlaceRef, fields: &[OperandRef]) {
@@ -364,8 +388,8 @@ impl ProgramRuntimeInterface for BasicPri {
     ) {
         assign_to(dest, |h| {
             h.raw_ptr_from(
-                take_back_operand_ref(data_ptr),
-                take_back_operand_ref(metadata),
+                take_back_operand(data_ptr),
+                take_back_operand(metadata),
                 is_mutable,
             )
         })
@@ -373,7 +397,7 @@ impl ProgramRuntimeInterface for BasicPri {
 
     fn assign_shallow_init_box(dest: PlaceRef, operand: OperandRef, _boxed_type_id: Self::TypeId) {
         assign_to(dest, |h| {
-            h.shallow_init_box_from(take_back_operand_ref(operand))
+            h.shallow_init_box_from(take_back_operand(operand))
         })
     }
 
@@ -417,23 +441,44 @@ impl ProgramRuntimeInterface for BasicPri {
     fn before_call_func(func: OperandRef, args: &[OperandRef], are_args_tupled: bool) {
         func_control(|h| {
             h.before_call(
-                take_back_operand_ref(func),
-                args.iter().map(|o| take_back_operand_ref(*o)),
+                take_back_operand(func),
+                args.iter().map(|o| take_back_operand(*o)),
                 are_args_tupled,
             )
         });
     }
-    #[tracing::instrument(target = "pri::place", level = "debug")]
-    fn preserve_special_local_metadata(place: PlaceRef) {
-        func_control(|h| h.metadata().preserve_metadata(take_back_place_ref(place)))
+    #[tracing::instrument(target = "pri::call", level = "debug")]
+    fn enter_func(func: OperandRef, arg_places: &[PlaceRef], ret_val_place: PlaceRef) {
+        let func = take_back_operand(func);
+        let arg_places = arg_places
+            .iter()
+            .map(|p| take_place_info_to_read(*p))
+            .collect::<Vec<_>>();
+        let ret_val_place = take_place_info_to_write(ret_val_place);
+        func_control(|h| h.enter(func, arg_places.into_iter(), ret_val_place, None))
     }
     #[tracing::instrument(target = "pri::call", level = "debug")]
-    fn try_untuple_argument(arg_index: LocalIndex, tuple_type_id: TypeId) {
-        func_control(|h| h.metadata().try_untuple_argument(arg_index, tuple_type_id))
-    }
-    #[tracing::instrument(target = "pri::call", level = "debug")]
-    fn enter_func(func: OperandRef) {
-        func_control(|h| h.enter(take_back_operand_ref(func)))
+    fn enter_func_tupled(
+        func: OperandRef,
+        arg_places: &[PlaceRef],
+        ret_val_place: PlaceRef,
+        tupled_arg_index: LocalIndex,
+        tupled_arg_type_id: TypeId,
+    ) {
+        let func = take_back_operand(func);
+        let arg_places = arg_places
+            .iter()
+            .map(|p| take_place_info_to_read(*p))
+            .collect::<Vec<_>>();
+        let ret_val_place = take_place_info_to_write(ret_val_place);
+        func_control(|h| {
+            h.enter(
+                func,
+                arg_places.into_iter(),
+                ret_val_place,
+                Some((Local::Argument(tupled_arg_index), tupled_arg_type_id)),
+            )
+        })
     }
     #[tracing::instrument(target = "pri::call", level = "debug")]
     fn return_from_func() {
@@ -444,11 +489,12 @@ impl ProgramRuntimeInterface for BasicPri {
     /// until it is consumed at the point of return to an internal caller.
     #[tracing::instrument(target = "pri::call", level = "debug")]
     fn override_return_value(operand: OperandRef) {
-        func_control(|h| h.override_return_value(take_back_operand_ref(operand)))
+        func_control(|h| h.override_return_value(take_back_operand(operand)))
     }
     #[tracing::instrument(target = "pri::call", level = "debug")]
     fn after_call_func(destination: PlaceRef) {
-        func_control(|h| h.after_call(take_back_place_ref(destination)))
+        let dest_place = take_place_info_to_write(destination);
+        func_control(|h| h.after_call(dest_place))
     }
 
     fn check_assert_bounds_check(
@@ -458,8 +504,8 @@ impl ProgramRuntimeInterface for BasicPri {
         index: OperandRef,
     ) {
         let assert_kind = AssertKind::BoundsCheck {
-            len: take_back_operand_ref(len),
-            index: take_back_operand_ref(index),
+            len: take_back_operand(len),
+            index: take_back_operand(index),
         };
         Self::check_assert(cond, expected, assert_kind)
     }
@@ -472,21 +518,21 @@ impl ProgramRuntimeInterface for BasicPri {
     ) {
         let assert_kind = AssertKind::Overflow(
             operator,
-            take_back_operand_ref(first),
-            take_back_operand_ref(second),
+            take_back_operand(first),
+            take_back_operand(second),
         );
         Self::check_assert(cond, expected, assert_kind)
     }
     fn check_assert_overflow_neg(cond: OperandRef, expected: bool, operand: OperandRef) {
-        let assert_kind = AssertKind::OverflowNeg(take_back_operand_ref(operand));
+        let assert_kind = AssertKind::OverflowNeg(take_back_operand(operand));
         Self::check_assert(cond, expected, assert_kind)
     }
     fn check_assert_div_by_zero(cond: OperandRef, expected: bool, operand: OperandRef) {
-        let assert_kind = AssertKind::DivisionByZero(take_back_operand_ref(operand));
+        let assert_kind = AssertKind::DivisionByZero(take_back_operand(operand));
         Self::check_assert(cond, expected, assert_kind)
     }
     fn check_assert_rem_by_zero(cond: OperandRef, expected: bool, operand: OperandRef) {
-        let assert_kind = AssertKind::RemainderByZero(take_back_operand_ref(operand));
+        let assert_kind = AssertKind::RemainderByZero(take_back_operand(operand));
         Self::check_assert(cond, expected, assert_kind)
     }
     fn check_assert_misaligned_ptr_deref(
@@ -496,8 +542,8 @@ impl ProgramRuntimeInterface for BasicPri {
         found: OperandRef,
     ) {
         let assert_kind = AssertKind::MisalignedPointerDereference {
-            required: take_back_operand_ref(required),
-            found: take_back_operand_ref(found),
+            required: take_back_operand(required),
+            found: take_back_operand(found),
         };
         Self::check_assert(cond, expected, assert_kind)
     }
@@ -563,25 +609,22 @@ impl ProgramRuntimeInterface for BasicPri {
 
 impl BasicPri {
     fn set_place_type(place: PlaceRef, ty: ValueType) {
-        mut_place_ref(place, |p, place| p.metadata(place).set_primitive_type(ty));
+        mut_place_info(place, |p, place| p.metadata(place).set_primitive_type(ty));
     }
 
     fn take_fields(fields: &[OperandRef]) -> Vec<FieldImpl> {
-        let fields = fields.iter().map(|o| take_back_operand_ref(*o));
+        let fields = fields.iter().map(|o| take_back_operand(*o));
         fields.map(Into::<FieldImpl>::into).collect()
     }
 
     fn assign_cast_pointer(dest: PlaceRef, operand: OperandRef, dst_type_id: TypeId) {
         assign_to(dest, |h| {
-            h.cast_of(
-                take_back_operand_ref(operand),
-                CastKind::ToPointer(dst_type_id),
-            )
+            h.cast_of(take_back_operand(operand), CastKind::ToPointer(dst_type_id))
         })
     }
 
     fn check_assert(cond: OperandRef, expected: bool, assert_kind: AssertKind<OperandImpl>) {
-        branch(|h| h.assert(take_back_operand_ref(cond), expected, assert_kind))
+        branch(|h| h.assert(take_back_operand(cond), expected, assert_kind))
     }
 }
 

@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::{
-    abs::{place::HasMetadata, PointerOffset, TypeId, TypeSize},
+    abs::{PlaceUsage, PointerOffset, TypeId, TypeSize},
     backends::basic::{
         alias::{SymValueRefExprBuilder, TypeManager},
         config::{SymbolicPlaceConfig, SymbolicPlaceStrategy},
@@ -14,16 +14,16 @@ use crate::{
             lazy::RawPointerRetriever,
             place::{DeterministicPlaceValue, SymbolicPlaceValue},
         },
-        VariablesState,
+        GenericVariablesState,
     },
     tyexp::TypeInfoExt,
-    utils::{alias::RRef, SelfHierarchical},
+    utils::{alias::RRef, InPlaceSelfHierarchical},
 };
 use common::tyexp::{FieldsShapeInfo, StructShape, TypeInfo, UnionShape};
 
 use super::super::{
     expr::prelude::*,
-    place::{LocalWithMetadata, PlaceMetadata, PlaceWithMetadata},
+    place::{LocalWithMetadata, PlaceMetadata, PlaceWithMetadata, Projection},
     ValueRef,
 };
 
@@ -34,7 +34,6 @@ use memory::*;
 
 type Local = LocalWithMetadata;
 type Place = PlaceWithMetadata;
-type Projection = crate::abs::Projection<Local>;
 
 type SymPlaceHandlerObject = Box<
     dyn super::SymPlaceHandler<
@@ -194,46 +193,46 @@ impl<EB: SymValueRefExprBuilder> RawPointerVariableState<EB> {
     }
 }
 
-impl<EB: SymValueRefExprBuilder> VariablesState<Place, ValueRef, PlaceValueRef>
-    for RawPointerVariableState<EB>
-{
+impl<EB: SymValueRefExprBuilder> GenericVariablesState for RawPointerVariableState<EB> {
+    type PlaceInfo = Place;
+    type PlaceValue = PlaceValueRef;
+    type Value = ValueRef;
+
     fn id(&self) -> usize {
         // FIXME
         0
     }
 
     #[tracing::instrument(level = "debug", skip(self))]
-    fn ref_place(&self, place: &Place) -> PlaceValueRef {
-        self.get_place(place, self.sym_read_handler.borrow_mut())
+    fn ref_place(&self, place: &Place, usage: PlaceUsage) -> PlaceValueRef {
+        self.get_place(
+            place,
+            match usage {
+                PlaceUsage::Read => self.sym_read_handler.borrow_mut(),
+                PlaceUsage::Write => self.sym_write_handler.borrow_mut(),
+            },
+        )
     }
 
     #[tracing::instrument(level = "debug", skip(self))]
-    fn copy_place(&self, place: &Place) -> ValueRef {
-        let place_val = self.get_place(place, self.sym_read_handler.borrow_mut());
-        match place_val.as_ref() {
+    fn copy_place(&self, place: &PlaceValueRef) -> ValueRef {
+        match place.as_ref() {
             PlaceValue::Deterministic(ref place) => self.copy_deterministic_place(place),
-            PlaceValue::Symbolic(ref sym_place) => self
-                .copy_symbolic_place(sym_place, place.metadata().unwrap_type_id())
-                .into(),
+            PlaceValue::Symbolic(ref sym_place) => self.copy_symbolic_place(sym_place).into(),
         }
     }
 
     #[tracing::instrument(level = "debug", skip(self))]
-    fn try_take_place(&mut self, place: &Place) -> Option<ValueRef> {
-        let place_val = self.get_place(place, self.sym_write_handler.borrow_mut());
-        match place_val.as_ref() {
-            PlaceValue::Deterministic(ref place) => Some(self.take_deterministic_place(place)),
-            PlaceValue::Symbolic(ref sym_place) => Some(
-                self.take_symbolic_place(sym_place, place.metadata().unwrap_type_id())
-                    .into(),
-            ),
+    fn take_place(&mut self, place: &PlaceValueRef) -> ValueRef {
+        match place.as_ref() {
+            PlaceValue::Deterministic(ref place) => self.take_deterministic_place(place),
+            PlaceValue::Symbolic(ref sym_place) => self.take_symbolic_place(sym_place).into(),
         }
     }
 
     #[tracing::instrument(level = "debug", skip(self))]
-    fn set_place(&mut self, place: &Place, value: ValueRef) {
-        let place_val = self.get_place(place, self.sym_write_handler.borrow_mut());
-        match place_val.as_ref() {
+    fn set_place(&mut self, place: &PlaceValueRef, value: ValueRef) {
+        match place.as_ref() {
             PlaceValue::Deterministic(ref place) => {
                 self.set_deterministic_place(place, value);
             }
@@ -386,14 +385,14 @@ impl<EB: SymValueRefExprBuilder> RawPointerVariableState<EB> {
 // Symbolic Place
 impl<EB: SymValueRefExprBuilder> RawPointerVariableState<EB> {
     #[inline]
-    fn copy_symbolic_place(&self, place_val: &SymbolicPlaceValue, type_id: TypeId) -> SymValueRef {
-        self.resolve_and_retrieve_symbolic_place(place_val, type_id)
+    fn copy_symbolic_place(&self, place_val: &SymbolicPlaceValue) -> SymValueRef {
+        self.resolve_and_retrieve_symbolic_place(place_val)
     }
 
     #[inline]
-    fn take_symbolic_place(&self, place_val: &SymbolicPlaceValue, type_id: TypeId) -> SymValueRef {
+    fn take_symbolic_place(&self, place_val: &SymbolicPlaceValue) -> SymValueRef {
         // Currently, no different behavior from copying unless needed.
-        self.copy_symbolic_place(place_val, type_id)
+        self.copy_symbolic_place(place_val)
     }
 }
 
@@ -550,13 +549,13 @@ impl<EB: SymValueRefExprBuilder> RawPointerVariableState<EB> {
     }
 }
 
-impl<EB> SelfHierarchical for RawPointerVariableState<EB> {
-    fn add_layer(self) -> Self {
-        self
+impl<EB> InPlaceSelfHierarchical for RawPointerVariableState<EB> {
+    fn add_layer(&mut self) {
+        // Nothing to do.
     }
 
-    fn drop_layer(self) -> Option<Self> {
-        Some(self)
+    fn drop_layer(&mut self) -> Option<Self> {
+        None
     }
 }
 

@@ -66,36 +66,42 @@ impl SymPlaceHandler<PlaceMetadata> for StamperSymPlaceHandler {
         place_value: Self::SymPlaceValue,
         place_meta: &PlaceMetadata,
     ) -> Self::PlaceValue {
-        let (sym_value, meta) = match &place_value.base {
+        let (sym_value, conc_value) = match &place_value.base {
             SymbolicPlaceBase::Deref(DerefSymHostPlace {
                 value: host,
-                metadata: host_metadata,
-            }) => (host, host_metadata),
+                metadata: meta,
+            }) => (
+                host,
+                RawConcreteValue(
+                    meta.address(),
+                    LazyTypeInfo::from((meta.type_id(), meta.ty().copied())),
+                ),
+            ),
             SymbolicPlaceBase::SymIndex(SymIndexedPlace {
                 index,
-                index_metadata,
+                index_place: index_metadata,
                 host: base,
                 host_metadata: base_metadata,
             }) => {
                 if base.is_symbolic() {
                     self.handle(SymPlaceValueRef::new(base.clone()), base_metadata);
                 }
-                (index, index_metadata)
+                (
+                    index,
+                    RawConcreteValue(index_metadata.address(), index_metadata.type_info().clone()),
+                )
             }
         };
-        let conc_val = RawConcreteValue(
-            meta.address(),
-            LazyTypeInfo::from((meta.type_id(), meta.ty().copied())),
-        )
-        .to_value_ref();
 
         log_debug!(
             "Stamping symbolic value {} with concrete value {}",
             place_value,
-            conc_val
+            conc_value
         );
-        self.concretizer
-            .stamp(sym_value.clone(), ConcreteValueRef::new(conc_val));
+        self.concretizer.stamp(
+            sym_value.clone(),
+            ConcreteValueRef::new(conc_value.to_value_ref()),
+        );
 
         ConcretizerSymPlaceHandler.handle(place_value, place_meta)
     }

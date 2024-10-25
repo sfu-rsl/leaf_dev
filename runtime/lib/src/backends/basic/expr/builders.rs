@@ -606,7 +606,7 @@ mod core {
             wrapping_op: BasicBinaryOp,
         ) -> (impl Fn(bool) -> Option<Expr>, Expr, IntType) {
             let op: OverflowingBinaryOp = wrapping_op.try_into().unwrap();
-            let Ok(ValueType::Int(ty)) = ValueType::try_from(operands.as_flat().0.as_ref()) else {
+            let Ok(ValueType::Int(ty)) = ValueType::try_from(operands.as_flat().0.value()) else {
                 unreachable!("Only integer types are expected for overflowing operations.")
             };
             let Value::Symbolic(SymValue::Expression(wrapping_expr)) =
@@ -668,7 +668,7 @@ mod core {
             _metadata: Self::Metadata<'b>,
         ) -> Self::Expr<'a> {
             debug_assert!(
-                ValueType::try_from(operand.as_ref()).map_or(true, |ty| ty == IntType::U8.into(),),
+                ValueType::try_from(operand.value()).map_or(true, |ty| ty == IntType::U8.into(),),
                 // https://doc.rust-lang.org/reference/expressions/operator-expr.html#type-cast-expressions
                 "Cast to char is only expected from u8."
             );
@@ -684,7 +684,7 @@ mod core {
             }: Self::IntType,
             metadata: Self::Metadata<'b>,
         ) -> Self::Expr<'a> {
-            let from_type = ValueType::try_from(operand.as_ref());
+            let from_type = ValueType::try_from(operand.value());
             if let Ok(from_type) = from_type {
                 match from_type {
                     ValueType::Bool => Expr::Ite {
@@ -828,7 +828,7 @@ mod core {
         fn trans(&mut self, operand: SymValueRef, dst_ty: LazyTypeInfo) -> SymValueRef {
             if Option::zip(
                 ValueType::try_from(&dst_ty).ok(),
-                ValueType::try_from(operand.as_ref()).ok(),
+                ValueType::try_from(operand.value()).ok(),
             )
             .is_some_and(|(dst_ty, src_ty)| dst_ty == src_ty)
             {

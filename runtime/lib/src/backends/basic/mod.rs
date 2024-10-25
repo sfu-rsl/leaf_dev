@@ -3,12 +3,12 @@ mod call;
 mod concrete;
 mod config;
 pub(crate) mod expr;
-pub(crate) mod operand;
 mod outgen;
 mod place;
 mod state;
 
 use std::{
+    assert_matches::assert_matches,
     cell::{RefCell, RefMut},
     collections::HashMap,
     iter,
@@ -19,8 +19,8 @@ use std::{
 use crate::{
     abs::{
         self, backend::*, place::HasMetadata, AssertKind, BasicBlockIndex, BranchingMetadata,
-        CastKind, FieldIndex, IntType, Local, LocalIndex, PlaceUsage, RawPointer, TypeId, UnaryOp,
-        VariantIndex,
+        CastKind, FieldIndex, IntType, Local, LocalIndex, PlaceUsage, RawPointer, SymVariable,
+        TypeId, UnaryOp, VariantIndex,
     },
     solvers::z3::Z3Solver,
     trace::ImmediateTraceManager,
@@ -39,8 +39,7 @@ use self::{
     concrete::BasicConcretizer,
     config::BasicBackendConfig,
     expr::{prelude::*, translators::z3::Z3ValueTranslator},
-    operand::BasicOperandHandler,
-    place::{BasicPlaceHandler, PlaceMetadata},
+    place::PlaceMetadata,
     state::{make_sym_place_handler, RawPointerVariableState},
 };
 
@@ -51,10 +50,8 @@ type BasicVariablesState = RawPointerVariableState<BasicSymExprBuilder>;
 type BasicCallStackManager = call::BasicCallStackManager<BasicVariablesState>;
 
 type Place = place::PlaceWithMetadata;
-
-type Projection<L> = crate::abs::Projection<L>;
-type Operand<S = SymValueRef> = operand::Operand<Place, S>;
-pub(crate) type Field<S = SymValueRef> = Operand<S>;
+type Projection = place::Projection;
+pub(crate) use place::BasicPlaceBuilder;
 
 pub struct BasicBackend {
     call_stack_manager: BasicCallStackManager,
@@ -133,11 +130,11 @@ impl BasicBackend {
 }
 
 impl RuntimeBackend for BasicBackend {
-    type PlaceHandler<'a> = BasicPlaceHandler
+    type PlaceHandler<'a> = BasicPlaceHandler<'a>
     where
         Self: 'a;
 
-    type OperandHandler<'a> = BasicOperandHandler<'a, Self::Place>
+    type OperandHandler<'a> = BasicOperandHandler<'a>
     where
         Self: 'a;
 
@@ -153,57 +150,117 @@ impl RuntimeBackend for BasicBackend {
     where
         Self: 'a;
 
-    type Place = Place;
+    type PlaceInfo = Place;
+    type Place = PlaceValueRef;
+    type Operand = ValueRef;
 
-    type Operand = Operand;
-
-    fn place(&mut self) -> Self::PlaceHandler<'_> {
-        Self::PlaceHandler::default()
+    fn place(&mut self, usage: PlaceUsage) -> Self::PlaceHandler<'_> {
+        BasicPlaceHandler {
+            vars_state: self.call_stack_manager.top(),
+            usage,
+            type_manager: self.type_manager.as_ref(),
+        }
     }
 
     fn operand(&mut self) -> Self::OperandHandler<'_> {
-        BasicOperandHandler::new(Box::new(move |conc_val, ty| {
-            self.new_symbolic_value(conc_val, ty)
-        }))
+        BasicOperandHandler {
+            vars_state: self.call_stack_manager.top(),
+            sym_values: self.sym_values.clone(),
+        }
     }
 
     fn assign_to<'a>(
         &'a mut self,
         dest: <Self::AssignmentHandler<'a> as AssignmentHandler>::Place,
     ) -> Self::AssignmentHandler<'a> {
-        BasicAssignmentHandler::new(
-            dest,
-            self.call_stack_manager.top(),
-            self.expr_builder.clone(),
-            self.type_manager.as_ref(),
-        )
+        BasicAssignmentHandler::new(dest, self)
     }
 
     fn branch(&mut self) -> Self::BranchingHandler<'_> {
-        BasicBranchingHandler {
-            vars_state: self.call_stack_manager.top(),
-            trace_manager: self.trace_manager.borrow_mut(),
-            expr_builder: self.expr_builder.clone(),
-        }
+        BasicBranchingHandler::new(self)
     }
 
     fn func_control(&mut self) -> Self::FunctionHandler<'_> {
-        BasicFunctionHandler::new(&mut self.call_stack_manager, self.type_manager.as_ref())
+        BasicFunctionHandler::new(self)
     }
 }
 
-impl BasicBackend {
-    fn new_symbolic_value(&mut self, conc_val: Operand, ty: abs::ValueType) -> SymValueRef {
+pub(crate) struct BasicPlaceHandler<'a> {
+    vars_state: &'a mut dyn VariablesState,
+    usage: PlaceUsage,
+    type_manager: &'a dyn TypeManager,
+}
+
+impl PlaceHandler for BasicPlaceHandler<'_> {
+    type PlaceInfo<'a> = Place;
+    type Place = PlaceValueRef;
+    type DiscriminablePlace = TagPlaceWithInfo;
+
+    fn from_info<'a>(self, info: Self::PlaceInfo<'a>) -> Self::Place {
+        self.vars_state.ref_place(&info, self.usage)
+    }
+
+    fn tag_of<'a>(self, info: Self::PlaceInfo<'a>) -> Self::DiscriminablePlace {
+        let mut place = info;
+        let type_manager: &dyn TypeManager = self.type_manager;
+        let ty = type_manager.get_type(place.metadata().unwrap_type_id());
+        let tag_info = ty.tag.as_ref().unwrap();
+        let metadata = {
+            let mut meta = PlaceMetadata::default();
+            meta.set_address(
+                place
+                    .address()
+                    .wrapping_byte_add(tag_info.as_field.offset as usize)
+                    as RawPointer,
+            );
+            let tag_ty = type_manager.get_type(tag_info.as_field.ty);
+            meta.set_type_id(tag_ty.id);
+            if let Ok(value_ty) = tag_ty.try_into() {
+                meta.set_ty(value_ty);
+            }
+            meta.set_size(tag_ty.size);
+            meta
+        };
+        place.add_projection(Projection::Field(0));
+        place.push_metadata(metadata);
+        TagPlaceWithInfo(self.from_info(place), tag_info)
+    }
+}
+
+pub(crate) struct BasicOperandHandler<'a> {
+    vars_state: &'a mut dyn VariablesState,
+    sym_values: RRef<HashMap<u32, (SymValueRef, ConcreteValueRef)>>,
+}
+
+impl OperandHandler for BasicOperandHandler<'_> {
+    type Place = PlaceValueRef;
+    type Operand = ValueRef;
+
+    fn copy_of(self, place: Self::Place) -> Self::Operand {
+        self.vars_state.copy_place(&place)
+    }
+
+    fn move_of(self, place: Self::Place) -> Self::Operand {
+        self.vars_state.take_place(&place)
+    }
+
+    fn const_from(self, info: Self::Constant) -> Self::Operand {
+        ConcreteValue::from(info).to_value_ref()
+    }
+
+    fn new_symbolic(self, var: SymVariable<Self::Operand>) -> Self::Operand {
         let mut sym_values = self.sym_values.borrow_mut();
         let id = sym_values.len() as u32 + 1;
-        let conc_val = match conc_val {
-            Operand::Const(c) => c,
-            _ => {
-                unreachable!("Only constant values are expected to be used as the concrete value.")
-            }
-        };
-        let sym_val = SymValue::Variable(SymbolicVar::new(id, ty)).to_value_ref();
-        let conc_val = ConcreteValueRef::new(ConcreteValue::from(conc_val).to_value_ref());
+        let conc_val = var
+            .conc_value
+            .expect("Concrete value of symbolic variables is required.");
+        assert_matches!(
+            conc_val.as_ref(),
+            Value::Concrete(ConcreteValue::Const(..)),
+            "Only constant values are currently expected to be used as the concrete value."
+        );
+        let sym_val = SymValue::Variable(SymbolicVar::new(id, var.ty)).to_value_ref();
+        let conc_val = ConcreteValueRef::new(conc_val);
 
         log_info!(
             "Introducing a new symbolic variable: {} = {}",
@@ -211,59 +268,52 @@ impl BasicBackend {
             conc_val,
         );
         sym_values.insert(id, (sym_val.clone(), conc_val));
-        sym_val
+        sym_val.into()
     }
 }
 
 pub(crate) struct BasicAssignmentHandler<'s, EB: OperationalExprBuilder> {
-    dest: Place,
+    dest: PlaceValueRef,
     vars_state: &'s mut dyn VariablesState,
     expr_builder: RRef<EB>,
     type_manager: &'s dyn TypeManager,
 }
 
-impl<'s, EB: OperationalExprBuilder> BasicAssignmentHandler<'s, EB> {
-    fn new(
-        dest: Place,
-        vars_state: &'s mut dyn VariablesState,
-        expr_builder: RRef<EB>,
-        type_manager: &'s dyn TypeManager,
-    ) -> Self {
+impl<'s> BasicAssignmentHandler<'s, BasicExprBuilder> {
+    fn new(dest: PlaceValueRef, backend: &'s mut BasicBackend) -> Self {
         Self {
             dest,
-            vars_state,
-            expr_builder,
-            type_manager,
+            vars_state: backend.call_stack_manager.top(),
+            expr_builder: backend.expr_builder.clone(),
+            type_manager: backend.type_manager.as_ref(),
         }
     }
 }
 
 impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_, EB> {
-    type Place = Place;
-    type Operand = Operand;
-    type Field = Field;
+    type Place = PlaceValueRef;
+    type DiscriminablePlace = TagPlaceWithInfo;
+    type Operand = ValueRef;
 
     fn use_of(mut self, operand: Self::Operand) {
-        let value = self.get_operand_value(operand);
-        self.set(value)
+        self.set(operand)
     }
 
     fn repeat_of(mut self, operand: Self::Operand, count: usize) {
-        let element_value = self.get_operand_value(operand);
-        /* NOTE: As we don't expect the count to be a large number, we currently,
-         * don't optimize this by using a single element and a length.
-         */
-        let value = ConcreteValue::Array(ArrayValue {
-            elements: vec![element_value; count],
-        })
-        .into();
+        let value = if operand.is_symbolic() {
+            ConcreteValue::Array(ArrayValue {
+                elements: vec![operand; count],
+            })
+            .into()
+        } else {
+            UnevalValue::Some.into()
+        };
         self.set_value(value)
     }
 
     fn ref_to(mut self, place: Self::Place, _is_mutable: bool) {
-        let place_value = self.get_place_value(place);
-        let value = if place_value.is_symbolic() {
-            Expr::Ref(SymPlaceValueRef::new(place_value)).into()
+        let value = if place.is_symbolic() {
+            Expr::Ref(SymPlaceValueRef::new(place)).into()
         } else {
             UnevalValue::Some.into()
         };
@@ -281,9 +331,8 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
     }
 
     fn len_of(mut self, place: Self::Place) {
-        let place_value = self.get_place_value(place);
-        let value = if place_value.is_symbolic() {
-            Expr::Len(SymPlaceValueRef::new(place_value)).into()
+        let value = if place.is_symbolic() {
+            Expr::Len(SymPlaceValueRef::new(place)).into()
         } else {
             UnevalValue::Some.into()
         };
@@ -291,10 +340,9 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
     }
 
     fn cast_of(mut self, operand: Self::Operand, target: CastKind) {
-        let value = self.get_operand_value(operand);
         let cast_value: ValueRef = self
             .expr_builder()
-            .cast(value.into(), target, self.dest.metadata().into())
+            .cast(operand.into(), target, self.dest.type_info().id().into())
             .into();
 
         self.set(cast_value)
@@ -306,29 +354,30 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
         first: Self::Operand,
         second: Self::Operand,
     ) {
-        let first_value = self.get_operand_value(first);
-        let second_value = self.get_operand_value(second);
         let result_value = self
             .expr_builder()
-            .binary_op((first_value, second_value).into(), operator);
+            .binary_op((first, second).into(), operator);
         self.set(result_value.into())
     }
 
     fn unary_op_on(mut self, operator: UnaryOp, operand: Self::Operand) {
-        let value = self.get_operand_value(operand);
-        let result_value = self.expr_builder().unary_op(value.into(), operator);
+        let result_value = self.expr_builder().unary_op(operand.into(), operator);
         self.set(result_value.into())
     }
 
-    fn discriminant_of(mut self, place: Self::Place) {
-        let (tag_place, tag_info) = project_tag(place, self.type_manager);
+    /// # Remarks
+    /// The tag place for the basic backend should be
+    fn discriminant_from(
+        mut self,
+        TagPlaceWithInfo(tag_place, tag_info): Self::DiscriminablePlace,
+    ) {
         let tag_value = self.vars_state.copy_place(&tag_place);
         let discr_value = if tag_value.is_symbolic() {
             self.build_discriminant_expr(
                 SymValueRef::new(tag_value),
                 &tag_info.encoding,
-                self.dest.metadata(),
-                tag_place.metadata(),
+                self.dest.type_info(),
+                tag_place.type_info(),
             )
             .into()
         } else {
@@ -337,11 +386,19 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
         self.set(discr_value)
     }
 
-    fn array_from(mut self, items: impl Iterator<Item = Self::Operand>) {
+    fn array_from(mut self, elements: impl Iterator<Item = Self::Operand>) {
+        let mut has_symbolic = false;
         let value = ConcreteValue::Array(ArrayValue {
-            elements: items.map(|e| self.get_operand_value(e)).collect(),
+            elements: elements
+                .inspect(|e| has_symbolic |= e.is_symbolic())
+                .collect(),
         });
-        self.set_value(value.into())
+        let value = if has_symbolic {
+            value.into()
+        } else {
+            UnevalValue::Some.into()
+        };
+        self.set_value(value)
     }
 
     fn adt_from(
@@ -384,17 +441,12 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
          * https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/mir/enum.Rvalue.html#variant.ShallowInitBox
          * > Transmutes a *mut u8 into shallow-initialized Box<T>.
          * BTW, very improbable to have a symbolic value here. */
-        let dst_ty_id = self.dest.metadata().unwrap_type_id();
+        let dst_ty_id = self.dest.type_info().id().unwrap();
         self.cast_of(value, CastKind::Transmute(dst_ty_id));
     }
 }
 
 impl<EB: OperationalExprBuilder> BasicAssignmentHandler<'_, EB> {
-    #[inline]
-    fn get_place_value(&mut self, place: Place) -> PlaceValueRef {
-        self.vars_state.ref_place(&place)
-    }
-
     #[inline]
     fn set(&mut self, value: ValueRef) {
         self.vars_state.set_place(&self.dest, value);
@@ -402,11 +454,7 @@ impl<EB: OperationalExprBuilder> BasicAssignmentHandler<'_, EB> {
 
     #[inline]
     fn set_value(&mut self, value: Value) {
-        self.set(ValueRef::new(value));
-    }
-
-    fn get_operand_value(&mut self, operand: <Self as AssignmentHandler>::Operand) -> ValueRef {
-        get_operand_value(self.vars_state, operand)
+        self.set(value.to_value_ref());
     }
 
     fn expr_builder(&self) -> impl DerefMut<Target = EB> + '_ {
@@ -418,14 +466,17 @@ impl<EB: OperationalExprBuilder> BasicAssignmentHandler<'_, EB> {
         kind: AdtKind,
         fields: impl Iterator<Item = Option<<Self as AssignmentHandler>::Field>>,
     ) {
-        let value = Value::Concrete(ConcreteValue::Adt(AdtValue {
-            kind,
-            fields: fields
-                .map(|f| AdtField {
-                    value: f.map(|f| self.get_operand_value(f.into())),
-                })
-                .collect(),
-        }));
+        let mut has_symbolic = false;
+        let fields = fields
+            .map(|f| AdtField {
+                value: f.inspect(|f| has_symbolic |= f.is_symbolic()),
+            })
+            .collect();
+        let value = if has_symbolic {
+            ConcreteValue::Adt(AdtValue { kind, fields }).into()
+        } else {
+            UnevalValue::Some.into()
+        };
         self.set_value(value)
     }
 
@@ -434,8 +485,8 @@ impl<EB: OperationalExprBuilder> BasicAssignmentHandler<'_, EB> {
         &self,
         tag_value: SymValueRef,
         tag_encoding: &common::tyexp::TagEncodingInfo,
-        discr_meta: &PlaceMetadata,
-        tag_ty: &PlaceMetadata,
+        discr_ty_info: &LazyTypeInfo,
+        tag_ty_info: &LazyTypeInfo,
     ) -> SymValueRef {
         use common::tyexp::TagEncodingInfo::*;
         match tag_encoding {
@@ -461,21 +512,20 @@ impl<EB: OperationalExprBuilder> BasicAssignmentHandler<'_, EB> {
                     }
                 }
 
-                let get_int_type = |meta: &PlaceMetadata| {
-                    meta.ty()
-                        .cloned()
+                let get_int_type = |ty_info: &LazyTypeInfo| {
+                    ValueType::try_from(ty_info)
+                        .ok()
                         .unwrap_or_else(|| {
                             self.type_manager
-                        .get_type(meta.unwrap_type_id())
+                        .get_type(ty_info.id().unwrap())
                         .try_into()
                         .expect("Expected the type of the discriminant raw value to be a primitive")
                         })
                         .expect_int()
                 };
 
-                let discr_ty = get_int_type(discr_meta);
-                let discr_ty_info = LazyTypeInfo::from(discr_meta);
-                let tag_ty = get_int_type(tag_ty);
+                let discr_ty = get_int_type(discr_ty_info);
+                let tag_ty = get_int_type(tag_ty_info);
 
                 let into_tag_value = |v: u128| ConstValue::new_int(v, tag_ty).to_value_ref();
                 let into_discr_value = |v: u128| ConstValue::new_int(v, discr_ty).to_value_ref();
@@ -512,7 +562,7 @@ impl<EB: OperationalExprBuilder> BasicAssignmentHandler<'_, EB> {
                         .into();
                     let tagged_discr =
                         self.expr_builder()
-                            .to_int(tagged_discr, discr_ty, discr_ty_info);
+                            .to_int(tagged_discr, discr_ty, discr_ty_info.clone());
                     debug_assert!(tagged_discr.is_symbolic());
                     (is_niche, tagged_discr)
                 };
@@ -530,22 +580,34 @@ impl<EB: OperationalExprBuilder> BasicAssignmentHandler<'_, EB> {
 }
 
 pub(crate) struct BasicBranchingHandler<'a, EB: BinaryExprBuilder> {
-    vars_state: &'a mut dyn VariablesState,
     trace_manager: RefMut<'a, TraceManager>,
     expr_builder: RRef<EB>,
 }
 
+impl<'a> BasicBranchingHandler<'a, BasicExprBuilder> {
+    fn new(backend: &'a mut BasicBackend) -> Self {
+        Self {
+            trace_manager: backend.trace_manager.borrow_mut(),
+            expr_builder: backend.expr_builder.clone(),
+        }
+    }
+}
+
 impl<'a, EB: BinaryExprBuilder> BranchingHandler for BasicBranchingHandler<'a, EB> {
-    type Operand = Operand;
+    type Operand = ValueRef;
     type ConditionalBranchingHandler = BasicConditionalBranchingHandler<'a, EB>;
 
     fn conditional(
         self,
-        discriminant: Operand,
+        discriminant: Self::Operand,
         metadata: abs::BranchingMetadata,
     ) -> Self::ConditionalBranchingHandler {
-        let disc = get_operand_value(self.vars_state, discriminant);
-        BasicConditionalBranchingHandler::new(disc, metadata, self.trace_manager, self.expr_builder)
+        BasicConditionalBranchingHandler::new(
+            discriminant,
+            metadata,
+            self.trace_manager,
+            self.expr_builder,
+        )
     }
 
     /// This function provides runtime support for all 5 assertion kinds in the leaf compiler.
@@ -558,14 +620,13 @@ impl<'a, EB: BinaryExprBuilder> BranchingHandler for BasicBranchingHandler<'a, E
     ) {
         // For now, we will call this function before the assert occurs and assume that assertions always succeed.
         // TODO: add a result: bool parameter to this function, and add support for it using a panic hook.
-        let cond_val = get_operand_value(self.vars_state, cond);
-        if cond_val.is_symbolic() {
+        if cond.is_symbolic() {
             // NOTE: This is a trick to pass the value through the expression builder
             // to ensure value resolving and simplifications.
             let expr = self
                 .expr_builder
                 .borrow_mut()
-                .and((ConstValue::Bool(true).to_value_ref(), cond_val.clone()).into());
+                .and((ConstValue::Bool(true).to_value_ref(), cond.clone()).into());
             let mut constraint = Constraint::Bool(expr.into());
             if !expected {
                 constraint = constraint.not();
@@ -759,155 +820,122 @@ pub(crate) struct BasicFunctionHandler<'a> {
 }
 
 impl<'a> BasicFunctionHandler<'a> {
-    fn new(
-        call_stack_manager: &'a mut impl CallStackManager,
-        type_manager: &'a dyn TypeManager,
-    ) -> Self {
+    fn new(backend: &'a mut BasicBackend) -> Self {
         Self {
-            call_stack_manager,
-            type_manager,
+            call_stack_manager: &mut backend.call_stack_manager,
+            type_manager: backend.type_manager.as_ref(),
         }
     }
 }
 
 impl<'a> FunctionHandler for BasicFunctionHandler<'a> {
-    type Place = Place;
-    type Operand = Operand;
-    type MetadataHandler = BasicFunctionMetadataHandler<'a>;
+    type Place = PlaceValueRef;
+    type Operand = ValueRef;
+    type MetadataHandler = ();
 
+    #[inline]
     fn before_call(
         self,
         func: Self::Operand,
         args: impl Iterator<Item = Self::Arg>,
         are_args_tupled: bool,
     ) {
-        // we don't know whether func will be internal or external
-        let func_val = match try_const_operand_value(func) {
-            Some(func) => func,
-            None => unimplemented!("handle when func may be a non-const function pointer"),
-        };
-        let args = args
-            .map(|a| get_operand_value(self.call_stack_manager.top(), a))
-            .collect();
         self.call_stack_manager
-            .prepare_for_call(func_val, args, are_args_tupled);
+            .prepare_for_call(func, args.collect(), are_args_tupled);
     }
 
-    fn enter(self, func: Self::Operand) {
-        let func_val = match try_const_operand_value(func) {
-            Some(func) => func,
-            None => unimplemented!("handle when func may be a non-const function pointer"),
-        };
-        self.call_stack_manager.notify_enter(func_val);
+    fn enter(
+        self,
+        func: Self::Operand,
+        arg_places: impl Iterator<Item = Self::Place>,
+        ret_val_place: Self::Place,
+        tupled_arg: Option<(Local, TypeId)>,
+    ) {
+        fn ensure_deter_place(place: PlaceValueRef) -> DeterPlaceValueRef {
+            debug_assert!(!place.is_symbolic());
+            DeterPlaceValueRef::new(place)
+        }
+        self.call_stack_manager.set_places(
+            arg_places.map(ensure_deter_place).collect(),
+            ensure_deter_place(ret_val_place),
+        );
+        if let Some((arg_index, tuple_type_id)) = tupled_arg {
+            let Local::Argument(arg_index) = arg_index else {
+                unreachable!()
+            };
+            self.call_stack_manager
+                .try_untuple_argument(arg_index, &|| {
+                    Box::new(BasicUntupleHelper::new(self.type_manager, tuple_type_id))
+                });
+        }
+        self.call_stack_manager.notify_enter(func);
     }
 
+    #[inline]
     fn override_return_value(self, value: Self::Operand) {
-        let value = get_operand_value(self.call_stack_manager.top(), value);
         self.call_stack_manager.override_return_value(value)
     }
 
+    #[inline]
     fn ret(self) {
         self.call_stack_manager.pop_stack_frame();
     }
 
     fn after_call(self, result_dest: Self::Place) {
-        self.call_stack_manager.finalize_call(result_dest);
+        debug_assert!(!result_dest.is_symbolic());
+        self.call_stack_manager
+            .finalize_call(DeterPlaceValueRef::new(result_dest));
     }
 
     fn metadata(self) -> Self::MetadataHandler {
-        BasicFunctionMetadataHandler {
-            call_stack_manager: self.call_stack_manager,
-            type_manager: self.type_manager,
-        }
-    }
-}
-
-pub(crate) struct BasicFunctionMetadataHandler<'a> {
-    call_stack_manager: &'a mut dyn CallStackManager,
-    type_manager: &'a dyn TypeManager,
-}
-
-impl BasicFunctionMetadataHandler<'_> {
-    pub(crate) fn preserve_metadata(&mut self, place: Place) {
-        let local = place.local();
-        let metadata = local.metadata();
-        let local: &abs::Local = local.as_ref();
-        debug_assert!(
-            local.is_func_local() && !place.has_projection(),
-            "This method is meant for function locals not arbitrary places."
-        );
-        self.call_stack_manager
-            .set_local_metadata(local, metadata.clone())
-    }
-
-    pub(crate) fn try_untuple_argument(&mut self, arg_index: LocalIndex, tuple_type_id: TypeId) {
-        self.call_stack_manager
-            .try_untuple_argument(arg_index, &|| {
-                Box::new(BasicUntupleHelper::new(self.type_manager, tuple_type_id))
-            })
+        Default::default()
     }
 }
 
 struct BasicUntupleHelper<'a> {
     type_manager: &'a dyn TypeManager,
-    type_id: TypeId,
+    tuple_type_id: TypeId,
     type_info: Option<&'static TypeInfo>,
     fields_info: Option<&'static StructShape>,
 }
 
-impl UntupleHelper for BasicUntupleHelper<'_> {
-    fn make_tupled_arg_pseudo_place_meta(&mut self, addr: RawPointer) -> PlaceMetadata {
-        let mut metadata = PlaceMetadata::default();
-        metadata.set_address(addr);
-        Self::set_metadata_from_type_info(&mut metadata, self.type_info());
-        metadata
+impl GenericUntupleHelper for BasicUntupleHelper<'_> {
+    type PlaceInfo = Place;
+    type Place = DeterPlaceValueRef;
+
+    fn make_tupled_arg_pseudo_place(&mut self, addr: RawAddress) -> Self::Place {
+        DeterPlaceValueRef::new(
+            DeterministicPlaceValue::from_addr_type(addr, self.tuple_type_id).to_value_ref(),
+        )
     }
 
-    fn num_fields(&self, tupled_value: &ValueRef) -> FieldIndex {
-        if let Some(ref type_info) = self.type_info {
-            type_info
-                .as_single_variant()
-                .and_then(|s| s.fields.as_struct())
-                .unwrap_or_else(|| panic!("Expected tuple type info, got: {:?}", type_info))
-                .fields
-                .len() as FieldIndex
-        } else if let Value::Concrete(ConcreteValue::Adt(AdtValue {
-            kind: AdtKind::Struct,
-            fields,
-        })) = tupled_value.as_ref()
-        {
-            fields.len() as FieldIndex
-        } else {
-            panic!("Could not find the number of fields for the tupled arg.")
-        }
+    fn num_fields(&mut self) -> FieldIndex {
+        self.type_info()
+            .expect_single_variant()
+            .fields
+            .as_struct()
+            .unwrap()
+            .fields
+            .len() as FieldIndex
     }
 
-    fn field_place(&mut self, mut base: Place, field: FieldIndex) -> Place {
-        use abs::backend::PlaceHandler;
-
-        let base_addr = base.address();
-
-        BasicPlaceHandler::default()
-            .project_on(&mut base)
-            .for_field(field);
-
-        if self.type_info.is_some() {
-            // FIXME: Repeated checks
-            let field_info = &self.fields_info().fields[field as usize];
-            let field_type = self.get_type(field_info.ty);
-            Self::set_metadata_from_type_info(base.metadata_mut(), &field_type);
-            base.metadata_mut()
-                .set_address(base_addr.wrapping_byte_add(field_info.offset as usize) as RawPointer);
-        }
-        base
+    fn field_place(&mut self, base: Self::Place, field: FieldIndex) -> Self::Place {
+        let field_info = &self.fields_info().fields[field as usize];
+        DeterPlaceValueRef::new(
+            DeterministicPlaceValue::from_addr_type(
+                base.address().wrapping_byte_add(field_info.offset as usize),
+                field_info.ty,
+            )
+            .to_value_ref(),
+        )
     }
 }
 
 impl<'a> BasicUntupleHelper<'a> {
-    fn new(type_manager: &'a dyn TypeManager, type_id: TypeId) -> Self {
+    fn new(type_manager: &'a dyn TypeManager, tuple_type_id: TypeId) -> Self {
         Self {
             type_manager,
-            type_id,
+            tuple_type_id,
             type_info: None,
             fields_info: None,
         }
@@ -920,7 +948,7 @@ impl<'a> BasicUntupleHelper<'a> {
 
     fn type_info(&mut self) -> &'static TypeInfo {
         if self.type_info.is_none() {
-            self.type_info = Some(self.get_type(self.type_id));
+            self.type_info = Some(self.get_type(self.tuple_type_id));
         }
         self.type_info.unwrap()
     }
@@ -932,11 +960,6 @@ impl<'a> BasicUntupleHelper<'a> {
                 FieldsShapeInfo::Struct(ref shape) => shape,
                 _ => panic!("Expected tuple type info, got: {:?}", type_info),
             })
-    }
-
-    fn set_metadata_from_type_info(metadata: &mut PlaceMetadata, type_info: &TypeInfo) {
-        metadata.set_type_id(type_info.id);
-        metadata.set_size(type_info.size);
     }
 }
 
@@ -967,91 +990,62 @@ impl<'t> crate::abs::backend::TypeManager for BasicTypeManager<'t> {
     }
 }
 
-type ValueRef = expr::ValueRef;
-
 type Constraint = crate::abs::Constraint<ValueRef>;
 
-fn get_operand_value(vars_state: &mut dyn VariablesState, operand: Operand) -> ValueRef {
-    match operand {
-        // copy and move are the same, but only for now. see: https://github.com/rust-lang/unsafe-code-guidelines/issues/188
-        Operand::Place(place, PlaceUsage::Copy) => vars_state.copy_place(&place),
-        Operand::Place(place, PlaceUsage::Move) => vars_state.take_place(&place),
-        Operand::Const(constant) => Into::<ConcreteValue>::into(constant).to_value_ref(),
-        Operand::Symbolic(sym) => sym.into(),
-    }
-}
+pub(crate) struct TagPlaceWithInfo(PlaceValueRef, &'static common::tyexp::TagInfo);
 
-/// This function should only be used when you know your operand will be const
-fn try_const_operand_value(operand: Operand) -> Option<ValueRef> {
-    match operand {
-        Operand::Const(constant) => Some(Into::<ConcreteValue>::into(constant).to_value_ref()),
-        _ => None,
-    }
-}
+trait GenericVariablesState {
+    type PlaceInfo = Place;
+    type PlaceValue = PlaceValueRef;
+    type Value = ValueRef;
 
-/// Simulates accessing the tag value of an enum as a field.
-fn project_tag(
-    mut place: Place,
-    type_manager: &dyn TypeManager,
-) -> (Place, &'static common::tyexp::TagInfo) {
-    let ty = type_manager.get_type(place.metadata().unwrap_type_id());
-    let tag_info = ty.tag.as_ref().unwrap();
-    let metadata = {
-        let mut meta = PlaceMetadata::default();
-        meta.set_address(
-            place
-                .address()
-                .wrapping_byte_add(tag_info.as_field.offset as usize) as RawPointer,
-        );
-        let tag_ty = type_manager.get_type(tag_info.as_field.ty);
-        meta.set_type_id(tag_ty.id);
-        if let Ok(value_ty) = tag_ty.try_into() {
-            meta.set_ty(value_ty);
-        }
-        meta.set_size(tag_ty.size);
-        meta
-    };
-    place.add_projection(Projection::Field(0));
-    place.push_metadata(metadata);
-    (place, tag_info)
-}
-
-trait VariablesState<P = Place, V = ValueRef, PV = PlaceValueRef> {
     fn id(&self) -> usize;
 
     /// Returns a value that corresponds to the place itself.
     /// The returned value does not necessarily access the actual value but
     /// should be dereferenceable to get the actual value.
-    /// Used for creating references, addresses, etc.
-    fn ref_place(&self, place: &P) -> PV;
+    fn ref_place(&self, place: &Self::PlaceInfo, usage: PlaceUsage) -> Self::PlaceValue;
 
     /// Returns a copy of the value stored at the given place. May not physically copy the value
     /// but the returned value should be independently usable from the original value.
-    fn copy_place(&self, place: &P) -> V;
+    fn copy_place(&self, place: &Self::PlaceValue) -> Self::Value;
 
     /// Returns the value stored at the given place.
     /// Conceptually, it is required that the place will not contain the value right after this operation.
-    fn take_place(&mut self, place: &P) -> V {
-        self.try_take_place(place).unwrap()
-    }
-
-    /// Tries to take the value of a place if available.
-    fn try_take_place(&mut self, place: &P) -> Option<V>;
+    fn take_place(&mut self, place: &Self::PlaceValue) -> Self::Value;
 
     /// Sets the value of a place. Overwrites the previous value if any, also defines a new local
     /// variable if it does not exist.
-    fn set_place(&mut self, place: &P, value: V);
+    fn set_place(&mut self, place: &Self::PlaceValue, value: Self::Value);
 }
 
-trait CallStackManager {
+trait VariablesState:
+    GenericVariablesState<PlaceInfo = Place, PlaceValue = PlaceValueRef, Value = ValueRef>
+{
+}
+impl<T> VariablesState for T where
+    T: GenericVariablesState<PlaceInfo = Place, PlaceValue = PlaceValueRef, Value = ValueRef>
+{
+}
+
+trait GenericCallStackManager {
+    type VariablesState: GenericVariablesState;
+    type Place = <Self::VariablesState as GenericVariablesState>::PlaceValue;
+    type Value = <Self::VariablesState as GenericVariablesState>::Value;
+
     /* NOTE: Why `are_args_tupled` are passed? Isn't `try_untuple_argument` enough?
      * First, arguments are tupled at the call site, which also calls this function.
      * Second, when untupling, we should make sure that the arguments were tupled.
      * If closures are converted to a function pointer, then the arguments are not tupled.
      */
-    fn prepare_for_call(&mut self, func: ValueRef, args: Vec<ValueRef>, are_args_tupled: bool);
+    fn prepare_for_call(
+        &mut self,
+        func: Self::Value,
+        args: Vec<Self::Value>,
+        are_args_tupled: bool,
+    );
 
-    fn set_local_metadata(&mut self, local: &Local, metadata: PlaceMetadata);
+    fn set_places(&mut self, arg_places: Vec<Self::Place>, ret_val_place: Self::Place);
 
     fn try_untuple_argument<'a, 'b>(
         &'a mut self,
@@ -1059,23 +1053,49 @@ trait CallStackManager {
         untuple_helper: &dyn Fn() -> Box<dyn UntupleHelper + 'b>,
     );
 
-    fn notify_enter(&mut self, current_func: ValueRef);
+    fn notify_enter(&mut self, current_func: Self::Value);
 
     fn pop_stack_frame(&mut self);
 
-    fn override_return_value(&mut self, value: ValueRef);
+    fn override_return_value(&mut self, value: Self::Value);
 
-    fn finalize_call(&mut self, result_dest: Place);
+    fn finalize_call(&mut self, result_dest: Self::Place);
 
-    fn top(&mut self) -> &mut dyn VariablesState;
+    fn top(&mut self) -> &mut Self::VariablesState;
 }
 
-trait UntupleHelper {
-    fn make_tupled_arg_pseudo_place_meta(&mut self, addr: RawPointer) -> PlaceMetadata;
+trait GenericUntupleHelper {
+    type PlaceInfo;
+    type Place;
 
-    fn num_fields(&self, tupled_value: &ValueRef) -> FieldIndex;
+    fn make_tupled_arg_pseudo_place(&mut self, addr: RawAddress) -> Self::Place;
+
+    fn num_fields(&mut self) -> FieldIndex;
 
     /// Takes a place and returns a place with projection to the field.
     /// It should make a valid place with full information needed for the state.
-    fn field_place(&mut self, base: Place, field: FieldIndex) -> Place;
+    fn field_place(&mut self, base: Self::Place, field: FieldIndex) -> Self::Place;
+}
+
+trait UntupleHelper: GenericUntupleHelper<PlaceInfo = Place, Place = DeterPlaceValueRef> {}
+impl<T> UntupleHelper for T where
+    T: GenericUntupleHelper<PlaceInfo = Place, Place = DeterPlaceValueRef>
+{
+}
+
+trait CallStackManager:
+    GenericCallStackManager<
+        VariablesState = BasicVariablesState,
+        Place = DeterPlaceValueRef,
+        Value = ValueRef,
+    >
+{
+}
+impl<T> CallStackManager for T where
+    T: GenericCallStackManager<
+            VariablesState = BasicVariablesState,
+            Place = DeterPlaceValueRef,
+            Value = ValueRef,
+        >
+{
 }

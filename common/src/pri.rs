@@ -442,10 +442,16 @@ pub mod macros {
 
               #[allow(unused_parens)]
               { fn before_call_func(func: OperandRef, args: ($slice_ty!(OperandRef)), are_args_tupled: bool) }
-              { fn preserve_special_local_metadata(place: PlaceRef) }
               #[allow(unused_parens)]
-              { fn try_untuple_argument(arg_index: LocalIndex, tuple_type_id: ($type_id_ty)) }
-              { fn enter_func(func: OperandRef) }
+              { fn enter_func(func: OperandRef, arg_places: &[PlaceRef], ret_val_place: PlaceRef) }
+              #[allow(unused_parens)]
+              { fn enter_func_tupled(
+                  func: OperandRef,
+                  arg_places: &[PlaceRef],
+                  ret_val_place: PlaceRef,
+                  tupled_arg_index: LocalIndex,
+                  tupled_arg_type_id: TypeId,
+              ) }
               { fn return_from_func() }
               { fn override_return_value(operand: OperandRef) }
               { fn after_call_func(destination: PlaceRef) }
@@ -749,11 +755,9 @@ pub mod macros {
             }$modifier!{
                 #[allow(unused_parens)]fn before_call_func(func:OperandRef,args:($slice_ty!(OperandRef)),are_args_tupled:bool);
             }$modifier!{
-                fn preserve_special_local_metadata(place:PlaceRef);
+                #[allow(unused_parens)]fn enter_func(func:OperandRef,arg_places: &[PlaceRef],ret_val_place:PlaceRef);
             }$modifier!{
-                #[allow(unused_parens)]fn try_untuple_argument(arg_index:LocalIndex,tuple_type_id:($type_id_ty));
-            }$modifier!{
-                fn enter_func(func:OperandRef);
+                #[allow(unused_parens)]fn enter_func_tupled(func:OperandRef,arg_places: &[PlaceRef],ret_val_place:PlaceRef,tupled_arg_index:LocalIndex,tupled_arg_type_id:TypeId,);
             }$modifier!{
                 fn return_from_func();
             }$modifier!{

@@ -522,7 +522,7 @@ mod retrieval {
             let result = expr_builder.to_int(result, IntType::U8, LazyTypeInfo::None);
 
             debug_assert!(
-                ValueType::try_from(result.as_ref()).is_ok_and(|ty| ty == IntType::U8.into())
+                ValueType::try_from(result.value()).is_ok_and(|ty| ty == IntType::U8.into())
             );
             result
         }

@@ -4,6 +4,7 @@ Concretizer
 ctfe
 CTFE
 ctfes
+Discriminable
 dynamization
 Dynamize
 Flippable

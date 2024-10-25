@@ -1,17 +1,16 @@
 use crate::{
-    abs::{self, Local, LocalIndex},
-    utils::SelfHierarchical,
+    abs::{self, LocalIndex},
+    utils::InPlaceSelfHierarchical,
 };
 
 use super::{
     config::{CallConfig, ExternalCallStrategy},
-    expr::FuncId,
-    place::{LocalWithMetadata, PlaceMetadata},
-    CallStackManager, ConcreteValue, ConstValue, Place, UntupleHelper, Value, ValueRef,
+    expr::{place::DeterPlaceValueRef, FuncId},
+    ConcreteValue, ConstValue, GenericCallStackManager, UntupleHelper, Value, ValueRef,
     VariablesState,
 };
 
-use common::{log_debug, log_warn, pri::RawPointer};
+use common::{log_debug, log_warn, types::RawAddress};
 
 type VariablesStateFactory<VS> = Box<dyn Fn(usize) -> VS>;
 
@@ -22,8 +21,6 @@ use self::logging::TAG;
  * | Caller        | Callee                    |
  * +---------------+---------------------------+
  * | before_call() |                           |
- * |               | preserve_metadata()       |
- * |               | [try_untuple_argument()]  |
  * |               | enter()                   |
  * |               | [override_return_value()] |
  * |               | return()                  |
@@ -34,7 +31,7 @@ use self::logging::TAG;
  * | Caller             | Callee                    | Log Span                       |
  * +--------------------+---------------------------+--------------------------------+
  * | prepare_for_call() |                           | depth = n, trans: dir = "call" |
- * |                    | set_local_metadata()      |                                |
+ * |                    | set_places()              |                                |
  * |                    | [try_untuple_argument()]  |                                |
  * |                    | notify_enter()            | __                             |
  * |                    | [override_return_value()] | depth = n + 1                  |
@@ -47,7 +44,7 @@ use self::logging::TAG;
  * +---------------------------+--------------------------------+
  * |                           | __ depth = n                   |
  * | prepare_for_call()        | depth = n, trans: dir = "call" |
- * | set_local_metadata()      |                                |
+ * | set_places()              |                                |
  * | [try_untuple_argument()]  |                                |
  * | notify_enter()            | __                             |
  * |                           | depth = n + 1                  |
@@ -100,12 +97,12 @@ pub(super) struct BasicCallStackManager<VS: VariablesState> {
     /// The data passed between from the call point (in the caller)
     /// to the entrance point (in the callee).
     latest_call: Option<CallInfo>,
-    args_metadata: Vec<Option<PlaceMetadata>>,
-    return_val_metadata: Option<PlaceMetadata>,
+    arg_places: Vec<DeterPlaceValueRef>,
+    return_val_place: Option<DeterPlaceValueRef>,
     /// The data (return value) passed between the exit point (in the callee)
     /// to the return point (in the caller).
     latest_returned_val: Option<ValueRef>,
-    vars_state: Option<VS>,
+    vars_state: VS,
     config: CallConfig,
     log_span: tracing::span::EnteredSpan,
 }
@@ -123,11 +120,8 @@ pub(super) struct CallStackFrame {
     /// value from the external call when storing the returned value in the
     /// destination variable.
     overridden_return_val: Option<ValueRef>,
-    arg_locals: Vec<ArgLocal>,
-    return_val_metadata: Option<PlaceMetadata>,
+    return_val_place: Option<DeterPlaceValueRef>,
 }
-
-type ArgLocal = LocalWithMetadata;
 
 #[derive(Debug)]
 pub(super) struct CallInfo {
@@ -141,35 +135,28 @@ impl<VS: VariablesState> BasicCallStackManager<VS> {
         let log_span = tracing::Span::none().entered();
         Self {
             stack: vec![],
+            vars_state: vars_state_factory(0),
             vars_state_factory,
             latest_call: None,
-            args_metadata: vec![],
-            return_val_metadata: None,
+            arg_places: vec![],
+            return_val_place: None,
             latest_returned_val: None,
-            vars_state: None,
             config: config.clone(),
             log_span,
         }
     }
 }
 
-impl<VS: VariablesState + SelfHierarchical> BasicCallStackManager<VS> {
+impl<VS: VariablesState + InPlaceSelfHierarchical> BasicCallStackManager<VS> {
     fn push_new_stack_frame(
         &mut self,
-        args: impl Iterator<Item = (ArgLocal, ValueRef)>,
+        args: impl Iterator<Item = (DeterPlaceValueRef, ValueRef)>,
         frame: CallStackFrame,
     ) {
-        self.vars_state = Some(if let Some(current_vars) = self.vars_state.take() {
-            let mut vars_state = current_vars.add_layer();
-            for (local, value) in args {
-                vars_state.set_place(&Place::from(local.clone()), value);
-            }
-
-            vars_state
-        } else {
-            // The first push when the stack is empty
-            (self.vars_state_factory)(0)
-        });
+        self.vars_state.add_layer();
+        for (local, value) in args {
+            self.vars_state.set_place(local.as_ref(), value);
+        }
 
         self.stack.push(frame);
         self.log_span_reset();
@@ -181,7 +168,7 @@ impl<VS: VariablesState + SelfHierarchical> BasicCallStackManager<VS> {
             .expect("Call stack should not be empty")
     }
 
-    fn finalize_internal_call(&mut self, result_dest: &Place) {
+    fn finalize_internal_call(&mut self, result_dest: &VS::PlaceValue) {
         if let Some(returned_val) = self.latest_returned_val.take() {
             self.top().set_place(&result_dest, returned_val)
         } else {
@@ -189,7 +176,7 @@ impl<VS: VariablesState + SelfHierarchical> BasicCallStackManager<VS> {
         }
     }
 
-    fn finalize_external_call(&mut self, result_dest: &Place) {
+    fn finalize_external_call(&mut self, result_dest: &VS::PlaceValue) {
         // Clearing the data that is not cleared by the external function.
         let latest_call = self.latest_call.take();
         let symbolic_args = latest_call
@@ -247,36 +234,24 @@ impl<VS: VariablesState + SelfHierarchical> BasicCallStackManager<VS> {
 
     fn untuple(
         tupled_value: ValueRef,
-        tupled_arg_metadata: Option<&PlaceMetadata>,
+        tupled_arg_addr: Option<RawAddress>,
         untuple_helper: &mut dyn UntupleHelper,
         isolated_vars_state: VS,
     ) -> Vec<ValueRef> {
-        // Make a pseudo place for the tupled argument
-        let tupled_local = Local::Argument(1);
-        let tupled_local = {
-            let metadata = untuple_helper.make_tupled_arg_pseudo_place_meta(
-                /* NOTE: The address should not really matter, but let's keep it realistic. */
-                tupled_arg_metadata
-                    .map(|m| m.address() as RawPointer)
-                    .unwrap_or(1),
-            );
-            ArgLocal::from((tupled_local, metadata))
-        };
-        let tupled_pseudo_place = Place::from(tupled_local);
+        let tupled_pseudo_place = untuple_helper.make_tupled_arg_pseudo_place(
+            /* NOTE: The address should not really matter, but let's keep it realistic. */
+            tupled_arg_addr.unwrap_or(core::ptr::null() as RawAddress),
+        );
 
         // Write the value to the pseudo place in an isolated state, then read the fields
         let mut vars_state = isolated_vars_state;
-        let num_fields = untuple_helper.num_fields(&tupled_value);
-        vars_state.set_place(&tupled_pseudo_place, tupled_value);
+        let num_fields = untuple_helper.num_fields();
+        vars_state.set_place(tupled_pseudo_place.as_ref(), tupled_value);
         // Read the fields (values inside the tuple) one by one.
         (0..num_fields)
             .into_iter()
             .map(|i| untuple_helper.field_place(tupled_pseudo_place.clone(), i))
-            .map(|arg_place| {
-                vars_state.try_take_place(&arg_place).unwrap_or_else(|| {
-                    panic!("Could not untuple the argument at field {}.", arg_place)
-                })
-            })
+            .map(|arg_place| vars_state.take_place(arg_place.as_ref()))
             .collect()
     }
 
@@ -316,14 +291,19 @@ impl<VS: VariablesState + SelfHierarchical> BasicCallStackManager<VS> {
     }
 }
 
-impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackManager<VS> {
+impl<VS: VariablesState + InPlaceSelfHierarchical> GenericCallStackManager
+    for BasicCallStackManager<VS>
+{
+    type VariablesState = VS;
+    type Place = DeterPlaceValueRef;
+
     fn prepare_for_call(&mut self, func: ValueRef, args: Vec<ValueRef>, are_args_tupled: bool) {
         self.log_span_start_trans(logging::TransitionDirection::Call);
 
         // Some sanity checks
         let is_currently_clean = self.latest_call.is_none()
-            && self.args_metadata.is_empty()
-            && self.return_val_metadata.is_none();
+            && self.arg_places.is_empty()
+            && self.return_val_place.is_none();
         debug_assert!(
             is_currently_clean,
             concat!(
@@ -331,9 +311,9 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
                 "This is due to a problem in external function handling or instrumentation. ",
                 "`latest_call`: {:?}, ",
                 "`args_metadata`: {:?}, ",
-                "`return_val_metadata`: {:?}",
+                "`return_val_place`: {:?}",
             ),
-            self.latest_call, self.args_metadata, self.return_val_metadata,
+            self.latest_call, self.arg_places, self.return_val_place,
         );
 
         self.latest_call = Some(CallInfo {
@@ -343,19 +323,9 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
         });
     }
 
-    fn set_local_metadata(&mut self, local: &Local, metadata: super::place::PlaceMetadata) {
-        match local {
-            Local::ReturnValue => self.return_val_metadata = Some(metadata),
-            Local::Argument(local_index) => {
-                let args_metadata = &mut self.args_metadata;
-                let index = *local_index as usize - 1;
-                if args_metadata.len() <= index {
-                    args_metadata.resize(index + 1, None);
-                }
-                args_metadata[index] = Some(metadata);
-            }
-            _ => (),
-        }
+    fn set_places(&mut self, arg_places: Vec<Self::Place>, ret_val_place: Self::Place) {
+        self.arg_places = arg_places;
+        self.return_val_place = Some(ret_val_place);
     }
 
     fn try_untuple_argument<'a, 'b>(
@@ -381,7 +351,7 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
         let tupled_value = args.remove(arg_index);
         let untupled_args = Self::untuple(
             tupled_value,
-            self.args_metadata.get(arg_index).and_then(|m| m.as_ref()),
+            self.arg_places.get(arg_index).map(|m| m.address()),
             untuple_helper().as_mut(),
             (self.vars_state_factory)(usize::MAX),
         );
@@ -390,18 +360,9 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
     }
 
     fn notify_enter(&mut self, current_func: ValueRef) {
-        let arg_locals = self
-            .args_metadata
-            .drain(..)
-            .into_iter()
-            .map(|m| m.expect("Missing argument metadata."))
-            .enumerate()
-            .map(|(i, metadata)| ArgLocal::new(Local::Argument((i + 1) as LocalIndex), metadata))
-            .collect::<Vec<_>>();
-
+        let arg_places = core::mem::replace(&mut self.arg_places, Default::default());
         let call_stack_frame = CallStackFrame {
-            arg_locals: arg_locals.clone(),
-            return_val_metadata: self.return_val_metadata.take(),
+            return_val_place: self.return_val_place.take(),
             ..Default::default()
         };
 
@@ -410,11 +371,11 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
                 let args = call_info.args;
                 assert_eq!(
                     args.len(),
-                    arg_locals.len(),
+                    arg_places.len(),
                     "Inconsistent number of passed arguments."
                 );
 
-                Ok(arg_locals.into_iter().zip(args.into_iter()))
+                Ok(arg_places.into_iter().zip(args.into_iter()))
             } else {
                 log_debug!(
                     target: TAG,
@@ -449,6 +410,13 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
     }
 
     fn pop_stack_frame(&mut self) {
+        self.vars_state.drop_layer().or_else(|| {
+            if self.stack.len() == 0 {
+                log_warn!(target: TAG, "The initial call stack was getting popped.");
+            }
+            None
+        });
+
         let popped_frame = self.stack.pop().unwrap();
 
         self.log_span_reset();
@@ -460,22 +428,12 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
             self.log_span_start_trans(logging::TransitionDirection::Return);
         }
 
+        let return_val = self
+            .top()
+            .take_place(&popped_frame.return_val_place.unwrap().into());
         self.latest_returned_val
-            .take()
-            .inspect(|val| self.inspect_returned_value(val));
-
-        // Cleaning the arguments
-        popped_frame.arg_locals.into_iter().for_each(|local| {
-            self.top().take_place(&Place::from(local));
-        });
-
-        let ret_local = popped_frame
-            .return_val_metadata
-            // When return type is unit, metadata may be removed.
-            .map(|m| LocalWithMetadata::new(Local::ReturnValue, m));
-        self.latest_returned_val = ret_local
-            .map(Place::from)
-            .and_then(|p| self.top().try_take_place(&p));
+            .replace(return_val)
+            .inspect(|old_unconsumed_value| self.inspect_returned_value(old_unconsumed_value));
         if let Some(overridden) = popped_frame.overridden_return_val {
             if self.latest_returned_val.is_some() {
                 log_warn!(
@@ -488,11 +446,9 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
             }
             self.latest_returned_val = Some(overridden);
         }
-
-        self.vars_state = self.vars_state.take().unwrap().drop_layer();
     }
 
-    fn finalize_call(&mut self, result_dest: Place) {
+    fn finalize_call(&mut self, result_dest: Self::Place) {
         self.log_span_reset();
 
         let is_external = self
@@ -505,10 +461,10 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
             });
         if !is_external {
             log_debug!(target: TAG, "Finalizing an internal call.");
-            self.finalize_internal_call(&result_dest)
+            self.finalize_internal_call(result_dest.as_ref())
         } else {
             log_debug!(target: TAG, "Finalizing an external call.");
-            self.finalize_external_call(&result_dest)
+            self.finalize_external_call(result_dest.as_ref())
         }
     }
 
@@ -517,8 +473,8 @@ impl<VS: VariablesState + SelfHierarchical> CallStackManager for BasicCallStackM
         self.top_frame().overridden_return_val = Some(value);
     }
 
-    fn top(&mut self) -> &mut dyn VariablesState {
-        self.vars_state.as_mut().expect("Call stack is empty")
+    fn top(&mut self) -> &mut VS {
+        &mut self.vars_state
     }
 }
 

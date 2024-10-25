@@ -82,10 +82,10 @@ impl<P> TryFrom<Place<Local, P>> for Local {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(crate) enum Projection<L = Local> {
+pub(crate) enum Projection<I = Local> {
     Field(FieldIndex),
     Deref,
-    Index(L),
+    Index(I),
     ConstantIndex {
         offset: u64,
         min_length: u64,
@@ -99,6 +99,30 @@ pub(crate) enum Projection<L = Local> {
     Downcast(VariantIndex),
     OpaqueCast,
     Subtype,
+}
+
+impl<I> Projection<I> {
+    pub(crate) fn map<IInto>(self, f: impl FnOnce(I) -> IInto) -> Projection<IInto> {
+        use Projection::*;
+        match self {
+            Field(index) => Field(index),
+            Deref => Deref,
+            Index(index) => Index(f(index)),
+            ConstantIndex {
+                offset,
+                min_length,
+                from_end,
+            } => ConstantIndex {
+                offset,
+                min_length,
+                from_end,
+            },
+            Subslice { from, to, from_end } => Subslice { from, to, from_end },
+            Downcast(index) => Downcast(index),
+            OpaqueCast => OpaqueCast,
+            Subtype => Subtype,
+        }
+    }
 }
 
 pub(crate) trait HasMetadata {
@@ -224,4 +248,16 @@ impl<L, P, M> From<Place<L, P>> for PlaceWithMetadata<L, P, M> {
             projs_metadata: Vec::with_capacity(0),
         }
     }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum PlaceUsage {
+    Read,
+    Write,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum PlaceAsOperandUsage {
+    Copy,
+    Move,
 }

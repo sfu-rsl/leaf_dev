@@ -2,8 +2,8 @@ use std::fmt::{Display, Formatter, Result};
 
 use super::{
     place::{
-        DerefSymHostPlace, DeterministicProjection, PlaceValue, SymIndexedPlace, SymbolicPlaceBase,
-        SymbolicPlaceValue,
+        DerefSymHostPlace, DeterministicPlaceValue, DeterministicProjection, PlaceValue,
+        SymIndexedPlace, SymbolicPlaceBase, SymbolicPlaceValue,
     },
     *,
 };
@@ -246,9 +246,15 @@ impl Display for PorterValue {
 impl Display for PlaceValue {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
-            PlaceValue::Deterministic(value) => write!(f, "{:?}", value),
+            PlaceValue::Deterministic(value) => write!(f, "{value}"),
             PlaceValue::Symbolic(value) => write!(f, "{value}"),
         }
+    }
+}
+
+impl Display for DeterministicPlaceValue {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        write!(f, "@({:p}:{})", self.address(), self.type_info())
     }
 }
 
