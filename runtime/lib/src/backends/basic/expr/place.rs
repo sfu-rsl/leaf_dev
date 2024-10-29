@@ -122,16 +122,14 @@ impl DeterministicProjection {
 
 #[derive(Clone, Debug, PartialEq, Eq, dm::From)]
 pub(crate) struct DerefSymHostPlace {
-    pub value: SymValueRef,
-    pub metadata: PlaceMetadata,
+    pub host: SymValueRef,
+    pub host_type_id: TypeId,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct SymIndexedPlace {
     pub host: PlaceValueRef,
-    pub host_metadata: PlaceMetadata,
     pub index: SymValueRef,
-    pub index_place: DeterPlaceValueRef,
 }
 
 mod guards {

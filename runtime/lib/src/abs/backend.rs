@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use super::{
     AssertKind, BinaryOp, BranchingMetadata, CastKind, Constraint, FieldIndex, Local, PlaceUsage,
-    Projection, SymVariable, UnaryOp, VariantIndex,
+    Projection, SymVariable, TypeId, UnaryOp, VariantIndex,
 };
 
 pub(crate) trait RuntimeBackend {
@@ -46,12 +46,15 @@ pub(crate) trait PlaceHandler {
     type PlaceInfo<'a>;
     type Place;
     type DiscriminablePlace = Self::Place;
+    type Operand;
 
     fn from_info<'a>(self, info: Self::PlaceInfo<'a>) -> Self::Place;
 
     /// # Remarks
     /// Used for discriminant of enums.
     fn tag_of<'a>(self, info: Self::PlaceInfo<'a>) -> Self::DiscriminablePlace;
+
+    fn from_ptr(self, ptr: Self::Operand, ptr_type_id: TypeId) -> Self::Place;
 }
 
 pub(crate) trait PlaceBuilder {

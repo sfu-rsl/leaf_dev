@@ -23,7 +23,7 @@ use common::tyexp::{FieldsShapeInfo, StructShape, TypeInfo, UnionShape};
 
 use super::super::{
     expr::prelude::*,
-    place::{LocalWithMetadata, PlaceMetadata, PlaceWithMetadata, Projection},
+    place::{LocalWithMetadata, PlaceWithMetadata, Projection},
     ValueRef,
 };
 
@@ -37,9 +37,9 @@ type Place = PlaceWithMetadata;
 
 type SymPlaceHandlerObject = Box<
     dyn super::SymPlaceHandler<
-            PlaceMetadata,
-            SymPlaceValue = SymPlaceValueRef,
-            PlaceValue = PlaceValueRef,
+            SymEntity = SymValueRef,
+            ConcEntity = ConcreteValueRef,
+            Entity = ValueRef,
         >,
 >;
 
@@ -207,6 +207,23 @@ impl<EB: SymValueRefExprBuilder> GenericVariablesState for RawPointerVariableSta
     fn ref_place(&self, place: &Place, usage: PlaceUsage) -> PlaceValueRef {
         self.get_place(
             place,
+            match usage {
+                PlaceUsage::Read => self.sym_read_handler.borrow_mut(),
+                PlaceUsage::Write => self.sym_write_handler.borrow_mut(),
+            },
+        )
+    }
+
+    #[tracing::instrument(level = "debug", skip(self))]
+    fn ref_place_by_ptr(
+        &self,
+        ptr: ValueRef,
+        ptr_type_id: TypeId,
+        usage: PlaceUsage,
+    ) -> PlaceValueRef {
+        self.get_deref_of_ptr(
+            ptr,
+            ptr_type_id,
             match usage {
                 PlaceUsage::Read => self.sym_read_handler.borrow_mut(),
                 PlaceUsage::Write => self.sym_write_handler.borrow_mut(),

@@ -278,7 +278,7 @@ impl Display for SymbolicPlaceBase {
 
 impl Display for DerefSymHostPlace {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{}", self.value)
+        write!(f, "{}", self.host)
     }
 }
 

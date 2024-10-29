@@ -1,24 +1,34 @@
-use super::{place::PlaceMetadata, ValueRef};
-
 mod pointer_based;
 
 pub(super) use pointer_based::sym_place::strategies::make_sym_place_handler;
 pub(super) use pointer_based::RawPointerVariableState;
 
-pub(crate) trait SymPlaceHandler<M = PlaceMetadata> {
-    type SymPlaceValue;
-    type PlaceValue;
+use super::{ConcreteValueRef, SymValueRef};
 
-    fn handle(&mut self, place_value: Self::SymPlaceValue, place_meta: &M) -> Self::PlaceValue;
+pub(crate) trait SymPlaceHandler {
+    type SymEntity = SymValueRef;
+    type ConcEntity = ConcreteValueRef;
+    type Entity: From<Self::SymEntity> + From<Self::ConcEntity>;
+
+    fn handle<'a>(
+        &mut self,
+        sym_entity: Self::SymEntity,
+        get_conc: Box<dyn FnOnce(&Self::SymEntity) -> Self::ConcEntity + 'a>,
+    ) -> Self::Entity;
 }
 
-impl<M, SPV, PV> SymPlaceHandler<M>
-    for Box<dyn SymPlaceHandler<M, SymPlaceValue = SPV, PlaceValue = PV>>
+impl<SE, CE, E: From<SE> + From<CE>> SymPlaceHandler
+    for Box<dyn SymPlaceHandler<SymEntity = SE, ConcEntity = CE, Entity = E>>
 {
-    type SymPlaceValue = SPV;
-    type PlaceValue = PV;
+    type SymEntity = SE;
+    type ConcEntity = CE;
+    type Entity = E;
 
-    fn handle(&mut self, place_value: Self::SymPlaceValue, place_meta: &M) -> Self::PlaceValue {
-        self.as_mut().handle(place_value, place_meta)
+    fn handle<'a>(
+        &mut self,
+        sym_entity: Self::SymEntity,
+        get_conc: Box<dyn FnOnce(&Self::SymEntity) -> Self::ConcEntity + 'a>,
+    ) -> Self::Entity {
+        self.as_mut().handle(sym_entity, get_conc)
     }
 }

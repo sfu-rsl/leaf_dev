@@ -1,20 +1,15 @@
 use crate::backends::basic::{
-    concrete::Concretizer,
-    config::SymbolicPlaceStrategy,
-    expr::place::{DerefSymHostPlace, DeterministicPlaceValue, SymIndexedPlace, SymbolicPlaceBase},
-    place::PlaceMetadata,
-    state::SymPlaceHandler,
-    LazyTypeInfo,
+    concrete::Concretizer, config::SymbolicPlaceStrategy, state::SymPlaceHandler,
 };
 
-use super::{ConcreteValueRef, PlaceValueRef, RawConcreteValue, SymPlaceValueRef};
+use super::{ConcreteValueRef, SymValueRef, ValueRef};
 use common::log_debug;
 
 pub(crate) fn make_sym_place_handler(
     config: SymbolicPlaceStrategy,
     concretizer_factory: impl FnOnce() -> Box<dyn Concretizer>,
 ) -> Box<
-    dyn SymPlaceHandler<PlaceMetadata, SymPlaceValue = SymPlaceValueRef, PlaceValue = PlaceValueRef>,
+    dyn SymPlaceHandler<SymEntity = SymValueRef, ConcEntity = ConcreteValueRef, Entity = ValueRef>,
 > {
     log_debug!(
         "Creating a symbolic place handler for strategy {:?}",
@@ -31,78 +26,53 @@ pub(crate) fn make_sym_place_handler(
 }
 
 struct ProjExprSymPlaceHandler;
-impl<M> SymPlaceHandler<M> for ProjExprSymPlaceHandler {
-    type SymPlaceValue = SymPlaceValueRef;
-    type PlaceValue = PlaceValueRef;
+impl SymPlaceHandler for ProjExprSymPlaceHandler {
+    type Entity = ValueRef;
 
-    fn handle(&mut self, place_value: Self::SymPlaceValue, _metadata: &M) -> Self::PlaceValue {
-        place_value.into()
+    fn handle<'a>(
+        &mut self,
+        sym_value: Self::SymEntity,
+        _get_conc: Box<dyn FnOnce(&Self::SymEntity) -> Self::ConcEntity + 'a>,
+    ) -> Self::Entity {
+        sym_value.into()
     }
 }
 
 struct ConcretizerSymPlaceHandler;
-impl SymPlaceHandler<PlaceMetadata> for ConcretizerSymPlaceHandler {
-    type SymPlaceValue = SymPlaceValueRef;
-    type PlaceValue = PlaceValueRef;
+impl SymPlaceHandler for ConcretizerSymPlaceHandler {
+    type Entity = ValueRef;
 
-    fn handle(
+    fn handle<'a>(
         &mut self,
-        _place_value: Self::SymPlaceValue,
-        place_meta: &PlaceMetadata,
-    ) -> Self::PlaceValue {
-        DeterministicPlaceValue::new(place_meta).to_value_ref()
+        sym_value: Self::SymEntity,
+        get_conc: Box<dyn FnOnce(&Self::SymEntity) -> Self::ConcEntity + 'a>,
+    ) -> Self::Entity {
+        get_conc(&sym_value).into()
     }
 }
 
 struct StamperSymPlaceHandler {
     concretizer: Box<dyn Concretizer>,
 }
-impl SymPlaceHandler<PlaceMetadata> for StamperSymPlaceHandler {
-    type SymPlaceValue = SymPlaceValueRef;
-    type PlaceValue = PlaceValueRef;
+impl SymPlaceHandler for StamperSymPlaceHandler {
+    type Entity = ValueRef;
 
-    fn handle(
+    fn handle<'a>(
         &mut self,
-        place_value: Self::SymPlaceValue,
-        place_meta: &PlaceMetadata,
-    ) -> Self::PlaceValue {
-        let (sym_value, conc_value) = match &place_value.base {
-            SymbolicPlaceBase::Deref(DerefSymHostPlace {
-                value: host,
-                metadata: meta,
-            }) => (
-                host,
-                RawConcreteValue(
-                    meta.address(),
-                    LazyTypeInfo::from((meta.type_id(), meta.ty().copied())),
-                ),
-            ),
-            SymbolicPlaceBase::SymIndex(SymIndexedPlace {
-                index,
-                index_place: index_metadata,
-                host: base,
-                host_metadata: base_metadata,
-            }) => {
-                if base.is_symbolic() {
-                    self.handle(SymPlaceValueRef::new(base.clone()), base_metadata);
-                }
-                (
-                    index,
-                    RawConcreteValue(index_metadata.address(), index_metadata.type_info().clone()),
-                )
-            }
-        };
+        sym_value: Self::SymEntity,
+        get_conc: Box<dyn FnOnce(&Self::SymEntity) -> Self::ConcEntity + 'a>,
+    ) -> Self::Entity {
+        let conc_value = get_conc(&sym_value);
 
         log_debug!(
             "Stamping symbolic value {} with concrete value {}",
-            place_value,
-            conc_value
-        );
-        self.concretizer.stamp(
-            sym_value.clone(),
-            ConcreteValueRef::new(conc_value.to_value_ref()),
+            sym_value,
+            conc_value,
         );
 
-        ConcretizerSymPlaceHandler.handle(place_value, place_meta)
+        self.concretizer
+            .stamp(sym_value.clone(), conc_value.clone());
+
+        ConcretizerSymPlaceHandler.handle(sym_value, Box::new(|_| conc_value))
     }
 }
