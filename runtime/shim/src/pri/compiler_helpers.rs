@@ -53,6 +53,12 @@ static _CONST_BINARY_OP_OF_REFERENCER: fn(u8) -> BinaryOp = const_binary_op_of;
 #[used]
 static _CONST_UNARY_OP_OF_REFERENCER: fn(u8) -> UnaryOp = const_unary_op_of;
 
+#[used]
+static _CONST_ATOMIC_ORD_OF_REFERENCER: fn(u8) -> AtomicOrdering = const_atomic_ord_of;
+
+#[used]
+static _CONST_ATOMIC_BINARY_OP_OF_REFERENCER: fn(u8) -> AtomicBinaryOp = const_atomic_binary_op_of;
+
 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
 pub fn set_place_address_typed<T>(place: PlaceRef, address: *const T) {
     super::set_place_address(place, address as *const () as RawPointer)
@@ -99,6 +105,20 @@ pub const fn const_binary_op_of(raw: u8) -> BinaryOp {
 #[inline(always)]
 pub const fn const_unary_op_of(raw: u8) -> UnaryOp {
     UnaryOp::from_raw(raw)
+}
+
+#[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
+#[cfg_attr(core_build, rustc_const_stable(feature = "rust1", since = "1.0.0"))]
+#[inline(always)]
+pub const fn const_atomic_ord_of(raw: u8) -> AtomicOrdering {
+    AtomicOrdering::from_raw(raw)
+}
+
+#[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
+#[cfg_attr(core_build, rustc_const_stable(feature = "rust1", since = "1.0.0"))]
+#[inline(always)]
+pub const fn const_atomic_binary_op_of(raw: u8) -> AtomicBinaryOp {
+    AtomicBinaryOp::from_raw(raw)
 }
 
 /* This function is used as a replacement for special functions like intrinsics

@@ -55,6 +55,8 @@ impl ProgramRuntimeInterface for LateInitPri<MainPri> {
     type TypeId = abs::TypeId;
     type BinaryOp = abs::BinaryOp;
     type UnaryOp = abs::UnaryOp;
+    type AtomicOrdering = abs::AtomicOrdering;
+    type AtomicBinaryOp = abs::AtomicBinaryOp;
     type DebugInfo = DebugInfo;
 
     common::pri::list_func_decls! { modifier: late_init, (from Self) }

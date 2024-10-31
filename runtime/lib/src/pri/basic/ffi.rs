@@ -36,3 +36,17 @@ impl From<super::BranchingInfo> for common::pri::BranchingInfo {
         }
     }
 }
+
+impl From<common::pri::AtomicOrdering> for abs::AtomicOrdering {
+    #[inline(always)]
+    fn from(value: common::pri::AtomicOrdering) -> Self {
+        unsafe { core::mem::transmute(value) }
+    }
+}
+
+impl From<common::pri::AtomicBinaryOp> for abs::AtomicBinaryOp {
+    #[inline(always)]
+    fn from(value: common::pri::AtomicBinaryOp) -> Self {
+        unsafe { core::mem::transmute(value) }
+    }
+}

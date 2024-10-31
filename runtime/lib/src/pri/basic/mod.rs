@@ -27,6 +27,8 @@ impl ProgramRuntimeInterface for BasicPri {
     type TypeId = TypeId;
     type BinaryOp = abs::BinaryOp;
     type UnaryOp = abs::UnaryOp;
+    type AtomicOrdering = abs::AtomicOrdering;
+    type AtomicBinaryOp = abs::AtomicBinaryOp;
     type DebugInfo = DebugInfo;
 
     fn init_runtime_lib() {

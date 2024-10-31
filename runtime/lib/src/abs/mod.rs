@@ -91,6 +91,32 @@ pub enum UnaryOp {
     LeadingZeros = common::pri::UnaryOp::CTLZ.as_u8(),
 }
 
+#[derive(Clone, Copy, Debug)]
+#[repr(u8)]
+pub enum AtomicOrdering {
+    Unordered = common::pri::AtomicOrdering::UNORDERED.as_u8(),
+    Relaxed = common::pri::AtomicOrdering::RELAXED.as_u8(),
+    Acquire = common::pri::AtomicOrdering::ACQUIRE.as_u8(),
+    Release = common::pri::AtomicOrdering::RELEASE.as_u8(),
+    AcquireRelease = common::pri::AtomicOrdering::ACQ_REL.as_u8(),
+    SequentiallyConsistent = common::pri::AtomicOrdering::SEQ_CST.as_u8(),
+}
+
+#[derive(Clone, Copy, Debug)]
+#[repr(u8)]
+pub enum AtomicBinaryOp {
+    Add = common::pri::AtomicBinaryOp::ADD.as_u8(),
+    Sub = common::pri::AtomicBinaryOp::SUB.as_u8(),
+
+    Xor = common::pri::AtomicBinaryOp::XOR.as_u8(),
+    And = common::pri::AtomicBinaryOp::AND.as_u8(),
+    Nand = common::pri::AtomicBinaryOp::NAND.as_u8(),
+    Or = common::pri::AtomicBinaryOp::OR.as_u8(),
+
+    Min = common::pri::AtomicBinaryOp::MIN.as_u8(),
+    Max = common::pri::AtomicBinaryOp::MAX.as_u8(),
+}
+
 pub(crate) use place::Local;
 pub(crate) type Place<L = Local, P = Projection<L>> = place::Place<L, P>;
 pub(crate) type Projection<L> = place::Projection<L>;

@@ -8,16 +8,7 @@ pub type Ref = u64;
 pub type PlaceRef = Ref;
 pub type OperandRef = Ref;
 
-#[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug)]
-pub struct BinaryOp(pub u8);
-#[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug)]
-pub struct UnaryOp(pub u8);
-
-macro_rules! op_const {
+macro_rules! self_const {
     ($($name:ident = $value:expr;)*) => {
         $(
             #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
@@ -26,13 +17,55 @@ macro_rules! op_const {
     };
 }
 
-#[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
-impl BinaryOp {
-    const OVERFLOW: u8 = 0b01 << (core::mem::size_of::<u8>() * 8 - 2);
-    const UNCHECKED: u8 = 0b10 << (core::mem::size_of::<u8>() * 8 - 2);
-    const SATURATING: u8 = 0b11 << (core::mem::size_of::<u8>() * 8 - 2);
+macro_rules! cases_ifs {
+    ($raw_val:expr, $($name:ident),* $(,)?) => {
+        if false {
+            unreachable!()
+        }
+        $(
+        else if $raw_val == Self::$name.as_u8() {
+            Self::$name
+        }
+        )*
+        else {
+            unreachable!()
+        }
+    };
+}
 
-    op_const! {
+macro_rules! enum_like_type {
+    ($name:ident {
+        $($variant:ident = $value:expr;)*
+    }) => {
+        #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
+        #[repr(transparent)]
+        #[derive(Clone, Copy, Debug)]
+        pub struct $name(pub u8);
+
+        #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
+        impl $name {
+            self_const! {
+                $($variant = $value;)*
+            }
+
+            #[cfg_attr(core_build, rustc_const_stable(feature = "rust1", since = "1.0.0"))]
+            #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
+            pub const fn from_raw(raw: u8) -> Self {
+                cases_ifs!(raw, $($variant),*)
+            }
+
+            #[cfg_attr(core_build, rustc_const_stable(feature = "rust1", since = "1.0.0"))]
+            #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
+            #[inline]
+            pub const fn as_u8(self) -> u8 {
+                self.0
+            }
+        }
+    };
+}
+
+enum_like_type! {
+    BinaryOp {
         ADD = 1;
         ADD_UNCHECKED = BinaryOp::ADD.0 | BinaryOp::UNCHECKED;
         ADD_WITH_OVERFLOW = BinaryOp::ADD.0 | BinaryOp::OVERFLOW;
@@ -66,88 +99,17 @@ impl BinaryOp {
         CMP = 27;
         OFFSET = 31;
     }
-
-    #[cfg_attr(core_build, rustc_const_stable(feature = "rust1", since = "1.0.0"))]
-    #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
-    pub const fn from_raw(raw: u8) -> Self {
-        if raw == BinaryOp::ADD.as_u8() {
-            BinaryOp::ADD
-        } else if raw == BinaryOp::ADD_UNCHECKED.as_u8() {
-            BinaryOp::ADD_UNCHECKED
-        } else if raw == BinaryOp::ADD_WITH_OVERFLOW.as_u8() {
-            BinaryOp::ADD_WITH_OVERFLOW
-        } else if raw == BinaryOp::ADD_SATURATING.as_u8() {
-            BinaryOp::ADD_SATURATING
-        } else if raw == BinaryOp::SUB.as_u8() {
-            BinaryOp::SUB
-        } else if raw == BinaryOp::SUB_UNCHECKED.as_u8() {
-            BinaryOp::SUB_UNCHECKED
-        } else if raw == BinaryOp::SUB_WITH_OVERFLOW.as_u8() {
-            BinaryOp::SUB_WITH_OVERFLOW
-        } else if raw == BinaryOp::SUB_SATURATING.as_u8() {
-            BinaryOp::SUB_SATURATING
-        } else if raw == BinaryOp::MUL.as_u8() {
-            BinaryOp::MUL
-        } else if raw == BinaryOp::MUL_UNCHECKED.as_u8() {
-            BinaryOp::MUL_UNCHECKED
-        } else if raw == BinaryOp::MUL_WITH_OVERFLOW.as_u8() {
-            BinaryOp::MUL_WITH_OVERFLOW
-        } else if raw == BinaryOp::DIV.as_u8() {
-            BinaryOp::DIV
-        } else if raw == BinaryOp::DIV_EXACT.as_u8() {
-            BinaryOp::DIV_EXACT
-        } else if raw == BinaryOp::REM.as_u8() {
-            BinaryOp::REM
-        } else if raw == BinaryOp::BIT_XOR.as_u8() {
-            BinaryOp::BIT_XOR
-        } else if raw == BinaryOp::BIT_AND.as_u8() {
-            BinaryOp::BIT_AND
-        } else if raw == BinaryOp::BIT_OR.as_u8() {
-            BinaryOp::BIT_OR
-        } else if raw == BinaryOp::SHL.as_u8() {
-            BinaryOp::SHL
-        } else if raw == BinaryOp::SHL_UNCHECKED.as_u8() {
-            BinaryOp::SHL_UNCHECKED
-        } else if raw == BinaryOp::SHR.as_u8() {
-            BinaryOp::SHR
-        } else if raw == BinaryOp::SHR_UNCHECKED.as_u8() {
-            BinaryOp::SHR_UNCHECKED
-        } else if raw == BinaryOp::ROT_L.as_u8() {
-            BinaryOp::ROT_L
-        } else if raw == BinaryOp::ROT_R.as_u8() {
-            BinaryOp::ROT_R
-        } else if raw == BinaryOp::EQ.as_u8() {
-            BinaryOp::EQ
-        } else if raw == BinaryOp::LT.as_u8() {
-            BinaryOp::LT
-        } else if raw == BinaryOp::LE.as_u8() {
-            BinaryOp::LE
-        } else if raw == BinaryOp::NE.as_u8() {
-            BinaryOp::NE
-        } else if raw == BinaryOp::GE.as_u8() {
-            BinaryOp::GE
-        } else if raw == BinaryOp::GT.as_u8() {
-            BinaryOp::GT
-        } else if raw == BinaryOp::CMP.as_u8() {
-            BinaryOp::CMP
-        } else if raw == BinaryOp::OFFSET.as_u8() {
-            BinaryOp::OFFSET
-        } else {
-            unreachable!()
-        }
-    }
-
-    #[cfg_attr(core_build, rustc_const_stable(feature = "rust1", since = "1.0.0"))]
-    #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
-    #[inline]
-    pub const fn as_u8(self) -> u8 {
-        self.0
-    }
 }
 
 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
-impl UnaryOp {
-    op_const! {
+impl BinaryOp {
+    const OVERFLOW: u8 = 0b01 << (core::mem::size_of::<u8>() * 8 - 2);
+    const UNCHECKED: u8 = 0b10 << (core::mem::size_of::<u8>() * 8 - 2);
+    const SATURATING: u8 = 0b11 << (core::mem::size_of::<u8>() * 8 - 2);
+}
+
+enum_like_type! {
+    UnaryOp {
         NOT = 31;
         NEG = 32;
         PTR_METADATA = 33;
@@ -157,38 +119,6 @@ impl UnaryOp {
         CTPOP = 37;
         CTLZ_NONZERO = 38;
         CTLZ = 39;
-    }
-
-    #[cfg_attr(core_build, rustc_const_stable(feature = "rust1", since = "1.0.0"))]
-    #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
-    pub const fn from_raw(raw: u8) -> Self {
-        if raw == UnaryOp::NOT.as_u8() {
-            UnaryOp::NOT
-        } else if raw == UnaryOp::NEG.as_u8() {
-            UnaryOp::NEG
-        } else if raw == UnaryOp::PTR_METADATA.as_u8() {
-            UnaryOp::PTR_METADATA
-        } else if raw == UnaryOp::BIT_REVERSE.as_u8() {
-            UnaryOp::BIT_REVERSE
-        } else if raw == UnaryOp::CTTZ_NONZERO.as_u8() {
-            UnaryOp::CTTZ_NONZERO
-        } else if raw == UnaryOp::CTTZ.as_u8() {
-            UnaryOp::CTTZ
-        } else if raw == UnaryOp::CTPOP.as_u8() {
-            UnaryOp::CTPOP
-        } else if raw == UnaryOp::CTLZ_NONZERO.as_u8() {
-            UnaryOp::CTLZ_NONZERO
-        } else if raw == UnaryOp::CTLZ.as_u8() {
-            UnaryOp::CTLZ
-        } else {
-            unreachable!()
-        }
-    }
-
-    #[cfg_attr(core_build, rustc_const_stable(feature = "rust1", since = "1.0.0"))]
-    #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
-    pub const fn as_u8(self) -> u8 {
-        self.0
     }
 }
 
@@ -217,6 +147,32 @@ impl Default for BranchingInfo {
     }
 }
 
+enum_like_type! {
+    AtomicOrdering {
+        UNORDERED = 0;
+        RELAXED = 1;
+        RELEASE = 2;
+        ACQUIRE = 3;
+        ACQ_REL = 4;
+        SEQ_CST = 5;
+    }
+}
+
+enum_like_type! {
+    AtomicBinaryOp {
+        ADD = 1;
+        SUB = 2;
+
+        XOR = 6;
+        AND = 7;
+        NAND = 13;
+        OR = 8;
+
+        MIN = 40;
+        MAX = 41;
+    }
+}
+
 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
 pub type DebugInfo = &'static [u8];
 
@@ -237,6 +193,8 @@ pub trait ProgramRuntimeInterface {
     type TypeId;
     type BinaryOp;
     type UnaryOp;
+    type AtomicOrdering;
+    type AtomicBinaryOp;
     type DebugInfo;
 
     list_func_decls! { modifier: utils::identity, (from Self) }
@@ -535,6 +493,8 @@ pub mod macros {
                         type_id: $$type_id_ty:ty,
                         binary_op: $$binary_op_ty:ty,
                         unary_op: $$unary_op_ty:ty,
+                        atomic_ord: $$atomic_ord_ty:ty,
+                        atomic_bin_op: $atomic_bin_op_ty:ty,
                         dbg_info: $$dbg_info_ty:ty
                         $$(,)?
                     )
@@ -554,9 +514,11 @@ pub mod macros {
                             slice: $crate::leaf::common::utils::identity,
                             branching_info: (),
                             type_id: (),
-                            binary_op:(),
-                            unary_op:(),
-                            dbg_info:(),
+                            binary_op: (),
+                            unary_op: (),
+                            atomic_ord: (),
+                            atomic_bin_op: (),
+                            dbg_info: (),
                         )
                     }
                 };
@@ -573,6 +535,8 @@ pub mod macros {
                             type_id: Self::TypeId,
                             binary_op: Self::BinaryOp,
                             unary_op: Self::UnaryOp,
+                            atomic_ord: Self::AtomicOrdering,
+                            atomic_bin_op: Self::AtomicBinaryOp,
                             dbg_info: Self::DebugInfo,
                         )
                     }
@@ -590,6 +554,8 @@ pub mod macros {
                             type_id: U128Pack<TypeId>,
                             binary_op: common::pri::BinaryOp,
                             unary_op: common::pri::UnaryOp,
+                            atomic_ord: common::pri::AtomicOrdering,
+                            atomic_bin_op: common::pri::AtomicBinaryOp,
                             dbg_info: common::ffi::DebugInfo,
                         )
                     }
@@ -605,7 +571,7 @@ pub mod macros {
 
     #[cfg_attr(not(core_build), macro_export)]
     macro_rules! list_func_decls {
-        (modifier: $modifier:path,(u128: $u128_ty:ty,char: $char_ty:ty, &str: $str_ty:ty, &[u8]: $byte_str_ty:ty,slice: $slice_ty:path,branching_info: $branching_info_ty:ty,type_id: $type_id_ty:ty,binary_op: $binary_op_ty:ty,unary_op: $unary_op_ty:ty,dbg_info: $dbg_info_ty:ty$(,)?)) => {
+        (modifier: $modifier:path,(u128: $u128_ty:ty,char: $char_ty:ty, &str: $str_ty:ty, &[u8]: $byte_str_ty:ty,slice: $slice_ty:path,branching_info: $branching_info_ty:ty,type_id: $type_id_ty:ty,binary_op: $binary_op_ty:ty,unary_op: $unary_op_ty:ty,atomic_ord: $atomic_ord_ty:ty,atomic_bin_op: $atomic_bin_op_ty:ty,dbg_info: $dbg_info_ty:ty$(,)?)) => {
             $modifier!{
                 fn init_runtime_lib();
             }$modifier!{
@@ -804,17 +770,17 @@ pub mod macros {
         };
         (modifier: $modifier:path) => {
             $crate::leaf::common::pri::macros::list_func_decls!{
-                modifier: $modifier,(u128:(),char:(), &str:(), &[u8]:(),slice:crate::leaf::common::utils::identity,branching_info:(),type_id:(),binary_op:(),unary_op:(),dbg_info:(),)
+                modifier: $modifier,(u128:(),char:(), &str:(), &[u8]:(),slice:crate::leaf::common::utils::identity,branching_info:(),type_id:(),binary_op:(),unary_op:(),atomic_ord:(),atomic_bin_op:(),dbg_info:(),)
             }
         };
         (modifier: $modifier:path,(from Self)) => {
             $crate::leaf::common::pri::macros::list_func_decls!{
-                modifier: $modifier,(u128:Self::U128,char:Self::Char, &str:Self::ConstStr, &[u8]:Self::ConstByteStr,slice: $crate::leaf::common::pri::macros::self_slice_of,branching_info:Self::BranchingInfo,type_id:Self::TypeId,binary_op:Self::BinaryOp,unary_op:Self::UnaryOp,dbg_info:Self::DebugInfo,)
+                modifier: $modifier,(u128:Self::U128,char:Self::Char, &str:Self::ConstStr, &[u8]:Self::ConstByteStr,slice: $crate::leaf::common::pri::macros::self_slice_of,branching_info:Self::BranchingInfo,type_id:Self::TypeId,binary_op:Self::BinaryOp,unary_op:Self::UnaryOp,atomic_ord:Self::AtomicOrdering,atomic_bin_op:Self::AtomicBinaryOp,dbg_info:Self::DebugInfo,)
             }
         };
         (modifier: $modifier:path,(from common::ffi)) => {
             $crate::leaf::common::pri::macros::list_func_decls!{
-                modifier: $modifier,(u128:U128Pack,char:CharPack, &str:ConstStrPack, &[u8]:ConstByteStrPack,slice: $crate::leaf::common::pri::macros::slice_pack_of,branching_info:common::pri::BranchingInfo,type_id:U128Pack<TypeId>,binary_op:common::pri::BinaryOp,unary_op:common::pri::UnaryOp,dbg_info:common::ffi::DebugInfo,)
+                modifier: $modifier,(u128:U128Pack,char:CharPack, &str:ConstStrPack, &[u8]:ConstByteStrPack,slice: $crate::leaf::common::pri::macros::slice_pack_of,branching_info:common::pri::BranchingInfo,type_id:U128Pack<TypeId>,binary_op:common::pri::BinaryOp,unary_op:common::pri::UnaryOp,atomic_ord:common::pri::AtomicOrdering,atomic_bin_op:common::pri::AtomicBinaryOp,dbg_info:common::ffi::DebugInfo,)
             }
         };
     }

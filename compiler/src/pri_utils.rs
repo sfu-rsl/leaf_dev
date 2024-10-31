@@ -142,10 +142,13 @@ pub mod sym {
             const_binary_op_of,
             const_unary_op_of,
 
+            const_atomic_ord_of,
+            const_atomic_binary_op_of,
+
             special_func_placeholder,
         }
 
-        pub(crate) const ALL_HELPERS: [LS; 15] = [
+        pub(crate) const ALL_HELPERS: [LS; 17] = [
             CH_MODULE_MARKER,
             PLACE_REF_TYPE_HOLDER,
             OPERAND_REF_TYPE_HOLDER,
@@ -160,6 +163,8 @@ pub mod sym {
             size_of,
             const_binary_op_of,
             const_unary_op_of,
+            const_atomic_ord_of,
+            const_atomic_binary_op_of,
             special_func_placeholder,
         ];
     }
@@ -242,6 +247,8 @@ pub(crate) struct PriHelperFunctions {
     pub size_of: FunctionInfo,
     pub const_binary_op_of: FunctionInfo,
     pub const_unary_op_of: FunctionInfo,
+    pub const_atomic_ord_of: FunctionInfo,
+    pub const_atomic_binary_op_of: FunctionInfo,
     pub special_func_placeholder: FunctionInfo,
 }
 
@@ -451,6 +458,8 @@ pub(crate) fn collect_helper_funcs<'tcx>(
         size_of: get_func_info(sym::size_of),
         const_binary_op_of: get_func_info(sym::const_binary_op_of),
         const_unary_op_of: get_func_info(sym::const_unary_op_of),
+        const_atomic_ord_of: get_func_info(sym::const_atomic_ord_of),
+        const_atomic_binary_op_of: get_func_info(sym::const_atomic_binary_op_of),
         special_func_placeholder: get_func_info(sym::special_func_placeholder),
     }
 }
