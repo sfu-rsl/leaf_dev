@@ -195,6 +195,7 @@ impl PlaceHandler for BasicPlaceHandler<'_> {
     type PlaceInfo<'a> = Place;
     type Place = PlaceValueRef;
     type DiscriminablePlace = TagPlaceWithInfo;
+    type Operand = ValueRef;
 
     fn from_info<'a>(self, info: Self::PlaceInfo<'a>) -> Self::Place {
         self.vars_state.ref_place(&info, self.usage)
@@ -224,6 +225,11 @@ impl PlaceHandler for BasicPlaceHandler<'_> {
         place.add_projection(Projection::Field(0));
         place.push_metadata(metadata);
         TagPlaceWithInfo(self.from_info(place), tag_info)
+    }
+
+    fn from_ptr(self, ptr: Self::Operand, ptr_type_id: TypeId) -> Self::Place {
+        self.vars_state
+            .ref_place_by_ptr(ptr, ptr_type_id, self.usage)
     }
 }
 
@@ -443,6 +449,26 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
          * BTW, very improbable to have a symbolic value here. */
         let dst_ty_id = self.dest.type_info().id().unwrap();
         self.cast_of(value, CastKind::Transmute(dst_ty_id));
+    }
+
+    fn use_if_eq(mut self, val: Self::Operand, current: Self::Operand, expected: Self::Operand) {
+        let are_eq = self.expr_builder().eq((current.clone(), expected).into());
+        self.set_value(if are_eq.is_symbolic() {
+            // FIXME: Add ITE to the expression builder
+            Expr::Ite {
+                condition: SymValueRef::new(are_eq),
+                if_target: val,
+                else_target: current,
+            }
+            .into()
+        } else {
+            UnevalValue::Some.into()
+        })
+    }
+
+    fn use_and_check_eq(mut self, val: Self::Operand, expected: Self::Operand) {
+        let are_eq = self.expr_builder().eq((val.clone(), expected).into());
+        self.set_adt_value(AdtKind::Struct, [Some(val), Some(are_eq)].into_iter())
     }
 }
 
@@ -1005,6 +1031,15 @@ trait GenericVariablesState {
     /// The returned value does not necessarily access the actual value but
     /// should be dereferenceable to get the actual value.
     fn ref_place(&self, place: &Self::PlaceInfo, usage: PlaceUsage) -> Self::PlaceValue;
+
+    /// Returns a value that corresponds to the place pointer by the pointer.
+    /// Effectively, this is equivalent to the place that would be represented by `*ptr`.
+    fn ref_place_by_ptr(
+        &self,
+        ptr: Self::Value,
+        ptr_type_id: TypeId,
+        usage: PlaceUsage,
+    ) -> Self::PlaceValue;
 
     /// Returns a copy of the value stored at the given place. May not physically copy the value
     /// but the returned value should be independently usable from the original value.

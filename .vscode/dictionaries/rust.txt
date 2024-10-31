@@ -2,6 +2,7 @@ alloc
 bitvector
 chrono
 clippy
+cxchg
 Deque
 dylib
 isize

@@ -188,6 +188,10 @@ pub(crate) trait AssignmentHandler: Sized {
     fn variant_index(self, variant_index: VariantIndex);
 
     fn shallow_init_box_from(self, value: Self::Operand);
+
+    fn use_if_eq(self, current: Self::Operand, expected: Self::Operand, then: Self::Operand);
+
+    fn use_and_check_eq(self, val: Self::Operand, expected: Self::Operand);
 }
 
 // https://en.wikipedia.org/wiki/Branch_(computer_science)

@@ -13,7 +13,7 @@ use std::{
     sync::{Mutex, Once},
 };
 
-type BackendImpl = crate::backends::basic::BasicBackend;
+pub(super) type BackendImpl = crate::backends::basic::BasicBackend;
 
 type PlaceInfo = <BasicPlaceBuilder as PlaceBuilder>::Place;
 type PlaceImpl = <<BackendImpl as RuntimeBackend>::PlaceHandler<'static> as PlaceHandler>::Place;
@@ -128,11 +128,15 @@ pub(super) fn assign_to<T>(
     dest_ref: PlaceRef,
     assign_action: impl FnOnce(<BackendImpl as RuntimeBackend>::AssignmentHandler<'_>) -> T,
 ) -> T {
-    let dest_info = take_back_place_info(dest_ref);
-    perform_on_backend(|r| {
-        let dest = r.place(PlaceUsage::Write).from_info(dest_info);
-        assign_action(r.assign_to(dest))
-    })
+    let dest = take_place_info_to_write(dest_ref);
+    assign_to_place(dest, assign_action)
+}
+
+pub(super) fn assign_to_place<T>(
+    dest: PlaceImpl,
+    assign_action: impl FnOnce(<BackendImpl as RuntimeBackend>::AssignmentHandler<'_>) -> T,
+) -> T {
+    perform_on_backend(|r| assign_action(r.assign_to(dest)))
 }
 
 pub(super) fn push_operand(

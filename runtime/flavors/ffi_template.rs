@@ -29,6 +29,8 @@ impl ProgramRuntimeInterface for ExternPri {
     type TypeId = U128Pack<TypeId>;
     type BinaryOp = common::pri::BinaryOp;
     type UnaryOp = common::pri::UnaryOp;
+    type AtomicOrdering = common::pri::AtomicOrdering;
+    type AtomicBinaryOp = common::pri::AtomicBinaryOp;
     type DebugInfo = common::ffi::DebugInfo;
 
     common::pri::list_func_decls!(modifier: delegate_to_default, (from Self));

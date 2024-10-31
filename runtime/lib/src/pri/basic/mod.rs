@@ -607,6 +607,97 @@ impl ProgramRuntimeInterface for BasicPri {
     fn intrinsic_assign_ctpop(dest: PlaceRef, x: OperandRef) {
         Self::assign_unary_op(dest, Self::UnaryOp::CountOnes, x);
     }
+
+    fn intrinsic_atomic_load(
+        _ordering: Self::AtomicOrdering,
+        ptr: OperandRef,
+        ptr_type_id: Self::TypeId,
+        dest: PlaceRef,
+    ) {
+        let src_ptr = take_back_operand(ptr);
+        let src_place = get_backend_place(abs::PlaceUsage::Read, |h| {
+            h.from_ptr(src_ptr.clone(), ptr_type_id)
+        });
+        let src_pointee_value = take_back_operand(push_operand(|h| h.copy_of(src_place.clone())));
+        assign_to(dest, |h| h.use_of(src_pointee_value))
+    }
+
+    fn intrinsic_atomic_store(
+        _ordering: Self::AtomicOrdering,
+        ptr: OperandRef,
+        ptr_type_id: Self::TypeId,
+        src: OperandRef,
+    ) {
+        let dst_ptr = take_back_operand(ptr);
+        let dst_place = get_backend_place(abs::PlaceUsage::Write, |h| {
+            h.from_ptr(dst_ptr.clone(), ptr_type_id)
+        });
+        let src_value = take_back_operand(src);
+        assign_to_place(dst_place, |h| h.use_of(src_value))
+    }
+
+    fn intrinsic_atomic_xchg(
+        _ordering: Self::AtomicOrdering,
+        ptr: OperandRef,
+        ptr_type_id: Self::TypeId,
+        val: OperandRef,
+        prev_dest: PlaceRef,
+    ) {
+        Self::update_by_ptr_return_old(ptr, ptr_type_id, val, prev_dest, |h, _current, val| {
+            h.use_of(val)
+        })
+    }
+
+    fn intrinsic_atomic_cxchg(
+        _ordering: Self::AtomicOrdering,
+        ptr: OperandRef,
+        ptr_type_id: Self::TypeId,
+        failure_ordering: Self::AtomicOrdering,
+        weak: bool,
+        old: OperandRef,
+        src: OperandRef,
+        prev_dest: PlaceRef,
+    ) {
+        let old = take_back_operand(old);
+
+        Self::update_by_ptr(
+            ptr,
+            ptr_type_id,
+            src,
+            prev_dest,
+            |h, current, src| h.use_if_eq(src, current, old.clone()),
+            |h, current| h.use_and_check_eq(current, old.clone()),
+        )
+    }
+
+    fn intrinsic_atomic_binary_op(
+        _ordering: Self::AtomicOrdering,
+        ptr: OperandRef,
+        ptr_type_id: Self::TypeId,
+        operator: Self::AtomicBinaryOp,
+        src: OperandRef,
+        prev_dest: PlaceRef,
+    ) {
+        // Perform sequentially.
+        let binary_op = match operator {
+            abs::AtomicBinaryOp::Add => Self::BinaryOp::Add,
+            abs::AtomicBinaryOp::Sub => Self::BinaryOp::Sub,
+            abs::AtomicBinaryOp::Xor => Self::BinaryOp::BitXor,
+            abs::AtomicBinaryOp::And => Self::BinaryOp::BitAnd,
+            abs::AtomicBinaryOp::Nand => todo!(),
+            abs::AtomicBinaryOp::Or => Self::BinaryOp::BitOr,
+            abs::AtomicBinaryOp::Min => todo!(),
+            abs::AtomicBinaryOp::Max => todo!(),
+        };
+
+        Self::update_by_ptr_return_old(ptr, ptr_type_id, src, prev_dest, |h, current, src| {
+            h.binary_op_between(binary_op, current, src)
+        });
+    }
+
+    fn intrinsic_atomic_fence(_ordering: Self::AtomicOrdering, _single_thread: bool) {
+        // No-op.
+    }
 }
 
 impl BasicPri {
@@ -627,6 +718,60 @@ impl BasicPri {
 
     fn check_assert(cond: OperandRef, expected: bool, assert_kind: AssertKind<OperandImpl>) {
         branch(|h| h.assert(take_back_operand(cond), expected, assert_kind))
+    }
+
+    #[inline]
+    fn update_by_ptr_return_old(
+        ptr: OperandRef,
+        ptr_type_id: TypeId,
+        src: OperandRef,
+        prev_dest: PlaceRef,
+        ptr_update_action: impl FnOnce(
+            <BackendImpl as RuntimeBackend>::AssignmentHandler<'_>,
+            OperandImpl,
+            OperandImpl,
+        ),
+    ) {
+        Self::update_by_ptr(
+            ptr,
+            ptr_type_id,
+            src,
+            prev_dest,
+            ptr_update_action,
+            |h, current| h.use_of(current),
+        )
+    }
+
+    fn update_by_ptr(
+        ptr: OperandRef,
+        ptr_type_id: TypeId,
+        src: OperandRef,
+        prev_dest: PlaceRef,
+        ptr_update_action: impl FnOnce(
+            <BackendImpl as RuntimeBackend>::AssignmentHandler<'_>,
+            OperandImpl,
+            OperandImpl,
+        ),
+        dest_assign_action: impl FnOnce(
+            <BackendImpl as RuntimeBackend>::AssignmentHandler<'_>,
+            OperandImpl,
+        ),
+    ) {
+        let ptr = take_back_operand(ptr);
+        let ptr_place = get_backend_place(abs::PlaceUsage::Read, |h| {
+            h.from_ptr(ptr.clone(), ptr_type_id)
+        });
+        let current = take_back_operand(push_operand(|h| h.copy_of(ptr_place.clone())));
+
+        let ptr_place = get_backend_place(abs::PlaceUsage::Write, |h| {
+            h.from_ptr(ptr.clone(), ptr_type_id)
+        });
+        let src = take_back_operand(src);
+        assign_to_place(ptr_place.clone(), |h| {
+            ptr_update_action(h, current.clone(), src)
+        });
+
+        assign_to(prev_dest, |h| dest_assign_action(h, current.clone()));
     }
 }
 
