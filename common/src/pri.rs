@@ -452,6 +452,55 @@ pub mod macros {
               { fn intrinsic_assign_ctpop(dest: PlaceRef, x: OperandRef) }
               { fn intrinsic_assign_ctlz_nonzero(dest: PlaceRef, x: OperandRef) }
               { fn intrinsic_assign_ctlz(dest: PlaceRef, x: OperandRef) }
+
+              // All atomic operations have an ordering, majority get applied on a pointer.
+              #[allow(unused_parens)]
+              { fn intrinsic_atomic_load(
+                  ordering: ($atomic_ord_ty),
+                  ptr: OperandRef,
+                  ptr_type_id: ($type_id_ty),
+                  dest: PlaceRef,
+              ) }
+              #[allow(unused_parens)]
+              { fn intrinsic_atomic_store(
+                  ordering: ($atomic_ord_ty),
+                  ptr: OperandRef,
+                  ptr_type_id: ($type_id_ty),
+                  val: OperandRef,
+              ) }
+              #[allow(unused_parens)]
+              { fn intrinsic_atomic_xchg(
+                  ordering: ($atomic_ord_ty),
+                  ptr: OperandRef,
+                  ptr_type_id: ($type_id_ty),
+                  val: OperandRef,
+                  prev_dest: PlaceRef,
+              ) }
+              #[allow(unused_parens)]
+              { fn intrinsic_atomic_cxchg(
+                  ordering: ($atomic_ord_ty),
+                  ptr: OperandRef,
+                  ptr_type_id: ($type_id_ty),
+                  failure_ordering: ($atomic_ord_ty),
+                  weak: bool,
+                  old: OperandRef,
+                  src: OperandRef,
+                  prev_dest: PlaceRef,
+              ) }
+              #[allow(unused_parens)]
+              { fn intrinsic_atomic_binary_op(
+                  ordering: ($atomic_ord_ty),
+                  ptr: OperandRef,
+                  ptr_type_id: ($type_id_ty),
+                  operator: ($atomic_bin_op_ty),
+                  src: OperandRef,
+                  prev_dest: PlaceRef,
+              ) }
+              #[allow(unused_parens)]
+              { fn intrinsic_atomic_fence(
+                  ordering: ($atomic_ord_ty),
+                  single_thread: bool,
+              ) }
             }
         };
     }
@@ -766,6 +815,18 @@ pub mod macros {
                 fn intrinsic_assign_ctlz_nonzero(dest:PlaceRef,x:OperandRef);
             }$modifier!{
                 fn intrinsic_assign_ctlz(dest:PlaceRef,x:OperandRef);
+            }$modifier!{
+                #[allow(unused_parens)]fn intrinsic_atomic_load(ordering:($atomic_ord_ty),ptr:OperandRef,ptr_type_id:($type_id_ty),dest:PlaceRef,);
+            }$modifier!{
+                #[allow(unused_parens)]fn intrinsic_atomic_store(ordering:($atomic_ord_ty),ptr:OperandRef,ptr_type_id:($type_id_ty),val:OperandRef,);
+            }$modifier!{
+                #[allow(unused_parens)]fn intrinsic_atomic_xchg(ordering:($atomic_ord_ty),ptr:OperandRef,ptr_type_id:($type_id_ty),val:OperandRef,dest:PlaceRef,);
+            }$modifier!{
+                #[allow(unused_parens)]fn intrinsic_atomic_cxchg(ordering:($atomic_ord_ty),ptr:OperandRef,ptr_type_id:($type_id_ty),failure_ordering:($atomic_ord_ty),weak:bool,old:OperandRef,src:OperandRef,dest:PlaceRef,);
+            }$modifier!{
+                #[allow(unused_parens)]fn intrinsic_atomic_binary_op(ordering:($atomic_ord_ty),ptr:OperandRef,ptr_type_id:($type_id_ty),operator:($atomic_bin_op_ty),src:OperandRef,prev_dest:PlaceRef,);
+            }$modifier!{
+                #[allow(unused_parens)]fn intrinsic_atomic_fence(ordering:($atomic_ord_ty),single_thread:bool,);
             }
         };
         (modifier: $modifier:path) => {

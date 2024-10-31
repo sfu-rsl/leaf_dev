@@ -16,7 +16,7 @@ use crate::{
     passes::Storage,
 };
 
-use super::{InsertionLocation, OperandRef, PlaceRef, SwitchInfo};
+use super::{AtomicOrdering, InsertionLocation, OperandRef, PlaceRef, SwitchInfo};
 use crate::pri_utils::{sym::LeafSymbol, FunctionInfo, PriHelperFunctions, PriTypes};
 
 pub(crate) trait TyContextProvider<'tcx> {
@@ -63,6 +63,12 @@ pub(crate) trait CastOperandProvider {
 
 pub(crate) trait SwitchInfoProvider<'tcx> {
     fn switch_info(&self) -> SwitchInfo<'tcx>;
+}
+
+pub(crate) trait AtomicIntrinsicParamsProvider<'tcx> {
+    fn ordering(&self) -> AtomicOrdering;
+    fn ptr(&self) -> OperandRef;
+    fn ptr_ty(&self) -> Ty<'tcx>;
 }
 
 /*
@@ -308,6 +314,26 @@ impl<'tcx, B> SwitchInfoProvider<'tcx> for BranchingContext<'_, 'tcx, B> {
     }
 }
 
+pub(crate) struct AtomicIntrinsicContext<'b, 'tcx, B> {
+    pub(super) base: &'b mut B,
+    pub(super) ordering: AtomicOrdering,
+    pub(super) ptr_and_ty: Option<(OperandRef, Ty<'tcx>)>,
+}
+
+impl<'tcx, B> AtomicIntrinsicParamsProvider<'tcx> for AtomicIntrinsicContext<'_, 'tcx, B> {
+    fn ordering(&self) -> AtomicOrdering {
+        self.ordering
+    }
+
+    fn ptr(&self) -> OperandRef {
+        self.ptr_and_ty.unwrap().0
+    }
+
+    fn ptr_ty(&self) -> Ty<'tcx> {
+        self.ptr_and_ty.unwrap().1
+    }
+}
+
 /* We make inheritance of traits from the base context possible through generics.
  * NOTE: From this point we utilize macros as much as possible to prevent boilerplate codes.
  * Probably the best way to understand or fix the following code is to check for
@@ -473,6 +499,15 @@ make_impl_macro! {
     fn switch_info(&self) -> SwitchInfo<'tcx>;
 }
 
+make_impl_macro! {
+    impl_atomic_intrinsic_params_provider,
+    AtomicIntrinsicParamsProvider<'tcx>,
+    self,
+    fn ordering(&self) -> AtomicOrdering;
+    fn ptr(&self) -> OperandRef;
+    fn ptr_ty(&self) -> Ty<'tcx>;
+}
+
 /// A meta macro that creates a macro able to call a list of macros with exclusions for some input.
 /// Note that the excluded macros must appear in the same order as in the original "all" list.
 macro_rules! make_caller_macro {
@@ -541,6 +576,7 @@ make_caller_macro!(
         impl_dest_ref_provider,
         impl_cast_operand_provider,
         impl_discr_info_provider,
+        impl_atomic_intrinsic_params_provider,
     ]
 );
 
@@ -552,3 +588,4 @@ impl_traits!(all - [ impl_source_info_provider ] for SourceInfoContext);
 impl_traits!(all - [ impl_dest_ref_provider ] for AssignmentContext<'tcxd>);
 impl_traits!(all - [ impl_cast_operand_provider ] for CastAssignmentContext);
 impl_traits!(all - [ impl_discr_info_provider ] for BranchingContext<'tcxd>);
+impl_traits!(all - [ impl_atomic_intrinsic_params_provider ] for AtomicIntrinsicContext<'tcxd>);

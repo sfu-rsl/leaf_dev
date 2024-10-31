@@ -72,7 +72,7 @@ pub mod sym {
                 ]
             };
         }
-        pub(crate) const ALL_MAINS: [LeafSymbol; 97] =
+        pub(crate) const ALL_MAINS: [LeafSymbol; 103] =
             common::pri::pass_func_names_to!(bracket, all_comma_separated);
 
         pub(crate) mod intrinsics {
@@ -103,6 +103,39 @@ pub mod sym {
                 intrinsic_assign_ctpop,
                 intrinsic_assign_ctlz_nonzero,
                 intrinsic_assign_ctlz,
+
+                intrinsic_atomic_load,
+                intrinsic_atomic_store,
+                intrinsic_atomic_xchg,
+                intrinsic_atomic_cxchg,
+                intrinsic_atomic_binary_op,
+                intrinsic_atomic_fence,
+            }
+
+            pub(crate) mod atomic {
+                #![allow(non_upper_case_globals)]
+                use super::*;
+
+                #[derive(
+                    Clone, Copy, dm::Deref, Debug, dm::Display, Hash, PartialEq, Eq, PartialOrd, Ord,
+                )]
+                #[repr(transparent)]
+                pub struct LeafAtomicIntrinsicSymbol(LeafIntrinsicSymbol);
+
+                macro_rules! symbols_for_atomic_intrinsics {
+                    ($($name: ident),* $(,)?) => {
+                        $(pub(crate) const $name: LeafAtomicIntrinsicSymbol = LeafAtomicIntrinsicSymbol(super::$name);)*
+                    };
+                }
+
+                symbols_for_atomic_intrinsics! {
+                    intrinsic_atomic_load,
+                    intrinsic_atomic_store,
+                    intrinsic_atomic_xchg,
+                    intrinsic_atomic_cxchg,
+                    intrinsic_atomic_binary_op,
+                    intrinsic_atomic_fence,
+                }
             }
         }
     }

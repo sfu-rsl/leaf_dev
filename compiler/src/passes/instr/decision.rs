@@ -193,18 +193,35 @@ fn is_drop_fn(tcx: TyCtxt<'_>, def_id: DefId) -> bool {
 }
 
 mod intrinsics {
+    use common::pri::{AtomicBinaryOp, AtomicOrdering};
+
     use crate::pri_utils::sym::intrinsics::LeafIntrinsicSymbol;
 
     use super::*;
 
     pub(crate) enum IntrinsicDecision {
-        PriFunc(LeafIntrinsicSymbol),
+        OneToOneAssign(LeafIntrinsicSymbol),
+        Atomic(AtomicOrdering, AtomicIntrinsicKind),
         NoOp,
         ConstEvaluated,
         ToDo,
         NotPlanned,
         Unsupported,
         Unexpected,
+    }
+
+    pub(crate) enum AtomicIntrinsicKind {
+        Load,
+        Store,
+        Exchange,
+        CompareExchange {
+            fail_ordering: AtomicOrdering,
+            weak: bool,
+        },
+        BinOp(AtomicBinaryOp),
+        Fence {
+            single_thread: bool,
+        },
     }
 
     macro_rules! of_mir_translated_funcs {
@@ -390,110 +407,145 @@ mod intrinsics {
         };
     }
 
-    macro_rules! of_atomic_op_funcs {
+    macro_rules! of_atomic_load_funcs {
         ($macro:ident) => {
             $macro!(
-                atomic_xsub_seqcst,
-                atomic_xsub_release,
-                atomic_xsub_relaxed,
+                atomic_load_acquire,
+                atomic_load_relaxed,
+                atomic_load_seqcst,
+                atomic_load_unordered,
+            )
+        };
+    }
+
+    macro_rules! of_atomic_store_funcs {
+        ($macro:ident) => {
+            $macro!(
+                atomic_store_relaxed,
+                atomic_store_release,
+                atomic_store_seqcst,
+                atomic_store_unordered,
+            )
+        };
+    }
+
+    macro_rules! of_atomic_xchg_funcs {
+        ($macro:ident) => {
+            $macro!(
+                atomic_xchg_acqrel,
+                atomic_xchg_acquire,
+                atomic_xchg_relaxed,
+                atomic_xchg_release,
+                atomic_xchg_seqcst,
+            )
+        };
+    }
+
+    macro_rules! of_atomic_cxchg_funcs {
+        ($macro:ident) => {
+            $macro!(
+                atomic_cxchg_acqrel_acquire,
+                atomic_cxchg_acqrel_relaxed,
+                atomic_cxchg_acqrel_seqcst,
+                atomic_cxchg_acquire_acquire,
+                atomic_cxchg_acquire_relaxed,
+                atomic_cxchg_acquire_seqcst,
+                atomic_cxchg_relaxed_acquire,
+                atomic_cxchg_relaxed_relaxed,
+                atomic_cxchg_relaxed_seqcst,
+                atomic_cxchg_release_acquire,
+                atomic_cxchg_release_relaxed,
+                atomic_cxchg_release_seqcst,
+                atomic_cxchg_seqcst_acquire,
+                atomic_cxchg_seqcst_relaxed,
+                atomic_cxchg_seqcst_seqcst,
+                atomic_cxchgweak_acqrel_acquire,
+                atomic_cxchgweak_acqrel_relaxed,
+                atomic_cxchgweak_acqrel_seqcst,
+                atomic_cxchgweak_acquire_acquire,
+                atomic_cxchgweak_acquire_relaxed,
+                atomic_cxchgweak_acquire_seqcst,
+                atomic_cxchgweak_relaxed_acquire,
+                atomic_cxchgweak_relaxed_relaxed,
+                atomic_cxchgweak_relaxed_seqcst,
+                atomic_cxchgweak_release_acquire,
+                atomic_cxchgweak_release_relaxed,
+                atomic_cxchgweak_release_seqcst,
+                atomic_cxchgweak_seqcst_acquire,
+                atomic_cxchgweak_seqcst_relaxed,
+                atomic_cxchgweak_seqcst_seqcst,
+            )
+        };
+    }
+
+    macro_rules! of_atomic_binop_funcs {
+        ($macro:ident) => {
+            $macro!(
+                atomic_and_acqrel,
+                atomic_and_acquire,
+                atomic_and_relaxed,
+                atomic_and_release,
+                atomic_and_seqcst,
+                atomic_max_acqrel,
+                atomic_max_acquire,
+                atomic_max_relaxed,
+                atomic_max_release,
+                atomic_max_seqcst,
+                atomic_min_acqrel,
+                atomic_min_acquire,
+                atomic_min_relaxed,
+                atomic_min_release,
+                atomic_min_seqcst,
+                atomic_nand_acqrel,
+                atomic_nand_acquire,
+                atomic_nand_relaxed,
+                atomic_nand_release,
+                atomic_nand_seqcst,
+                atomic_or_acqrel,
+                atomic_or_acquire,
+                atomic_or_relaxed,
+                atomic_or_release,
+                atomic_or_seqcst,
+                atomic_umax_acqrel,
+                atomic_umax_acquire,
+                atomic_umax_relaxed,
+                atomic_umax_release,
+                atomic_umax_seqcst,
+                atomic_umin_acqrel,
+                atomic_umin_acquire,
+                atomic_umin_relaxed,
+                atomic_umin_release,
+                atomic_umin_seqcst,
+                atomic_xadd_acqrel,
+                atomic_xadd_acquire,
+                atomic_xadd_relaxed,
+                atomic_xadd_release,
+                atomic_xadd_seqcst,
+                atomic_xor_acqrel,
+                atomic_xor_acquire,
+                atomic_xor_relaxed,
+                atomic_xor_release,
                 atomic_xor_seqcst,
                 atomic_xsub_acqrel,
                 atomic_xsub_acquire,
-                atomic_xor_relaxed,
-                atomic_xor_acqrel,
-                atomic_xor_release,
-                atomic_xchg_seqcst,
-                atomic_xor_acquire,
-                atomic_xadd_seqcst,
-                atomic_xchg_relaxed,
-                atomic_xchg_acqrel,
-                atomic_xchg_acquire,
-                atomic_xchg_release,
-                atomic_xadd_release,
-                atomic_xadd_acqrel,
-                atomic_umin_seqcst,
-                atomic_xadd_relaxed,
-                atomic_xadd_acquire,
-                atomic_umin_acquire,
-                atomic_umax_seqcst,
-                atomic_umin_acqrel,
-                atomic_umin_relaxed,
-                atomic_umin_release,
-                atomic_umax_relaxed,
-                atomic_umax_release,
-                atomic_umax_acqrel,
-                atomic_umax_acquire,
-                atomic_store_release,
-                atomic_singlethreadfence_seqcst,
-                atomic_store_relaxed,
-                atomic_store_unordered,
-                atomic_store_seqcst,
-                atomic_or_release,
-                atomic_singlethreadfence_acquire,
-                atomic_singlethreadfence_acqrel,
-                atomic_or_seqcst,
-                atomic_singlethreadfence_release,
-                atomic_or_relaxed,
-                atomic_or_acqrel,
-                atomic_nand_release,
-                atomic_or_acquire,
-                atomic_nand_seqcst,
-                atomic_min_seqcst,
-                atomic_nand_acquire,
-                atomic_nand_acqrel,
-                atomic_nand_relaxed,
-                atomic_min_release,
-                atomic_max_seqcst,
-                atomic_max_release,
-                atomic_min_relaxed,
-                atomic_min_acqrel,
-                atomic_min_acquire,
-                atomic_max_acqrel,
-                atomic_load_unordered,
-                atomic_max_relaxed,
-                atomic_load_seqcst,
-                atomic_max_acquire,
-                atomic_load_relaxed,
-                atomic_fence_seqcst,
+                atomic_xsub_relaxed,
+                atomic_xsub_release,
+                atomic_xsub_seqcst,
+            )
+        };
+    }
+
+    macro_rules! of_atomic_fence_funcs {
+        ($macro:ident) => {
+            $macro!(
+                atomic_fence_acqrel,
                 atomic_fence_acquire,
                 atomic_fence_release,
-                atomic_load_acquire,
-                atomic_cxchgweak_seqcst_acquire,
-                atomic_cxchgweak_release_seqcst,
-                atomic_fence_acqrel,
-                atomic_cxchgweak_seqcst_seqcst,
-                atomic_cxchgweak_seqcst_relaxed,
-                atomic_cxchgweak_relaxed_seqcst,
-                atomic_cxchgweak_relaxed_relaxed,
-                atomic_cxchgweak_relaxed_acquire,
-                atomic_cxchgweak_release_relaxed,
-                atomic_cxchgweak_release_acquire,
-                atomic_cxchgweak_acquire_acquire,
-                atomic_cxchgweak_acquire_seqcst,
-                atomic_cxchgweak_acqrel_seqcst,
-                atomic_cxchgweak_acquire_relaxed,
-                atomic_cxchgweak_acqrel_acquire,
-                atomic_cxchg_seqcst_relaxed,
-                atomic_cxchgweak_acqrel_relaxed,
-                atomic_cxchg_seqcst_seqcst,
-                atomic_cxchg_release_seqcst,
-                atomic_cxchg_release_relaxed,
-                atomic_cxchg_release_acquire,
-                atomic_cxchg_seqcst_acquire,
-                atomic_cxchg_relaxed_acquire,
-                atomic_cxchg_acquire_seqcst,
-                atomic_cxchg_relaxed_seqcst,
-                atomic_cxchg_relaxed_relaxed,
-                atomic_cxchg_acquire_acquire,
-                atomic_cxchg_acquire_relaxed,
-                atomic_cxchg_acqrel_relaxed,
-                atomic_and_seqcst,
-                atomic_cxchg_acqrel_seqcst,
-                atomic_cxchg_acqrel_acquire,
-                atomic_and_release,
-                atomic_and_relaxed,
-                atomic_and_acquire,
-                atomic_and_acqrel,
+                atomic_fence_seqcst,
+                atomic_singlethreadfence_acqrel,
+                atomic_singlethreadfence_acquire,
+                atomic_singlethreadfence_release,
+                atomic_singlethreadfence_seqcst,
             )
         };
     }
@@ -604,7 +656,7 @@ mod intrinsics {
         };
     }
 
-    macro_rules! of_supported_funcs {
+    macro_rules! of_one_to_one_funcs {
         ($macro:ident) => {
             $macro!(
                 rotate_left,
@@ -647,10 +699,15 @@ mod intrinsics {
             of_const_evaluated_funcs,
             of_noop_funcs,
             of_float_arith_funcs,
-            of_atomic_op_funcs,
+            of_atomic_load_funcs,
+            of_atomic_store_funcs,
+            of_atomic_xchg_funcs,
+            of_atomic_binop_funcs,
+            of_atomic_cxchg_funcs,
+            of_atomic_fence_funcs,
             of_simd_op_funcs,
             of_to_be_supported_funcs,
-            of_supported_funcs,
+            of_one_to_one_funcs,
         );
 
         /* NTOE: This is used as a test to make sure that the list do not contain duplicates.
@@ -659,51 +716,105 @@ mod intrinsics {
         const _ALL_INTRINSICS: [u8; 354] = [0; TOTAL_COUNT];
     }
 
-    pub(crate) fn decide_intrinsic_call<'tcx>(intrinsic: IntrinsicDef) -> IntrinsicDecision {
-        use crate::pri_utils::sym::intrinsics as psym;
-        use rustc_span::sym as rsym;
+    use crate::pri_utils::sym::intrinsics as psym;
+    use rustc_span::sym as rsym;
 
+    pub(crate) fn decide_intrinsic_call<'tcx>(intrinsic: IntrinsicDef) -> IntrinsicDecision {
         macro_rules! any_of {
             ($($intrinsic:ident),*$(,)?) => {
                 $(rsym::$intrinsic)|*
             };
         }
 
-        macro_rules! str_any_of {
-            ($($intrinsic:ident),*$(,)?) => {
-                $(stringify!($intrinsic))|*
-            };
-        }
-
         match intrinsic.name {
-            rsym::rotate_left => IntrinsicDecision::PriFunc(psym::intrinsic_assign_rotate_left),
-            rsym::rotate_right => IntrinsicDecision::PriFunc(psym::intrinsic_assign_rotate_right),
-            rsym::saturating_add => {
-                IntrinsicDecision::PriFunc(psym::intrinsic_assign_saturating_add)
-            }
-            rsym::saturating_sub => {
-                IntrinsicDecision::PriFunc(psym::intrinsic_assign_saturating_sub)
-            }
-            rsym::exact_div => IntrinsicDecision::PriFunc(psym::intrinsic_assign_exact_div),
-            rsym::bitreverse => IntrinsicDecision::PriFunc(psym::intrinsic_assign_bitreverse),
-            rsym::cttz_nonzero => IntrinsicDecision::PriFunc(psym::intrinsic_assign_cttz_nonzero),
-            rsym::cttz => IntrinsicDecision::PriFunc(psym::intrinsic_assign_cttz),
-            rsym::ctpop => IntrinsicDecision::PriFunc(psym::intrinsic_assign_ctpop),
-            rsym::ctlz_nonzero => IntrinsicDecision::PriFunc(psym::intrinsic_assign_ctlz_nonzero),
-            rsym::ctlz => IntrinsicDecision::PriFunc(psym::intrinsic_assign_ctlz),
+            of_one_to_one_funcs!(any_of) => decide_one_to_one_intrinsic_call(intrinsic),
             of_noop_funcs!(any_of) => IntrinsicDecision::NoOp,
             of_const_evaluated_funcs!(any_of) => IntrinsicDecision::ConstEvaluated,
             of_to_be_supported_funcs!(any_of) => IntrinsicDecision::ToDo,
             of_float_arith_funcs!(any_of) => IntrinsicDecision::NotPlanned,
             of_mir_translated_funcs!(any_of) => IntrinsicDecision::Unexpected,
             of_simd_op_funcs!(any_of) => IntrinsicDecision::Unsupported,
-            other if matches!(other.as_str(), of_atomic_op_funcs!(str_any_of)) => {
-                IntrinsicDecision::Unsupported
+            other if other.as_str().starts_with("atomic") => {
+                decide_atomic_intrinsic_call(intrinsic)
             }
-            #[allow(unreachable_patterns)]
-            of_supported_funcs!(any_of) => unreachable!(),
             _ => panic!("Uncovered intrinsic: {:?}", intrinsic),
         }
     }
+
+    fn decide_one_to_one_intrinsic_call(intrinsic: IntrinsicDef) -> IntrinsicDecision {
+        let pri_sym = match intrinsic.name {
+            rsym::rotate_left => psym::intrinsic_assign_rotate_left,
+            rsym::rotate_right => psym::intrinsic_assign_rotate_right,
+            rsym::saturating_add => psym::intrinsic_assign_saturating_add,
+            rsym::saturating_sub => psym::intrinsic_assign_saturating_sub,
+            rsym::exact_div => psym::intrinsic_assign_exact_div,
+            rsym::bitreverse => psym::intrinsic_assign_bitreverse,
+            rsym::cttz_nonzero => psym::intrinsic_assign_cttz_nonzero,
+            rsym::cttz => psym::intrinsic_assign_cttz,
+            rsym::ctpop => psym::intrinsic_assign_ctpop,
+            rsym::ctlz_nonzero => psym::intrinsic_assign_ctlz_nonzero,
+            rsym::ctlz => psym::intrinsic_assign_ctlz,
+            _ => unreachable!(),
+        };
+        IntrinsicDecision::OneToOneAssign(pri_sym)
+    }
+
+    fn decide_atomic_intrinsic_call<'tcx>(intrinsic: IntrinsicDef) -> IntrinsicDecision {
+        macro_rules! str_any_of {
+            ($($intrinsic:ident),*$(,)?) => {
+                $(stringify!($intrinsic))|*
+            };
+        }
+
+        let name = intrinsic.name.as_str();
+        let parts = name.split('_').skip(1).collect::<Vec<_>>();
+        let operation = parts[0];
+        let ordering = atomic_ordering_from_str(parts[1]);
+        let kind = match name {
+            of_atomic_load_funcs!(str_any_of) => AtomicIntrinsicKind::Load,
+            of_atomic_store_funcs!(str_any_of) => AtomicIntrinsicKind::Store,
+            of_atomic_xchg_funcs!(str_any_of) => AtomicIntrinsicKind::Exchange,
+            of_atomic_cxchg_funcs!(str_any_of) => AtomicIntrinsicKind::CompareExchange {
+                fail_ordering: atomic_ordering_from_str(parts[2]),
+                weak: operation.contains("weak"),
+            },
+            of_atomic_binop_funcs!(str_any_of) => {
+                AtomicIntrinsicKind::BinOp(atomic_binop_from_str(&operation))
+            }
+            of_atomic_fence_funcs!(str_any_of) => AtomicIntrinsicKind::Fence {
+                single_thread: operation.contains("singlethread"),
+            },
+            _ => unreachable!(),
+        };
+        IntrinsicDecision::Atomic(ordering, kind)
+    }
+
+    fn atomic_ordering_from_str(ordering: &str) -> AtomicOrdering {
+        match ordering {
+            "acqrel" => AtomicOrdering::ACQ_REL,
+            "acquire" => AtomicOrdering::ACQUIRE,
+            "relaxed" => AtomicOrdering::RELAXED,
+            "release" => AtomicOrdering::RELEASE,
+            "seqcst" => AtomicOrdering::SEQ_CST,
+            "unordered" => AtomicOrdering::UNORDERED,
+            _ => unreachable!(),
+        }
+    }
+
+    fn atomic_binop_from_str(binop: &str) -> AtomicBinaryOp {
+        match binop {
+            "and" => AtomicBinaryOp::AND,
+            "max" => AtomicBinaryOp::MAX,
+            "min" => AtomicBinaryOp::MIN,
+            "nand" => AtomicBinaryOp::NAND,
+            "or" => AtomicBinaryOp::OR,
+            "umax" => AtomicBinaryOp::MAX,
+            "umin" => AtomicBinaryOp::MIN,
+            "xadd" => AtomicBinaryOp::ADD,
+            "xor" => AtomicBinaryOp::XOR,
+            "xsub" => AtomicBinaryOp::SUB,
+            _ => unreachable!(),
+        }
+    }
 }
-pub(super) use intrinsics::{decide_intrinsic_call, IntrinsicDecision};
+pub(super) use intrinsics::{decide_intrinsic_call, AtomicIntrinsicKind, IntrinsicDecision};

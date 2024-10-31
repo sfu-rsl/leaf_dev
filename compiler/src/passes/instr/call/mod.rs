@@ -2,6 +2,7 @@
 /// PRI in MIR bodies.
 pub(super) mod context;
 
+use context::DestinationProvider;
 use rustc_middle::{
     mir::{
         BasicBlock, BinOp, Body, CastKind, ConstOperand, Local, Operand, Place, ProjectionElem,
@@ -12,7 +13,10 @@ use rustc_middle::{
 use rustc_span::def_id::DefId;
 use rustc_target::abi::{FieldIdx, VariantIdx};
 
-use common::{log_debug, log_warn};
+use common::{
+    log_debug, log_warn,
+    pri::{AtomicBinaryOp, AtomicOrdering},
+};
 use core::iter;
 use serde::Serialize;
 use std::vec;
@@ -67,7 +71,7 @@ pub(crate) trait OperandReferencer<'tcx> {
     fn reference_operand(&mut self, operand: &Operand<'tcx>) -> OperandRef;
 }
 
-pub(crate) trait Assigner<'tcx> {
+pub(crate) trait Assigner<'tcx>: DestinationProvider<'tcx> {
     type Cast<'a>: CastAssigner<'tcx>
     where
         Self: 'a;
@@ -182,12 +186,39 @@ pub(crate) trait FunctionHandler<'tcx> {
 }
 
 pub(crate) trait IntrinsicHandler<'tcx> {
-    fn perform_intrinsic_by(
+    fn intrinsic_one_to_one_by(
         &mut self,
         intrinsic_func: DefId,
         pri_func: LeafIntrinsicSymbol,
         args: impl Iterator<Item = OperandRef>,
     );
+}
+
+pub(crate) trait AtomicIntrinsicHandler<'tcx> {
+    fn load(&mut self)
+    where
+        Self: Assigner<'tcx>;
+
+    fn store(&mut self, val: OperandRef);
+
+    fn exchange(&mut self, val: OperandRef)
+    where
+        Self: Assigner<'tcx>;
+
+    fn compare_exchange(
+        &mut self,
+        failure_ordering: AtomicOrdering,
+        weak: bool,
+        old: OperandRef,
+        src: OperandRef,
+    ) where
+        Self: Assigner<'tcx>;
+
+    fn binary_op(&mut self, operator: AtomicBinaryOp, src: OperandRef)
+    where
+        Self: Assigner<'tcx>;
+
+    fn fence(&mut self, single_threaded: bool);
 }
 
 pub(crate) trait EntryFunctionHandler {
@@ -239,6 +270,7 @@ mod implementation {
 
     use crate::mir_transform::*;
     use crate::passes::Storage;
+    use crate::pri_utils::sym::intrinsics::atomic::LeafAtomicIntrinsicSymbol;
     use crate::pri_utils::{
         sym::{self, LeafSymbol},
         FunctionInfo,
@@ -411,6 +443,18 @@ mod implementation {
             self.with_context(|base| EntryFunctionMarkerContext { base })
         }
 
+        pub fn perform_atomic_op<'b, 'tcx>(
+            &'b mut self,
+            ordering: AtomicOrdering,
+            ptr_and_ty: Option<(OperandRef, Ty<'tcx>)>,
+        ) -> RuntimeCallAdder<AtomicIntrinsicContext<'b, 'tcx, C>> {
+            self.with_context(|base| AtomicIntrinsicContext {
+                base,
+                ordering,
+                ptr_and_ty,
+            })
+        }
+
         pub fn borrow_from(
             other: &mut RuntimeCallAdder<C>,
         ) -> RuntimeCallAdder<TransparentContext<C>> {
@@ -551,6 +595,17 @@ mod implementation {
         delegate! {
             to self.context {
                 fn source_info(&self) -> mir::SourceInfo;
+            }
+        }
+    }
+    impl<'tcx, C> DestinationProvider<'tcx> for RuntimeCallAdder<C>
+    where
+        C: DestinationProvider<'tcx>,
+    {
+        delegate! {
+            to self.context {
+                fn dest_ref(&self) -> PlaceRef;
+                fn dest_ty(&self) -> Ty<'tcx>;
             }
         }
     }
@@ -2028,7 +2083,7 @@ mod implementation {
         Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
         C: ForAssignment<'tcx>,
     {
-        fn perform_intrinsic_by(
+        fn intrinsic_one_to_one_by(
             &mut self,
             intrinsic_func: DefId,
             pri_func: LeafIntrinsicSymbol,
@@ -2078,6 +2133,195 @@ mod implementation {
                 intrinsic_func,
                 pri_func_info.def_id
             );
+        }
+    }
+
+    impl<'tcx, C> AtomicIntrinsicHandler<'tcx> for RuntimeCallAdder<C>
+    where
+        Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
+        C: ForAtomicIntrinsic<'tcx>,
+    {
+        fn load(&mut self)
+        where
+            Self: Assigner<'tcx>,
+        {
+            self.add_bb_for_atomic_intrinsic_call_with_ptr(
+                sym::intrinsics::atomic::intrinsic_atomic_load,
+                vec![operand::move_for_local(self.dest_ref().into())],
+                Default::default(),
+            );
+        }
+
+        fn store(&mut self, val: OperandRef) {
+            self.add_bb_for_atomic_intrinsic_call_with_ptr(
+                sym::intrinsics::atomic::intrinsic_atomic_store,
+                vec![operand::move_for_local(val.into())],
+                Default::default(),
+            )
+        }
+
+        fn exchange(&mut self, val: OperandRef)
+        where
+            Self: Assigner<'tcx>,
+        {
+            self.add_bb_for_atomic_intrinsic_call_with_ptr(
+                sym::intrinsics::atomic::intrinsic_atomic_xchg,
+                vec![
+                    operand::move_for_local(val.into()),
+                    operand::move_for_local(self.dest_ref().into()),
+                ],
+                Default::default(),
+            );
+        }
+
+        fn compare_exchange(
+            &mut self,
+            failure_ordering: AtomicOrdering,
+            weak: bool,
+            old: OperandRef,
+            src: OperandRef,
+        ) where
+            Self: Assigner<'tcx>,
+        {
+            let mut additional_blocks = vec![];
+
+            let failure_ordering_local = {
+                let bb = self.make_bb_for_atomic_ordering(failure_ordering);
+                additional_blocks.extend(bb.0);
+                bb.1
+            };
+
+            self.add_bb_for_atomic_intrinsic_call_with_ptr(
+                sym::intrinsics::atomic::intrinsic_atomic_cxchg,
+                vec![
+                    operand::move_for_local(failure_ordering_local),
+                    operand::const_from_bool(self.tcx(), weak),
+                    operand::move_for_local(old.into()),
+                    operand::move_for_local(src.into()),
+                    operand::move_for_local(self.dest_ref().into()),
+                ],
+                additional_blocks,
+            )
+        }
+
+        fn binary_op(&mut self, operator: AtomicBinaryOp, src: OperandRef)
+        where
+            Self: Assigner<'tcx>,
+        {
+            let tcx = self.tcx();
+            let mut additional_blocks = vec![];
+
+            let operator_local = {
+                let (block, local) = self.make_bb_for_helper_call_with_all(
+                    self.pri_helper_funcs().const_atomic_binary_op_of,
+                    vec![],
+                    vec![operand::const_from_uint(tcx, operator.as_u8())],
+                    Default::default(),
+                );
+                additional_blocks.push(block);
+                local
+            };
+
+            let prev_dest = self.dest_ref();
+
+            self.add_bb_for_atomic_intrinsic_call_with_ptr(
+                sym::intrinsics::atomic::intrinsic_atomic_binary_op,
+                vec![
+                    operand::move_for_local(operator_local),
+                    operand::move_for_local(src.into()),
+                    operand::move_for_local(prev_dest.into()),
+                ],
+                additional_blocks,
+            )
+        }
+
+        fn fence(&mut self, single_thread: bool) {
+            self.add_bb_for_atomic_intrinsic_call(
+                sym::intrinsics::atomic::intrinsic_atomic_fence,
+                vec![operand::const_from_bool(self.tcx(), single_thread)],
+                Default::default(),
+            );
+        }
+    }
+
+    impl<'tcx, C> RuntimeCallAdder<C>
+    where
+        C: ForAtomicIntrinsic<'tcx>,
+    {
+        fn add_bb_for_atomic_intrinsic_call_with_ptr(
+            &mut self,
+            func: LeafAtomicIntrinsicSymbol,
+            additional_args: Vec<Operand<'tcx>>,
+            additional_blocks: Vec<BasicBlockData<'tcx>>,
+        ) {
+            let mut blocks = additional_blocks;
+
+            let dst_ptr_type_id_local = {
+                let (block, id_local) = self.make_type_id_of_bb(self.context.ptr_ty());
+                blocks.push(block);
+                id_local
+            };
+
+            self.add_bb_for_atomic_intrinsic_call(
+                func,
+                vec![
+                    vec![
+                        operand::move_for_local(self.context.ptr().into()),
+                        operand::move_for_local(dst_ptr_type_id_local),
+                    ],
+                    additional_args,
+                ]
+                .concat(),
+                blocks,
+            );
+        }
+
+        fn add_bb_for_atomic_intrinsic_call(
+            &mut self,
+            func: LeafAtomicIntrinsicSymbol,
+            additional_args: Vec<Operand<'tcx>>,
+            additional_blocks: Vec<BasicBlockData<'tcx>>,
+        ) {
+            let mut blocks = additional_blocks;
+
+            let ordering_local = {
+                let bb = self.make_bb_for_atomic_ordering(self.context.ordering());
+                blocks.extend(bb.0);
+                bb.1
+            };
+
+            let block = self.make_bb_for_call(
+                **func,
+                [
+                    vec![operand::move_for_local(ordering_local)],
+                    additional_args,
+                ]
+                .concat(),
+            );
+            blocks.push(block);
+
+            self.insert_blocks(blocks);
+        }
+    }
+
+    impl<'tcx, C> RuntimeCallAdder<C>
+    where
+        Self: MirCallAdder<'tcx>,
+        C: Basic<'tcx>,
+    {
+        fn make_bb_for_atomic_ordering(
+            &mut self,
+            ordering: AtomicOrdering,
+        ) -> BlocksAndResult<'tcx> {
+            let tcx = self.tcx();
+
+            self.make_bb_for_helper_call_with_all(
+                self.pri_helper_funcs().const_atomic_ord_of,
+                vec![],
+                vec![operand::const_from_uint(tcx, ordering.as_u8())],
+                Default::default(),
+            )
+            .into()
         }
     }
 
@@ -3118,6 +3362,15 @@ mod implementation {
         {
         }
         impl<'tcx, C> ForEntryFunction<'tcx> for C where C: ForInsertion<'tcx> + InEntryFunction {}
+
+        pub(crate) trait ForAtomicIntrinsic<'tcx>:
+            ForInsertion<'tcx> + AtomicIntrinsicParamsProvider<'tcx>
+        {
+        }
+        impl<'tcx, C> ForAtomicIntrinsic<'tcx> for C where
+            C: ForInsertion<'tcx> + AtomicIntrinsicParamsProvider<'tcx>
+        {
+        }
     }
 }
 

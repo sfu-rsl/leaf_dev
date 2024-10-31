@@ -32,8 +32,8 @@ use call::{
         AtLocationContext, BlockIndexProvider, PriItemsProvider, SourceInfoProvider,
         TyContextProvider,
     },
-    ctxtreqs, AssertionHandler, Assigner, BranchingHandler, BranchingReferencer, CastAssigner,
-    EntryFunctionHandler, FunctionHandler,
+    ctxtreqs, AssertionHandler, Assigner, AtomicIntrinsicHandler, BranchingHandler,
+    BranchingReferencer, CastAssigner, EntryFunctionHandler, FunctionHandler,
     InsertionLocation::*,
     IntrinsicHandler, OperandRef, OperandReferencer, PlaceReferencer, RuntimeCallAdder,
 };
@@ -568,15 +568,18 @@ where
     ) {
         use decision::IntrinsicDecision::*;
         match decision::decide_intrinsic_call(def) {
-            PriFunc(func_name) => {
+            OneToOneAssign(func_name) => {
                 let mut call_adder = self.call_adder.before();
                 let dest_ref = call_adder.reference_place(params.destination);
                 let dest_ty = params.destination.ty(&call_adder, call_adder.tcx()).ty;
                 let args = Self::ref_args(&mut call_adder, params.args);
-                self.call_adder
+                call_adder
                     .before()
                     .assign(dest_ref, dest_ty)
-                    .perform_intrinsic_by(def_id, func_name, args.into_iter());
+                    .intrinsic_one_to_one_by(def_id, func_name, args.into_iter());
+            }
+            Atomic(ordering, kind) => {
+                self.instrument_atomic_intrinsic_call(&params, ordering, kind);
             }
             NoOp | ConstEvaluated => {
                 // Currently, no instrumentation
@@ -616,6 +619,52 @@ where
                 );
             }
         }
+    }
+
+    fn instrument_atomic_intrinsic_call(
+        &mut self,
+        params: &CallParams<'_, 'tcx>,
+        ordering: common::pri::AtomicOrdering,
+        kind: decision::AtomicIntrinsicKind,
+    ) {
+        let mut call_adder = self.call_adder.before();
+        let ptr_arg = params.args.get(0);
+        let ptr_ref = ptr_arg.map(|a| call_adder.reference_operand_spanned(a));
+        let ptr_ty = ptr_arg.map(|a| a.node.ty(&call_adder, call_adder.tcx()));
+        let mut call_adder = call_adder.perform_atomic_op(ordering, ptr_ref.zip(ptr_ty));
+        use decision::AtomicIntrinsicKind::*;
+        match kind {
+            Load | Exchange | CompareExchange { .. } | BinOp(..) => {
+                let dest_ref = call_adder.reference_place(params.destination);
+                let dest_ty = params.destination.ty(&call_adder, call_adder.tcx()).ty;
+                let mut call_adder = call_adder.assign(dest_ref, dest_ty);
+                match kind {
+                    Load => call_adder.load(),
+                    BinOp(binop) => {
+                        let src = call_adder.reference_operand_spanned(&params.args[1]);
+                        call_adder.binary_op(binop, src);
+                    }
+                    Exchange => {
+                        let src = call_adder.reference_operand_spanned(&params.args[1]);
+                        call_adder.exchange(src)
+                    }
+                    CompareExchange {
+                        fail_ordering,
+                        weak,
+                    } => {
+                        let old = call_adder.reference_operand_spanned(&params.args[1]);
+                        let src = call_adder.reference_operand_spanned(&params.args[2]);
+                        call_adder.compare_exchange(fail_ordering, weak, old, src)
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            Store => {
+                let val_ref = call_adder.reference_operand_spanned(&params.args[1]);
+                call_adder.store(val_ref)
+            }
+            Fence { single_thread } => call_adder.fence(single_thread),
+        };
     }
 
     fn instrument_llvm_intrinsic_call(&mut self, params: CallParams<'_, 'tcx>) {
@@ -670,17 +719,8 @@ where
         call_adder: &mut RuntimeCallAdder<AtLocationContext<C>>,
         args: &[Spanned<Operand<'tcx>>],
     ) -> Vec<OperandRef> {
-        let source_scope = call_adder.source_info().scope;
-        let mut call_adder = call_adder.before();
         args.iter()
-            .map(|arg| {
-                call_adder
-                    .with_source_info(SourceInfo {
-                        span: arg.span,
-                        scope: source_scope,
-                    })
-                    .reference_operand(&arg.node)
-            })
+            .map(|arg| call_adder.reference_operand_spanned(arg))
             .collect()
     }
 }
@@ -884,6 +924,19 @@ where
         let first_ref = self.call_adder.reference_operand(&operands.0);
         let second_ref = self.call_adder.reference_operand(&operands.1);
         self.call_adder.by_binary_op(op, first_ref, second_ref)
+    }
+}
+
+impl<'tcx, C: ctxtreqs::ForOperandRef<'tcx>> RuntimeCallAdder<C> {
+    fn reference_operand_spanned(&mut self, operand: &Spanned<Operand<'tcx>>) -> OperandRef {
+        let source_scope = self.source_info().scope;
+        let mut call_adder = self.before();
+        call_adder
+            .with_source_info(SourceInfo {
+                span: operand.span,
+                scope: source_scope,
+            })
+            .reference_operand(&operand.node)
     }
 }
 
