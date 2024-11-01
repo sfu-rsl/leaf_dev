@@ -91,6 +91,22 @@ macro_rules_method_with_optional_args!(impl_unary_expr_method {
     };
 });
 
+macro_rules_method_with_optional_args!(impl_ternary_expr_method {
+    ($method: ident + $($arg: ident : $arg_type: ty),* $(,)?) => {
+        impl_ternary_expr_method!($method + ($($arg : $arg_type { $arg }),*));
+    };
+    /* Gives the ability to give a custom expression passed to the builders. */
+    ($method: ident + ($($arg: ident : $arg_type: ty { $arg_expr:expr }),*) $(,)?) => {
+        fn $method<'a>(
+            &mut self,
+            operands: Self::ExprRefTriple<'a>,
+            $($arg: $arg_type),*
+        ) -> Self::Expr<'a> {
+            try_on_current_then_next!(self, $method, (operands$(, $arg_expr)*), |operands|)
+        }
+    };
+});
+
 macro_rules_method_with_optional_args!(impl_cast_expr_method {
     ($method: ident + $($arg: ident : $arg_type: ty),* $(,)?) => {
         impl_cast_expr_method!($method + ($($arg : $arg_type { $arg }),*));
@@ -151,6 +167,24 @@ where
     impl_unary_expr_method!(bit_reverse count_ones);
     impl_unary_expr_method!(trailing_zeros + non_zero: bool);
     impl_unary_expr_method!(leading_zeros + non_zero: bool);
+}
+
+impl<C, N, E, CE> TernaryExprBuilder for ChainedExprBuilder<C, N, E, CE>
+where
+    N: TernaryExprBuilder,
+    for<'a> C: TernaryExprBuilder<
+            ExprRefTriple<'a> = N::ExprRefTriple<'a>,
+            Expr<'a> = Result<CE, N::ExprRefTriple<'a>>,
+        >,
+    CE: Into<E>,
+    for<'a> N::Expr<'a>: Into<E>,
+{
+    type ExprRefTriple<'a> = N::ExprRefTriple<'a>;
+    type Expr<'a> = E;
+
+    impl_ternary_expr_method!(ternary_op + op: TernaryOp);
+
+    impl_ternary_expr_method!(if_then_else);
 }
 
 impl<C, N, E, CE> CastExprBuilder for ChainedExprBuilder<C, N, E, CE>

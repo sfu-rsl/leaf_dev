@@ -3,13 +3,14 @@
 /// over the input and output types of the wrapped expression builder.
 use super::{
     macros::macro_rules_method_with_optional_args, BinaryExprBuilder, CastExprBuilder,
-    UnaryExprBuilder,
+    TernaryExprBuilder, UnaryExprBuilder,
 };
-use crate::abs::{BinaryOp, CastKind, UnaryOp};
+use crate::abs::{BinaryOp, CastKind, TernaryOp, UnaryOp};
 use std::ops::DerefMut;
 
 use BinaryExprBuilder as BEB;
 use CastExprBuilder as CEB;
+use TernaryExprBuilder as TEB;
 use UnaryExprBuilder as UEB;
 
 pub(crate) trait FnH<I, O>: FnOnce(I) -> O {}
@@ -107,6 +108,48 @@ where
     delegate_singular_unary_op!(bit_reverse count_ones);
     delegate_singular_unary_op!(trailing_zeros + non_zero: bool);
     delegate_singular_unary_op!(leading_zeros + non_zero: bool);
+}
+
+pub(crate) trait TernaryExprBuilderAdapter: DerefMut
+where
+    Self::Target: Sized,
+    Self::Target: TernaryExprBuilder,
+{
+    type TargetExprRefTriple<'a> = <Self::Target as TEB>::ExprRefTriple<'a>;
+    type TargetExpr<'a> = <Self::Target as TEB>::Expr<'a>;
+
+    /// Takes the input from the type of the adapted operands, passes it to the wrapped builder,
+    /// then converts and returns the output to the type of the adapted expression.
+    /// [`build`] is the method in the wrapped builder that corresponds to the one called currently
+    /// on this builder.
+    fn adapt<'t, F>(operands: Self::TargetExprRefTriple<'t>, build: F) -> Self::TargetExpr<'t>
+    where
+        F: for<'s> FnH<<Self::Target as TEB>::ExprRefTriple<'s>, <Self::Target as TEB>::Expr<'s>>;
+}
+
+macro_rules_method_with_optional_args!(delegate_ternary_op {
+    ($method: ident + $($arg: ident : $arg_type: ty),* $(,)?) => {
+        fn $method<'a>(
+            &mut self,
+            operands: Self::ExprRefTriple<'a>,
+            $($arg: $arg_type),*
+        ) -> Self::Expr<'a> {
+            Self::adapt(operands, |operands| self.deref_mut().$method(operands, $($arg),*))
+        }
+    };
+});
+
+impl<T: TernaryExprBuilderAdapter> TernaryExprBuilder for T
+where
+    T::Target: Sized,
+    T::Target: TernaryExprBuilder,
+{
+    type ExprRefTriple<'a> = T::TargetExprRefTriple<'a>;
+    type Expr<'a> = T::TargetExpr<'a>;
+
+    delegate_ternary_op!(ternary_op + op: TernaryOp);
+
+    delegate_ternary_op!(if_then_else);
 }
 
 pub(crate) trait CastExprBuilderAdapter: DerefMut

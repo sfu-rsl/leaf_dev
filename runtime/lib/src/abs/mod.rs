@@ -93,6 +93,12 @@ pub enum UnaryOp {
 
 #[derive(Clone, Copy, Debug)]
 #[repr(u8)]
+pub enum TernaryOp {
+    IfThenElse = 1,
+}
+
+#[derive(Clone, Copy, Debug)]
+#[repr(u8)]
 pub enum AtomicOrdering {
     Unordered = common::pri::AtomicOrdering::UNORDERED.as_u8(),
     Relaxed = common::pri::AtomicOrdering::RELAXED.as_u8(),

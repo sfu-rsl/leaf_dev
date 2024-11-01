@@ -293,3 +293,9 @@ impl Display for DeterministicProjection {
         write!(f, "↳{}T#{:x}", self.offset, self.ty_id)
     }
 }
+
+impl Display for SymTernaryOperands {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        write!(f, "({:?}, {:?}, {:?})", self.0, self.1, self.2)
+    }
+}

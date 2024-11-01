@@ -27,6 +27,7 @@ pub(crate) use crate::abs::{
 pub(crate) type ValueRef = Rc<Value>;
 pub(crate) type ConcreteValueRef = guards::ConcreteValueGuard<ValueRef>;
 pub(crate) type SymValueRef = guards::SymValueGuard<ValueRef>;
+pub(crate) type SymTernaryOperands = guards::SymTernaryOperands;
 
 pub(crate) type SymVarId = u32;
 
@@ -994,6 +995,27 @@ mod guards {
         value
     );
     define_value_guard!(SymValue, SymValueGuard, Value::Symbolic(value), value);
+
+    #[derive(Debug)]
+    // NOTE: We skip structural guarantee like in SymBinaryOperands because of 7 possible permutations.
+    pub(crate) struct SymTernaryOperands(
+        pub(crate) ValueRef,
+        pub(crate) ValueRef,
+        pub(crate) ValueRef,
+    );
+
+    impl SymTernaryOperands {
+        pub(crate) fn new(first: ValueRef, second: ValueRef, third: ValueRef) -> Self {
+            assert!(first.is_symbolic() || second.is_symbolic() || third.is_symbolic());
+            Self(first, second, third)
+        }
+    }
+
+    impl Into<(ValueRef, ValueRef, ValueRef)> for SymTernaryOperands {
+        fn into(self) -> (ValueRef, ValueRef, ValueRef) {
+            (self.0, self.1, self.2)
+        }
+    }
 }
 use guards::define_guard;
 

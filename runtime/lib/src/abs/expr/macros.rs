@@ -177,6 +177,43 @@ macro_rules! impl_singular_unary_ops_through_general {
 }
 
 #[allow(unused_macros)]
+macro_rules! impl_general_ternary_op_through_singulars {
+    () => {
+        fn ternary_op<'a>(
+            &mut self,
+            operands: Self::ExprRefTriple<'a>,
+            op: crate::abs::TernaryOp,
+        ) -> Self::Expr<'a> {
+            use crate::abs::TernaryOp::*;
+            match op {
+                IfThenElse => self.if_then_else(operands),
+            }
+        }
+    };
+}
+
+macro_rules! impl_singular_ternary_op_through_general {
+    (($method:ident $(+ $($arg: ident : $arg_type: ty),*)? = $op:expr)) => {
+        #[inline(always)]
+        fn $method<'a>(
+            &mut self,
+            operands: Self::ExprRefTriple<'a>,
+            $($($arg: $arg_type,)*)?
+        ) -> Self::Expr<'a> {
+            self.ternary_op(operands, $op)
+        }
+    };
+}
+macro_rules! impl_singular_ternary_ops_through_general {
+    () => {
+        repeat_macro_for!(
+            impl_singular_ternary_op_through_general;
+            (if_then_else = crate::abs::TernaryOp::IfThenElse)
+        );
+    };
+}
+
+#[allow(unused_macros)]
 macro_rules! impl_general_cast_through_singulars {
     () => {
         fn cast<'a>(
@@ -254,9 +291,10 @@ macro_rules! macro_rules_method_with_optional_args {
 #[allow(unused_imports)]
 pub(crate) use {
     impl_general_binary_op_for, impl_general_binary_op_through_singulars,
-    impl_general_cast_through_singulars, impl_general_unary_op_through_singulars,
+    impl_general_cast_through_singulars, impl_general_ternary_op_through_singulars,
     impl_singular_binary_ops_through_general, impl_singular_cast_through_general,
-    impl_singular_casts_through_general, impl_singular_unary_op_through_general,
+    impl_singular_casts_through_general, impl_singular_ternary_op_through_general,
+    impl_singular_ternary_ops_through_general, impl_singular_unary_op_through_general,
     impl_singular_unary_ops_through_general, macro_rules_method_with_optional_args,
     repeat_macro_for,
 };

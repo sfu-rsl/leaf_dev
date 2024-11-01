@@ -10,10 +10,12 @@ use super::*;
 pub(crate) struct CompositeExprBuilder<
     B: BinaryExprBuilder,
     U: UnaryExprBuilder,
+    T: TernaryExprBuilder,
     C: CastExprBuilder,
 > {
     pub(crate) binary: B,
     pub(crate) unary: U,
+    pub(crate) ternary: T,
     pub(crate) cast: C,
 }
 
@@ -45,6 +47,20 @@ macro_rules_method_with_optional_args!(impl_unary_expr_method {
     };
 });
 
+macro_rules_method_with_optional_args!(impl_ternary_expr_method {
+    ($method: ident + $($arg: ident : $arg_type: ty),* $(,)?) => {
+        delegate! {
+            to self.ternary {
+                fn $method<'a>(
+                    &mut self,
+                    operands: Self::ExprRefTriple<'a>,
+                    $($arg: $arg_type,)*
+                ) -> Self::Expr<'a>;
+            }
+        }
+    };
+});
+
 macro_rules_method_with_optional_args!(impl_cast_expr_method {
     ($method: ident + $($arg: ident : $arg_type: ty),* $(,)?) => {
         delegate! {
@@ -60,10 +76,11 @@ macro_rules_method_with_optional_args!(impl_cast_expr_method {
     };
 });
 
-impl<B, U, C> BinaryExprBuilder for CompositeExprBuilder<B, U, C>
+impl<B, U, T, C> BinaryExprBuilder for CompositeExprBuilder<B, U, T, C>
 where
     B: BinaryExprBuilder,
     U: UnaryExprBuilder,
+    T: TernaryExprBuilder,
     C: CastExprBuilder,
 {
     type ExprRefPair<'a> = B::ExprRefPair<'a>;
@@ -90,10 +107,11 @@ where
     impl_binary_expr_method!(offset);
 }
 
-impl<B, U, C> UnaryExprBuilder for CompositeExprBuilder<B, U, C>
+impl<B, U, T, C> UnaryExprBuilder for CompositeExprBuilder<B, U, T, C>
 where
     B: BinaryExprBuilder,
     U: UnaryExprBuilder,
+    T: TernaryExprBuilder,
     C: CastExprBuilder,
 {
     type ExprRef<'a> = U::ExprRef<'a>;
@@ -107,10 +125,26 @@ where
     impl_unary_expr_method!(leading_zeros + non_zero: bool);
 }
 
-impl<B, U, C> CastExprBuilder for CompositeExprBuilder<B, U, C>
+impl<B, U, T, C> TernaryExprBuilder for CompositeExprBuilder<B, U, T, C>
 where
     B: BinaryExprBuilder,
     U: UnaryExprBuilder,
+    T: TernaryExprBuilder,
+    C: CastExprBuilder,
+{
+    type ExprRefTriple<'a> = T::ExprRefTriple<'a>;
+    type Expr<'a> = T::Expr<'a>;
+
+    impl_ternary_expr_method!(ternary_op + op: TernaryOp);
+
+    impl_ternary_expr_method!(if_then_else);
+}
+
+impl<B, U, T, C> CastExprBuilder for CompositeExprBuilder<B, U, T, C>
+where
+    B: BinaryExprBuilder,
+    U: UnaryExprBuilder,
+    T: TernaryExprBuilder,
     C: CastExprBuilder,
 {
     type ExprRef<'a> = C::ExprRef<'a>;

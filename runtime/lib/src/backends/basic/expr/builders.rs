@@ -1,3 +1,5 @@
+use delegate::delegate;
+
 use super::super::alias::{
     SymValueRefExprBuilder, TypeManager, ValueRefBinaryExprBuilder, ValueRefExprBuilder,
 };
@@ -5,13 +7,13 @@ use super::{BinaryOp as BasicBinaryOp, UnaryOp as BasicUnaryOp, *};
 use crate::abs::{
     expr::{
         macros::*, BinaryExprBuilder, CastExprBuilder, ChainedExprBuilder, CompositeExprBuilder,
-        LoggerExprBuilder, UnaryExprBuilder,
+        LoggerExprBuilder, TernaryExprBuilder, UnaryExprBuilder,
     },
-    BinaryOp as AbsBinaryOp, CastKind, UnaryOp as AbsUnaryOp,
+    BinaryOp as AbsBinaryOp, CastKind, TernaryOp as AbsTernaryOp, UnaryOp as AbsUnaryOp,
 };
 use crate::utils::alias::RRef;
 
-type Composite<Binary, Unary, Cast> = CompositeExprBuilder<Binary, Unary, Cast>;
+type Composite<Binary, Unary, Ternary, Cast> = CompositeExprBuilder<Binary, Unary, Ternary, Cast>;
 type Chained<Current, Next, Expr = ValueRef, CurrentExpr = Expr> =
     ChainedExprBuilder<Current, Next, Expr, CurrentExpr>;
 type Logger<B> = LoggerExprBuilder<B>;
@@ -35,7 +37,7 @@ impl ValueRefExprBuilder for DefaultExprBuilder {}
 impl ValueRefBinaryExprBuilder for DefaultExprBuilder {}
 
 mod toplevel {
-    use super::{concrete::ConcreteAbstractorBuilder, symbolic::SymbolicBuilder, *};
+    use super::{concrete::MinimalConcreteBuilder, symbolic::SymbolicBuilder, *};
 
     /// An expression builder that separates the path for expressions that involve symbolic values,
     /// or the ones that are fully based on concrete values.
@@ -43,14 +45,14 @@ mod toplevel {
     /// the future, this top-level builder will be reduced to the symbolic builder.
     pub(crate) struct TopLevelBuilder {
         sym_builder: SymbolicBuilder,
-        conc_builder: ConcreteAbstractorBuilder,
+        conc_builder: MinimalConcreteBuilder,
     }
 
     impl TopLevelBuilder {
         pub(crate) fn new(type_manager: Rc<dyn TypeManager>) -> Self {
             Self {
-                sym_builder: SymbolicBuilder::new(type_manager),
-                conc_builder: ConcreteAbstractorBuilder::default(),
+                sym_builder: SymbolicBuilder::new(type_manager.clone()),
+                conc_builder: MinimalConcreteBuilder::new(type_manager.clone()),
             }
         }
     }
@@ -109,6 +111,23 @@ mod toplevel {
         impl_singular_unary_ops_through_general!();
     }
 
+    impl TernaryExprBuilder for TopLevelBuilder {
+        type ExprRefTriple<'a> = (ValueRef, ValueRef, ValueRef);
+        type Expr<'a> = ValueRef;
+
+        fn if_then_else<'a>(&mut self, operands: Self::ExprRefTriple<'a>) -> Self::Expr<'a> {
+            if operands.0.is_symbolic() {
+                self.sym_builder
+                    .if_then_else(SymTernaryOperands::new(operands.0, operands.1, operands.2))
+                    .into()
+            } else {
+                self.conc_builder.if_then_else(operands)
+            }
+        }
+
+        impl_general_ternary_op_through_singulars!();
+    }
+
     impl CastExprBuilder for TopLevelBuilder {
         type ExprRef<'a> = ValueRef;
         type Expr<'a> = ValueRef;
@@ -147,6 +166,8 @@ mod symbolic {
         Chained<ConstSimplifier, Chained<ConstFolder, CoreBuilder>>,
         /*Unary:*/
         CoreBuilder,
+        /*Ternary:*/
+        CoreBuilder,
         /*Cast:*/
         CoreBuilder,
     >;
@@ -176,18 +197,53 @@ mod symbolic {
     }
 
     impl<EB: SymValueRefExprBuilder> UnevaluatedResolverBuilder<EB> {
-        fn resolve_if_porter(&mut self, value: &mut ValueRef, expect: bool) {
-            if let Value::Symbolic(SymValue::Expression(Expr::Partial(porter))) = value.as_ref() {
-                if let Ok(resolved) =
-                    porter.try_to_masked_value(self.type_manager.as_ref(), &mut self.sym_builder)
-                {
-                    *value = resolved.into();
-                } else if expect {
-                    panic!(
-                        "Porter value participating in an expression is expected to be convertible to masked value {:?}",
-                        value
-                    );
+        fn resolve(&mut self, value: &mut ValueRef, expect_scalar: bool) {
+            match value.as_ref() {
+                Value::Concrete(_) => self.resolve_conc(value, expect_scalar),
+                Value::Symbolic(..) => self.resolve_sym(value, true),
+                _ => {}
+            }
+        }
+
+        fn resolve_conc(&mut self, value: &mut ValueRef, expect_scalar: bool) {
+            match value.as_ref() {
+                Value::Concrete(ConcreteValue::Unevaluated(UnevalValue::Lazy(lazy))) => {
+                    match unsafe { lazy.try_retrieve_as_scalar(Some(self.type_manager.as_ref())) } {
+                        Ok(retrieved) => {
+                            *value = retrieved.to_value_ref();
+                        }
+                        Err(type_info) if expect_scalar => {
+                            panic!(
+                                "Expected the value to be retrievable as a scalar: {:?}: {:?}",
+                                value, type_info,
+                            );
+                        }
+                        _ => (),
+                    }
                 }
+                _ => {}
+            }
+        }
+
+        fn resolve_sym(&mut self, value: &mut ValueRef, expect_scalar: bool) {
+            match value.as_ref() {
+                Value::Symbolic(SymValue::Expression(Expr::Partial(porter))) => {
+                    match porter
+                        .try_to_masked_value(self.type_manager.as_ref(), &mut self.sym_builder)
+                    {
+                        Ok(resolved) => {
+                            *value = resolved.into();
+                        }
+                        Err(type_info) if expect_scalar => {
+                            panic!(
+                                "Porter value participating in an expression is expected to be convertible to masked value {:?}: {:?}",
+                                value, type_info,
+                            );
+                        }
+                        _ => (),
+                    }
+                }
+                _ => (),
             }
         }
     }
@@ -202,26 +258,10 @@ mod symbolic {
             _op: AbsBinaryOp,
         ) -> Self::Expr<'a> {
             let other = operands.as_flat_mut().1;
-            match other.as_ref() {
-                Value::Concrete(ConcreteValue::Unevaluated(UnevalValue::Lazy(lazy))) => {
-                    *other = unsafe {
-                        lazy.try_retrieve_as_scalar(Some(self.type_manager.as_ref()))
-                            .expect(
-                                concat!(
-                                    "The value participating in a binary expression is expected to be a scalar. ",
-                                    "Maybe the value type is not available?"
-                                ),
-                            )
-                    }.to_value_ref()
-                }
-                Value::Symbolic(..) => {
-                    self.resolve_if_porter(other, true)
-                }
-                _ => {},
-            };
+            self.resolve(other, true);
 
             let sym = operands.as_flat_mut().0;
-            self.resolve_if_porter(sym.as_mut(), true);
+            self.resolve_sym(sym.as_mut(), true);
 
             Err(operands)
         }
@@ -238,11 +278,33 @@ mod symbolic {
             mut operand: Self::ExprRef<'a>,
             _op: AbsUnaryOp,
         ) -> Self::Expr<'a> {
-            self.resolve_if_porter(operand.as_mut(), true);
+            self.resolve_sym(operand.as_mut(), true);
             Err(operand)
         }
 
         impl_singular_unary_ops_through_general!();
+    }
+
+    impl<EB: SymValueRefExprBuilder> TernaryExprBuilder for UnevaluatedResolverBuilder<EB> {
+        type ExprRefTriple<'a> = SymTernaryOperands;
+        type Expr<'a> = Result<ValueRef, SymTernaryOperands>;
+
+        fn ternary_op<'a>(
+            &mut self,
+            mut operands: Self::ExprRefTriple<'a>,
+            op: AbsTernaryOp,
+        ) -> Self::Expr<'a> {
+            let expect_scalar = match op {
+                AbsTernaryOp::IfThenElse => (true, false, false),
+            };
+            self.resolve(&mut operands.0, expect_scalar.0);
+            self.resolve(&mut operands.1, expect_scalar.1);
+            self.resolve(&mut operands.2, expect_scalar.2);
+
+            Err(operands)
+        }
+
+        impl_singular_ternary_ops_through_general!();
     }
 
     impl<EB: SymValueRefExprBuilder> CastExprBuilder for UnevaluatedResolverBuilder<EB> {
@@ -268,7 +330,7 @@ mod symbolic {
                         return Ok(operand.into());
                     }
                     _ if ValueType::try_from(&metadata).is_ok() => {
-                        self.resolve_if_porter(operand.as_mut(), true);
+                        self.resolve_sym(operand.as_mut(), true);
                     }
                     _ => {}
                 }
@@ -289,6 +351,7 @@ mod adapters {
 
     use BinaryExprBuilder as BEB;
     use CastExprBuilder as CEB;
+    use TernaryExprBuilder as TEB;
     use UnaryExprBuilder as UEB;
 
     #[derive(Default, Clone, Deref, DerefMut)]
@@ -317,6 +380,22 @@ mod adapters {
             F: for<'s> FnH<<Self::Target as UEB>::ExprRef<'s>, <Self::Target as UEB>::Expr<'s>>,
         {
             Value::from(build(operand)).to_value_ref()
+        }
+    }
+
+    impl TernaryExprBuilderAdapter for CoreBuilder {
+        type TargetExprRefTriple<'a> = SymTernaryOperands;
+        type TargetExpr<'a> = ValueRef;
+
+        #[inline]
+        fn adapt<'t, F>(operands: Self::TargetExprRefTriple<'t>, build: F) -> Self::TargetExpr<'t>
+        where
+            F: for<'s> FnH<
+                    <Self::Target as TEB>::ExprRefTriple<'s>,
+                    <Self::Target as TEB>::Expr<'s>,
+                >,
+        {
+            Value::from(build(operands)).to_value_ref()
         }
     }
 
@@ -444,6 +523,22 @@ mod adapters {
         impl_singular_unary_ops_through_general!();
     }
 
+    impl<T: ValueRefExprBuilder> TernaryExprBuilder for SymValueRefExprBuilderAdapter<T> {
+        type ExprRefTriple<'a> = SymTernaryOperands;
+        type Expr<'a> = ValueRef;
+
+        #[inline]
+        fn ternary_op<'a>(
+            &mut self,
+            operands: Self::ExprRefTriple<'a>,
+            op: AbsTernaryOp,
+        ) -> Self::Expr<'a> {
+            self.0.borrow_mut().ternary_op(operands.into(), op)
+        }
+
+        impl_singular_ternary_ops_through_general!();
+    }
+
     impl<T: ValueRefExprBuilder> CastExprBuilder for SymValueRefExprBuilderAdapter<T> {
         type ExprRef<'a> = SymValueRef;
         type Expr<'a> = SymValueRef;
@@ -467,6 +562,7 @@ mod adapters {
 mod core {
     use abs::expr::CastExprBuilder;
     use common::utils::type_id_of;
+    use guards::SymTernaryOperands;
     use simp::CastSimplifier;
 
     use super::*;
@@ -648,6 +744,22 @@ mod core {
         }
 
         impl_singular_unary_ops_through_general!();
+    }
+
+    impl TernaryExprBuilder for CoreBuilder {
+        // Not practical to define 7 variations for the valid symbolic cases.
+        type ExprRefTriple<'a> = SymTernaryOperands;
+        type Expr<'a> = Expr;
+
+        fn if_then_else<'a>(&mut self, operands: Self::ExprRefTriple<'a>) -> Self::Expr<'a> {
+            Expr::Ite {
+                condition: SymValueRef::new(operands.0),
+                if_target: operands.1,
+                else_target: operands.2,
+            }
+        }
+
+        impl_general_ternary_op_through_singulars!();
     }
 
     impl CastExprBuilder for CoreBuilder {
@@ -852,6 +964,101 @@ mod core {
 
 mod concrete {
     use super::*;
+
+    pub(crate) struct MinimalConcreteBuilder {
+        type_manager: Rc<dyn TypeManager>,
+    }
+
+    impl MinimalConcreteBuilder {
+        pub(crate) fn new(type_manager: Rc<dyn TypeManager>) -> Self {
+            Self { type_manager }
+        }
+    }
+
+    impl BinaryExprBuilder for MinimalConcreteBuilder {
+        type ExprRefPair<'a> = (ConcreteValueRef, ConcreteValueRef);
+        type Expr<'a> = ValueRef;
+
+        delegate! {
+            to ConcreteAbstractorBuilder {
+                #[inline]
+                fn binary_op<'a>(
+                    &mut self,
+                    operands: Self::ExprRefPair<'a>,
+                    op: AbsBinaryOp,
+                ) -> Self::Expr<'a>;
+            }
+        }
+
+        impl_singular_binary_ops_through_general!();
+    }
+
+    impl UnaryExprBuilder for MinimalConcreteBuilder {
+        type ExprRef<'a> = ConcreteValueRef;
+        type Expr<'a> = ValueRef;
+
+        delegate! {
+            to ConcreteAbstractorBuilder {
+                #[inline]
+                fn unary_op<'a>(&mut self, operand: Self::ExprRef<'a>, op: AbsUnaryOp) -> Self::Expr<'a>;
+            }
+        }
+
+        impl_singular_unary_ops_through_general!();
+    }
+
+    impl TernaryExprBuilder for MinimalConcreteBuilder {
+        type ExprRefTriple<'a> = (ValueRef, ValueRef, ValueRef);
+        type Expr<'a> = ValueRef;
+
+        fn if_then_else<'a>(
+            &mut self,
+            (condition, if_target, else_target): Self::ExprRefTriple<'a>,
+        ) -> Self::Expr<'a> {
+            let Value::Concrete(condition) = condition.as_ref() else {
+                unreachable!()
+            };
+            let resolved_cond_value = condition
+                .try_resolve_as_const(self.type_manager.as_ref())
+                .and_then(|c| match c {
+                    ConstValue::Bool(b) => Some(b),
+                    _ => None,
+                })
+                .unwrap_or_else(|| {
+                    unreachable!(
+                        "Condition must be resolvable to a boolean constant. {:?}",
+                        condition
+                    )
+                });
+            if resolved_cond_value {
+                if_target
+            } else {
+                else_target
+            }
+        }
+
+        impl_general_ternary_op_through_singulars!();
+    }
+
+    impl CastExprBuilder for MinimalConcreteBuilder {
+        type ExprRef<'a> = ConcreteValueRef;
+        type Expr<'a> = ValueRef;
+        type Metadata<'a> = CastMetadata;
+
+        delegate! {
+            to ConcreteAbstractorBuilder {
+                #[inline]
+                fn cast<'a, 'b>(
+                    &mut self,
+                    operand: Self::ExprRef<'a>,
+                    target: CastKind<Self::IntType, Self::FloatType, Self::PtrType, Self::GenericType>,
+                    metadata: Self::Metadata<'b>,
+                ) -> Self::Expr<'a>;
+            }
+        }
+
+        impl_singular_casts_through_general!();
+    }
 
     #[derive(Default)]
     pub(crate) struct ConcreteAbstractorBuilder;

@@ -8,12 +8,13 @@ use crate::abs::CastKind;
 
 use super::{
     macros::macro_rules_method_with_optional_args, BinaryExprBuilder, CastExprBuilder,
-    UnaryExprBuilder,
+    TernaryExprBuilder, UnaryExprBuilder,
 };
 
 pub(crate) const TAG: &str = "expr_builder";
 const SPAN_BINARY: &str = "binary_op";
 const SPAN_UNARY: &str = "unary_op";
+const SPAN_TERNARY: &str = "ternary_op";
 const SPAN_CAST: &str = "cast_op";
 
 #[derive(Clone, Default)]
@@ -57,6 +58,28 @@ macro_rules_method_with_optional_args!(impl_unary_expr_method {
             .entered();
 
             let result = self.builder.$method(operand, $($arg),*);
+
+            log_debug!(target: TAG, expr = %result);
+            span.exit();
+            result
+        }
+    };
+});
+
+macro_rules_method_with_optional_args!(impl_ternary_expr_method {
+    ($method: ident + $($arg: ident : $arg_type: ty),* $(,)?) => {
+        fn $method<'a>(
+            &mut self,
+            operands: Self::ExprRefTriple<'a>,
+            $($arg: $arg_type),*
+        ) -> Self::Expr<'a>
+        {
+            let span = debug_span!(
+                target: TAG, SPAN_TERNARY,
+                op = stringify!($method), operands = %operands)
+            .entered();
+
+            let result = self.builder.$method(operands, $($arg),*);
 
             log_debug!(target: TAG, expr = %result);
             span.exit();
@@ -140,6 +163,20 @@ where
     impl_unary_expr_method!(bit_reverse count_ones);
     impl_unary_expr_method!(trailing_zeros + non_zero: bool);
     impl_unary_expr_method!(leading_zeros + non_zero: bool);
+}
+
+impl<B> TernaryExprBuilder for LoggerExprBuilder<B>
+where
+    B: TernaryExprBuilder,
+    for<'a> B::ExprRefTriple<'a>: Display,
+    for<'a> B::Expr<'a>: Display,
+{
+    type ExprRefTriple<'a> = B::ExprRefTriple<'a>;
+    type Expr<'a> = B::Expr<'a>;
+
+    impl_ternary_expr_method!(ternary_op + op: crate::abs::TernaryOp);
+
+    impl_ternary_expr_method!(if_then_else);
 }
 
 impl<B> CastExprBuilder for LoggerExprBuilder<B>

@@ -1,10 +1,10 @@
 use super::{
-    expr::{SymBinaryOperands, SymValueRef, ValueRef},
+    expr::{SymBinaryOperands, SymTernaryOperands, SymValueRef, ValueRef},
     LazyTypeInfo,
 };
 use crate::abs::{
     self,
-    expr::{BinaryExprBuilder, CastExprBuilder, UnaryExprBuilder},
+    expr::{BinaryExprBuilder, CastExprBuilder, TernaryExprBuilder, UnaryExprBuilder},
     FloatType, IntType, TypeId,
 };
 use common::tyexp::TypeInfo;
@@ -15,6 +15,7 @@ pub(crate) trait SymValueRefExprBuilder
 where
     Self: for<'a> BinaryExprBuilder<ExprRefPair<'a> = SymBinaryOperands, Expr<'a> = ValueRef>
         + for<'a> UnaryExprBuilder<ExprRef<'a> = SymValueRef, Expr<'a> = ValueRef>
+        + for<'a> TernaryExprBuilder<ExprRefTriple<'a> = SymTernaryOperands, Expr<'a> = ValueRef>
         + for<'a> CastExprBuilder<
             ExprRef<'a> = SymValueRef,
             Expr<'a> = SymValueRef,
@@ -31,7 +32,10 @@ pub(crate) trait ValueRefExprBuilder
 where
     Self: for<'a> BinaryExprBuilder<ExprRefPair<'a> = (ValueRef, ValueRef), Expr<'a> = ValueRef>
         + for<'a> UnaryExprBuilder<ExprRef<'a> = ValueRef, Expr<'a> = ValueRef>
-        + for<'a> CastExprBuilder<
+        + for<'a> TernaryExprBuilder<
+            ExprRefTriple<'a> = (ValueRef, ValueRef, ValueRef),
+            Expr<'a> = ValueRef,
+        > + for<'a> CastExprBuilder<
             ExprRef<'a> = ValueRef,
             Expr<'a> = ValueRef,
             Metadata<'a> = LazyTypeInfo,

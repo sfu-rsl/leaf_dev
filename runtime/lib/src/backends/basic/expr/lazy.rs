@@ -556,6 +556,21 @@ mod retrieval {
             .to_value_ref()
         }
     }
+
+    impl ConcreteValue {
+        pub(crate) fn try_resolve_as_const(
+            &self,
+            type_manager: &dyn TypeManager,
+        ) -> Option<ConstValue> {
+            match self {
+                ConcreteValue::Const(value) => Some(value.clone()),
+                ConcreteValue::Unevaluated(UnevalValue::Lazy(lazy)) => {
+                    unsafe { lazy.try_retrieve_as_scalar(Some(type_manager)) }.ok()
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
 }
 
 pub(crate) use retrieval::RawPointerRetriever;

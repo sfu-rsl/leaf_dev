@@ -8,7 +8,7 @@ pub(crate) mod variance;
 
 use self::macros::macro_rules_method_with_optional_args;
 
-use super::{BinaryOp, CastKind, FloatType, IntType, TypeId, UnaryOp};
+use super::{BinaryOp, CastKind, FloatType, IntType, TernaryOp, TypeId, UnaryOp};
 
 macro_rules_method_with_optional_args! (bin_fn_signature {
     ($method: ident + $($arg: ident : $arg_type: ty),* $(,)?) => {
@@ -25,6 +25,16 @@ macro_rules_method_with_optional_args! (unary_fn_signature {
         fn $method<'a>(
             &mut self,
             operand: Self::ExprRef<'a>,
+            $($arg: $arg_type),*
+        ) -> Self::Expr<'a>;
+    };
+});
+
+macro_rules_method_with_optional_args! (tri_fn_signature {
+    ($method: ident + $($arg: ident : $arg_type: ty),* $(,)?) => {
+        fn $method<'a>(
+            &mut self,
+            operands: Self::ExprRefTriple<'a>,
             $($arg: $arg_type),*
         ) -> Self::Expr<'a>;
     };
@@ -68,6 +78,15 @@ pub(crate) trait UnaryExprBuilder {
     unary_fn_signature!(bit_reverse count_ones);
     unary_fn_signature!(trailing_zeros + non_zero: bool);
     unary_fn_signature!(leading_zeros + non_zero: bool);
+}
+
+pub(crate) trait TernaryExprBuilder {
+    type ExprRefTriple<'a>;
+    type Expr<'a>;
+
+    tri_fn_signature!(ternary_op + op: TernaryOp);
+
+    tri_fn_signature!(if_then_else);
 }
 
 pub(crate) trait CastExprBuilder {
