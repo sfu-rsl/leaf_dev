@@ -452,18 +452,25 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
     }
 
     fn use_if_eq(mut self, val: Self::Operand, current: Self::Operand, expected: Self::Operand) {
-        let are_eq = self.expr_builder().eq((current.clone(), expected).into());
-        self.set_value(if are_eq.is_symbolic() {
-            // FIXME: Add ITE to the expression builder
-            Expr::Ite {
-                condition: SymValueRef::new(are_eq),
-                if_target: val,
-                else_target: current,
+        let are_eq = self
+            .expr_builder()
+            .eq((current.clone(), expected.clone()).into());
+        let are_eq = if !are_eq.is_symbolic() {
+            let current =
+                ConcreteValueRef::new(current.clone()).try_resolve_as_const(self.type_manager);
+            let expected = ConcreteValueRef::new(expected).try_resolve_as_const(self.type_manager);
+            match (current, expected) {
+                (Some(current), Some(expected)) => {
+                    let are_eq = current == expected;
+                    ConstValue::Bool(are_eq).to_value_ref()
+                }
+                _ => are_eq,
             }
-            .into()
         } else {
-            UnevalValue::Some.into()
-        })
+            are_eq
+        };
+        let value = self.expr_builder().if_then_else((are_eq, val, current));
+        self.set(value)
     }
 
     fn use_and_check_eq(mut self, val: Self::Operand, expected: Self::Operand) {
@@ -593,13 +600,12 @@ impl<EB: OperationalExprBuilder> BasicAssignmentHandler<'_, EB> {
                     (is_niche, tagged_discr)
                 };
 
-                let discr_value = Expr::Ite {
-                    condition: is_niche,
-                    if_target: tagged_discr.into(),
-                    else_target: into_discr_value(*non_niche_value),
-                }
-                .to_value_ref();
-                discr_value
+                let discr_value = self.expr_builder().if_then_else((
+                    is_niche.into(),
+                    tagged_discr.into(),
+                    into_discr_value(*non_niche_value),
+                ));
+                SymValueRef::new(discr_value)
             }
         }
     }
