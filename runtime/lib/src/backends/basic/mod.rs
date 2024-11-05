@@ -348,7 +348,7 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
     fn cast_of(mut self, operand: Self::Operand, target: CastKind) {
         let cast_value: ValueRef = self
             .expr_builder()
-            .cast(operand.into(), target, self.dest.type_info().id().into())
+            .cast(operand.into(), target, self.dest.type_info().clone())
             .into();
 
         self.set(cast_value)
