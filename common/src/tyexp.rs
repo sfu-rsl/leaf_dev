@@ -3,7 +3,7 @@ use std::{collections::HashMap, error::Error, fs::OpenOptions};
 
 use serde::{Deserialize, Serialize, Serializer};
 
-use crate::{types::*, *};
+use crate::{types::*, utils::array_backed_struct, *};
 
 pub use crate::types::{Alignment, TypeId, TypeSize};
 
@@ -90,6 +90,73 @@ pub enum TagEncodingInfo {
     },
 }
 
+#[cfg_attr(not(core_build), macro_export)]
+macro_rules! pass_core_type_names_to {
+    ($macro:ident) => {
+        $macro! {
+            bool,
+            char,
+            i8, i16, i32, i64, i128, isize,
+            u8, u16, u32, u64, u128, usize,
+            f16, f32, f64, f128,
+            raw_addr, raw_mut_addr,
+        }
+    };
+}
+pub use pass_core_type_names_to;
+
+macro_rules! define_core_types {
+    ($($name: ident),*$(,)?) => {
+        array_backed_struct! {
+            #[derive(Serialize, Deserialize)]
+            pub struct CoreTypes<V = TypeId> {
+                $($name),*
+            }: V;
+        }
+    };
+}
+
+pass_core_type_names_to!(define_core_types);
+
+impl<V: Copy> CoreTypes<V> {
+    pub fn map<T: Copy>(&self, f: impl FnMut(V) -> T) -> CoreTypes<T> {
+        self.0.map(f).into()
+    }
+}
+
+macro_rules! define_named_core_types {
+    ($($name: ident),*$(,)?) => {
+        pub struct NamedCoreTypes<V = TypeId> {
+            $(
+                pub $name: V
+            ),*
+        }
+    };
+}
+
+pass_core_type_names_to!(define_named_core_types);
+
+impl<V: Copy> From<NamedCoreTypes<V>> for CoreTypes<V> {
+    fn from(named: NamedCoreTypes<V>) -> Self {
+        macro_rules! to_array {
+            ($($name: ident),*$(,)?) => {
+                [$(named.$name),*]
+            };
+        }
+        CoreTypes(pass_core_type_names_to!(to_array))
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct GenericTypesData<All, Cores> {
+    pub all_types: All,
+    pub core_types: Cores,
+}
+
+pub type TypesData = GenericTypesData<HashMap<TypeId, TypeInfo>, CoreTypes>;
+
+type SerializedTypesData = GenericTypesData<Vec<TypeInfo>, Vec<(String, TypeId)>>;
+
 pub struct TypeExport;
 
 #[derive(Debug)]
@@ -119,22 +186,34 @@ pub const FINAL_TYPE_EXPORT_FILE: &str = "types.json";
 // FIXME: Move these functions to a more appropriate place.
 // FIXME: Make this configurable and injectable.
 impl TypeExport {
-    pub fn read() -> Result<HashMap<TypeId, TypeInfo>, ReadError> {
+    pub fn read() -> Result<TypesData, ReadError> {
         let type_info_file_path =
             crate::utils::search_current_ancestor_dirs_for(FINAL_TYPE_EXPORT_FILE)
                 .expect("Failed to find the type info file.");
-        let type_infos: Vec<TypeInfo> =
-            Self::get_type_info(type_info_file_path.display().to_string())?;
-        log_debug!("Retrieved {} types from file.", type_infos.len());
 
-        let type_infos = type_infos
-            .into_iter()
-            .map(|type_info| (type_info.id, type_info))
-            .collect();
-        Ok(type_infos)
+        let data = Self::parse_exported_types(type_info_file_path.display().to_string())?;
+        log_debug!("Retrieved {} types from file.", data.all_types.len());
+
+        let types = TypesData {
+            all_types: data
+                .all_types
+                .into_iter()
+                .map(|type_info| (type_info.id, type_info))
+                .collect(),
+            core_types: CoreTypes::try_from(
+                data.core_types.into_iter().collect::<Vec<_>>().as_slice(),
+            )
+            .unwrap(),
+        };
+
+        Ok(types)
     }
 
-    pub fn write<'a>(types: impl Iterator<Item = &'a TypeInfo>, file_path: String) {
+    pub fn write<'a>(
+        types: impl Iterator<Item = &'a TypeInfo>,
+        core_types: CoreTypes<TypeId>,
+        file_path: String,
+    ) {
         let file = OpenOptions::new()
             .create(true)
             .write(true)
@@ -142,12 +221,15 @@ impl TypeExport {
             .open(file_path)
             .expect("Unable to open file for type export");
         let mut serializer = serde_json::Serializer::pretty(file);
-        serializer
-            .collect_seq(types)
+        let data = SerializedTypesData {
+            all_types: types.cloned().collect(),
+            core_types: core_types.to_pairs().to_vec(),
+        };
+        data.serialize(&mut serializer)
             .expect("Failed to write types to file.");
     }
 
-    pub fn get_type_info(file_path: String) -> Result<Vec<TypeInfo>, ReadError> {
+    pub fn parse_exported_types(file_path: String) -> Result<SerializedTypesData, ReadError> {
         let file = OpenOptions::new()
             .read(true)
             .open(file_path)
@@ -156,10 +238,11 @@ impl TypeExport {
                 cause: Some(Box::new(err)),
             })?;
 
-        let type_infos: Vec<TypeInfo> = serde_json::from_reader(file).map_err(|err| ReadError {
-            message: "Failed to parse types from file.",
-            cause: Some(Box::new(err)),
-        })?;
+        let type_infos: SerializedTypesData =
+            serde_json::from_reader(file).map_err(|err| ReadError {
+                message: "Failed to parse types from file.",
+                cause: Some(Box::new(err)),
+            })?;
         Ok(type_infos)
     }
 }

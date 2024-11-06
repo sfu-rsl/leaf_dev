@@ -6,6 +6,7 @@ pub(crate) mod expr;
 mod outgen;
 mod place;
 mod state;
+mod types;
 
 use std::{
     assert_matches::assert_matches,
@@ -41,6 +42,7 @@ use self::{
     expr::{prelude::*, translators::z3::Z3ValueTranslator},
     place::PlaceMetadata,
     state::{make_sym_place_handler, RawPointerVariableState},
+    types::BasicTypeManager,
 };
 
 type TraceManager = dyn abs::backend::TraceManager<BasicBlockIndex, ValueRef>;
@@ -992,33 +994,6 @@ impl<'a> BasicUntupleHelper<'a> {
                 FieldsShapeInfo::Struct(ref shape) => shape,
                 _ => panic!("Expected tuple type info, got: {:?}", type_info),
             })
-    }
-}
-
-pub(crate) struct BasicTypeManager<'t> {
-    type_map: &'t HashMap<TypeId, TypeInfo>,
-}
-
-impl<'t> BasicTypeManager<'t> {
-    fn new(type_map: &'t HashMap<TypeId, TypeInfo>) -> Self {
-        Self { type_map }
-    }
-}
-
-impl Default for BasicTypeManager<'static> {
-    fn default() -> Self {
-        Self::new(tyexp::instance::PROGRAM_TYPES.get_or_init(|| TypeExport::read().unwrap()))
-    }
-}
-
-impl<'t> crate::abs::backend::TypeManager for BasicTypeManager<'t> {
-    type Key = TypeId;
-    type Value = &'t TypeInfo;
-
-    fn get_type(&self, key: Self::Key) -> Self::Value {
-        self.type_map
-            .get(&key)
-            .unwrap_or_else(|| panic!("Type information was not found. TypeId: {}", key))
     }
 }
 

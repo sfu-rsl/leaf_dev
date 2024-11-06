@@ -136,9 +136,9 @@ impl FieldsShapeInfoExt for FieldsShapeInfo {
 }
 
 pub(crate) mod instance {
-    use std::{collections::HashMap, sync::OnceLock};
+    use std::sync::OnceLock;
 
-    use super::{TypeId, TypeInfo};
+    use common::tyexp::TypesData;
 
-    pub(crate) static PROGRAM_TYPES: OnceLock<HashMap<TypeId, TypeInfo>> = OnceLock::new();
+    pub(crate) static PROGRAM_TYPES: OnceLock<TypesData> = OnceLock::new();
 }

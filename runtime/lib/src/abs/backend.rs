@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use super::{
-    AssertKind, BinaryOp, BranchingMetadata, CastKind, Constraint, FieldIndex, Local, PlaceUsage,
-    Projection, SymVariable, TypeId, UnaryOp, VariantIndex,
+    AssertKind, BinaryOp, BranchingMetadata, CastKind, Constraint, FieldIndex, IntType, Local,
+    PlaceUsage, Projection, SymVariable, TypeId, UnaryOp, VariantIndex,
 };
 
 pub(crate) trait RuntimeBackend {
@@ -286,6 +286,35 @@ pub(crate) trait TypeManager {
     type Value;
 
     fn get_type(&self, key: Self::Key) -> Self::Value;
+}
+
+macro_rules! fn_by_name {
+    ($($name:ident),*$(,)?) => {
+        $(
+            #[allow(unused)]
+            fn $name(&self) -> V;
+        )*
+    };
+}
+
+pub(crate) trait CoreTypeProvider<V> {
+    common::tyexp::pass_core_type_names_to!(fn_by_name);
+
+    fn int_type(&self, ty: IntType) -> V {
+        match (ty.is_signed, ty.bit_size as u32) {
+            (true, i8::BITS) => self.i8(),
+            (false, u8::BITS) => self.u8(),
+            (true, i16::BITS) => self.i16(),
+            (false, u16::BITS) => self.u16(),
+            (true, i32::BITS) => self.i32(),
+            (false, u32::BITS) => self.u32(),
+            (true, i64::BITS) => self.i64(),
+            (false, u64::BITS) => self.u64(),
+            (true, i128::BITS) => self.i128(),
+            (false, u128::BITS) => self.u128(),
+            _ => unreachable!("Unexpected integer type: {:?}", ty),
+        }
+    }
 }
 
 pub(crate) mod implementation {

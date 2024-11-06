@@ -4,6 +4,7 @@ use super::{
 };
 use crate::abs::{
     self,
+    backend::*,
     expr::{BinaryExprBuilder, CastExprBuilder, TernaryExprBuilder, UnaryExprBuilder},
     FloatType, IntType, TypeId,
 };
@@ -57,10 +58,14 @@ pub(crate) use super::expr::builders::DefaultExprBuilder as BasicExprBuilder;
 pub(crate) use super::expr::builders::DefaultSymExprBuilder as BasicSymExprBuilder;
 
 pub(crate) trait TypeManager:
-    abs::backend::TypeManager<Key = abs::TypeId, Value = &'static TypeInfo>
+    abs::backend::TypeManager<Key = TypeId, Value = &'static TypeInfo>
+    + CoreTypeProvider<&'static TypeInfo>
+    + CoreTypeProvider<LazyTypeInfo>
 {
 }
 impl<'t, T> TypeManager for T where
-    T: abs::backend::TypeManager<Key = abs::TypeId, Value = &'static TypeInfo>
+    T: abs::backend::TypeManager<Key = TypeId, Value = &'static TypeInfo>
+        + CoreTypeProvider<&'static TypeInfo>
+        + CoreTypeProvider<LazyTypeInfo>
 {
 }

@@ -66,7 +66,11 @@ impl CompilationPass for TypeExporter {
         }
         .display()
         .to_string();
-        TypeExport::write(type_map.values(), file_path);
+        TypeExport::write(
+            type_map.values(),
+            get_core_types(tcx).map(|t| type_id(tcx, t)),
+            file_path,
+        );
     }
 }
 
@@ -97,12 +101,37 @@ fn capture_all_types<'s>(
             })
         });
 
-    let special_types = vec![Ty::new_mut_ptr(tcx, tcx.types.unit)];
-    for ty in special_types {
-        add_type_information_to_map(&mut type_map, tcx, ty, ParamEnv::empty());
+    for ty in CoreTypes::from(get_core_types(tcx)).as_ref() {
+        add_type_information_to_map(&mut type_map, tcx, *ty, ParamEnv::empty());
     }
 
     type_map
+}
+
+fn get_core_types<'tcx>(tcx: TyCtxt<'tcx>) -> CoreTypes<Ty<'tcx>> {
+    NamedCoreTypes {
+        bool: tcx.types.bool,
+        char: tcx.types.char,
+        i8: tcx.types.i8,
+        i16: tcx.types.i16,
+        i32: tcx.types.i32,
+        i64: tcx.types.i64,
+        i128: tcx.types.i128,
+        isize: tcx.types.isize,
+        u8: tcx.types.u8,
+        u16: tcx.types.u16,
+        u32: tcx.types.u32,
+        u64: tcx.types.u64,
+        u128: tcx.types.u128,
+        usize: tcx.types.usize,
+        f16: tcx.types.f16,
+        f32: tcx.types.f32,
+        f64: tcx.types.f64,
+        f128: tcx.types.f128,
+        raw_addr: Ty::new_imm_ptr(tcx, tcx.types.unit),
+        raw_mut_addr: Ty::new_mut_ptr(tcx, tcx.types.unit),
+    }
+    .into()
 }
 
 fn add_type_information_to_map<'tcx>(
@@ -138,8 +167,8 @@ fn aggregate_type_info(type_map: &mut HashMap<TypeId, TypeInfo>, path_prefix: Op
             .expect("Failed to read glob entry")
             .display()
             .to_string();
-        let type_infos = TypeExport::get_type_info(file_path).unwrap();
-        for type_info in type_infos {
+        let type_infos = TypeExport::parse_exported_types(file_path).unwrap();
+        for type_info in type_infos.all_types {
             if !type_map.contains_key(&type_info.id) {
                 type_map.insert(type_info.id, type_info);
             }
