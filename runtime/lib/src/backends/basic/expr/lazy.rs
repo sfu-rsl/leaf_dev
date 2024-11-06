@@ -356,30 +356,25 @@ mod retrieval {
         .into()
     }
 
-    impl PorterValue {
-        pub(crate) fn try_to_masked_value<'a, 'b, EB: SymValueRefExprBuilder>(
-            &self,
-            type_manager: &'a dyn TypeManager,
-            expr_builder: &'b mut EB,
-        ) -> Result<SymValueRef, &LazyTypeInfo> {
-            let whole_ty = self.as_concrete.type_as_scalar(Some(type_manager))?;
+    struct MaskedValueBuilder<'a, 'b, EB: SymValueRefExprBuilder> {
+        type_manager: &'a dyn TypeManager,
+        expr_builder: &'b mut EB,
+    }
+
+    impl<EB: SymValueRefExprBuilder> MaskedValueBuilder<'_, '_, EB> {
+        #[tracing::instrument(level = "debug", skip(self))]
+        pub(crate) fn build(&mut self, value: &PorterValue, whole_ty: ScalarType) -> SymValueRef {
             let whole_bit_rep_ty = IntType {
                 bit_size: whole_ty.bit_size(),
                 is_signed: false,
             };
             let whole_size = whole_ty.bit_size() / u8::BITS as TypeSize;
 
-            log_debug!(
-                "Making a masked value from {} symbolic values for type {:?}",
-                self.sym_values.len(),
-                whole_ty,
-            );
-
-            let whole_bit_rep = unsafe { retrieve_scalar(self.as_concrete.0, &whole_ty) }
+            let whole_bit_rep = unsafe { retrieve_scalar(value.as_concrete.0, &whole_ty) }
                 .try_to_bit_rep()
                 .expect("Unexpected const value.");
 
-            let (result, mask) = self.sym_values.iter().fold(
+            let (result, mask) = value.sym_values.iter().fold(
                 (
                     ConstValue::new_int(0u128, whole_bit_rep_ty).to_value_ref(),
                     0u128,
@@ -390,35 +385,38 @@ mod retrieval {
                         SymValue::Expression(Expr::Partial(_))
                     ));
 
-                    let value_ty = type_manager.get_type(*ty_id);
+                    let value_ty = self.type_manager.get_type(*ty_id);
                     let value_size = value_ty.size;
 
-                    let sym_value = Self::to_bit_rep(expr_builder, sym_value, value_ty);
+                    let sym_value = self.to_bit_rep(sym_value, value_ty);
 
-                    let (padded, mask) =
-                        self.pad(expr_builder, sym_value, *at, value_size, whole_bit_rep_ty);
+                    let (padded, mask) = self.pad(sym_value, *at, value_size, whole_bit_rep_ty);
 
                     // Covering the whole value
-                    if core::intrinsics::unlikely(value_size == whole_size) {
-                        log_warn!(
+                    if value_size == whole_size {
+                        log_debug!(
                             concat!(
                                 "A transmutation is happening as a form of porter value. ",
-                                "Either the program is unusually unsafe, or there is a problem ",
+                                "With the exception symbolic enum discriminant, ",
+                                "either the program is unusually unsafe, or there is a problem ",
                                 "with value storage and retrieval. ",
                                 "Symbolic value: {:?}, Whole value: {:?}",
                             ),
                             padded,
-                            self,
+                            value,
                         );
                         return (padded.into(), mask);
                     }
 
-                    (expr_builder.or((padded, acc_value).into()), acc_mask | mask)
+                    (
+                        self.expr_builder.or((padded, acc_value).into()),
+                        acc_mask | mask,
+                    )
                 },
             );
             let result = SymValueRef::new(result);
             let result = SymValueRef::new(
-                expr_builder.and(
+                self.expr_builder.and(
                     (
                         result,
                         ConstValue::new_int(mask, whole_bit_rep_ty).to_value_ref(),
@@ -426,7 +424,7 @@ mod retrieval {
                         .into(),
                 ),
             );
-            let result = expr_builder.or((
+            let result = self.expr_builder.or((
                 result,
                 ConstValue::new_int(whole_bit_rep & !mask, whole_bit_rep_ty).to_value_ref(),
             )
@@ -436,25 +434,23 @@ mod retrieval {
             let result = if let ScalarType::Bool = whole_ty {
                 Self::bit_rep_to_bool(result)
             } else {
-                let ty_info = self.as_concrete.1.clone();
+                let ty_info = value.as_concrete.1.clone();
                 SymValueRef::new(
-                    expr_builder
+                    self.expr_builder
                         .transmute(result.into(), ty_info.id().unwrap(), ty_info)
                         .into(),
                 )
             };
 
-            log_debug!("Masked value: {}", result);
-            Ok(result)
+            result
         }
 
         /// Creates a zero-padded value from a symbolic value + a mask representing the set bits.
         /// # Example
         /// If a symbolic u8 value at byte offset 1 in little-endian order is requested to be masked
         /// for a u32 value, the padded value will be 0x0000xx00 and the mask will be 0x0000ff00.
-        fn pad<EB: SymValueRefExprBuilder>(
-            &self,
-            expr_builder: &mut EB,
+        fn pad(
+            &mut self,
             value: SymValueRef,
             at: PointerOffset,
             value_size: TypeSize,
@@ -464,28 +460,31 @@ mod retrieval {
 
             debug_assert!(
                 value_size + at <= whole_size,
-                "The value is overflowing the whole value. {:?} @ {:?} in {:?}",
+                "The value is overflowing the whole value. {:?} @ {:?}",
                 value,
                 at,
-                self,
             );
 
             let padded = (0..value_size).fold(
                 ConstValue::new_int(0u128, bit_rep_ty).to_value_ref(),
                 |acc, i| {
-                    let byte = Self::extract_byte(expr_builder, value.clone(), value_size, i);
-                    let extended = expr_builder.to_int(byte, bit_rep_ty, LazyTypeInfo::None);
+                    let byte = self.extract_byte(value.clone(), value_size, i);
+                    let extended = self.expr_builder.to_int(
+                        byte,
+                        bit_rep_ty,
+                        self.type_manager.int_type(bit_rep_ty),
+                    );
                     // NOTE: We need to care about the endianness as the whole value is a scalar (primitive).
                     let shift_amount = Self::shift_amount(whole_size, at + i as PointerOffset);
                     let aligned = SymValueRef::new(
-                        expr_builder
+                        self.expr_builder
                             .shl(SymBinaryOperands::Orig {
                                 first: extended,
                                 second: ConstValue::from(shift_amount).to_value_ref(),
                             })
                             .into(),
                     );
-                    expr_builder.or((aligned, acc).into())
+                    self.expr_builder.or((aligned, acc).into())
                 },
             );
 
@@ -500,8 +499,8 @@ mod retrieval {
         /// would be located.
         /// # Remarks
         /// The return value that has the type of u8.
-        fn extract_byte<EB: SymValueRefExprBuilder>(
-            expr_builder: &mut EB,
+        fn extract_byte(
+            &mut self,
             value: SymValueRef,
             value_size: TypeSize,
             byte_offset: PointerOffset,
@@ -511,7 +510,7 @@ mod retrieval {
 
             let shift_amount = Self::shift_amount(value_size, byte_offset);
             let result = SymValueRef::new(
-                expr_builder
+                self.expr_builder
                     .shr(SymBinaryOperands::Orig {
                         first: result,
                         second: ConstValue::from(shift_amount).to_value_ref(),
@@ -519,12 +518,23 @@ mod retrieval {
                     .into(),
             );
 
-            let result = expr_builder.to_int(result, IntType::U8, LazyTypeInfo::None);
+            let result = self
+                .expr_builder
+                .to_int(result, IntType::U8, self.type_manager.u8());
 
             debug_assert!(
-                ValueType::try_from(result.value()).is_ok_and(|ty| ty == IntType::U8.into())
+                ValueType::try_from(result.value()).is_ok_and(|ty| ty == IntType::U8.into()),
             );
             result
+        }
+
+        fn to_bit_rep(&mut self, value: &SymValueRef, ty: &TypeInfo) -> SymValueRef {
+            if ScalarType::try_from(ty).is_ok_and(|ty| matches!(ty, ScalarType::Bool)) {
+                self.expr_builder
+                    .to_int(value.clone(), IntType::U8, self.type_manager.u8())
+            } else {
+                value.clone()
+            }
         }
 
         #[cfg_attr(target_endian = "little", allow(unused))]
@@ -536,24 +546,27 @@ mod retrieval {
             shift_amount_byte as u32 * u8::BITS
         }
 
-        fn to_bit_rep<EB: SymValueRefExprBuilder>(
-            expr_builder: &mut EB,
-            value: &SymValueRef,
-            ty: &TypeInfo,
-        ) -> SymValueRef {
-            if ScalarType::try_from(ty).is_ok_and(|ty| matches!(ty, ScalarType::Bool)) {
-                expr_builder.to_int(value.clone(), IntType::U8, LazyTypeInfo::None)
-            } else {
-                value.clone()
-            }
-        }
-
         fn bit_rep_to_bool(result: SymValueRef) -> SymValueRef {
             BinaryExpr {
                 operator: BinaryOp::Ne,
                 operands: (result, ConstValue::from(0_u8).to_value_ref()).into(),
             }
             .to_value_ref()
+        }
+    }
+
+    impl PorterValue {
+        pub(crate) fn try_to_masked_value<'a, 'b, EB: SymValueRefExprBuilder>(
+            &self,
+            type_manager: &'a dyn TypeManager,
+            expr_builder: &'b mut EB,
+        ) -> Result<SymValueRef, &LazyTypeInfo> {
+            let whole_ty = self.as_concrete.type_as_scalar(Some(type_manager))?;
+            let mut builder = MaskedValueBuilder {
+                type_manager,
+                expr_builder,
+            };
+            Ok(builder.build(self, whole_ty))
         }
     }
 
