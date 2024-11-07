@@ -27,6 +27,7 @@ pub(crate) mod z3 {
 
     const CHAR_BIT_SIZE: u32 = size_of::<char>() as u32 * 8;
     const USIZE_BIT_SIZE: u32 = size_of::<usize>() as u32 * 8;
+    const ADDR_BIT_SIZE: u32 = size_of::<*const ()>() as u32 * 8;
     const POSSIBLE_VALUES_PREFIX: &str = "pvs";
 
     pub(crate) struct Z3ValueTranslator<'ctx> {
@@ -132,11 +133,11 @@ pub(crate) mod z3 {
                     "Function values are not supposed to appear in symbolic expressions.",
                     "Symbolic function pointers are not expected to appear as function constants."
                 )),
-                ConstValue::Addr(..) => {
-                    unreachable!(
-                        "Raw address values are not supposed to appear in symbolic expressions."
-                    )
-                }
+                ConstValue::Addr(addr) => BVNode::new(
+                    ast::BV::from_u64(self.context, *addr as u64, ADDR_BIT_SIZE),
+                    false,
+                )
+                .into(),
             }
         }
 
