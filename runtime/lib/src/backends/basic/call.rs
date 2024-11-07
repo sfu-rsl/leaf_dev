@@ -1,5 +1,8 @@
+use core::iter;
+
 use crate::{
     abs::{self, LocalIndex},
+    backends::basic::UnevalValue,
     utils::InPlaceSelfHierarchical,
 };
 
@@ -169,11 +172,13 @@ impl<VS: VariablesState + InPlaceSelfHierarchical> BasicCallStackManager<VS> {
     }
 
     fn finalize_internal_call(&mut self, result_dest: &VS::PlaceValue) {
-        if let Some(returned_val) = self.latest_returned_val.take() {
-            self.top().set_place(&result_dest, returned_val)
+        let returned_val = if let Some(returned_val) = self.latest_returned_val.take() {
+            returned_val
         } else {
             // The unit return type
-        }
+            UnevalValue::Some.to_value_ref()
+        };
+        self.top().set_place(&result_dest, returned_val)
     }
 
     fn finalize_external_call(&mut self, result_dest: &VS::PlaceValue) {
@@ -197,6 +202,9 @@ impl<VS: VariablesState + InPlaceSelfHierarchical> BasicCallStackManager<VS> {
             self.top().set_place(result_dest, overridden);
             return;
         }
+
+        self.top()
+            .set_place(result_dest, UnevalValue::Some.to_value_ref());
 
         enum Action {
             Concretize,
@@ -366,16 +374,16 @@ impl<VS: VariablesState + InPlaceSelfHierarchical> GenericCallStackManager
             ..Default::default()
         };
 
-        let args_if_not_broken = if let Some(call_info) = self.latest_call.take() {
+        let arg_values_if_not_broken = if let Some(call_info) = self.latest_call.take() {
             if current_func.unwrap_func_id() == call_info.expected_func.unwrap_func_id() {
-                let args = call_info.args;
+                let arg_values = call_info.args;
                 assert_eq!(
-                    args.len(),
+                    arg_values.len(),
                     arg_places.len(),
                     "Inconsistent number of passed arguments."
                 );
 
-                Ok(arg_places.into_iter().zip(args.into_iter()))
+                Ok(arg_values)
             } else {
                 log_debug!(
                     target: TAG,
@@ -391,20 +399,19 @@ impl<VS: VariablesState + InPlaceSelfHierarchical> GenericCallStackManager
         };
 
         if let Some(parent_frame) = self.stack.last_mut() {
-            parent_frame.is_callee_external = Some(args_if_not_broken.is_err());
+            parent_frame.is_callee_external = Some(arg_values_if_not_broken.is_err());
         }
 
-        match args_if_not_broken {
-            Ok(args) => {
-                self.push_new_stack_frame(args, call_stack_frame);
-            }
+        let arg_values = match arg_values_if_not_broken {
+            Ok(arg_values) => arg_values,
             Err(call_info) => {
                 call_info.inspect(|info| {
                     self.inspect_external_call_info(info);
                 });
-                self.push_new_stack_frame(core::iter::empty(), call_stack_frame);
+                iter::repeat_n(UnevalValue::Some.to_value_ref(), arg_places.len()).collect()
             }
-        }
+        };
+        self.push_new_stack_frame(arg_places.into_iter().zip(arg_values), call_stack_frame);
 
         log_debug!(target: TAG, "Entered the function");
     }
