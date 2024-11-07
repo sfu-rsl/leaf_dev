@@ -35,13 +35,13 @@ use memory::*;
 type Local = LocalWithMetadata;
 type Place = PlaceWithMetadata;
 
-type SymPlaceHandlerObject = Box<
-    dyn super::SymPlaceHandler<
-            SymEntity = SymValueRef,
-            ConcEntity = ConcreteValueRef,
-            Entity = ValueRef,
-        >,
->;
+type SymPlaceHandlerDyn = dyn super::SymPlaceHandler<
+        SymEntity = SymValueRef,
+        ConcEntity = ConcreteValueRef,
+        Entity = ValueRef,
+    >;
+
+type SymPlaceHandlerObject = RRef<SymPlaceHandlerDyn>;
 
 /* NOTE: Memory structure
  * How does this state tries to store (symbolic) objects?
@@ -103,23 +103,23 @@ type MemoryObject = (SymValueRef, TypeId);
 pub(in super::super) struct RawPointerVariableState<EB> {
     memory: memory::Memory,
     type_manager: Rc<dyn TypeManager>,
-    sym_read_handler: RefCell<SymPlaceHandlerObject>,
-    sym_write_handler: RefCell<SymPlaceHandlerObject>,
+    sym_read_handler: SymPlaceHandlerObject,
+    sym_write_handler: SymPlaceHandlerObject,
     expr_builder: RRef<EB>,
 }
 
 impl<EB: SymValueRefExprBuilder> RawPointerVariableState<EB> {
     pub fn new(
         type_manager: Rc<dyn TypeManager>,
-        sym_place_handler_factory: impl Fn(SymbolicPlaceStrategy) -> SymPlaceHandlerObject,
-        sym_place_config: &SymbolicPlaceConfig,
+        sym_read_handler: SymPlaceHandlerObject,
+        sym_write_handler: SymPlaceHandlerObject,
         expr_builder: RRef<EB>,
     ) -> Self {
         Self {
             memory: Default::default(),
             type_manager,
-            sym_read_handler: RefCell::new(sym_place_handler_factory(sym_place_config.read)),
-            sym_write_handler: RefCell::new(sym_place_handler_factory(sym_place_config.write)),
+            sym_read_handler,
+            sym_write_handler,
             expr_builder,
         }
     }

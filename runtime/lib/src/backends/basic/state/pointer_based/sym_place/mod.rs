@@ -27,13 +27,13 @@ impl<EB: SymValueRefExprBuilder> RawPointerVariableState<EB> {
     pub(super) fn get_place<'a, 'b>(
         &'a self,
         place: &'b Place,
-        mut sym_place_handler: RefMut<'a, SymPlaceHandlerObject>,
+        mut sym_place_handler: RefMut<'a, SymPlaceHandlerDyn>,
     ) -> PlaceValueRef {
         self.get_place_iter_raw(
             place.local().metadata(),
             place.projections(),
             place.projs_metadata(),
-            &mut sym_place_handler,
+            sym_place_handler.deref_mut(),
         )
     }
 
@@ -42,7 +42,7 @@ impl<EB: SymValueRefExprBuilder> RawPointerVariableState<EB> {
         mut host_metadata: &'b PlaceMetadata,
         mut projs: &'b [Projection],
         mut projs_metadata: I,
-        sym_place_handler: &mut SymPlaceHandlerObject,
+        sym_place_handler: &mut SymPlaceHandlerDyn,
     ) -> PlaceValueRef {
         /* NOTE: How does this work?
          * The main responsibility of this is function is to check if any non-determinism
@@ -112,7 +112,7 @@ impl<EB: SymValueRefExprBuilder> RawPointerVariableState<EB> {
         &self,
         ptr_val: ValueRef,
         ptr_type_id: TypeId,
-        mut sym_place_handler: RefMut<'a, SymPlaceHandlerObject>,
+        mut sym_place_handler: RefMut<'a, SymPlaceHandlerDyn>,
     ) -> PlaceValueRef {
         let ptr_val = self.retrieve_value(ptr_val, ptr_type_id);
         let pointee_ty = self
@@ -147,7 +147,7 @@ impl<EB: SymValueRefExprBuilder> RawPointerVariableState<EB> {
         &self,
         host_metadata: &PlaceMetadata,
         host_deref_metadata: &PlaceMetadata,
-        sym_place_handler: &mut SymPlaceHandlerObject,
+        sym_place_handler: &mut SymPlaceHandlerDyn,
     ) -> Option<SymPlaceValueRef> {
         let host_place = DeterministicPlaceValue::new(host_metadata);
         let host = self.copy_deterministic_place(&host_place);
@@ -195,7 +195,7 @@ impl<EB: SymValueRefExprBuilder> RawPointerVariableState<EB> {
         host: &PlaceValueRef,
         proj: &'b Projection,
         proj_meta: &'b PlaceMetadata,
-        sym_place_handler: &mut SymPlaceHandlerObject,
+        sym_place_handler: &mut SymPlaceHandlerDyn,
     ) -> Option<SymPlaceValueRef> {
         let opt_sym_index_val = match proj {
             Projection::Index(index_place) => Some(self.copy_deterministic_place(index_place))

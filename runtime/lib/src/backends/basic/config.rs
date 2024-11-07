@@ -55,6 +55,12 @@ pub(crate) struct SymbolicPlaceConfig {
 #[derive(Debug, Default, Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum SymbolicPlaceStrategy {
+    /// Panics if the place is symbolic.
+    /// # Remarks
+    /// This is useful for sanity checking purposes because it is not surprising to
+    /// face symbolic pointers (e.g., in printing) in real programs even they do not
+    /// explicitly access the memory symbolically.
+    Panic,
     /// Builds an expression with multiple possible values.
     #[serde(alias = "proj", alias = "expr")]
     ProjExpression,

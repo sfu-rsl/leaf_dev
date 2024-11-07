@@ -17,11 +17,25 @@ pub(crate) fn make_sym_place_handler(
     );
     use SymbolicPlaceStrategy::*;
     match config {
+        Panic => Box::new(PanicSymPlaceHandler),
         ProjExpression => Box::new(ProjExprSymPlaceHandler),
         Concretization => Box::new(ConcretizerSymPlaceHandler),
         Stamping => Box::new(StamperSymPlaceHandler {
             concretizer: concretizer_factory(),
         }),
+    }
+}
+
+struct PanicSymPlaceHandler;
+impl SymPlaceHandler for PanicSymPlaceHandler {
+    type Entity = ValueRef;
+
+    fn handle<'a>(
+        &mut self,
+        sym_value: Self::SymEntity,
+        _get_conc: Box<dyn FnOnce(&Self::SymEntity) -> Self::ConcEntity + 'a>,
+    ) -> Self::Entity {
+        panic!("Faced symbolic place: {:?}", sym_value)
     }
 }
 

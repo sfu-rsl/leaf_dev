@@ -100,20 +100,24 @@ impl BasicBackend {
             }),
         )));
         let trace_manager = trace_manager_ref.clone();
+
+        let sym_place_handler_factory = |s| {
+            Rc::new(RefCell::from(make_sym_place_handler(s, || {
+                Box::new(BasicConcretizer::new(
+                    expr_builder_ref.clone(),
+                    trace_manager_ref.clone(),
+                ))
+            })))
+        };
+        let sym_read_handler_ref = sym_place_handler_factory(config.sym_place.read);
+        let sym_write_handler_ref = sym_place_handler_factory(config.sym_place.write);
         Self {
             call_stack_manager: BasicCallStackManager::new(
                 Box::new(move |_id| {
                     let vars_state = RawPointerVariableState::new(
                         type_manager_ref.clone(),
-                        |s| {
-                            make_sym_place_handler(s, || {
-                                Box::new(BasicConcretizer::new(
-                                    expr_builder_ref.clone(),
-                                    trace_manager_ref.clone(),
-                                ))
-                            })
-                        },
-                        &config.sym_place,
+                        sym_read_handler_ref.clone(),
+                        sym_write_handler_ref.clone(),
                         Rc::new(RefCell::new(expr::builders::to_sym_expr_builder(
                             expr_builder_ref.clone(),
                         ))),
