@@ -217,8 +217,7 @@ impl PlaceHandler for BasicPlaceHandler<'_> {
             meta.set_address(
                 place
                     .address()
-                    .wrapping_byte_add(tag_info.as_field.offset as usize)
-                    as RawPointer,
+                    .wrapping_byte_add(tag_info.as_field.offset as usize),
             );
             let tag_ty = type_manager.get_type(tag_info.as_field.ty);
             meta.set_type_id(tag_ty.id);

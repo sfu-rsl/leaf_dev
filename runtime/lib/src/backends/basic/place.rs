@@ -12,7 +12,7 @@ use crate::abs::{
         PlaceBuilder, PlaceProjectionHandler,
     },
     place::HasMetadata,
-    Local, RawPointer, TypeId, TypeSize, ValueType,
+    Local, TypeId, TypeSize, ValueType,
 };
 
 use super::{expr::place::DeterPlaceValueRef, PlaceValueRef};
@@ -44,7 +44,7 @@ impl PlaceMetadata {
     }
 
     #[inline]
-    pub(crate) fn set_address(&mut self, address: RawPointer) {
+    pub(crate) fn set_address(&mut self, address: RawAddress) {
         self.address = NonNull::new(address as *mut ());
         if self.address.is_none() {
             log_warn!("Setting null address to place metadata. {:?}", self);
@@ -162,7 +162,7 @@ impl PlaceProjectionHandler for BasicProjectionBuilder<'_> {
 pub(crate) struct BasicPlaceMetadataHandler<'a>(&'a mut PlaceWithMetadata);
 
 impl BasicPlaceMetadataHandler<'_> {
-    pub(crate) fn set_address(&mut self, address: RawPointer) {
+    pub(crate) fn set_address(&mut self, address: RawAddress) {
         if self.0.has_projection() {
             let last = &mut self.0.projs_metadata_mut().last().unwrap();
             debug_assert!(last.address.is_none());

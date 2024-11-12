@@ -3,10 +3,8 @@ pub type BasicBlockIndex = u32;
 pub type VariantIndex = u32;
 pub type FieldIndex = u32;
 
-// FIXME: Rename to `RawAddress` because raw pointers in Rust may be fat.
-pub type RawPointer = u64;
 pub type RawAddress = *const ();
-pub type PointerOffset = RawPointer;
+pub type PointerOffset = u64;
 pub type TypeSize = PointerOffset;
 pub type Alignment = TypeSize;
 

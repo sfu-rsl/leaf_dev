@@ -92,7 +92,7 @@ impl ProgramRuntimeInterface for BasicPri {
         mut_place_info(place, |p, place| p.project_on(place).subtype())
     }
     #[tracing::instrument(target = "pri::place", level = "debug", ret)]
-    fn set_place_address(place: PlaceRef, raw_ptr: RawPointer) {
+    fn set_place_address(place: PlaceRef, raw_ptr: RawAddress) {
         mut_place_info(place, |p, place| p.metadata(place).set_address(raw_ptr));
     }
     #[tracing::instrument(target = "pri::place", level = "debug", ret)]

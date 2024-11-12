@@ -276,7 +276,7 @@ pub mod macros {
               { fn ref_place_opaque_cast(place: PlaceRef /*, type */) }
               { fn ref_place_subtype(place: PlaceRef /*, type */) }
 
-              { fn set_place_address(place: PlaceRef, raw_ptr: RawPointer) }
+              { fn set_place_address(place: PlaceRef, raw_ptr: RawAddress) }
               #[allow(unused_parens)]
               { fn set_place_type_id(place: PlaceRef, type_id: ($type_id_ty)) }
               { fn set_place_type_bool(place: PlaceRef) }
@@ -295,7 +295,6 @@ pub mod macros {
               { fn ref_operand_const_float(bit_rep: ($u128_ty), e_bits: u64, s_bits: u64) -> OperandRef }
               #[allow(unused_parens)]
               { fn ref_operand_const_char(value: ($char_ty)) -> OperandRef }
-              { fn ref_operand_const_func(id: FuncId) -> OperandRef }
               #[allow(unused_parens)]
               { fn ref_operand_const_str(value: ($str_ty)) -> OperandRef }
               #[allow(unused_parens)]
@@ -648,7 +647,7 @@ pub mod macros {
             }$modifier!{
                 fn ref_place_subtype(place:PlaceRef);
             }$modifier!{
-                fn set_place_address(place:PlaceRef,raw_ptr:RawPointer);
+                fn set_place_address(place:PlaceRef,raw_ptr:RawAddress);
             }$modifier!{
                 #[allow(unused_parens)]fn set_place_type_id(place:PlaceRef,type_id:($type_id_ty));
             }$modifier!{

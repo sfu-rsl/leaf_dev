@@ -14,10 +14,6 @@ pub static OPERAND_REF_TYPE_HOLDER: OperandRef = 0;
 pub static BINARY_OP_TYPE_HOLDER: BinaryOp = BinaryOp::ADD;
 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
 pub static UNARY_OP_TYPE_HOLDER: UnaryOp = UnaryOp::NEG;
-#[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
-pub static RAW_PTR_TYPE_HOLDER: RawPointer = 0;
-#[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
-pub static FUNC_ID_TYPE_HOLDER: FuncId = 0;
 
 /* NOTE: The const version of this conversion is unstable
  * and causes errors during the compilation of the core library.
