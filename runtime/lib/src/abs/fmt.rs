@@ -236,3 +236,33 @@ where
         }
     }
 }
+
+impl Display for super::FuncDef {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        write!(f, "fn@{:p}", self.static_addr as *const ())?;
+        if let Some((dyn_metadata, identifier)) = self.as_dyn_method {
+            write!(
+                f,
+                "+ dyn@{:p}#{:x}",
+                usize::from_ne_bytes(dyn_metadata.0) as *const (),
+                identifier
+            )?;
+        }
+        Ok(())
+    }
+}
+
+impl Display for super::CalleeDef {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        write!(f, "fn@{:p}", self.static_addr as *const ())?;
+        if let Some((dyn_metadata, identifier)) = self.as_virtual {
+            write!(
+                f,
+                "(? dyn@{:p}#{:x})",
+                usize::from_ne_bytes(dyn_metadata.0) as *const (),
+                identifier
+            )?;
+        }
+        Ok(())
+    }
+}

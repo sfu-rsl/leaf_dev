@@ -1,8 +1,8 @@
 use super::{ffi, utils};
 
 pub use super::types::{
-    Alignment, BasicBlockIndex, FieldIndex, FuncId, LocalIndex, RawPointer, TypeId, TypeSize,
-    VariantIndex,
+    Alignment, BasicBlockIndex, CalleeDef, DynRawMetadata, FieldIndex, FuncDef, LocalIndex,
+    RawAddress, TypeId, TypeSize, VariantIndex,
 };
 pub type Ref = u64;
 pub type PlaceRef = Ref;
@@ -398,12 +398,12 @@ pub mod macros {
               ) }
 
               #[allow(unused_parens)]
-              { fn before_call_func(func: OperandRef, args: ($slice_ty!(OperandRef)), are_args_tupled: bool) }
+              { fn before_call_func(def: CalleeDef, func: OperandRef, args: ($slice_ty!(OperandRef)), are_args_tupled: bool) }
               #[allow(unused_parens)]
-              { fn enter_func(func: OperandRef, arg_places: &[PlaceRef], ret_val_place: PlaceRef) }
+              { fn enter_func(def: FuncDef, arg_places: &[PlaceRef], ret_val_place: PlaceRef) }
               #[allow(unused_parens)]
               { fn enter_func_tupled(
-                  func: OperandRef,
+                  def: FuncDef,
                   arg_places: &[PlaceRef],
                   ret_val_place: PlaceRef,
                   tupled_arg_index: LocalIndex,
@@ -673,8 +673,6 @@ pub mod macros {
             }$modifier!{
                 #[allow(unused_parens)]fn ref_operand_const_char(value:($char_ty))->OperandRef;
             }$modifier!{
-                fn ref_operand_const_func(id:FuncId)->OperandRef;
-            }$modifier!{
                 #[allow(unused_parens)]fn ref_operand_const_str(value:($str_ty))->OperandRef;
             }$modifier!{
                 #[allow(unused_parens)]fn ref_operand_const_byte_str(value:($byte_str_ty))->OperandRef;
@@ -767,11 +765,11 @@ pub mod macros {
             }$modifier!{
                 #[allow(unused_parens)]fn take_branch_ow_enum_discriminant(info:($branching_info_ty),non_indices:($slice_ty!(VariantIndex)),);
             }$modifier!{
-                #[allow(unused_parens)]fn before_call_func(func:OperandRef,args:($slice_ty!(OperandRef)),are_args_tupled:bool);
+                #[allow(unused_parens)]fn before_call_func(def:CalleeDef,func:OperandRef,args:($slice_ty!(OperandRef)),are_args_tupled:bool);
             }$modifier!{
-                #[allow(unused_parens)]fn enter_func(func:OperandRef,arg_places: &[PlaceRef],ret_val_place:PlaceRef);
+                #[allow(unused_parens)]fn enter_func(def:FuncDef,arg_places: &[PlaceRef],ret_val_place:PlaceRef);
             }$modifier!{
-                #[allow(unused_parens)]fn enter_func_tupled(func:OperandRef,arg_places: &[PlaceRef],ret_val_place:PlaceRef,tupled_arg_index:LocalIndex,tupled_arg_type_id:TypeId,);
+                #[allow(unused_parens)]fn enter_func_tupled(def:FuncDef,arg_places: &[PlaceRef],ret_val_place:PlaceRef,tupled_arg_index:LocalIndex,tupled_arg_type_id:TypeId,);
             }$modifier!{
                 fn return_from_func();
             }$modifier!{
@@ -819,9 +817,9 @@ pub mod macros {
             }$modifier!{
                 #[allow(unused_parens)]fn intrinsic_atomic_store(ordering:($atomic_ord_ty),ptr:OperandRef,ptr_type_id:($type_id_ty),val:OperandRef,);
             }$modifier!{
-                #[allow(unused_parens)]fn intrinsic_atomic_xchg(ordering:($atomic_ord_ty),ptr:OperandRef,ptr_type_id:($type_id_ty),val:OperandRef,dest:PlaceRef,);
+                #[allow(unused_parens)]fn intrinsic_atomic_xchg(ordering:($atomic_ord_ty),ptr:OperandRef,ptr_type_id:($type_id_ty),val:OperandRef,prev_dest:PlaceRef,);
             }$modifier!{
-                #[allow(unused_parens)]fn intrinsic_atomic_cxchg(ordering:($atomic_ord_ty),ptr:OperandRef,ptr_type_id:($type_id_ty),failure_ordering:($atomic_ord_ty),weak:bool,old:OperandRef,src:OperandRef,dest:PlaceRef,);
+                #[allow(unused_parens)]fn intrinsic_atomic_cxchg(ordering:($atomic_ord_ty),ptr:OperandRef,ptr_type_id:($type_id_ty),failure_ordering:($atomic_ord_ty),weak:bool,old:OperandRef,src:OperandRef,prev_dest:PlaceRef,);
             }$modifier!{
                 #[allow(unused_parens)]fn intrinsic_atomic_binary_op(ordering:($atomic_ord_ty),ptr:OperandRef,ptr_type_id:($type_id_ty),operator:($atomic_bin_op_ty),src:OperandRef,prev_dest:PlaceRef,);
             }$modifier!{

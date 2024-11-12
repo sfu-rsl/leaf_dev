@@ -161,10 +161,6 @@ impl ProgramRuntimeInterface for BasicPri {
         push_operand(|o| o.const_from(Constant::Char(value)))
     }
     #[tracing::instrument(target = "pri::operand", level = "debug", ret)]
-    fn ref_operand_const_func(id: FuncId) -> OperandRef {
-        push_operand(|o| o.const_from(Constant::Func(id)))
-    }
-    #[tracing::instrument(target = "pri::operand", level = "debug", ret)]
     fn ref_operand_const_str(value: &'static str) -> OperandRef {
         push_operand(|o| o.const_from(Constant::Str(value)))
     }
@@ -450,9 +446,15 @@ impl ProgramRuntimeInterface for BasicPri {
     }
 
     #[tracing::instrument(target = "pri::call", level = "debug")]
-    fn before_call_func(func: OperandRef, args: &[OperandRef], are_args_tupled: bool) {
+    fn before_call_func(
+        def: CalleeDef,
+        func: OperandRef,
+        args: &[OperandRef],
+        are_args_tupled: bool,
+    ) {
         func_control(|h| {
             h.before_call(
+                def.into(),
                 take_back_operand(func),
                 args.iter().map(|o| take_back_operand(*o)),
                 are_args_tupled,
@@ -460,24 +462,22 @@ impl ProgramRuntimeInterface for BasicPri {
         });
     }
     #[tracing::instrument(target = "pri::call", level = "debug")]
-    fn enter_func(func: OperandRef, arg_places: &[PlaceRef], ret_val_place: PlaceRef) {
-        let func = take_back_operand(func);
+    fn enter_func(def: FuncDef, arg_places: &[PlaceRef], ret_val_place: PlaceRef) {
         let arg_places = arg_places
             .iter()
             .map(|p| take_place_info_to_read(*p))
             .collect::<Vec<_>>();
         let ret_val_place = take_place_info_to_write(ret_val_place);
-        func_control(|h| h.enter(func, arg_places.into_iter(), ret_val_place, None))
+        func_control(|h| h.enter(def.into(), arg_places.into_iter(), ret_val_place, None))
     }
     #[tracing::instrument(target = "pri::call", level = "debug")]
     fn enter_func_tupled(
-        func: OperandRef,
+        def: FuncDef,
         arg_places: &[PlaceRef],
         ret_val_place: PlaceRef,
         tupled_arg_index: LocalIndex,
         tupled_arg_type_id: TypeId,
     ) {
-        let func = take_back_operand(func);
         let arg_places = arg_places
             .iter()
             .map(|p| take_place_info_to_read(*p))
@@ -485,7 +485,7 @@ impl ProgramRuntimeInterface for BasicPri {
         let ret_val_place = take_place_info_to_write(ret_val_place);
         func_control(|h| {
             h.enter(
-                func,
+                def.into(),
                 arg_places.into_iter(),
                 ret_val_place,
                 Some((Local::Argument(tupled_arg_index), tupled_arg_type_id)),

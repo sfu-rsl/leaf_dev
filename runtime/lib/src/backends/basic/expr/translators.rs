@@ -129,10 +129,6 @@ pub(crate) mod z3 {
                     BVNode::new(ast, *is_signed).into()
                 }
                 ConstValue::Float { .. } => todo!(),
-                ConstValue::Func(_) => unreachable!(concat!(
-                    "Function values are not supposed to appear in symbolic expressions.",
-                    "Symbolic function pointers are not expected to appear as function constants."
-                )),
                 ConstValue::Addr(addr) => BVNode::new(
                     ast::BV::from_u64(self.context, *addr as u64, ADDR_BIT_SIZE),
                     false,

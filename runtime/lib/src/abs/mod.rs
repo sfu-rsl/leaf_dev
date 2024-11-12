@@ -1,3 +1,5 @@
+use derive_more as dm;
+
 pub(crate) mod backend;
 pub(crate) mod expr;
 pub(crate) mod fmt;
@@ -143,7 +145,6 @@ pub(crate) enum Constant {
     Float { bit_rep: u128, ty: FloatType },
     Str(&'static str),
     ByteStr(&'static [u8]),
-    Func(FuncId),
     Zst,
     Some,
 }
@@ -304,3 +305,9 @@ impl TryFrom<CastKind> for ValueType {
         }
     }
 }
+
+#[derive(Clone, Copy, Debug, dm::From, dm::Deref)]
+pub(crate) struct FuncDef(common::pri::FuncDef);
+
+#[derive(Clone, Copy, Debug, dm::From, dm::Deref)]
+pub(crate) struct CalleeDef(common::pri::CalleeDef);

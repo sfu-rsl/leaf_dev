@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use super::{
-    AssertKind, BinaryOp, BranchingMetadata, CastKind, Constraint, FieldIndex, IntType, Local,
-    PlaceUsage, Projection, SymVariable, TypeId, UnaryOp, VariantIndex,
+    AssertKind, BinaryOp, BranchingMetadata, CalleeDef, CastKind, Constraint, FieldIndex, FuncDef,
+    IntType, Local, PlaceUsage, Projection, SymVariable, TypeId, UnaryOp, VariantIndex,
 };
 
 pub(crate) trait RuntimeBackend {
@@ -233,6 +233,7 @@ pub(crate) trait FunctionHandler {
 
     fn before_call(
         self,
+        def: CalleeDef,
         func: Self::Operand,
         args: impl Iterator<Item = Self::Arg>,
         are_args_tupled: bool,
@@ -240,7 +241,7 @@ pub(crate) trait FunctionHandler {
 
     fn enter(
         self,
-        func: Self::Operand,
+        def: FuncDef,
         arg_places: impl Iterator<Item = Self::Place>,
         ret_val_place: Self::Place,
         tupled_arg: Option<(Local, super::TypeId)>,

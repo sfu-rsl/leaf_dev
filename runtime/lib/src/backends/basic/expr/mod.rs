@@ -21,7 +21,7 @@ use place::SymPlaceValueRef;
 
 use crate::abs;
 pub(crate) use crate::abs::{
-    FloatType, FuncId, IntType, PointerOffset, RawAddress, TypeId, ValueType, VariantIndex,
+    FloatType, IntType, PointerOffset, RawAddress, TypeId, ValueType, VariantIndex,
 };
 
 pub(crate) type ValueRef = Rc<Value>;
@@ -82,8 +82,6 @@ pub(crate) enum ConstValue {
         bit_rep: u128,
         ty: FloatType,
     },
-    #[from(ignore)]
-    Func(FuncId),
     #[from(ignore)]
     Addr(RawAddress),
 }
@@ -1062,7 +1060,6 @@ mod convert {
                         ty,
                     },
                     Float { bit_rep, ty } => ConstValue::Float { bit_rep, ty },
-                    Func(value) => ConstValue::Func(value),
                     Zst | Str(..) | ByteStr(..) | Some => unreachable!(),
                 }),
             }

@@ -8,8 +8,8 @@ use crate::{
 
 use super::{
     config::{CallConfig, ExternalCallStrategy},
-    expr::{place::DeterPlaceValueRef, FuncId},
-    ConcreteValue, ConstValue, GenericCallStackManager, UntupleHelper, Value, ValueRef,
+    expr::place::DeterPlaceValueRef,
+    CalleeDef, ConcreteValue, FuncDef, GenericCallStackManager, UntupleHelper, ValueRef,
     VariablesState,
 };
 
@@ -128,7 +128,7 @@ pub(super) struct CallStackFrame {
 
 #[derive(Debug)]
 pub(super) struct CallInfo {
-    expected_func: ValueRef,
+    expected_func: CalleeDef,
     args: Vec<ValueRef>,
     are_args_tupled: bool,
 }
@@ -305,7 +305,13 @@ impl<VS: VariablesState + InPlaceSelfHierarchical> GenericCallStackManager
     type VariablesState = VS;
     type Place = DeterPlaceValueRef;
 
-    fn prepare_for_call(&mut self, func: ValueRef, args: Vec<ValueRef>, are_args_tupled: bool) {
+    fn prepare_for_call(
+        &mut self,
+        def: CalleeDef,
+        func: ValueRef,
+        args: Vec<ValueRef>,
+        are_args_tupled: bool,
+    ) {
         self.log_span_start_trans(logging::TransitionDirection::Call);
 
         // Some sanity checks
@@ -324,8 +330,12 @@ impl<VS: VariablesState + InPlaceSelfHierarchical> GenericCallStackManager
             self.latest_call, self.arg_places, self.return_val_place,
         );
 
+        if func.is_symbolic() {
+            log_warn!("Calling a symbolic function {}", func);
+        }
+
         self.latest_call = Some(CallInfo {
-            expected_func: func,
+            expected_func: def,
             args,
             are_args_tupled,
         });
@@ -367,7 +377,7 @@ impl<VS: VariablesState + InPlaceSelfHierarchical> GenericCallStackManager
         args.splice(arg_index..arg_index, untupled_args);
     }
 
-    fn notify_enter(&mut self, current_func: ValueRef) {
+    fn notify_enter(&mut self, current_func: FuncDef) {
         let arg_places = core::mem::replace(&mut self.arg_places, Default::default());
         let call_stack_frame = CallStackFrame {
             return_val_place: self.return_val_place.take(),
@@ -375,7 +385,7 @@ impl<VS: VariablesState + InPlaceSelfHierarchical> GenericCallStackManager
         };
 
         let arg_values_if_not_broken = if let Some(call_info) = self.latest_call.take() {
-            if current_func.unwrap_func_id() == call_info.expected_func.unwrap_func_id() {
+            if current_func == call_info.expected_func {
                 let arg_values = call_info.args;
                 assert_eq!(
                     arg_values.len(),
@@ -387,8 +397,9 @@ impl<VS: VariablesState + InPlaceSelfHierarchical> GenericCallStackManager
             } else {
                 log_debug!(
                     target: TAG,
-                    "External function call detected. Expected: {}",
+                    "External function call detected. Expected: {} but got: {}",
                     call_info.expected_func,
+                    current_func,
                 );
                 Err(Some(call_info))
             }
@@ -485,13 +496,21 @@ impl<VS: VariablesState + InPlaceSelfHierarchical> GenericCallStackManager
     }
 }
 
-impl Value {
-    #[inline]
-    pub(crate) fn unwrap_func_id(&self) -> FuncId {
-        match self {
-            Value::Concrete(ConcreteValue::Const(ConstValue::Func(f))) => *f,
-            _ => panic!("Expected a function id, but got {:?}", self),
+impl PartialEq<CalleeDef> for FuncDef {
+    fn eq(&self, other: &CalleeDef) -> bool {
+        if self.static_addr == other.static_addr {
+            return true;
         }
+
+        if self
+            .as_dyn_method
+            .zip(other.as_virtual)
+            .is_some_and(|(s, o)| s == o)
+        {
+            return true;
+        }
+
+        false
     }
 }
 

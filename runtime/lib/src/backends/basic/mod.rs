@@ -20,8 +20,8 @@ use std::{
 use crate::{
     abs::{
         self, backend::*, place::HasMetadata, AssertKind, BasicBlockIndex, BranchingMetadata,
-        CastKind, FieldIndex, IntType, Local, LocalIndex, PlaceUsage, RawPointer, SymVariable,
-        TypeId, UnaryOp, VariantIndex,
+        CalleeDef, CastKind, FieldIndex, FuncDef, IntType, Local, LocalIndex, PlaceUsage,
+        SymVariable, TypeId, UnaryOp, VariantIndex,
     },
     solvers::z3::Z3Solver,
     trace::ImmediateTraceManager,
@@ -873,17 +873,18 @@ impl<'a> FunctionHandler for BasicFunctionHandler<'a> {
     #[inline]
     fn before_call(
         self,
+        def: CalleeDef,
         func: Self::Operand,
         args: impl Iterator<Item = Self::Arg>,
         are_args_tupled: bool,
     ) {
         self.call_stack_manager
-            .prepare_for_call(func, args.collect(), are_args_tupled);
+            .prepare_for_call(def, func, args.collect(), are_args_tupled);
     }
 
     fn enter(
         self,
-        func: Self::Operand,
+        def: FuncDef,
         arg_places: impl Iterator<Item = Self::Place>,
         ret_val_place: Self::Place,
         tupled_arg: Option<(Local, TypeId)>,
@@ -905,7 +906,7 @@ impl<'a> FunctionHandler for BasicFunctionHandler<'a> {
                     Box::new(BasicUntupleHelper::new(self.type_manager, tuple_type_id))
                 });
         }
-        self.call_stack_manager.notify_enter(func);
+        self.call_stack_manager.notify_enter(def);
     }
 
     #[inline]
@@ -1059,6 +1060,7 @@ trait GenericCallStackManager {
      */
     fn prepare_for_call(
         &mut self,
+        def: CalleeDef,
         func: Self::Value,
         args: Vec<Self::Value>,
         are_args_tupled: bool,
@@ -1072,7 +1074,7 @@ trait GenericCallStackManager {
         untuple_helper: &dyn Fn() -> Box<dyn UntupleHelper + 'b>,
     );
 
-    fn notify_enter(&mut self, current_func: Self::Value);
+    fn notify_enter(&mut self, current_func: FuncDef);
 
     fn pop_stack_frame(&mut self);
 
