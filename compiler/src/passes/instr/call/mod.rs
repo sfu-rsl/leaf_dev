@@ -510,6 +510,7 @@ mod implementation {
                         _ => unreachable!("Unexpected type for body instance: {:?}", ty),
                     }
                 }
+                ReifyShim(def_id, _) => tcx.type_of(def_id).instantiate_identity(),
                 FnPtrShim(fn_trait_fn_id, fn_ptr_ty) => {
                     ty::fn_def_of_fn_ptr_shim(tcx, fn_trait_fn_id, fn_ptr_ty)
                 }
