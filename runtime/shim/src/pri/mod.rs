@@ -65,8 +65,14 @@ mod ffi {
 
 static mut REC_GUARD: bool = false;
 
-pub(crate) fn run_rec_guarded<T>(default: T, f: impl FnOnce() -> T) -> T {
-    if core::intrinsics::unlikely(unsafe { REC_GUARD }) {
+pub(crate) fn run_rec_guarded<const UNLIKELY: bool, T>(default: T, f: impl FnOnce() -> T) -> T {
+    let value = unsafe { REC_GUARD };
+    let guarded = if UNLIKELY {
+        core::intrinsics::unlikely(value)
+    } else {
+        value
+    };
+    if guarded {
         return default;
     }
     unsafe {

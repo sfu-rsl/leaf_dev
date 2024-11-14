@@ -72,7 +72,7 @@ pub mod sym {
                 ]
             };
         }
-        pub(crate) const ALL_MAINS: [LeafSymbol; 103] =
+        pub(crate) const ALL_MAINS: [LeafSymbol; 102] =
             common::pri::pass_func_names_to!(bracket, all_comma_separated);
 
         pub(crate) mod intrinsics {
@@ -87,7 +87,10 @@ pub mod sym {
 
             macro_rules! symbols_for_intrinsics {
                 ($($name: ident),* $(,)?) => {
-                    $(pub(crate) const $name: LeafIntrinsicSymbol = LeafIntrinsicSymbol(super::$name);)*
+                    $(
+                        #[allow(non_upper_case_globals)]
+                        pub(crate) const $name: LeafIntrinsicSymbol = LeafIntrinsicSymbol(super::$name);
+                    )*
                 };
             }
 
@@ -113,7 +116,6 @@ pub mod sym {
             }
 
             pub(crate) mod atomic {
-                #![allow(non_upper_case_globals)]
                 use super::*;
 
                 #[derive(
@@ -124,7 +126,10 @@ pub mod sym {
 
                 macro_rules! symbols_for_atomic_intrinsics {
                     ($($name: ident),* $(,)?) => {
-                        $(pub(crate) const $name: LeafAtomicIntrinsicSymbol = LeafAtomicIntrinsicSymbol(super::$name);)*
+                        $(
+                            #[allow(non_upper_case_globals)]
+                            pub(crate) const $name: LeafAtomicIntrinsicSymbol = LeafAtomicIntrinsicSymbol(super::$name);
+                        )*
                     };
                 }
 
@@ -151,49 +156,63 @@ pub mod sym {
         }
         macro_rules! symbols_in_compiler_helpers {
             ($($name: ident),* $(,)?) => {
-                $(pub(crate) const $name: LS = LS(in_compiler_helpers!($name));)*
+                $(
+                    #[allow(non_upper_case_globals)]
+                    pub(crate) const $name: LS = LS(in_compiler_helpers!($name));
+                )*
             };
         }
 
         symbols_in_compiler_helpers! {
-            CH_MODULE_MARKER,
+                    CH_MODULE_MARKER,
 
+                    PLACE_REF_TYPE_HOLDER,
+                    OPERAND_REF_TYPE_HOLDER,
+                    BINARY_OP_TYPE_HOLDER,
+                    UNARY_OP_TYPE_HOLDER,
+
+                    f32_to_bits,
+                    f64_to_bits,
+
+                    set_place_address_typed,
+                    type_id_of,
+                    size_of,
+
+                    callee_def_static,
+                    callee_def_maybe_virtual,
+                    func_def_static,
+                    func_def_dyn_method,
+        receiver_to_raw_ptr,
+                    receiver_pin_to_raw_ptr,
+                    receiver_self_to_raw_ptr,
+
+                    const_binary_op_of,
+                    const_unary_op_of,
+
+                    const_atomic_ord_of,
+                    const_atomic_binary_op_of,
+
+                    special_func_placeholder,
+                }
+
+        pub(crate) const ALL_HELPERS: [LS; 22] = [
+            CH_MODULE_MARKER,
             PLACE_REF_TYPE_HOLDER,
             OPERAND_REF_TYPE_HOLDER,
             BINARY_OP_TYPE_HOLDER,
             UNARY_OP_TYPE_HOLDER,
-            RAW_PTR_TYPE_HOLDER,
-            FUNC_ID_TYPE_HOLDER,
-
-            f32_to_bits,
-            f64_to_bits,
-
-            set_place_address_typed,
-            type_id_of,
-            size_of,
-
-            const_binary_op_of,
-            const_unary_op_of,
-
-            const_atomic_ord_of,
-            const_atomic_binary_op_of,
-
-            special_func_placeholder,
-        }
-
-        pub(crate) const ALL_HELPERS: [LS; 17] = [
-            CH_MODULE_MARKER,
-            PLACE_REF_TYPE_HOLDER,
-            OPERAND_REF_TYPE_HOLDER,
-            BINARY_OP_TYPE_HOLDER,
-            UNARY_OP_TYPE_HOLDER,
-            RAW_PTR_TYPE_HOLDER,
-            FUNC_ID_TYPE_HOLDER,
             f32_to_bits,
             f64_to_bits,
             set_place_address_typed,
             type_id_of,
             size_of,
+            callee_def_static,
+            callee_def_maybe_virtual,
+            func_def_static,
+            func_def_dyn_method,
+            receiver_to_raw_ptr,
+            receiver_pin_to_raw_ptr,
+            receiver_self_to_raw_ptr,
             const_binary_op_of,
             const_unary_op_of,
             const_atomic_ord_of,
@@ -224,19 +243,6 @@ pub(crate) struct FunctionInfo {
     pub def_id: DefId,
 }
 
-impl FunctionInfo {
-    pub(crate) fn ret_ty<'tcx>(&self, tcx: TyCtxt<'tcx>) -> Ty<'tcx> {
-        // FIXME: Check if additional caching can be beneficial
-        tcx.fn_sig(self.def_id)
-            .skip_binder()
-            .output()
-            .no_bound_vars()
-            .expect(
-                "PRI functions are not expected to have bound vars (generics) for the return type.",
-            )
-    }
-}
-
 struct TypeHolder(DefId);
 
 impl TypeHolder {
@@ -253,8 +259,6 @@ pub(crate) struct PriTypes {
     operand_ref: TypeHolder,
     binary_op: TypeHolder,
     unary_op: TypeHolder,
-    raw_ptr: TypeHolder,
-    func_id: TypeHolder,
 }
 
 impl PriTypes {
@@ -266,18 +270,21 @@ impl PriTypes {
         // FIXME: Check if additional caching can be beneficial
         self.operand_ref.ty(tcx)
     }
-
-    pub(crate) fn func_id<'tcx>(&self, tcx: TyCtxt<'tcx>) -> Ty<'tcx> {
-        self.func_id.ty(tcx)
-    }
 }
 
 pub(crate) struct PriHelperFunctions {
-    pub f32_to_bits: DefId,
-    pub f64_to_bits: DefId,
+    pub f32_to_bits: FunctionInfo,
+    pub f64_to_bits: FunctionInfo,
     pub set_place_address_typed: FunctionInfo,
     pub type_id_of: FunctionInfo,
     pub size_of: FunctionInfo,
+    pub callee_def_static: FunctionInfo,
+    pub callee_def_maybe_virtual: FunctionInfo,
+    pub func_def_static: FunctionInfo,
+    pub func_def_dyn_method: FunctionInfo,
+    pub receiver_to_raw_ptr: FunctionInfo,
+    pub receiver_pin_to_raw_ptr: FunctionInfo,
+    pub receiver_self_to_raw_ptr: FunctionInfo,
     pub const_binary_op_of: FunctionInfo,
     pub const_unary_op_of: FunctionInfo,
     pub const_atomic_ord_of: FunctionInfo,
@@ -464,8 +471,6 @@ pub(crate) fn collect_helper_types<'tcx>(helper_def_ids: &HashMap<LeafSymbol, De
         operand_ref: get_type_holder(sym::OPERAND_REF_TYPE_HOLDER),
         binary_op: get_type_holder(sym::BINARY_OP_TYPE_HOLDER),
         unary_op: get_type_holder(sym::UNARY_OP_TYPE_HOLDER),
-        raw_ptr: get_type_holder(sym::RAW_PTR_TYPE_HOLDER),
-        func_id: get_type_holder(sym::FUNC_ID_TYPE_HOLDER),
     }
 }
 
@@ -483,18 +488,33 @@ pub(crate) fn collect_helper_funcs<'tcx>(
             .into()
     };
 
-    PriHelperFunctions {
-        f32_to_bits: *helper_def_ids.get(&sym::f32_to_bits).unwrap(),
-        f64_to_bits: *helper_def_ids.get(&sym::f64_to_bits).unwrap(),
-        set_place_address_typed: get_func_info(sym::set_place_address_typed),
-        type_id_of: get_func_info(sym::type_id_of),
-        size_of: get_func_info(sym::size_of),
-        const_binary_op_of: get_func_info(sym::const_binary_op_of),
-        const_unary_op_of: get_func_info(sym::const_unary_op_of),
-        const_atomic_ord_of: get_func_info(sym::const_atomic_ord_of),
-        const_atomic_binary_op_of: get_func_info(sym::const_atomic_binary_op_of),
-        special_func_placeholder: get_func_info(sym::special_func_placeholder),
+    macro_rules! create {
+        ($($name: ident),*$(,)?) => {
+            PriHelperFunctions {
+                $($name: get_func_info(sym::$name)),*
+            }
+        };
     }
+
+    create!(
+        f32_to_bits,
+        f64_to_bits,
+        set_place_address_typed,
+        type_id_of,
+        size_of,
+        callee_def_static,
+        callee_def_maybe_virtual,
+        func_def_static,
+        func_def_dyn_method,
+        receiver_to_raw_ptr,
+        receiver_pin_to_raw_ptr,
+        receiver_self_to_raw_ptr,
+        const_binary_op_of,
+        const_unary_op_of,
+        const_atomic_ord_of,
+        const_atomic_binary_op_of,
+        special_func_placeholder,
+    )
 }
 
 fn filter_pri_items<'a, 'tcx: 'a>(

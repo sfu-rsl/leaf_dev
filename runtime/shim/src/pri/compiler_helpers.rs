@@ -1,3 +1,9 @@
+use core::{
+    intrinsics::{self, transmute, transmute_unchecked},
+    marker::{FnPtr, Unsize},
+    ops::Deref,
+};
+
 use super::common;
 use common::pri::*;
 
@@ -20,12 +26,12 @@ pub static UNARY_OP_TYPE_HOLDER: UnaryOp = UnaryOp::NEG;
  */
 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
 pub fn f32_to_bits(value: f32) -> u128 {
-    unsafe { core::intrinsics::transmute::<f32, u32>(value) as u128 }
+    unsafe { transmute::<f32, u32>(value) as u128 }
 }
 
 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
 pub fn f64_to_bits(value: f64) -> u128 {
-    unsafe { core::intrinsics::transmute::<f64, u64>(value) as u128 }
+    unsafe { transmute::<f64, u64>(value) as u128 }
 }
 
 /* NOTE:
@@ -57,7 +63,7 @@ static _CONST_ATOMIC_BINARY_OP_OF_REFERENCER: fn(u8) -> AtomicBinaryOp = const_a
 
 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
 pub fn set_place_address_typed<T>(place: PlaceRef, address: *const T) {
-    super::set_place_address(place, address as *const () as RawPointer)
+    super::set_place_address(place, address as RawAddress)
 }
 
 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
@@ -73,20 +79,119 @@ pub const fn type_id_of<T: ?Sized + 'static>() -> TypeId {
      * Based on the last checks, LLVM is smart enough to inline this function
      * automatically and even replace everything with u128. */
     fn rt<T: ?Sized + 'static>() -> TypeId {
-        super::run_rec_guarded(
+        super::run_rec_guarded::<true, _>(
             /* If we are recursing, the value doesn't matter (although unsafe) */
-            unsafe { core::intrinsics::transmute([0u8; core::intrinsics::size_of::<TypeId>()]) },
+            unsafe { intrinsics::transmute([0u8; intrinsics::size_of::<TypeId>()]) },
             || common::utils::type_id_of::<T>(),
         )
     }
-    core::intrinsics::const_eval_select((), common::utils::type_id_of::<T>, rt::<T>)
+    intrinsics::const_eval_select((), common::utils::type_id_of::<T>, rt::<T>)
 }
 
 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
 #[cfg_attr(core_build, rustc_const_stable(feature = "rust1", since = "1.0.0"))]
 #[inline(always)]
 pub const fn size_of<T>() -> TypeSize {
-    core::intrinsics::size_of::<T>() as TypeSize
+    intrinsics::size_of::<T>() as TypeSize
+}
+
+#[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
+pub fn callee_def_static<F: FnPtr>(func_addr: F) -> CalleeDef {
+    CalleeDef {
+        static_addr: func_addr.addr(),
+        as_virtual: None,
+    }
+}
+
+#[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
+pub fn callee_def_maybe_virtual<F: FnPtr, R: ?Sized>(
+    func_addr: F,
+    receiver_ptr: *const R,
+    identifier: u64,
+) -> CalleeDef {
+    CalleeDef {
+        static_addr: func_addr.addr(),
+        as_virtual: {
+            if is_ptr_of_dyn(receiver_ptr) {
+                let metadata = intrinsics::ptr_metadata(receiver_ptr);
+                Some((
+                    unsafe { intrinsics::transmute_unchecked(metadata) },
+                    identifier,
+                ))
+            } else {
+                None
+            }
+        },
+    }
+}
+
+#[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
+pub fn func_def_static<F: FnPtr>(addr: F) -> FuncDef {
+    FuncDef {
+        static_addr: addr.addr(),
+        as_dyn_method: None,
+    }
+}
+
+#[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
+pub fn func_def_dyn_method<F: FnPtr, T: Unsize<Dyn>, Dyn: ?Sized>(
+    static_addr: F,
+    receiver_ptr: *const Dyn,
+    identifier: u64,
+) -> FuncDef {
+    FuncDef {
+        static_addr: static_addr.addr(),
+        as_dyn_method: Some((
+            {
+                let metadata = intrinsics::ptr_metadata(receiver_ptr);
+                if !is_ptr_of_dyn(receiver_ptr) {
+                    unsafe { intrinsics::unreachable() }
+                }
+                unsafe { transmute_unchecked(metadata) }
+            },
+            identifier,
+        )),
+    }
+}
+
+#[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
+#[inline]
+pub fn receiver_to_raw_ptr<Pointee: ?Sized, Ptr: Deref<Target = Pointee>>(
+    receiver: &Ptr,
+) -> *const Pointee {
+    // NOTE: This is because of call to Deref (which is not inlined)
+    let as_ref: &Pointee = super::run_rec_guarded::<false, _>(
+        unsafe {
+            const ZEROS: [usize; 2] = [0; 2];
+            let dummy_ptr: *const Pointee =
+                intrinsics::read_via_copy(&ZEROS as *const _ as *const _);
+            transmute(dummy_ptr)
+        },
+        || &*receiver,
+    );
+    receiver_self_to_raw_ptr::<Pointee>(as_ref)
+}
+
+#[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
+#[cfg_attr(core_build, rustc_const_stable(feature = "rust1", since = "1.0.0"))]
+#[inline(always)]
+const fn is_ptr_of_dyn<T: ?Sized>(_ptr: *const T) -> bool {
+    intrinsics::size_of::<<T as core::ptr::Pointee>::Metadata>()
+        == intrinsics::size_of::<DynRawMetadata>()
+}
+
+#[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
+#[inline(always)]
+pub fn receiver_pin_to_raw_ptr<Pointee: ?Sized, Ptr: Deref<Target = Pointee>>(
+    receiver: &core::pin::Pin<Ptr>,
+) -> *const Pointee {
+    receiver_to_raw_ptr(receiver)
+}
+
+#[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
+#[inline(always)]
+pub fn receiver_self_to_raw_ptr<Pointee: ?Sized>(receiver_ref: &Pointee) -> *const Pointee {
+    receiver_ref as *const Pointee
 }
 
 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]

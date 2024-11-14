@@ -673,22 +673,15 @@ where
     }
 
     fn instrument_regular_call(&mut self, params: CallParams<'_, 'tcx>) {
-        self.instrument_call_general(|call_adder, func| call_adder.reference_func(func), params);
+        self.instrument_call_general(params, false);
     }
 
     fn instrument_unsupported_call(&mut self, params: CallParams<'_, 'tcx>) {
-        self.instrument_call_general(
-            |call_adder, func| call_adder.reference_special_func(func),
-            params,
-        );
+        self.instrument_call_general(params, true);
     }
 
     fn instrument_call_general(
         &mut self,
-        ref_func: impl FnOnce(
-            &mut RuntimeCallAdder<call::context::AtLocationContext<C>>,
-            &'_ Operand<'tcx>,
-        ) -> OperandRef,
         CallParams {
             func,
             args,
@@ -696,15 +689,11 @@ where
             target,
             fn_span: _,
         }: CallParams<'_, 'tcx>,
+        no_definition: bool,
     ) {
         let mut call_adder = self.call_adder.before();
 
-        let func_ref = ref_func(&mut call_adder, func);
-
-        let arg_refs = Self::ref_args(&mut call_adder, args);
-        let are_args_tupled = call_adder.are_args_tupled(func, args.iter().map(|a| &a.node));
-
-        call_adder.before_call_func(func_ref, arg_refs.into_iter(), are_args_tupled);
+        call_adder.before_call_func(func, args, no_definition);
 
         if target.is_some() {
             call_adder.after().after_call_func(destination);

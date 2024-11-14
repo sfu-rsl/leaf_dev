@@ -10,7 +10,7 @@ use rustc_middle::{
     },
     ty::{Const, GenericArg, Ty, TyCtxt},
 };
-use rustc_span::def_id::DefId;
+use rustc_span::{def_id::DefId, source_map::Spanned};
 use rustc_target::abi::{FieldIdx, VariantIdx};
 
 use common::{
@@ -167,15 +167,11 @@ pub(crate) trait BranchingHandler {
 }
 
 pub(crate) trait FunctionHandler<'tcx> {
-    fn reference_func(&mut self, func: &Operand<'tcx>) -> OperandRef;
-
-    fn reference_special_func(&mut self, func: &Operand<'tcx>) -> OperandRef;
-
     fn before_call_func(
         &mut self,
-        func: OperandRef,
-        arguments: impl Iterator<Item = OperandRef>,
-        are_args_tupled: bool,
+        func: &Operand<'tcx>,
+        arguments: &[Spanned<Operand<'tcx>>],
+        no_def: bool,
     );
 
     fn enter_func(&mut self);
@@ -483,7 +479,7 @@ mod implementation {
     where
         C: context::BodyProvider<'tcx> + context::TyContextProvider<'tcx> + HasLocalDecls<'tcx>,
     {
-        fn current_func(&self) -> Operand<'tcx> {
+        fn current_func_ty(&self) -> Ty<'tcx> {
             let source = self.context.body().source;
             log_debug!(
                 "Creating operand of current function: {}",
@@ -532,12 +528,7 @@ mod implementation {
             };
 
             debug_assert_matches!(fn_def_ty.kind(), TyKind::FnDef(..));
-
-            Operand::Constant(Box::new(mir::ConstOperand {
-                span: self.context.body().span,
-                user_ty: None,
-                const_: mir::Const::zero_sized(fn_def_ty),
-            }))
+            fn_def_ty
         }
 
         fn current_param_env(&self) -> mir_ty::ParamEnv<'tcx> {
@@ -572,6 +563,18 @@ mod implementation {
         delegate! {
             to self.context {
                 fn local_decls(&self) -> &rustc_middle::mir::LocalDecls<'tcx>;
+            }
+        }
+    }
+    impl<'tcx, C> BodyLocalManager<'tcx> for RuntimeCallAdder<C>
+    where
+        C: BodyLocalManager<'tcx>,
+    {
+        delegate! {
+            to self.context {
+                fn add_local<T>(&mut self, decl_info: T) -> Local
+                where
+                    T: Into<NewLocalDecl<'tcx>>;
             }
         }
     }
@@ -639,9 +642,11 @@ mod implementation {
             args: Vec<Operand<'tcx>>,
             target: Option<BasicBlock>,
         ) -> (BasicBlockData<'tcx>, Local) {
-            let result_local = self
-                .context
-                .add_local((func_info.ret_ty(self.tcx()), self.context.source_info()));
+            let generic_args = generic_args.into_iter().collect::<Vec<_>>();
+            let result_local = self.context.add_local((
+                func_info.ret_ty(self.tcx(), &generic_args),
+                self.context.source_info(),
+            ));
             (
                 self.make_call_bb(
                     func_info.def_id,
@@ -1178,9 +1183,9 @@ mod implementation {
 
         fn internal_reference_func_def_const_operand(
             &mut self,
-            constant: &Box<ConstOperand<'tcx>>,
+            _constant: &Box<ConstOperand<'tcx>>,
         ) -> BlocksAndResult<'tcx> {
-            self.internal_reference_func(&Operand::Constant(constant.clone()))
+            panic!("Function definition constant is not supported by this configuration.")
         }
 
         fn internal_reference_unevaluated_const_operand(
@@ -1890,64 +1895,85 @@ mod implementation {
         Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
         C: ForFunctionCalling<'tcx>,
     {
-        fn reference_func(&mut self, func: &Operand<'tcx>) -> OperandRef {
-            self.debug_info(&format!("{}", func.ty(self, self.tcx())));
-            let BlocksAndResult(new_blocks, ref_local) = self.internal_reference_func(func);
-            self.insert_blocks(new_blocks);
-            ref_local.into()
-        }
-
-        fn reference_special_func(&mut self, func: &Operand<'tcx>) -> OperandRef {
-            self.debug_info(&format!("{}", func.ty(self, self.tcx())));
-            // Use `special_func_placeholder` instead.
-            let func = operand::func(
-                self.tcx(),
-                *self.pri_helper_funcs().special_func_placeholder,
-                iter::empty(),
-            );
-            let BlocksAndResult(new_blocks, ref_local) = self.internal_reference_func(&func);
-            self.insert_blocks(new_blocks);
-            ref_local.into()
-        }
-
         fn before_call_func(
             &mut self,
-            func: OperandRef,
-            arguments: impl Iterator<Item = OperandRef>,
-            are_args_tupled: bool,
+            func: &Operand<'tcx>,
+            args: &[Spanned<Operand<'tcx>>],
+            no_def: bool,
         ) {
             let tcx = self.tcx();
+            let mut blocks = vec![];
+
+            self.debug_info(&format!("{}", func.ty(self, self.tcx())));
+
+            let def_local = {
+                let func = if !no_def {
+                    func.clone()
+                } else {
+                    operand::func(
+                        self.tcx(),
+                        *self.pri_helper_funcs().special_func_placeholder,
+                        iter::empty(),
+                    )
+                };
+                let BlocksAndResult(def_blocks, def_local) =
+                    func::definition_of_callee(tcx, self, func, args.first().map(|a| &a.node));
+                blocks.extend(def_blocks);
+                def_local
+            };
+
+            let func_ref = self.reference_operand(func);
+
+            let arg_refs = args
+                .iter()
+                .map(|a| self.reference_operand_spanned(a))
+                .map(|a| operand::move_for_local(a.into()))
+                .collect();
             let operand_ref_ty = self.context.pri_types().operand_ref(tcx);
-            let (arguments_local, additional_stmts) = prepare_operand_for_slice(
+            let (arguments_local, additional_stmts) =
+                prepare_operand_for_slice(tcx, &mut self.context, operand_ref_ty, arg_refs);
+
+            let are_args_tupled = func::are_args_tupled(
                 tcx,
-                &mut self.context,
-                operand_ref_ty,
-                arguments
-                    .map(|a| operand::copy_for_local(a.into()))
-                    .collect(),
+                self,
+                func,
+                args.iter().map(|a| &a.node),
+                self.current_param_env(),
             );
+
             let mut block = self.make_bb_for_call(
                 sym::before_call_func,
                 vec![
-                    operand::copy_for_local(func.into()),
+                    operand::move_for_local(def_local),
+                    operand::move_for_local(func_ref.into()),
                     operand::move_for_local(arguments_local),
                     operand::const_from_bool(tcx, are_args_tupled),
                 ],
             );
             block.statements.extend(additional_stmts);
+            blocks.push(block);
+
             debug_assert_matches!(
                 self.context.insertion_loc(),
                 Before(..),
                 "Inserting before_call after a block is not expected."
             );
-            self.insert_blocks([block]);
+            self.insert_blocks(blocks);
         }
 
         fn enter_func(&mut self) {
             let tcx = self.tcx();
             let mut blocks = vec![];
+            let fn_def_ty = self.current_func_ty();
 
-            let func_ref = self.reference_func(&self.current_func());
+            self.debug_info(&format!("{}", fn_def_ty));
+
+            let def_local = {
+                let BlocksAndResult(def_blocks, def_local) =
+                    func::definition_of_func(tcx, self, fn_def_ty, self.current_param_env());
+                blocks.extend(def_blocks);
+                def_local
+            };
 
             let (argument_places_local, additional_stmts) = {
                 let arg_places_refs = self
@@ -1972,7 +1998,7 @@ mod implementation {
             };
 
             let base_args = vec![
-                operand::move_for_local(func_ref.into()),
+                operand::move_for_local(def_local),
                 operand::move_for_local(argument_places_local),
                 operand::move_for_local(ret_val_place_local),
             ];
@@ -2022,23 +2048,6 @@ mod implementation {
 
     impl<'tcx, C> RuntimeCallAdder<C>
     where
-        C: Basic<'tcx>,
-    {
-        pub(crate) fn are_args_tupled<'a>(
-            &self,
-            callee: &Operand<'tcx>,
-            args: impl Iterator<Item = &'a Operand<'tcx>>,
-        ) -> bool
-        where
-            'tcx: 'a,
-        {
-            let tcx = self.tcx();
-            utils::are_args_tupled(tcx, &self.context, callee, args, self.current_param_env())
-        }
-    }
-
-    impl<'tcx, C> RuntimeCallAdder<C>
-    where
         Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
         C: Basic<'tcx> + SourceInfoProvider,
     {
@@ -2062,19 +2071,6 @@ mod implementation {
                     operand::move_for_local(tuple_id_local),
                 ],
             )
-        }
-
-        fn internal_reference_func(&mut self, func: &Operand<'tcx>) -> BlocksAndResult<'tcx> {
-            let tcx = self.tcx();
-            log_debug!("Referencing function: {:?}", func.ty(self, tcx).kind());
-            let id_ty = self.context.pri_types().func_id(tcx);
-            let (stmts, id_local) = id_of_func(tcx, &mut self.context, func, id_ty);
-            let (mut new_block, ref_local) = self.make_bb_for_operand_ref_call(
-                sym::ref_operand_const_func,
-                vec![operand::move_for_local(id_local)],
-            );
-            new_block.statements.extend(stmts);
-            (new_block, ref_local).into()
         }
     }
 
@@ -2530,7 +2526,8 @@ mod implementation {
                 self, BasicBlock, BasicBlockData, HasLocalDecls, Local, Operand, Place, Rvalue,
                 SourceInfo, Statement,
             },
-            ty::{adjustment::PointerCoercion, Ty, TyCtxt, TyKind},
+            query::Key,
+            ty::{adjustment::PointerCoercion, ParamEnv, Ty, TyCtxt, TyKind},
         };
         use rustc_span::DUMMY_SP;
 
@@ -2752,6 +2749,18 @@ mod implementation {
                     Rvalue::Cast(CastKind::PointerCoercion(coercion), operand, to_ty)
                 }
 
+                pub fn cast_to_fn_ptr<'tcx>(
+                    tcx: TyCtxt<'tcx>,
+                    operand: Operand<'tcx>,
+                    operand_ty: Ty<'tcx>,
+                ) -> Rvalue<'tcx> {
+                    cast_to_coerced(
+                        PointerCoercion::ReifyFnPointer,
+                        operand,
+                        Ty::new_fn_ptr(tcx, ty::fn_ptr_sig(tcx, operand_ty)),
+                    )
+                }
+
                 pub fn array<'tcx>(ty: Ty<'tcx>, items: Vec<Operand<'tcx>>) -> Rvalue<'tcx> {
                     Rvalue::Aggregate(
                         Box::new(AggregateKind::Array(ty)),
@@ -2773,7 +2782,6 @@ mod implementation {
 
         pub(super) mod ty {
             use rustc_abi::Size;
-            use rustc_middle::ty::ParamEnv;
 
             use super::*;
 
@@ -2981,7 +2989,7 @@ mod implementation {
                 }
             }
 
-            fn is_trait<'tcx>(
+            pub(super) fn is_trait<'tcx>(
                 tcx: TyCtxt<'tcx>,
                 ty: Ty<'tcx>,
                 param_env: ParamEnv<'tcx>,
@@ -3041,6 +3049,400 @@ mod implementation {
                         target: target.unwrap_or(NEXT_BLOCK),
                     },
                 }
+            }
+        }
+
+        pub(super) mod func {
+            use mir_ty::{AssocItem, ExistentialTraitRef, TraitRef};
+            use rustc_trait_selection::traits::is_vtable_safe_method;
+
+            use super::*;
+
+            pub fn definition_of_func<'tcx>(
+                tcx: TyCtxt<'tcx>,
+                call_adder: &mut (
+                         impl BodyLocalManager<'tcx>
+                         + BodyProvider<'tcx>
+                         + MirCallAdder<'tcx>
+                         + PriItemsProvider<'tcx>
+                     ),
+                fn_def_ty: Ty<'tcx>,
+                param_env: mir_ty::ParamEnv<'tcx>,
+            ) -> BlocksAndResult<'tcx> {
+                let TyKind::FnDef(def_id, generic_args) = *fn_def_ty.kind() else {
+                    unreachable!(
+                        "Expected function definition type but received: {}",
+                        fn_def_ty
+                    )
+                };
+
+                let fn_value = operand::func(tcx, def_id, generic_args);
+
+                if let Some((trait_ref, trait_item)) = as_dyn_compatible_method(tcx, def_id)
+                    && trait_ref.self_ty().is_sized(tcx, param_env)
+                {
+                    def_of_dyn_compatible_method(
+                        tcx,
+                        call_adder,
+                        fn_value,
+                        trait_ref,
+                        trait_item.def_id,
+                    )
+                } else {
+                    def_of_static_func(tcx, call_adder, fn_value)
+                }
+            }
+
+            fn def_of_static_func<'tcx>(
+                tcx: TyCtxt<'tcx>,
+                call_adder: &mut (
+                         impl BodyLocalManager<'tcx> + MirCallAdder<'tcx> + PriItemsProvider<'tcx>
+                     ),
+                fn_value: Operand<'tcx>,
+            ) -> BlocksAndResult<'tcx> {
+                let (fn_ptr_ty, fn_ptr_local, ptr_assignment) =
+                    to_fn_ptr(tcx, call_adder, fn_value);
+
+                let (mut block, id_local) = call_adder.make_bb_for_helper_call_with_all(
+                    call_adder.pri_helper_funcs().func_def_static,
+                    vec![fn_ptr_ty.into()],
+                    vec![operand::move_for_local(fn_ptr_local)],
+                    None,
+                );
+                block.statements.push(ptr_assignment);
+                BlocksAndResult::from((block, id_local))
+            }
+
+            fn def_of_dyn_compatible_method<'tcx>(
+                tcx: TyCtxt<'tcx>,
+                call_adder: &mut (
+                         impl BodyLocalManager<'tcx>
+                         + BodyProvider<'tcx>
+                         + MirCallAdder<'tcx>
+                         + PriItemsProvider<'tcx>
+                     ),
+                fn_value: Operand<'tcx>,
+                trait_ref: TraitRef<'tcx>,
+                method_id: DefId,
+            ) -> BlocksAndResult<'tcx> {
+                let (fn_ptr_ty, fn_ptr_local, ptr_assignment) =
+                    to_fn_ptr(tcx, call_adder, fn_value);
+
+                // Receiver -> *const Self
+                let self_ty = trait_ref.self_ty();
+                let (raw_ptr_of_receiver_block, raw_ptr_of_receiver_local) = raw_ptr_of_receiver(
+                    tcx,
+                    call_adder,
+                    call_adder
+                        .body()
+                        .args_iter()
+                        .next()
+                        .expect("An object safe trait method is expected to have a receiver")
+                        .into(),
+                    self_ty,
+                );
+
+                // *const Self as *const dyn Trait
+                let dyn_ty = Ty::new_dynamic(
+                    tcx,
+                    tcx.mk_poly_existential_predicates(&[mir_ty::Binder::dummy(
+                        rustc_type_ir::ExistentialPredicate::Trait(
+                            ExistentialTraitRef::erase_self_ty(tcx, trait_ref),
+                        ),
+                    )]),
+                    tcx.lifetimes.re_erased,
+                    mir_ty::DynKind::Dyn,
+                );
+                let receiver_ptr_ty = Ty::new_imm_ptr(tcx, dyn_ty);
+                let receiver_ptr_local = call_adder.add_local(receiver_ptr_ty);
+                let receiver_ptr_assignment = assignment::create(
+                    Place::from(receiver_ptr_local),
+                    rvalue::cast_to_unsize(
+                        operand::move_for_local(raw_ptr_of_receiver_local),
+                        receiver_ptr_ty,
+                    ),
+                );
+
+                let identifier = identifier_of_method(tcx, method_id);
+
+                let (mut block, id_local) = call_adder.make_bb_for_helper_call_with_all(
+                    call_adder.pri_helper_funcs().func_def_dyn_method,
+                    vec![fn_ptr_ty.into(), self_ty.into(), dyn_ty.into()],
+                    vec![
+                        operand::move_for_local(fn_ptr_local),
+                        operand::move_for_local(receiver_ptr_local),
+                        operand::const_from_uint(tcx, identifier),
+                    ],
+                    None,
+                );
+                block.statements.push(ptr_assignment);
+                block.statements.push(receiver_ptr_assignment);
+                BlocksAndResult(vec![raw_ptr_of_receiver_block, block], id_local)
+            }
+
+            fn as_dyn_compatible_method<'tcx>(
+                tcx: TyCtxt<'tcx>,
+                def_id: DefId,
+            ) -> Option<(TraitRef<'tcx>, AssocItem)> {
+                let trait_ref = tcx
+                    .impl_of_method(def_id)
+                    .and_then(|impl_id| tcx.impl_trait_ref(impl_id))
+                    .map(|trait_ref| trait_ref.instantiate_identity())
+                    .filter(|trait_ref| tcx.is_object_safe(trait_ref.def_id))
+                    .filter(|trait_ref| {
+                        trait_ref.def_id != tcx.lang_items().deref_trait().unwrap()
+                    })?;
+
+                let item = to_trait_associated_item(tcx, def_id);
+                is_vtable_safe_method(tcx, trait_ref.def_id, item).then_some((trait_ref, item))
+            }
+
+            pub fn definition_of_callee<'tcx>(
+                tcx: TyCtxt<'tcx>,
+                call_adder: &mut (
+                         impl BodyLocalManager<'tcx> + MirCallAdder<'tcx> + PriItemsProvider<'tcx>
+                     ),
+                fn_value: Operand<'tcx>,
+                first_arg: Option<&Operand<'tcx>>,
+            ) -> BlocksAndResult<'tcx> {
+                let fn_ty = fn_value.ty(call_adder, tcx);
+
+                match fn_ty.kind() {
+                    TyKind::FnDef(def_id, generic_args) => {
+                        let def_id = *def_id;
+                        /* NOTE: As the bodies are still polymorphic, it is still possible that the
+                         * instance is not resolvable. Thus we cannot use `expect_resolve` to decide
+                         * at this point. */
+                        // let is_dynamic = UNKNOWN;
+
+                        if let Some(item) = as_possibly_dynamic_method_call(tcx, def_id) {
+                            let receiver = first_arg.unwrap_or_else(|| {
+                                panic!("Expected receiver for a dyn-compatible method: {:?}", fn_ty)
+                            });
+                            let self_ty = generic_args.type_at(0);
+                            def_of_possibly_virtual_callee(
+                                tcx,
+                                call_adder,
+                                fn_value,
+                                item.def_id,
+                                self_ty,
+                                receiver,
+                            )
+                        } else {
+                            def_of_static_callee(tcx, call_adder, fn_value)
+                        }
+                    }
+                    TyKind::FnPtr(..) => def_of_static_callee(tcx, call_adder, fn_value),
+                    _ => {
+                        unreachable!("Unexpected type of callee: {:?}: {:?}", fn_value, fn_ty);
+                    }
+                }
+            }
+
+            fn def_of_static_callee<'tcx>(
+                tcx: TyCtxt<'tcx>,
+                call_adder: &mut (
+                         impl BodyLocalManager<'tcx> + MirCallAdder<'tcx> + PriItemsProvider<'tcx>
+                     ),
+                fn_value: Operand<'tcx>,
+            ) -> BlocksAndResult<'tcx> {
+                let (fn_ptr_ty, fn_ptr_local, ptr_assignment) =
+                    to_fn_ptr(tcx, call_adder, fn_value);
+
+                let (mut block, id_local) = call_adder.make_bb_for_helper_call_with_all(
+                    call_adder.pri_helper_funcs().callee_def_static,
+                    vec![fn_ptr_ty.into()],
+                    vec![operand::move_for_local(fn_ptr_local)],
+                    None,
+                );
+                block.statements.push(ptr_assignment);
+                BlocksAndResult::from((block, id_local))
+            }
+
+            fn def_of_possibly_virtual_callee<'tcx>(
+                tcx: TyCtxt<'tcx>,
+                call_adder: &mut (
+                         impl BodyLocalManager<'tcx> + MirCallAdder<'tcx> + PriItemsProvider<'tcx>
+                     ),
+                fn_value: Operand<'tcx>,
+                method_id: DefId,
+                self_ty: Ty<'tcx>,
+                receiver: &Operand<'tcx>,
+            ) -> BlocksAndResult<'tcx> {
+                let (fn_ptr_ty, fn_ptr_local, ptr_assignment) =
+                    to_fn_ptr(tcx, call_adder, fn_value);
+
+                let (receiver_raw_ptr_block, receiver_raw_ptr_local) = match receiver {
+                    Operand::Copy(place) | Operand::Move(place) => {
+                        raw_ptr_of_receiver(tcx, call_adder, *place, self_ty)
+                    }
+                    Operand::Constant(..) => {
+                        let receiver_local = call_adder.add_local(receiver.ty(call_adder, tcx));
+                        let receiver_assignment = assignment::create(
+                            Place::from(receiver_local),
+                            Rvalue::Use(receiver.clone()),
+                        );
+                        let (mut block, local) =
+                            raw_ptr_of_receiver(tcx, call_adder, receiver_local.into(), self_ty);
+                        block.statements.push(receiver_assignment);
+                        (block, local)
+                    }
+                };
+
+                let identifier = identifier_of_method(tcx, method_id);
+
+                let (mut block, id_local) = call_adder.make_bb_for_helper_call_with_all(
+                    call_adder.pri_helper_funcs().callee_def_maybe_virtual,
+                    vec![fn_ptr_ty.into(), self_ty.into()],
+                    vec![
+                        operand::move_for_local(fn_ptr_local),
+                        operand::move_for_local(receiver_raw_ptr_local),
+                        operand::const_from_uint(tcx, identifier),
+                    ],
+                    Default::default(),
+                );
+                block.statements.push(ptr_assignment);
+                BlocksAndResult(vec![receiver_raw_ptr_block, block], id_local)
+            }
+
+            fn as_possibly_dynamic_method_call<'tcx>(
+                tcx: TyCtxt<'tcx>,
+                def_id: DefId,
+            ) -> Option<AssocItem> {
+                let trait_id = tcx.trait_of_item(def_id)?;
+                let item = to_trait_associated_item(tcx, def_id);
+                is_vtable_safe_method(tcx, trait_id, item).then_some(item)
+            }
+
+            // Receiver -> &Receiver -> *const Self
+            fn raw_ptr_of_receiver<'tcx>(
+                tcx: TyCtxt<'tcx>,
+                call_adder: &mut (
+                         impl BodyLocalManager<'tcx>
+                         + HasLocalDecls<'tcx>
+                         + MirCallAdder<'tcx>
+                         + PriItemsProvider<'tcx>
+                     ),
+                receiver_place: Place<'tcx>,
+                self_ty: Ty<'tcx>,
+            ) -> (BasicBlockData<'tcx>, Local) {
+                let receiver_ty = receiver_place.ty(call_adder, tcx).ty;
+                let receiver_ref_local = call_adder.add_local(Ty::new_imm_ref(
+                    tcx,
+                    tcx.lifetimes.re_erased,
+                    receiver_ty,
+                ));
+                let receiver_ref_assignment = assignment::create(
+                    receiver_ref_local.into(),
+                    rvalue::ref_of(receiver_place, tcx),
+                );
+
+                let pointee_ty = self_ty;
+
+                let (converter_func, generic_args) = {
+                    let is_pin = tcx
+                        .lang_items()
+                        .pin_type()
+                        .zip(receiver_ty.ty_def_id())
+                        .is_some_and(|(a, b)| a == b);
+                    // FIXME: Use the self method for `&Self` and `&mut Self` as well.
+                    if is_pin {
+                        (
+                            call_adder.pri_helper_funcs().receiver_pin_to_raw_ptr,
+                            vec![pointee_ty.into(), receiver_ty.into()],
+                        )
+                    } else if receiver_ty == self_ty {
+                        (
+                            call_adder.pri_helper_funcs().receiver_self_to_raw_ptr,
+                            vec![pointee_ty.into()],
+                        )
+                    } else {
+                        (
+                            call_adder.pri_helper_funcs().receiver_to_raw_ptr,
+                            vec![pointee_ty.into(), receiver_ty.into()],
+                        )
+                    }
+                };
+
+                let (mut raw_ptr_block, raw_ptr_local) = call_adder
+                    .make_bb_for_helper_call_with_all(
+                        converter_func,
+                        generic_args,
+                        vec![operand::move_for_local(receiver_ref_local)],
+                        Default::default(),
+                    );
+                raw_ptr_block.statements.push(receiver_ref_assignment);
+
+                (raw_ptr_block, raw_ptr_local)
+            }
+
+            fn to_fn_ptr<'tcx>(
+                tcx: TyCtxt<'tcx>,
+                local_manager: &mut impl BodyLocalManager<'tcx>,
+                fn_value: Operand<'tcx>,
+            ) -> (Ty<'tcx>, Local, Statement<'tcx>) {
+                let value_ty = fn_value.ty(local_manager, tcx);
+                let fn_ptr_ty = Ty::new_fn_ptr(tcx, ty::fn_ptr_sig(tcx, value_ty));
+                let fn_rvalue = if fn_ptr_ty != value_ty {
+                    rvalue::cast_to_fn_ptr(tcx, fn_value, value_ty)
+                } else {
+                    Rvalue::Use(fn_value)
+                };
+                let fn_ptr_local = local_manager.add_local(fn_ptr_ty);
+                let fn_ptr_assign = assignment::create(Place::from(fn_ptr_local), fn_rvalue);
+                (fn_ptr_ty, fn_ptr_local, fn_ptr_assign)
+            }
+
+            /// Returns the corresponding trait item of a trait method or an implementation of it.
+            fn to_trait_associated_item<'tcx>(tcx: TyCtxt<'tcx>, def_id: DefId) -> AssocItem {
+                let item = tcx.associated_item(def_id);
+                if let Some(id) = item.trait_item_def_id
+                    && id != def_id
+                {
+                    to_trait_associated_item(tcx, id)
+                } else {
+                    item
+                }
+            }
+
+            fn identifier_of_method<'tcx>(tcx: TyCtxt<'tcx>, method: DefId) -> u64 {
+                let method_item = to_trait_associated_item(tcx, method);
+                let trait_id = method_item
+                    .trait_container(tcx)
+                    .expect("Expected a trait method");
+                tcx.associated_items(trait_id)
+                    .in_definition_order()
+                    .position(|item| item == &method_item)
+                    .unwrap() as u64
+            }
+
+            pub fn are_args_tupled<'tcx: 'a, 'a>(
+                tcx: TyCtxt<'tcx>,
+                local_manager: &impl HasLocalDecls<'tcx>,
+                callee: &Operand<'tcx>,
+                args: impl Iterator<Item = &'a Operand<'tcx>>,
+                param_env: mir_ty::ParamEnv<'tcx>,
+            ) -> bool {
+                // Tupling is only observed in fn trait (closure) calls.
+                if !is_fn_trait_method_call(tcx, callee.ty(local_manager, tcx)) {
+                    return false;
+                }
+
+                // Ensure assumptions that runtime may rely upon.
+                let args = args.collect::<Vec<_>>();
+                assert_eq!(args.len(), 2);
+                assert!(
+                    args.last()
+                        .unwrap()
+                        .ty(local_manager, tcx)
+                        .is_tuple(tcx, param_env),
+                    "Fn trait method call without tupled arguments observed. {:?}, {:?}",
+                    callee,
+                    args.iter()
+                        .map(|a| a.ty(local_manager, tcx))
+                        .collect::<Vec<_>>()
+                );
+                true
             }
         }
 
@@ -3135,7 +3537,7 @@ mod implementation {
             };
             let block = BasicBlockData::new(Some(terminator::call(
                 tcx,
-                conversion_func,
+                conversion_func.def_id,
                 iter::empty(),
                 vec![operand::const_from_existing(constant)],
                 bit_rep_local.into(),
@@ -3158,69 +3560,6 @@ mod implementation {
             );
 
             (ptr_assignment, ptr_local)
-        }
-
-        /// Returns a local having a value equal to the function address.
-        /// Effectively, it should be a unique value for each function.
-        ///
-        /// Three assignment statements are returned:
-        /// 1. Function operand to function pointer.
-        /// 2. Function pointer to raw pointer.
-        /// 3. Raw pointer to id.
-        pub(super) fn id_of_func<'tcx>(
-            tcx: TyCtxt<'tcx>,
-            local_manager: &mut (impl BodyLocalManager<'tcx> + HasLocalDecls<'tcx>),
-            func: &Operand<'tcx>,
-            id_ty: Ty<'tcx>,
-        ) -> ([Statement<'tcx>; 3], Local) {
-            log_debug!("Getting id (pointer) of function {:?}.", func);
-
-            let fn_ty = func.ty(local_manager, tcx);
-            debug_assert_matches!(fn_ty.kind(), TyKind::FnDef(..) | TyKind::FnPtr(..));
-            let ptr_ty = Ty::new_fn_ptr(tcx, ty::fn_ptr_sig(tcx, fn_ty));
-            let ptr_local = local_manager.add_local(ptr_ty);
-            let ptr_assignment = assignment::create(
-                Place::from(ptr_local),
-                if fn_ty.is_fn_ptr() {
-                    Rvalue::Use(func.clone())
-                } else {
-                    let TyKind::FnDef(def_id, ..) = fn_ty.kind() else {
-                        unreachable!()
-                    };
-                    assert!(
-                        !(tcx.intrinsic(def_id).is_some() || tcx.is_llvm_intrinsic(*def_id)),
-                        "Cannot extract function pointer (as id) of intrinsic functions."
-                    );
-                    rvalue::cast_to_coerced(PointerCoercion::ReifyFnPointer, func.clone(), ptr_ty)
-                },
-            );
-
-            /* This is an additional step just for the sake of semantics.
-             * (FnPtr -> RawPointer -> FuncId)
-             */
-            let raw_ptr_local = local_manager.add_local(tcx.types.usize);
-            let raw_ptr_assignment = assignment::create(
-                Place::from(raw_ptr_local),
-                Rvalue::Cast(
-                    mir::CastKind::PointerExposeProvenance,
-                    operand::move_for_local(ptr_local),
-                    tcx.types.usize,
-                ),
-            );
-
-            let id_local = local_manager.add_local(id_ty);
-            let id_assignment = assignment::create(
-                Place::from(id_local),
-                Rvalue::Cast(
-                    mir::CastKind::IntToInt,
-                    operand::move_for_local(raw_ptr_local),
-                    id_ty,
-                ),
-            );
-            (
-                [ptr_assignment, raw_ptr_assignment, id_assignment],
-                id_local,
-            )
         }
 
         pub(super) fn convert_mir_binop_to_pri(op: &mir::BinOp) -> common::pri::BinaryOp {
@@ -3271,33 +3610,20 @@ mod implementation {
                 .is_some_and(|id| tcx.is_fn_trait(id))
         }
 
-        pub(super) fn are_args_tupled<'tcx: 'a, 'a>(
-            tcx: TyCtxt<'tcx>,
-            local_manager: &impl HasLocalDecls<'tcx>,
-            callee: &Operand<'tcx>,
-            args: impl Iterator<Item = &'a Operand<'tcx>>,
-            param_env: mir_ty::ParamEnv<'tcx>,
-        ) -> bool {
-            // Tupling is only observed in fn trait (closure) calls.
-            if !is_fn_trait_method_call(tcx, callee.ty(local_manager, tcx)) {
-                return false;
+        impl FunctionInfo {
+            pub(super) fn ret_ty<'tcx>(
+                &self,
+                tcx: TyCtxt<'tcx>,
+                generic_args: &[GenericArg<'tcx>],
+            ) -> Ty<'tcx> {
+                // FIXME: Check if additional caching can be beneficial
+                tcx.fn_sig(self.def_id).instantiate(tcx,    generic_args)
+            .output()
+            .no_bound_vars()
+            .expect(
+                "PRI functions are not expected to have bound vars (generics) for the return type.",
+            )
             }
-
-            // Ensure assumptions that runtime may rely upon.
-            let args = args.collect::<Vec<_>>();
-            assert_eq!(args.len(), 2);
-            assert!(
-                args.last()
-                    .unwrap()
-                    .ty(local_manager, tcx)
-                    .is_tuple(tcx, param_env),
-                "Fn trait method call without tupled arguments observed. {:?}, {:?}",
-                callee,
-                args.iter()
-                    .map(|a| a.ty(local_manager, tcx))
-                    .collect::<Vec<_>>()
-            );
-            true
         }
     }
 

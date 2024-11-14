@@ -26,3 +26,4 @@ untupled
 untupling
 upvar
 upvars
+vtable
