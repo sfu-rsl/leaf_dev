@@ -1,7 +1,7 @@
 use core::{
     intrinsics::{self, transmute, transmute_unchecked},
-    marker::{FnPtr, Unsize},
-    ops::Deref,
+    marker::FnPtr,
+    ops::{CoerceUnsized, Deref},
 };
 
 use super::common;
@@ -134,15 +134,19 @@ pub fn func_def_static<F: FnPtr>(addr: F) -> FuncDef {
 }
 
 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
-pub fn func_def_dyn_method<F: FnPtr, T: Unsize<Dyn>, Dyn: ?Sized>(
+pub fn func_def_dyn_method<F: FnPtr, T: ?Sized, Dyn: ?Sized>(
     static_addr: F,
-    receiver_ptr: *const Dyn,
+    receiver_ptr: *const T,
     identifier: u64,
-) -> FuncDef {
+) -> FuncDef
+where
+    *const T: CoerceUnsized<*const Dyn>,
+{
     FuncDef {
         static_addr: static_addr.addr(),
         as_dyn_method: Some((
             {
+                let receiver_ptr = receiver_ptr as *const Dyn;
                 let metadata = intrinsics::ptr_metadata(receiver_ptr);
                 if !is_ptr_of_dyn(receiver_ptr) {
                     unsafe { intrinsics::unreachable() }
@@ -160,16 +164,13 @@ pub fn receiver_to_raw_ptr<Pointee: ?Sized, Ptr: Deref<Target = Pointee>>(
     receiver: &Ptr,
 ) -> *const Pointee {
     // NOTE: This is because of call to Deref (which is not inlined)
-    let as_ref: &Pointee = super::run_rec_guarded::<false, _>(
+    super::run_rec_guarded::<false, _>(
         unsafe {
             const ZEROS: [usize; 2] = [0; 2];
-            let dummy_ptr: *const Pointee =
-                intrinsics::read_via_copy(&ZEROS as *const _ as *const _);
-            transmute(dummy_ptr)
+            intrinsics::read_via_copy(&ZEROS as *const _ as *const () as *const *const Pointee)
         },
-        || &*receiver,
-    );
-    receiver_self_to_raw_ptr::<Pointee>(as_ref)
+        || receiver.deref() as *const Pointee,
+    )
 }
 
 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]

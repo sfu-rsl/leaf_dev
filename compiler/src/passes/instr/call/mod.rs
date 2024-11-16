@@ -1917,8 +1917,13 @@ mod implementation {
                         iter::empty(),
                     )
                 };
-                let BlocksAndResult(def_blocks, def_local) =
-                    func::definition_of_callee(tcx, self, func, args.first().map(|a| &a.node));
+                let BlocksAndResult(def_blocks, def_local) = func::definition_of_callee(
+                    tcx,
+                    self,
+                    self.current_param_env(),
+                    func,
+                    args.first().map(|a| &a.node),
+                );
                 blocks.extend(def_blocks);
                 def_local
             };
@@ -3085,6 +3090,7 @@ mod implementation {
                     def_of_dyn_compatible_method(
                         tcx,
                         call_adder,
+                        param_env,
                         fn_value,
                         trait_ref,
                         trait_item.def_id,
@@ -3122,6 +3128,7 @@ mod implementation {
                          + MirCallAdder<'tcx>
                          + PriItemsProvider<'tcx>
                      ),
+                param_env: ParamEnv<'tcx>,
                 fn_value: Operand<'tcx>,
                 trait_ref: TraitRef<'tcx>,
                 method_id: DefId,
@@ -3129,11 +3136,11 @@ mod implementation {
                 let (fn_ptr_ty, fn_ptr_local, ptr_assignment) =
                     to_fn_ptr(tcx, call_adder, fn_value);
 
-                // Receiver -> *const Self
                 let self_ty = trait_ref.self_ty();
                 let (raw_ptr_of_receiver_block, raw_ptr_of_receiver_local) = raw_ptr_of_receiver(
                     tcx,
                     call_adder,
+                    param_env,
                     call_adder
                         .body()
                         .args_iter()
@@ -3143,7 +3150,6 @@ mod implementation {
                     self_ty,
                 );
 
-                // *const Self as *const dyn Trait
                 let dyn_ty = Ty::new_dynamic(
                     tcx,
                     tcx.mk_poly_existential_predicates(&[mir_ty::Binder::dummy(
@@ -3154,15 +3160,6 @@ mod implementation {
                     tcx.lifetimes.re_erased,
                     mir_ty::DynKind::Dyn,
                 );
-                let receiver_ptr_ty = Ty::new_imm_ptr(tcx, dyn_ty);
-                let receiver_ptr_local = call_adder.add_local(receiver_ptr_ty);
-                let receiver_ptr_assignment = assignment::create(
-                    Place::from(receiver_ptr_local),
-                    rvalue::cast_to_unsize(
-                        operand::move_for_local(raw_ptr_of_receiver_local),
-                        receiver_ptr_ty,
-                    ),
-                );
 
                 let identifier = identifier_of_method(tcx, method_id);
 
@@ -3171,14 +3168,17 @@ mod implementation {
                     vec![fn_ptr_ty.into(), self_ty.into(), dyn_ty.into()],
                     vec![
                         operand::move_for_local(fn_ptr_local),
-                        operand::move_for_local(receiver_ptr_local),
+                        operand::move_for_local(raw_ptr_of_receiver_local),
                         operand::const_from_uint(tcx, identifier),
                     ],
                     None,
                 );
                 block.statements.push(ptr_assignment);
-                block.statements.push(receiver_ptr_assignment);
-                BlocksAndResult(vec![raw_ptr_of_receiver_block, block], id_local)
+
+                BlocksAndResult(
+                    merge_if_not_call((raw_ptr_of_receiver_block, block)),
+                    id_local,
+                )
             }
 
             fn as_dyn_compatible_method<'tcx>(
@@ -3203,6 +3203,7 @@ mod implementation {
                 call_adder: &mut (
                          impl BodyLocalManager<'tcx> + MirCallAdder<'tcx> + PriItemsProvider<'tcx>
                      ),
+                param_env: ParamEnv<'tcx>,
                 fn_value: Operand<'tcx>,
                 first_arg: Option<&Operand<'tcx>>,
             ) -> BlocksAndResult<'tcx> {
@@ -3224,6 +3225,7 @@ mod implementation {
                             def_of_possibly_virtual_callee(
                                 tcx,
                                 call_adder,
+                                param_env,
                                 fn_value,
                                 item.def_id,
                                 self_ty,
@@ -3265,6 +3267,7 @@ mod implementation {
                 call_adder: &mut (
                          impl BodyLocalManager<'tcx> + MirCallAdder<'tcx> + PriItemsProvider<'tcx>
                      ),
+                param_env: ParamEnv<'tcx>,
                 fn_value: Operand<'tcx>,
                 method_id: DefId,
                 self_ty: Ty<'tcx>,
@@ -3275,7 +3278,7 @@ mod implementation {
 
                 let (receiver_raw_ptr_block, receiver_raw_ptr_local) = match receiver {
                     Operand::Copy(place) | Operand::Move(place) => {
-                        raw_ptr_of_receiver(tcx, call_adder, *place, self_ty)
+                        raw_ptr_of_receiver(tcx, call_adder, param_env, *place, self_ty)
                     }
                     Operand::Constant(..) => {
                         let receiver_local = call_adder.add_local(receiver.ty(call_adder, tcx));
@@ -3283,8 +3286,13 @@ mod implementation {
                             Place::from(receiver_local),
                             Rvalue::Use(receiver.clone()),
                         );
-                        let (mut block, local) =
-                            raw_ptr_of_receiver(tcx, call_adder, receiver_local.into(), self_ty);
+                        let (mut block, local) = raw_ptr_of_receiver(
+                            tcx,
+                            call_adder,
+                            param_env,
+                            receiver_local.into(),
+                            self_ty,
+                        );
                         block.statements.push(receiver_assignment);
                         (block, local)
                     }
@@ -3303,7 +3311,7 @@ mod implementation {
                     Default::default(),
                 );
                 block.statements.push(ptr_assignment);
-                BlocksAndResult(vec![receiver_raw_ptr_block, block], id_local)
+                BlocksAndResult(merge_if_not_call((receiver_raw_ptr_block, block)), id_local)
             }
 
             fn as_possibly_dynamic_method_call<'tcx>(
@@ -3315,7 +3323,7 @@ mod implementation {
                 is_vtable_safe_method(tcx, trait_id, item).then_some(item)
             }
 
-            // Receiver -> &Receiver -> *const Self
+            // Receiver -> *const Self
             fn raw_ptr_of_receiver<'tcx>(
                 tcx: TyCtxt<'tcx>,
                 call_adder: &mut (
@@ -3324,57 +3332,92 @@ mod implementation {
                          + MirCallAdder<'tcx>
                          + PriItemsProvider<'tcx>
                      ),
+                param_env: ParamEnv<'tcx>,
                 receiver_place: Place<'tcx>,
                 self_ty: Ty<'tcx>,
             ) -> (BasicBlockData<'tcx>, Local) {
+                let self_ty = tcx.normalize_erasing_regions(param_env, self_ty);
+
                 let receiver_ty = receiver_place.ty(call_adder, tcx).ty;
-                let receiver_ref_local = call_adder.add_local(Ty::new_imm_ref(
-                    tcx,
-                    tcx.lifetimes.re_erased,
-                    receiver_ty,
-                ));
-                let receiver_ref_assignment = assignment::create(
-                    receiver_ref_local.into(),
-                    rvalue::ref_of(receiver_place, tcx),
-                );
+                let receiver_ty = tcx.normalize_erasing_regions(param_env, receiver_ty);
 
-                let pointee_ty = self_ty;
+                let is_self_ref = if let TyKind::Ref(_, pointee, _) = receiver_ty.kind()
+                    && *pointee == self_ty
+                {
+                    true
+                } else {
+                    false
+                };
 
-                let (converter_func, generic_args) = {
+                let (raw_ptr_block, raw_ptr_local) = if receiver_ty == self_ty || is_self_ref {
+                    let local = call_adder.add_local(Ty::new_imm_ptr(tcx, self_ty));
+                    let assignment = assignment::create(
+                        Place::from(local),
+                        Rvalue::RawPtr(
+                            mir::Mutability::Not,
+                            if is_self_ref {
+                                receiver_place.project_deeper(&[ProjectionElem::Deref], tcx)
+                            } else {
+                                receiver_place
+                            },
+                        ),
+                    );
+                    let mut block = BasicBlockData::new(Some(terminator::goto(None)));
+                    block.statements.push(assignment);
+                    (block, local)
+                } else {
+                    let receiver_ref_local = call_adder.add_local(Ty::new_imm_ref(
+                        tcx,
+                        tcx.lifetimes.re_erased,
+                        receiver_ty,
+                    ));
+                    let receiver_ref_assignment = assignment::create(
+                        receiver_ref_local.into(),
+                        rvalue::ref_of(receiver_place, tcx),
+                    );
                     let is_pin = tcx
                         .lang_items()
                         .pin_type()
                         .zip(receiver_ty.ty_def_id())
                         .is_some_and(|(a, b)| a == b);
-                    // FIXME: Use the self method for `&Self` and `&mut Self` as well.
-                    if is_pin {
-                        (
-                            call_adder.pri_helper_funcs().receiver_pin_to_raw_ptr,
-                            vec![pointee_ty.into(), receiver_ty.into()],
-                        )
-                    } else if receiver_ty == self_ty {
-                        (
-                            call_adder.pri_helper_funcs().receiver_self_to_raw_ptr,
-                            vec![pointee_ty.into()],
-                        )
+                    let converter_func = if is_pin {
+                        call_adder.pri_helper_funcs().receiver_pin_to_raw_ptr
                     } else {
-                        (
-                            call_adder.pri_helper_funcs().receiver_to_raw_ptr,
-                            vec![pointee_ty.into(), receiver_ty.into()],
-                        )
-                    }
-                };
+                        call_adder.pri_helper_funcs().receiver_to_raw_ptr
+                    };
+                    let pointee_ty = self_ty;
 
-                let (mut raw_ptr_block, raw_ptr_local) = call_adder
-                    .make_bb_for_helper_call_with_all(
+                    let (mut block, local) = call_adder.make_bb_for_helper_call_with_all(
                         converter_func,
-                        generic_args,
+                        vec![pointee_ty.into(), receiver_ty.into()],
                         vec![operand::move_for_local(receiver_ref_local)],
                         Default::default(),
                     );
-                raw_ptr_block.statements.push(receiver_ref_assignment);
+                    block.statements.push(receiver_ref_assignment);
+                    (block, local)
+                };
 
                 (raw_ptr_block, raw_ptr_local)
+            }
+
+            fn merge_if_not_call<'tcx>(
+                mut block_pair: (BasicBlockData<'tcx>, BasicBlockData<'tcx>),
+            ) -> Vec<BasicBlockData<'tcx>> {
+                if block_pair
+                    .0
+                    .terminator
+                    .as_ref()
+                    .unwrap()
+                    .kind
+                    .as_goto()
+                    .is_some_and(|x| x == NEXT_BLOCK)
+                {
+                    block_pair.1.statements =
+                        vec![block_pair.0.statements, block_pair.1.statements].concat();
+                    vec![block_pair.1]
+                } else {
+                    vec![block_pair.0, block_pair.1]
+                }
             }
 
             fn to_fn_ptr<'tcx>(
