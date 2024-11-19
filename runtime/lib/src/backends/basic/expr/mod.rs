@@ -474,7 +474,6 @@ impl ConstValue {
             Self::Int { bit_rep, .. } => Ok(bit_rep.0),
             Self::Float { bit_rep, .. } => Ok(*bit_rep),
             Self::Addr(value) => Ok((*value as usize) as u128),
-            _ => Err(self),
         }
     }
 }
@@ -600,57 +599,12 @@ impl LazyTypeInfo {
     }
 }
 
-impl From<Option<TypeId>> for LazyTypeInfo {
-    fn from(ty_id: Option<TypeId>) -> Self {
-        match ty_id {
-            Some(ty_id) => ty_id.into(),
-            None => Self::None,
-        }
-    }
-}
-
 impl From<(Option<TypeId>, Option<ValueType>)> for LazyTypeInfo {
     fn from(pair: (Option<TypeId>, Option<ValueType>)) -> Self {
         match pair {
             (Some(ty_id), Some(value_ty)) => Self::IdPrimitive(ty_id, value_ty),
             (Some(ty_id), None) => Self::Id(ty_id),
             _ => Self::None,
-        }
-    }
-}
-
-impl<'a> TryFrom<&'a TypeInfo> for ValueType {
-    type Error = &'a TypeInfo;
-
-    fn try_from(value: &'a TypeInfo) -> Result<Self, Self::Error> {
-        // TODO: To be replaced with a well-cached implementation
-        let name = value.name.as_str();
-        match name {
-            "bool" => Ok(ValueType::Bool),
-            "char" => Ok(ValueType::Char),
-            _ if name.starts_with('i') || name.starts_with('u') => name[1..]
-                .parse()
-                .map(|bit_size| {
-                    IntType {
-                        bit_size,
-                        is_signed: name.starts_with('i'),
-                    }
-                    .into()
-                })
-                .or_else(|_| {
-                    if name[1..] == *"size" {
-                        Ok(IntType {
-                            is_signed: name.starts_with('i'),
-                            ..IntType::USIZE
-                        }
-                        .into())
-                    } else {
-                        Err(value)
-                    }
-                }),
-            _ if name.starts_with("f") => unimplemented!(),
-            "*mut ()" | "*const ()" => Ok(IntType::USIZE.into()),
-            _ => Err(value),
         }
     }
 }

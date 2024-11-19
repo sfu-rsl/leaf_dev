@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use super::{
     AssertKind, BinaryOp, BranchingMetadata, CalleeDef, CastKind, Constraint, FieldIndex, FuncDef,
-    IntType, Local, PlaceUsage, Projection, SymVariable, TypeId, UnaryOp, VariantIndex,
+    IntType, Local, PlaceUsage, Projection, SymVariable, TypeId, UnaryOp, ValueType, VariantIndex,
 };
 
 pub(crate) trait RuntimeBackend {
@@ -316,6 +316,8 @@ pub(crate) trait CoreTypeProvider<V> {
             _ => unreachable!("Unexpected integer type: {:?}", ty),
         }
     }
+
+    fn try_to_value_type<'a>(&self, ty: V) -> Option<ValueType>;
 }
 
 pub(crate) mod implementation {

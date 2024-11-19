@@ -25,11 +25,11 @@ use crate::{
     },
     solvers::z3::Z3Solver,
     trace::ImmediateTraceManager,
-    tyexp::{self, FieldsShapeInfoExt, TypeInfoExt},
+    tyexp::{FieldsShapeInfoExt, TypeInfoExt},
     utils::alias::RRef,
 };
-use common::log_info;
-use common::tyexp::{FieldsShapeInfo, StructShape, TypeExport, TypeInfo};
+use common::tyexp::{FieldsShapeInfo, StructShape, TypeInfo};
+use common::{log_info, log_warn};
 
 use self::{
     alias::{
@@ -221,7 +221,7 @@ impl PlaceHandler for BasicPlaceHandler<'_> {
             );
             let tag_ty = type_manager.get_type(tag_info.as_field.ty);
             meta.set_type_id(tag_ty.id);
-            if let Ok(value_ty) = tag_ty.try_into() {
+            if let Some(value_ty) = type_manager.try_to_value_type(tag_ty) {
                 meta.set_ty(value_ty);
             }
             meta.set_size(tag_ty.size);
@@ -461,6 +461,7 @@ impl<EB: OperationalExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_
             .expr_builder()
             .eq((current.clone(), expected.clone()).into());
         let are_eq = if !are_eq.is_symbolic() {
+            // As it will be abstracted to Some, we need to resolve them explicitly here.
             let current =
                 ConcreteValueRef::new(current.clone()).try_resolve_as_const(self.type_manager);
             let expected = ConcreteValueRef::new(expected).try_resolve_as_const(self.type_manager);
@@ -551,14 +552,9 @@ impl<EB: OperationalExprBuilder> BasicAssignmentHandler<'_, EB> {
                 }
 
                 let get_int_type = |ty_info: &LazyTypeInfo| {
-                    ValueType::try_from(ty_info)
-                        .ok()
-                        .unwrap_or_else(|| {
-                            self.type_manager
-                        .get_type(ty_info.id().unwrap())
-                        .try_into()
+                    self.type_manager
+                        .try_to_value_type(ty_info.clone())
                         .expect("Expected the type of the discriminant raw value to be a primitive")
-                        })
                         .expect_int()
                 };
 

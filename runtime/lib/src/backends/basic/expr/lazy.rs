@@ -25,25 +25,12 @@ mod retrieval {
     impl RawConcreteValue {
         pub(crate) fn type_as_scalar(
             &self,
-            type_manager: Option<&dyn TypeManager>,
+            type_manager: &dyn TypeManager,
         ) -> Result<ScalarType, &LazyTypeInfo> {
-            if let LazyTypeInfo::IdPrimitive(_, value_ty) = &self.1 {
-                Ok(value_ty.clone().into())
-            } else {
-                let ty = if let (LazyTypeInfo::Id(ty_id), Some(type_manager)) =
-                    (&self.1, type_manager)
-                {
-                    Some(type_manager.get_type(*ty_id))
-                } else if let LazyTypeInfo::Fetched(ty) = &self.1 {
-                    Some(*ty)
-                } else if let LazyTypeInfo::Forced(ty) = &self.1 {
-                    Some(ty.as_ref())
-                } else {
-                    None
-                };
-                ty.ok_or(&self.1)
-                    .and_then(|ty| ty.try_into().map_err(|_| &self.1))
-            }
+            type_manager
+                .try_to_value_type(self.1.clone())
+                .map(Into::into)
+                .ok_or(&self.1)
         }
 
         /// Tries to retrieve the value from a scalar type.
@@ -56,7 +43,7 @@ mod retrieval {
         /// This should be ensured by the caller.
         pub(crate) unsafe fn try_retrieve_as_scalar(
             &self,
-            type_manager: Option<&dyn TypeManager>,
+            type_manager: &dyn TypeManager,
         ) -> Result<ConstValue, &LazyTypeInfo> {
             self.type_as_scalar(type_manager)
                 .map(|ty| retrieve_scalar(self.0, &ty))
@@ -561,7 +548,7 @@ mod retrieval {
             type_manager: &'a dyn TypeManager,
             expr_builder: &'b mut EB,
         ) -> Result<SymValueRef, &LazyTypeInfo> {
-            let whole_ty = self.as_concrete.type_as_scalar(Some(type_manager))?;
+            let whole_ty = self.as_concrete.type_as_scalar(type_manager)?;
             let mut builder = MaskedValueBuilder {
                 type_manager,
                 expr_builder,
@@ -578,9 +565,9 @@ mod retrieval {
             match self {
                 ConcreteValue::Const(value) => Some(value.clone()),
                 ConcreteValue::Unevaluated(UnevalValue::Lazy(lazy)) => {
-                    unsafe { lazy.try_retrieve_as_scalar(Some(type_manager)) }.ok()
+                    unsafe { lazy.try_retrieve_as_scalar(type_manager) }.ok()
                 }
-                _ => unreachable!(),
+                _ => None,
             }
         }
     }

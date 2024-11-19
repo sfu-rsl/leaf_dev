@@ -663,7 +663,7 @@ impl ProgramRuntimeInterface for BasicPri {
         ptr: OperandRef,
         ptr_type_id: Self::TypeId,
         failure_ordering: Self::AtomicOrdering,
-        weak: bool,
+        _weak: bool,
         old: OperandRef,
         src: OperandRef,
         prev_dest: PlaceRef,
