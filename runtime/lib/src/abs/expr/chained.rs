@@ -127,14 +127,11 @@ macro_rules_method_with_optional_args!(impl_cast_expr_method {
 impl<C, N, E, CE> BinaryExprBuilder for ChainedExprBuilder<C, N, E, CE>
 where
     N: BinaryExprBuilder,
-    for<'a> C: BinaryExprBuilder<
-            ExprRefPair<'a> = N::ExprRefPair<'a>,
-            Expr<'a> = Result<CE, N::ExprRefPair<'a>>,
-        >,
+    for<'a> C: BinaryExprBuilder<Expr<'a> = Result<CE, N::ExprRefPair<'a>>>,
     CE: Into<E>,
     for<'a> N::Expr<'a>: Into<E>,
 {
-    type ExprRefPair<'a> = N::ExprRefPair<'a>;
+    type ExprRefPair<'a> = C::ExprRefPair<'a>;
     type Expr<'a> = E;
 
     impl_binary_expr_method!(binary_op + op: BinaryOp);
@@ -153,12 +150,11 @@ where
 impl<C, N, E, CE> UnaryExprBuilder for ChainedExprBuilder<C, N, E, CE>
 where
     N: UnaryExprBuilder,
-    for<'a> C:
-        UnaryExprBuilder<ExprRef<'a> = N::ExprRef<'a>, Expr<'a> = Result<CE, N::ExprRef<'a>>>,
+    for<'a> C: UnaryExprBuilder<Expr<'a> = Result<CE, N::ExprRef<'a>>>,
     CE: Into<E>,
     for<'a> N::Expr<'a>: Into<E>,
 {
-    type ExprRef<'a> = N::ExprRef<'a>;
+    type ExprRef<'a> = C::ExprRef<'a>;
     type Expr<'a> = E;
 
     impl_unary_expr_method!(unary_op + op: UnaryOp);
@@ -172,14 +168,11 @@ where
 impl<C, N, E, CE> TernaryExprBuilder for ChainedExprBuilder<C, N, E, CE>
 where
     N: TernaryExprBuilder,
-    for<'a> C: TernaryExprBuilder<
-            ExprRefTriple<'a> = N::ExprRefTriple<'a>,
-            Expr<'a> = Result<CE, N::ExprRefTriple<'a>>,
-        >,
+    for<'a> C: TernaryExprBuilder<Expr<'a> = Result<CE, N::ExprRefTriple<'a>>>,
     CE: Into<E>,
     for<'a> N::Expr<'a>: Into<E>,
 {
-    type ExprRefTriple<'a> = N::ExprRefTriple<'a>;
+    type ExprRefTriple<'a> = C::ExprRefTriple<'a>;
     type Expr<'a> = E;
 
     impl_ternary_expr_method!(ternary_op + op: TernaryOp);
