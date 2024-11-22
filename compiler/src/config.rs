@@ -13,6 +13,12 @@ pub(crate) struct LeafCompilerConfig {
     pub set_sysroot: bool,
     #[serde(default)]
     pub codegen_all_mir: bool,
+    #[serde(default = "default_marker_cfg_name")]
+    pub marker_cfg_name: String,
+}
+
+fn default_marker_cfg_name() -> String {
+    "leafc".to_string()
 }
 
 impl LeafCompilerConfig {
