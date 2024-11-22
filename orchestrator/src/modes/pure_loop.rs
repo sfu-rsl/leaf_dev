@@ -1,15 +1,40 @@
+#![deprecated(note = "This mode is going to be replaced by an LibAFL-based one")]
+
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     fs::{self, OpenOptions},
     path::{Path, PathBuf},
-    process::{self, Command, Stdio},
+    process::{self, Stdio},
 };
 
+use orchestrator::utils::stdio_from_path;
 use sha2::{Digest, Sha256};
 
 use common::{log_debug, log_info};
 
-use statistics::{measure_time, Statistics};
+use crate::utils::execute_once_for_div_inputs;
+
+use statistics::Statistics;
+
+extern crate orchestrator;
+use orchestrator::*;
+
+fn test_in_pure_concolic_mode(program: &str, search_keyword: &str) {
+    let options = Options {
+        program: PathBuf::from(program),
+        child_env: {
+            let mut env = std::collections::HashMap::new();
+            env.insert("LEAF_LOG".to_string(), "warn".to_string());
+            env
+        },
+        current_inputs_dir: PathBuf::from("loop/current"),
+        past_inputs_dir: PathBuf::from("loop/past"),
+        next_inputs_dir: PathBuf::from("loop/next"),
+    };
+    run_loop(options, |output| {
+        String::from_utf8_lossy(&output.stdout).contains(search_keyword)
+    });
+}
 
 pub(crate) struct Options {
     pub program: PathBuf,
@@ -22,6 +47,7 @@ pub(crate) struct Options {
 pub(crate) fn run_loop(options: Options, target: impl Fn(&process::Output) -> bool) {
     let mut past_inputs = collect_past_inputs(&options.past_inputs_dir);
     let mut current_inputs = HashMap::new();
+    let mut current_inputs_queue = VecDeque::new();
     fs::create_dir_all(&options.current_inputs_dir).unwrap_or_else(|err| {
         panic!(
             "Could not create current inputs directory {}: {}",
@@ -31,19 +57,17 @@ pub(crate) fn run_loop(options: Options, target: impl Fn(&process::Output) -> bo
     });
     let mut stats = Statistics::new();
     loop {
-        current_inputs = grab_new_next_inputs(
+        grab_new_next_inputs(
             &options.next_inputs_dir,
             &options.current_inputs_dir,
             &past_inputs,
-            current_inputs,
+            &mut current_inputs,
+            &mut current_inputs_queue,
             &mut stats,
         );
 
-        let Some(input) = current_inputs
-            .keys()
-            .into_iter()
-            .next()
-            .cloned()
+        let Some(input) = current_inputs_queue
+            .pop_front()
             .map(|k| current_inputs.remove_entry(&k).unwrap())
         else {
             break;
@@ -84,37 +108,19 @@ fn execute_once(
     input: &Path,
     stats: &mut Statistics,
 ) -> process::Output {
-    let input = OpenOptions::new()
-        .read(true)
-        .open(input)
-        .expect("Could not open input file");
-
-    const ENV_PREFIX: &str = "LEAF_";
-    use common::config::{CONFIG_STR, CONFIG_STR_FORMAT};
-    let config_toml = format!(
-        r#"
-        [[outputs]]
-        type = "file"
-        directory = "{dir}"
-        format = "binary"
-        prefix = "next_"
-        extension = ".bin"
-        "#,
-        dir = next_inputs_dir.display(),
-    );
-
-    let (result, elapsed) = measure_time(|| {
-        Command::new(program)
-            .env(format!("{ENV_PREFIX}{CONFIG_STR}"), config_toml)
-            .env(format!("{ENV_PREFIX}{CONFIG_STR_FORMAT}"), "toml")
-            .envs(env)
-            .stdin(Stdio::from(input))
-            // .stderr(Stdio::inherit())
-            .output()
-            .expect("Could not execute the program")
-    });
-    stats.notify_execution(elapsed);
-    result
+    let result = execute_once_for_div_inputs(
+        program,
+        env,
+        stdio_from_path(Some(input)),
+        Stdio::null(),
+        Stdio::null(),
+        next_inputs_dir,
+        "next_",
+        Default::default(),
+    )
+    .expect("Could not execute the program");
+    stats.notify_execution(result.elapsed_time);
+    result.output
 }
 
 fn collect_past_inputs(dir: &Path) -> HashSet<String> {
@@ -129,9 +135,10 @@ fn grab_new_next_inputs(
     next_dir: &Path,
     current_dir: &Path,
     past_inputs: &HashSet<String>,
-    mut current_inputs: HashMap<String, PathBuf>,
+    current_inputs: &mut HashMap<String, PathBuf>,
+    current_inputs_queue: &mut VecDeque<String>,
     stats: &mut Statistics,
-) -> HashMap<String, PathBuf> {
+) {
     // NOTE: We clean up the next directory for the next execution.
     let count_before = current_inputs.len();
     let mut next_files = list_files(next_dir);
@@ -159,12 +166,12 @@ fn grab_new_next_inputs(
                     err
                 )
             });
-            current_inputs.insert(fingerprint, new_path);
+            current_inputs.insert(fingerprint.clone(), new_path);
+            current_inputs_queue.push_back(fingerprint);
         }
     }
 
     stats.notify_next_inputs_grabbed(next_count, current_inputs.len() - count_before);
-    current_inputs
 }
 
 fn list_files(dir: &Path) -> Vec<(String, PathBuf)> {
@@ -251,10 +258,14 @@ mod statistics {
             )
         }
     }
+}
 
-    pub(super) fn measure_time<T>(f: impl FnOnce() -> T) -> (T, Duration) {
-        let now = Instant::now();
-        let result = f();
-        (result, now.elapsed())
-    }
+fn main() {
+    crate::logging::init_logging();
+
+    log_info!("Starting the orchestrator");
+    test_in_pure_concolic_mode(
+        "/workspaces/Rust/leaf/leaf/samples/crates/repos/nom/target/debug/examples/css_stdin",
+        "Welcome!",
+    );
 }

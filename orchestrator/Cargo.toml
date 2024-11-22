@@ -3,12 +3,23 @@ name = "orchestrator"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "orchestrator"
+
 [[bin]]
-name = "leafo"
-path = "src/main.rs"
+name = "leafo_pure"
+path = "src/modes/pure_loop.rs"
+
+[[bin]]
+name = "leafo_onetime"
+path = "src/modes/onetime.rs"
 
 [dependencies]
 common = { path = "../common", features = ["logging", "config"] }
 
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { workspace = true }
+tracing = { workspace = true }
 sha2 = "0.10.8"
+clap = { version = "4.5.21", features = ["derive"] }
+derive_more = { workspace = true }
+glob = "0.3.1"
