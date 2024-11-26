@@ -33,9 +33,9 @@ pub(crate) type SymVarId = u32;
 
 #[derive(Clone, Debug, PartialEq, Eq, dm::From)]
 pub(crate) enum Value {
-    #[from(types(ConstValue, AdtValue, ArrayValue, UnevalValue))]
+    #[from(ConcreteValue, ConstValue, AdtValue, ArrayValue, UnevalValue)]
     Concrete(ConcreteValue),
-    #[from(types(Expr))]
+    #[from(SymValue, Expr)]
     Symbolic(SymValue),
 }
 

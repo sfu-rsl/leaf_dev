@@ -528,9 +528,9 @@ mod logging {
     const FIELD_TRANS_DIR: &str = "dir";
     #[derive(derive_more::Display)]
     pub(super) enum TransitionDirection {
-        #[display(fmt = "call")]
+        #[display("call")]
         Call,
-        #[display(fmt = "ret")]
+        #[display("ret")]
         Return,
     }
 

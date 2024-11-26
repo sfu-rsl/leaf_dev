@@ -4,7 +4,7 @@
 #![cfg_attr(not(core_build), feature(core_intrinsics))]
 #![cfg_attr(not(core_build), feature(fn_ptr_trait))]
 #![cfg_attr(not(core_build), feature(ptr_metadata))]
-#![cfg_attr(not(core_build), feature(unsize))]
+#![cfg_attr(not(core_build), feature(coerce_unsized))]
 #![cfg_attr(not(core_build), no_std)]
 #![cfg_attr(not(core_build), feature(rustc_attrs))]
 #![cfg_attr(not(core_build), feature(register_tool))]
