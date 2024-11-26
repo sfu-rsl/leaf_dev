@@ -24,7 +24,7 @@ use crate::{
         SymVariable, TypeId, UnaryOp, VariantIndex,
     },
     solvers::z3::Z3Solver,
-    trace::ImmediateTraceManager,
+    trace::{ImmediateTraceManager, LoggerTraceManagerExt},
     tyexp::{FieldsShapeInfoExt, TypeInfoExt},
     utils::alias::RRef,
 };
@@ -76,29 +76,27 @@ impl BasicBackend {
         let all_sym_values = sym_values_ref.clone();
         let type_manager = type_manager_ref.clone();
         let mut output_generator = outgen::BasicOutputGenerator::new(&config.outputs);
-        let trace_manager_ref = Rc::new(RefCell::new(ImmediateTraceManager::<
-            BasicBlockIndex,
-            u32,
-            ValueRef,
-            _,
-        >::new(
-            Box::new(crate::pathics::AllPathInterestChecker),
-            Box::new(Z3Solver::new_in_global_context(|ctx| {
-                Z3ValueTranslator::new(ctx)
-            })),
-            true,
-            Box::new(move |mut answers| {
-                // FIXME: Performance can be improved.
-                let all_sym_values = all_sym_values.borrow();
-                let missing_answers = all_sym_values
-                    .iter()
-                    .filter(|(id, _)| !answers.contains_key(id))
-                    .map(|(id, (_, conc))| (*id, conc.clone().0))
-                    .collect::<Vec<_>>();
-                answers.extend(missing_answers);
-                output_generator.generate(&answers)
-            }),
-        )));
+        let trace_manager_ref = Rc::new(RefCell::new(
+            ImmediateTraceManager::<BasicBlockIndex, u32, ValueRef, _>::new(
+                Box::new(crate::pathics::AllPathInterestChecker),
+                Box::new(Z3Solver::new_in_global_context(|ctx| {
+                    Z3ValueTranslator::new(ctx)
+                })),
+                true,
+                Box::new(move |mut answers| {
+                    // FIXME: Performance can be improved.
+                    let all_sym_values = all_sym_values.borrow();
+                    let missing_answers = all_sym_values
+                        .iter()
+                        .filter(|(id, _)| !answers.contains_key(id))
+                        .map(|(id, (_, conc))| (*id, conc.clone().0))
+                        .collect::<Vec<_>>();
+                    answers.extend(missing_answers);
+                    output_generator.generate(&answers)
+                }),
+            )
+            .into_logger(),
+        ));
         let trace_manager = trace_manager_ref.clone();
 
         let sym_place_handler_factory = |s| {

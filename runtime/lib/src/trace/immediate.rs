@@ -38,16 +38,6 @@ impl<S, I, V, O> ImmediateTraceManager<S, I, V, O> {
 
 impl<S: Display, I, V: Display, O> TraceManager<S, V> for ImmediateTraceManager<S, I, V, O> {
     fn notify_step(&mut self, step: S, new_constraints: Vec<Constraint<V>>) {
-        log_info!(
-            "Notified about constraints [{}] at step {}",
-            &new_constraints
-                .iter()
-                .map(|c| c.to_string())
-                .collect::<Vec<_>>()
-                .join(", "),
-            step,
-        );
-
         self.trace.push(step);
 
         if new_constraints.is_empty() {

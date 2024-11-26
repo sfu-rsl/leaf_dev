@@ -5,5 +5,5 @@ mod logger;
 mod noop;
 
 pub(crate) use immediate::ImmediateTraceManager;
-pub(crate) use logger::LoggerTraceManager;
+pub(crate) use logger::{LoggerTraceManager, TraceManagerExt as LoggerTraceManagerExt};
 pub(crate) use noop::NoopTraceManager;
