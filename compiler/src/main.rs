@@ -69,7 +69,7 @@ fn main() {
 fn init_logging() {
     use env;
     use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
-    let env = env::var(constants::LOG_ENV).unwrap_or_default();
+    let env = env::var(constants::LOG_ENV).unwrap_or("warn".to_string());
 
     let off_tags = [LOG_PASS_OBJECTS_TAG, LOG_PRI_DISCOVERY_TAG, LOG_BB_JUMP_TAG]
         .map(|t| format!("{}=off", t))
