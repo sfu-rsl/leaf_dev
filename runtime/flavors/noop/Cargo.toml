@@ -9,5 +9,5 @@ name = "leafrt_noop"
 crate-type = ["cdylib"]
 
 [dependencies]
-common = { path = "../../../common" }
+common = { workspace = true }
 runtime = { path = "../../lib" }

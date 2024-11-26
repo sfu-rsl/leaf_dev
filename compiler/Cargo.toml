@@ -14,20 +14,20 @@ ignore = "0.4.22"
 
 
 [dependencies]
-common = { path = "../common", features = ["tyexp", "config", "logging"] }
-macros = { path = "../macros" }
+common = { workspace = true, features = ["tyexp", "config", "logging"] }
+macros = { workspace = true }
 
-delegate = "0.12.0"
+delegate = { workspace = true }
 paste = "1.0"
 bimap = "0.6.3"
-derive_more = "0.99.11"
-const_format = "0.2.32"
+derive_more = { workspace = true }
+const_format = { workspace = true }
 glob = "0.3.1"
-config = "0.14.0"
-serde = { version = "1.0.188", features = ["derive"] }
+config = { workspace = true }
+serde = { workspace = true }
 ron = "0.8"
 bitflags = "2.6.0"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { workspace = true }
 
 [package.metadata.rust-analyzer]
 rustc_private = true

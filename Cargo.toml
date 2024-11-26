@@ -8,8 +8,16 @@ members = [
     "macros",
     "orchestrator",
 ]
-exclude = [
-    "runtime/shim",
-    "samples/crates/",
-    "scripts",
-]
+exclude = ["runtime/shim", "samples/crates/", "scripts"]
+
+[workspace.dependencies]
+common = { path = "common" }
+macros = { path = "macros" }
+
+config = "0.14.1"
+const_format = "0.2.33"
+delegate = "0.13.1"
+derive_more = { version = "1.0.0", features = ["full"] }
+tracing = { version = "0.1", features = ["log"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+serde = { version = "1.0.215", features = ["derive"] }

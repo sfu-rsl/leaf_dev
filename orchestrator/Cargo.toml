@@ -15,7 +15,7 @@ name = "leafo_onetime"
 path = "src/modes/onetime.rs"
 
 [dependencies]
-common = { path = "../common", features = ["logging", "config"] }
+common = { workspace = true, features = ["logging", "config"] }
 
 tracing-subscriber = { workspace = true }
 tracing = { workspace = true }
