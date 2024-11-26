@@ -1,5 +1,4 @@
-# codegen_all_mir = true
-codegen_all_mir = false
+marker_cfg_name = "leafc"
 
 [runtime_shim]
 # as_external = false

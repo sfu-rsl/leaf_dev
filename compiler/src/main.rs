@@ -162,6 +162,17 @@ mod driver_callbacks {
             };
             passes.set_leaf_config(config);
             passes.add_config_callback(Box::new(move |rustc_config, leafc_config| {
+                let cfg_name = leafc_config.marker_cfg_name.clone();
+                if cfg_name.is_empty() {
+                    return;
+                }
+                log_info!("Adding marker cfg to the crate config: `{cfg_name}`.");
+                rustc_config
+                    .crate_check_cfg
+                    .push(format!("cfg({})", cfg_name));
+                rustc_config.crate_cfg.push(cfg_name.clone());
+            }));
+            passes.add_config_callback(Box::new(move |rustc_config, leafc_config| {
                 /* Forcing inlining to happen as some compiler helper functions in the PRI use
                  * generic functions from the core library which may cause infinite loops. */
                 rustc_config.opts.unstable_opts.inline_mir = Some(true);
