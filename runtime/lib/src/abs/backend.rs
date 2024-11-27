@@ -258,26 +258,31 @@ pub(crate) trait FunctionHandler {
 
 /// Keeps track of all the compounding constraints in a single trace
 pub(crate) trait TraceManager<S, V> {
-    fn notify_step(&mut self, step: S, new_constraints: Vec<Constraint<V>>);
+    fn notify_step(&mut self, step: S, constraint: Constraint<V>);
 }
 
-pub(crate) trait PathInterestChecker<S> {
-    fn is_interesting(&self, path: &[S]) -> bool;
-}
+pub(crate) type Model<I, A> = HashMap<I, A>;
 
 /// A trait for the SMT solver.
 /// It takes a set of constraints to check satisfiability of them together.
-pub(crate) trait Solver<I, V> {
-    fn check(&mut self, constraints: &[Constraint<V>]) -> SolveResult<I, V>;
+pub(crate) trait Solver {
+    type Value;
+    type Model;
+
+    fn check<'a>(
+        &mut self,
+        constraints: impl Iterator<Item = &'a Constraint<Self::Value>>,
+    ) -> SolveResult<Self::Model>
+    where
+        Self: 'a;
 }
 
 /// The result of the checking performed by [`Solver`].
-/// [`Sat`]: The constraints are satisfiable and a set of values from type `V`
-/// for the variables identified by ids from type `I` is found.
+/// [`Sat`]: The constraints are satisfiable and a model is found.
 /// [`Unsat`]: The constraints are unsatisfiable.
 /// [`Unknown`]: The solver could not determine the satisfiability.
-pub(crate) enum SolveResult<I, V> {
-    Sat(HashMap<I, V>),
+pub(crate) enum SolveResult<M> {
+    Sat(M),
     Unsat,
     Unknown,
 }

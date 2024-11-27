@@ -10,7 +10,12 @@ use std::{borrow::Borrow, collections::HashMap, hash::Hash};
 
 use common::log_debug;
 
-use crate::{abs::backend, utils::UnsafeSync};
+use crate::{
+    abs::{backend, Constraint},
+    utils::UnsafeSync,
+};
+
+use self::backend::SolveResult;
 
 /* NOTE: Why not using `Dynamic`?
  * In this way we have a little more freedom to include our information such
@@ -154,10 +159,10 @@ impl<'ctx> AstNode<'ctx> {
     }
 }
 
+#[derive(Debug, Clone)]
 pub(crate) struct TranslatedConstraint<'ctx, I> {
     pub constraint: ast::Bool<'ctx>,
     pub variables: HashMap<I, AstNode<'ctx>>,
-    pub extra: Vec<ast::Bool<'ctx>>,
 }
 
 lazy_static! {
@@ -172,50 +177,56 @@ lazy_static! {
     static ref CONTEXT: UnsafeSync<Context> = UnsafeSync::new(Context::new(&Config::default()));
 }
 
-pub(crate) struct Z3Solver<'ctx, Id, Val, Translator> {
-    context: &'ctx Context,
+pub(crate) struct Z3Solver<'ctx, I> {
+    pub(crate) context: &'ctx Context,
     solver: Option<Solver<'ctx>>,
-    translator: Translator,
-    _phantom: std::marker::PhantomData<(Id, Val)>,
+    _phantom: core::marker::PhantomData<I>,
 }
 
-impl<'ctx, I, V, T> Z3Solver<'ctx, I, V, T> {
-    pub fn new_in_global_context(translator_factory: impl FnOnce(&'ctx Context) -> T) -> Self {
+impl<'ctx, I> Z3Solver<'ctx, I> {
+    pub fn new_in_global_context() -> Self {
         let context = CONTEXT.borrow();
         Self {
             context,
             solver: None,
-            translator: translator_factory(context),
-            _phantom: std::marker::PhantomData,
+            _phantom: Default::default(),
         }
     }
 }
 
-impl<'ctx, I, V, T> backend::Solver<I, V> for Z3Solver<'ctx, I, V, T>
+impl<'ctx, I> backend::Solver for Z3Solver<'ctx, I>
 where
-    I: Eq + Hash,
-    V: From<AstNode<'ctx>>,
-    T: for<'v> FnMut(&'v V) -> TranslatedConstraint<'ctx, I>,
+    I: Eq + Hash + Clone,
     Self: 'ctx,
 {
-    fn check(&mut self, constraints: &[crate::abs::Constraint<V>]) -> backend::SolveResult<I, V> {
+    type Value = TranslatedConstraint<'ctx, I>;
+    type Model = HashMap<I, AstNode<'ctx>>;
+
+    fn check<'a, 'b>(
+        &'a mut self,
+        constraints: impl Iterator<Item = &'b Constraint<Self::Value>>,
+    ) -> SolveResult<Self::Model>
+    where
+        Self: 'b,
+    {
         self.solver.get_or_insert_with(|| Solver::new(self.context));
 
         let mut all_vars = HashMap::<I, AstNode>::new();
         let asts = constraints
-            .iter()
-            .flat_map(|constraint| {
+            .map(|constraint| {
                 let (value, is_negated) = constraint.destruct_ref();
                 let TranslatedConstraint {
                     constraint: ast,
                     variables,
-                    extra,
-                } = (self.translator)(value);
-                all_vars.extend(variables);
+                } = value;
+                all_vars.extend(
+                    variables
+                        .iter()
+                        .map(|(id, node)| (id.clone(), node.clone())),
+                );
 
-                let constraint = if is_negated { ast.not() } else { ast };
-
-                extra.into_iter().chain(std::iter::once(constraint))
+                let constraint = if is_negated { ast.not() } else { ast.clone() };
+                constraint
             })
             .collect::<Vec<_>>();
 
@@ -224,17 +235,16 @@ where
     }
 }
 
-impl<'ctx, I, V, T> Z3Solver<'_, I, V, T>
+impl<'ctx, I> Z3Solver<'_, I>
 where
     I: Eq + Hash,
-    V: From<AstNode<'ctx>>,
 {
     fn check_using(
         &self,
         solver: &Solver<'ctx>,
         constraints: &[ast::Bool<'ctx>],
         vars: HashMap<I, AstNode<'ctx>>,
-    ) -> backend::SolveResult<I, V> {
+    ) -> SolveResult<HashMap<I, AstNode<'ctx>>> {
         log_debug!("Sending constraints to Z3: {:#?}", constraints);
 
         solver.push();

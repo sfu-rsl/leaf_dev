@@ -16,7 +16,6 @@
 pub mod abs;
 mod backends;
 pub(crate) mod outgen;
-pub(crate) mod pathics;
 pub mod pri;
 pub(crate) mod solvers;
 pub(crate) mod trace;

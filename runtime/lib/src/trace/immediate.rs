@@ -1,69 +1,57 @@
-use std::{collections::HashMap, fmt::Display, slice::SliceIndex};
+use core::iter;
 
 use common::{log_debug, log_info, log_warn};
 
 use crate::abs::{
-    backend::{PathInterestChecker, SolveResult, Solver},
+    backend::{SolveResult, Solver},
     Constraint,
 };
 
-use super::TraceManager;
+use super::TraceInspector;
 
-pub(crate) struct ImmediateTraceManager<Step, Id, Val, Output> {
-    pub(crate) trace: Vec<Step>,
-    pub(crate) constraints: Vec<Constraint<Val>>,
-    pub(crate) path_interest_checker: Box<dyn PathInterestChecker<Step>>,
-    pub(crate) solver: Box<dyn Solver<Id, Val>>,
-    pub(crate) check_optimistic: bool,
-    pub(crate) answer_consumer: Box<dyn FnMut(HashMap<Id, Val>) -> Output>,
+pub(crate) trait DivergenceFilter<S> {
+    fn should_find(&mut self, trace: &[S]) -> bool;
 }
 
-impl<S, I, V, O> ImmediateTraceManager<S, I, V, O> {
-    pub fn new(
-        path_interest_checker: Box<dyn PathInterestChecker<S>>,
-        solver: Box<dyn Solver<I, V>>,
-        check_optimistic: bool,
-        output_generator: Box<dyn FnMut(HashMap<I, V>) -> O>,
-    ) -> Self {
-        Self {
-            trace: Vec::new(),
-            constraints: Vec::new(),
-            path_interest_checker,
-            solver,
-            check_optimistic,
-            answer_consumer: output_generator,
-        }
+impl<S, T: FnMut(&[S]) -> bool> DivergenceFilter<S> for T {
+    fn should_find(&mut self, trace: &[S]) -> bool {
+        self(trace)
     }
 }
 
-impl<S: Display, I, V: Display, O> TraceManager<S, V> for ImmediateTraceManager<S, I, V, O> {
-    fn notify_step(&mut self, step: S, new_constraints: Vec<Constraint<V>>) {
-        self.trace.push(step);
+pub(crate) struct ImmediateDivergingAnswerFinder<S: Solver, TS, C> {
+    solver: S,
+    filter: C,
+    check_optimistic: bool,
+    model_consumer: Box<dyn FnMut(S::Model)>,
+    _phantom: core::marker::PhantomData<TS>,
+}
 
-        if new_constraints.is_empty() {
-            return;
-        }
-
-        self.constraints.extend(new_constraints);
-
-        if !self
-            .path_interest_checker
-            .is_interesting(self.trace.as_slice())
-        {
-            return;
-        }
-
+impl<S: Solver, TS, C: DivergenceFilter<TS>> TraceInspector<TS, S::Value>
+    for ImmediateDivergingAnswerFinder<S, TS, C>
+where
+    S::Value: Clone,
+{
+    fn inspect(&mut self, steps: &[TS], constraints: &[Constraint<S::Value>]) {
         // Sanity check
         #[cfg(debug_assertions)]
-        if !self.check(.., false) {
+        if !self.check(constraints.iter(), false) {
             log_warn!("Unsatisfiable concretely taken path");
         }
 
-        log_debug!("Negating the last constraint");
-        let last = self.constraints.pop().unwrap();
-        self.constraints.push(last.not());
+        if !self.filter.should_find(steps) {
+            return;
+        }
 
-        if !self.check(.., true) {
+        log_debug!("Negating the last constraint");
+        let not_last = constraints.last().cloned().unwrap().not();
+
+        if !self.check(
+            constraints[..constraints.len() - 1]
+                .into_iter()
+                .chain(iter::once(&not_last)),
+            true,
+        ) {
             /* NOTE: What is optimistic checking?
              * Consider two independent branch conditions at the same level
              * that the current execution has taken neither.
@@ -74,37 +62,43 @@ impl<S: Display, I, V: Display, O> TraceManager<S, V> for ImmediateTraceManager<
              */
             if self.check_optimistic {
                 log_debug!("Checking optimistically using the last constraint");
-                self.check(self.constraints.len() - 1.., true);
+                self.check(iter::once(&not_last), true);
             }
         }
-
-        let last = self.constraints.pop().unwrap();
-        self.constraints.push(last.not());
     }
 }
 
-impl<S, I, V: Display, O> ImmediateTraceManager<S, I, V, O> {
-    pub(crate) fn check(
+impl<S: Solver, TS, C> ImmediateDivergingAnswerFinder<S, TS, C> {
+    pub fn new(
+        solver: S,
+        filter: C,
+        check_optimistic: bool,
+        model_consumer: Box<dyn FnMut(S::Model)>,
+    ) -> Self {
+        Self {
+            solver,
+            filter,
+            check_optimistic,
+            model_consumer,
+            _phantom: Default::default(),
+        }
+    }
+}
+
+impl<S: Solver, TS, C> ImmediateDivergingAnswerFinder<S, TS, C> {
+    pub(crate) fn check<'a>(
         &mut self,
-        range: impl SliceIndex<[Constraint<V>], Output = [Constraint<V>]>,
+        constraints: impl Iterator<Item = &'a Constraint<S::Value>>,
         gen_output: bool,
-    ) -> bool {
-        let constraints = &self.constraints[range];
-
-        log_debug!(
-            "Sending constraints to the solver: [\n{}\n]",
-            constraints
-                .iter()
-                .map(|c| c.to_string())
-                .collect::<Vec<_>>()
-                .join(",\n")
-        );
-
+    ) -> bool
+    where
+        S: 'a,
+    {
         let result = self.solver.check(constraints);
         match result {
-            SolveResult::Sat(values) => {
+            SolveResult::Sat(model) => {
                 if gen_output {
-                    self.generate_output(values);
+                    (self.model_consumer)(model);
                 }
                 true
             }
@@ -113,9 +107,5 @@ impl<S, I, V: Display, O> ImmediateTraceManager<S, I, V, O> {
                 false
             }
         }
-    }
-
-    pub(crate) fn generate_output(&mut self, values: HashMap<I, V>) -> O {
-        (self.answer_consumer)(values)
     }
 }

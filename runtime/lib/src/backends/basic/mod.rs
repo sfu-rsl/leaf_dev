@@ -23,13 +23,17 @@ use crate::{
         CalleeDef, CastKind, FieldIndex, FuncDef, IntType, Local, LocalIndex, PlaceUsage,
         SymVariable, TypeId, UnaryOp, VariantIndex,
     },
-    solvers::z3::Z3Solver,
-    trace::{ImmediateTraceManager, LoggerTraceManagerExt},
+    solvers::{z3::Z3Solver, MapSolverExt},
+    trace::{
+        AdapterTraceManagerExt, AggregatorTraceManager, ImmediateDivergingAnswerFinder,
+        LoggerTraceManagerExt,
+    },
     tyexp::{FieldsShapeInfoExt, TypeInfoExt},
     utils::alias::RRef,
 };
 use common::tyexp::{FieldsShapeInfo, StructShape, TypeInfo};
 use common::{log_info, log_warn};
+use expr::SymVarId;
 
 use self::{
     alias::{
@@ -76,26 +80,32 @@ impl BasicBackend {
         let all_sym_values = sym_values_ref.clone();
         let type_manager = type_manager_ref.clone();
         let mut output_generator = outgen::BasicOutputGenerator::new(&config.outputs);
+        let solver = Z3Solver::<SymVarId>::new_in_global_context();
+        let solver_context = solver.context;
+        let model_consumer = Box::new(move |mut answers: Model<SymVarId, ValueRef>| {
+            // FIXME: Performance can be improved.
+            let all_sym_values = all_sym_values.borrow();
+            let missing_answers = all_sym_values
+                .iter()
+                .filter(|(id, _)| !answers.contains_key(id))
+                .map(|(id, (_, conc))| (*id, conc.clone().0))
+                .collect::<Vec<_>>();
+            answers.extend(missing_answers);
+            output_generator.generate(&answers)
+        });
+        let inspector = ImmediateDivergingAnswerFinder::new(
+            solver.map_answers(ValueRef::from),
+            |_steps: &[BasicBlockIndex]| true,
+            true,
+            model_consumer,
+        );
         let trace_manager_ref = Rc::new(RefCell::new(
-            ImmediateTraceManager::<BasicBlockIndex, u32, ValueRef, _>::new(
-                Box::new(crate::pathics::AllPathInterestChecker),
-                Box::new(Z3Solver::new_in_global_context(|ctx| {
-                    Z3ValueTranslator::new(ctx)
-                })),
-                true,
-                Box::new(move |mut answers| {
-                    // FIXME: Performance can be improved.
-                    let all_sym_values = all_sym_values.borrow();
-                    let missing_answers = all_sym_values
-                        .iter()
-                        .filter(|(id, _)| !answers.contains_key(id))
-                        .map(|(id, (_, conc))| (*id, conc.clone().0))
-                        .collect::<Vec<_>>();
-                    answers.extend(missing_answers);
-                    output_generator.generate(&answers)
-                }),
-            )
-            .into_logger(),
+            AggregatorTraceManager::new(inspector)
+                .adapt(
+                    |s| s,
+                    |v| Z3ValueTranslator::new(solver_context).translate_from(&v),
+                )
+                .into_logger(),
         ));
         let trace_manager = trace_manager_ref.clone();
 
@@ -665,7 +675,7 @@ impl<'a, EB: BinaryExprBuilder> BranchingHandler for BasicBranchingHandler<'a, E
 
             self.trace_manager.notify_step(
                 0, /* TODO: The unique index of the block we have entered. */
-                vec![constraint],
+                constraint,
             );
         }
     }
@@ -696,7 +706,7 @@ impl<'a, EB: BinaryExprBuilder> BasicConditionalBranchingHandler<'a, EB> {
     fn notify_constraint(&mut self, constraint: Constraint) {
         self.trace_manager.notify_step(
             0, /* TODO: The unique index of the block we have entered. */
-            vec![constraint],
+            constraint,
         );
     }
 }

@@ -1,9 +1,14 @@
 use crate::abs::{backend::TraceManager, Constraint};
 
+mod adapt;
+mod agg;
+mod filter;
 mod immediate;
-mod logger;
-mod noop;
+mod inspect;
+mod log;
 
-pub(crate) use immediate::ImmediateTraceManager;
-pub(crate) use logger::{LoggerTraceManager, TraceManagerExt as LoggerTraceManagerExt};
-pub(crate) use noop::NoopTraceManager;
+pub(crate) use adapt::{AdapterTraceManager, TraceManagerExt as AdapterTraceManagerExt};
+pub(crate) use agg::AggregatorTraceManager;
+pub(crate) use immediate::ImmediateDivergingAnswerFinder;
+pub(crate) use inspect::TraceInspector;
+pub(crate) use log::{LoggerTraceManager, TraceManagerExt as LoggerTraceManagerExt};

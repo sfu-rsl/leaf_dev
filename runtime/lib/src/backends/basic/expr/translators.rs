@@ -33,7 +33,6 @@ pub(crate) mod z3 {
     pub(crate) struct Z3ValueTranslator<'ctx> {
         context: &'ctx Context,
         variables: HashMap<SymVarId, AstNode<'ctx>>,
-        constraints: Vec<ast::Bool<'ctx>>,
     }
 
     impl<'ctx> Z3ValueTranslator<'ctx> {
@@ -41,34 +40,21 @@ pub(crate) mod z3 {
             Self {
                 context,
                 variables: Default::default(),
-                // Additional constraints are not common.
-                constraints: Vec::with_capacity(0),
             }
         }
     }
 
-    impl<'ctx> FnOnce<(&ValueRef,)> for Z3ValueTranslator<'ctx> {
-        type Output = TranslatedConstraint<'ctx, SymVarId>;
-        extern "rust-call" fn call_once(mut self, (value,): (&ValueRef,)) -> Self::Output {
-            self.translate(value)
-        }
-    }
-
-    impl<'ctx> FnMut<(&ValueRef,)> for Z3ValueTranslator<'_> {
-        extern "rust-call" fn call_mut(&mut self, (value,): (&ValueRef,)) -> Self::Output {
-            self.translate(value)
-        }
-    }
-
     impl<'ctx> Z3ValueTranslator<'ctx> {
-        fn translate(&mut self, value: &ValueRef) -> TranslatedConstraint<'ctx, SymVarId> {
+        pub(crate) fn translate_from(
+            &mut self,
+            value: &ValueRef,
+        ) -> TranslatedConstraint<'ctx, SymVarId> {
             log_debug!(target: TAG, "Translating value: {}", value);
             let ast = self.translate_value(value);
             match ast {
                 AstNode::Bool(ast) => TranslatedConstraint {
                     constraint: ast,
                     variables: self.variables.drain().collect(),
-                    extra: self.constraints.drain(..).collect(),
                 },
                 _ => panic!("Expected the value to be a boolean expression but it is a {ast:#?}.",),
             }
