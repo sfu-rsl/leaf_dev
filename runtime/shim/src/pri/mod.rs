@@ -56,6 +56,7 @@ mod ffi {
         type AtomicOrdering = common::pri::AtomicOrdering;
         type AtomicBinaryOp = common::pri::AtomicBinaryOp;
         type DebugInfo = common::ffi::DebugInfo;
+        type Tag = common::ffi::ConstStrPack;
 
         common::pri::list_func_decls!(modifier: delegate_to_leafrt, (from Self));
     }
@@ -135,5 +136,6 @@ common::pri::list_func_decls! {
         atomic_ord: AtomicOrdering,
         atomic_bin_op: AtomicBinaryOp,
         dbg_info: DebugInfo,
+        tag: Tag,
     )
 }

@@ -72,7 +72,7 @@ pub mod sym {
                 ]
             };
         }
-        pub(crate) const ALL_MAINS: [LeafSymbol; 102] =
+        pub(crate) const ALL_MAINS: [LeafSymbol; 104] =
             common::pri::pass_func_names_to!(bracket, all_comma_separated);
 
         pub(crate) mod intrinsics {
@@ -164,36 +164,36 @@ pub mod sym {
         }
 
         symbols_in_compiler_helpers! {
-                    CH_MODULE_MARKER,
+            CH_MODULE_MARKER,
 
-                    PLACE_REF_TYPE_HOLDER,
-                    OPERAND_REF_TYPE_HOLDER,
-                    BINARY_OP_TYPE_HOLDER,
-                    UNARY_OP_TYPE_HOLDER,
+            PLACE_REF_TYPE_HOLDER,
+            OPERAND_REF_TYPE_HOLDER,
+            BINARY_OP_TYPE_HOLDER,
+            UNARY_OP_TYPE_HOLDER,
 
-                    f32_to_bits,
-                    f64_to_bits,
+            f32_to_bits,
+            f64_to_bits,
 
-                    set_place_address_typed,
-                    type_id_of,
-                    size_of,
+            set_place_address_typed,
+            type_id_of,
+            size_of,
 
-                    callee_def_static,
-                    callee_def_maybe_virtual,
-                    func_def_static,
-                    func_def_dyn_method,
-        receiver_to_raw_ptr,
-                    receiver_pin_to_raw_ptr,
-                    receiver_self_to_raw_ptr,
+            callee_def_static,
+            callee_def_maybe_virtual,
+            func_def_static,
+            func_def_dyn_method,
+            receiver_to_raw_ptr,
+            receiver_pin_to_raw_ptr,
+            receiver_self_to_raw_ptr,
 
-                    const_binary_op_of,
-                    const_unary_op_of,
+            const_binary_op_of,
+            const_unary_op_of,
 
-                    const_atomic_ord_of,
-                    const_atomic_binary_op_of,
+            const_atomic_ord_of,
+            const_atomic_binary_op_of,
 
-                    special_func_placeholder,
-                }
+            special_func_placeholder,
+        }
 
         pub(crate) const ALL_HELPERS: [LS; 22] = [
             CH_MODULE_MARKER,

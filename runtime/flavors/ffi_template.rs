@@ -32,6 +32,7 @@ impl ProgramRuntimeInterface for ExternPri {
     type AtomicOrdering = common::pri::AtomicOrdering;
     type AtomicBinaryOp = common::pri::AtomicBinaryOp;
     type DebugInfo = common::ffi::DebugInfo;
+    type Tag = common::ffi::ConstStrPack;
 
     common::pri::list_func_decls!(modifier: delegate_to_default, (from Self));
 }

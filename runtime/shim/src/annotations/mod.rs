@@ -78,3 +78,15 @@ mod implementation {
 
     impl_symbolizable_float!(f32, f64);
 }
+
+pub fn push_tag(tag: &'static str) {
+    super::pri::push_tag(tag);
+}
+
+pub fn pop_tag() {
+    super::pri::pop_tag();
+}
+
+pub mod tags {
+    pub use common::pri::tags::*;
+}

@@ -179,6 +179,15 @@ pub(super) fn func_control<T>(
     })
 }
 
+pub(super) fn annotate<T>(
+    annotate_action: impl FnOnce(<BackendImpl as RuntimeBackend>::AnnotationHandler<'_>) -> T,
+) -> T {
+    perform_on_backend(|r| {
+        let annotate = r.annotate();
+        annotate_action(annotate)
+    })
+}
+
 #[cfg(runtime_access = "safe_mt")]
 fn perform_on_backend<T>(action: impl FnOnce(&mut BackendImpl) -> T) -> T {
     let mut guard = BACKEND.lock().unwrap();

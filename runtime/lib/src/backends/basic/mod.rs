@@ -21,12 +21,7 @@ use crate::{
     abs::{
         self, backend::*, place::HasMetadata, AssertKind, BasicBlockIndex, BranchingMetadata,
         CalleeDef, CastKind, FieldIndex, FuncDef, IntType, Local, LocalIndex, PlaceUsage,
-        SymVariable, TypeId, UnaryOp, VariantIndex,
-    },
-    solvers::{z3::Z3Solver, MapSolverExt},
-    trace::{
-        AdapterTraceManagerExt, AggregatorTraceManager, ImmediateDivergingAnswerFinder,
-        LoggerTraceManagerExt,
+        SymVariable, Tag, TypeId, UnaryOp, VariantIndex,
     },
     tyexp::{FieldsShapeInfoExt, TypeInfoExt},
     utils::alias::RRef,
@@ -59,12 +54,15 @@ type Place = place::PlaceWithMetadata;
 type Projection = place::Projection;
 pub(crate) use place::BasicPlaceBuilder;
 
+const LOG_TAG_TAGS: &str = "tags";
+
 pub struct BasicBackend {
     call_stack_manager: BasicCallStackManager,
     trace_manager: RRef<TraceManager>,
     expr_builder: RRef<BasicExprBuilder>,
     sym_values: RRef<HashMap<u32, (SymValueRef, ConcreteValueRef)>>,
     type_manager: Rc<dyn TypeManager>,
+    tags: RRef<Vec<Tag>>,
 }
 
 impl BasicBackend {
@@ -77,6 +75,7 @@ impl BasicBackend {
         let sym_values_ref = Rc::new(RefCell::new(
             HashMap::<u32, (SymValueRef, ConcreteValueRef)>::new(),
         ));
+        let tags_ref = Rc::new(RefCell::new(Vec::new()));
         let all_sym_values = sym_values_ref.clone();
         let type_manager = type_manager_ref.clone();
         let mut output_generator = outgen::BasicOutputGenerator::new(&config.outputs);
@@ -139,6 +138,7 @@ impl BasicBackend {
             expr_builder,
             sym_values: sym_values_ref.clone(),
             type_manager,
+            tags: tags_ref.clone(),
         }
     }
 }
@@ -161,6 +161,10 @@ impl RuntimeBackend for BasicBackend {
         Self: 'a;
 
     type FunctionHandler<'a> = BasicFunctionHandler<'a>
+    where
+        Self: 'a;
+
+    type AnnotationHandler<'a> = BasicAnnotationHandler<'a>
     where
         Self: 'a;
 
@@ -196,6 +200,10 @@ impl RuntimeBackend for BasicBackend {
 
     fn func_control(&mut self) -> Self::FunctionHandler<'_> {
         BasicFunctionHandler::new(self)
+    }
+
+    fn annotate(&mut self) -> Self::AnnotationHandler<'_> {
+        BasicAnnotationHandler::new(self)
     }
 }
 
@@ -1002,6 +1010,34 @@ impl<'a> BasicUntupleHelper<'a> {
                 FieldsShapeInfo::Struct(ref shape) => shape,
                 _ => panic!("Expected tuple type info, got: {:?}", type_info),
             })
+    }
+}
+
+pub(crate) struct BasicAnnotationHandler<'a> {
+    tags: RefMut<'a, Vec<common::pri::Tag>>,
+}
+
+impl<'a> BasicAnnotationHandler<'a> {
+    fn new(backend: &'a mut BasicBackend) -> Self {
+        Self {
+            tags: backend.tags.borrow_mut(),
+        }
+    }
+
+    fn log_current_tags(&self) {
+        log_debug!(target: LOG_TAG_TAGS, "Current tags: [{}]", self.tags.join(", "));
+    }
+}
+
+impl<'a> AnnotationHandler for BasicAnnotationHandler<'a> {
+    fn push_tag(mut self, tag: common::pri::Tag) {
+        self.tags.push(tag);
+        self.log_current_tags();
+    }
+
+    fn pop_tag(mut self) {
+        self.tags.pop();
+        self.log_current_tags();
     }
 }
 

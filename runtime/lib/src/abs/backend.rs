@@ -2,7 +2,8 @@ use std::collections::HashMap;
 
 use super::{
     AssertKind, BinaryOp, BranchingMetadata, CalleeDef, CastKind, Constraint, FieldIndex, FuncDef,
-    IntType, Local, PlaceUsage, Projection, SymVariable, TypeId, UnaryOp, ValueType, VariantIndex,
+    IntType, Local, PlaceUsage, Projection, SymVariable, Tag, TypeId, UnaryOp, ValueType,
+    VariantIndex,
 };
 
 pub(crate) trait RuntimeBackend {
@@ -23,6 +24,9 @@ pub(crate) trait RuntimeBackend {
     type FunctionHandler<'a>: FunctionHandler<Place = Self::Place, Operand = Self::Operand>
     where
         Self: 'a;
+    type AnnotationHandler<'a>: AnnotationHandler
+    where
+        Self: 'a;
 
     type PlaceInfo;
     type Place;
@@ -40,6 +44,8 @@ pub(crate) trait RuntimeBackend {
     fn branch(&mut self) -> Self::BranchingHandler<'_>;
 
     fn func_control(&mut self) -> Self::FunctionHandler<'_>;
+
+    fn annotate(&mut self) -> Self::AnnotationHandler<'_>;
 }
 
 pub(crate) trait PlaceHandler {
@@ -254,6 +260,12 @@ pub(crate) trait FunctionHandler {
     fn after_call(self, result_dest: Self::Place);
 
     fn metadata(self) -> Self::MetadataHandler;
+}
+
+pub(crate) trait AnnotationHandler {
+    fn push_tag(self, tag: Tag);
+
+    fn pop_tag(self);
 }
 
 /// Keeps track of all the compounding constraints in a single trace

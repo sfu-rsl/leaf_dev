@@ -30,6 +30,7 @@ impl ProgramRuntimeInterface for BasicPri {
     type AtomicOrdering = abs::AtomicOrdering;
     type AtomicBinaryOp = abs::AtomicBinaryOp;
     type DebugInfo = DebugInfo;
+    type Tag = Tag;
 
     fn init_runtime_lib() {
         init_backend();
@@ -572,6 +573,14 @@ impl ProgramRuntimeInterface for BasicPri {
             log_info!(target: DB_TAG, "{}…", &str_rep[..MAX_LEN]);
             log_debug!(target: DB_TAG, "Full debug info: {}", str_rep);
         }
+    }
+
+    fn push_tag(tag: Self::Tag) {
+        annotate(|h| h.push_tag(tag))
+    }
+
+    fn pop_tag() {
+        annotate(|h| h.pop_tag())
     }
 
     fn intrinsic_assign_rotate_left(dest: PlaceRef, x: OperandRef, shift: OperandRef) {

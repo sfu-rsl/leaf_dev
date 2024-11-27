@@ -8,6 +8,12 @@ pub type Ref = u64;
 pub type PlaceRef = Ref;
 pub type OperandRef = Ref;
 
+pub type Tag = &'static str;
+
+pub mod tags {
+    pub const NO_DIVERGE: &str = "no_diverge";
+}
+
 macro_rules! self_const {
     ($($name:ident = $value:expr;)*) => {
         $(
@@ -196,6 +202,7 @@ pub trait ProgramRuntimeInterface {
     type AtomicOrdering;
     type AtomicBinaryOp;
     type DebugInfo;
+    type Tag;
 
     list_func_decls! { modifier: utils::identity, (from Self) }
 }
@@ -216,6 +223,10 @@ pub trait FfiPri:
         TypeId = ffi::U128Pack<TypeId>,
         BinaryOp = BinaryOp,
         UnaryOp = UnaryOp,
+        AtomicOrdering = AtomicOrdering,
+        AtomicBinaryOp = AtomicBinaryOp,
+        DebugInfo = ffi::DebugInfo,
+        Tag = ffi::ConstStrPack,
     >
 {
 }
@@ -440,6 +451,10 @@ pub mod macros {
               #[allow(unused_parens)]
               { fn debug_info(info: ($dbg_info_ty)) }
 
+              #[allow(unused_parens)]
+              { fn push_tag(tag: ($tag_ty)) }
+              { fn pop_tag() }
+
               { fn intrinsic_assign_rotate_left(dest: PlaceRef, x: OperandRef, shift: OperandRef) }
               { fn intrinsic_assign_rotate_right(dest: PlaceRef, x: OperandRef, shift: OperandRef) }
               { fn intrinsic_assign_saturating_add(dest: PlaceRef, first: OperandRef, second: OperandRef) }
@@ -543,7 +558,8 @@ pub mod macros {
                         unary_op: $$unary_op_ty:ty,
                         atomic_ord: $$atomic_ord_ty:ty,
                         atomic_bin_op: $atomic_bin_op_ty:ty,
-                        dbg_info: $$dbg_info_ty:ty
+                        dbg_info: $$dbg_info_ty:ty,
+                        tag: $$tag_ty:ty
                         $$(,)?
                     )
                 ) => {
@@ -567,6 +583,7 @@ pub mod macros {
                             atomic_ord: (),
                             atomic_bin_op: (),
                             dbg_info: (),
+                            tag: (),
                         )
                     }
                 };
@@ -586,6 +603,7 @@ pub mod macros {
                             atomic_ord: Self::AtomicOrdering,
                             atomic_bin_op: Self::AtomicBinaryOp,
                             dbg_info: Self::DebugInfo,
+                            tag: Self::Tag,
                         )
                     }
                 };
@@ -605,6 +623,7 @@ pub mod macros {
                             atomic_ord: common::pri::AtomicOrdering,
                             atomic_bin_op: common::pri::AtomicBinaryOp,
                             dbg_info: common::ffi::DebugInfo,
+                            tag: ConstStrPack,
                         )
                     }
                 };
@@ -619,7 +638,7 @@ pub mod macros {
 
     #[cfg_attr(not(core_build), macro_export)]
     macro_rules! list_func_decls {
-        (modifier: $modifier:path,(u128: $u128_ty:ty,char: $char_ty:ty, &str: $str_ty:ty, &[u8]: $byte_str_ty:ty,slice: $slice_ty:path,branching_info: $branching_info_ty:ty,type_id: $type_id_ty:ty,binary_op: $binary_op_ty:ty,unary_op: $unary_op_ty:ty,atomic_ord: $atomic_ord_ty:ty,atomic_bin_op: $atomic_bin_op_ty:ty,dbg_info: $dbg_info_ty:ty$(,)?)) => {
+        (modifier: $modifier:path,(u128: $u128_ty:ty,char: $char_ty:ty, &str: $str_ty:ty, &[u8]: $byte_str_ty:ty,slice: $slice_ty:path,branching_info: $branching_info_ty:ty,type_id: $type_id_ty:ty,binary_op: $binary_op_ty:ty,unary_op: $unary_op_ty:ty,atomic_ord: $atomic_ord_ty:ty,atomic_bin_op: $atomic_bin_op_ty:ty,dbg_info: $dbg_info_ty:ty,tag: $tag_ty:ty$(,)?)) => {
             $modifier!{
                 fn init_runtime_lib();
             }$modifier!{
@@ -791,6 +810,10 @@ pub mod macros {
             }$modifier!{
                 #[allow(unused_parens)]fn debug_info(info:($dbg_info_ty));
             }$modifier!{
+                #[allow(unused_parens)]fn push_tag(tag:($tag_ty));
+            }$modifier!{
+                fn pop_tag();
+            }$modifier!{
                 fn intrinsic_assign_rotate_left(dest:PlaceRef,x:OperandRef,shift:OperandRef);
             }$modifier!{
                 fn intrinsic_assign_rotate_right(dest:PlaceRef,x:OperandRef,shift:OperandRef);
@@ -828,20 +851,20 @@ pub mod macros {
         };
         (modifier: $modifier:path) => {
             $crate::leaf::common::pri::macros::list_func_decls!{
-                modifier: $modifier,(u128:(),char:(), &str:(), &[u8]:(),slice:crate::leaf::common::utils::identity,branching_info:(),type_id:(),binary_op:(),unary_op:(),atomic_ord:(),atomic_bin_op:(),dbg_info:(),)
+                modifier: $modifier,(u128:(),char:(), &str:(), &[u8]:(),slice:crate::leaf::common::utils::identity,branching_info:(),type_id:(),binary_op:(),unary_op:(),atomic_ord:(),atomic_bin_op:(),dbg_info:(),tag:(),)
             }
         };
         (modifier: $modifier:path,(from Self)) => {
             $crate::leaf::common::pri::macros::list_func_decls!{
-                modifier: $modifier,(u128:Self::U128,char:Self::Char, &str:Self::ConstStr, &[u8]:Self::ConstByteStr,slice: $crate::leaf::common::pri::macros::self_slice_of,branching_info:Self::BranchingInfo,type_id:Self::TypeId,binary_op:Self::BinaryOp,unary_op:Self::UnaryOp,atomic_ord:Self::AtomicOrdering,atomic_bin_op:Self::AtomicBinaryOp,dbg_info:Self::DebugInfo,)
+                modifier: $modifier,(u128:Self::U128,char:Self::Char, &str:Self::ConstStr, &[u8]:Self::ConstByteStr,slice: $crate::leaf::common::pri::macros::self_slice_of,branching_info:Self::BranchingInfo,type_id:Self::TypeId,binary_op:Self::BinaryOp,unary_op:Self::UnaryOp,atomic_ord:Self::AtomicOrdering,atomic_bin_op:Self::AtomicBinaryOp,dbg_info:Self::DebugInfo,tag:Self::Tag,)
             }
         };
         (modifier: $modifier:path,(from common::ffi)) => {
             $crate::leaf::common::pri::macros::list_func_decls!{
-                modifier: $modifier,(u128:U128Pack,char:CharPack, &str:ConstStrPack, &[u8]:ConstByteStrPack,slice: $crate::leaf::common::pri::macros::slice_pack_of,branching_info:common::pri::BranchingInfo,type_id:U128Pack<TypeId>,binary_op:common::pri::BinaryOp,unary_op:common::pri::UnaryOp,atomic_ord:common::pri::AtomicOrdering,atomic_bin_op:common::pri::AtomicBinaryOp,dbg_info:common::ffi::DebugInfo,)
+                modifier: $modifier,(u128:U128Pack,char:CharPack, &str:ConstStrPack, &[u8]:ConstByteStrPack,slice: $crate::leaf::common::pri::macros::slice_pack_of,branching_info:common::pri::BranchingInfo,type_id:U128Pack<TypeId>,binary_op:common::pri::BinaryOp,unary_op:common::pri::UnaryOp,atomic_ord:common::pri::AtomicOrdering,atomic_bin_op:common::pri::AtomicBinaryOp,dbg_info:common::ffi::DebugInfo,tag:ConstStrPack,)
             }
         };
-    }
+}
     #[cfg(not(core_build))]
     pub use {list_func_decls, pass_func_names_to, self_slice_of, slice_pack_of};
     #[cfg(core_build)]

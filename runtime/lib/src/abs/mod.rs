@@ -5,6 +5,7 @@ pub(crate) mod expr;
 pub(crate) mod fmt;
 pub(crate) mod place;
 
+pub(crate) use common::pri::Tag;
 pub(crate) use common::types::*;
 
 use core::num::NonZeroU64;
