@@ -6,6 +6,7 @@ pub(crate) mod expr;
 mod outgen;
 mod place;
 mod state;
+mod trace;
 mod types;
 
 use std::{
@@ -17,6 +18,11 @@ use std::{
     rc::Rc,
 };
 
+use common::{
+    log_debug, log_info,
+    tyexp::{FieldsShapeInfo, StructShape, TypeInfo},
+};
+
 use crate::{
     abs::{
         self, backend::*, place::HasMetadata, AssertKind, BasicBlockIndex, BranchingMetadata,
@@ -26,9 +32,6 @@ use crate::{
     tyexp::{FieldsShapeInfoExt, TypeInfoExt},
     utils::alias::RRef,
 };
-use common::tyexp::{FieldsShapeInfo, StructShape, TypeInfo};
-use common::{log_info, log_warn};
-use expr::SymVarId;
 
 use self::{
     alias::{
@@ -38,7 +41,7 @@ use self::{
     },
     concrete::BasicConcretizer,
     config::BasicBackendConfig,
-    expr::{prelude::*, translators::z3::Z3ValueTranslator},
+    expr::{prelude::*, SymVarId},
     place::PlaceMetadata,
     state::{make_sym_place_handler, RawPointerVariableState},
     types::BasicTypeManager,
@@ -75,37 +78,16 @@ impl BasicBackend {
         let sym_values_ref = Rc::new(RefCell::new(
             HashMap::<u32, (SymValueRef, ConcreteValueRef)>::new(),
         ));
+
         let tags_ref = Rc::new(RefCell::new(Vec::new()));
         let all_sym_values = sym_values_ref.clone();
         let type_manager = type_manager_ref.clone();
-        let mut output_generator = outgen::BasicOutputGenerator::new(&config.outputs);
-        let solver = Z3Solver::<SymVarId>::new_in_global_context();
-        let solver_context = solver.context;
-        let model_consumer = Box::new(move |mut answers: Model<SymVarId, ValueRef>| {
-            // FIXME: Performance can be improved.
-            let all_sym_values = all_sym_values.borrow();
-            let missing_answers = all_sym_values
-                .iter()
-                .filter(|(id, _)| !answers.contains_key(id))
-                .map(|(id, (_, conc))| (*id, conc.clone().0))
-                .collect::<Vec<_>>();
-            answers.extend(missing_answers);
-            output_generator.generate(&answers)
-        });
-        let inspector = ImmediateDivergingAnswerFinder::new(
-            solver.map_answers(ValueRef::from),
-            |_steps: &[BasicBlockIndex]| true,
-            true,
-            model_consumer,
-        );
-        let trace_manager_ref = Rc::new(RefCell::new(
-            AggregatorTraceManager::new(inspector)
-                .adapt(
-                    |s| s,
-                    |v| Z3ValueTranslator::new(solver_context).translate_from(&v),
-                )
-                .into_logger(),
-        ));
+        let output_generator = outgen::BasicOutputGenerator::new(&config.outputs);
+        let trace_manager_ref = Rc::new(RefCell::new(trace::new_trace_manager(
+            tags_ref.clone(),
+            all_sym_values,
+            output_generator,
+        )));
         let trace_manager = trace_manager_ref.clone();
 
         let sym_place_handler_factory = |s| {
@@ -118,6 +100,7 @@ impl BasicBackend {
         };
         let sym_read_handler_ref = sym_place_handler_factory(config.sym_place.read);
         let sym_write_handler_ref = sym_place_handler_factory(config.sym_place.write);
+
         Self {
             call_stack_manager: BasicCallStackManager::new(
                 Box::new(move |_id| {

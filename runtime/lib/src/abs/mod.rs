@@ -312,3 +312,11 @@ pub(crate) struct FuncDef(common::pri::FuncDef);
 
 #[derive(Clone, Copy, Debug, dm::From, dm::Deref)]
 pub(crate) struct CalleeDef(common::pri::CalleeDef);
+
+pub(crate) trait HasTags {
+    fn tags(&self) -> &[Tag];
+
+    fn has_tag(&self, tag: Tag) -> bool {
+        self.tags().contains(&tag)
+    }
+}
