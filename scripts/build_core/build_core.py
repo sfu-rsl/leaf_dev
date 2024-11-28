@@ -147,7 +147,10 @@ def add_leaf_to_core(core_src_dir: Path, leaf_workspace_dir: Path, res_dir: Path
         dst_dir.mkdir(exist_ok=True)
         modules = ["ffi", "pri", "types", "utils"]
         for module in modules:
-            shutil.copy(common_src_dir.joinpath(f"{module}.rs"), dst_dir)
+            if common_src_dir.joinpath(f"{module}.rs").exists():
+                shutil.copy(common_src_dir.joinpath(f"{module}.rs"), dst_dir)
+            else:
+                shutil.copytree(common_src_dir.joinpath(module), dst_dir.joinpath(module))
         # Making appropriate mod.rs
         with open(dst_dir.joinpath("mod.rs"), "w") as f:
             f.writelines((f"pub(crate) mod {m};" for m in modules))

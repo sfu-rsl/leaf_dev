@@ -79,14 +79,20 @@ mod implementation {
     impl_symbolizable_float!(f32, f64);
 }
 
+#[leaf_attr::instrument(false)]
+#[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
 pub fn push_tag(tag: &'static str) {
     super::pri::push_tag(tag);
 }
 
+#[leaf_attr::instrument(false)]
+#[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
 pub fn pop_tag() {
     super::pri::pop_tag();
 }
 
+#[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
 pub mod tags {
-    pub use common::pri::tags::*;
+    #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
+    pub use super::super::common::pri::tags::*;
 }

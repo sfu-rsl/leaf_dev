@@ -28,7 +28,7 @@ mod ffi {
 
     #[link(name = "leafrt")]
     extern "C" {
-        common::pri::list_func_decls!(modifier: declare_fn, (from common::ffi));
+        common::pri::macros::list_func_decls!(modifier: declare_fn, (from common::ffi));
     }
 
     macro_rules! delegate_to_leafrt {
@@ -58,7 +58,7 @@ mod ffi {
         type DebugInfo = common::ffi::DebugInfo;
         type Tag = common::ffi::ConstStrPack;
 
-        common::pri::list_func_decls!(modifier: delegate_to_leafrt, (from Self));
+        common::pri::macros::list_func_decls!(modifier: delegate_to_leafrt, (from Self));
     }
 
     impl FfiPri for ForeignPri {}
@@ -121,7 +121,7 @@ macro_rules! slice_of {
     };
 }
 
-common::pri::list_func_decls! {
+common::pri::macros::list_func_decls! {
     modifier: export_to_rust_abi,
     (
         u128: u128,
