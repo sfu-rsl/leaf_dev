@@ -634,12 +634,10 @@ impl<'a, EB: BinaryExprBuilder> BranchingHandler for BasicBranchingHandler<'a, E
         discriminant: Self::Operand,
         metadata: abs::BranchingMetadata,
     ) -> Self::ConditionalBranchingHandler {
-        BasicConditionalBranchingHandler::new(
+        BasicConditionalBranchingHandler {
             discriminant,
-            metadata,
-            self.trace_manager,
-            self.expr_builder,
-        )
+            parent: self,
+        }
     }
 
     /// This function provides runtime support for all 5 assertion kinds in the leaf compiler.
@@ -672,28 +670,7 @@ impl<'a, EB: BinaryExprBuilder> BranchingHandler for BasicBranchingHandler<'a, E
     }
 }
 
-pub(crate) struct BasicConditionalBranchingHandler<'a, EB: BinaryExprBuilder> {
-    discriminant: ValueRef,
-    metadata: BranchingMetadata,
-    trace_manager: RefMut<'a, TraceManager>,
-    expr_builder: RRef<EB>,
-}
-
-impl<'a, EB: BinaryExprBuilder> BasicConditionalBranchingHandler<'a, EB> {
-    fn new(
-        discriminant: ValueRef,
-        metadata: BranchingMetadata,
-        trace_manager: RefMut<'a, TraceManager>,
-        expr_builder: RRef<EB>,
-    ) -> Self {
-        Self {
-            discriminant,
-            metadata,
-            trace_manager,
-            expr_builder,
-        }
-    }
-
+impl<'a, EB: BinaryExprBuilder> BasicBranchingHandler<'a, EB> {
     fn notify_constraint(&mut self, constraint: Constraint) {
         self.trace_manager.notify_step(
             0, /* TODO: The unique index of the block we have entered. */
@@ -702,135 +679,53 @@ impl<'a, EB: BinaryExprBuilder> BasicConditionalBranchingHandler<'a, EB> {
     }
 }
 
+pub(crate) struct BasicConditionalBranchingHandler<'a, EB: BinaryExprBuilder> {
+    discriminant: ValueRef,
+    parent: BasicBranchingHandler<'a, EB>,
+}
+
 impl<'a, EB: BinaryExprBuilder> ConditionalBranchingHandler
     for BasicConditionalBranchingHandler<'a, EB>
 {
-    type BoolBranchTakingHandler = BasicBranchTakingHandler<'a, EB>;
-    type IntBranchTakingHandler = BasicBranchTakingHandler<'a, EB>;
-    type CharBranchTakingHandler = BasicBranchTakingHandler<'a, EB>;
-
-    fn on_bool(self) -> Self::BoolBranchTakingHandler {
-        BasicBranchTakingHandler { parent: self }
-    }
-    fn on_int(self) -> Self::IntBranchTakingHandler {
-        BasicBranchTakingHandler { parent: self }
-    }
-    fn on_char(self) -> Self::CharBranchTakingHandler {
-        BasicBranchTakingHandler { parent: self }
-    }
-}
-
-pub(crate) struct BasicBranchTakingHandler<'a, EB: BinaryExprBuilder> {
-    parent: BasicConditionalBranchingHandler<'a, EB>,
-}
-
-impl<EB: BinaryExprBuilder> BasicBranchTakingHandler<'_, EB> {
-    fn create_equality_expr(&mut self, value: impl BranchCaseValue, eq: bool) -> ValueRef {
-        let first = self.parent.discriminant.clone();
-        let second = value
-            .into_const(self.parent.metadata.discr_as_int)
-            .to_value_ref();
-        if eq {
-            self.expr_builder().eq((first, second).into())
-        } else {
-            self.expr_builder().ne((first, second).into())
-        }
-        .into()
-    }
-
-    fn expr_builder(&self) -> impl DerefMut<Target = EB> + '_ {
-        self.parent.expr_builder.as_ref().borrow_mut()
-    }
-}
-
-impl<EB: BinaryExprBuilder> BranchTakingHandler<bool> for BasicBranchTakingHandler<'_, EB> {
-    fn take(mut self, result: bool) {
-        /* FIXME: Bad smell! The branching traits structure prevents
-         * us from having a simpler and cleaner handler.
-         */
-        if !self.parent.discriminant.is_symbolic() {
+    fn take(mut self, value: Self::Constant) {
+        if !self.discriminant.is_symbolic() {
             return;
         }
 
-        // NOTE: This is a trick to pass the value through the expression builder
-        // to ensure value resolving and simplifications.
-        let expr = self
-            .expr_builder()
-            .and(
-                (
-                    ConstValue::Bool(true).to_value_ref(),
-                    self.parent.discriminant.clone(),
-                )
-                    .into(),
-            )
-            .into();
-        let mut constraint = Constraint::Bool(expr);
-        if !result {
-            constraint = constraint.not();
-        }
-
+        let constraint = self.create_constraint(vec![value], true);
         self.parent.notify_constraint(constraint);
     }
 
-    fn take_otherwise(self, non_values: &[bool]) {
-        // FIXME: Duplicate code
-        self.take(!non_values[0])
+    fn take_otherwise(mut self, non_values: Vec<Self::Constant>) {
+        if !self.discriminant.is_symbolic() {
+            return;
+        }
+
+        let constraint = self.create_constraint(non_values, false);
+        self.parent.notify_constraint(constraint);
     }
 }
 
-macro_rules! impl_general_branch_taking_handler {
-    ($($type:ty),*) => {
-        $(
-            impl<EB: BinaryExprBuilder> BranchTakingHandler<$type>
-                for BasicBranchTakingHandler<'_, EB>
-            {
-                fn take(mut self, value: $type) {
-                    if !self.parent.discriminant.is_symbolic() {
-                        return;
-                    }
-
-                    let expr = self.create_equality_expr(value, true);
-                    let constraint = Constraint::Bool(expr);
-                    self.parent.notify_constraint(constraint);
-                }
-
-                fn take_otherwise(mut self, non_values: &[$type]) {
-                    if !self.parent.discriminant.is_symbolic() {
-                        return;
-                    }
-
-                    // Converting all non-equalities into a single constraint to keep the semantics.
-                    let constraint = Constraint::Bool(
-                        non_values.into_iter().fold(
-                            ConstValue::Bool(true).to_value_ref(),
-                            |acc, v| {
-                                let expr = self.create_equality_expr(*v, false);
-                                self.expr_builder().and((acc, expr).into()).into()
-                            },
-                        )
-                    );
-                    self.parent.notify_constraint(constraint);
-                }
-            }
-        )*
-    };
-}
-
-impl_general_branch_taking_handler!(u128, char);
-
-trait BranchCaseValue {
-    fn into_const(self, discr_as_int: IntType) -> ConstValue;
-}
-
-impl BranchCaseValue for char {
-    fn into_const(self, _discr_as_int: IntType) -> ConstValue {
-        ConstValue::Char(self)
-    }
-}
-
-impl BranchCaseValue for u128 {
-    fn into_const(self, discr_as_int: IntType) -> ConstValue {
-        ConstValue::new_int(self, discr_as_int)
+impl<'a, EB: BinaryExprBuilder> BasicConditionalBranchingHandler<'a, EB> {
+    fn create_constraint(
+        &mut self,
+        values: Vec<<Self as ConditionalBranchingHandler>::Constant>,
+        eq: bool,
+    ) -> Constraint {
+        let mut expr_builder = self.parent.expr_builder.as_ref().borrow_mut();
+        let expr = values
+            .into_iter()
+            .fold(ConstValue::Bool(true).to_value_ref(), |acc, v| {
+                let first = self.discriminant.clone();
+                let second = ConcreteValue::from(v).to_value_ref();
+                let expr = if eq {
+                    expr_builder.eq((first, second).into())
+                } else {
+                    expr_builder.ne((first, second).into())
+                };
+                expr_builder.and((acc, expr).into()).into()
+            });
+        Constraint::Bool(expr)
     }
 }
 

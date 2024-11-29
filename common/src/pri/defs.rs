@@ -212,9 +212,19 @@ pub mod macros {
           { fn take_branch_false(info: ($branching_info_ty)) }
 
           #[allow(unused_parens)]
-          { fn take_branch_int(info: ($branching_info_ty), value_bit_rep: ($u128_ty)) }
+          { fn take_branch_int(
+              info: ($branching_info_ty),
+              value_bit_rep: ($u128_ty),
+              bit_size: u64,
+              is_signed: bool,
+            ) }
           #[allow(unused_parens)]
-          { fn take_branch_ow_int(info: ($branching_info_ty), non_values: ($slice_ty!($u128_ty))) }
+          { fn take_branch_ow_int(
+              info: ($branching_info_ty),
+              non_values: ($slice_ty!($u128_ty)),
+              bit_size: u64,
+              is_signed: bool,
+          ) }
 
           #[allow(unused_parens)]
           { fn take_branch_char(info: ($branching_info_ty), value: (($char_ty))) }
@@ -445,7 +455,6 @@ pub mod macros {
 }
     // NOTE: Because of a bug in the compiler, we need to perform the expansion manually.
     // pass_func_decls_to!(make_list_func_decls_macro);
-
     // Recursive expansion of pass_func_decls_to! macro
     // =================================================
 
@@ -585,9 +594,9 @@ pub mod macros {
             }$modifier!{
                 #[allow(unused_parens)]fn take_branch_false(info:($branching_info_ty));
             }$modifier!{
-                #[allow(unused_parens)]fn take_branch_int(info:($branching_info_ty),value_bit_rep:($u128_ty));
+                #[allow(unused_parens)]fn take_branch_int(info:($branching_info_ty),value_bit_rep:($u128_ty),bit_size:u64,is_signed:bool,);
             }$modifier!{
-                #[allow(unused_parens)]fn take_branch_ow_int(info:($branching_info_ty),non_values:($slice_ty!($u128_ty)));
+                #[allow(unused_parens)]fn take_branch_ow_int(info:($branching_info_ty),non_values:($slice_ty!($u128_ty)),bit_size:u64,is_signed:bool,);
             }$modifier!{
                 #[allow(unused_parens)]fn take_branch_char(info:($branching_info_ty),value:(($char_ty)));
             }$modifier!{

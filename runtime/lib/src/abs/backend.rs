@@ -215,18 +215,10 @@ pub(crate) trait BranchingHandler {
 }
 
 pub(crate) trait ConditionalBranchingHandler {
-    type BoolBranchTakingHandler: BranchTakingHandler<bool>;
-    type IntBranchTakingHandler: BranchTakingHandler<u128>;
-    type CharBranchTakingHandler: BranchTakingHandler<char>;
+    type Constant = super::Constant;
 
-    fn on_bool(self) -> Self::BoolBranchTakingHandler;
-    fn on_int(self) -> Self::IntBranchTakingHandler;
-    fn on_char(self) -> Self::CharBranchTakingHandler;
-}
-
-pub(crate) trait BranchTakingHandler<T> {
-    fn take(self, value: T);
-    fn take_otherwise(self, non_values: &[T]);
+    fn take(self, value: Self::Constant);
+    fn take_otherwise(self, non_values: Vec<Self::Constant>);
 }
 
 pub(crate) trait FunctionHandler {

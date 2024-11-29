@@ -419,24 +419,52 @@ impl ProgramRuntimeInterface for BasicPri {
         BranchingInfo::new(node_location, discriminant, discr_bit_size, discr_is_signed)
     }
     fn take_branch_true(info: BranchingInfo) {
-        conditional(info, |h| h.on_bool().take(true))
+        conditional(info, |h| h.take(true.into()))
     }
     fn take_branch_false(info: BranchingInfo) {
-        conditional(info, |h| h.on_bool().take(false))
+        conditional(info, |h| h.take(false.into()))
     }
 
-    fn take_branch_int(info: BranchingInfo, value_bit_rep: u128) {
-        conditional(info, |h| h.on_int().take(value_bit_rep))
+    fn take_branch_int(info: BranchingInfo, value_bit_rep: u128, bit_size: u64, is_signed: bool) {
+        conditional(info, |h| {
+            h.take(Constant::Int {
+                bit_rep: value_bit_rep,
+                ty: IntType {
+                    bit_size,
+                    is_signed,
+                },
+            })
+        })
     }
-    fn take_branch_ow_int(info: BranchingInfo, non_values: &[u128]) {
-        conditional(info, |h| h.on_int().take_otherwise(non_values))
+    fn take_branch_ow_int(
+        info: BranchingInfo,
+        non_values: &[u128],
+        bit_size: u64,
+        is_signed: bool,
+    ) {
+        conditional(info, |h| {
+            h.take_otherwise(
+                non_values
+                    .iter()
+                    .map(|nv| Constant::Int {
+                        bit_rep: *nv,
+                        ty: IntType {
+                            bit_size,
+                            is_signed,
+                        },
+                    })
+                    .collect(),
+            )
+        })
     }
 
     fn take_branch_char(info: BranchingInfo, value: char) {
-        conditional(info, |h| h.on_char().take(value))
+        conditional(info, |h| h.take(value.into()))
     }
     fn take_branch_ow_char(info: BranchingInfo, non_values: &[char]) {
-        conditional(info, |h| h.on_char().take_otherwise(non_values))
+        conditional(info, |h| {
+            h.take_otherwise(non_values.iter().map(|c| (*c).into()).collect())
+        })
     }
 
     #[tracing::instrument(target = "pri::call", level = "debug")]

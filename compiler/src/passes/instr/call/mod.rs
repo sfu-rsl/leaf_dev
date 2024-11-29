@@ -1747,6 +1747,7 @@ mod implementation {
         C: SwitchInfoProvider<'tcx> + ForBranching<'tcx>,
     {
         fn take_by_value(&mut self, value: u128) {
+            let tcx = self.context.tcx();
             let switch_info = self.context.switch_info();
             let discr_ty = switch_info.discr_ty;
             let (func_name, additional_args) = if discr_ty.is_bool() {
@@ -1762,13 +1763,17 @@ mod implementation {
                 // NOTE: Discriminants are integers.
                 (
                     sym::take_branch_int,
-                    vec![operand::const_from_uint(self.context.tcx(), value)],
+                    vec![
+                        operand::const_from_uint(tcx, value),
+                        operand::const_from_uint(tcx, discr_ty.primitive_size(tcx).bits()),
+                        operand::const_from_bool(tcx, discr_ty.is_signed()),
+                    ],
                 )
             } else if discr_ty.is_char() {
                 (
                     sym::take_branch_char,
                     vec![operand::const_from_char(
-                        self.context.tcx(),
+                        tcx,
                         char::from_u32(value.try_into().unwrap()).unwrap(),
                     )],
                 )
@@ -1801,38 +1806,41 @@ mod implementation {
             I: IntoIterator<Item = u128>,
             I::IntoIter: ExactSizeIterator<Item = u128>,
         {
+            let tcx = self.context.tcx();
             let switch_info = self.context.switch_info();
             let discr_ty = switch_info.discr_ty;
+            let mut non_values = non_values.into_iter();
             let (additional_stmts, func_name, additional_args) = if discr_ty.is_bool() {
-                let mut non_values = non_values.into_iter();
                 debug_assert!(non_values.len() == 1);
                 debug_assert!(non_values.next().unwrap() == 0);
 
                 (vec![], sym::take_branch_true, vec![])
             } else {
-                let tcx = self.context.tcx();
-
-                let (func_name, value_type, value_to_operand): (
-                    LeafSymbol,
-                    Ty<'tcx>,
-                    Box<dyn Fn(u128) -> Operand<'tcx>>,
-                ) = if discr_ty.is_integral() {
-                    // TODO: Distinguish enum discriminant
+                let (func_name, value_ty, non_values, additional_args) = if discr_ty.is_integral() {
                     (
                         sym::take_branch_ow_int,
                         tcx.types.u128,
-                        Box::new(|nv: u128| operand::const_from_uint(tcx, nv)),
+                        non_values
+                            .map(|nv: u128| operand::const_from_uint(tcx, nv))
+                            .collect(),
+                        vec![
+                            operand::const_from_uint(tcx, discr_ty.primitive_size(tcx).bits()),
+                            operand::const_from_bool(tcx, discr_ty.is_signed()),
+                        ],
                     )
                 } else if discr_ty.is_char() {
                     (
                         sym::take_branch_ow_char,
                         tcx.types.char,
-                        Box::new(|nv: u128| {
-                            operand::const_from_char(
-                                tcx,
-                                char::from_u32(nv.try_into().unwrap()).unwrap(),
-                            )
-                        }),
+                        non_values
+                            .map(|nv: u128| {
+                                operand::const_from_char(
+                                    tcx,
+                                    char::from_u32(nv.try_into().unwrap()).unwrap(),
+                                )
+                            })
+                            .collect(),
+                        vec![],
                     )
                 } else {
                     unreachable!(
@@ -1840,15 +1848,16 @@ mod implementation {
                     )
                 };
 
-                let (non_values_local, assign_stmts) = self.add_and_assign_local_for_ow_non_values(
-                    non_values.into_iter(),
-                    value_type,
-                    value_to_operand,
-                );
+                let (non_values_local, assign_stmts) =
+                    prepare_operand_for_slice(tcx, &mut self.context, value_ty, non_values);
                 (
                     assign_stmts.to_vec(),
                     func_name,
-                    vec![operand::move_for_local(non_values_local)],
+                    [
+                        vec![operand::move_for_local(non_values_local)],
+                        additional_args,
+                    ]
+                    .concat(),
                 )
             };
 
@@ -1869,25 +1878,6 @@ mod implementation {
                 new_block_index,
                 JumpModificationConstraint::SwitchOtherwise,
             );
-        }
-    }
-    impl<'tcx, C> RuntimeCallAdder<C>
-    where
-        Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
-        C: SwitchInfoProvider<'tcx> + ForBranching<'tcx>,
-    {
-        fn add_and_assign_local_for_ow_non_values(
-            &mut self,
-            non_values: impl ExactSizeIterator<Item = u128>,
-            value_ty: Ty<'tcx>,
-            value_to_operand: impl Fn(u128) -> Operand<'tcx>,
-        ) -> (Local, [Statement<'tcx>; 3]) {
-            prepare_operand_for_slice(
-                self.context.tcx(),
-                &mut self.context,
-                value_ty,
-                non_values.map(value_to_operand).collect(),
-            )
         }
     }
 

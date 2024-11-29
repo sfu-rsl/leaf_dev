@@ -138,7 +138,7 @@ pub(crate) enum Operand<P, C, S> {
     Symbolic(S),
 }
 
-#[derive(Debug)]
+#[derive(Debug, dm::From)]
 pub(crate) enum Constant {
     Bool(bool),
     Char(char),
