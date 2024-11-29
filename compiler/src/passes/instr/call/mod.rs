@@ -1759,7 +1759,7 @@ mod implementation {
                     )
                 }
             } else if discr_ty.is_integral() {
-                // TODO: Distinguish enum discriminant
+                // NOTE: Discriminants are integers.
                 (
                     sym::take_branch_int,
                     vec![operand::const_from_uint(self.context.tcx(), value)],

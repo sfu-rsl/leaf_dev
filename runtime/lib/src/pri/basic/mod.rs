@@ -439,13 +439,6 @@ impl ProgramRuntimeInterface for BasicPri {
         conditional(info, |h| h.on_char().take_otherwise(non_values))
     }
 
-    fn take_branch_enum_discriminant(info: BranchingInfo, index: VariantIndex) {
-        conditional(info, |h| h.on_enum().take(index))
-    }
-    fn take_branch_ow_enum_discriminant(info: BranchingInfo, non_indices: &[VariantIndex]) {
-        conditional(info, |h| h.on_enum().take_otherwise(non_indices))
-    }
-
     #[tracing::instrument(target = "pri::call", level = "debug")]
     fn before_call_func(
         def: CalleeDef,

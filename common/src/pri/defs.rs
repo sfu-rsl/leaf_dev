@@ -222,14 +222,6 @@ pub mod macros {
           { fn take_branch_ow_char(info: ($branching_info_ty), non_values: ($slice_ty!($char_ty))) }
 
           #[allow(unused_parens)]
-          { fn take_branch_enum_discriminant(info: ($branching_info_ty), index: VariantIndex) }
-          #[allow(unused_parens)]
-          { fn take_branch_ow_enum_discriminant(
-              info: ($branching_info_ty),
-              non_indices: ($slice_ty!(VariantIndex)),
-          ) }
-
-          #[allow(unused_parens)]
           { fn before_call_func(def: CalleeDef, func: OperandRef, args: ($slice_ty!(OperandRef)), are_args_tupled: bool) }
           #[allow(unused_parens)]
           { fn enter_func(def: FuncDef, arg_places: &[PlaceRef], ret_val_place: PlaceRef) }
@@ -600,10 +592,6 @@ pub mod macros {
                 #[allow(unused_parens)]fn take_branch_char(info:($branching_info_ty),value:(($char_ty)));
             }$modifier!{
                 #[allow(unused_parens)]fn take_branch_ow_char(info:($branching_info_ty),non_values:($slice_ty!($char_ty)));
-            }$modifier!{
-                #[allow(unused_parens)]fn take_branch_enum_discriminant(info:($branching_info_ty),index:VariantIndex);
-            }$modifier!{
-                #[allow(unused_parens)]fn take_branch_ow_enum_discriminant(info:($branching_info_ty),non_indices:($slice_ty!(VariantIndex)),);
             }$modifier!{
                 #[allow(unused_parens)]fn before_call_func(def:CalleeDef,func:OperandRef,args:($slice_ty!(OperandRef)),are_args_tupled:bool);
             }$modifier!{

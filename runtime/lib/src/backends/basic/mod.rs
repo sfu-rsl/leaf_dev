@@ -708,7 +708,6 @@ impl<'a, EB: BinaryExprBuilder> ConditionalBranchingHandler
     type BoolBranchTakingHandler = BasicBranchTakingHandler<'a, EB>;
     type IntBranchTakingHandler = BasicBranchTakingHandler<'a, EB>;
     type CharBranchTakingHandler = BasicBranchTakingHandler<'a, EB>;
-    type EnumBranchTakingHandler = BasicBranchTakingHandler<'a, EB>;
 
     fn on_bool(self) -> Self::BoolBranchTakingHandler {
         BasicBranchTakingHandler { parent: self }
@@ -717,9 +716,6 @@ impl<'a, EB: BinaryExprBuilder> ConditionalBranchingHandler
         BasicBranchTakingHandler { parent: self }
     }
     fn on_char(self) -> Self::CharBranchTakingHandler {
-        BasicBranchTakingHandler { parent: self }
-    }
-    fn on_enum(self) -> Self::EnumBranchTakingHandler {
         BasicBranchTakingHandler { parent: self }
     }
 }
@@ -820,7 +816,7 @@ macro_rules! impl_general_branch_taking_handler {
     };
 }
 
-impl_general_branch_taking_handler!(u128, char, VariantIndex);
+impl_general_branch_taking_handler!(u128, char);
 
 trait BranchCaseValue {
     fn into_const(self, discr_as_int: IntType) -> ConstValue;
@@ -832,19 +828,11 @@ impl BranchCaseValue for char {
     }
 }
 
-macro_rules! impl_int_branch_case_value {
-    ($($type:ty),*) => {
-        $(
-            impl BranchCaseValue for $type {
-                fn into_const(self, discr_as_int: IntType) -> ConstValue {
-                    ConstValue::new_int(self, discr_as_int)
-                }
-            }
-        )*
-    };
+impl BranchCaseValue for u128 {
+    fn into_const(self, discr_as_int: IntType) -> ConstValue {
+        ConstValue::new_int(self, discr_as_int)
+    }
 }
-
-impl_int_branch_case_value!(u128, VariantIndex);
 
 pub(crate) struct BasicFunctionHandler<'a> {
     call_stack_manager: &'a mut dyn CallStackManager,

@@ -218,12 +218,10 @@ pub(crate) trait ConditionalBranchingHandler {
     type BoolBranchTakingHandler: BranchTakingHandler<bool>;
     type IntBranchTakingHandler: BranchTakingHandler<u128>;
     type CharBranchTakingHandler: BranchTakingHandler<char>;
-    type EnumBranchTakingHandler: BranchTakingHandler<VariantIndex>;
 
     fn on_bool(self) -> Self::BoolBranchTakingHandler;
     fn on_int(self) -> Self::IntBranchTakingHandler;
     fn on_char(self) -> Self::CharBranchTakingHandler;
-    fn on_enum(self) -> Self::EnumBranchTakingHandler;
 }
 
 pub(crate) trait BranchTakingHandler<T> {

@@ -72,7 +72,7 @@ pub mod sym {
                 ]
             };
         }
-        pub(crate) const ALL_MAINS: [LeafSymbol; 104] =
+        pub(crate) const ALL_MAINS: [LeafSymbol; 102] =
             common::pri::pass_func_names_to!(bracket, all_comma_separated);
 
         pub(crate) mod intrinsics {
