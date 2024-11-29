@@ -126,8 +126,6 @@ enum_like_type! {
 static DEFAULT_BRANCHING_INFO: BranchingInfo = BranchingInfo {
     node_location: 0,
     discriminant: 0,
-    discr_bit_size: 0,
-    discr_is_signed: false,
 };
 
 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
@@ -136,8 +134,6 @@ static DEFAULT_BRANCHING_INFO: BranchingInfo = BranchingInfo {
 pub struct BranchingInfo {
     pub node_location: BasicBlockIndex,
     pub discriminant: OperandRef,
-    pub discr_bit_size: u64,
-    pub discr_is_signed: bool,
 }
 
 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]

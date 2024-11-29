@@ -203,8 +203,6 @@ pub mod macros {
           { fn new_branching_info(
               node_location: BasicBlockIndex,
               discriminant: OperandRef,
-              discr_bit_size: u64,
-              discr_is_signed: bool,
           ) -> ($branching_info_ty) }
           #[allow(unused_parens)]
           { fn take_branch_true(info: ($branching_info_ty)) }
@@ -588,7 +586,7 @@ pub mod macros {
             }$modifier!{
                 #[allow(unused_parens)]fn assign_shallow_init_box(dest:PlaceRef,operand:OperandRef,boxed_type_id:($type_id_ty));
             }$modifier!{
-                #[allow(unused_parens)]fn new_branching_info(node_location:BasicBlockIndex,discriminant:OperandRef,discr_bit_size:u64,discr_is_signed:bool,)->($branching_info_ty);
+                #[allow(unused_parens)]fn new_branching_info(node_location:BasicBlockIndex,discriminant:OperandRef,)->($branching_info_ty);
             }$modifier!{
                 #[allow(unused_parens)]fn take_branch_true(info:($branching_info_ty));
             }$modifier!{

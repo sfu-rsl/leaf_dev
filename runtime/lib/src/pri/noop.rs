@@ -39,13 +39,7 @@ impl Default for BranchingInfo {
     fn default() -> Self {
         Self {
             discriminant: Default::default(),
-            metadata: BranchingMetadata {
-                discr_as_int: IntType {
-                    bit_size: 0,
-                    is_signed: false,
-                },
-                node_location: 0,
-            },
+            metadata: BranchingMetadata { node_location: 0 },
         }
     }
 }

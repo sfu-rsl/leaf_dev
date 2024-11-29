@@ -409,10 +409,8 @@ impl ProgramRuntimeInterface for BasicPri {
     fn new_branching_info(
         node_location: BasicBlockIndex,
         discriminant: OperandRef,
-        discr_bit_size: u64,
-        discr_is_signed: bool,
     ) -> BranchingInfo {
-        BranchingInfo::new(node_location, discriminant, discr_bit_size, discr_is_signed)
+        BranchingInfo::new(node_location, discriminant)
     }
     fn take_branch_true(info: BranchingInfo) {
         switch(info, |h| h.take(true.into()))
@@ -822,21 +820,10 @@ pub struct BranchingInfo {
 
 impl BranchingInfo {
     #[inline]
-    pub(crate) fn new(
-        node_location: BasicBlockIndex,
-        discriminant: OperandRef,
-        discr_bit_size: u64,
-        discr_is_signed: bool,
-    ) -> Self {
+    pub(crate) fn new(node_location: BasicBlockIndex, discriminant: OperandRef) -> Self {
         Self {
             discriminant,
-            metadata: BranchingMetadata {
-                node_location,
-                discr_as_int: IntType {
-                    bit_size: discr_bit_size,
-                    is_signed: discr_is_signed,
-                },
-            },
+            metadata: BranchingMetadata { node_location },
         }
     }
 }
@@ -845,8 +832,8 @@ impl core::fmt::Debug for BranchingInfo {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "BranchingInfo(on: {} as {} @ {})",
-            self.discriminant, self.metadata.discr_as_int, self.metadata.node_location
+            "BranchingInfo(on: {} @ {})",
+            self.discriminant, self.metadata.node_location
         )
     }
 }

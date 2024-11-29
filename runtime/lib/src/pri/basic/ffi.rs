@@ -17,12 +17,7 @@ impl From<common::pri::UnaryOp> for abs::UnaryOp {
 impl From<common::pri::BranchingInfo> for super::BranchingInfo {
     #[inline(always)]
     fn from(value: common::pri::BranchingInfo) -> Self {
-        Self::new(
-            value.node_location,
-            value.discriminant,
-            value.discr_bit_size,
-            value.discr_is_signed,
-        )
+        Self::new(value.node_location, value.discriminant)
     }
 }
 impl From<super::BranchingInfo> for common::pri::BranchingInfo {
@@ -31,8 +26,6 @@ impl From<super::BranchingInfo> for common::pri::BranchingInfo {
         Self {
             node_location: value.metadata.node_location,
             discriminant: value.discriminant,
-            discr_bit_size: value.metadata.discr_as_int.bit_size,
-            discr_is_signed: value.metadata.discr_as_int.is_signed,
         }
     }
 }
