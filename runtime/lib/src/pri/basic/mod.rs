@@ -134,48 +134,44 @@ impl ProgramRuntimeInterface for BasicPri {
 
     #[tracing::instrument(target = "pri::operand", level = "debug", ret)]
     fn ref_operand_const_bool(value: bool) -> OperandRef {
-        push_operand(|o| o.const_from(Constant::Bool(value)))
+        Self::push_const_operand(value)
     }
     #[tracing::instrument(target = "pri::operand", level = "debug", ret)]
     fn ref_operand_const_int(bit_rep: u128, bit_size: u64, is_signed: bool) -> OperandRef {
-        push_operand(|o| {
-            o.const_from(Constant::Int {
-                bit_rep,
-                ty: IntType {
-                    bit_size,
-                    is_signed,
-                },
-            })
+        Self::push_const_operand(Constant::Int {
+            bit_rep,
+            ty: IntType {
+                bit_size,
+                is_signed,
+            },
         })
     }
     #[tracing::instrument(target = "pri::operand", level = "debug", ret)]
     fn ref_operand_const_float(bit_rep: u128, e_bits: u64, s_bits: u64) -> OperandRef {
-        push_operand(|o| {
-            o.const_from(Constant::Float {
-                bit_rep,
-                ty: FloatType { e_bits, s_bits },
-            })
+        Self::push_const_operand(Constant::Float {
+            bit_rep,
+            ty: FloatType { e_bits, s_bits },
         })
     }
     #[tracing::instrument(target = "pri::operand", level = "debug", ret)]
     fn ref_operand_const_char(value: char) -> OperandRef {
-        push_operand(|o| o.const_from(Constant::Char(value)))
+        Self::push_const_operand(value)
     }
     #[tracing::instrument(target = "pri::operand", level = "debug", ret)]
     fn ref_operand_const_str(value: &'static str) -> OperandRef {
-        push_operand(|o| o.const_from(Constant::Str(value)))
+        Self::push_const_operand(value)
     }
     #[tracing::instrument(target = "pri::operand", level = "debug", ret)]
     fn ref_operand_const_byte_str(value: &'static [u8]) -> OperandRef {
-        push_operand(|o| o.const_from(Constant::ByteStr(value)))
+        Self::push_const_operand(value)
     }
     #[tracing::instrument(target = "pri::operand", level = "debug", ret)]
     fn ref_operand_const_zst() -> OperandRef {
-        push_operand(|o| o.const_from(Constant::Zst))
+        Self::push_const_operand(Constant::Zst)
     }
     #[tracing::instrument(target = "pri::operand", level = "debug", ret)]
     fn ref_operand_const_some() -> OperandRef {
-        push_operand(|o| o.const_from(Constant::Some))
+        Self::push_const_operand(Constant::Some)
     }
 
     fn new_sym_value_bool(conc_val: bool) -> OperandRef {
@@ -741,6 +737,10 @@ impl ProgramRuntimeInterface for BasicPri {
 }
 
 impl BasicPri {
+    fn push_const_operand<T: Into<Constant>>(constant: T) -> OperandRef {
+        push_operand(|o| o.const_from(constant.into()))
+    }
+
     fn set_place_type(place: PlaceRef, ty: ValueType) {
         mut_place_info(place, |p, place| p.metadata(place).set_primitive_type(ty));
     }
