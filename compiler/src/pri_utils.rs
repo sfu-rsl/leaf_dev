@@ -58,6 +58,14 @@ pub mod sym {
         compiler_helpers,
     }
 
+    macro_rules! bracket {
+        ($($name: ident),*$(,)?) => {
+            [
+                $($name),*
+            ]
+        };
+    }
+
     mod mains {
         #![allow(non_upper_case_globals)]
 
@@ -65,14 +73,7 @@ pub mod sym {
 
         common::pri::pass_func_names_to!(symbols_in_pri, all_comma_separated);
 
-        macro_rules! bracket {
-            ($($name: ident),*) => {
-                [
-                    $($name),*
-                ]
-            };
-        }
-        pub(crate) const ALL_MAINS: [LeafSymbol; 102] =
+        pub(crate) const ALL_MAINS: [LeafSymbol; 101] =
             common::pri::pass_func_names_to!(bracket, all_comma_separated);
 
         pub(crate) mod intrinsics {
@@ -149,6 +150,64 @@ pub mod sym {
     mod compiler_helpers {
         use super::*;
 
+        macro_rules! make_pass_compiler_helpers_to_macro {
+            (funcs: [$($fname:ident),+,], others: [$($o_name:ident),+,]) => {
+                macro_rules! pass_compiler_helpers_to {
+                    ($$macro:ident, just_funcs) => {
+                        $$macro! {
+                            $($fname),+
+                        }
+                    };
+                    ($$macro:ident) => {
+                        $$macro! {
+                            $($fname),+,
+                            $($o_name),+
+                        }
+                    };
+                }
+            };
+        }
+
+        make_pass_compiler_helpers_to_macro! {
+            funcs: [
+                f32_to_bits,
+                f64_to_bits,
+
+                set_place_address_typed,
+                type_id_of,
+                size_of,
+
+                basic_block_location,
+                switch_info,
+
+                callee_def_static,
+                callee_def_maybe_virtual,
+                func_def_static,
+                func_def_dyn_method,
+                receiver_to_raw_ptr,
+                receiver_pin_to_raw_ptr,
+                receiver_self_to_raw_ptr,
+
+                const_binary_op_of,
+                const_unary_op_of,
+
+                const_atomic_ord_of,
+                const_atomic_binary_op_of,
+
+                special_func_placeholder,
+            ],
+            others: [
+                CH_MODULE_MARKER,
+
+                PLACE_REF_TYPE_HOLDER,
+                OPERAND_REF_TYPE_HOLDER,
+                BINARY_OP_TYPE_HOLDER,
+                UNARY_OP_TYPE_HOLDER,
+            ]
+        }
+
+        pub(in super::super) use pass_compiler_helpers_to;
+
         macro_rules! in_compiler_helpers {
             ($name: ident) => {
                 concatcp!(compiler_helpers.0, "::", stringify!($name))
@@ -163,62 +222,9 @@ pub mod sym {
             };
         }
 
-        symbols_in_compiler_helpers! {
-            CH_MODULE_MARKER,
+        pass_compiler_helpers_to!(symbols_in_compiler_helpers);
 
-            PLACE_REF_TYPE_HOLDER,
-            OPERAND_REF_TYPE_HOLDER,
-            BINARY_OP_TYPE_HOLDER,
-            UNARY_OP_TYPE_HOLDER,
-
-            f32_to_bits,
-            f64_to_bits,
-
-            set_place_address_typed,
-            type_id_of,
-            size_of,
-
-            callee_def_static,
-            callee_def_maybe_virtual,
-            func_def_static,
-            func_def_dyn_method,
-            receiver_to_raw_ptr,
-            receiver_pin_to_raw_ptr,
-            receiver_self_to_raw_ptr,
-
-            const_binary_op_of,
-            const_unary_op_of,
-
-            const_atomic_ord_of,
-            const_atomic_binary_op_of,
-
-            special_func_placeholder,
-        }
-
-        pub(crate) const ALL_HELPERS: [LS; 22] = [
-            CH_MODULE_MARKER,
-            PLACE_REF_TYPE_HOLDER,
-            OPERAND_REF_TYPE_HOLDER,
-            BINARY_OP_TYPE_HOLDER,
-            UNARY_OP_TYPE_HOLDER,
-            f32_to_bits,
-            f64_to_bits,
-            set_place_address_typed,
-            type_id_of,
-            size_of,
-            callee_def_static,
-            callee_def_maybe_virtual,
-            func_def_static,
-            func_def_dyn_method,
-            receiver_to_raw_ptr,
-            receiver_pin_to_raw_ptr,
-            receiver_self_to_raw_ptr,
-            const_binary_op_of,
-            const_unary_op_of,
-            const_atomic_ord_of,
-            const_atomic_binary_op_of,
-            special_func_placeholder,
-        ];
+        pub(crate) const ALL_HELPERS: [LS; 24] = pass_compiler_helpers_to!(bracket);
     }
     pub(crate) use compiler_helpers::*;
 
@@ -272,25 +278,17 @@ impl PriTypes {
     }
 }
 
-pub(crate) struct PriHelperFunctions {
-    pub f32_to_bits: FunctionInfo,
-    pub f64_to_bits: FunctionInfo,
-    pub set_place_address_typed: FunctionInfo,
-    pub type_id_of: FunctionInfo,
-    pub size_of: FunctionInfo,
-    pub callee_def_static: FunctionInfo,
-    pub callee_def_maybe_virtual: FunctionInfo,
-    pub func_def_static: FunctionInfo,
-    pub func_def_dyn_method: FunctionInfo,
-    pub receiver_to_raw_ptr: FunctionInfo,
-    pub receiver_pin_to_raw_ptr: FunctionInfo,
-    pub receiver_self_to_raw_ptr: FunctionInfo,
-    pub const_binary_op_of: FunctionInfo,
-    pub const_unary_op_of: FunctionInfo,
-    pub const_atomic_ord_of: FunctionInfo,
-    pub const_atomic_binary_op_of: FunctionInfo,
-    pub special_func_placeholder: FunctionInfo,
+macro_rules! define_pri_helper_funcs {
+    ($($name: ident),*$(,)?) => {
+        pub(crate) struct PriHelperFunctions {
+            $(
+                pub $name: FunctionInfo,
+            )*
+        }
+    };
 }
+
+sym::pass_compiler_helpers_to!(define_pri_helper_funcs, just_funcs);
 
 /// Lists all the PRI items, including the compiler helper items.
 pub(crate) fn all_pri_items(tcx: TyCtxt) -> Vec<DefId> {
@@ -496,25 +494,7 @@ pub(crate) fn collect_helper_funcs<'tcx>(
         };
     }
 
-    create!(
-        f32_to_bits,
-        f64_to_bits,
-        set_place_address_typed,
-        type_id_of,
-        size_of,
-        callee_def_static,
-        callee_def_maybe_virtual,
-        func_def_static,
-        func_def_dyn_method,
-        receiver_to_raw_ptr,
-        receiver_pin_to_raw_ptr,
-        receiver_self_to_raw_ptr,
-        const_binary_op_of,
-        const_unary_op_of,
-        const_atomic_ord_of,
-        const_atomic_binary_op_of,
-        special_func_placeholder,
-    )
+    sym::pass_compiler_helpers_to!(create, just_funcs)
 }
 
 fn filter_pri_items<'a, 'tcx: 'a>(

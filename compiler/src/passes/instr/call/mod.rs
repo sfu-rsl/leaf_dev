@@ -151,7 +151,7 @@ pub(crate) trait CastAssigner<'tcx> {
 pub struct SwitchInfo<'tcx> {
     pub(super) node_index: BasicBlock,
     pub(super) discr_ty: Ty<'tcx>,
-    pub(super) runtime_info_store_var: Local,
+    pub(super) info_local: Local,
 }
 
 pub(crate) trait BranchingReferencer<'tcx> {
@@ -1718,26 +1718,48 @@ mod implementation {
         C: ForBranching<'tcx>,
     {
         fn store_branching_info(&mut self, discr: &Operand<'tcx>) -> SwitchInfo<'tcx> {
-            let tcx = self.context.tcx();
-            let operand_ref = self.reference_operand(discr);
-            let ty = discr.ty(self.context.local_decls(), tcx);
-            let discr_size = ty.primitive_size(tcx).bits();
-            let node_index = self.context.block_index();
-            let (block, info_store_var) = self.make_bb_for_call_with_ret(
-                sym::new_branching_info,
+            let loc_local = self.add_bb_for_basic_block_location();
+            let discr_ref = self.reference_operand(discr);
+
+            let (info_block, info_local) = self.make_bb_for_helper_call_with_all(
+                self.context.pri_helper_funcs().switch_info,
+                [],
                 vec![
-                    operand::const_from_uint(tcx, u32::from(node_index)),
-                    operand::copy_for_local(operand_ref.into()),
-                    operand::const_from_uint(tcx, discr_size),
-                    operand::const_from_bool(tcx, ty.is_signed()),
+                    operand::move_for_local(loc_local.into()),
+                    operand::move_for_local(discr_ref.into()),
                 ],
+                Default::default(),
+            );
+            self.insert_blocks([info_block]);
+            SwitchInfo {
+                node_index: self.context.block_index(),
+                discr_ty: discr.ty(self.context.local_decls(), self.tcx()),
+                info_local,
+            }
+        }
+    }
+
+    impl<'tcx, C> RuntimeCallAdder<C>
+    where
+        Self: MirCallAdder<'tcx> + BlockInserter<'tcx> + BodyProvider<'tcx>,
+        C: BaseContext<'tcx> + BlockIndexProvider,
+    {
+        fn add_bb_for_basic_block_location(&mut self) -> Local {
+            let tcx = self.tcx();
+            let def_id = self.body().source.def_id();
+            let bb_index = self.context.block_index();
+            let (block, local) = self.make_bb_for_helper_call_with_all(
+                self.context.pri_helper_funcs().basic_block_location,
+                [],
+                vec![
+                    operand::const_from_uint(tcx, def_id.krate.as_u32()),
+                    operand::const_from_uint(tcx, def_id.index.as_u32()),
+                    operand::const_from_uint(tcx, bb_index.as_u32()),
+                ],
+                Default::default(),
             );
             self.insert_blocks([block]);
-            SwitchInfo {
-                node_index,
-                discr_ty: ty,
-                runtime_info_store_var: info_store_var,
-            }
+            local
         }
     }
 
@@ -1786,7 +1808,7 @@ mod implementation {
             let block = self.make_bb_for_call_with_target(
                 func_name,
                 [
-                    vec![operand::move_for_local(switch_info.runtime_info_store_var)],
+                    vec![operand::move_for_local(switch_info.info_local)],
                     additional_args,
                 ]
                 .concat(),
@@ -1864,7 +1886,7 @@ mod implementation {
             let mut block = self.make_bb_for_call_with_target(
                 func_name,
                 [
-                    vec![operand::move_for_local(switch_info.runtime_info_store_var)],
+                    vec![operand::move_for_local(switch_info.info_local)],
                     additional_args,
                 ]
                 .concat(),

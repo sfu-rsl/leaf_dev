@@ -16,7 +16,6 @@ pub trait ProgramRuntimeInterface {
     type ConstStr;
     type ConstByteStr;
     type Slice<'a, T: 'a>;
-    type BranchingInfo;
     type TypeId;
     type BinaryOp;
     type UnaryOp;
@@ -40,7 +39,6 @@ pub trait FfiPri:
         ConstStr = ffi::ConstStrPack,
         ConstByteStr = ffi::ConstByteStrPack,
         // Slice<'a, T> = ffi::SlicePack<T>,
-        BranchingInfo = BranchingInfo,
         TypeId = ffi::U128Pack<TypeId>,
         BinaryOp = BinaryOp,
         UnaryOp = UnaryOp,
@@ -200,34 +198,29 @@ pub mod macros {
           { fn assign_shallow_init_box(dest: PlaceRef, operand: OperandRef, boxed_type_id: ($type_id_ty)) }
 
           #[allow(unused_parens)]
-          { fn new_branching_info(
-              node_location: BasicBlockIndex,
-              discriminant: OperandRef,
-          ) -> ($branching_info_ty) }
+          { fn take_branch_true(info: SwitchInfo) }
           #[allow(unused_parens)]
-          { fn take_branch_true(info: ($branching_info_ty)) }
-          #[allow(unused_parens)]
-          { fn take_branch_false(info: ($branching_info_ty)) }
+          { fn take_branch_false(info: SwitchInfo) }
 
           #[allow(unused_parens)]
           { fn take_branch_int(
-              info: ($branching_info_ty),
+              info: SwitchInfo,
               value_bit_rep: ($u128_ty),
               bit_size: u64,
               is_signed: bool,
             ) }
           #[allow(unused_parens)]
           { fn take_branch_ow_int(
-              info: ($branching_info_ty),
+              info: SwitchInfo,
               non_values: ($slice_ty!($u128_ty)),
               bit_size: u64,
               is_signed: bool,
           ) }
 
           #[allow(unused_parens)]
-          { fn take_branch_char(info: ($branching_info_ty), value: (($char_ty))) }
+          { fn take_branch_char(info: SwitchInfo, value: (($char_ty))) }
           #[allow(unused_parens)]
-          { fn take_branch_ow_char(info: ($branching_info_ty), non_values: ($slice_ty!($char_ty))) }
+          { fn take_branch_ow_char(info: SwitchInfo, non_values: ($slice_ty!($char_ty))) }
 
           #[allow(unused_parens)]
           { fn before_call_func(def: CalleeDef, func: OperandRef, args: ($slice_ty!(OperandRef)), are_args_tupled: bool) }
@@ -373,7 +366,6 @@ pub mod macros {
                     &[u8]: $$byte_str_ty:ty,
                     // NOTE: Slice is received as a macro to enable having [T].
                     slice: $$slice_ty:path,
-                    branching_info: $$branching_info_ty:ty,
                     type_id: $$type_id_ty:ty,
                     binary_op: $$binary_op_ty:ty,
                     unary_op: $$unary_op_ty:ty,
@@ -397,7 +389,6 @@ pub mod macros {
                         &str: (),
                         &[u8]: (),
                         slice: $crate::leaf::common::utils::identity,
-                        branching_info: (),
                         type_id: (),
                         binary_op: (),
                         unary_op: (),
@@ -417,7 +408,6 @@ pub mod macros {
                         &str: Self::ConstStr,
                         &[u8]: Self::ConstByteStr,
                         slice: $$crate::leaf::common::pri::macros::self_slice_of,
-                        branching_info: Self::BranchingInfo,
                         type_id: Self::TypeId,
                         binary_op: Self::BinaryOp,
                         unary_op: Self::UnaryOp,
@@ -437,7 +427,6 @@ pub mod macros {
                         &str: ConstStrPack,
                         &[u8]: ConstByteStrPack,
                         slice: $$crate::leaf::common::pri::macros::slice_pack_of,
-                        branching_info: common::pri::BranchingInfo,
                         type_id: U128Pack<TypeId>,
                         binary_op: common::pri::BinaryOp,
                         unary_op: common::pri::UnaryOp,
@@ -458,7 +447,7 @@ pub mod macros {
 
     #[cfg_attr(not(core_build), macro_export)]
     macro_rules! list_func_decls {
-        (modifier: $modifier:path,(u128: $u128_ty:ty,char: $char_ty:ty, &str: $str_ty:ty, &[u8]: $byte_str_ty:ty,slice: $slice_ty:path,branching_info: $branching_info_ty:ty,type_id: $type_id_ty:ty,binary_op: $binary_op_ty:ty,unary_op: $unary_op_ty:ty,atomic_ord: $atomic_ord_ty:ty,atomic_bin_op: $atomic_bin_op_ty:ty,dbg_info: $dbg_info_ty:ty,tag: $tag_ty:ty$(,)?)) => {
+        (modifier: $modifier:path,(u128: $u128_ty:ty,char: $char_ty:ty, &str: $str_ty:ty, &[u8]: $byte_str_ty:ty,slice: $slice_ty:path,type_id: $type_id_ty:ty,binary_op: $binary_op_ty:ty,unary_op: $unary_op_ty:ty,atomic_ord: $atomic_ord_ty:ty,atomic_bin_op: $atomic_bin_op_ty:ty,dbg_info: $dbg_info_ty:ty,tag: $tag_ty:ty$(,)?)) => {
             $modifier!{
                 fn init_runtime_lib();
             }$modifier!{
@@ -586,19 +575,17 @@ pub mod macros {
             }$modifier!{
                 #[allow(unused_parens)]fn assign_shallow_init_box(dest:PlaceRef,operand:OperandRef,boxed_type_id:($type_id_ty));
             }$modifier!{
-                #[allow(unused_parens)]fn new_branching_info(node_location:BasicBlockIndex,discriminant:OperandRef,)->($branching_info_ty);
+                #[allow(unused_parens)]fn take_branch_true(info:SwitchInfo);
             }$modifier!{
-                #[allow(unused_parens)]fn take_branch_true(info:($branching_info_ty));
+                #[allow(unused_parens)]fn take_branch_false(info:SwitchInfo);
             }$modifier!{
-                #[allow(unused_parens)]fn take_branch_false(info:($branching_info_ty));
+                #[allow(unused_parens)]fn take_branch_int(info:SwitchInfo,value_bit_rep:($u128_ty),bit_size:u64,is_signed:bool,);
             }$modifier!{
-                #[allow(unused_parens)]fn take_branch_int(info:($branching_info_ty),value_bit_rep:($u128_ty),bit_size:u64,is_signed:bool,);
+                #[allow(unused_parens)]fn take_branch_ow_int(info:SwitchInfo,non_values:($slice_ty!($u128_ty)),bit_size:u64,is_signed:bool,);
             }$modifier!{
-                #[allow(unused_parens)]fn take_branch_ow_int(info:($branching_info_ty),non_values:($slice_ty!($u128_ty)),bit_size:u64,is_signed:bool,);
+                #[allow(unused_parens)]fn take_branch_char(info:SwitchInfo,value:(($char_ty)));
             }$modifier!{
-                #[allow(unused_parens)]fn take_branch_char(info:($branching_info_ty),value:(($char_ty)));
-            }$modifier!{
-                #[allow(unused_parens)]fn take_branch_ow_char(info:($branching_info_ty),non_values:($slice_ty!($char_ty)));
+                #[allow(unused_parens)]fn take_branch_ow_char(info:SwitchInfo,non_values:($slice_ty!($char_ty)));
             }$modifier!{
                 #[allow(unused_parens)]fn before_call_func(def:CalleeDef,func:OperandRef,args:($slice_ty!(OperandRef)),are_args_tupled:bool);
             }$modifier!{
@@ -667,17 +654,17 @@ pub mod macros {
         };
         (modifier: $modifier:path) => {
             $crate::leaf::common::pri::macros::list_func_decls!{
-                modifier: $modifier,(u128:(),char:(), &str:(), &[u8]:(),slice:crate::leaf::common::utils::identity,branching_info:(),type_id:(),binary_op:(),unary_op:(),atomic_ord:(),atomic_bin_op:(),dbg_info:(),tag:(),)
+                modifier: $modifier,(u128:(),char:(), &str:(), &[u8]:(),slice:crate::leaf::common::utils::identity,type_id:(),binary_op:(),unary_op:(),atomic_ord:(),atomic_bin_op:(),dbg_info:(),tag:(),)
             }
         };
         (modifier: $modifier:path,(from Self)) => {
             $crate::leaf::common::pri::macros::list_func_decls!{
-                modifier: $modifier,(u128:Self::U128,char:Self::Char, &str:Self::ConstStr, &[u8]:Self::ConstByteStr,slice: $crate::leaf::common::pri::macros::self_slice_of,branching_info:Self::BranchingInfo,type_id:Self::TypeId,binary_op:Self::BinaryOp,unary_op:Self::UnaryOp,atomic_ord:Self::AtomicOrdering,atomic_bin_op:Self::AtomicBinaryOp,dbg_info:Self::DebugInfo,tag:Self::Tag,)
+                modifier: $modifier,(u128:Self::U128,char:Self::Char, &str:Self::ConstStr, &[u8]:Self::ConstByteStr,slice: $crate::leaf::common::pri::macros::self_slice_of,type_id:Self::TypeId,binary_op:Self::BinaryOp,unary_op:Self::UnaryOp,atomic_ord:Self::AtomicOrdering,atomic_bin_op:Self::AtomicBinaryOp,dbg_info:Self::DebugInfo,tag:Self::Tag,)
             }
         };
         (modifier: $modifier:path,(from common::ffi)) => {
             $crate::leaf::common::pri::macros::list_func_decls!{
-                modifier: $modifier,(u128:U128Pack,char:CharPack, &str:ConstStrPack, &[u8]:ConstByteStrPack,slice: $crate::leaf::common::pri::macros::slice_pack_of,branching_info:common::pri::BranchingInfo,type_id:U128Pack<TypeId>,binary_op:common::pri::BinaryOp,unary_op:common::pri::UnaryOp,atomic_ord:common::pri::AtomicOrdering,atomic_bin_op:common::pri::AtomicBinaryOp,dbg_info:common::ffi::DebugInfo,tag:ConstStrPack,)
+                modifier: $modifier,(u128:U128Pack,char:CharPack, &str:ConstStrPack, &[u8]:ConstByteStrPack,slice: $crate::leaf::common::pri::macros::slice_pack_of,type_id:U128Pack<TypeId>,binary_op:common::pri::BinaryOp,unary_op:common::pri::UnaryOp,atomic_ord:common::pri::AtomicOrdering,atomic_bin_op:common::pri::AtomicBinaryOp,dbg_info:common::ffi::DebugInfo,tag:ConstStrPack,)
             }
         };
     }

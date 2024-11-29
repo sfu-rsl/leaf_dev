@@ -1,6 +1,6 @@
 pub use super::super::types::{
-    Alignment, BasicBlockIndex, CalleeDef, DynRawMetadata, FieldIndex, FuncDef, LocalIndex,
-    RawAddress, TypeId, TypeSize, VariantIndex,
+    Alignment, BasicBlockIndex, BasicBlockLocation, CalleeDef, DefId, DynRawMetadata, FieldIndex,
+    FuncDef, LocalIndex, RawAddress, TypeId, TypeSize, VariantIndex,
 };
 
 pub type Ref = u64;
@@ -123,24 +123,27 @@ enum_like_type! {
     }
 }
 
-static DEFAULT_BRANCHING_INFO: BranchingInfo = BranchingInfo {
-    node_location: 0,
+static DEFAULT_SWITCH_INFO: SwitchInfo = SwitchInfo {
+    node_location: BasicBlockLocation {
+        body: DefId(0, 0),
+        index: 0,
+    },
     discriminant: 0,
 };
 
 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
-pub struct BranchingInfo {
-    pub node_location: BasicBlockIndex,
+pub struct SwitchInfo {
+    pub node_location: BasicBlockLocation,
     pub discriminant: OperandRef,
 }
 
 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
-impl Default for BranchingInfo {
+impl Default for SwitchInfo {
     #[inline(always)]
     fn default() -> Self {
-        DEFAULT_BRANCHING_INFO
+        DEFAULT_SWITCH_INFO
     }
 }
 
