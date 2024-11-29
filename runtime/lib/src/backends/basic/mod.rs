@@ -139,7 +139,7 @@ impl RuntimeBackend for BasicBackend {
     where
         Self: 'a;
 
-    type BranchingHandler<'a> = BasicBranchingHandler<'a, BasicExprBuilder>
+    type ConstraintHandler<'a> = BasicConstraintHandler<'a, BasicExprBuilder>
     where
         Self: 'a;
 
@@ -177,8 +177,8 @@ impl RuntimeBackend for BasicBackend {
         BasicAssignmentHandler::new(dest, self)
     }
 
-    fn branch(&mut self) -> Self::BranchingHandler<'_> {
-        BasicBranchingHandler::new(self)
+    fn constraint(&mut self) -> Self::ConstraintHandler<'_> {
+        BasicConstraintHandler::new(self)
     }
 
     fn func_control(&mut self) -> Self::FunctionHandler<'_> {
@@ -611,12 +611,12 @@ impl<EB: OperationalExprBuilder> BasicAssignmentHandler<'_, EB> {
     }
 }
 
-pub(crate) struct BasicBranchingHandler<'a, EB: BinaryExprBuilder> {
+pub(crate) struct BasicConstraintHandler<'a, EB: BinaryExprBuilder> {
     trace_manager: RefMut<'a, TraceManager>,
     expr_builder: RRef<EB>,
 }
 
-impl<'a> BasicBranchingHandler<'a, BasicExprBuilder> {
+impl<'a> BasicConstraintHandler<'a, BasicExprBuilder> {
     fn new(backend: &'a mut BasicBackend) -> Self {
         Self {
             trace_manager: backend.trace_manager.borrow_mut(),
@@ -625,16 +625,16 @@ impl<'a> BasicBranchingHandler<'a, BasicExprBuilder> {
     }
 }
 
-impl<'a, EB: BinaryExprBuilder> BranchingHandler for BasicBranchingHandler<'a, EB> {
+impl<'a, EB: BinaryExprBuilder> ConstraintHandler for BasicConstraintHandler<'a, EB> {
     type Operand = ValueRef;
-    type ConditionalBranchingHandler = BasicConditionalBranchingHandler<'a, EB>;
+    type SwitchHandler = BasicSwitchHandler<'a, EB>;
 
-    fn conditional(
+    fn switch(
         self,
         discriminant: Self::Operand,
         metadata: abs::BranchingMetadata,
-    ) -> Self::ConditionalBranchingHandler {
-        BasicConditionalBranchingHandler {
+    ) -> Self::SwitchHandler {
+        BasicSwitchHandler {
             discriminant,
             parent: self,
         }
@@ -670,7 +670,7 @@ impl<'a, EB: BinaryExprBuilder> BranchingHandler for BasicBranchingHandler<'a, E
     }
 }
 
-impl<'a, EB: BinaryExprBuilder> BasicBranchingHandler<'a, EB> {
+impl<'a, EB: BinaryExprBuilder> BasicConstraintHandler<'a, EB> {
     fn notify_constraint(&mut self, constraint: Constraint) {
         self.trace_manager.notify_step(
             0, /* TODO: The unique index of the block we have entered. */
@@ -679,14 +679,12 @@ impl<'a, EB: BinaryExprBuilder> BasicBranchingHandler<'a, EB> {
     }
 }
 
-pub(crate) struct BasicConditionalBranchingHandler<'a, EB: BinaryExprBuilder> {
+pub(crate) struct BasicSwitchHandler<'a, EB: BinaryExprBuilder> {
     discriminant: ValueRef,
-    parent: BasicBranchingHandler<'a, EB>,
+    parent: BasicConstraintHandler<'a, EB>,
 }
 
-impl<'a, EB: BinaryExprBuilder> ConditionalBranchingHandler
-    for BasicConditionalBranchingHandler<'a, EB>
-{
+impl<'a, EB: BinaryExprBuilder> SwitchHandler for BasicSwitchHandler<'a, EB> {
     fn take(mut self, value: Self::Constant) {
         if !self.discriminant.is_symbolic() {
             return;
@@ -706,10 +704,10 @@ impl<'a, EB: BinaryExprBuilder> ConditionalBranchingHandler
     }
 }
 
-impl<'a, EB: BinaryExprBuilder> BasicConditionalBranchingHandler<'a, EB> {
+impl<'a, EB: BinaryExprBuilder> BasicSwitchHandler<'a, EB> {
     fn create_constraint(
         &mut self,
-        values: Vec<<Self as ConditionalBranchingHandler>::Constant>,
+        values: Vec<<Self as SwitchHandler>::Constant>,
         eq: bool,
     ) -> Constraint {
         let mut expr_builder = self.parent.expr_builder.as_ref().borrow_mut();

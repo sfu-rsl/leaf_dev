@@ -415,14 +415,14 @@ impl ProgramRuntimeInterface for BasicPri {
         BranchingInfo::new(node_location, discriminant, discr_bit_size, discr_is_signed)
     }
     fn take_branch_true(info: BranchingInfo) {
-        conditional(info, |h| h.take(true.into()))
+        switch(info, |h| h.take(true.into()))
     }
     fn take_branch_false(info: BranchingInfo) {
-        conditional(info, |h| h.take(false.into()))
+        switch(info, |h| h.take(false.into()))
     }
 
     fn take_branch_int(info: BranchingInfo, value_bit_rep: u128, bit_size: u64, is_signed: bool) {
-        conditional(info, |h| {
+        switch(info, |h| {
             h.take(Constant::Int {
                 bit_rep: value_bit_rep,
                 ty: IntType {
@@ -438,7 +438,7 @@ impl ProgramRuntimeInterface for BasicPri {
         bit_size: u64,
         is_signed: bool,
     ) {
-        conditional(info, |h| {
+        switch(info, |h| {
             h.take_otherwise(
                 non_values
                     .iter()
@@ -455,10 +455,10 @@ impl ProgramRuntimeInterface for BasicPri {
     }
 
     fn take_branch_char(info: BranchingInfo, value: char) {
-        conditional(info, |h| h.take(value.into()))
+        switch(info, |h| h.take(value.into()))
     }
     fn take_branch_ow_char(info: BranchingInfo, non_values: &[char]) {
-        conditional(info, |h| {
+        switch(info, |h| {
             h.take_otherwise(non_values.iter().map(|c| (*c).into()).collect())
         })
     }
@@ -757,7 +757,7 @@ impl BasicPri {
     }
 
     fn check_assert(cond: OperandRef, expected: bool, assert_kind: AssertKind<OperandImpl>) {
-        branch(|h| h.assert(take_back_operand(cond), expected, assert_kind))
+        constraint(|h| h.assert(take_back_operand(cond), expected, assert_kind))
     }
 
     #[inline]

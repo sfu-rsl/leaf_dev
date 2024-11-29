@@ -18,7 +18,7 @@ pub(crate) trait RuntimeBackend {
     type AssignmentHandler<'a>: AssignmentHandler<Place = Self::Place, Operand = Self::Operand>
     where
         Self: 'a;
-    type BranchingHandler<'a>: BranchingHandler<Operand = Self::Operand>
+    type ConstraintHandler<'a>: ConstraintHandler<Operand = Self::Operand>
     where
         Self: 'a;
     type FunctionHandler<'a>: FunctionHandler<Place = Self::Place, Operand = Self::Operand>
@@ -41,7 +41,7 @@ pub(crate) trait RuntimeBackend {
         dest: <Self::AssignmentHandler<'a> as AssignmentHandler>::Place,
     ) -> Self::AssignmentHandler<'a>;
 
-    fn branch(&mut self) -> Self::BranchingHandler<'_>;
+    fn constraint(&mut self) -> Self::ConstraintHandler<'_>;
 
     fn func_control(&mut self) -> Self::FunctionHandler<'_>;
 
@@ -200,21 +200,20 @@ pub(crate) trait AssignmentHandler: Sized {
     fn use_and_check_eq(self, val: Self::Operand, expected: Self::Operand);
 }
 
-// https://en.wikipedia.org/wiki/Branch_(computer_science)
-pub(crate) trait BranchingHandler {
+pub(crate) trait ConstraintHandler {
     type Operand;
-    type ConditionalBranchingHandler: ConditionalBranchingHandler;
+    type SwitchHandler: SwitchHandler;
 
-    fn conditional(
+    fn switch(
         self,
         discriminant: Self::Operand,
         metadata: BranchingMetadata,
-    ) -> Self::ConditionalBranchingHandler;
+    ) -> Self::SwitchHandler;
 
     fn assert(self, cond: Self::Operand, expected: bool, assert_kind: AssertKind<Self::Operand>);
 }
 
-pub(crate) trait ConditionalBranchingHandler {
+pub(crate) trait SwitchHandler {
     type Constant = super::Constant;
 
     fn take(self, value: Self::Constant);

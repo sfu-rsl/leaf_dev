@@ -1,7 +1,7 @@
 use super::utils::{DefaultRefManager, RefManager, UnsafeSync};
 use super::{BranchingInfo, OperandRef, PlaceHandler, PlaceRef};
 use crate::abs::{
-    backend::{AssignmentHandler, BranchingHandler, OperandHandler, PlaceBuilder, RuntimeBackend},
+    backend::{AssignmentHandler, ConstraintHandler, OperandHandler, PlaceBuilder, RuntimeBackend},
     PlaceUsage,
 };
 use crate::backends::basic::BasicPlaceBuilder;
@@ -149,24 +149,24 @@ pub(super) fn take_back_operand(reference: OperandRef) -> OperandImpl {
     perform_on_operand_ref_manager(|rm| rm.take(reference))
 }
 
-pub(super) fn branch<T>(
-    branch_action: impl FnOnce(<BackendImpl as RuntimeBackend>::BranchingHandler<'_>) -> T,
+pub(super) fn constraint<T>(
+    constraint_action: impl FnOnce(<BackendImpl as RuntimeBackend>::ConstraintHandler<'_>) -> T,
 ) -> T {
     perform_on_backend(|r| {
-        let handler = r.branch();
-        branch_action(handler)
+        let handler = r.constraint();
+        constraint_action(handler)
     })
 }
 
-pub(super) fn conditional<T>(
+pub(super) fn switch<T>(
     info: BranchingInfo,
-    conditional_action: impl FnOnce(
-        <<BackendImpl as RuntimeBackend>::BranchingHandler<'_> as BranchingHandler>::ConditionalBranchingHandler,
+    switch_action: impl FnOnce(
+        <<BackendImpl as RuntimeBackend>::ConstraintHandler<'_> as ConstraintHandler>::SwitchHandler,
     ) -> T,
 ) -> T {
-    branch(|b| {
-        let handler = b.conditional(take_back_operand(info.discriminant), info.metadata);
-        conditional_action(handler)
+    constraint(|b| {
+        let handler = b.switch(take_back_operand(info.discriminant), info.metadata);
+        switch_action(handler)
     })
 }
 
