@@ -147,6 +147,15 @@ impl Default for SwitchInfo {
     }
 }
 
+#[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct AssertionInfo {
+    pub location: BasicBlockLocation,
+    pub condition: OperandRef,
+    pub expected: bool,
+}
+
 enum_like_type! {
     AtomicOrdering {
         UNORDERED = 0;

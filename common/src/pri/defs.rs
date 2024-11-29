@@ -238,26 +238,19 @@ pub mod macros {
           { fn override_return_value(operand: OperandRef) }
           { fn after_call_func(destination: PlaceRef) }
 
-          { fn check_assert_bounds_check(
-              cond: OperandRef,
-              expected: bool,
-              len: OperandRef,
-              index: OperandRef,
-          ) }
+          { fn assert_bounds_check(info: AssertionInfo, len: OperandRef, index: OperandRef) }
           #[allow(unused_parens)]
-          { fn check_assert_overflow(
-              cond: OperandRef,
-              expected: bool,
+          { fn assert_overflow(
+              info: AssertionInfo,
               operator: ($binary_op_ty),
               first: OperandRef,
               second: OperandRef,
           ) }
-          { fn check_assert_overflow_neg(cond: OperandRef, expected: bool, operand: OperandRef) }
-          { fn check_assert_div_by_zero(cond: OperandRef, expected: bool, operand: OperandRef) }
-          { fn check_assert_rem_by_zero(cond: OperandRef, expected: bool, operand: OperandRef) }
-          { fn check_assert_misaligned_ptr_deref(
-              cond: OperandRef,
-              expected: bool,
+          { fn assert_overflow_neg(info: AssertionInfo, operand: OperandRef) }
+          { fn assert_div_by_zero(info: AssertionInfo, operand: OperandRef) }
+          { fn assert_rem_by_zero(info: AssertionInfo, operand: OperandRef) }
+          { fn assert_misaligned_ptr_deref(
+              info: AssertionInfo,
               required: OperandRef,
               found: OperandRef,
           ) }
@@ -599,17 +592,17 @@ pub mod macros {
             }$modifier!{
                 fn after_call_func(destination:PlaceRef);
             }$modifier!{
-                fn check_assert_bounds_check(cond:OperandRef,expected:bool,len:OperandRef,index:OperandRef,);
+                fn assert_bounds_check(info:AssertionInfo,len:OperandRef,index:OperandRef);
             }$modifier!{
-                #[allow(unused_parens)]fn check_assert_overflow(cond:OperandRef,expected:bool,operator:($binary_op_ty),first:OperandRef,second:OperandRef,);
+                #[allow(unused_parens)]fn assert_overflow(info:AssertionInfo,operator:($binary_op_ty),first:OperandRef,second:OperandRef,);
             }$modifier!{
-                fn check_assert_overflow_neg(cond:OperandRef,expected:bool,operand:OperandRef);
+                fn assert_overflow_neg(info:AssertionInfo,operand:OperandRef);
             }$modifier!{
-                fn check_assert_div_by_zero(cond:OperandRef,expected:bool,operand:OperandRef);
+                fn assert_div_by_zero(info:AssertionInfo,operand:OperandRef);
             }$modifier!{
-                fn check_assert_rem_by_zero(cond:OperandRef,expected:bool,operand:OperandRef);
+                fn assert_rem_by_zero(info:AssertionInfo,operand:OperandRef);
             }$modifier!{
-                fn check_assert_misaligned_ptr_deref(cond:OperandRef,expected:bool,required:OperandRef,found:OperandRef,);
+                fn assert_misaligned_ptr_deref(info:AssertionInfo,required:OperandRef,found:OperandRef,);
             }$modifier!{
                 #[allow(unused_parens)]fn debug_info(info:($dbg_info_ty));
             }$modifier!{

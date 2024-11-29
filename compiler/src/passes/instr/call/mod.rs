@@ -2350,24 +2350,34 @@ mod implementation {
             expected: bool,
             msg: &rustc_middle::mir::AssertMessage<'tcx>,
         ) {
-            let Some((func_name, mut additional_operands, additional_stmts)) =
-                self.reference_assert_kind(msg)
-            else {
+            let Some((func_name, additional_operands)) = self.reference_assert_kind(msg) else {
                 return;
             };
 
-            let mut operands = vec![
-                operand::move_for_local(cond.into()),
-                // this is a compile-time known value, so we can just pass it!
-                // NOTE: we could call different functions based on the value of this to improve
-                //       performance, but it wouldn't really affect much...
-                operand::const_from_bool(self.context.tcx(), expected),
-            ];
-            operands.append(&mut additional_operands);
+            let (info_block, info_local) = {
+                let loc_local = self.add_bb_for_basic_block_location();
+                self.make_bb_for_helper_call_with_all(
+                    self.context.pri_helper_funcs().assertion_info,
+                    [],
+                    vec![
+                        operand::move_for_local(loc_local.into()),
+                        operand::move_for_local(cond.into()),
+                        operand::const_from_bool(self.context.tcx(), expected),
+                    ],
+                    Default::default(),
+                )
+            };
 
-            let mut block = self.make_bb_for_call(func_name, operands);
-            block.statements.extend(additional_stmts);
-            self.insert_blocks([block]);
+            let block = self.make_bb_for_call(
+                func_name,
+                [
+                    vec![operand::move_for_local(info_local.into())],
+                    additional_operands,
+                ]
+                .concat(),
+            );
+
+            self.insert_blocks([info_block, block]);
         }
     }
     impl<'tcx, C> RuntimeCallAdder<C>
@@ -2377,19 +2387,18 @@ mod implementation {
         fn reference_assert_kind(
             &mut self,
             msg: &rustc_middle::mir::AssertMessage<'tcx>,
-        ) -> Option<(LeafSymbol, Vec<Operand<'tcx>>, Vec<Statement<'tcx>>)> {
+        ) -> Option<(LeafSymbol, Vec<Operand<'tcx>>)> {
             use rustc_middle::mir::AssertKind;
             match msg {
                 AssertKind::BoundsCheck { len, index } => {
                     let len_ref = self.reference_operand(len);
                     let index_ref = self.reference_operand(index);
                     Some((
-                        sym::check_assert_bounds_check,
+                        sym::assert_bounds_check,
                         vec![
                             operand::copy_for_local(len_ref.into()),
                             operand::copy_for_local(index_ref.into()),
                         ],
-                        vec![],
                     ))
                 }
                 AssertKind::Overflow(operator, op1, op2) => {
@@ -2410,38 +2419,34 @@ mod implementation {
                     let op1_ref = self.reference_operand(op1);
                     let op2_ref = self.reference_operand(op2);
                     Some((
-                        sym::check_assert_overflow,
+                        sym::assert_overflow,
                         vec![
                             // TODO: double check that moves and copies here are correct
                             operand::move_for_local(operator_local),
                             operand::copy_for_local(op1_ref.into()),
                             operand::copy_for_local(op2_ref.into()),
                         ],
-                        vec![],
                     ))
                 }
                 AssertKind::OverflowNeg(op) => {
                     let op_ref = self.reference_operand(op);
                     Some((
-                        sym::check_assert_overflow_neg,
+                        sym::assert_overflow_neg,
                         vec![operand::copy_for_local(op_ref.into())],
-                        vec![],
                     ))
                 }
                 AssertKind::DivisionByZero(op) => {
                     let op_ref = self.reference_operand(op);
                     Some((
-                        sym::check_assert_div_by_zero,
+                        sym::assert_div_by_zero,
                         vec![operand::copy_for_local(op_ref.into())],
-                        vec![],
                     ))
                 }
                 AssertKind::RemainderByZero(op) => {
                     let op_ref = self.reference_operand(op);
                     Some((
-                        sym::check_assert_rem_by_zero,
+                        sym::assert_rem_by_zero,
                         vec![operand::copy_for_local(op_ref.into())],
-                        vec![],
                     ))
                 }
                 AssertKind::ResumedAfterReturn(..) | AssertKind::ResumedAfterPanic(..) => {
@@ -2456,12 +2461,11 @@ mod implementation {
                     let required_ref = self.reference_operand(required);
                     let found_ref = self.reference_operand(found);
                     Some((
-                        sym::check_assert_misaligned_ptr_deref,
+                        sym::assert_misaligned_ptr_deref,
                         vec![
                             operand::copy_for_local(required_ref.into()),
                             operand::copy_for_local(found_ref.into()),
                         ],
-                        vec![],
                     ))
                 }
             }

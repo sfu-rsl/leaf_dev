@@ -179,6 +179,7 @@ pub mod sym {
 
                 basic_block_location,
                 switch_info,
+                assertion_info,
 
                 callee_def_static,
                 callee_def_maybe_virtual,
@@ -224,7 +225,7 @@ pub mod sym {
 
         pass_compiler_helpers_to!(symbols_in_compiler_helpers);
 
-        pub(crate) const ALL_HELPERS: [LS; 24] = pass_compiler_helpers_to!(bracket);
+        pub(crate) const ALL_HELPERS: [LS; 25] = pass_compiler_helpers_to!(bracket);
     }
     pub(crate) use compiler_helpers::*;
 
