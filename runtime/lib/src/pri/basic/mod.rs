@@ -40,6 +40,28 @@ impl ProgramRuntimeInterface for BasicPri {
         log_warn!("Shutting down has no effect on the basic backend.");
     }
 
+    #[tracing::instrument(target = "pri", skip_all, level = "trace")]
+    fn debug_info(info: Self::DebugInfo) {
+        let str_rep = String::from_utf8_lossy(info);
+        let str_rep = str_rep.trim_matches('"');
+        const MAX_LEN: usize = 120;
+        const DB_TAG: &str = const_format::concatcp!(TAG, "::debug");
+        if str_rep.len() <= MAX_LEN {
+            log_info!(target: DB_TAG, "{}", str_rep);
+        } else {
+            log_info!(target: DB_TAG, "{}…", &str_rep[..MAX_LEN]);
+            log_debug!(target: DB_TAG, "Full debug info: {}", str_rep);
+        }
+    }
+
+    fn push_tag(tag: Self::Tag) {
+        annotate(|h| h.push_tag(tag))
+    }
+
+    fn pop_tag() {
+        annotate(|h| h.pop_tag())
+    }
+
     #[tracing::instrument(target = "pri::place", level = "debug", ret)]
     fn ref_place_return_value() -> PlaceRef {
         push_place_info(|p| p.of_local(Local::ReturnValue))
@@ -461,6 +483,46 @@ impl ProgramRuntimeInterface for BasicPri {
         })
     }
 
+    fn assert_bounds_check(info: AssertionInfo, len: OperandRef, index: OperandRef) {
+        let assert_kind = AssertKind::BoundsCheck {
+            len: take_back_operand(len),
+            index: take_back_operand(index),
+        };
+        Self::assert(info, assert_kind)
+    }
+    fn assert_overflow(
+        info: AssertionInfo,
+        operator: Self::BinaryOp,
+        first: OperandRef,
+        second: OperandRef,
+    ) {
+        let assert_kind = AssertKind::Overflow(
+            operator,
+            take_back_operand(first),
+            take_back_operand(second),
+        );
+        Self::assert(info, assert_kind)
+    }
+    fn assert_overflow_neg(info: AssertionInfo, operand: OperandRef) {
+        let assert_kind = AssertKind::OverflowNeg(take_back_operand(operand));
+        Self::assert(info, assert_kind)
+    }
+    fn assert_div_by_zero(info: AssertionInfo, operand: OperandRef) {
+        let assert_kind = AssertKind::DivisionByZero(take_back_operand(operand));
+        Self::assert(info, assert_kind)
+    }
+    fn assert_rem_by_zero(info: AssertionInfo, operand: OperandRef) {
+        let assert_kind = AssertKind::RemainderByZero(take_back_operand(operand));
+        Self::assert(info, assert_kind)
+    }
+    fn assert_misaligned_ptr_deref(info: AssertionInfo, required: OperandRef, found: OperandRef) {
+        let assert_kind = AssertKind::MisalignedPointerDereference {
+            required: take_back_operand(required),
+            found: take_back_operand(found),
+        };
+        Self::assert(info, assert_kind)
+    }
+
     #[tracing::instrument(target = "pri::call", level = "debug")]
     fn before_call_func(
         def: CalleeDef,
@@ -523,79 +585,6 @@ impl ProgramRuntimeInterface for BasicPri {
     fn after_call_func(destination: PlaceRef) {
         let dest_place = take_place_info_to_write(destination);
         func_control(|h| h.after_call(dest_place))
-    }
-
-    fn check_assert_bounds_check(
-        cond: OperandRef,
-        expected: bool,
-        len: OperandRef,
-        index: OperandRef,
-    ) {
-        let assert_kind = AssertKind::BoundsCheck {
-            len: take_back_operand(len),
-            index: take_back_operand(index),
-        };
-        Self::check_assert(cond, expected, assert_kind)
-    }
-    fn check_assert_overflow(
-        cond: OperandRef,
-        expected: bool,
-        operator: Self::BinaryOp,
-        first: OperandRef,
-        second: OperandRef,
-    ) {
-        let assert_kind = AssertKind::Overflow(
-            operator,
-            take_back_operand(first),
-            take_back_operand(second),
-        );
-        Self::check_assert(cond, expected, assert_kind)
-    }
-    fn check_assert_overflow_neg(cond: OperandRef, expected: bool, operand: OperandRef) {
-        let assert_kind = AssertKind::OverflowNeg(take_back_operand(operand));
-        Self::check_assert(cond, expected, assert_kind)
-    }
-    fn check_assert_div_by_zero(cond: OperandRef, expected: bool, operand: OperandRef) {
-        let assert_kind = AssertKind::DivisionByZero(take_back_operand(operand));
-        Self::check_assert(cond, expected, assert_kind)
-    }
-    fn check_assert_rem_by_zero(cond: OperandRef, expected: bool, operand: OperandRef) {
-        let assert_kind = AssertKind::RemainderByZero(take_back_operand(operand));
-        Self::check_assert(cond, expected, assert_kind)
-    }
-    fn check_assert_misaligned_ptr_deref(
-        cond: OperandRef,
-        expected: bool,
-        required: OperandRef,
-        found: OperandRef,
-    ) {
-        let assert_kind = AssertKind::MisalignedPointerDereference {
-            required: take_back_operand(required),
-            found: take_back_operand(found),
-        };
-        Self::check_assert(cond, expected, assert_kind)
-    }
-
-    #[tracing::instrument(target = "pri", skip_all, level = "trace")]
-    fn debug_info(info: Self::DebugInfo) {
-        let str_rep = String::from_utf8_lossy(info);
-        let str_rep = str_rep.trim_matches('"');
-        const MAX_LEN: usize = 120;
-        const DB_TAG: &str = const_format::concatcp!(TAG, "::debug");
-        if str_rep.len() <= MAX_LEN {
-            log_info!(target: DB_TAG, "{}", str_rep);
-        } else {
-            log_info!(target: DB_TAG, "{}…", &str_rep[..MAX_LEN]);
-            log_debug!(target: DB_TAG, "Full debug info: {}", str_rep);
-        }
-    }
-
-    fn push_tag(tag: Self::Tag) {
-        annotate(|h| h.push_tag(tag))
-    }
-
-    fn pop_tag() {
-        annotate(|h| h.pop_tag())
     }
 
     fn intrinsic_assign_rotate_left(dest: PlaceRef, x: OperandRef, shift: OperandRef) {

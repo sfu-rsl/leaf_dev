@@ -90,9 +90,18 @@ pub mod macros {
     macro_rules! pass_func_decls_to {
     ($macro:ident) => {
         $macro! {
+            // ----- Interaction -----
           { fn init_runtime_lib() }
           { fn shutdown_runtime_lib() }
 
+          #[allow(unused_parens)]
+          { fn debug_info(info: ($dbg_info_ty)) }
+
+          #[allow(unused_parens)]
+          { fn push_tag(tag: ($tag_ty)) }
+          { fn pop_tag() }
+
+          // ----- Place -----
           { fn ref_place_return_value() -> PlaceRef }
           { fn ref_place_argument(local_index: LocalIndex) -> PlaceRef }
           { fn ref_place_local(local_index: LocalIndex) -> PlaceRef }
@@ -115,6 +124,7 @@ pub mod macros {
           { fn set_place_type_float(place: PlaceRef, e_bits: u64, s_bits: u64) }
           { fn set_place_size(place: PlaceRef, byte_size: TypeSize) }
 
+          // ----- Operand -----
           { fn ref_operand_copy(place: PlaceRef) -> OperandRef }
           { fn ref_operand_move(place: PlaceRef) -> OperandRef }
 
@@ -139,6 +149,7 @@ pub mod macros {
           #[allow(unused_parens)]
           { fn new_sym_value_float(conc_val_bit_rep:($u128_ty), e_bits: u64, s_bits: u64) -> OperandRef }
 
+          // ----- Assign -----
           { fn assign_use(dest: PlaceRef, operand: OperandRef) }
           { fn assign_repeat(dest: PlaceRef, operand: OperandRef, count: usize) }
           { fn assign_ref(dest: PlaceRef, place: PlaceRef, is_mutable: bool) }
@@ -146,6 +157,7 @@ pub mod macros {
           { fn assign_raw_ptr_of(dest: PlaceRef, place: PlaceRef, is_mutable: bool) }
           { fn assign_len(dest: PlaceRef, place: PlaceRef) }
 
+          // ------- Cast ---
           { fn assign_cast_char(dest: PlaceRef, operand: OperandRef) }
           { fn assign_cast_integer(dest: PlaceRef, operand: OperandRef, bit_size: u64, is_signed: bool) }
           { fn assign_cast_float(dest: PlaceRef, operand: OperandRef, e_bits: u64, s_bits: u64) }
@@ -197,11 +209,11 @@ pub mod macros {
           #[allow(unused_parens)]
           { fn assign_shallow_init_box(dest: PlaceRef, operand: OperandRef, boxed_type_id: ($type_id_ty)) }
 
+          // ----- Switch -----
           #[allow(unused_parens)]
           { fn take_branch_true(info: SwitchInfo) }
           #[allow(unused_parens)]
           { fn take_branch_false(info: SwitchInfo) }
-
           #[allow(unused_parens)]
           { fn take_branch_int(
               info: SwitchInfo,
@@ -216,28 +228,12 @@ pub mod macros {
               bit_size: u64,
               is_signed: bool,
           ) }
-
           #[allow(unused_parens)]
           { fn take_branch_char(info: SwitchInfo, value: (($char_ty))) }
           #[allow(unused_parens)]
           { fn take_branch_ow_char(info: SwitchInfo, non_values: ($slice_ty!($char_ty))) }
 
-          #[allow(unused_parens)]
-          { fn before_call_func(def: CalleeDef, func: OperandRef, args: ($slice_ty!(OperandRef)), are_args_tupled: bool) }
-          #[allow(unused_parens)]
-          { fn enter_func(def: FuncDef, arg_places: &[PlaceRef], ret_val_place: PlaceRef) }
-          #[allow(unused_parens)]
-          { fn enter_func_tupled(
-              def: FuncDef,
-              arg_places: &[PlaceRef],
-              ret_val_place: PlaceRef,
-              tupled_arg_index: LocalIndex,
-              tupled_arg_type_id: TypeId,
-          ) }
-          { fn return_from_func() }
-          { fn override_return_value(operand: OperandRef) }
-          { fn after_call_func(destination: PlaceRef) }
-
+          // ----- Assertion -----
           { fn assert_bounds_check(info: AssertionInfo, len: OperandRef, index: OperandRef) }
           #[allow(unused_parens)]
           { fn assert_overflow(
@@ -255,13 +251,24 @@ pub mod macros {
               found: OperandRef,
           ) }
 
+          // ----- Calling -----
           #[allow(unused_parens)]
-          { fn debug_info(info: ($dbg_info_ty)) }
-
+          { fn before_call_func(def: CalleeDef, func: OperandRef, args: ($slice_ty!(OperandRef)), are_args_tupled: bool) }
           #[allow(unused_parens)]
-          { fn push_tag(tag: ($tag_ty)) }
-          { fn pop_tag() }
+          { fn enter_func(def: FuncDef, arg_places: &[PlaceRef], ret_val_place: PlaceRef) }
+          #[allow(unused_parens)]
+          { fn enter_func_tupled(
+              def: FuncDef,
+              arg_places: &[PlaceRef],
+              ret_val_place: PlaceRef,
+              tupled_arg_index: LocalIndex,
+              tupled_arg_type_id: TypeId,
+          ) }
+          { fn return_from_func() }
+          { fn override_return_value(operand: OperandRef) }
+          { fn after_call_func(destination: PlaceRef) }
 
+          // ----- Atomic -----
           { fn intrinsic_assign_rotate_left(dest: PlaceRef, x: OperandRef, shift: OperandRef) }
           { fn intrinsic_assign_rotate_right(dest: PlaceRef, x: OperandRef, shift: OperandRef) }
           { fn intrinsic_assign_saturating_add(dest: PlaceRef, first: OperandRef, second: OperandRef) }
@@ -446,6 +453,12 @@ pub mod macros {
             }$modifier!{
                 fn shutdown_runtime_lib();
             }$modifier!{
+                #[allow(unused_parens)]fn debug_info(info:($dbg_info_ty));
+            }$modifier!{
+                #[allow(unused_parens)]fn push_tag(tag:($tag_ty));
+            }$modifier!{
+                fn pop_tag();
+            }$modifier!{
                 fn ref_place_return_value()->PlaceRef;
             }$modifier!{
                 fn ref_place_argument(local_index:LocalIndex)->PlaceRef;
@@ -580,18 +593,6 @@ pub mod macros {
             }$modifier!{
                 #[allow(unused_parens)]fn take_branch_ow_char(info:SwitchInfo,non_values:($slice_ty!($char_ty)));
             }$modifier!{
-                #[allow(unused_parens)]fn before_call_func(def:CalleeDef,func:OperandRef,args:($slice_ty!(OperandRef)),are_args_tupled:bool);
-            }$modifier!{
-                #[allow(unused_parens)]fn enter_func(def:FuncDef,arg_places: &[PlaceRef],ret_val_place:PlaceRef);
-            }$modifier!{
-                #[allow(unused_parens)]fn enter_func_tupled(def:FuncDef,arg_places: &[PlaceRef],ret_val_place:PlaceRef,tupled_arg_index:LocalIndex,tupled_arg_type_id:TypeId,);
-            }$modifier!{
-                fn return_from_func();
-            }$modifier!{
-                fn override_return_value(operand:OperandRef);
-            }$modifier!{
-                fn after_call_func(destination:PlaceRef);
-            }$modifier!{
                 fn assert_bounds_check(info:AssertionInfo,len:OperandRef,index:OperandRef);
             }$modifier!{
                 #[allow(unused_parens)]fn assert_overflow(info:AssertionInfo,operator:($binary_op_ty),first:OperandRef,second:OperandRef,);
@@ -604,11 +605,17 @@ pub mod macros {
             }$modifier!{
                 fn assert_misaligned_ptr_deref(info:AssertionInfo,required:OperandRef,found:OperandRef,);
             }$modifier!{
-                #[allow(unused_parens)]fn debug_info(info:($dbg_info_ty));
+                #[allow(unused_parens)]fn before_call_func(def:CalleeDef,func:OperandRef,args:($slice_ty!(OperandRef)),are_args_tupled:bool);
             }$modifier!{
-                #[allow(unused_parens)]fn push_tag(tag:($tag_ty));
+                #[allow(unused_parens)]fn enter_func(def:FuncDef,arg_places: &[PlaceRef],ret_val_place:PlaceRef);
             }$modifier!{
-                fn pop_tag();
+                #[allow(unused_parens)]fn enter_func_tupled(def:FuncDef,arg_places: &[PlaceRef],ret_val_place:PlaceRef,tupled_arg_index:LocalIndex,tupled_arg_type_id:TypeId,);
+            }$modifier!{
+                fn return_from_func();
+            }$modifier!{
+                fn override_return_value(operand:OperandRef);
+            }$modifier!{
+                fn after_call_func(destination:PlaceRef);
             }$modifier!{
                 fn intrinsic_assign_rotate_left(dest:PlaceRef,x:OperandRef,shift:OperandRef);
             }$modifier!{
