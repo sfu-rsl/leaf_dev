@@ -13,7 +13,7 @@ impl<S: Display, V: Display, M: TraceManager<S, V>> TraceManager<S, V>
     for LoggerTraceManager<S, V, M>
 {
     fn notify_step(&mut self, step: S, constraint: Constraint<V>) {
-        log_info!("Notified about constraints {} at step {}", constraint, step,);
+        log_info!("Notified about constraint {} at step {}", constraint, step,);
 
         self.inner.notify_step(step, constraint);
     }

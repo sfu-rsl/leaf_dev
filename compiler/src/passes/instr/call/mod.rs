@@ -1836,7 +1836,7 @@ mod implementation {
                 debug_assert!(non_values.len() == 1);
                 debug_assert!(non_values.next().unwrap() == 0);
 
-                (vec![], sym::take_branch_true, vec![])
+                (vec![], sym::take_branch_ow_bool, vec![])
             } else {
                 let (func_name, value_ty, non_values, additional_args) = if discr_ty.is_integral() {
                     (

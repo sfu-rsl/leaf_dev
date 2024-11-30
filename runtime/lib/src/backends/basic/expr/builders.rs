@@ -1368,7 +1368,18 @@ mod simp {
         }
 
         fn eq<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
-            Err(operands)
+            if operands.konst() == &ConstValue::Bool(true) {
+                Ok(operands.other_into())
+            } else if operands.konst() == &ConstValue::Bool(false) {
+                Ok(Expr::Unary {
+                    operator: UnaryOp::Not,
+                    operand: operands.other_into(),
+                }
+                .to_value_ref()
+                .into())
+            } else {
+                Err(operands)
+            }
         }
 
         fn lt<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
@@ -1390,7 +1401,18 @@ mod simp {
         }
 
         fn ne<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {
-            Err(operands)
+            if operands.konst() == &ConstValue::Bool(true) {
+                Ok(Expr::Unary {
+                    operator: UnaryOp::Not,
+                    operand: operands.other_into(),
+                }
+                .to_value_ref()
+                .into())
+            } else if operands.konst() == &ConstValue::Bool(false) {
+                Ok(operands.other_into())
+            } else {
+                Err(operands)
+            }
         }
 
         fn ge<'a>(&mut self, operands: Self::ExprRefPair<'a>) -> Self::Expr<'a> {

@@ -211,9 +211,9 @@ pub mod macros {
 
           // ----- Switch -----
           #[allow(unused_parens)]
-          { fn take_branch_true(info: SwitchInfo) }
-          #[allow(unused_parens)]
           { fn take_branch_false(info: SwitchInfo) }
+          #[allow(unused_parens)]
+          { fn take_branch_ow_bool(info: SwitchInfo) }
           #[allow(unused_parens)]
           { fn take_branch_int(
               info: SwitchInfo,
@@ -581,9 +581,9 @@ pub mod macros {
             }$modifier!{
                 #[allow(unused_parens)]fn assign_shallow_init_box(dest:PlaceRef,operand:OperandRef,boxed_type_id:($type_id_ty));
             }$modifier!{
-                #[allow(unused_parens)]fn take_branch_true(info:SwitchInfo);
-            }$modifier!{
                 #[allow(unused_parens)]fn take_branch_false(info:SwitchInfo);
+            }$modifier!{
+                #[allow(unused_parens)]fn take_branch_ow_bool(info:SwitchInfo);
             }$modifier!{
                 #[allow(unused_parens)]fn take_branch_int(info:SwitchInfo,value_bit_rep:($u128_ty),bit_size:u64,is_signed:bool,);
             }$modifier!{

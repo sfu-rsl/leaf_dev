@@ -680,7 +680,7 @@ impl<'a, EB: BinaryExprBuilder> SwitchHandler for BasicSwitchHandler<'a, EB> {
             return;
         }
 
-        let constraint = self.create_constraint(vec![value], true);
+        let constraint = self.create_constraint(vec![value]);
         self.parent.notify_constraint(constraint);
     }
 
@@ -689,29 +689,21 @@ impl<'a, EB: BinaryExprBuilder> SwitchHandler for BasicSwitchHandler<'a, EB> {
             return;
         }
 
-        let constraint = self.create_constraint(non_values, false);
+        let constraint = self.create_constraint(non_values).not();
         self.parent.notify_constraint(constraint);
     }
 }
 
 impl<'a, EB: BinaryExprBuilder> BasicSwitchHandler<'a, EB> {
-    fn create_constraint(
-        &mut self,
-        values: Vec<<Self as SwitchHandler>::Constant>,
-        eq: bool,
-    ) -> Constraint {
+    fn create_constraint(&mut self, values: Vec<<Self as SwitchHandler>::Constant>) -> Constraint {
         let mut expr_builder = self.parent.expr_builder.as_ref().borrow_mut();
         let expr = values
             .into_iter()
-            .fold(ConstValue::Bool(true).to_value_ref(), |acc, v| {
+            .fold(ConstValue::Bool(false).to_value_ref(), |acc, v| {
                 let first = self.discriminant.clone();
                 let second = ConcreteValue::from(v).to_value_ref();
-                let expr = if eq {
-                    expr_builder.eq((first, second).into())
-                } else {
-                    expr_builder.ne((first, second).into())
-                };
-                expr_builder.and((acc, expr).into()).into()
+                let expr = expr_builder.eq((first, second).into());
+                expr_builder.or((acc, expr).into()).into()
             });
         Constraint::Bool(expr)
     }

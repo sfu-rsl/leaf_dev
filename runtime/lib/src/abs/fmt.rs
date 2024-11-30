@@ -135,8 +135,8 @@ where
 {
     fn fmt(&self, f: &mut Formatter) -> Result {
         match self {
-            Constraint::Bool(value) => write!(f, "({})", value),
-            Constraint::Not(value) => write!(f, "!({})", value),
+            Constraint::Bool(value) => write!(f, "{{{}}}", value),
+            Constraint::Not(value) => write!(f, "!{{{}}}", value),
         }
     }
 }
