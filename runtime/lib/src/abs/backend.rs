@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use super::{
-    AssertKind, BinaryOp, BranchingMetadata, CalleeDef, CastKind, Constraint, FieldIndex, FuncDef,
+    AssertKind, BasicBlockLocation, BinaryOp, CalleeDef, CastKind, Constraint, FieldIndex, FuncDef,
     IntType, Local, PlaceUsage, Projection, SymVariable, Tag, TypeId, UnaryOp, ValueType,
     VariantIndex,
 };
@@ -41,7 +41,7 @@ pub(crate) trait RuntimeBackend {
         dest: <Self::AssignmentHandler<'a> as AssignmentHandler>::Place,
     ) -> Self::AssignmentHandler<'a>;
 
-    fn constraint(&mut self) -> Self::ConstraintHandler<'_>;
+    fn constraint_at(&mut self, location: BasicBlockLocation) -> Self::ConstraintHandler<'_>;
 
     fn func_control(&mut self) -> Self::FunctionHandler<'_>;
 
@@ -204,11 +204,7 @@ pub(crate) trait ConstraintHandler {
     type Operand;
     type SwitchHandler: SwitchHandler;
 
-    fn switch(
-        self,
-        discriminant: Self::Operand,
-        metadata: BranchingMetadata,
-    ) -> Self::SwitchHandler;
+    fn switch(self, discriminant: Self::Operand) -> Self::SwitchHandler;
 
     fn assert(self, cond: Self::Operand, expected: bool, assert_kind: AssertKind<Self::Operand>);
 }

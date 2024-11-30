@@ -25,7 +25,6 @@ impl ProgramRuntimeInterface for ExternPri {
     type ConstStr = ConstStrPack;
     type ConstByteStr = ConstByteStrPack;
     type Slice<'a, T: 'a> = SlicePack<T>;
-    type BranchingInfo = common::pri::BranchingInfo;
     type TypeId = U128Pack<TypeId>;
     type BinaryOp = common::pri::BinaryOp;
     type UnaryOp = common::pri::UnaryOp;

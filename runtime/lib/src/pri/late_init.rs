@@ -51,7 +51,6 @@ impl ProgramRuntimeInterface for LateInitPri<MainPri> {
     type ConstStr = &'static str;
     type ConstByteStr = &'static [u8];
     type Slice<'a, T: 'a> = &'a [T];
-    type BranchingInfo = BranchingInfo;
     type TypeId = abs::TypeId;
     type BinaryOp = abs::BinaryOp;
     type UnaryOp = abs::UnaryOp;

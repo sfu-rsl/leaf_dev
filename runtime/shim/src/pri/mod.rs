@@ -49,7 +49,6 @@ mod ffi {
         type ConstStr = ConstStrPack;
         type ConstByteStr = ConstByteStrPack;
         type Slice<'a, T: 'a> = SlicePack<T>;
-        type BranchingInfo = common::pri::BranchingInfo;
         type TypeId = U128Pack<TypeId>;
         type BinaryOp = common::pri::BinaryOp;
         type UnaryOp = common::pri::UnaryOp;
@@ -129,7 +128,6 @@ common::pri::macros::list_func_decls! {
         &str: &'static str,
         &[u8]: &'static [u8],
         slice: slice_of,
-        branching_info: BranchingInfo,
         type_id: TypeId,
         binary_op: BinaryOp,
         unary_op: UnaryOp,

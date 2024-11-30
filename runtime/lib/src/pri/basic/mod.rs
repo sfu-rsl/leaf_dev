@@ -6,8 +6,8 @@ use common::{log_debug, log_info, pri::*};
 
 use self::instance::*;
 use crate::abs::{
-    self, backend::*, AssertKind, BranchingMetadata, CastKind, Constant, FloatType, IntType, Local,
-    SymVariable, ValueType,
+    self, backend::*, AssertKind, CastKind, Constant, FloatType, IntType, Local, SymVariable,
+    ValueType,
 };
 use common::log_warn;
 use leaf_macros::trait_log_fn;
@@ -23,7 +23,6 @@ impl ProgramRuntimeInterface for BasicPri {
     type ConstStr = &'static str;
     type ConstByteStr = &'static [u8];
     type Slice<'a, T: 'a> = &'a [T];
-    type BranchingInfo = BranchingInfo;
     type TypeId = TypeId;
     type BinaryOp = abs::BinaryOp;
     type UnaryOp = abs::UnaryOp;
@@ -428,20 +427,14 @@ impl ProgramRuntimeInterface for BasicPri {
         })
     }
 
-    fn new_branching_info(
-        node_location: BasicBlockIndex,
-        discriminant: OperandRef,
-    ) -> BranchingInfo {
-        BranchingInfo::new(node_location, discriminant)
-    }
-    fn take_branch_true(info: BranchingInfo) {
+    fn take_branch_true(info: SwitchInfo) {
         switch(info, |h| h.take(true.into()))
     }
-    fn take_branch_false(info: BranchingInfo) {
+    fn take_branch_false(info: SwitchInfo) {
         switch(info, |h| h.take(false.into()))
     }
 
-    fn take_branch_int(info: BranchingInfo, value_bit_rep: u128, bit_size: u64, is_signed: bool) {
+    fn take_branch_int(info: SwitchInfo, value_bit_rep: u128, bit_size: u64, is_signed: bool) {
         switch(info, |h| {
             h.take(Constant::Int {
                 bit_rep: value_bit_rep,
@@ -452,12 +445,7 @@ impl ProgramRuntimeInterface for BasicPri {
             })
         })
     }
-    fn take_branch_ow_int(
-        info: BranchingInfo,
-        non_values: &[u128],
-        bit_size: u64,
-        is_signed: bool,
-    ) {
+    fn take_branch_ow_int(info: SwitchInfo, non_values: &[u128], bit_size: u64, is_signed: bool) {
         switch(info, |h| {
             h.take_otherwise(
                 non_values
@@ -474,10 +462,10 @@ impl ProgramRuntimeInterface for BasicPri {
         })
     }
 
-    fn take_branch_char(info: BranchingInfo, value: char) {
+    fn take_branch_char(info: SwitchInfo, value: char) {
         switch(info, |h| h.take(value.into()))
     }
-    fn take_branch_ow_char(info: BranchingInfo, non_values: &[char]) {
+    fn take_branch_ow_char(info: SwitchInfo, non_values: &[char]) {
         switch(info, |h| {
             h.take_otherwise(non_values.iter().map(|c| (*c).into()).collect())
         })
@@ -743,8 +731,14 @@ impl BasicPri {
         })
     }
 
-    fn check_assert(cond: OperandRef, expected: bool, assert_kind: AssertKind<OperandImpl>) {
-        constraint(|h| h.assert(take_back_operand(cond), expected, assert_kind))
+    fn assert(info: AssertionInfo, assert_kind: AssertKind<OperandImpl>) {
+        constraint_at(info.location, |h| {
+            h.assert(
+                take_back_operand(info.condition),
+                info.expected,
+                assert_kind,
+            )
+        })
     }
 
     #[inline]
@@ -799,30 +793,5 @@ impl BasicPri {
         });
 
         assign_to(prev_dest, |h| dest_assign_action(h, current.clone()));
-    }
-}
-
-pub struct BranchingInfo {
-    pub discriminant: OperandRef,
-    pub(crate) metadata: BranchingMetadata,
-}
-
-impl BranchingInfo {
-    #[inline]
-    pub(crate) fn new(node_location: BasicBlockIndex, discriminant: OperandRef) -> Self {
-        Self {
-            discriminant,
-            metadata: BranchingMetadata { node_location },
-        }
-    }
-}
-
-impl core::fmt::Debug for BranchingInfo {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "BranchingInfo(on: {} @ {})",
-            self.discriminant, self.metadata.node_location
-        )
     }
 }

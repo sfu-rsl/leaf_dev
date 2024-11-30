@@ -1,8 +1,8 @@
 use super::utils::{DefaultRefManager, RefManager, UnsafeSync};
-use super::{BranchingInfo, OperandRef, PlaceHandler, PlaceRef};
+use super::{OperandRef, PlaceHandler, PlaceRef, SwitchInfo};
 use crate::abs::{
     backend::{AssignmentHandler, ConstraintHandler, OperandHandler, PlaceBuilder, RuntimeBackend},
-    PlaceUsage,
+    BasicBlockLocation, PlaceUsage,
 };
 use crate::backends::basic::BasicPlaceBuilder;
 use common::log_info;
@@ -149,23 +149,24 @@ pub(super) fn take_back_operand(reference: OperandRef) -> OperandImpl {
     perform_on_operand_ref_manager(|rm| rm.take(reference))
 }
 
-pub(super) fn constraint<T>(
+pub(super) fn constraint_at<T>(
+    location: BasicBlockLocation,
     constraint_action: impl FnOnce(<BackendImpl as RuntimeBackend>::ConstraintHandler<'_>) -> T,
 ) -> T {
     perform_on_backend(|r| {
-        let handler = r.constraint();
+        let handler = r.constraint_at(location);
         constraint_action(handler)
     })
 }
 
 pub(super) fn switch<T>(
-    info: BranchingInfo,
+    info: SwitchInfo,
     switch_action: impl FnOnce(
         <<BackendImpl as RuntimeBackend>::ConstraintHandler<'_> as ConstraintHandler>::SwitchHandler,
     ) -> T,
 ) -> T {
-    constraint(|b| {
-        let handler = b.switch(take_back_operand(info.discriminant), info.metadata);
+    constraint_at(info.node_location, |c| {
+        let handler = c.switch(take_back_operand(info.discriminant));
         switch_action(handler)
     })
 }

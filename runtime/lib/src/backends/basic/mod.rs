@@ -25,7 +25,7 @@ use common::{
 
 use crate::{
     abs::{
-        self, backend::*, place::HasMetadata, AssertKind, BasicBlockIndex, BranchingMetadata,
+        self, backend::*, place::HasMetadata, AssertKind, BasicBlockIndex, BasicBlockLocation,
         CalleeDef, CastKind, FieldIndex, FuncDef, IntType, Local, LocalIndex, PlaceUsage,
         SymVariable, Tag, TypeId, UnaryOp, VariantIndex,
     },
@@ -177,7 +177,7 @@ impl RuntimeBackend for BasicBackend {
         BasicAssignmentHandler::new(dest, self)
     }
 
-    fn constraint(&mut self) -> Self::ConstraintHandler<'_> {
+    fn constraint_at(&mut self, location: BasicBlockLocation) -> Self::ConstraintHandler<'_> {
         BasicConstraintHandler::new(self)
     }
 
@@ -629,11 +629,7 @@ impl<'a, EB: BinaryExprBuilder> ConstraintHandler for BasicConstraintHandler<'a,
     type Operand = ValueRef;
     type SwitchHandler = BasicSwitchHandler<'a, EB>;
 
-    fn switch(
-        self,
-        discriminant: Self::Operand,
-        metadata: abs::BranchingMetadata,
-    ) -> Self::SwitchHandler {
+    fn switch(self, discriminant: Self::Operand) -> Self::SwitchHandler {
         BasicSwitchHandler {
             discriminant,
             parent: self,

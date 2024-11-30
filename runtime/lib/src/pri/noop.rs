@@ -1,6 +1,6 @@
 use common::pri::*;
 
-use crate::abs::{self, BranchingMetadata, IntType};
+use crate::abs;
 
 pub struct NoOpPri;
 
@@ -14,8 +14,6 @@ macro_rules! noop {
     };
 }
 
-use super::DefaultBranchingInfo as BranchingInfo;
-
 impl ProgramRuntimeInterface for NoOpPri {
     // We try to match the DefaultPri, but it is not necessary to do so if it causes significant overhead.
     type U128 = u128;
@@ -23,7 +21,6 @@ impl ProgramRuntimeInterface for NoOpPri {
     type ConstStr = &'static str;
     type ConstByteStr = &'static [u8];
     type Slice<'a, T: 'a> = &'a [T];
-    type BranchingInfo = BranchingInfo;
     type TypeId = abs::TypeId;
     type BinaryOp = abs::BinaryOp;
     type UnaryOp = abs::UnaryOp;
@@ -33,13 +30,4 @@ impl ProgramRuntimeInterface for NoOpPri {
     type Tag = Tag;
 
     common::pri::list_func_decls! { modifier: noop, (from Self) }
-}
-
-impl Default for BranchingInfo {
-    fn default() -> Self {
-        Self {
-            discriminant: Default::default(),
-            metadata: BranchingMetadata { node_location: 0 },
-        }
-    }
 }

@@ -176,11 +176,6 @@ pub enum AssertKind<Operand> {
     MisalignedPointerDereference { required: Operand, found: Operand },
 }
 
-#[derive(Debug)]
-pub(crate) struct BranchingMetadata {
-    pub node_location: BasicBlockIndex,
-}
-
 #[derive(Debug, Clone)]
 pub(crate) enum Constraint<V> {
     Bool(V),

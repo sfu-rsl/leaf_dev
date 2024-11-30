@@ -4,8 +4,11 @@ use core::{
     ops::{CoerceUnsized, Deref},
 };
 
-use super::common;
-use common::pri::*;
+use super::common::{
+    self,
+    pri::*,
+    types::{BasicBlockLocation, DefId},
+};
 
 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
 pub static CH_MODULE_MARKER: u8 = 0;
@@ -48,6 +51,13 @@ static _TYPE_ID_OF_REFERENCER: fn() -> TypeId = type_id_of::<u32>;
 
 #[used]
 static _SIZE_OF_REFERENCER: fn() -> TypeSize = size_of::<u32>;
+
+#[used]
+static _BASIC_BLOCK_LOCATION_REFERENCER: fn(u32, u32, BasicBlockIndex) -> BasicBlockLocation =
+    basic_block_location;
+
+#[used]
+static _SWITCH_INFO_REFERENCER: fn(BasicBlockLocation, OperandRef) -> SwitchInfo = switch_info;
 
 #[used]
 static _CONST_BINARY_OP_OF_REFERENCER: fn(u8) -> BinaryOp = const_binary_op_of;
@@ -93,6 +103,48 @@ pub const fn type_id_of<T: ?Sized + 'static>() -> TypeId {
 #[inline(always)]
 pub const fn size_of<T>() -> TypeSize {
     intrinsics::size_of::<T>() as TypeSize
+}
+
+#[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
+#[cfg_attr(core_build, rustc_const_stable(feature = "rust1", since = "1.0.0"))]
+#[inline(always)]
+pub const fn basic_block_location(
+    crate_id: u32,
+    body_id: u32,
+    index: BasicBlockIndex,
+) -> BasicBlockLocation {
+    BasicBlockLocation {
+        body: DefId(crate_id, body_id),
+        index,
+    }
+}
+
+#[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
+#[cfg_attr(core_build, rustc_const_stable(feature = "rust1", since = "1.0.0"))]
+#[inline(always)]
+pub const fn switch_info(
+    node_location: BasicBlockLocation,
+    discriminant: OperandRef,
+) -> SwitchInfo {
+    SwitchInfo {
+        node_location,
+        discriminant,
+    }
+}
+
+#[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
+#[cfg_attr(core_build, rustc_const_stable(feature = "rust1", since = "1.0.0"))]
+#[inline(always)]
+pub const fn assertion_info(
+    location: BasicBlockLocation,
+    condition: OperandRef,
+    expected: bool,
+) -> AssertionInfo {
+    AssertionInfo {
+        location,
+        condition,
+        expected,
+    }
 }
 
 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
