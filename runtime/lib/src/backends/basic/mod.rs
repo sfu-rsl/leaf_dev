@@ -25,9 +25,9 @@ use common::{
 
 use crate::{
     abs::{
-        self, backend::*, place::HasMetadata, AssertKind, BasicBlockIndex, BasicBlockLocation,
-        CalleeDef, CastKind, FieldIndex, FuncDef, IntType, Local, LocalIndex, PlaceUsage,
-        SymVariable, Tag, TypeId, UnaryOp, VariantIndex,
+        self, backend::*, place::HasMetadata, AssertKind, BasicBlockLocation, CalleeDef, CastKind,
+        FieldIndex, FuncDef, IntType, Local, LocalIndex, PlaceUsage, SymVariable, Tag, TypeId,
+        UnaryOp, VariantIndex,
     },
     tyexp::{FieldsShapeInfoExt, TypeInfoExt},
     utils::alias::RRef,
@@ -47,7 +47,7 @@ use self::{
     types::BasicTypeManager,
 };
 
-type TraceManager = dyn abs::backend::TraceManager<BasicBlockIndex, ValueRef>;
+type TraceManager = dyn abs::backend::TraceManager<trace::Step, ValueRef>;
 
 type BasicVariablesState = RawPointerVariableState<BasicSymExprBuilder>;
 
@@ -178,7 +178,7 @@ impl RuntimeBackend for BasicBackend {
     }
 
     fn constraint_at(&mut self, location: BasicBlockLocation) -> Self::ConstraintHandler<'_> {
-        BasicConstraintHandler::new(self)
+        BasicConstraintHandler::new(self, location)
     }
 
     fn func_control(&mut self) -> Self::FunctionHandler<'_> {
@@ -612,15 +612,17 @@ impl<EB: OperationalExprBuilder> BasicAssignmentHandler<'_, EB> {
 }
 
 pub(crate) struct BasicConstraintHandler<'a, EB: BinaryExprBuilder> {
+    location: BasicBlockLocation,
     trace_manager: RefMut<'a, TraceManager>,
     expr_builder: RRef<EB>,
 }
 
 impl<'a> BasicConstraintHandler<'a, BasicExprBuilder> {
-    fn new(backend: &'a mut BasicBackend) -> Self {
+    fn new(backend: &'a mut BasicBackend, location: BasicBlockLocation) -> Self {
         Self {
             trace_manager: backend.trace_manager.borrow_mut(),
             expr_builder: backend.expr_builder.clone(),
+            location,
         }
     }
 }
@@ -636,8 +638,6 @@ impl<'a, EB: BinaryExprBuilder> ConstraintHandler for BasicConstraintHandler<'a,
         }
     }
 
-    /// This function provides runtime support for all 5 assertion kinds in the leaf compiler.
-    /// See: https://doc.rust-lang.org/beta/nightly-rustc/rustc_middle/mir/enum.AssertKind.html
     fn assert(
         mut self,
         cond: Self::Operand,
@@ -652,26 +652,20 @@ impl<'a, EB: BinaryExprBuilder> ConstraintHandler for BasicConstraintHandler<'a,
             let expr = self
                 .expr_builder
                 .borrow_mut()
-                .and((ConstValue::Bool(true).to_value_ref(), cond.clone()).into());
-            let mut constraint = Constraint::Bool(expr.into());
+                .eq((cond.clone(), ConstValue::Bool(true).to_value_ref()));
+            let mut constraint = Constraint::Bool(expr);
             if !expected {
                 constraint = constraint.not();
             }
 
-            self.trace_manager.notify_step(
-                0, /* TODO: The unique index of the block we have entered. */
-                constraint,
-            );
+            self.notify_constraint(constraint);
         }
     }
 }
 
 impl<'a, EB: BinaryExprBuilder> BasicConstraintHandler<'a, EB> {
     fn notify_constraint(&mut self, constraint: Constraint) {
-        self.trace_manager.notify_step(
-            0, /* TODO: The unique index of the block we have entered. */
-            constraint,
-        );
+        self.trace_manager.notify_step(self.location, constraint);
     }
 }
 

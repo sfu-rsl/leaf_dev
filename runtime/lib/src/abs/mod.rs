@@ -183,6 +183,7 @@ pub(crate) enum Constraint<V> {
 }
 
 impl<V> Constraint<V> {
+    #[inline]
     pub fn destruct_ref(&self) -> (&V, bool) {
         match self {
             Constraint::Bool(value) => (value, false),
@@ -190,6 +191,7 @@ impl<V> Constraint<V> {
         }
     }
 
+    #[inline]
     pub fn not(self) -> Constraint<V> {
         match self {
             Constraint::Bool(value) => Constraint::Not(value),

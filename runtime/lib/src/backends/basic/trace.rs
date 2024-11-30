@@ -3,7 +3,7 @@ use derive_more as dm;
 use core::fmt::Display;
 use std::collections::HashMap;
 
-use common::{log_debug, pri::BasicBlockIndex};
+use common::{log_debug, pri::BasicBlockLocation};
 
 use crate::{
     abs::{
@@ -23,7 +23,7 @@ use super::{
     SymValueRef, SymVarId, ValueRef,
 };
 
-pub(super) type Step = BasicBlockIndex;
+pub(super) type Step = BasicBlockLocation;
 
 #[derive(Clone, Debug, dm::Deref)]
 struct Tagged<T> {
@@ -40,7 +40,11 @@ impl HasTags for Tagged<Step> {
 
 impl<T: Display> Display for Tagged<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} #[{}]", self.value, self.tags.join(", "))
+        if self.tags.is_empty() {
+            return self.value.fmt(f);
+        } else {
+            write!(f, "{} #[{}]", self.value, self.tags.join(", "))
+        }
     }
 }
 

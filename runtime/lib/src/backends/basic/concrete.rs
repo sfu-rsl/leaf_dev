@@ -31,7 +31,7 @@ impl<EB: ValueRefBinaryExprBuilder> Concretizer for BasicConcretizer<EB> {
             .eq((value.0, concrete_value.0).into());
         let constraint = Constraint::Bool(eq_expr.into());
         self.trace_manager.borrow_mut().notify_step(
-            0, /* TODO: A unique index like basic block index. */
+            Default::default(), /* TODO: A unique index like basic block index. */
             constraint,
         );
     }

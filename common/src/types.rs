@@ -16,6 +16,12 @@ pub type TypeId = NonZero<u128>;
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 #[repr(C)]
 pub struct DefId(pub u32, pub u32);
+#[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
+impl core::fmt::Display for DefId {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        write!(f, "Def({}:{})", self.0, self.1)
+    }
+}
 
 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -23,6 +29,12 @@ pub struct DefId(pub u32, pub u32);
 pub struct BasicBlockLocation {
     pub body: DefId,
     pub index: BasicBlockIndex,
+}
+#[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
+impl core::fmt::Display for BasicBlockLocation {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        write!(f, "{}[{}]", self.body, self.index)
+    }
 }
 
 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
