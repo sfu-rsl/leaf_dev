@@ -14,19 +14,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      - name: Install Rust
-        uses: codota/toolchain@v1
-        with:
-          profile: minimal
-          target: x86_64-unknown-linux-gnu
-      - name: Build
-        run: cargo build
 
-      - name: Setting LD_LIBRARY_PATH for leaf with no-op flavor
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --verbose
+
+      - name: Add no-op runtime to path
         run: |
           mkdir -p libleafrt_dir
           ln -s target/debug/libleafrt_noop.so libleafrt_dir/libleafrt_noop.so
-          export LD_LIBRARY_PATH=$PWD/libleafrt_dir:$LD_LIBRARY_PATH
         env:
           LD_LIBRARY_PATH: $PWD/libleafrt_dir:$LD_LIBRARY_PATH     
 
