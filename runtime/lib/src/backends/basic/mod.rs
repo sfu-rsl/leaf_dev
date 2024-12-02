@@ -83,11 +83,11 @@ impl BasicBackend {
 
         let tags_ref = Rc::new(RefCell::new(Vec::new()));
         let type_manager = type_manager_ref.clone();
-        let output_generator = outgen::BasicOutputGenerator::new(&config.outputs);
         let trace_manager_ref = Rc::new(RefCell::new(trace::new_trace_manager(
             tags_ref.clone(),
             sym_var_manager.clone(),
-            output_generator,
+            &config.exe_trace,
+            &config.outputs,
         )));
         let trace_manager = trace_manager_ref.clone();
 

@@ -11,3 +11,10 @@ write = "stamping"
 type = "file"
 directory = "output"
 format = "binary"
+
+[[exe_trace.inspectors]]
+type = "sanity_checker"
+level = "panic"
+
+[[exe_trace.inspectors]]
+type = "diverging_input"

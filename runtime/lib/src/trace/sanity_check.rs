@@ -16,8 +16,11 @@ pub(crate) struct ConstraintSanityChecker<S: Solver, TS, AI, const PANIC: bool =
 }
 
 impl<S: Solver, TS, AI> ConstraintSanityChecker<S, TS, AI> {
-    pub(crate) fn new(solver: S, assumptions: AI) -> Self {
-        Self {
+    pub(crate) fn new<const PANIC: bool>(
+        solver: S,
+        assumptions: AI,
+    ) -> ConstraintSanityChecker<S, TS, AI, PANIC> {
+        ConstraintSanityChecker {
             solver,
             assumptions,
             _phantom: Default::default(),

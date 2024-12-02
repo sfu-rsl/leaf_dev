@@ -20,8 +20,11 @@ use crate::{
 };
 
 use super::{
-    expr::translators::z3::Z3ValueTranslator, outgen::BasicOutputGenerator,
-    sym_vars::SymVariablesManager, Solver, SymVarId, ValueRef,
+    config::{ConstraintSanityCheckLevel, ExecutionTraceConfig, OutputConfig, TraceInspectorType},
+    expr::translators::z3::Z3ValueTranslator,
+    outgen::BasicOutputGenerator,
+    sym_vars::SymVariablesManager,
+    Solver, SymVarId, ValueRef,
 };
 
 pub(super) type Step = BasicBlockLocation;
@@ -56,30 +59,30 @@ impl<T: Display> Display for Tagged<T> {
 pub(super) fn new_trace_manager(
     tags: RRef<Vec<Tag>>,
     sym_var_manager: RRef<impl SymVariablesManager + 'static>,
-    output_generator: BasicOutputGenerator,
+    trace_config: &ExecutionTraceConfig,
+    output_config: &Vec<OutputConfig>,
 ) -> impl TraceManager<Step, ValueRef> {
     let solver: CurrentSolver = Z3Solver::<SymVarId>::new_in_global_context();
     let translator = Z3ValueTranslator::new(solver.context);
     let sym_var_manager_ref = sym_var_manager;
 
-    let model_consumer = create_model_consumer(sym_var_manager_ref.clone(), output_generator);
-    let divergence_filter = DivergenceTagFilter {
-        exclude_with_any_of: vec![common::pri::tags::NO_DIVERGE],
-    };
-
-    let mut inspectors: Vec<Box<dyn TraceInspector<_, _>>> = Vec::new();
-
-    inspectors.push(Box::new(ConstraintSanityChecker::new(
-        solver.clone(),
-        ConcretizationConstraintsCache::new(sym_var_manager_ref.clone(), translator.clone()),
-    )));
-
-    inspectors.push(Box::new(ImmediateDivergingAnswerFinder::new(
-        solver.clone().map_answers(ValueRef::from),
-        divergence_filter,
-        false,
-        Box::new(model_consumer),
-    )));
+    let inspectors = trace_config
+        .inspectors
+        .iter()
+        .map(|t| match t {
+            TraceInspectorType::SanityChecker { level } => create_sanity_checker(
+                sym_var_manager_ref.clone(),
+                translator.clone(),
+                *level,
+                solver.clone(),
+            ),
+            TraceInspectorType::DivergingInput => Box::new(create_imm_diverging_ans_finder(
+                sym_var_manager_ref.clone(),
+                solver.clone(),
+                output_config,
+            )),
+        })
+        .collect();
 
     let inspector = CompoundTraceInspector::new(inspectors);
     AggregatorTraceManager::new(inspector)
@@ -89,6 +92,54 @@ pub(super) fn new_trace_manager(
             value: s,
             tags: tags.borrow().clone(),
         })
+}
+
+fn create_sanity_checker<'ctx, S: 'ctx>(
+    sym_var_manager: RRef<impl SymVariablesManager + 'ctx>,
+    translator: CurrentSolverTranslator<'ctx>,
+    config: ConstraintSanityCheckLevel,
+    solver: CurrentSolver<'ctx>,
+) -> Box<dyn TraceInspector<S, CurrentSolverValue<'ctx>> + 'ctx> {
+    let assumptions = ConcretizationConstraintsCache::new(sym_var_manager, translator);
+    match config {
+        ConstraintSanityCheckLevel::Warn => {
+            Box::new(ConstraintSanityChecker::new::<false>(solver, assumptions))
+        }
+        ConstraintSanityCheckLevel::Panic => {
+            Box::new(ConstraintSanityChecker::new::<true>(solver, assumptions))
+        }
+    }
+}
+
+fn create_imm_diverging_ans_finder<'ctx>(
+    sym_var_manager: RRef<impl SymVariablesManager + 'static>,
+    solver: CurrentSolver<'ctx>,
+    output_config: &Vec<OutputConfig>,
+) -> impl TraceInspector<Tagged<Step>, CurrentSolverValue<'ctx>> + 'ctx {
+    let mut output_generator = super::outgen::BasicOutputGenerator::new(output_config);
+    let model_consumer = move |mut model: Model<SymVarId, ValueRef>| {
+        // Add missing answers.
+        // FIXME: Performance can be improved.
+        let all_sym_values = sym_var_manager.borrow();
+        let missing_answers = all_sym_values
+            .iter_variables()
+            .filter(|(id, _, _)| !model.contains_key(id))
+            .map(|(id, _, conc)| (*id, conc.clone().0))
+            .collect::<Vec<_>>();
+        model.extend(missing_answers);
+
+        output_generator.generate(&model)
+    };
+    let divergence_filter = DivergenceTagFilter {
+        exclude_with_any_of: vec![common::pri::tags::NO_DIVERGE],
+    };
+
+    ImmediateDivergingAnswerFinder::new(
+        solver.clone().map_answers(ValueRef::from),
+        divergence_filter,
+        false,
+        Box::new(model_consumer),
+    )
 }
 
 fn create_model_consumer(
@@ -148,7 +199,7 @@ impl<M: SymVariablesManager, T, V> ConcretizationConstraintsCache<M, T, V> {
     }
 }
 
-impl<'a, 'ctx: 'a, M: SymVariablesManager> IntoIterator
+impl<'a, 'ctx, M: SymVariablesManager> IntoIterator
     for &'a mut ConcretizationConstraintsCache<
         M,
         CurrentSolverTranslator<'ctx>,

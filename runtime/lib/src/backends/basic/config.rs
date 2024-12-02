@@ -21,6 +21,9 @@ pub(crate) struct BasicBackendConfig {
 
     #[serde(default)]
     pub outputs: Vec<OutputConfig>,
+
+    #[serde(default)]
+    pub exe_trace: ExecutionTraceConfig,
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
@@ -104,4 +107,35 @@ pub(crate) struct FileOutputConfig {
     pub prefix: Option<String>,
     /// The extension to use for the name of the output files.
     pub extension: Option<String>,
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+pub(crate) struct ExecutionTraceConfig {
+    #[serde(default = "default_trace_inspectors")]
+    pub inspectors: Vec<TraceInspectorType>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "type")]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum TraceInspectorType {
+    SanityChecker { level: ConstraintSanityCheckLevel },
+    DivergingInput,
+}
+
+#[derive(Debug, Default, Clone, Copy, Deserialize, PartialEq, PartialOrd)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ConstraintSanityCheckLevel {
+    #[default]
+    Warn,
+    Panic,
+}
+
+fn default_trace_inspectors() -> Vec<TraceInspectorType> {
+    vec![
+        TraceInspectorType::SanityChecker {
+            level: ConstraintSanityCheckLevel::Panic,
+        },
+        TraceInspectorType::DivergingInput,
+    ]
 }
