@@ -1,6 +1,7 @@
 use derive_more as dm;
 
 use core::fmt::Display;
+use std::collections::HashMap;
 
 use common::{log_debug, pri::BasicBlockLocation};
 
@@ -142,25 +143,6 @@ fn create_imm_diverging_ans_finder<'ctx>(
     )
 }
 
-fn create_model_consumer(
-    sym_var_manager: RRef<impl SymVariablesManager>,
-    mut output_generator: BasicOutputGenerator,
-) -> impl FnMut(Model<SymVarId, ValueRef>) {
-    move |mut model| {
-        // Add missing answers.
-        // FIXME: Performance can be improved.
-        let all_sym_values = sym_var_manager.borrow();
-        let missing_answers = all_sym_values
-            .iter_variables()
-            .filter(|(id, _, _)| !model.contains_key(id))
-            .map(|(id, _, conc)| (*id, conc.clone().0))
-            .collect::<Vec<_>>();
-        model.extend(missing_answers);
-
-        output_generator.generate(&model)
-    }
-}
-
 struct DivergenceTagFilter {
     exclude_with_any_of: Vec<Tag>,
 }
@@ -186,7 +168,7 @@ impl<S: HasTags> DivergenceFilter<S> for DivergenceTagFilter {
 struct ConcretizationConstraintsCache<M: SymVariablesManager, T, V> {
     manager: RRef<M>,
     translator: T,
-    constraints: Vec<Constraint<V>>,
+    constraints: HashMap<SymVarId, Constraint<V>>,
 }
 
 impl<M: SymVariablesManager, T, V> ConcretizationConstraintsCache<M, T, V> {
@@ -194,7 +176,7 @@ impl<M: SymVariablesManager, T, V> ConcretizationConstraintsCache<M, T, V> {
         Self {
             manager,
             translator,
-            constraints: Vec::new(),
+            constraints: HashMap::new(),
         }
     }
 }
@@ -209,7 +191,8 @@ impl<'a, 'ctx, M: SymVariablesManager> IntoIterator
 {
     type Item = &'a Constraint<CurrentSolverValue<'ctx>>;
 
-    type IntoIter = core::slice::Iter<'a, Constraint<CurrentSolverValue<'ctx>>>;
+    type IntoIter =
+        std::collections::hash_map::Values<'a, SymVarId, Constraint<CurrentSolverValue<'ctx>>>;
 
     fn into_iter(self) -> Self::IntoIter {
         let manager: std::cell::Ref<'a, M> = self.manager.borrow();
@@ -217,11 +200,10 @@ impl<'a, 'ctx, M: SymVariablesManager> IntoIterator
         if all_constraints.len() > self.constraints.len() {
             self.constraints.extend(
                 all_constraints
-                    .skip(self.constraints.len())
-                    .map(|(_, v)| Constraint::Bool(self.translator.call_mut((v,)))),
+                    .map(|(k, v)| (*k, Constraint::Bool(self.translator.call_mut((v,))))),
             );
         }
 
-        self.constraints.iter()
+        self.constraints.values()
     }
 }
