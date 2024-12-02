@@ -431,7 +431,7 @@ impl ProgramRuntimeInterface for BasicPri {
         switch(info, |h| h.take(false.into()))
     }
     fn take_branch_ow_bool(info: SwitchInfo) {
-        switch(info, |h| h.take_otherwise(vec![true.into()]))
+        switch(info, |h| h.take_otherwise(vec![false.into()]))
     }
 
     fn take_branch_int(info: SwitchInfo, value_bit_rep: u128, bit_size: u64, is_signed: bool) {
