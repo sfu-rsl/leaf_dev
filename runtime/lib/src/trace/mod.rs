@@ -4,8 +4,9 @@ mod adapt;
 mod agg;
 pub(crate) mod divergence;
 mod filter;
-mod inspect;
+pub(crate) mod inspect;
 mod log;
+pub(crate) mod sanity_check;
 
 pub(crate) use adapt::TraceManagerExt as AdapterTraceManagerExt;
 pub(crate) use agg::AggregatorTraceManager;

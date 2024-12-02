@@ -177,6 +177,7 @@ lazy_static! {
     static ref CONTEXT: UnsafeSync<Context> = UnsafeSync::new(Context::new(&Config::default()));
 }
 
+#[derive(Clone)]
 pub(crate) struct Z3Solver<'ctx, I> {
     pub(crate) context: &'ctx Context,
     solver: Option<Solver<'ctx>>,

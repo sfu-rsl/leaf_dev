@@ -30,6 +30,7 @@ pub(crate) mod z3 {
     const ADDR_BIT_SIZE: u32 = size_of::<*const ()>() as u32 * 8;
     const POSSIBLE_VALUES_PREFIX: &str = "pvs";
 
+    #[derive(Clone)]
     pub(crate) struct Z3ValueTranslator<'ctx> {
         context: &'ctx Context,
         variables: HashMap<SymVarId, AstNode<'ctx>>,
@@ -44,8 +45,21 @@ pub(crate) mod z3 {
         }
     }
 
+    impl<'ctx, 'a> FnOnce<(&'a ValueRef,)> for Z3ValueTranslator<'ctx> {
+        type Output = TranslatedConstraint<'ctx, SymVarId>;
+        extern "rust-call" fn call_once(mut self, (value,): (&'a ValueRef,)) -> Self::Output {
+            self.translate(value)
+        }
+    }
+
+    impl<'ctx, 'a> FnMut<(&'a ValueRef,)> for Z3ValueTranslator<'ctx> {
+        extern "rust-call" fn call_mut(&mut self, (value,): (&'a ValueRef,)) -> Self::Output {
+            self.translate(value)
+        }
+    }
+
     impl<'ctx> Z3ValueTranslator<'ctx> {
-        pub(crate) fn translate_from(
+        pub(crate) fn translate(
             &mut self,
             value: &ValueRef,
         ) -> TranslatedConstraint<'ctx, SymVarId> {

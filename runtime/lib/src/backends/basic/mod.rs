@@ -6,22 +6,22 @@ pub(crate) mod expr;
 mod outgen;
 mod place;
 mod state;
+mod sym_vars;
 mod trace;
 mod types;
 
 use std::{
-    assert_matches::assert_matches,
     cell::{RefCell, RefMut},
-    collections::HashMap,
     iter,
     ops::DerefMut,
     rc::Rc,
 };
 
 use common::{
-    log_debug, log_info,
+    log_debug,
     tyexp::{FieldsShapeInfo, StructShape, TypeInfo},
 };
+use sym_vars::SymVariablesManager;
 
 use crate::{
     abs::{
@@ -53,6 +53,8 @@ type BasicVariablesState = RawPointerVariableState<BasicSymExprBuilder>;
 
 type BasicCallStackManager = call::BasicCallStackManager<BasicVariablesState>;
 
+type BasicSymVariablesManager = sym_vars::BasicSymVariablesManager<BasicExprBuilder>;
+
 type Place = place::PlaceWithMetadata;
 type Projection = place::Projection;
 pub(crate) use place::BasicPlaceBuilder;
@@ -63,7 +65,7 @@ pub struct BasicBackend {
     call_stack_manager: BasicCallStackManager,
     trace_manager: RRef<TraceManager>,
     expr_builder: RRef<BasicExprBuilder>,
-    sym_values: RRef<HashMap<u32, (SymValueRef, ConcreteValueRef)>>,
+    sym_values: RRef<BasicSymVariablesManager>,
     type_manager: Rc<dyn TypeManager>,
     tags: RRef<Vec<Tag>>,
 }
@@ -75,17 +77,16 @@ impl BasicBackend {
             type_manager_ref.clone(),
         )));
         let expr_builder = expr_builder_ref.clone();
-        let sym_values_ref = Rc::new(RefCell::new(
-            HashMap::<u32, (SymValueRef, ConcreteValueRef)>::new(),
-        ));
+        let sym_var_manager = Rc::new(RefCell::new(BasicSymVariablesManager::new(
+            expr_builder_ref.clone(),
+        )));
 
         let tags_ref = Rc::new(RefCell::new(Vec::new()));
-        let all_sym_values = sym_values_ref.clone();
         let type_manager = type_manager_ref.clone();
         let output_generator = outgen::BasicOutputGenerator::new(&config.outputs);
         let trace_manager_ref = Rc::new(RefCell::new(trace::new_trace_manager(
             tags_ref.clone(),
-            all_sym_values,
+            sym_var_manager.clone(),
             output_generator,
         )));
         let trace_manager = trace_manager_ref.clone();
@@ -119,7 +120,7 @@ impl BasicBackend {
             ),
             trace_manager,
             expr_builder,
-            sym_values: sym_values_ref.clone(),
+            sym_values: sym_var_manager.clone(),
             type_manager,
             tags: tags_ref.clone(),
         }
@@ -239,7 +240,7 @@ impl PlaceHandler for BasicPlaceHandler<'_> {
 
 pub(crate) struct BasicOperandHandler<'a> {
     vars_state: &'a mut dyn VariablesState,
-    sym_values: RRef<HashMap<u32, (SymValueRef, ConcreteValueRef)>>,
+    sym_values: RRef<BasicSymVariablesManager>,
 }
 
 impl OperandHandler for BasicOperandHandler<'_> {
@@ -259,26 +260,7 @@ impl OperandHandler for BasicOperandHandler<'_> {
     }
 
     fn new_symbolic(self, var: SymVariable<Self::Operand>) -> Self::Operand {
-        let mut sym_values = self.sym_values.borrow_mut();
-        let id = sym_values.len() as u32 + 1;
-        let conc_val = var
-            .conc_value
-            .expect("Concrete value of symbolic variables is required.");
-        assert_matches!(
-            conc_val.as_ref(),
-            Value::Concrete(ConcreteValue::Const(..)),
-            "Only constant values are currently expected to be used as the concrete value."
-        );
-        let sym_val = SymValue::Variable(SymbolicVar::new(id, var.ty)).to_value_ref();
-        let conc_val = ConcreteValueRef::new(conc_val);
-
-        log_info!(
-            "Introducing a new symbolic variable: {} = {}",
-            sym_val,
-            conc_val,
-        );
-        sym_values.insert(id, (sym_val.clone(), conc_val));
-        sym_val.into()
+        self.sym_values.borrow_mut().add_variable(var).into()
     }
 }
 

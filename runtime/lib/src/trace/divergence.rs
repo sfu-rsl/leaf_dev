@@ -7,7 +7,7 @@ use crate::abs::{
     Constraint,
 };
 
-use super::TraceInspector;
+use super::inspect::TraceInspector;
 
 pub(crate) trait DivergenceFilter<S> {
     fn should_find(&mut self, trace: &[S]) -> bool;
@@ -33,12 +33,6 @@ where
     S::Value: Clone,
 {
     fn inspect(&mut self, steps: &[TS], constraints: &[Constraint<S::Value>]) {
-        // Sanity check
-        #[cfg(debug_assertions)]
-        if !self.check(constraints.iter(), false) {
-            log_warn!("Unsatisfiable concretely taken path");
-        }
-
         if !self.filter.should_find(steps) {
             return;
         }
