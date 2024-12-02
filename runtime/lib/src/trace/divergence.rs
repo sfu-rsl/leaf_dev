@@ -22,7 +22,7 @@ impl<S, T: FnMut(&[S]) -> bool> DivergenceFilter<S> for T {
 pub(crate) struct ImmediateDivergingAnswerFinder<S: Solver, TS, C> {
     solver: S,
     filter: C,
-    check_optimistic: bool,
+    optimistic_divergence_solver: Option<S>,
     model_consumer: Box<dyn FnMut(S::Model)>,
     _phantom: core::marker::PhantomData<TS>,
 }
@@ -40,11 +40,12 @@ where
         log_debug!("Negating the last constraint");
         let not_last = constraints.last().cloned().unwrap().not();
 
-        if !self.check(
+        if !Self::check(
+            &mut self.solver,
             constraints[..constraints.len() - 1]
                 .into_iter()
                 .chain(iter::once(&not_last)),
-            true,
+            &mut self.model_consumer,
         ) {
             /* NOTE: What is optimistic checking?
              * Consider two independent branch conditions at the same level
@@ -54,9 +55,9 @@ where
              * Thus we do not necessary need to satisfy the constraints for the
              * first one.
              */
-            if self.check_optimistic {
+            if let Some(ref mut solver) = self.optimistic_divergence_solver {
                 log_debug!("Checking optimistically using the last constraint");
-                self.check(iter::once(&not_last), true);
+                Self::check(solver, iter::once(&not_last), &mut self.model_consumer);
             }
         }
     }
@@ -66,13 +67,13 @@ impl<S: Solver, TS, C> ImmediateDivergingAnswerFinder<S, TS, C> {
     pub fn new(
         solver: S,
         filter: C,
-        check_optimistic: bool,
+        optimistic_divergence_solver: Option<S>,
         model_consumer: Box<dyn FnMut(S::Model)>,
     ) -> Self {
         Self {
             solver,
             filter,
-            check_optimistic,
+            optimistic_divergence_solver,
             model_consumer,
             _phantom: Default::default(),
         }
@@ -81,19 +82,17 @@ impl<S: Solver, TS, C> ImmediateDivergingAnswerFinder<S, TS, C> {
 
 impl<S: Solver, TS, C> ImmediateDivergingAnswerFinder<S, TS, C> {
     pub(crate) fn check<'a>(
-        &mut self,
+        solver: &mut S,
         constraints: impl Iterator<Item = &'a Constraint<S::Value>>,
-        gen_output: bool,
+        model_consumer: &'a mut dyn FnMut(S::Model),
     ) -> bool
     where
         S: 'a,
     {
-        let result = self.solver.check(constraints);
+        let result = solver.check(constraints);
         match result {
             SolveResult::Sat(model) => {
-                if gen_output {
-                    (self.model_consumer)(model);
-                }
+                model_consumer(model);
                 true
             }
             _ => {

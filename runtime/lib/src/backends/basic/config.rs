@@ -119,8 +119,13 @@ pub(crate) struct ExecutionTraceConfig {
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum TraceInspectorType {
-    SanityChecker { level: ConstraintSanityCheckLevel },
-    DivergingInput,
+    SanityChecker {
+        level: ConstraintSanityCheckLevel,
+    },
+    DivergingInput {
+        #[serde(default = "default_diverging_input_check_optimistic")]
+        check_optimistic: bool,
+    },
 }
 
 #[derive(Debug, Default, Clone, Copy, Deserialize, PartialEq, PartialOrd)]
@@ -131,11 +136,18 @@ pub(crate) enum ConstraintSanityCheckLevel {
     Panic,
 }
 
+fn default_diverging_input_check_optimistic() -> bool {
+    true
+}
+
 fn default_trace_inspectors() -> Vec<TraceInspectorType> {
     vec![
         TraceInspectorType::SanityChecker {
             level: ConstraintSanityCheckLevel::Panic,
         },
-        TraceInspectorType::DivergingInput,
+        TraceInspectorType::DivergingInput {
+            check_optimistic: default_diverging_input_check_optimistic(),
+        },
     ]
+}
 }

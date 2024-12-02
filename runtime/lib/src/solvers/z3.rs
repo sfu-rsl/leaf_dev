@@ -180,7 +180,7 @@ lazy_static! {
 #[derive(Clone)]
 pub(crate) struct Z3Solver<'ctx, I> {
     pub(crate) context: &'ctx Context,
-    solver: Option<Solver<'ctx>>,
+    solver: Solver<'ctx>,
     _phantom: core::marker::PhantomData<I>,
 }
 
@@ -189,7 +189,7 @@ impl<'ctx, I> Z3Solver<'ctx, I> {
         let context = CONTEXT.borrow();
         Self {
             context,
-            solver: None,
+            solver: Solver::new(context),
             _phantom: Default::default(),
         }
     }
@@ -210,8 +210,6 @@ where
     where
         Self: 'b,
     {
-        self.solver.get_or_insert_with(|| Solver::new(self.context));
-
         let mut all_vars = HashMap::<I, AstNode>::new();
         let asts = constraints
             .map(|constraint| {
@@ -231,7 +229,7 @@ where
             })
             .collect::<Vec<_>>();
 
-        let result = self.check_using(self.solver.as_ref().unwrap(), &asts, all_vars);
+        let result = self.check_using(&self.solver, &asts, all_vars);
         result
     }
 }

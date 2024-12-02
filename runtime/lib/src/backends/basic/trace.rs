@@ -23,7 +23,6 @@ use crate::{
 use super::{
     config::{ConstraintSanityCheckLevel, ExecutionTraceConfig, OutputConfig, TraceInspectorType},
     expr::translators::z3::Z3ValueTranslator,
-    outgen::BasicOutputGenerator,
     sym_vars::SymVariablesManager,
     Solver, SymVarId, ValueRef,
 };
@@ -77,11 +76,14 @@ pub(super) fn new_trace_manager(
                 *level,
                 solver.clone(),
             ),
-            TraceInspectorType::DivergingInput => Box::new(create_imm_diverging_ans_finder(
-                sym_var_manager_ref.clone(),
-                solver.clone(),
-                output_config,
-            )),
+            TraceInspectorType::DivergingInput { check_optimistic } => {
+                Box::new(create_imm_diverging_ans_finder(
+                    sym_var_manager_ref.clone(),
+                    solver.clone(),
+                    *check_optimistic,
+                    output_config,
+                ))
+            }
         })
         .collect();
 
@@ -115,6 +117,7 @@ fn create_sanity_checker<'ctx, S: 'ctx>(
 fn create_imm_diverging_ans_finder<'ctx>(
     sym_var_manager: RRef<impl SymVariablesManager + 'static>,
     solver: CurrentSolver<'ctx>,
+    check_optimistic: bool,
     output_config: &Vec<OutputConfig>,
 ) -> impl TraceInspector<Tagged<Step>, CurrentSolverValue<'ctx>> + 'ctx {
     let mut output_generator = super::outgen::BasicOutputGenerator::new(output_config);
@@ -138,7 +141,7 @@ fn create_imm_diverging_ans_finder<'ctx>(
     ImmediateDivergingAnswerFinder::new(
         solver.clone().map_answers(ValueRef::from),
         divergence_filter,
-        false,
+        check_optimistic.then(|| solver.clone().map_answers(ValueRef::from)),
         Box::new(model_consumer),
     )
 }
