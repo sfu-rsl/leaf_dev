@@ -18,6 +18,7 @@ level = "panic"
 
 [[exe_trace.inspectors]]
 type = "diverging_input"
+check_optimistic = true
 
 [solver]
 type = "z3"
