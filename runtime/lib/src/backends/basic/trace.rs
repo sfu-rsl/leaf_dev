@@ -21,7 +21,10 @@ use crate::{
 };
 
 use super::{
-    config::{ConstraintSanityCheckLevel, ExecutionTraceConfig, OutputConfig, TraceInspectorType},
+    config::{
+        ConstraintSanityCheckLevel, ExecutionTraceConfig, OutputConfig, SolverImpl,
+        TraceInspectorType,
+    },
     expr::translators::z3::Z3ValueTranslator,
     sym_vars::SymVariablesManager,
     Solver, SymVarId, ValueRef,
@@ -61,9 +64,18 @@ pub(super) fn new_trace_manager(
     sym_var_manager: RRef<impl SymVariablesManager + 'static>,
     trace_config: &ExecutionTraceConfig,
     output_config: &Vec<OutputConfig>,
+    solver_config: &SolverImpl,
 ) -> impl TraceManager<Step, ValueRef> {
-    let solver: CurrentSolver = Z3Solver::<SymVarId>::new_in_global_context();
-    let translator = Z3ValueTranslator::new(solver.context);
+    let (solver, translator) = match solver_config {
+        SolverImpl::Z3 { config } => {
+            crate::solvers::z3::set_global_params(
+                config.global_params.iter().map(|(k, v)| (k, v.to_string())),
+            );
+            let solver: CurrentSolver = Z3Solver::<SymVarId>::new_in_global_context();
+            let translator = Z3ValueTranslator::new(solver.context);
+            (solver, translator)
+        }
+    };
     let sym_var_manager_ref = sym_var_manager;
 
     let inspectors = trace_config

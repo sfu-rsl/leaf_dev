@@ -88,6 +88,7 @@ impl BasicBackend {
             sym_var_manager.clone(),
             &config.exe_trace,
             &config.outputs,
+            &config.solver,
         )));
         let trace_manager = trace_manager_ref.clone();
 

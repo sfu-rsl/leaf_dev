@@ -172,8 +172,7 @@ impl<'ctx, I> Z3Solver<'ctx, I> {
         Self::new(context::get_context_for_thread())
     }
 
-    pub fn new_in_global_context() -> Self {
-        let context = CONTEXT.borrow();
+    pub fn new(context: &'ctx Context) -> Self {
         Self {
             context,
             solver: Solver::new(context),
@@ -314,10 +313,12 @@ mod context {
     static CONTEXTS: OnceLock<Vec<UnsafeSync<UnsafeSend<Context>>>> = OnceLock::new();
     static THREAD_MAP: OnceLock<Mutex<HashMap<ThreadId, usize>>> = OnceLock::new();
 
-    pub(crate) fn set_global_params(config: &HashMap<String, String>) {
-        for (k, v) in config {
-            log_debug!("Setting global param: {} = {}", k, v);
-            z3::set_global_param(k, v);
+    pub(crate) fn set_global_params<K: AsRef<str>, V: AsRef<str>>(
+        params: impl Iterator<Item = (K, V)>,
+    ) {
+        for (k, v) in params {
+            log_debug!("Setting global param: {} = {}", k.as_ref(), v.as_ref());
+            z3::set_global_param(k.as_ref(), v.as_ref());
         }
     }
 

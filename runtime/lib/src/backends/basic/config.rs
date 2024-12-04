@@ -1,5 +1,9 @@
-use common::log_debug;
+use derive_more as dm;
 use serde::Deserialize;
+
+use std::collections::HashMap;
+
+use common::log_debug;
 
 impl TryFrom<::config::Config> for super::BasicBackend {
     type Error = ::config::ConfigError;
@@ -24,6 +28,9 @@ pub(crate) struct BasicBackendConfig {
 
     #[serde(default)]
     pub exe_trace: ExecutionTraceConfig,
+
+    #[serde(default)]
+    pub solver: SolverImpl,
 }
 
 #[derive(Debug, Default, Clone, Deserialize)]
@@ -150,4 +157,37 @@ fn default_trace_inspectors() -> Vec<TraceInspectorType> {
         },
     ]
 }
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "type")]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum SolverImpl {
+    Z3 {
+        #[serde(flatten)]
+        config: Z3Config,
+    },
+}
+
+impl Default for SolverImpl {
+    fn default() -> Self {
+        Self::Z3 {
+            config: Default::default(),
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+pub(crate) struct Z3Config {
+    #[serde(default)]
+    pub global_params: HashMap<String, ParamValue>,
+}
+
+#[derive(Debug, Clone, Deserialize, dm::Display)]
+#[serde(untagged)]
+#[display("{_0}")]
+pub(crate) enum ParamValue {
+    Bool(bool),
+    Uint(u32),
+    Double(f64),
+    String(String),
 }
