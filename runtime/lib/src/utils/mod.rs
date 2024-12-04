@@ -1,26 +1,30 @@
+use derive_more as dm;
+
 pub(crate) mod alias;
 pub(crate) mod logging;
 pub(crate) mod meta;
 
-use std::ops::Deref;
-
+#[derive(dm::Deref, dm::DerefMut)]
 pub(crate) struct UnsafeSync<T>(T);
+
+impl<T> UnsafeSync<T> {
+    pub(crate) const fn new(value: T) -> Self {
+        Self(value)
+    }
+}
 
 unsafe impl<T> Sync for UnsafeSync<T> {}
 
-impl<T> UnsafeSync<T> {
-    pub fn new(obj: T) -> Self {
-        Self(obj)
+#[derive(dm::Deref, dm::DerefMut)]
+pub(crate) struct UnsafeSend<T>(T);
+
+impl<T> UnsafeSend<T> {
+    pub(crate) const fn new(value: T) -> Self {
+        Self(value)
     }
 }
 
-impl<T> Deref for UnsafeSync<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
+unsafe impl<T> Send for UnsafeSend<T> {}
 
 /// A trait for any hierarchical structure that may take a parent.
 pub(crate) trait Hierarchical<T> {

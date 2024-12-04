@@ -1,19 +1,15 @@
 use derive_more as dm;
-use lazy_static::lazy_static;
 use z3::{
     self,
     ast::{self, Ast},
-    Config, Context, SatResult, Solver,
+    Context, SatResult, Solver,
 };
 
-use std::{borrow::Borrow, collections::HashMap, hash::Hash};
+use std::{collections::HashMap, hash::Hash};
 
 use common::log_debug;
 
-use crate::{
-    abs::{backend, Constraint},
-    utils::UnsafeSync,
-};
+use crate::abs::{backend, Constraint};
 
 use self::backend::SolveResult;
 
@@ -165,19 +161,6 @@ pub(crate) struct TranslatedConstraint<'ctx, I> {
     pub variables: HashMap<I, AstNode<'ctx>>,
 }
 
-lazy_static! {
-    /* FIXME: Can we have a safer and still clean approach?
-     * Before making changes, note that getting a reference to the context in the
-     * Z3Solver has helped us to avoid the need for translator factory and be
-     * able to generate solvers on demand.
-     * Initial guess is that it should be possible to maintain the instance of
-     * context inside the solver using interior mutability. RefCell was tried
-     * and I wasn't successful.
-     */
-    static ref CONTEXT: UnsafeSync<Context> = UnsafeSync::new(Context::new(&Config::default()));
-}
-
-#[derive(Clone)]
 pub(crate) struct Z3Solver<'ctx, I> {
     pub(crate) context: &'ctx Context,
     solver: Solver<'ctx>,
@@ -185,6 +168,10 @@ pub(crate) struct Z3Solver<'ctx, I> {
 }
 
 impl<'ctx, I> Z3Solver<'ctx, I> {
+    pub fn new_in_global_context<'a>() -> Self {
+        Self::new(context::get_context_for_thread())
+    }
+
     pub fn new_in_global_context() -> Self {
         let context = CONTEXT.borrow();
         Self {
@@ -192,6 +179,13 @@ impl<'ctx, I> Z3Solver<'ctx, I> {
             solver: Solver::new(context),
             _phantom: Default::default(),
         }
+    }
+}
+
+impl<'ctx, I> Clone for Z3Solver<'ctx, I> {
+    fn clone(&self) -> Self {
+        // Prevent cloning the assumptions in the solver
+        Self::new(self.context)
     }
 }
 
@@ -302,3 +296,54 @@ impl<'ctx> BVExt for ast::BV<'ctx> {
         }
     }
 }
+
+mod context {
+    use std::{
+        collections::HashMap,
+        sync::{Mutex, OnceLock},
+        thread::ThreadId,
+    };
+
+    use common::log_debug;
+    use z3::Config;
+
+    use crate::utils::{UnsafeSend, UnsafeSync};
+
+    use super::Context;
+
+    static CONTEXTS: OnceLock<Vec<UnsafeSync<UnsafeSend<Context>>>> = OnceLock::new();
+    static THREAD_MAP: OnceLock<Mutex<HashMap<ThreadId, usize>>> = OnceLock::new();
+
+    pub(crate) fn set_global_params(config: &HashMap<String, String>) {
+        for (k, v) in config {
+            log_debug!("Setting global param: {} = {}", k, v);
+            z3::set_global_param(k, v);
+        }
+    }
+
+    fn init_contexts() -> Vec<UnsafeSync<UnsafeSend<Context>>> {
+        // Statically allocate some in advance.
+        const TOTAL_CONTEXTS: usize = 1;
+
+        let mut list = Vec::with_capacity(TOTAL_CONTEXTS);
+        for _ in 0..TOTAL_CONTEXTS {
+            list.push(UnsafeSync::new(UnsafeSend::new(Context::new(
+                &Config::new(),
+            ))));
+        }
+        list
+    }
+
+    pub(super) fn get_context_for_thread() -> &'static Context {
+        let contexts = CONTEXTS.get_or_init(init_contexts);
+        let thread_id = std::thread::current().id();
+        let mut thread_map = THREAD_MAP.get_or_init(Default::default).lock().unwrap();
+        let accessor_count = thread_map.len();
+        let index = *thread_map.entry(thread_id).or_insert(accessor_count);
+        let context = &contexts
+            .get(index)
+            .expect("Unexpected number of threads to access Z3 context");
+        *context
+    }
+}
+pub(crate) use context::set_global_params;

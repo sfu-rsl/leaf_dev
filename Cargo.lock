@@ -1791,7 +1791,7 @@ dependencies = [
 [[package]]
 name = "z3"
 version = "0.12.1"
-source = "git+https://github.com/prove-rs/z3.rs?rev=b47f3af5ce4b7b3b47024533892735c3ffc0267b#b47f3af5ce4b7b3b47024533892735c3ffc0267b"
+source = "git+https://github.com/prove-rs/z3.rs?rev=60001b36fc8a7ab1d4f22595e80a3b6f7adc1bcf#60001b36fc8a7ab1d4f22595e80a3b6f7adc1bcf"
 dependencies = [
  "log",
  "num",
@@ -1801,7 +1801,7 @@ dependencies = [
 [[package]]
 name = "z3-sys"
 version = "0.8.1"
-source = "git+https://github.com/prove-rs/z3.rs?rev=b47f3af5ce4b7b3b47024533892735c3ffc0267b#b47f3af5ce4b7b3b47024533892735c3ffc0267b"
+source = "git+https://github.com/prove-rs/z3.rs?rev=60001b36fc8a7ab1d4f22595e80a3b6f7adc1bcf#60001b36fc8a7ab1d4f22595e80a3b6f7adc1bcf"
 dependencies = [
  "bindgen",
  "pkg-config",

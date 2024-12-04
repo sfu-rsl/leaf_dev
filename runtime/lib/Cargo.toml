@@ -11,15 +11,14 @@ crate-type = ["rlib"]
 
 [dependencies]
 common = { workspace = true, features = ["tyexp", "config", "logging"] }
-leaf_macros = { path = "../../macros", package = "macros"}
+leaf_macros = { path = "../../macros", package = "macros" }
 
 config = { workspace = true, features = ["toml", "json"] }
 tracing-subscriber = { workspace = true }
 tracing = { workspace = true }
 paste = "1.0"
-z3 = { git = "https://github.com/prove-rs/z3.rs", rev = "b47f3af5ce4b7b3b47024533892735c3ffc0267b" }
-z3-sys = { git = "https://github.com/prove-rs/z3.rs", rev = "b47f3af5ce4b7b3b47024533892735c3ffc0267b" }
-lazy_static = "1.4.0"
+z3 = { git = "https://github.com/prove-rs/z3.rs", rev = "60001b36fc8a7ab1d4f22595e80a3b6f7adc1bcf" }
+z3-sys = { git = "https://github.com/prove-rs/z3.rs", rev = "60001b36fc8a7ab1d4f22595e80a3b6f7adc1bcf" }
 delegate = { workspace = true }
 derive_more = { workspace = true }
 serde = { workspace = true }

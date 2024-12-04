@@ -1,10 +1,11 @@
-use super::utils::{DefaultRefManager, RefManager, UnsafeSync};
+use super::utils::{DefaultRefManager, RefManager};
 use super::{OperandRef, PlaceHandler, PlaceRef, SwitchInfo};
 use crate::abs::{
     backend::{AssignmentHandler, ConstraintHandler, OperandHandler, PlaceBuilder, RuntimeBackend},
     BasicBlockLocation, PlaceUsage,
 };
 use crate::backends::basic::BasicPlaceBuilder;
+use crate::utils::UnsafeSync;
 use common::log_info;
 
 #[allow(unused_imports)] // Mutex is detected as unused unless runtime_access is set to safe_mt

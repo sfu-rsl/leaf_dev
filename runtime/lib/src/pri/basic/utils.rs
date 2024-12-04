@@ -1,32 +1,4 @@
-use std::ops::{Deref, DerefMut};
-
 use super::Ref;
-
-pub(super) struct UnsafeSync<T> {
-    value: T,
-}
-
-unsafe impl<T> Sync for UnsafeSync<T> {}
-
-impl<T> UnsafeSync<T> {
-    pub const fn new(value: T) -> Self {
-        Self { value }
-    }
-}
-
-impl<T> Deref for UnsafeSync<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.value
-    }
-}
-
-impl<T> DerefMut for UnsafeSync<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.value
-    }
-}
 
 pub(super) trait RefManager {
     type Ref;
