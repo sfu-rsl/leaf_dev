@@ -31,7 +31,8 @@ samples/**/main
 *.bc
 *.json
 ./main
-.z3-trace
+
+*.log
 
 # Performance test results
 *.bench
@@ -49,3 +50,6 @@ scripts/**/venv
 *-leaf
 *-rustc
 *-orig
+
+.z3-trace
+*.smt2
