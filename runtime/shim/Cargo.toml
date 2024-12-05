@@ -17,7 +17,7 @@ test = false
 
 [dependencies]
 # No dependencies other than the internal packages are supposed to be used by this crate.
-common = { path = "../../common" }
+common = { path = "../../common", package = "common" }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = [

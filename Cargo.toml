@@ -11,7 +11,8 @@ members = [
 exclude = ["runtime/shim", "samples/crates/", "scripts"]
 
 [workspace.dependencies]
-common = { path = "common" }
+# Unless we specify the package, it won't be renamed.
+common = { path = "common", package = "common"}
 macros = { path = "macros" }
 
 config = "0.14.1"
