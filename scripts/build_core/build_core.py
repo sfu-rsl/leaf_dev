@@ -66,6 +66,17 @@ def find_leaf_workspace_dir() -> Path:
     return workspace_dir
 
 
+def should_add_leaf_as_dep() -> bool:
+    env_val = os.environ.get(ENV_ADD_LEAF_AS_DEP, "true").lower()
+    return env_val in [
+        "true",
+        "1",
+        "yes",
+        "y",
+        "on",
+    ]
+
+
 def get_toolchain_path(cwd, env=None) -> Path:
     try:
         process = run_command(
@@ -323,7 +334,7 @@ def main():
     copied_toolchain_path = copy_toolchain(orig_toolchain_path, paths.work)
     logging.debug("Copied toolchain path: %s", copied_toolchain_path)
 
-    add_leaf_as_dep = ENV_ADD_LEAF_AS_DEP in os.environ
+    add_leaf_as_dep = should_add_leaf_as_dep()
     logging.info(
         "Leaf's runtime shim will be %s.",
         "added as a dependency" if add_leaf_as_dep else "added to core library",
