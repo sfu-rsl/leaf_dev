@@ -10,4 +10,4 @@ name = "dummy"
 path = "src/main.rs"
 
 [dependencies]
-$leaf_dep_switch leaf = { path = "$leaf_workspace_dir/runtime/shim", package = "runtime_shim" }
+$leaf_dep_switch leafrtsh = { path = "$leaf_workspace_dir/runtime/shim", package = "runtime_shim" }

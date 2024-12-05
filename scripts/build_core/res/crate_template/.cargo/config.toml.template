@@ -14,5 +14,6 @@ rustflags = [
 
 [env]
 LEAFC_CODEGEN_ALL_MIR = "true"
-LEAFC_RUNTIME_SHIM__AS_EXTERNAL = "false"
+$leaf_as_in_core_switch LEAFC_RUNTIME_SHIM__LOCATION = "core"
+$leaf_as_external_switch LEAFC_RUNTIME_SHIM__LOCATION__EXTERNAL__SEARCH_PATH = "deps"
 LEAFC_BUILDING_CORE = "true"

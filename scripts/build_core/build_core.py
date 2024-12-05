@@ -150,7 +150,9 @@ def add_leaf_to_core(core_src_dir: Path, leaf_workspace_dir: Path, res_dir: Path
             if common_src_dir.joinpath(f"{module}.rs").exists():
                 shutil.copy(common_src_dir.joinpath(f"{module}.rs"), dst_dir)
             else:
-                shutil.copytree(common_src_dir.joinpath(module), dst_dir.joinpath(module))
+                shutil.copytree(
+                    common_src_dir.joinpath(module), dst_dir.joinpath(module)
+                )
         # Making appropriate mod.rs
         with open(dst_dir.joinpath("mod.rs"), "w") as f:
             f.writelines((f"pub(crate) mod {m};" for m in modules))
@@ -217,11 +219,16 @@ def substitute_template(template_path: Path, **substitutions: object):
 
 
 def set_dummy_crate_config_toml(
-    dummy_crate_dir: Path, toolchain_path: Path, enable_core_build_cfg: bool
+    dummy_crate_dir: Path,
+    toolchain_path: Path,
+    add_leaf_as_dep: bool,
+    enable_core_build_cfg: bool,
 ):
     substitute_template(
         dummy_crate_dir.joinpath(".cargo", "config.toml.template"),
         toolchain_path=toolchain_path.absolute(),
+        leaf_as_in_core_switch="#" if add_leaf_as_dep else "",
+        leaf_as_external_switch="#" if not add_leaf_as_dep else "",
         core_build_cfg_switch="#" if not enable_core_build_cfg else "",
     )
 
@@ -307,7 +314,9 @@ def main():
 
     dummy_crate_dir = create_dummy_crate(paths.work, paths.res)
 
-    run_command(args=["cargo", "--version"], cwd=dummy_crate_dir, env=os.environ, check=True)
+    run_command(
+        args=["cargo", "--version"], cwd=dummy_crate_dir, env=os.environ, check=True
+    )
 
     orig_toolchain_path = get_toolchain_path(cwd=dummy_crate_dir, env=os.environ)
     logging.debug("Original toolchain path: %s", orig_toolchain_path)
@@ -323,6 +332,7 @@ def main():
     set_dummy_crate_config_toml(
         dummy_crate_dir,
         copied_toolchain_path,
+        add_leaf_as_dep,
         enable_core_build_cfg=not add_leaf_as_dep,
     )
     toolchain_path = get_toolchain_path(

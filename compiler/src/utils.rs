@@ -54,3 +54,47 @@ pub(crate) mod mir {
         }
     }
 }
+
+pub(super) mod file {
+    use std::{
+        env,
+        path::{Path, PathBuf},
+    };
+
+    use common::log_debug;
+
+    pub(crate) fn find_dependency_path<'a>(
+        name: &'static str,
+        priority_dirs: impl Iterator<Item = &'a Path>,
+    ) -> PathBuf {
+        try_find_dependency_path(name, priority_dirs)
+            .unwrap_or_else(|| panic!("Unable to find the dependency with name: {}", name))
+    }
+
+    // Tries to find a dependency of the compiler by searching in the given directories.
+    // Order of search is:
+    // 1. Priority directories
+    // 2. Current working directory
+    // 3. Directory of the executable
+    pub(crate) fn try_find_dependency_path<'a>(
+        name: &str,
+        mut priority_dirs: impl Iterator<Item = &'a Path>,
+    ) -> Option<PathBuf> {
+        let try_dir = |path: &Path| {
+            log_debug!("Trying dir in search of `{}`: {:?}", name, path);
+            common::utils::try_join_path(path, name)
+        };
+
+        let try_priority_dirs = || priority_dirs.find_map(try_dir);
+        let try_cwd = || env::current_dir().ok().and_then(|p| try_dir(&p));
+        let try_exe_path = || {
+            env::current_exe()
+                .ok()
+                .and_then(|p| p.ancestors().skip(1).find_map(try_dir))
+        };
+
+        None.or_else(try_priority_dirs)
+            .or_else(try_cwd)
+            .or_else(try_exe_path)
+    }
+}

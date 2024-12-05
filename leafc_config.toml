@@ -1,6 +1,7 @@
+codegen_all_mir = true
 marker_cfg_name = "leafc"
 
 [runtime_shim]
-# as_external = false
-as_external = true
+[runtime_shim.location.external]
 crate_name = "leaf"
+search_path = "sysroot"

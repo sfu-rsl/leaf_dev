@@ -134,21 +134,23 @@ fn is_ineffective_crate(opts: &driver_args::CrateOptions) -> bool {
 mod driver_callbacks {
     use common::{log_debug, log_info, log_warn};
 
-    use super::{config::LeafCompilerConfig, passes::*, *};
+    use super::{
+        config::{LeafCompilerConfig, RuntimeShimLocation},
+        passes::*,
+        *,
+    };
     use crate::utils::chain;
 
     pub(super) fn set_up_callbacks(
         config: LeafCompilerConfig,
         crate_options: &driver_args::CrateOptions,
     ) -> Box<Callbacks> {
-        if (!config.codegen_all_mir || config.building_core)
-            && super::is_ineffective_crate(crate_options)
-        {
+        let is_ineffective_crate = super::is_ineffective_crate(crate_options);
+        if (!config.codegen_all_mir || config.building_core) && is_ineffective_crate {
             log_info!("Leafc will work as the normal Rust compiler.");
             Box::new(NoOpPass.to_callbacks())
         } else {
-            let mut passes = if config.codegen_all_mir && super::is_ineffective_crate(crate_options)
-            {
+            let mut passes = if config.codegen_all_mir && is_ineffective_crate {
                 log_info!("Setting up passes as for a primary package in codegen all mode.");
                 build_minimal_passes_in_codegen_all_mode()
             } else if config.codegen_all_mir
@@ -158,9 +160,12 @@ mod driver_callbacks {
                 build_dep_passes_in_codegen_all_mode()
             } else {
                 log_info!("Setting up passes as for a primary package.");
-                build_primary_passes(&config)
+                let mut passes = build_primary_passes(&config);
+                passes.add_config_callback(Box::new(shim_dep::config_shim_dep));
+                passes
             };
             passes.set_leaf_config(config);
+
             passes.add_config_callback(Box::new(move |rustc_config, leafc_config| {
                 let cfg_name = leafc_config.marker_cfg_name.clone();
                 if cfg_name.is_empty() {
@@ -186,8 +191,14 @@ mod driver_callbacks {
 
     fn build_primary_passes(config: &LeafCompilerConfig) -> Box<Callbacks> {
         let prerequisites_pass = RuntimeExternCrateAdder::new(
-            config.runtime_shim.crate_name.clone(),
-            config.runtime_shim.as_external,
+            matches!(
+                config.runtime_shim.location,
+                RuntimeShimLocation::External { .. }
+            ),
+            match config.runtime_shim.location {
+                RuntimeShimLocation::CoreLib => None,
+                RuntimeShimLocation::External { ref crate_name, .. } => Some(crate_name.clone()),
+            },
         );
 
         #[cfg(nctfe)]
@@ -303,6 +314,128 @@ mod driver_callbacks {
 
         from_cargo && !is_primary
     }
+
+    mod shim_dep {
+        use rustc_session::{
+            config::{ExternEntry, ExternLocation, Externs},
+            search_paths::{PathKind, SearchPath, SearchPathFile},
+            utils::CanonicalizedPath,
+        };
+
+        use std::{collections::BTreeMap, iter, path::Path};
+
+        use super::*;
+        use crate::utils::file::*;
+
+        const DIR_DEPS: &str = "deps";
+        pub(super) const FILE_RUNTIME_SHIM_LIB: &str = "libleafrtsh.rlib";
+        const PATH_SHIM_LIB_LOCATION: &str = env!("SHIM_LIB_LOCATION"); // Set by the build script.
+
+        pub(super) fn config_shim_dep(
+            rustc_config: &mut rustc_interface::Config,
+            leafc_config: &mut LeafCompilerConfig,
+        ) {
+            match &leafc_config.runtime_shim.location {
+                RuntimeShimLocation::CoreLib => {
+                    log_info!("Expecting the runtime shim as a part of core library")
+                    // Nothing to do.
+                }
+                RuntimeShimLocation::External {
+                    // The crate name will be taken care of in the dedicated pass.
+                    crate_name: _,
+                    search_path,
+                } => {
+                    log_info!("Adding the runtime shim as an external dependency");
+                    add_shim_as_external(rustc_config, search_path)
+                }
+            }
+        }
+
+        fn add_shim_as_external(
+            rustc_config: &mut rustc_interface::Config,
+            search_path: &config::RuntimeShimExternalLocation,
+        ) {
+            use crate::config::RuntimeShimExternalLocation::*;
+            let location = match search_path {
+                CrateSearchPaths => {
+                    log_debug!("Expecting the runtime shim in the search paths of the crate.");
+                    ExternLocation::FoundInLibrarySearchDirectories
+                }
+                _ => {
+                    let rlib_path = match search_path {
+                        Compiler => find_shim_lib_path(),
+                        Exact(path) => PathBuf::from(path),
+                        _ => unreachable!(),
+                    };
+                    let search_path = search_path_for_transitive_deps(&rlib_path);
+
+                    log_debug!(
+                        "Runtime shim path: {}, with {} transitive deps at: {}",
+                        rlib_path.display(),
+                        search_path.files.len(),
+                        search_path.dir.display()
+                    );
+
+                    rustc_config.opts.search_paths.push(search_path);
+                    ExternLocation::ExactPaths(
+                        core::iter::once(CanonicalizedPath::new(&rlib_path)).collect(),
+                    )
+                }
+            };
+
+            let extern_entry = ExternEntry {
+                add_prelude: true,
+                force: true,
+                is_private_dep: false,
+                nounused_dep: false,
+                location,
+            };
+            rustc_config.opts.externs = Externs::new(
+                // Let the user force the location if they want to.
+                iter::once((CRATE_RUNTIME.to_owned(), extern_entry))
+                    .chain(
+                        rustc_config
+                            .opts
+                            .externs
+                            .iter()
+                            .map(|(k, v)| (k.clone(), v.clone())),
+                    )
+                    .collect::<BTreeMap<_, _>>(),
+            );
+        }
+
+        fn find_shim_lib_path() -> PathBuf {
+            find_dependency_path(
+                FILE_RUNTIME_SHIM_LIB,
+                iter::once(Path::new(PATH_SHIM_LIB_LOCATION)),
+            )
+        }
+
+        fn search_path_for_transitive_deps(lib_file_path: &Path) -> SearchPath {
+            // The `deps` folder next to the library file
+            let deps_path = lib_file_path.parent().unwrap().join(DIR_DEPS);
+            // Source: rustc_session::search_paths::SearchPath::new
+            let files = std::fs::read_dir(&deps_path)
+                .map(|files| {
+                    files
+                        .filter_map(|e| {
+                            e.ok().and_then(|e| {
+                                e.file_name().to_str().map(|s| SearchPathFile {
+                                    path: e.path(),
+                                    file_name_str: s.to_string(),
+                                })
+                            })
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            SearchPath {
+                kind: PathKind::Dependency,
+                dir: deps_path,
+                files,
+            }
+        }
+    }
 }
 
 pub mod constants {
@@ -334,7 +467,7 @@ pub mod constants {
 mod driver_args {
     pub(super) use rustc_session::config::CrateType;
 
-    use super::*;
+    use super::{utils::file::*, *};
 
     use std::path::{Path, PathBuf};
     use std::{env, fs, iter};
@@ -344,13 +477,9 @@ mod driver_args {
 
     const CODEGEN_LINK_ARG: &str = "link-arg";
 
-    const DIR_DEPS: &str = "deps";
-
     const ENV_RUSTUP_HOME: &str = "RUSTUP_HOME";
     const ENV_SYSROOT: &str = "RUST_SYSROOT";
     const ENV_TOOLCHAIN: &str = "RUSTUP_TOOLCHAIN";
-
-    const FILE_RUNTIME_SHIM_LIB: &str = "libleafrtsh.rlib";
 
     const FILE_RUNTIME_DYLIB_DEFAULT: &str = FILE_RUNTIME_DYLIB_BASIC_LATE_INIT;
     #[allow(dead_code)]
@@ -371,7 +500,6 @@ mod driver_args {
 
     const LIB_RUNTIME: &str = "leafrt";
 
-    const OPT_EXTERN: &str = "--extern";
     const OPT_CODEGEN: &str = "-C";
     const OPT_CRATE_NAME: &str = "--crate-name";
     const OPT_CRATE_TYPE: &str = "--crate-type";
@@ -381,9 +509,6 @@ mod driver_args {
     const OPT_SEARCH_PATH: &str = "-L";
     const OPT_UNSTABLE: &str = "-Zunstable-options";
 
-    const PATH_SHIM_LIB_LOCATION: &str = env!("SHIM_LIB_LOCATION"); // Set by the build script.
-
-    const SEARCH_KIND_TRANS_DEP: &str = "dependency";
     const SEARCH_KIND_NATIVE: &str = "native";
 
     const SUFFIX_OVERRIDE: &str = "(override)";
@@ -479,20 +604,6 @@ mod driver_args {
 
         args.push(OPT_UNSTABLE.to_owned());
 
-        if config.runtime_shim.as_external {
-            // Add the runtime shim library as a direct external dependency.
-            let shim_lib_path = find_shim_lib_path();
-            args.add_pair(OPT_EXTERN, format!("{}={}", CRATE_RUNTIME, shim_lib_path));
-            // Add the runtime shim library dependencies into the search path.
-            args.add_pair(
-                OPT_SEARCH_PATH,
-                format!(
-                    "{SEARCH_KIND_TRANS_DEP}={}",
-                    find_shim_lib_deps_path(&shim_lib_path)
-                ),
-            );
-        }
-
         if let Some(input_path) = input_path {
             args.push(input_path.to_string_lossy().into_owned());
         }
@@ -504,7 +615,9 @@ mod driver_args {
         let use_noop_runtime = is_ineffective_crate(opts);
 
         ensure_runtime_dylib_exists(use_noop_runtime);
-        let runtime_dylib_dir = find_runtime_dylib_dir(use_noop_runtime);
+        let runtime_dylib_dir = find_runtime_dylib_dir(use_noop_runtime)
+            .to_string_lossy()
+            .to_string();
         // Add the runtime dynamic library as a dynamic dependency.
         /* NOTE: As long as the shim is getting compiled along with the program,
          * adding it explicitly should not be necessary (is expected to be
@@ -586,21 +699,6 @@ mod driver_args {
             .expect("Unable to find sysroot.")
     }
 
-    fn find_shim_lib_path() -> String {
-        find_dependency_path(
-            FILE_RUNTIME_SHIM_LIB,
-            iter::once(Path::new(PATH_SHIM_LIB_LOCATION)),
-        )
-    }
-
-    fn find_shim_lib_deps_path(lib_file_path: &str) -> String {
-        // Select the `deps` folder next to the lib file.
-        find_dependency_path(
-            DIR_DEPS,
-            iter::once(Path::new(lib_file_path).parent().unwrap()),
-        )
-    }
-
     fn ensure_runtime_dylib_exists(use_noop_runtime: bool) {
         ensure_runtime_dylib_dir_exist(use_noop_runtime);
         let runtime_dylib_dir = PathBuf::from(find_runtime_dylib_dir(use_noop_runtime));
@@ -659,7 +757,7 @@ mod driver_args {
         .expect("Could not create a symlink to the fallback runtime dylib.");
     }
 
-    fn find_runtime_dylib_dir(use_noop_runtime: bool) -> String {
+    fn find_runtime_dylib_dir(use_noop_runtime: bool) -> PathBuf {
         find_dependency_path(get_runtime_dylib_folder(use_noop_runtime), iter::empty())
     }
 
@@ -669,37 +767,6 @@ mod driver_args {
         } else {
             DIR_RUNTIME_DYLIB_DEFAULT
         }
-    }
-
-    fn find_dependency_path<'a>(
-        name: &'static str,
-        priority_dirs: impl Iterator<Item = &'a Path>,
-    ) -> String {
-        try_find_dependency_path(name, priority_dirs)
-            .unwrap_or_else(|| panic!("Unable to find the dependency with name: {}", name))
-    }
-
-    fn try_find_dependency_path<'a>(
-        name: &str,
-        mut priority_dirs: impl Iterator<Item = &'a Path>,
-    ) -> Option<String> {
-        let try_dir = |path: &Path| {
-            log_debug!("Trying dir in search of `{}`: {:?}", name, path);
-            common::utils::try_join_path(path, name)
-        };
-
-        let try_priority_dirs = || priority_dirs.find_map(try_dir);
-        let try_cwd = || env::current_dir().ok().and_then(|p| try_dir(&p));
-        let try_exe_path = || {
-            env::current_exe()
-                .ok()
-                .and_then(|p| p.ancestors().skip(1).find_map(try_dir))
-        };
-
-        None.or_else(try_priority_dirs)
-            .or_else(try_cwd)
-            .or_else(try_exe_path)
-            .map(|path| path.to_string_lossy().to_string())
     }
 
     fn retry<T, E>(

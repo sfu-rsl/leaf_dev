@@ -311,8 +311,6 @@ pub(crate) fn all_pri_items(tcx: TyCtxt) -> Vec<DefId> {
 /// This returns either crate that should be searched for the PRI items.
 /// When building the core library, the current crate is returned.
 fn find_pri_host_crate(tcx: TyCtxt) -> CrateNum {
-    let building_core = tcx.crate_name(LOCAL_CRATE).as_str() == *sym::CORE_LIB_CRATE;
-
     log_debug!(
         target: TAG_DISCOVERY,
         "Searching for the crate hosting PRI symbols among: {:?}",
@@ -322,7 +320,13 @@ fn find_pri_host_crate(tcx: TyCtxt) -> CrateNum {
     tcx.crate_by_name(*sym::RUNTIME_LIB_CRATE)
         .or_else(|| tcx.crate_by_name(*sym::CORE_LIB_CRATE))
         .or_else(|| {
-            if building_core {
+            /* NOTE: This is not expected to happen anymore.
+             * Previously, we tried to build the core library with instrumentation directly.
+             * However, currently, all bodies from the dependencies will be instrumented during
+             * building the target program. Thus, the core library should not be built directly.
+             * Anyway, if that happens, the runtime should be available as a part of it.
+             */
+            if tcx.crate_name(LOCAL_CRATE).as_str() == *sym::CORE_LIB_CRATE {
                 Some(LOCAL_CRATE)
             } else {
                 None
@@ -510,12 +514,12 @@ fn filter_pri_items<'a, 'tcx: 'a>(
 }
 
 fn to_map_key(tcx: TyCtxt, def_id: DefId) -> String {
-    let mut full_path = tcx.def_path_str(def_id);
-    if let Some(start) = full_path.find(*sym::RUNTIME_LIB_CRATE) {
-        full_path.split_off(start)
-    } else {
-        full_path
-    }
+    let def_path = tcx.def_path(def_id);
+    core::iter::once(tcx.crate_name(def_path.krate).to_string())
+        .chain(def_path.data.into_iter().map(|d| d.data.to_string()))
+        .skip_while(|p| p != *sym::RUNTIME_LIB_CRATE)
+        .collect::<Vec<_>>()
+        .join("::")
 }
 
 trait DefIdIterExt<'tcx> {
