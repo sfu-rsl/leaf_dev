@@ -1,7 +1,10 @@
+#!/usr/bin/env python3
+
 from dataclasses import dataclass
 import logging.config
 import subprocess
 import os
+import sys
 import shutil
 from pathlib import Path
 import logging
@@ -11,6 +14,7 @@ ENV_OUT_DIR = "OUT_DIR"
 ENV_LEAF_WORKSPACE = "LEAF_WORKSPACE"
 ENV_LOG_LEVEL = "LEAFS_LOG_LEVEL"
 ENV_ADD_LEAF_AS_DEP = "LEAFS_ADD_LEAF_AS_DEP"
+ENV_TOOLCHAIN_MARKER = "LEAFS_TOOLCHAIN_MARKER_FILE"
 
 ENV_LEAFC = "LEAFC"
 ENV_CARGO = "CARGO"
@@ -21,6 +25,8 @@ BUILD_TARGET = "x86_64-unknown-linux-gnu"
 BUILD_PROFILE = "release"
 
 SHIM_MODULE_NAME = "leafrtsh"
+
+OPTS_BUILD_STD = ["-Zbuild-std", f"--target={BUILD_TARGET}"]
 
 
 @dataclass
@@ -33,10 +39,14 @@ class Paths:
 
 def run_command(**kwargs):
     logging.debug(
-        "Running: %s %s",
+        "Running: %s %s %s",
         " ".join(str(arg) for arg in kwargs["args"]),
         "in " + str(kwargs.get("cwd", Path.cwd())),
     )
+    if not kwargs.get("capture_output", False):
+        kwargs.setdefault("stdout", subprocess.DEVNULL)
+        kwargs.setdefault("stderr", subprocess.DEVNULL)
+        
     return subprocess.run(**kwargs)
 
 
@@ -45,6 +55,12 @@ def ensure_env_dir(var_name: str, default) -> Path:
     assert not path.exists() or path.is_dir()
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def add_empty_file(folder: Path, name: str):
+    file = folder.joinpath(name)
+    file.touch()
+    return file
 
 
 def find_leaf_workspace_dir() -> Path:
@@ -58,6 +74,8 @@ def find_leaf_workspace_dir() -> Path:
                 raise FileNotFoundError("Leaf workspace not found")
             current_dir = parent
         workspace_dir = current_dir
+    else:
+        workspace_dir = Path(workspace_dir)
 
     # Check some assumed structure
     assert workspace_dir.joinpath("common").exists()
@@ -80,7 +98,15 @@ def should_add_leaf_as_dep() -> bool:
 def get_toolchain_path(cwd, env=None) -> Path:
     try:
         process = run_command(
-            args=["cargo", "rustc", "--", "--print=sysroot"],
+            args=[
+                "cargo",
+                "rustc",
+                # Cargo tries to build the dependencies, even if we only want to work with rustc.
+                # So, we need to make sure that build succeeds.
+                *OPTS_BUILD_STD,
+                "--",
+                "--print=sysroot",
+            ],
             cwd=cwd,
             env=env,
             check=True,
@@ -102,50 +128,63 @@ def get_core_src_dir(toolchain_path) -> Path:
 
 
 def copy_toolchain(toolchain_path: Path, work_dir: Path) -> Path:
-    dst_dir = work_dir.joinpath("toolchain")
-    if dst_dir.exists():
-        shutil.rmtree(dst_dir)
-    dst_dir.mkdir(parents=True)
-
     core_src_dir = get_core_src_dir(toolchain_path)
     assert (
         core_src_dir.exists()
     ), "Core source directory does not exist. Make sure you have added the source component to the toolchain."
 
-    # Symbolically copy the toolchain to the work directory except for the core source
-    work_list = [toolchain_path]
-    while len(work_list) > 0:
-        current = work_list.pop()
-        for child in current.iterdir():
-            if core_src_dir.is_relative_to(child):
-                if child == core_src_dir:
-                    # Copy the actual core source
-                    shutil.copytree(
-                        child,
-                        dst_dir.joinpath(child.relative_to(toolchain_path)),
-                        dirs_exist_ok=True,
-                    )
-                else:
-                    work_list.append(child)
-            else:
-                # Linking the rest
-                link_path = dst_dir.joinpath(child.relative_to(toolchain_path))
-                link_path.parent.mkdir(parents=True, exist_ok=True)
+    def internal_copy_toolchain(link: bool) -> Path:
+        dst_dir = work_dir.joinpath("toolchain")
+        if dst_dir.exists():
+            shutil.rmtree(dst_dir)
 
-                # Binary files must have a real path to give the correct sysroot.
-                # The rest like source files can be symbolically linked.
-                if "src" in str(link_path):
-                    link_path.symlink_to(child, target_is_directory=True)
-                elif child.is_dir():
-                    shutil.copytree(
-                        child,
-                        link_path,
-                        copy_function=os.link,
-                    )
-                else:
-                    link_path.hardlink_to(child)
+        if link:
+            # Symbolically copy the toolchain to the work directory except for the core source
+            dst_dir.mkdir(parents=True)
+            work_list = [toolchain_path]
+            while len(work_list) > 0:
+                current = work_list.pop()
+                for child in current.iterdir():
+                    if core_src_dir.is_relative_to(child):
+                        if child == core_src_dir:
+                            # Copy the actual core source
+                            shutil.copytree(
+                                child,
+                                dst_dir.joinpath(child.relative_to(toolchain_path)),
+                                dirs_exist_ok=True,
+                            )
+                        else:
+                            work_list.append(child)
+                    else:
+                        # Linking the rest
+                        link_path = dst_dir.joinpath(child.relative_to(toolchain_path))
+                        link_path.parent.mkdir(parents=True, exist_ok=True)
 
-    return dst_dir
+                        # Binary files must have a real path to give the correct sysroot.
+                        # The rest like source files can be symbolically linked.
+                        if "src" in str(link_path):
+                            link_path.symlink_to(child, target_is_directory=True)
+                        elif child.is_dir():
+                            shutil.copytree(
+                                child,
+                                link_path,
+                                copy_function=os.link,
+                            )
+                        else:
+                            link_path.hardlink_to(child)
+        else:
+            shutil.copytree(toolchain_path, dst_dir)
+
+        return dst_dir
+
+    try:
+        result = internal_copy_toolchain(link=True)
+    except Exception as e:
+        logging.debug("Failed to link the toolchain. Copying instead.")
+        logging.debug("Error: %s...", str(e)[:200])
+        result = internal_copy_toolchain(link=False)
+
+    return result
 
 
 def add_leaf_to_core(core_src_dir: Path, leaf_workspace_dir: Path, res_dir: Path):
@@ -231,13 +270,11 @@ def substitute_template(template_path: Path, **substitutions: object):
 
 def set_dummy_crate_config_toml(
     dummy_crate_dir: Path,
-    toolchain_path: Path,
     add_leaf_as_dep: bool,
     enable_core_build_cfg: bool,
 ):
     substitute_template(
         dummy_crate_dir.joinpath(".cargo", "config.toml.template"),
-        toolchain_path=toolchain_path.absolute(),
         leaf_as_in_core_switch="#" if add_leaf_as_dep else "",
         leaf_as_external_switch="#" if not add_leaf_as_dep else "",
         core_build_cfg_switch="#" if not enable_core_build_cfg else "",
@@ -266,13 +303,12 @@ def get_build_env(toolchain_path: Path):
 def build_crate_with_core(dummy_crate_dir: Path, toolchain_path):
     logging.info("Building the core library through dummy crate")
 
-    output = subprocess.DEVNULL if logging.getLogger().level > logging.DEBUG else None
+    output = subprocess.DEVNULL if logging.getLogger().level > logging.DEBUG else sys.stderr
     args = [
         "cargo",
         "build",
         # Causes the core lib to be built as a dependency
-        "-Zbuild-std",
-        f"--target={BUILD_TARGET}",
+        *OPTS_BUILD_STD,
         "--verbose",
         f"--profile={'dev' if BUILD_PROFILE == 'debug' else BUILD_PROFILE}",
         # You can switch to a single thread for easier debugging
@@ -309,6 +345,10 @@ def make_toolchain(dummy_crate_dir: Path, out_dir: Path) -> Path:
     for file in lib_files:
         shutil.copy(file, dst_dir)
 
+    if ENV_TOOLCHAIN_MARKER in os.environ:
+        logging.debug("Adding a toolchain marker file")
+        add_empty_file(toolchain_dir, os.environ[ENV_TOOLCHAIN_MARKER])
+
     return toolchain_dir
 
 
@@ -323,7 +363,14 @@ def main():
     )
     logging.debug("Paths: %s", paths.__repr__())
 
+    add_leaf_as_dep = should_add_leaf_as_dep()
+    logging.info(
+        "Leaf's runtime shim will be %s.",
+        "added as a dependency" if add_leaf_as_dep else "added to core library",
+    )
+
     dummy_crate_dir = create_dummy_crate(paths.work, paths.res)
+    set_dummy_crate_cargo_toml(dummy_crate_dir, add_leaf_as_dep, paths.leaf_workspace)
 
     run_command(
         args=["cargo", "--version"], cwd=dummy_crate_dir, env=os.environ, check=True
@@ -331,47 +378,43 @@ def main():
 
     orig_toolchain_path = get_toolchain_path(cwd=dummy_crate_dir, env=os.environ)
     logging.debug("Original toolchain path: %s", orig_toolchain_path)
-    copied_toolchain_path = copy_toolchain(orig_toolchain_path, paths.work)
-    logging.debug("Copied toolchain path: %s", copied_toolchain_path)
 
-    add_leaf_as_dep = should_add_leaf_as_dep()
-    logging.info(
-        "Leaf's runtime shim will be %s.",
-        "added as a dependency" if add_leaf_as_dep else "added to core library",
-    )
+    target_toolchain_path = orig_toolchain_path
+    if not add_leaf_as_dep:
+        target_toolchain_path = copy_toolchain(
+            orig_toolchain_path, paths.work
+        ).absolute()
+        logging.debug("Copied toolchain path: %s", target_toolchain_path)
 
     set_dummy_crate_config_toml(
         dummy_crate_dir,
-        copied_toolchain_path,
         add_leaf_as_dep,
         enable_core_build_cfg=not add_leaf_as_dep,
     )
     toolchain_path = get_toolchain_path(
-        cwd=dummy_crate_dir, env=get_build_env(copied_toolchain_path)
+        cwd=dummy_crate_dir, env=get_build_env(target_toolchain_path)
     )
     logging.debug("Toolchain path: %s", toolchain_path)
-    assert toolchain_path.absolute() == copied_toolchain_path.absolute(), toolchain_path
-
-    core_src = get_core_src_dir(toolchain_path)
-    logging.debug("Core source dir: %s", core_src)
+    assert toolchain_path.absolute() == target_toolchain_path.absolute(), (
+        toolchain_path,
+        target_toolchain_path,
+    )
 
     if not add_leaf_as_dep:
+        core_src = get_core_src_dir(toolchain_path)
+        logging.debug("Core source dir: %s", core_src)
         add_leaf_to_core(core_src, paths.leaf_workspace, paths.res)
-
-    set_dummy_crate_cargo_toml(dummy_crate_dir, add_leaf_as_dep, paths.leaf_workspace)
 
     build_crate_with_core(dummy_crate_dir, toolchain_path)
     out_toolchain_path = make_toolchain(dummy_crate_dir, paths.out)
 
-    logging.info(
-        "The toolchain is available at %s",
-        out_toolchain_path.absolute(),
-    )
+    print(out_toolchain_path.absolute())
 
 
 if __name__ == "__main__":
     logging.basicConfig(
         level=os.environ.get(ENV_LOG_LEVEL, default="INFO").upper(),
         format="[%(asctime)s %(levelname)s] %(message)s",
+        stream=sys.stderr,
     )
     main()
