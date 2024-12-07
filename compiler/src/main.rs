@@ -17,6 +17,7 @@ mod config;
 mod mir_transform;
 mod passes;
 mod pri_utils;
+mod toolchain_build;
 mod utils;
 mod visit;
 
@@ -177,14 +178,12 @@ mod driver_callbacks {
                     .push(format!("cfg({})", cfg_name));
                 rustc_config.crate_cfg.push(cfg_name.clone());
             }));
-            passes.add_config_callback(Box::new(move |rustc_config, leafc_config| {
+            passes.add_config_callback(Box::new(move |rustc_config, _| {
                 /* Forcing inlining to happen as some compiler helper functions in the PRI use
                  * generic functions from the core library which may cause infinite loops. */
                 rustc_config.opts.unstable_opts.inline_mir = Some(true);
-                if leafc_config.codegen_all_mir {
-                    config_codegen_all_mode(rustc_config, leafc_config);
-                }
             }));
+            passes.add_config_callback(Box::new(codegen_all::config_codegen_all));
             passes
         }
     }
@@ -259,46 +258,6 @@ mod driver_callbacks {
         /* We must enable overriding should_codegen to force the codegen for all items.
          * Currently, overriding it equals to forcing the codegen for all items. */
         OverrideFlagsForcePass::<SHOULD_CODEGEN_FLAGS>::default()
-    }
-
-    fn config_codegen_all_mode(
-        rustc_config: &mut rustc_interface::Config,
-        leafc_config: &mut LeafCompilerConfig,
-    ) {
-        assert!(
-            leafc_config.codegen_all_mir,
-            "This function is meant for codegen all mode."
-        );
-        rustc_config.opts.unstable_opts.always_encode_mir = true;
-        rustc_config
-            .opts
-            .cli_forced_codegen_units
-            .replace(1)
-            .inspect(|old| {
-                if *old != 1 {
-                    log_warn!(
-                        concat!(
-                            "Forcing codegen units to 1 because of compilation mode. ",
-                            "The requested value was: {:?}",
-                        ),
-                        old,
-                    );
-                }
-            });
-        if rustc_config.opts.maybe_sysroot.is_none() {
-            let is_building_core = leafc_config.building_core
-                || rustc_config
-                    .crate_cfg
-                    .iter()
-                    .any(|cfg| cfg == CONFIG_CORE_BUILD);
-            if !is_building_core {
-                log_warn!(concat!(
-                    "Codegen all MIR is enabled, but the sysroot is not set. ",
-                    "It is necessary to use a sysroot with MIR for all libraries included.",
-                    "Unless you are building the core library, this may cause issues.",
-                ));
-            }
-        }
     }
 
     fn is_dependency_crate(crate_name: Option<&String>) -> bool {
@@ -436,6 +395,101 @@ mod driver_callbacks {
             }
         }
     }
+
+    mod codegen_all {
+        use std::{iter, path::Path};
+
+        use common::log_error;
+        use toolchain_build::{self, is_sysroot_compatible};
+        use utils::file::try_find_dependency_path;
+
+        use super::*;
+
+        pub(super) fn config_codegen_all(
+            rustc_config: &mut rustc_interface::Config,
+            leafc_config: &mut LeafCompilerConfig,
+        ) {
+            if !leafc_config.codegen_all_mir {
+                return;
+            }
+
+            rustc_config.opts.unstable_opts.always_encode_mir = true;
+            rustc_config
+                .opts
+                .cli_forced_codegen_units
+                .replace(1)
+                .inspect(|old| {
+                    if *old != 1 {
+                        log_warn!(
+                            concat!(
+                                "Forcing codegen units to 1 because of compilation mode. ",
+                                "The requested value was: {:?}",
+                            ),
+                            old,
+                        );
+                    }
+                });
+
+            let is_building_core = leafc_config.building_core
+                || rustc_config
+                    .crate_cfg
+                    .iter()
+                    .any(|cfg| cfg == CONFIG_CORE_BUILD);
+
+            if !is_building_core {
+                check_sysroot(rustc_config, leafc_config);
+            }
+        }
+
+        fn check_sysroot(
+            rustc_config: &mut rustc_interface::Config,
+            leafc_config: &LeafCompilerConfig,
+        ) {
+            let current_sysroot = rustc_session::filesearch::materialize_sysroot(
+                rustc_config.opts.maybe_sysroot.clone(),
+            );
+            if is_sysroot_compatible(&current_sysroot) {
+                return;
+            }
+
+            if !leafc_config.override_sysroot {
+                log_warn!(concat!(
+                    "Codegen all MIR is enabled, while the sysroot does not seem to be built for leaf. ",
+                    "It is necessary to use a sysroot with MIR for all libraries included.",
+                    "Unless you are doing special build scenarios, this may lead to unexpected errors.",
+                ));
+                return;
+            }
+
+            log_debug!("The current sysroot is probably not compatible for codegen all MIR.");
+
+            let sysroot = try_find_dependency_path(DIR_TOOLCHAIN, iter::empty())
+                .filter(|p| is_sysroot_compatible(&p))
+                .unwrap_or_else(|| {
+                    build_toolchain(&current_sysroot, rustc_config.output_dir.as_deref())
+                });
+            log_info!(
+                "Overriding the sysroot with the one found at: {}",
+                sysroot.display()
+            );
+            rustc_config.opts.maybe_sysroot.replace(sysroot);
+        }
+
+        fn build_toolchain(current_sysroot: &Path, out_dir: Option<&Path>) -> PathBuf {
+            log_info!(
+                "Building a compatible toolchain based on the current sysroot: {}",
+                current_sysroot.display()
+            );
+
+            let result: PathBuf = toolchain_build::build_toolchain(current_sysroot, out_dir)
+                .unwrap_or_else(|e| {
+                    log_error!("Failed to build the toolchain: {}", e);
+                    std::process::exit(1);
+                });
+            assert!(is_sysroot_compatible(&result));
+            result
+        }
+    }
 }
 
 pub mod constants {
@@ -462,6 +516,10 @@ pub mod constants {
     pub const LOG_BB_JUMP_TAG: &str = super::mir_transform::TAG_BB_JUMP;
 
     pub const TOOL_LEAF: &str = "leaf_attr";
+
+    pub const DIR_TOOLCHAIN: &str = "toolchain";
+
+    pub const ENV_RUSTUP_TOOLCHAIN: &str = "RUSTUP_TOOLCHAIN";
 }
 
 mod driver_args {
@@ -479,7 +537,6 @@ mod driver_args {
 
     const ENV_RUSTUP_HOME: &str = "RUSTUP_HOME";
     const ENV_SYSROOT: &str = "RUST_SYSROOT";
-    const ENV_TOOLCHAIN: &str = "RUSTUP_TOOLCHAIN";
 
     const FILE_RUNTIME_DYLIB_DEFAULT: &str = FILE_RUNTIME_DYLIB_BASIC_LATE_INIT;
     #[allow(dead_code)]
@@ -598,10 +655,6 @@ mod driver_args {
             return args;
         }
 
-        if config.set_sysroot {
-            args.set_if_absent(OPT_SYSROOT, find_sysroot);
-        }
-
         args.push(OPT_UNSTABLE.to_owned());
 
         if let Some(input_path) = input_path {
@@ -686,7 +739,7 @@ mod driver_args {
 
         let try_toolchain_env = || {
             read_var!(ENV_RUSTUP_HOME)
-                .zip(read_var!(ENV_TOOLCHAIN))
+                .zip(read_var!(ENV_RUSTUP_TOOLCHAIN))
                 .map(|(home, toolchain)| format!("{home}/toolchains/{toolchain}"))
         };
 

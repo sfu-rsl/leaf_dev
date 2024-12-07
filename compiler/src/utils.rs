@@ -77,12 +77,16 @@ pub(super) mod file {
     // 2. Current working directory
     // 3. Directory of the executable
     pub(crate) fn try_find_dependency_path<'a>(
-        name: &str,
+        name: impl AsRef<Path> + Clone,
         mut priority_dirs: impl Iterator<Item = &'a Path>,
     ) -> Option<PathBuf> {
         let try_dir = |path: &Path| {
-            log_debug!("Trying dir in search of `{}`: {:?}", name, path);
-            common::utils::try_join_path(path, name)
+            log_debug!(
+                "Trying dir in search of `{}`: {:?}",
+                name.as_ref().display(),
+                path
+            );
+            common::utils::try_join_path(path, name.clone())
         };
 
         let try_priority_dirs = || priority_dirs.find_map(try_dir);

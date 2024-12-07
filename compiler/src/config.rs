@@ -10,11 +10,15 @@ pub(crate) struct LeafCompilerConfig {
     #[serde(default)]
     pub building_core: bool,
     #[serde(default)]
-    pub set_sysroot: bool,
-    #[serde(default)]
+    pub override_sysroot: bool,
+    #[serde(default = "default_codegen_all_mir")]
     pub codegen_all_mir: bool,
     #[serde(default = "default_marker_cfg_name")]
     pub marker_cfg_name: String,
+}
+
+fn default_codegen_all_mir() -> bool {
+    true
 }
 
 fn default_marker_cfg_name() -> String {

@@ -5,20 +5,36 @@ use std::{
     path::{Path, PathBuf},
 };
 
-const SHIM_LIB_PROJECT_DIR: &str = "../runtime/shim";
+const SHIM_LIB_PROJECT_DIR: [&str; 2] = ["runtime", "shim"];
 const SHIM_LIB_FILE_NAME: &str = "libleafrtsh.rlib";
 
+const PATH_TOOLCHAIN_BUILDER: [&str; 2] = ["scripts", "build_core"];
+const FILE_TOOLCHAIN_BUILDER: &str = "toolchain_builder";
+
 const ENV_SHIM_LIB_LOCATION: &str = "SHIM_LIB_LOCATION";
+const ENV_WORKSPACE_DIR: &str = "WORKSPACE_DIR";
 
 fn main() {
-    let shim_lib_location = provide_runtime_shim_lib();
+    let workspace_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap())
+        .parent()
+        .unwrap()
+        .to_path_buf();
+
+    println!(
+        "cargo:rustc-env={ENV_WORKSPACE_DIR}={}",
+        workspace_dir.display(),
+    );
+
+    let shim_lib_location = provide_runtime_shim_lib(&workspace_dir);
     println!(
         "cargo:rustc-env={ENV_SHIM_LIB_LOCATION}={}",
         shim_lib_location.display(),
     );
+
+    provide_toolchain_builder(&workspace_dir);
 }
 
-fn provide_runtime_shim_lib() -> PathBuf {
+fn provide_runtime_shim_lib(workspace_dir: &Path) -> PathBuf {
     /* NOTE: Why are we building it separately and not using the workspace's target output.
      * When building through workspace, if the shim library shares a dependency
      * with other projects, cargo builds a single version of that dependency,
@@ -31,7 +47,7 @@ fn provide_runtime_shim_lib() -> PathBuf {
      */
     use runtime_shim::*;
 
-    let shim_lib_proj_path = env::current_dir().unwrap().join(SHIM_LIB_PROJECT_DIR);
+    let shim_lib_proj_path = workspace_dir.join(PathBuf::from_iter(SHIM_LIB_PROJECT_DIR));
     println!("cargo:rerun-if-changed={}", shim_lib_proj_path.display());
 
     let target_output_dir = build_lib(&shim_lib_proj_path);
@@ -76,14 +92,7 @@ mod runtime_shim {
     /// Copies the built artifact and dependencies of the runtime shim to the
     /// the compiler's `deps` directory in a dedicated folder.
     pub(super) fn copy_lib_to_deps(lib_output_dir: &Path) -> PathBuf {
-        /* At the moment, no cleaner way is found to get the artifacts path.
-         * This is based on the default structure: target/profile/build/<crate>/out */
-        let deps_dir = PathBuf::from(env::var("OUT_DIR").unwrap())
-            .ancestors()
-            .skip(3) // profile/build/<crate>/out -> profile
-            .next()
-            .unwrap()
-            .join(DIR_DEPS);
+        let deps_dir = artifacts_path().join(DIR_DEPS);
         let shim_lib_copy_dir = deps_dir.join("runtime_shim");
         recreate_dir(&shim_lib_copy_dir);
         copy_built_files(lib_output_dir, &shim_lib_copy_dir);
@@ -119,9 +128,32 @@ mod runtime_shim {
     }
 }
 
+fn provide_toolchain_builder(workspace_dir: &Path) {
+    let script_path = workspace_dir.join(PathBuf::from_iter(PATH_TOOLCHAIN_BUILDER));
+    println!("cargo:rerun-if-changed={}", script_path.display());
+    let link_path = artifacts_path().join(FILE_TOOLCHAIN_BUILDER);
+    if link_path.exists() {
+        return;
+    }
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(script_path, link_path)
+        .expect("Could not create symlink to the toolchain builder script.");
+}
+
 fn recreate_dir(dir: &Path) {
     if dir.exists() {
         fs::remove_dir_all(dir).unwrap_or_else(|_| panic!("Failed to remove {:?}", dir));
     }
     fs::create_dir_all(dir).unwrap_or_else(|_| panic!("Failed to create {:?}", dir));
+}
+
+fn artifacts_path() -> PathBuf {
+    /* At the moment, no cleaner way is found to get the artifacts path.
+     * This is based on the default structure: target/profile/build/<crate>/out */
+    PathBuf::from(env::var("OUT_DIR").unwrap())
+        .ancestors()
+        .skip(3) // profile/build/<crate>/out -> profile
+        .next()
+        .unwrap()
+        .to_path_buf()
 }

@@ -1,5 +1,6 @@
 codegen_all_mir = true
 marker_cfg_name = "leafc"
+override_sysroot = true
 
 [runtime_shim]
 [runtime_shim.location.external]
