@@ -65,7 +65,7 @@ pub(super) mod file {
 
     pub(crate) fn find_dependency_path<'a>(
         name: &'static str,
-        priority_dirs: impl Iterator<Item = &'a Path>,
+        priority_dirs: impl IntoIterator<Item = &'a Path>,
     ) -> PathBuf {
         try_find_dependency_path(name, priority_dirs)
             .unwrap_or_else(|| panic!("Unable to find the dependency with name: {}", name))
@@ -78,7 +78,7 @@ pub(super) mod file {
     // 3. Directory of the executable
     pub(crate) fn try_find_dependency_path<'a>(
         name: impl AsRef<Path> + Clone,
-        mut priority_dirs: impl Iterator<Item = &'a Path>,
+        priority_dirs: impl IntoIterator<Item = &'a Path>,
     ) -> Option<PathBuf> {
         let try_dir = |path: &Path| {
             log_debug!(
@@ -89,7 +89,7 @@ pub(super) mod file {
             common::utils::try_join_path(path, name.clone())
         };
 
-        let try_priority_dirs = || priority_dirs.find_map(try_dir);
+        let try_priority_dirs = || priority_dirs.into_iter().find_map(try_dir);
         let try_cwd = || env::current_dir().ok().and_then(|p| try_dir(&p));
         let try_exe_path = || {
             env::current_exe()

@@ -463,7 +463,7 @@ mod driver_callbacks {
 
             log_debug!("The current sysroot is probably not compatible for codegen all MIR.");
 
-            let sysroot = try_find_dependency_path(DIR_TOOLCHAIN, iter::empty())
+            let sysroot = try_find_dependency_path(DIR_TOOLCHAIN, [])
                 .filter(|p| is_sysroot_compatible(&p))
                 .unwrap_or_else(|| {
                     build_toolchain(&current_sysroot, rustc_config.output_dir.as_deref())
@@ -530,13 +530,7 @@ mod driver_args {
     use std::path::{Path, PathBuf};
     use std::{env, fs, iter};
 
-    const CMD_RUSTC: &str = "rustc";
-    const CMD_RUSTUP: &str = "rustup";
-
     const CODEGEN_LINK_ARG: &str = "link-arg";
-
-    const ENV_RUSTUP_HOME: &str = "RUSTUP_HOME";
-    const ENV_SYSROOT: &str = "RUST_SYSROOT";
 
     const FILE_RUNTIME_DYLIB_DEFAULT: &str = FILE_RUNTIME_DYLIB_BASIC_LATE_INIT;
     #[allow(dead_code)]
@@ -561,20 +555,12 @@ mod driver_args {
     const OPT_CRATE_NAME: &str = "--crate-name";
     const OPT_CRATE_TYPE: &str = "--crate-type";
     const OPT_LINK_NATIVE: &str = "-l";
-    const OPT_PRINT_SYSROOT: &str = "--print=sysroot";
-    const OPT_SYSROOT: &str = "--sysroot";
     const OPT_SEARCH_PATH: &str = "-L";
     const OPT_UNSTABLE: &str = "-Zunstable-options";
 
     const SEARCH_KIND_NATIVE: &str = "native";
 
-    const SUFFIX_OVERRIDE: &str = "(override)";
-
     const MAX_RETRY: usize = 5;
-
-    macro_rules! read_var {
-        ($name:expr) => {{ env::var($name).ok() }};
-    }
 
     // FIXME: #467
     pub(super) struct CrateOptions {
@@ -688,68 +674,6 @@ mod driver_args {
             OPT_SEARCH_PATH,
             format!("{SEARCH_KIND_NATIVE}={}", runtime_dylib_dir),
         );
-    }
-
-    fn find_sysroot() -> String {
-        let try_rustc = || {
-            use std::process::Command;
-            // Find a nightly toolchain if available.
-            // NOTE: It is possible to prioritize the overridden toolchain even if not nightly.
-            let toolchain_arg = Command::new(CMD_RUSTUP)
-                .args(&["toolchain", "list"])
-                .output()
-                .ok()
-                .filter(|out| out.status.success())
-                .and_then(|out| {
-                    let lines = std::str::from_utf8(&out.stdout)
-                        .ok()?
-                        .lines()
-                        .filter(|l| l.starts_with("nightly"))
-                        .map(str::to_owned)
-                        .collect::<Vec<_>>();
-                    Some(lines)
-                })
-                .and_then(|toolchains| {
-                    toolchains
-                        .iter()
-                        .find_map(|t| t.rfind(SUFFIX_OVERRIDE).map(|i| t[..i].to_owned()))
-                        .or(toolchains.first().cloned())
-                })
-                .map(|t| format!("+{}", t.trim()))
-                .unwrap_or_else(|| {
-                    log_warn!("Unable to find a nightly toolchain. Using the default one.");
-                    Default::default()
-                });
-
-            Command::new(CMD_RUSTC)
-                .arg(toolchain_arg)
-                .arg(OPT_PRINT_SYSROOT)
-                .output()
-                .ok()
-                .filter(|out| {
-                    if out.status.success() {
-                        true
-                    } else {
-                        log_debug!("Rustc print sysroot was not successful: {:?}", out);
-                        false
-                    }
-                })
-                .map(|out| std::str::from_utf8(&out.stdout).unwrap().trim().to_owned())
-        };
-
-        let try_toolchain_env = || {
-            read_var!(ENV_RUSTUP_HOME)
-                .zip(read_var!(ENV_RUSTUP_TOOLCHAIN))
-                .map(|(home, toolchain)| format!("{home}/toolchains/{toolchain}"))
-        };
-
-        let try_sysroot_env = || read_var!(ENV_SYSROOT);
-
-        // NOTE: Check the priority of these variables in the original compiler.
-        try_rustc()
-            .or_else(try_toolchain_env)
-            .or_else(try_sysroot_env)
-            .expect("Unable to find sysroot.")
     }
 
     fn ensure_runtime_dylib_exists(use_noop_runtime: bool) {

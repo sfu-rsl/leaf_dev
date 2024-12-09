@@ -27,11 +27,8 @@ pub const FILE_TOOLCHAIN_MARKER: &str = ".leafc_toolchain";
 const PATH_WORKSPACE: &str = env!("WORKSPACE_DIR"); // Set by the build script.
 
 pub(super) fn build_toolchain(sysroot: &Path, out_dir: Option<&Path>) -> Result<PathBuf, String> {
-    let builder = try_find_dependency_path(
-        PathBuf::from_iter(PATH_TOOLCHAIN_BUILDER),
-        core::iter::empty(),
-    )
-    .ok_or("Failed to find the toolchain builder".to_owned())?;
+    let builder = try_find_dependency_path(PathBuf::from_iter(PATH_TOOLCHAIN_BUILDER), [])
+        .ok_or("Failed to find the toolchain builder".to_owned())?;
 
     let work_dir = setup_workdir(out_dir)?;
 
