@@ -22,7 +22,7 @@ pub mod sym {
     use LeafSymbol as LS;
 
     pub const CORE_LIB_CRATE: LS = LS("core");
-    pub const RUNTIME_LIB_CRATE: LS = LS(crate::constants::CRATE_RUNTIME);
+    pub const RUNTIME_LIB_CRATE: LS = LS(crate::constants::CRATE_RUNTIME_SHIM);
 
     pub const MODULE_MARKER_DIAG_NAME: LS = LS("leaf_module_marker");
 

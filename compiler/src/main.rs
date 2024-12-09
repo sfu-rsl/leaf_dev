@@ -48,7 +48,7 @@ extern crate thin_vec;
 
 use rustc_driver::RunCompiler;
 
-use common::{log_debug, log_info, log_warn};
+use common::log_info;
 
 use std::env;
 use std::path::PathBuf;
@@ -60,11 +60,7 @@ fn main() {
 
     set_up_compiler();
 
-    std::process::exit(run_compiler(
-        // The first argument is the executable file name.
-        env::args().collect::<Vec<_>>().into_iter().skip(1),
-        None,
-    ));
+    std::process::exit(run_compiler(env::args()));
 }
 
 fn init_logging() {
@@ -96,10 +92,10 @@ pub fn set_up_compiler() {
     rustc_driver::install_ice_hook(URL_BUG_REPORT, |_| ());
 }
 
-pub fn run_compiler(args: impl Iterator<Item = String>, input_path: Option<PathBuf>) -> i32 {
+pub fn run_compiler(args: impl IntoIterator<Item = String>) -> i32 {
     let config = config::load_config();
 
-    let args = driver_args::set_up_args(args, input_path, &config);
+    let args = driver_args::set_up_args(args);
     log_info!("Running compiler with args: {:?}", args);
 
     let mut callbacks = driver_callbacks::set_up_callbacks(
@@ -200,18 +196,6 @@ mod driver_callbacks {
             },
         );
 
-        #[cfg(nctfe)]
-        let nctfe_pass = {
-            let ctfe_block_ids = {
-                let pass = chain!(prerequisites_pass.clone(), <CtfeScanner>,);
-                let mut callbacks = pass.to_callbacks();
-                run_pass(&mut callbacks);
-                let pass = callbacks.into_pass();
-                pass.second.into_result()
-            };
-            NctfeFunctionAdder::new(ctfe_block_ids.len())
-        };
-        #[cfg(not(nctfe))]
         let nctfe_pass = NoOpPass;
 
         let passes = chain!(
@@ -287,8 +271,9 @@ mod driver_callbacks {
         use crate::utils::file::*;
 
         const DIR_DEPS: &str = "deps";
-        pub(super) const FILE_RUNTIME_SHIM_LIB: &str = "libleafrtsh.rlib";
-        const PATH_SHIM_LIB_LOCATION: &str = env!("SHIM_LIB_LOCATION"); // Set by the build script.
+
+        const DIR_RUNTIME_SHIM_LIB: &str = "runtime_shim";
+        const FILE_RUNTIME_SHIM_LIB: &str = "libleafrtsh.rlib";
 
         pub(super) fn config_shim_dep(
             rustc_config: &mut rustc_interface::Config,
@@ -322,14 +307,15 @@ mod driver_callbacks {
                 }
                 _ => {
                     let rlib_path = match search_path {
-                        Compiler => find_shim_lib_path(),
+                        Compiler => find_dependency_path(DIR_RUNTIME_SHIM_LIB, [])
+                            .join(FILE_RUNTIME_SHIM_LIB),
                         Exact(path) => PathBuf::from(path),
                         _ => unreachable!(),
                     };
-                    let search_path = search_path_for_transitive_deps(&rlib_path);
+                    let search_path = make_search_path_for_transitive_deps(&rlib_path);
 
                     log_debug!(
-                        "Runtime shim path: {}, with {} transitive deps at: {}",
+                        "Runtime shim path: {}, with {} transitive deps found at: {}",
                         rlib_path.display(),
                         search_path.files.len(),
                         search_path.dir.display()
@@ -350,8 +336,8 @@ mod driver_callbacks {
                 location,
             };
             rustc_config.opts.externs = Externs::new(
-                // Let the user force the location if they want to.
-                iter::once((CRATE_RUNTIME.to_owned(), extern_entry))
+                // We prepend to let the users force the location if they want to.
+                iter::once((CRATE_RUNTIME_SHIM.to_owned(), extern_entry))
                     .chain(
                         rustc_config
                             .opts
@@ -363,14 +349,7 @@ mod driver_callbacks {
             );
         }
 
-        fn find_shim_lib_path() -> PathBuf {
-            find_dependency_path(
-                FILE_RUNTIME_SHIM_LIB,
-                iter::once(Path::new(PATH_SHIM_LIB_LOCATION)),
-            )
-        }
-
-        fn search_path_for_transitive_deps(lib_file_path: &Path) -> SearchPath {
+        fn make_search_path_for_transitive_deps(lib_file_path: &Path) -> SearchPath {
             // The `deps` folder next to the library file
             let deps_path = lib_file_path.parent().unwrap().join(DIR_DEPS);
             // Source: rustc_session::search_paths::SearchPath::new
@@ -397,7 +376,7 @@ mod driver_callbacks {
     }
 
     mod codegen_all {
-        use std::{iter, path::Path};
+        use std::path::Path;
 
         use common::log_error;
         use toolchain_build::{self, is_sysroot_compatible};
@@ -498,15 +477,13 @@ pub mod constants {
     pub(super) const CRATE_NAME_BUILD_SCRIPT: &str = "build_script_build";
 
     // The instrumented code is going to call the shim.
-    pub(super) const CRATE_RUNTIME: &str = "leafrtsh";
+    pub(super) const CRATE_RUNTIME_SHIM: &str = "leafrtsh";
 
     pub(crate) const CONFIG_ENV_PREFIX: &str = "LEAFC";
 
     pub(super) const CONFIG_CORE_BUILD: &str = "core_build";
 
     pub(super) const URL_BUG_REPORT: &str = "https://github.com/sfu-rsl/leaf/issues/new";
-
-    pub(super) const LEAF_AUG_MOD_NAME: &str = "__leaf_augmentation";
 
     pub const LOG_ENV: &str = concatcp!(CONFIG_ENV_PREFIX, "_LOG");
     pub const LOG_WRITE_STYLE_ENV: &str = concatcp!(CONFIG_ENV_PREFIX, "_LOG_STYLE");
@@ -556,7 +533,6 @@ mod driver_args {
     const OPT_CRATE_TYPE: &str = "--crate-type";
     const OPT_LINK_NATIVE: &str = "-l";
     const OPT_SEARCH_PATH: &str = "-L";
-    const OPT_UNSTABLE: &str = "-Zunstable-options";
 
     const SEARCH_KIND_NATIVE: &str = "native";
 
@@ -613,20 +589,8 @@ mod driver_args {
         }
     }
 
-    pub(super) fn set_up_args(
-        given_args: impl Iterator<Item = String>,
-        input_path: Option<PathBuf>,
-        config: &crate::config::LeafCompilerConfig,
-    ) -> Vec<String> {
-        // Although the driver throws out the first argument, we set the correct value for it.
-        let given_args = std::iter::once(
-            env::current_exe()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .into_owned(),
-        )
-        .chain(given_args);
-        let mut args = given_args.collect::<Vec<_>>();
+    pub(super) fn set_up_args(given_args: impl IntoIterator<Item = String>) -> Vec<String> {
+        let mut args = given_args.into_iter().collect::<Vec<_>>();
 
         let crate_options = args.parse_crate_options();
 
@@ -635,16 +599,11 @@ mod driver_args {
          * with embedded runtime shim, we add it anyway. It won't be effective
          * if there is no linking required.
          * Related to #462. */
+        // FIXME: Use the parsed config instead.
         set_up_runtime_dylib(&mut args, &crate_options);
 
         if is_ineffective_crate(&crate_options) {
             return args;
-        }
-
-        args.push(OPT_UNSTABLE.to_owned());
-
-        if let Some(input_path) = input_path {
-            args.push(input_path.to_string_lossy().into_owned());
         }
 
         args

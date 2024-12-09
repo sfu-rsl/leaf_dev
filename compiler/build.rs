@@ -6,6 +6,8 @@ use std::{
     process::Command,
 };
 
+use self::utils::*;
+
 const SHIM_LIB_PROJECT_DIR: [&str; 2] = ["runtime", "shim"];
 const SHIM_LIB_FILE_NAME: &str = "libleafrtsh.rlib";
 
@@ -13,7 +15,6 @@ const PATH_TOOLCHAIN_BUILDER: [&str; 2] = ["scripts", "core_builder"];
 const FILE_TOOLCHAIN_BUILDER: &str = "toolchain_builder";
 
 const ENV_DEPS_DIR: &str = "DEPS_DIR";
-const ENV_SHIM_LIB_LOCATION: &str = "SHIM_LIB_LOCATION";
 const ENV_WORKSPACE_DIR: &str = "WORKSPACE_DIR";
 
 const DIR_DEPS: &str = "deps";
@@ -31,47 +32,43 @@ fn main() {
         workspace_dir.display(),
     );
 
-    let shim_lib_location = provide_runtime_shim_lib(&workspace_dir);
-    println!(
-        "cargo:rustc-env={ENV_SHIM_LIB_LOCATION}={}",
-        shim_lib_location.display(),
-    );
+    provide_runtime_shim_lib(&workspace_dir);
 
     provide_toolchain_builder(&workspace_dir);
 
-    add_dylib_search_path_header();
-}
-
-fn provide_runtime_shim_lib(workspace_dir: &Path) -> PathBuf {
-    /* NOTE: Why are we building it separately and not using the workspace's target output.
-     * When building through workspace, if the shim library shares a dependency
-     * with other projects, cargo builds a single version of that dependency,
-     * which works for all. In our case, common library is built with additional
-     * features not required for the runtime shim library.
-     * Furthermore, this guarantees a more controlled and isolated build with
-     * the necessary dependencies being added to the target programs, otherwise
-     * it will be hard to separate those.
-     * In short, an isolated build is achieved in this way.
-     */
-    use runtime_shim::*;
-
-    let shim_lib_proj_path = workspace_dir.join(PathBuf::from_iter(SHIM_LIB_PROJECT_DIR));
-    println!("cargo:rerun-if-changed={}", shim_lib_proj_path.display());
-
-    let target_output_dir = build_lib(&shim_lib_proj_path);
-
-    let shim_as_dep_path = copy_lib_to_deps(&target_output_dir);
-    println!("cargo:rerun-if-changed={}", shim_as_dep_path.display());
-
-    shim_as_dep_path
+    add_dylib_search_path_headers();
 }
 
 mod runtime_shim {
     use super::*;
 
+    pub(super) fn provide(workspace_dir: &Path) -> PathBuf {
+        /* NOTE: Why are we building it separately and not using the workspace's target output.
+         * When building through workspace, if the shim library shares a dependency
+         * with other projects, cargo builds a single version of that dependency,
+         * which works for all. In our case, common library is built with additional
+         * features not required for the runtime shim library.
+         * Furthermore, this guarantees a more controlled and isolated build with
+         * the necessary dependencies being added to the target programs, otherwise
+         * it will be hard to separate those.
+         * In short, an isolated build is achieved in this way.
+         */
+        use runtime_shim::*;
+
+        let shim_lib_proj_path = workspace_dir.join(PathBuf::from_iter(SHIM_LIB_PROJECT_DIR));
+        println!("cargo:rerun-if-changed={}", shim_lib_proj_path.display());
+
+        let target_output_dir = build_lib(&shim_lib_proj_path);
+
+        let shim_as_dep_path = copy_lib_to_deps(&target_output_dir);
+        println!("cargo:rerun-if-changed={}", shim_as_dep_path.display());
+
+        shim_as_dep_path
+    }
+
     /// Builds the runtime shim library and returns the path to the target output
     /// directory, which holds the artifacts and dependencies.
-    pub(super) fn build_lib(proj_path: &Path) -> PathBuf {
+    fn build_lib(proj_path: &Path) -> PathBuf {
         const SHIM_LIB_TARGET_DIR: &str = "target/compiler";
 
         // Use the same profile as the compiler
@@ -130,6 +127,7 @@ mod runtime_shim {
         }
     }
 }
+use runtime_shim::provide as provide_runtime_shim_lib;
 
 fn provide_toolchain_builder(workspace_dir: &Path) {
     let script_path = workspace_dir.join(PathBuf::from_iter(PATH_TOOLCHAIN_BUILDER));
@@ -143,29 +141,8 @@ fn provide_toolchain_builder(workspace_dir: &Path) {
         .expect("Could not create symlink to the toolchain builder script.");
 }
 
-fn recreate_dir(dir: &Path) {
-    if dir.exists() {
-        fs::remove_dir_all(dir).unwrap_or_else(|_| panic!("Failed to remove {:?}", dir));
-    }
-    fs::create_dir_all(dir).unwrap_or_else(|_| panic!("Failed to create {:?}", dir));
-}
-
-fn artifacts_path() -> PathBuf {
-    /* At the moment, no cleaner way is found to get the artifacts path.
-     * This is based on the default structure: target/profile/build/<crate>/out */
-    PathBuf::from(env::var("OUT_DIR").unwrap())
-        .ancestors()
-        .skip(3) // profile/build/<crate>/out -> profile
-        .next()
-        .unwrap()
-        .to_path_buf()
-}
-
-fn deps_path() -> PathBuf {
-    artifacts_path().join(DIR_DEPS)
-}
-
-fn add_dylib_search_path_header() {
+fn add_dylib_search_path_headers() {
+    // For rustc_driver shared lib
     let dylib_paths = get_current_sysroot().join("lib");
     println!(
         "cargo::rustc-link-arg-bins=-Wl,-rpath={}",
@@ -173,11 +150,37 @@ fn add_dylib_search_path_header() {
     );
 }
 
-fn get_current_sysroot() -> PathBuf {
-    let output = Command::new(env::var("RUSTC").unwrap())
-        .args(["--print", "sysroot"])
-        .output()
-        .unwrap();
-    output.status.exit_ok().unwrap();
-    PathBuf::from(String::from_utf8(output.stdout).unwrap().trim())
+mod utils {
+    use super::*;
+
+    pub(super) fn recreate_dir(dir: &Path) {
+        if dir.exists() {
+            fs::remove_dir_all(dir).unwrap_or_else(|_| panic!("Failed to remove {:?}", dir));
+        }
+        fs::create_dir_all(dir).unwrap_or_else(|_| panic!("Failed to create {:?}", dir));
+    }
+
+    pub(super) fn artifacts_path() -> PathBuf {
+        /* At the moment, no cleaner way is found to get the artifacts path.
+         * This is based on the default structure: target/profile/build/<crate>/out */
+        PathBuf::from(env::var("OUT_DIR").unwrap())
+            .ancestors()
+            .skip(3) // profile/build/<crate>/out -> profile
+            .next()
+            .unwrap()
+            .to_path_buf()
+    }
+
+    pub(super) fn deps_path() -> PathBuf {
+        artifacts_path().join(DIR_DEPS)
+    }
+
+    pub(super) fn get_current_sysroot() -> PathBuf {
+        let output = Command::new(env::var("RUSTC").unwrap())
+            .args(["--print", "sysroot"])
+            .output()
+            .unwrap();
+        output.status.exit_ok().unwrap();
+        PathBuf::from(String::from_utf8(output.stdout).unwrap().trim())
+    }
 }
