@@ -16,6 +16,9 @@ ignore = "0.4.22"
 [dependencies]
 common = { workspace = true, features = ["tyexp", "config", "logging"] }
 macros = { workspace = true }
+# Adding runtime flavors as dependencies, so they will be built along with the compiler.
+runtime_basic_li = { workspace = true }
+runtime_noop = { workspace = true }
 
 delegate = { workspace = true }
 paste = "1.0"

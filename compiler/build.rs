@@ -3,6 +3,7 @@
 use std::{
     env, fs,
     path::{Path, PathBuf},
+    process::Command,
 };
 
 const SHIM_LIB_PROJECT_DIR: [&str; 2] = ["runtime", "shim"];
@@ -11,10 +12,15 @@ const SHIM_LIB_FILE_NAME: &str = "libleafrtsh.rlib";
 const PATH_TOOLCHAIN_BUILDER: [&str; 2] = ["scripts", "core_builder"];
 const FILE_TOOLCHAIN_BUILDER: &str = "toolchain_builder";
 
+const ENV_DEPS_DIR: &str = "DEPS_DIR";
 const ENV_SHIM_LIB_LOCATION: &str = "SHIM_LIB_LOCATION";
 const ENV_WORKSPACE_DIR: &str = "WORKSPACE_DIR";
 
+const DIR_DEPS: &str = "deps";
+
 fn main() {
+    println!("cargo:rustc-env={ENV_DEPS_DIR}={}", deps_path().display());
+
     let workspace_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap())
         .parent()
         .unwrap()
@@ -32,6 +38,8 @@ fn main() {
     );
 
     provide_toolchain_builder(&workspace_dir);
+
+    add_dylib_search_path_header();
 }
 
 fn provide_runtime_shim_lib(workspace_dir: &Path) -> PathBuf {
@@ -61,10 +69,6 @@ fn provide_runtime_shim_lib(workspace_dir: &Path) -> PathBuf {
 mod runtime_shim {
     use super::*;
 
-    use std::process::Command;
-
-    const DIR_DEPS: &str = "deps";
-
     /// Builds the runtime shim library and returns the path to the target output
     /// directory, which holds the artifacts and dependencies.
     pub(super) fn build_lib(proj_path: &Path) -> PathBuf {
@@ -92,8 +96,7 @@ mod runtime_shim {
     /// Copies the built artifact and dependencies of the runtime shim to the
     /// the compiler's `deps` directory in a dedicated folder.
     pub(super) fn copy_lib_to_deps(lib_output_dir: &Path) -> PathBuf {
-        let deps_dir = artifacts_path().join(DIR_DEPS);
-        let shim_lib_copy_dir = deps_dir.join("runtime_shim");
+        let shim_lib_copy_dir = deps_path().join("runtime_shim");
         recreate_dir(&shim_lib_copy_dir);
         copy_built_files(lib_output_dir, &shim_lib_copy_dir);
         shim_lib_copy_dir
@@ -131,7 +134,7 @@ mod runtime_shim {
 fn provide_toolchain_builder(workspace_dir: &Path) {
     let script_path = workspace_dir.join(PathBuf::from_iter(PATH_TOOLCHAIN_BUILDER));
     println!("cargo:rerun-if-changed={}", script_path.display());
-    let link_path = artifacts_path().join(FILE_TOOLCHAIN_BUILDER);
+    let link_path = deps_path().join(FILE_TOOLCHAIN_BUILDER);
     if link_path.exists() {
         return;
     }
@@ -156,4 +159,25 @@ fn artifacts_path() -> PathBuf {
         .next()
         .unwrap()
         .to_path_buf()
+}
+
+fn deps_path() -> PathBuf {
+    artifacts_path().join(DIR_DEPS)
+}
+
+fn add_dylib_search_path_header() {
+    let dylib_paths = get_current_sysroot().join("lib");
+    println!(
+        "cargo::rustc-link-arg-bins=-Wl,-rpath={}",
+        dylib_paths.display()
+    );
+}
+
+fn get_current_sysroot() -> PathBuf {
+    let output = Command::new(env::var("RUSTC").unwrap())
+        .args(["--print", "sysroot"])
+        .output()
+        .unwrap();
+    output.status.exit_ok().unwrap();
+    PathBuf::from(String::from_utf8(output.stdout).unwrap().trim())
 }

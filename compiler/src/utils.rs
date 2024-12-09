@@ -63,6 +63,9 @@ pub(super) mod file {
 
     use common::log_debug;
 
+    // The deps folder when building the project. Set by the build script.
+    const DIR_DEPS: &str = env!("DEPS_DIR");
+
     pub(crate) fn find_dependency_path<'a>(
         name: &'static str,
         priority_dirs: impl IntoIterator<Item = &'a Path>,
@@ -90,6 +93,7 @@ pub(super) mod file {
         };
 
         let try_priority_dirs = || priority_dirs.into_iter().find_map(try_dir);
+        let try_deps = || try_dir(DIR_DEPS.as_ref());
         let try_cwd = || env::current_dir().ok().and_then(|p| try_dir(&p));
         let try_exe_path = || {
             env::current_exe()
@@ -98,6 +102,7 @@ pub(super) mod file {
         };
 
         None.or_else(try_priority_dirs)
+            .or_else(try_deps)
             .or_else(try_cwd)
             .or_else(try_exe_path)
     }
