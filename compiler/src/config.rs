@@ -9,12 +9,16 @@ pub(crate) struct LeafCompilerConfig {
     pub runtime_shim: RuntimeShimConfig,
     #[serde(default)]
     pub building_core: bool,
-    #[serde(default)]
+    #[serde(default = "default_override_sysroot")]
     pub override_sysroot: bool,
     #[serde(default = "default_codegen_all_mir")]
     pub codegen_all_mir: bool,
     #[serde(default = "default_marker_cfg_name")]
     pub marker_cfg_name: String,
+}
+
+fn default_override_sysroot() -> bool {
+    true
 }
 
 fn default_codegen_all_mir() -> bool {

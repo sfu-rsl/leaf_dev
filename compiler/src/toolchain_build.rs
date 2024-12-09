@@ -6,20 +6,22 @@ use std::{
 };
 
 use common::{log_debug, log_warn};
+use const_format::concatcp;
 
 use crate::utils::file::try_find_dependency_path;
 
-use super::constants::ENV_RUSTUP_TOOLCHAIN;
+use super::constants::{DIR_TOOLCHAIN, ENV_RUSTUP_TOOLCHAIN};
 
 const PATH_TOOLCHAIN_BUILDER: [&str; 2] = ["toolchain_builder", "build"];
 
 const DIR_LEAFC_WORK: &str = "leafc";
 const DIR_TOOLCHAIN_BUILDER_WORK: &str = "toolchain_builder";
 
+const PREFIX_LEAF_SCRIPT_CONFIG: &str = "LEAFS";
 const ENV_WORK_DIR: &str = "WORK_DIR";
 const ENV_OUT_DIR: &str = "OUT_DIR";
 const ENV_LEAFC: &str = "LEAFC";
-const ENV_TOOLCHAIN_MARKER: &str = "LEAFS_TOOLCHAIN_MARKER_FILE";
+const ENV_TOOLCHAIN_MARKER: &str = concatcp!(PREFIX_LEAF_SCRIPT_CONFIG, "_TOOLCHAIN_MARKER_FILE");
 const ENV_LEAF_WORKSPACE: &str = "LEAF_WORKSPACE";
 
 pub const FILE_TOOLCHAIN_MARKER: &str = ".leafc_toolchain";
@@ -48,9 +50,13 @@ pub(super) fn build_toolchain(sysroot: &Path, out_dir: Option<&Path>) -> Result<
     let _ = fs::remove_dir_all(&work_dir)
         .inspect_err(|e| log_warn!("Could not delete the work directory: {}", e));
 
-    log_debug!("Toolchain built at: {}", toolchain_path);
+    let target_dir = toolchain_path.with_file_name(DIR_TOOLCHAIN);
+    fs::rename(&toolchain_path, &target_dir)
+        .map_err(|e| format!("Failed to rename the toolchain directory: {}", e))?;
 
-    Ok(PathBuf::from(toolchain_path))
+    log_debug!("Toolchain built at: {}", target_dir.display());
+
+    Ok(target_dir)
 }
 
 fn setup_workdir(out_dir: Option<&Path>) -> Result<PathBuf, String> {
@@ -97,11 +103,8 @@ fn set_env_vars(
     let exe_path = env::current_exe()
         .map_err(|e| format!("Failed to get the current executable path: {}", e))?;
 
-    /* NOTE: This is quite risky to inherit all the environment variables.
-     * However, it makes it possible to pass some variables to builder from top-level. */
     // FIXME: Change these to arguments.
-    cmd.envs(env::vars())
-        .env(ENV_WORK_DIR, work_dir)
+    cmd.env(ENV_WORK_DIR, work_dir)
         .env(ENV_OUT_DIR, exe_path.parent().unwrap())
         .env(ENV_LEAFC, exe_path)
         .env(ENV_TOOLCHAIN_MARKER, FILE_TOOLCHAIN_MARKER)
@@ -111,7 +114,7 @@ fn set_env_vars(
     Ok(())
 }
 
-fn run_builder(mut cmd: process::Command) -> Result<String, String> {
+fn run_builder(mut cmd: process::Command) -> Result<PathBuf, String> {
     cmd.stdout(process::Stdio::piped());
 
     log_debug!("Running the toolchain builder");
@@ -139,7 +142,7 @@ fn run_builder(mut cmd: process::Command) -> Result<String, String> {
         .last()
         .ok_or("Failed to read the toolchain path")?
         .map_err(|e| format!("Failed to read the toolchain path: {}", e))?;
-    Ok(toolchain_path)
+    Ok(toolchain_path.into())
 }
 
 pub(super) fn is_sysroot_compatible(sysroot: &Path) -> bool {

@@ -12,11 +12,13 @@ import logging
 ENV_WORK_DIR = "WORK_DIR"
 ENV_OUT_DIR = "OUT_DIR"
 ENV_LEAF_WORKSPACE = "LEAF_WORKSPACE"
+
 ENV_LOG_LEVEL = "LEAFS_LOG_LEVEL"
 ENV_ADD_LEAF_AS_DEP = "LEAFS_ADD_LEAF_AS_DEP"
 ENV_TOOLCHAIN_MARKER = "LEAFS_TOOLCHAIN_MARKER_FILE"
 
 ENV_LEAFC = "LEAFC"
+ENV_LEAFC_BUILDING_CORE = "LEAFC_BUILDING_CORE"
 ENV_CARGO = "CARGO"
 ENV_RUSTC = "RUSTC"
 
@@ -39,14 +41,14 @@ class Paths:
 
 def run_command(**kwargs):
     logging.debug(
-        "Running: %s %s %s",
+        "Running: %s %s",
         " ".join(str(arg) for arg in kwargs["args"]),
         "in " + str(kwargs.get("cwd", Path.cwd())),
     )
     if not kwargs.get("capture_output", False):
         kwargs.setdefault("stdout", subprocess.DEVNULL)
         kwargs.setdefault("stderr", subprocess.DEVNULL)
-        
+
     return subprocess.run(**kwargs)
 
 
@@ -108,7 +110,7 @@ def get_toolchain_path(cwd, env=None) -> Path:
                 "--print=sysroot",
             ],
             cwd=cwd,
-            env=env,
+            env={**env, ENV_LEAFC_BUILDING_CORE: "true"},
             check=True,
             capture_output=True,
         )
@@ -292,9 +294,11 @@ def set_dummy_crate_cargo_toml(
 
 
 def get_build_env(toolchain_path: Path):
+    # Also check the environment variables set in config.toml
     return {
         **os.environ,
         ENV_RUSTC: os.environ.get(ENV_LEAFC, default="leafc"),
+        ENV_LEAFC_BUILDING_CORE: "true",
         "RUSTUP_TOOLCHAIN": str(toolchain_path),
         # "CARGO_LOG": "debug",
     }
@@ -303,7 +307,9 @@ def get_build_env(toolchain_path: Path):
 def build_crate_with_core(dummy_crate_dir: Path, toolchain_path):
     logging.info("Building the core library through dummy crate")
 
-    output = subprocess.DEVNULL if logging.getLogger().level > logging.DEBUG else sys.stderr
+    output = (
+        subprocess.DEVNULL if logging.getLogger().level > logging.DEBUG else sys.stderr
+    )
     args = [
         "cargo",
         "build",
@@ -354,6 +360,11 @@ def make_toolchain(dummy_crate_dir: Path, out_dir: Path) -> Path:
 
 def main():
     logging.info("Building core lib with leaf")
+    logging.info(
+        "You can control the log level of this script with the environment variable %s",
+        ENV_LOG_LEVEL,
+    )
+    logging.debug("Environment: %s", os.environ)
 
     paths = Paths(
         work=ensure_env_dir(ENV_WORK_DIR, default=Path("./work")),

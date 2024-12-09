@@ -494,7 +494,7 @@ pub mod constants {
 
     pub const TOOL_LEAF: &str = "leaf_attr";
 
-    pub const DIR_TOOLCHAIN: &str = "toolchain";
+    pub const DIR_TOOLCHAIN: &str = "leafc_toolchain";
 
     pub const ENV_RUSTUP_TOOLCHAIN: &str = "RUSTUP_TOOLCHAIN";
 }
