@@ -8,8 +8,11 @@ use std::process::ExitStatus;
 use macros::{gen_tests_rs, gen_tests_toml};
 
 const ENV_LEAFC_LOG: &str = "LEAFC_LOG";
-const ENV_LEAFC_RUNTIME_SHIM_CRATE_NAME: &str = "LEAFC_RUNTIME_SHIM__CRATE_NAME";
-const ENV_LEAFC_RUNTIME_SHIM_AS_EXTERNAL: &str = "LEAFC_RUNTIME_SHIM__AS_EXTERNAL";
+const ENV_LEAFC_RUNTIME_SHIM_EXTERNAL_CRATE_NAME: &str =
+    "LEAFC_RUNTIME_SHIM__LOCATION__EXTERNAL__CRATE_NAME";
+const ENV_LEAFC_RUNTIME_SHIM_EXTERNAL_SEARCH: &str =
+    "LEAFC_RUNTIME_SHIM__LOCATION__EXTERNAL__SEARCH_PATH";
+const ENV_LEAFC_CODEGEN_ALL_MIR: &str = "LEAFC_CODEGEN_ALL_MIR";
 const ENV_RUSTC: &str = "RUSTC";
 const ENV_RUST_FLAGS: &str = "RUSTFLAGS";
 const ENV_RUST_BACKTRACE: &str = "RUST_BACKTRACE";
@@ -61,6 +64,8 @@ fn test_compile_toml(source_dir: &str) {
         .env("CARGO_TARGET_DIR", &output_dir)
         .env(ENV_RUSTC, env!("CARGO_BIN_EXE_leafc"))
         .env(ENV_RUST_FLAGS, RUST_FLAGS.join(" "))
+        .env(ENV_LEAFC_RUNTIME_SHIM_EXTERNAL_SEARCH, "sysroot")
+        .env(ENV_LEAFC_CODEGEN_ALL_MIR, "true")
         .current_dir(path_in_proj_root(source_dir));
 
     let status = cmd
@@ -138,8 +143,9 @@ fn set_leafc_env(cmd: &mut Command) -> &mut Command {
             cmd.env_remove(k);
         });
     cmd.env(ENV_LEAFC_LOG, LOG_CONFIG)
-        .env(ENV_LEAFC_RUNTIME_SHIM_CRATE_NAME, "leaf")
-        .env(ENV_LEAFC_RUNTIME_SHIM_AS_EXTERNAL, "true")
+        .env(ENV_LEAFC_RUNTIME_SHIM_EXTERNAL_CRATE_NAME, "leaf")
+        .env(ENV_LEAFC_RUNTIME_SHIM_EXTERNAL_SEARCH, "compiler")
+        .env(ENV_LEAFC_CODEGEN_ALL_MIR, "false")
         .env(ENV_RUST_BACKTRACE, "1")
 }
 
