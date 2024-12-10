@@ -28,69 +28,72 @@ pub const FILE_TOOLCHAIN_MARKER: &str = ".leafc_toolchain";
 
 const PATH_WORKSPACE: &str = env!("WORKSPACE_DIR"); // Set by the build script.
 
-pub(super) fn build_toolchain(sysroot: &Path, out_dir: Option<&Path>) -> Result<PathBuf, String> {
+pub(super) fn build_toolchain(
+    sysroot: &Path,
+    crate_out_dir: Option<&Path>,
+) -> Result<PathBuf, String> {
     let builder = try_find_dependency_path(PathBuf::from_iter(PATH_TOOLCHAIN_BUILDER), [])
         .ok_or("Failed to find the toolchain builder".to_owned())?;
 
-    let work_dir = setup_workdir(out_dir)?;
+    let (work_dir, out_dir) = setup_work_and_out_dirs(crate_out_dir)?;
 
     let mut cmd = process::Command::new(&builder);
-    set_env_vars(&mut cmd, &work_dir, sysroot)?;
+    set_env_vars(&mut cmd, &work_dir, &out_dir, sysroot)?;
     let log_filename = set_log_file(&mut cmd, &work_dir)?;
     cmd.current_dir(&work_dir);
 
-    let toolchain_path = run_builder(cmd).map_err(|e| {
+    let built_toolchain_path = run_builder(cmd).map_err(|e| {
         format!(
             "{e}. You can check the log file at: {}",
             log_filename.display()
         )
     })?;
+    log_debug!("Toolchain built at: {}", built_toolchain_path.display());
 
     log_debug!("Deleting the work directory");
     let _ = fs::remove_dir_all(&work_dir)
         .inspect_err(|e| log_warn!("Could not delete the work directory: {}", e));
 
-    let target_dir = toolchain_path.with_file_name(DIR_TOOLCHAIN);
-    if target_dir.exists() {
-        fs::remove_dir_all(&target_dir)
-            .map_err(|e| format!("Could not delete the existing toolchain directory: {}", e))?;
-    }
-    fs::rename(&toolchain_path, &target_dir)
-        .map_err(|e| format!("Failed to rename the toolchain directory: {}", e))?;
+    let cache_path = cache_toolchain(&built_toolchain_path, sysroot)?;
 
-    log_debug!("Toolchain built at: {}", target_dir.display());
-
-    Ok(target_dir)
+    log_debug!("Toolchain is now available at: {}", cache_path.display());
+    Ok(cache_path)
 }
 
-fn setup_workdir(out_dir: Option<&Path>) -> Result<PathBuf, String> {
-    let work_dir = out_dir
+fn setup_work_and_out_dirs(crate_out_dir: Option<&Path>) -> Result<(PathBuf, PathBuf), String> {
+    fn create_new_dir(path: &Path) -> Result<(), String> {
+        if path.exists() {
+            let _ = fs::remove_dir_all(&path).inspect_err(|e| {
+                log_warn!("Could not delete the existing work directory: {}", e);
+            });
+        }
+        fs::create_dir_all(&path)
+            .map_err(|e| format!("Failed to create a work directory: {}", e))?;
+        log_debug!("Created a work directory: {}", path.display());
+        Ok(())
+    }
+
+    let id = current_instant();
+    let work_dir = crate_out_dir
         .map(Path::to_path_buf)
         .unwrap_or_else(env::temp_dir)
         .join(DIR_LEAFC_WORK)
-        .join(DIR_TOOLCHAIN_BUILDER_WORK);
+        .join(DIR_TOOLCHAIN_BUILDER_WORK)
+        .join(&id);
+    create_new_dir(&work_dir)?;
 
-    if work_dir.exists() {
-        let _ = fs::remove_dir_all(&work_dir).inspect_err(|e| {
-            log_warn!("Could not delete the existing work directory: {}", e);
-        });
-    }
-    fs::create_dir_all(&work_dir)
-        .map_err(|e| format!("Failed to create the work directory: {}", e))?;
+    let out_dir = env::current_exe()
+        .map_err(|e| format!("Failed to get the current executable path: {}", e))?
+        .parent()
+        .unwrap()
+        .join(format!("{DIR_TOOLCHAIN}_{id}"));
+    create_new_dir(&out_dir)?;
 
-    log_debug!("Created the work directory: {}", work_dir.display());
-
-    Ok(work_dir)
+    Ok((work_dir, out_dir))
 }
 
 fn set_log_file(cmd: &mut process::Command, work_dir: &Path) -> Result<PathBuf, String> {
-    let filename = work_dir.join(format!(
-        "log_{}.log",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis()
-    ));
+    let filename = work_dir.join(format!("log_{}.log", current_instant()));
     let file = fs::File::create_new(&filename)
         .map_err(|e| format!("Failed to create the toolchain builder stderr file: {}", e))?;
 
@@ -101,7 +104,8 @@ fn set_log_file(cmd: &mut process::Command, work_dir: &Path) -> Result<PathBuf, 
 
 fn set_env_vars(
     cmd: &mut process::Command,
-    work_dir: &PathBuf,
+    work_dir: &Path,
+    out_dir: &Path,
     sysroot: &Path,
 ) -> Result<(), String> {
     let exe_path = env::current_exe()
@@ -109,7 +113,7 @@ fn set_env_vars(
 
     // FIXME: Change these to arguments.
     cmd.env(ENV_WORK_DIR, work_dir)
-        .env(ENV_OUT_DIR, exe_path.parent().unwrap())
+        .env(ENV_OUT_DIR, out_dir)
         .env(ENV_LEAFC, exe_path)
         .env(ENV_TOOLCHAIN_MARKER, FILE_TOOLCHAIN_MARKER)
         .env(ENV_RUSTUP_TOOLCHAIN, sysroot)
@@ -119,7 +123,8 @@ fn set_env_vars(
 }
 
 fn run_builder(mut cmd: process::Command) -> Result<PathBuf, String> {
-    cmd.stdout(process::Stdio::piped());
+    cmd.stdout(process::Stdio::piped())
+        .stdin(process::Stdio::null());
 
     log_debug!("Running the toolchain builder");
 
@@ -149,6 +154,36 @@ fn run_builder(mut cmd: process::Command) -> Result<PathBuf, String> {
     Ok(toolchain_path.into())
 }
 
+fn cache_toolchain(built_toolchain_path: &Path, sysroot: &Path) -> Result<PathBuf, String> {
+    log_debug!("Moving the built toolchain next to the compiler");
+    let cache_path = env::current_exe()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join(DIR_TOOLCHAIN);
+    if cache_path.exists() {
+        // A naive approach to prevent concurrency conflicts.
+        if is_sysroot_compatible(sysroot, Some(&cache_path)) {
+            log_debug!("Toolchain already exists at: {}", cache_path.display());
+            fs::remove_dir_all(&built_toolchain_path).map_err(|e| {
+                format!(
+                    "Could not delete the unused built toolchain directory: {}",
+                    e
+                )
+            })?;
+            return Ok(cache_path);
+        } else {
+            log_debug!("Deleting the existing cached toolchain directory");
+            fs::remove_dir_all(&cache_path)
+                .map_err(|e| format!("Could not delete the existing toolchain directory: {}", e))?;
+        }
+    }
+
+    fs::rename(&built_toolchain_path, &cache_path).map_err(|e| format!("Failed to move: {}", e))?;
+
+    Ok(cache_path)
+}
+
 pub(super) fn is_sysroot_compatible(sysroot: &Path, built_sysroot: Option<&Path>) -> bool {
     // If the original set sysroot has the marker, it is our own sysroot.
     if sysroot.join(FILE_TOOLCHAIN_MARKER).exists() {
@@ -172,4 +207,12 @@ pub(super) fn is_sysroot_compatible(sysroot: &Path, built_sysroot: Option<&Path>
         fs::canonicalize(original_sysroot).ok(),
     )
     .is_some_and(|(a, b)| a == b)
+}
+
+fn current_instant() -> String {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis()
+        .to_string()
 }

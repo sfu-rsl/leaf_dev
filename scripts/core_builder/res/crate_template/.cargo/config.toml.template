@@ -1,18 +1,12 @@
 [build]
 rustflags = [
-    "--cfg",
-    "runtime_access=\"safe_brt\"",
-    "--cfg",
-    "place_addr",
-    "--cfg",
-    "abs_concrete",
     $core_build_cfg_switch "--cfg",
     $core_build_cfg_switch "core_build",
-    "-Zalways-encode-mir",
     "-Ccodegen-units=1",
 ]
 
 [env]
 LEAFC_CODEGEN_ALL_MIR = "true"
+LEAFC_BUILDING_CORE = "true"
 $leaf_as_in_core_switch LEAFC_RUNTIME_SHIM__LOCATION = "core"
 $leaf_as_external_switch LEAFC_RUNTIME_SHIM__LOCATION__EXTERNAL__SEARCH_PATH = "deps"
