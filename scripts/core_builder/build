@@ -28,7 +28,10 @@ BUILD_PROFILE = "release"
 
 SHIM_MODULE_NAME = "leafrtsh"
 
-OPTS_BUILD_STD = ["-Zbuild-std", f"--target={BUILD_TARGET}"]
+OPTS_BUILD_STD = [
+    "-Zbuild-std=core,std,panic_unwind,panic_abort,test",
+    f"--target={BUILD_TARGET}",
+]
 
 
 @dataclass

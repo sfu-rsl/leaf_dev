@@ -5,9 +5,7 @@ name = "dummy"
 version = "0.1.0"
 edition = "2021"
 
-[[bin]]
-name = "dummy"
-path = "src/main.rs"
+[library]
 
 [dependencies]
 $leaf_dep_switch leafrtsh = { path = "$leaf_workspace_dir/runtime/shim", package = "runtime_shim" }

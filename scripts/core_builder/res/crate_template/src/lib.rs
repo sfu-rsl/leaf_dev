@@ -1,6 +1,6 @@
 use leaf::annotations::*;
 
-fn main() {
+pub fn say_hello() {
     let x = 10.mark_symbolic();
     println!("Hello, world!");
 }
