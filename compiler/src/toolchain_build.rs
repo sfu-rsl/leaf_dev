@@ -51,6 +51,10 @@ pub(super) fn build_toolchain(sysroot: &Path, out_dir: Option<&Path>) -> Result<
         .inspect_err(|e| log_warn!("Could not delete the work directory: {}", e));
 
     let target_dir = toolchain_path.with_file_name(DIR_TOOLCHAIN);
+    if target_dir.exists() {
+        fs::remove_dir_all(&target_dir)
+            .map_err(|e| format!("Could not delete the existing toolchain directory: {}", e))?;
+    }
     fs::rename(&toolchain_path, &target_dir)
         .map_err(|e| format!("Failed to rename the toolchain directory: {}", e))?;
 
@@ -145,6 +149,27 @@ fn run_builder(mut cmd: process::Command) -> Result<PathBuf, String> {
     Ok(toolchain_path.into())
 }
 
-pub(super) fn is_sysroot_compatible(sysroot: &Path) -> bool {
-    sysroot.join(FILE_TOOLCHAIN_MARKER).exists()
+pub(super) fn is_sysroot_compatible(sysroot: &Path, built_sysroot: Option<&Path>) -> bool {
+    // If the original set sysroot has the marker, it is our own sysroot.
+    if sysroot.join(FILE_TOOLCHAIN_MARKER).exists() {
+        return true;
+    }
+
+    let Some(built_sysroot) = built_sysroot else {
+        return false;
+    };
+
+    let original_sysroot = match fs::read_to_string(built_sysroot.join(FILE_TOOLCHAIN_MARKER)) {
+        Ok(original_sysroot) => PathBuf::from(original_sysroot.trim()),
+        Err(e) => {
+            log_warn!("Failed to read the toolchain marker file: {}", e);
+            return false;
+        }
+    };
+
+    Option::zip(
+        fs::canonicalize(sysroot).ok(),
+        fs::canonicalize(original_sysroot).ok(),
+    )
+    .is_some_and(|(a, b)| a == b)
 }

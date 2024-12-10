@@ -62,12 +62,6 @@ def ensure_env_dir(var_name: str, default) -> Path:
     return path
 
 
-def add_empty_file(folder: Path, name: str):
-    file = folder.joinpath(name)
-    file.touch()
-    return file
-
-
 def find_leaf_workspace_dir() -> Path:
     workspace_dir = os.environ.get(ENV_LEAF_WORKSPACE)
     if not workspace_dir:
@@ -354,11 +348,14 @@ def make_toolchain(dummy_crate_dir: Path, out_dir: Path) -> Path:
     for file in lib_files:
         shutil.copy(file, dst_dir)
 
-    if ENV_TOOLCHAIN_MARKER in os.environ:
-        logging.debug("Adding a toolchain marker file")
-        add_empty_file(toolchain_dir, os.environ[ENV_TOOLCHAIN_MARKER])
-
     return toolchain_dir
+
+
+def add_marker_file(folder: Path, name: str, original_toolchain_path: Path):
+    file = folder.joinpath(name)
+    with open(file, "w") as f:
+        f.write(str(original_toolchain_path))
+    return file
 
 
 def main():
@@ -421,6 +418,12 @@ def main():
 
     build_crate_with_core(dummy_crate_dir, toolchain_path)
     out_toolchain_path = make_toolchain(dummy_crate_dir, paths.out)
+
+    if ENV_TOOLCHAIN_MARKER in os.environ:
+        logging.debug("Adding a toolchain marker file")
+        add_marker_file(
+            out_toolchain_path, os.environ[ENV_TOOLCHAIN_MARKER], orig_toolchain_path
+        )
 
     print(out_toolchain_path.absolute())
 

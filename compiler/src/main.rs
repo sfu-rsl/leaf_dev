@@ -427,7 +427,7 @@ mod driver_callbacks {
             let current_sysroot = rustc_session::filesearch::materialize_sysroot(
                 rustc_config.opts.maybe_sysroot.clone(),
             );
-            if is_sysroot_compatible(&current_sysroot) {
+            if is_sysroot_compatible(&current_sysroot, None) {
                 return;
             }
 
@@ -443,7 +443,7 @@ mod driver_callbacks {
             log_debug!("The current sysroot is probably not compatible for codegen all MIR.");
 
             let sysroot = try_find_dependency_path(DIR_TOOLCHAIN, [])
-                .filter(|p| is_sysroot_compatible(&p))
+                .filter(|p| is_sysroot_compatible(&current_sysroot, Some(p)))
                 .unwrap_or_else(|| {
                     build_toolchain(&current_sysroot, rustc_config.output_dir.as_deref())
                 });
@@ -465,7 +465,7 @@ mod driver_callbacks {
                     log_error!("Failed to build the toolchain: {}", e);
                     std::process::exit(1);
                 });
-            assert!(is_sysroot_compatible(&result));
+            assert!(is_sysroot_compatible(current_sysroot, Some(&result)));
             result
         }
     }
