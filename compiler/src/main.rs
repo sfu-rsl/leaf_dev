@@ -379,8 +379,7 @@ mod driver_callbacks {
         use std::path::Path;
 
         use common::log_error;
-        use toolchain_build::{self, is_sysroot_compatible};
-        use utils::file::try_find_dependency_path;
+        use toolchain_build::{self, is_sysroot_compatible, try_find_compatible_toolchain};
 
         use super::*;
 
@@ -442,11 +441,8 @@ mod driver_callbacks {
 
             log_debug!("The current sysroot is probably not compatible for codegen all MIR.");
 
-            let sysroot = try_find_dependency_path(DIR_TOOLCHAIN, [])
-                .filter(|p| is_sysroot_compatible(&current_sysroot, Some(p)))
-                .unwrap_or_else(|| {
-                    build_toolchain(&current_sysroot, rustc_config.output_dir.as_deref())
-                });
+            let sysroot = try_find_compatible_toolchain(&current_sysroot)
+                .unwrap_or_else(|| build_toolchain(&current_sysroot, rustc_config));
             log_info!(
                 "Overriding the sysroot with the one found at: {}",
                 sysroot.display()
@@ -454,17 +450,24 @@ mod driver_callbacks {
             rustc_config.opts.maybe_sysroot.replace(sysroot);
         }
 
-        fn build_toolchain(current_sysroot: &Path, out_dir: Option<&Path>) -> PathBuf {
+        fn build_toolchain(
+            current_sysroot: &Path,
+            rustc_config: &rustc_interface::Config,
+        ) -> PathBuf {
             log_info!(
                 "Building a compatible toolchain based on the current sysroot: {}",
                 current_sysroot.display()
             );
 
-            let result: PathBuf = toolchain_build::build_toolchain(current_sysroot, out_dir)
-                .unwrap_or_else(|e| {
-                    log_error!("Failed to build the toolchain: {}", e);
-                    std::process::exit(1);
-                });
+            let result: PathBuf = toolchain_build::build_toolchain(
+                current_sysroot,
+                rustc_config.opts.target_triple.triple(),
+                rustc_config.output_dir.as_deref(),
+            )
+            .unwrap_or_else(|e| {
+                log_error!("Failed to build the toolchain: {}", e);
+                std::process::exit(1);
+            });
             assert!(is_sysroot_compatible(current_sysroot, Some(&result)));
             result
         }
@@ -493,8 +496,6 @@ pub mod constants {
     pub const LOG_BB_JUMP_TAG: &str = super::mir_transform::TAG_BB_JUMP;
 
     pub const TOOL_LEAF: &str = "leaf_attr";
-
-    pub const DIR_TOOLCHAIN: &str = "leafc_toolchain";
 
     pub const ENV_RUSTUP_TOOLCHAIN: &str = "RUSTUP_TOOLCHAIN";
 }

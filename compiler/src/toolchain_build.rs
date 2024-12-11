@@ -10,10 +10,11 @@ use const_format::concatcp;
 
 use crate::utils::file::try_find_dependency_path;
 
-use super::constants::{DIR_TOOLCHAIN, ENV_RUSTUP_TOOLCHAIN};
+use super::constants::ENV_RUSTUP_TOOLCHAIN;
 
 const PATH_TOOLCHAIN_BUILDER: [&str; 2] = ["toolchain_builder", "build"];
 
+const DIR_TOOLCHAINS: &str = "leafc_toolchains";
 const DIR_LEAFC_WORK: &str = "leafc";
 const DIR_TOOLCHAIN_BUILDER_WORK: &str = "toolchain_builder";
 
@@ -30,6 +31,7 @@ const PATH_WORKSPACE: &str = env!("WORKSPACE_DIR"); // Set by the build script.
 
 pub(super) fn build_toolchain(
     sysroot: &Path,
+    target_triple: &str,
     crate_out_dir: Option<&Path>,
 ) -> Result<PathBuf, String> {
     let builder = try_find_dependency_path(PathBuf::from_iter(PATH_TOOLCHAIN_BUILDER), [])
@@ -54,10 +56,12 @@ pub(super) fn build_toolchain(
     let _ = fs::remove_dir_all(&work_dir)
         .inspect_err(|e| log_warn!("Could not delete the work directory: {}", e));
 
-    let cache_path = cache_toolchain(&built_toolchain_path, sysroot)?;
+    let result = persist_toolchain(&built_toolchain_path, target_triple)
+        .inspect_err(|e| log_warn!("Failed to persist the toolchain: {}", e))
+        .unwrap_or(built_toolchain_path);
 
-    log_debug!("Toolchain is now available at: {}", cache_path.display());
-    Ok(cache_path)
+    log_debug!("Toolchain is now available at: {}", result.display());
+    Ok(result)
 }
 
 fn setup_work_and_out_dirs(crate_out_dir: Option<&Path>) -> Result<(PathBuf, PathBuf), String> {
@@ -86,7 +90,8 @@ fn setup_work_and_out_dirs(crate_out_dir: Option<&Path>) -> Result<(PathBuf, Pat
         .map_err(|e| format!("Failed to get the current executable path: {}", e))?
         .parent()
         .unwrap()
-        .join(format!("{DIR_TOOLCHAIN}_{id}"));
+        .join(DIR_TOOLCHAINS)
+        .join(id);
     create_new_dir(&out_dir)?;
 
     Ok((work_dir, out_dir))
@@ -154,34 +159,42 @@ fn run_builder(mut cmd: process::Command) -> Result<PathBuf, String> {
     Ok(toolchain_path.into())
 }
 
-fn cache_toolchain(built_toolchain_path: &Path, sysroot: &Path) -> Result<PathBuf, String> {
-    log_debug!("Moving the built toolchain next to the compiler");
-    let cache_path = env::current_exe()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .join(DIR_TOOLCHAIN);
-    if cache_path.exists() {
-        // A naive approach to prevent concurrency conflicts.
-        if is_sysroot_compatible(sysroot, Some(&cache_path)) {
-            log_debug!("Toolchain already exists at: {}", cache_path.display());
-            fs::remove_dir_all(&built_toolchain_path).map_err(|e| {
-                format!(
-                    "Could not delete the unused built toolchain directory: {}",
-                    e
-                )
-            })?;
-            return Ok(cache_path);
-        } else {
-            log_debug!("Deleting the existing cached toolchain directory");
-            fs::remove_dir_all(&cache_path)
-                .map_err(|e| format!("Could not delete the existing toolchain directory: {}", e))?;
-        }
+fn persist_toolchain(built_toolchain_path: &Path, target_triple: &str) -> Result<PathBuf, String> {
+    let toolchains = persistent_toolchains_path();
+    let uid = get_unique_id(built_toolchain_path, target_triple);
+    let dest = toolchains.join(&uid);
+
+    log_debug!(
+        "Moving the built toolchain to a persistent location: {}",
+        dest.display()
+    );
+
+    // Parallel build
+    if dest.exists() {
+        log_debug!("Found a persisted toolchain at: {}", dest.display());
+        return Ok(dest);
+    } else {
+        fs::rename(&built_toolchain_path, &dest).map_err(|e| format!("Failed to move: {}", e))?;
     }
 
-    fs::rename(&built_toolchain_path, &cache_path).map_err(|e| format!("Failed to move: {}", e))?;
+    if built_toolchain_path.exists() {
+        let _ = fs::remove_dir_all(built_toolchain_path).inspect_err(|e| {
+            log_warn!("Failed to delete the built toolchain: {}", e);
+        });
+    }
 
-    Ok(cache_path)
+    Ok(dest)
+}
+
+pub(super) fn try_find_compatible_toolchain(sysroot: &Path) -> Option<PathBuf> {
+    let toolchains = persistent_toolchains_path();
+    fs::read_dir(toolchains)
+        .ok()?
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
+        .filter(|e| fs::read_dir(e.path()).is_ok_and(|mut d| d.next().is_some()))
+        .map(|e| e.path())
+        .find(|p| is_sysroot_compatible(sysroot, Some(&p)))
 }
 
 pub(super) fn is_sysroot_compatible(sysroot: &Path, built_sysroot: Option<&Path>) -> bool {
@@ -194,8 +207,10 @@ pub(super) fn is_sysroot_compatible(sysroot: &Path, built_sysroot: Option<&Path>
         return false;
     };
 
-    let original_sysroot = match fs::read_to_string(built_sysroot.join(FILE_TOOLCHAIN_MARKER)) {
-        Ok(original_sysroot) => PathBuf::from(original_sysroot.trim()),
+    let original_sysroot = match fs::read_to_string(built_sysroot.join(FILE_TOOLCHAIN_MARKER))
+        .map(|c| PathBuf::from(c.trim()))
+    {
+        Ok(original_sysroot) => original_sysroot,
         Err(e) => {
             log_warn!("Failed to read the toolchain marker file: {}", e);
             return false;
@@ -207,6 +222,38 @@ pub(super) fn is_sysroot_compatible(sysroot: &Path, built_sysroot: Option<&Path>
         fs::canonicalize(original_sysroot).ok(),
     )
     .is_some_and(|(a, b)| a == b)
+}
+
+fn persistent_toolchains_path() -> PathBuf {
+    env::current_exe()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join(DIR_TOOLCHAINS)
+}
+
+fn get_unique_id(toolchain_path: &Path, target_triple: &str) -> String {
+    let libs_path = toolchain_path
+        .join("lib")
+        .join("rustlib")
+        .join(target_triple)
+        .join("lib");
+    const PREFIX: &str = "libcore-";
+    fs::read_dir(&libs_path)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .find_map(|mut n| {
+            n.starts_with(PREFIX)
+                .then(move || {
+                    n.split_off(PREFIX.len())
+                        .rsplit_once('.')
+                        .map(|(hash, _)| hash.to_owned())
+                })
+                .flatten()
+        })
+        .expect("Could not find libcore to get the unique id for the toolchain")
+        .to_owned()
 }
 
 fn current_instant() -> String {
