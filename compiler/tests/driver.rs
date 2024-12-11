@@ -16,7 +16,7 @@ const ENV_LEAFC_CODEGEN_ALL_MIR: &str = "LEAFC_CODEGEN_ALL_MIR";
 const ENV_RUSTC: &str = "RUSTC";
 const ENV_RUST_FLAGS: &str = "RUSTFLAGS";
 const ENV_RUST_BACKTRACE: &str = "RUST_BACKTRACE";
-const LOG_CONFIG: &str = "off";
+const LOG_CONFIG: &str = "info";
 
 // Disable warnings to avoid polluting the output
 const RUST_FLAGS: [&str; 2] = ["-Awarnings", "-Coverflow-checks=off"];
@@ -67,6 +67,8 @@ fn test_compile_toml(source_dir: &str) {
         .env(ENV_LEAFC_RUNTIME_SHIM_EXTERNAL_SEARCH, "sysroot")
         .env(ENV_LEAFC_CODEGEN_ALL_MIR, "true")
         .current_dir(path_in_proj_root(source_dir));
+
+    set_out_log_files(&mut cmd, &output_dir);
 
     let status = cmd
         .status()
@@ -149,6 +151,11 @@ fn set_leafc_env(cmd: &mut Command) -> &mut Command {
         .env(ENV_RUST_BACKTRACE, "1")
 }
 
+fn set_out_log_files(cmd: &mut Command, work_dir: &Path) {
+    cmd.stdout(fs::File::create(work_dir.join("stdout.log")).unwrap())
+        .stderr(fs::File::create(work_dir.join("stderr.log")).unwrap());
+}
+
 fn run_compilation(src_file: &Path) -> CompilationResult {
     let work_dir = create_temp_dir();
     let mut cmd = Command::new(PATH_LEAFC);
@@ -162,6 +169,7 @@ fn run_compilation(src_file: &Path) -> CompilationResult {
     cmd.args(["-o", out_file.to_str().unwrap()]);
 
     set_leafc_env(&mut cmd);
+    set_out_log_files(&mut cmd, &work_dir);
 
     cmd.arg(src_file);
 
