@@ -6,6 +6,7 @@ members = [
     "runtime/lib",
     "runtime/flavors/*",
     "integration/libafl/lib",
+    "integration/libafl/fuzzers/pure_concolic",
     "macros",
     "orchestrator",
 ]

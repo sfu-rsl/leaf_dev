@@ -1,0 +1,19 @@
+[package]
+name = "pure_concolic"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "leaff_pure_conc"
+path = "src/main.rs"
+
+[features]
+tui = ["libafl/tui_monitor"]
+
+[dependencies]
+libafl = { workspace = true, features = ["std", "prelude"] }
+libafl_bolts = { workspace = true }
+libafl_leaf = { workspace = true }
+
+clap = { workspace = true, features = ["derive"] }
+sha2 = "0.10.8"
