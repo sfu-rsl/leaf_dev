@@ -1,0 +1,10 @@
+[package]
+name = "libafl_leaf"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+libafl = { workspace = true, features = ["std"] }
+libafl_bolts = { workspace = true }
+
+log = { version = "0.4.22" }

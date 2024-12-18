@@ -5,10 +5,11 @@ members = [
     "compiler",
     "runtime/lib",
     "runtime/flavors/*",
+    "integration/libafl/lib",
     "macros",
     "orchestrator",
 ]
-exclude = ["runtime/shim", "samples/crates/", "scripts"]
+exclude = ["runtime/shim", "integration/libafl/fuzzers/*", "samples/crates/", "scripts"]
 
 [workspace.dependencies]
 # Unless we specify the package, it won't be renamed.
@@ -16,7 +17,9 @@ common = { path = "common", package = "common" }
 macros = { path = "macros" }
 runtime_basic_li = { path = "runtime/flavors/basic_li" }
 runtime_noop = { path = "runtime/flavors/noop" }
+libafl_leaf = { path = "integration/libafl/lib" }
 
+clap = { version = "4.5", features = ["derive"] }
 config = "0.14.1"
 const_format = "0.2.33"
 delegate = "0.13.1"
@@ -24,3 +27,6 @@ derive_more = { version = "1.0.0", features = ["full"] }
 tracing = { version = "0.1", features = ["log"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 serde = { version = "1.0.215", features = ["derive"] }
+
+libafl = { git = "https://github.com/sfu-rsl/libafl", branch = "leaf", features = ["std"]}
+libafl_bolts = { git = "https://github.com/sfu-rsl/libafl", branch = "leaf" }
