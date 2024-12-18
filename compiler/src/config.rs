@@ -60,19 +60,16 @@ impl RuntimeShimLocation {
     const F_SEARCH_PATH: &'static str = "search_path";
 }
 
-#[derive(Debug, Default, Clone, Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum RuntimeShimExternalLocation {
+    #[default]
+    #[serde(alias = "default")]
+    Sysroot,
     /// Treated as a normal dependency,
     /// i.e., the crate is expected to be in the sysroot or other provided search paths.
-    #[default]
-    #[serde(
-        alias = "sysroot",
-        alias = "deps",
-        alias = "default",
-        alias = "search_paths"
-    )]
-    CrateSearchPaths,
+    #[serde(alias = "deps")]
+    CrateDeps,
     Compiler,
     #[serde(alias = "exact")]
     Exact(String),
@@ -86,7 +83,7 @@ impl Default for RuntimeShimLocation {
     fn default() -> Self {
         RuntimeShimLocation::External {
             crate_name: default_runtime_shim_crate_name(),
-            search_path: RuntimeShimExternalLocation::CrateSearchPaths,
+            search_path: RuntimeShimExternalLocation::Sysroot,
         }
     }
 }

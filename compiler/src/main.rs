@@ -284,25 +284,34 @@ mod driver_callbacks {
                     log_info!("Expecting the runtime shim as a part of core library")
                     // Nothing to do.
                 }
-                RuntimeShimLocation::External {
-                    // The crate name will be taken care of in the dedicated pass.
-                    crate_name: _,
-                    search_path,
-                } => {
+                RuntimeShimLocation::External { .. } => {
                     log_info!("Adding the runtime shim as an external dependency");
-                    add_shim_as_external(rustc_config, search_path)
+                    add_shim_as_external(rustc_config, leafc_config)
                 }
             }
         }
 
         fn add_shim_as_external(
             rustc_config: &mut rustc_interface::Config,
-            search_path: &config::RuntimeShimExternalLocation,
+            leafc_config: &mut LeafCompilerConfig,
         ) {
             use crate::config::RuntimeShimExternalLocation::*;
+            let RuntimeShimLocation::External { search_path, .. } =
+                &leafc_config.runtime_shim.location
+            else {
+                unreachable!()
+            };
             let location = match search_path {
-                CrateSearchPaths => {
+                Sysroot | CrateDeps => {
                     log_debug!("Expecting the runtime shim in the search paths of the crate.");
+                    if search_path == &Sysroot && leafc_config.codegen_all_mir != true {
+                        log_warn!(concat!(
+                            "The runtime shim is expected to be in the sysroot",
+                            "which is meant for codegen_all_mir mode. ",
+                            "The mode will be enabled."
+                        ));
+                        leafc_config.codegen_all_mir = true;
+                    }
                     ExternLocation::FoundInLibrarySearchDirectories
                 }
                 _ => {
@@ -376,10 +385,6 @@ mod driver_callbacks {
     }
 
     mod codegen_all {
-        use std::path::Path;
-
-        use common::log_error;
-        use toolchain_build::{self, is_sysroot_compatible, try_find_compatible_toolchain};
 
         use super::*;
 
@@ -415,11 +420,20 @@ mod driver_callbacks {
                     .any(|cfg| cfg == CONFIG_CORE_BUILD);
 
             if !is_building_core {
-                check_sysroot(rustc_config, leafc_config);
+                sysroot::check_sysroot(rustc_config, leafc_config);
             }
         }
+    }
 
-        fn check_sysroot(
+    mod sysroot {
+        use super::*;
+
+        use std::path::Path;
+
+        use common::log_error;
+        use toolchain_build::{self, is_sysroot_compatible, try_find_compatible_toolchain};
+
+        pub(super) fn check_sysroot(
             rustc_config: &mut rustc_interface::Config,
             leafc_config: &LeafCompilerConfig,
         ) {
