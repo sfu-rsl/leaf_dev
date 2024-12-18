@@ -30,6 +30,11 @@ mod retrieval {
             type_manager
                 .try_to_value_type(self.1.clone())
                 .map(Into::into)
+                .or_else(|| {
+                    self.1
+                        .get_type(type_manager)
+                        .and_then(|t| t.try_into().ok())
+                })
                 .ok_or(&self.1)
         }
 
