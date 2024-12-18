@@ -212,7 +212,10 @@ impl PlaceHandler for BasicPlaceHandler<'_> {
         let mut place = info;
         let type_manager: &dyn TypeManager = self.type_manager;
         let ty = type_manager.get_type(place.metadata().unwrap_type_id());
-        let tag_info = ty.tag.as_ref().unwrap();
+        let tag_info = ty
+            .tag
+            .as_ref()
+            .unwrap_or_else(|| panic!("No tag info found for the type: {:?}", ty));
         let metadata = {
             let mut meta = PlaceMetadata::default();
             meta.set_address(

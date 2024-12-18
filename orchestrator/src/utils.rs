@@ -69,7 +69,12 @@ pub fn stdio_from_path(path: Option<&Path>) -> Stdio {
         if path.to_string_lossy() == "-" {
             Stdio::inherit()
         } else {
-            Stdio::from(OpenOptions::new().read(true).open(path).unwrap())
+            Stdio::from(
+                OpenOptions::new()
+                    .read(true)
+                    .open(path)
+                    .unwrap_or_else(|e| panic!("Failed to open file `{}`: {}", path.display(), e)),
+            )
         }
     } else {
         Stdio::null()
