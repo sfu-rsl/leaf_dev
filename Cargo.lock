@@ -976,7 +976,7 @@ checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 [[package]]
 name = "libafl"
 version = "0.14.0"
-source = "git+https://github.com/sfu-rsl/libafl?branch=leaf#0d0bbf0c5d7f16c1b54c4b0175fd30a3b644de10"
+source = "git+https://github.com/sfu-rsl/LibAFL?branch=leaf#0d0bbf0c5d7f16c1b54c4b0175fd30a3b644de10"
 dependencies = [
  "ahash",
  "arbitrary-int",
@@ -1012,7 +1012,7 @@ dependencies = [
 [[package]]
 name = "libafl_bolts"
 version = "0.14.0"
-source = "git+https://github.com/sfu-rsl/libafl?branch=leaf#0d0bbf0c5d7f16c1b54c4b0175fd30a3b644de10"
+source = "git+https://github.com/sfu-rsl/LibAFL?branch=leaf#0d0bbf0c5d7f16c1b54c4b0175fd30a3b644de10"
 dependencies = [
  "ahash",
  "backtrace",
@@ -1044,7 +1044,7 @@ dependencies = [
 [[package]]
 name = "libafl_derive"
 version = "0.14.0"
-source = "git+https://github.com/sfu-rsl/libafl?branch=leaf#0d0bbf0c5d7f16c1b54c4b0175fd30a3b644de10"
+source = "git+https://github.com/sfu-rsl/LibAFL?branch=leaf#0d0bbf0c5d7f16c1b54c4b0175fd30a3b644de10"
 dependencies = [
  "proc-macro2",
  "quote",
