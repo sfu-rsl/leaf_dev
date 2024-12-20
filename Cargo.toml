@@ -1,6 +1,6 @@
 [package]
 name = "libafl_libfuzzer"
-version.workspace = true
+version = "0.14.1"
 description = "libFuzzer shim which uses LibAFL with common defaults"
 repository = "https://github.com/AFLplusplus/LibAFL/"
 readme = "../README.md"
@@ -43,7 +43,7 @@ libafl-libfuzzer-use-version = []
 
 [dependencies]
 libfuzzer-sys = { version = "0.4.7", default-features = false }
-document-features = { workspace = true, optional = true }
+document-features = { version = "0.2.10", optional = true }
 
 [package.metadata.docs.rs]
 features = ["document-features"]
@@ -51,5 +51,38 @@ all-features = true
 
 rustdoc-args = ["--cfg", "docsrs"]
 
-[lints]
-workspace = true
+
+[lints.rust]
+# Forbid
+unexpected_cfgs = "forbid"
+
+# Allow
+incomplete_features = "allow"
+ambiguous_glob_reexports = "allow"
+
+[lints.clippy]
+# Deny
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+cargo_common_metadata = "deny"
+
+# Warn
+cargo = { level = "warn", priority = -1 }
+negative_feature_names = "warn"
+
+# Allow
+unreadable_literal = "allow"
+type_repetition_in_bounds = "allow"
+missing_errors_doc = "allow"
+cast_possible_truncation = "allow"
+used_underscore_binding = "allow"
+ptr_as_ptr = "allow"
+missing_panics_doc = "allow"
+module_name_repetitions = "allow"
+unsafe_derive_deserialize = "allow"
+similar_names = "allow"
+too_many_lines = "allow"
+
+[lints.rustdoc]
+# Deny
+broken_intra_doc_links = "deny"
