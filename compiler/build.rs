@@ -22,10 +22,7 @@ const DIR_DEPS: &str = "deps";
 fn main() {
     println!("cargo:rustc-env={ENV_DEPS_DIR}={}", deps_path().display());
 
-    let workspace_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap())
-        .parent()
-        .unwrap()
-        .to_path_buf();
+    let workspace_dir = workspace_path();
 
     println!(
         "cargo:rustc-env={ENV_WORKSPACE_DIR}={}",
@@ -152,6 +149,20 @@ fn add_dylib_search_path_headers() {
 
 mod utils {
     use super::*;
+
+    pub(super) fn workspace_path() -> PathBuf {
+        let output = Command::new(env!("CARGO"))
+            .arg("locate-project")
+            .arg("--workspace")
+            .arg("--message-format=plain")
+            .output()
+            .unwrap()
+            .stdout;
+        Path::new(std::str::from_utf8(&output).unwrap().trim())
+            .parent()
+            .unwrap()
+            .to_path_buf()
+    }
 
     pub(super) fn recreate_dir(dir: &Path) {
         if dir.exists() {
