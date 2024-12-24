@@ -123,6 +123,7 @@ pub struct LibfuzzerOptions {
     tui: bool,
     runs: usize,
     close_fd_mask: u8,
+    concolic_exe: Option<String>,
     unknown: Vec<String>,
 }
 
@@ -228,6 +229,10 @@ impl LibfuzzerOptions {
         self.close_fd_mask
     }
 
+    pub fn concolic_exe(&self) -> Option<&str> {
+        self.concolic_exe.as_deref()
+    }
+
     pub fn unknown(&self) -> &[String] {
         &self.unknown
     }
@@ -257,6 +262,7 @@ struct LibfuzzerOptionsBuilder<'a> {
     tui: bool,
     runs: usize,
     close_fd_mask: u8,
+    concolic_exe: Option<String>,
     unknown: Vec<&'a str>,
 }
 
@@ -358,6 +364,7 @@ impl<'a> LibfuzzerOptionsBuilder<'a> {
                         }
                         "runs" => self.runs = parse_or_bail!(name, value, usize),
                         "close_fd_mask" => self.close_fd_mask = parse_or_bail!(name, value, u8),
+                        "concolic_exe" => self.concolic_exe = Some(value.to_string()),
                         _ => {
                             self.unknown.push(arg);
                         }
@@ -404,6 +411,7 @@ impl<'a> LibfuzzerOptionsBuilder<'a> {
             tui: self.tui,
             runs: self.runs,
             close_fd_mask: self.close_fd_mask,
+            concolic_exe: self.concolic_exe,
             unknown: self.unknown.into_iter().map(ToString::to_string).collect(),
         }
     }

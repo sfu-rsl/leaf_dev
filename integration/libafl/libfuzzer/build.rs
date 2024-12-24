@@ -118,7 +118,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         for (_name, spec) in deps {
             if let toml::Value::Table(spec) = spec {
                 // replace all path deps with version deps
-                if spec.remove("path").is_some() {
+                if spec.remove("path").is_some()
+                    || spec.remove("git").is_some()
+                    || spec.remove("workspace").is_some()
+                {
                     spec.insert(
                         "version".to_string(),
                         toml::Value::String(version.to_string()),
@@ -126,6 +129,46 @@ fn main() -> Result<(), Box<dyn Error>> {
                 }
             }
         }
+
+        fn workspace_path() -> PathBuf {
+            let output = Command::new(env!("CARGO"))
+                .arg("locate-project")
+                .arg("--workspace")
+                .arg("--message-format=plain")
+                .output()
+                .unwrap()
+                .stdout;
+            Path::new(std::str::from_utf8(&output).unwrap().trim())
+                .parent()
+                .unwrap()
+                .to_path_buf()
+        }
+
+        let toml::Value::String(ref mut libafl_leaf_path) = root
+            .entry("patch")
+            .or_insert_with(|| toml::Value::Table(toml::Table::new()))
+            .as_table_mut()
+            .expect("Invalid Cargo.toml")
+            .entry("crates-io")
+            .or_insert_with(|| toml::Value::Table(toml::Table::new()))
+            .as_table_mut()
+            .expect("Invalid Cargo.toml")
+            .entry("libafl_leaf")
+            .or_insert_with(|| toml::Value::Table(toml::Table::new()))
+            .as_table_mut()
+            .expect("Invalid Cargo.toml")
+            .get_mut("path")
+            .expect("Invalid Cargo.toml")
+        else {
+            unreachable!("Invalid Cargo.toml")
+        };
+        *libafl_leaf_path = workspace_path()
+            .join("integration")
+            .join("libafl")
+            .join("libfuzzer_runtime")
+            .join(&libafl_leaf_path)
+            .to_string_lossy()
+            .into_owned();
 
         let serialized = toml::to_string(&template)?;
         fs::write(custom_lib_dir.join("Cargo.toml"), serialized)?;
@@ -199,9 +242,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     drop(redefinitions_file);
 
     assert!(
-            nm_child.wait().is_ok_and(|s| s.success()),
-            "Couldn't link runtime crate! Do you have the llvm-tools component installed? (`rustup component add llvm-tools-preview` to install)"
-        );
+        nm_child.wait().is_ok_and(|s| s.success()),
+        "Couldn't link runtime crate! Do you have the llvm-tools component installed? (`rustup component add llvm-tools-preview` to install)"
+    );
 
     let mut objcopy_command = Command::new(rust_objcopy);
 
@@ -242,9 +285,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         .args([&archive_path, &redefined_archive_path]);
 
     assert!(
-            objcopy_command.status().is_ok_and(|s| s.success()),
-            "Couldn't rename allocators in the runtime crate! Do you have the llvm-tools component installed? (`rustup component add llvm-tools-preview` to install)"
-        );
+        objcopy_command.status().is_ok_and(|s| s.success()),
+        "Couldn't rename allocators in the runtime crate! Do you have the llvm-tools component installed? (`rustup component add llvm-tools-preview` to install)"
+    );
 
     #[cfg(feature = "embed-runtime")]
     {

@@ -82,6 +82,7 @@ use crate::options::{LibfuzzerMode, LibfuzzerOptions};
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
+mod concolic;
 mod corpus;
 mod feedbacks;
 mod fuzz;
@@ -173,7 +174,6 @@ macro_rules! fuzz_with {
         use libafl_bolts::nonzero;
         use rand::{thread_rng, RngCore};
         use std::{env::temp_dir, fs::create_dir, path::PathBuf};
-        use core::num::NonZeroUsize;
         use crate::{
             CustomMutationStatus,
             corpus::{ArtifactCorpus, LibfuzzerCorpus},
@@ -496,8 +496,11 @@ macro_rules! fuzz_with {
                 &mut mgr,
             )?), ()));
 
+            let concolic = crate::concolic::make_concolic_stage(&$options);
+
             // The order of the stages matter!
             let mut stages = tuple_list!(
+                concolic,
                 calibration,
                 generalization,
                 tracing,

@@ -6,6 +6,7 @@ members = [
     "runtime/lib",
     "runtime/flavors/*",
     "integration/libafl/lib",
+    "integration/libafl/libfuzzer",
     "integration/libafl/fuzzers/pure_concolic",
     "macros",
     "orchestrator",
@@ -31,3 +32,4 @@ serde = { version = "1.0.215", features = ["derive"] }
 
 libafl = { git = "https://github.com/sfu-rsl/LibAFL", tag = "0.14.1", features = ["std"]}
 libafl_bolts = { git = "https://github.com/sfu-rsl/LibAFL", tag = "0.14.1" }
+libafl_targets = { git = "https://github.com/sfu-rsl/LibAFL", tag = "0.14.1" }

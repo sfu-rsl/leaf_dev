@@ -16,6 +16,7 @@ use libafl_bolts::Named;
 /// ready to be evaluated to the fuzzer.
 #[derive(Debug)]
 pub struct NonBlockingMultiMutationalStage<E, EM, I, M, Z> {
+    name: Cow<'static, str>,
     inputs: mpsc::SyncSender<I>,
     mutants: mpsc::Receiver<I>,
     #[allow(clippy::type_complexity)]
@@ -28,9 +29,10 @@ where
     M: MultiMutator<Z::Input, ()> + Send + 'static,
     Z::Input: Send + 'static,
 {
-    pub fn new(mutator: M) -> Self {
+    pub fn new(name: Cow<'static, str>, mutator: M) -> Self {
         let (inputs_sender, mutants_receiver) = Self::spawn_mutator_thread(mutator);
         Self {
+            name,
             inputs: inputs_sender,
             mutants: mutants_receiver,
             _phantom: PhantomData,
@@ -70,7 +72,7 @@ where
 
 impl<E, EM, I, M, Z> Named for NonBlockingMultiMutationalStage<E, EM, I, M, Z> {
     fn name(&self) -> &Cow<'static, str> {
-        &Cow::Borrowed("NonBlockingMultiMutationalStage")
+        &self.name
     }
 }
 

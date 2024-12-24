@@ -42,7 +42,9 @@ pub fn merge(
     harness: &extern "C" fn(*const u8, usize) -> c_int,
 ) -> Result<(), Error> {
     if options.dirs().is_empty() {
-        return Err(Error::illegal_argument("Missing corpora to minimize; you should provide one directory to minimize into and one-to-many from which the inputs are loaded."));
+        return Err(Error::illegal_argument(
+            "Missing corpora to minimize; you should provide one directory to minimize into and one-to-many from which the inputs are loaded.",
+        ));
     }
 
     let crash_corpus = ArtifactCorpus::new();

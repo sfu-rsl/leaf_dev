@@ -17,7 +17,7 @@
 //! To use bleeding-edge changes from upstream, use the following:
 //!
 //! ```toml
-//! libfuzzer-sys = { version = "*", features = [...], package = "libafl_libfuzzer", git = "https://github.com/AFLplusplus/LibAFL" }
+//! libfuzzer-sys = { version = "*", features = [...], package = "libafl_libfuzzer", git = "https://github.com/sfu-rsl/leaf " }
 //! ```
 //!
 //! You could also specify a specific git revision using `rev = "..."` in this case.
