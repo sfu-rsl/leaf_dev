@@ -1,0 +1,17 @@
+[package]
+name = "basic_pro_conc"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[lib]
+
+[[bin]]
+name = "program"
+path = "src/program.rs"
+
+[package.metadata]
+cargo-fuzz = true
+
+[lints]
+workspace = true
