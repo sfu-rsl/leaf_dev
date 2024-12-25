@@ -1,5 +1,8 @@
 use core::fmt::{Display, Formatter};
-use std::{path::PathBuf, time::Duration};
+use std::{
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 use libafl::mutators::Tokens;
 use serde::{Deserialize, Serialize};
@@ -123,7 +126,8 @@ pub struct LibfuzzerOptions {
     tui: bool,
     runs: usize,
     close_fd_mask: u8,
-    concolic_exe: Option<String>,
+    conc_program: Option<PathBuf>,
+    leaf_orch: Option<PathBuf>,
     unknown: Vec<String>,
 }
 
@@ -229,8 +233,12 @@ impl LibfuzzerOptions {
         self.close_fd_mask
     }
 
-    pub fn concolic_exe(&self) -> Option<&str> {
-        self.concolic_exe.as_deref()
+    pub fn conc_program(&self) -> Option<&Path> {
+        self.conc_program.as_deref()
+    }
+
+    pub fn leaf_orch(&self) -> Option<&Path> {
+        self.leaf_orch.as_deref()
     }
 
     pub fn unknown(&self) -> &[String] {
@@ -262,7 +270,8 @@ struct LibfuzzerOptionsBuilder<'a> {
     tui: bool,
     runs: usize,
     close_fd_mask: u8,
-    concolic_exe: Option<String>,
+    conc_program: Option<PathBuf>,
+    leaf_orch: Option<PathBuf>,
     unknown: Vec<&'a str>,
 }
 
@@ -364,7 +373,8 @@ impl<'a> LibfuzzerOptionsBuilder<'a> {
                         }
                         "runs" => self.runs = parse_or_bail!(name, value, usize),
                         "close_fd_mask" => self.close_fd_mask = parse_or_bail!(name, value, u8),
-                        "concolic_exe" => self.concolic_exe = Some(value.to_string()),
+                        "conc_program" => self.conc_program = Some(PathBuf::from(value)),
+                        "leaf_orch" => self.leaf_orch = Some(PathBuf::from(value)),
                         _ => {
                             self.unknown.push(arg);
                         }
@@ -411,7 +421,8 @@ impl<'a> LibfuzzerOptionsBuilder<'a> {
             tui: self.tui,
             runs: self.runs,
             close_fd_mask: self.close_fd_mask,
-            concolic_exe: self.concolic_exe,
+            conc_program: self.conc_program,
+            leaf_orch: self.leaf_orch,
             unknown: self.unknown.into_iter().map(ToString::to_string).collect(),
         }
     }

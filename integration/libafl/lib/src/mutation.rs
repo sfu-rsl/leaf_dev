@@ -1,6 +1,6 @@
 use std::{
     borrow::Cow,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Command, Stdio},
 };
 
@@ -18,9 +18,11 @@ pub struct DivergingMutator {
 }
 
 impl DivergingMutator {
-    pub fn new(orchestrator_path: PathBuf, program_path: PathBuf, work_dir: PathBuf) -> Self {
+    pub fn new(orchestrator_path: &Path, program_path: &Path, work_dir: &Path) -> Self {
         Self {
-            orchestrator_path,
+            orchestrator_path: orchestrator_path
+                .canonicalize()
+                .expect("Invalid orchestrator path"),
             program_path: program_path.canonicalize().expect("Invalid program path"),
             work_dir: work_dir.canonicalize().expect("Invalid work directory"),
         }

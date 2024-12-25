@@ -20,6 +20,8 @@ use libafl_leaf::DivergingMutator;
 
 const NAME_ORCHESTRATOR: &str = "leafo_onetime";
 
+const DIR_MUTATOR_WORK: &str = "mutator";
+
 #[derive(Parser, Debug)]
 struct Args {
     /// Leaf-instrumented program to perform concolic execution
@@ -31,9 +33,13 @@ struct Args {
     /// Leaf's One-time orchestrator, defaults to `leafo_onetime`
     #[arg(long)]
     orchestrator: Option<PathBuf>,
-    /// Working directory to store the artifacts, e.g., crashes, mutants, ...
-    #[arg(long, default_value = "work")]
-    workdir: PathBuf,
+    /// The working directory to store the temporary files, e.g., mutants.
+    /// Defaults to a temporary directory
+    #[arg(long)]
+    workdir: Option<PathBuf>,
+    /// The directory to store the artifacts, e.g., crashes
+    #[arg(long, default_value = "./artifacts")]
+    artifacts_dir: PathBuf,
     /// Directories to load initial inputs from
     #[arg(long)]
     initial_input_dirs: Vec<PathBuf>,
@@ -65,7 +71,7 @@ pub fn main() {
     let mut state = StdState::new(
         StdRand::with_seed(current_nanos()),
         InMemoryCorpus::new(),
-        OnDiskCorpus::new(args.workdir.join("crashes")).unwrap(),
+        OnDiskCorpus::new(args.artifacts_dir.join("crashes")).unwrap(),
         &mut feedback,
         &mut objective,
     )
@@ -112,8 +118,12 @@ pub fn main() {
     };
     load_initial_inputs();
 
-    let mutator =
-        DivergingMutator::new(args.orchestrator.unwrap(), args.conc_program, args.workdir);
+    let mutant_work_dir = get_mutator_workdir(&args.workdir);
+    let mutator = DivergingMutator::new(
+        &args.orchestrator.unwrap(),
+        &args.conc_program,
+        &mutant_work_dir,
+    );
 
     let mut stages = tuple_list!(IfStage::new(
         // Do not repeat inputs
@@ -131,6 +141,9 @@ pub fn main() {
                 println!("Concolic loop stopped: {:?}", e);
             }
         });
+    let _ = std::fs::remove_dir_all(mutant_work_dir).inspect_err(|e| {
+        eprintln!("Failed to remove the work directory: {}", e);
+    });
 }
 
 fn process_args() -> Args {
@@ -139,6 +152,15 @@ fn process_args() -> Args {
     args.orchestrator
         .get_or_insert_with(|| PathBuf::from(NAME_ORCHESTRATOR));
     args
+}
+
+fn get_mutator_workdir(arg_workdir: &Option<PathBuf>) -> PathBuf {
+    let path = arg_workdir
+        .clone()
+        .unwrap_or_else(|| std::env::temp_dir().join("leaf").join("pure_concolic"))
+        .join(DIR_MUTATOR_WORK);
+    std::fs::create_dir_all(&path).expect("Failed to create the work directory for mutator");
+    path
 }
 
 fn make_monitor() -> impl Monitor {
