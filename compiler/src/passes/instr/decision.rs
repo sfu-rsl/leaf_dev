@@ -7,31 +7,44 @@ use rustc_middle::{
 };
 use rustc_span::Symbol;
 
-use common::{log_info, log_warn};
+use core::ops::Deref;
 
-use crate::utils::mir::TyCtxtExt;
+use common::{log_debug, log_info, log_warn};
 
-pub(super) const TAG_INSTR_DECISION: &str = concatcp!(super::TAG_INSTRUMENTATION, "::skip");
+use crate::{config::InstrumentationRules, utils::mir::TyCtxtExt};
+
+pub(super) const TAG_INSTR_DECISION: &str = concatcp!(super::TAG_INSTRUMENTATION, "::decision");
 
 const TOOL_NAME: &str = crate::constants::TOOL_LEAF;
 const ATTR_NAME: &str = "instrument";
+pub(super) const KEY_RULES: &str = "instr_rules";
+const KEY_BAKED_RULES: &str = "instr_rules_baked";
 
-pub(super) fn should_instrument<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>) -> bool {
+pub(super) fn should_instrument<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    body: &mut Body<'tcx>,
+    storage: &mut dyn Storage,
+) -> bool {
     let def_id = body.source.def_id();
 
     if !decide_instance_kind(&body.source.instance) {
         return false;
     }
 
-    if let Some((explicit, item)) = opt_instrument_attr_inheritable(tcx, def_id) {
-        log_info!(
+    let rules = storage.get_or_insert_with_acc(KEY_BAKED_RULES.to_owned(), |storage| {
+        let rules = storage.get_or_default::<InstrumentationRules>(KEY_RULES.to_owned());
+        rules.to_baked()
+    });
+
+    if let Some((decision, item)) = find_inheritable_first_filtered(tcx, def_id, rules.deref()) {
+        log_debug!(
             target: TAG_INSTR_DECISION,
-            "Found explicit instrumentation attribute for {:?} on {:?} with value: {}",
+            "Found a rule for instrumentation of {:?} on {:?} with decision: {}",
             def_id,
             item,
-            explicit
+            decision
         );
-        return explicit;
+        return decision;
     }
 
     if is_lang_start_item(tcx, def_id) {
@@ -81,16 +94,27 @@ fn decide_instance_kind(kind: &InstanceKind) -> bool {
     }
 }
 
-/// Returns the value of the `instrument` attribute if it is placed on the item or one of its ancestors.
-fn opt_instrument_attr_inheritable<'tcx>(
+fn find_inheritable_first_filtered<'tcx>(
     tcx: TyCtxt<'tcx>,
     def_id: DefId,
+    rules: &dyn Fn(TyCtxt<'tcx>, DefId) -> Option<bool>,
 ) -> Option<(bool, DefId)> {
     let mut current = def_id;
     loop {
-        let attr = opt_instrument_attr(tcx, current);
-        if attr.is_some() {
-            return attr.map(|v| (v, current));
+        // Attributes take precedence over filters.
+        if let Some(explicit) = opt_instrument_attr(tcx, current) {
+            log_info!(
+                target: TAG_INSTR_DECISION,
+                "Found explicit instrumentation attribute for {:?} on {:?} with value: {}",
+                def_id,
+                current,
+                explicit
+            );
+            return Some((explicit, current));
+        }
+
+        if let Some(include) = rules(tcx, current) {
+            return Some((include, current));
         }
 
         let parent = tcx.opt_parent(current);
@@ -817,3 +841,91 @@ mod intrinsics {
     }
 }
 pub(super) use intrinsics::{decide_intrinsic_call, AtomicIntrinsicKind, IntrinsicDecision};
+
+use super::{Storage, StorageExt};
+
+mod rules {
+    use super::*;
+
+    use crate::config::{
+        AllFormula, AnyFormula, CrateFilter, EntityFilter, EntityLocationFilter,
+        InstrumentationRules, LogicFormula, NotFormula,
+    };
+
+    type Predicate = Box<dyn Fn(TyCtxt<'_>, DefId) -> bool>;
+
+    trait ToPredicate {
+        fn to_predicate<'tcx>(&self) -> Predicate;
+    }
+
+    impl InstrumentationRules {
+        pub(super) fn to_baked<'tcx>(&self) -> impl Fn(TyCtxt<'_>, DefId) -> Option<bool> {
+            fn to_predicate(filters: &[EntityFilter]) -> Predicate {
+                let preds = filters
+                    .iter()
+                    .filter_map(|f| match &f {
+                        EntityFilter::WholeBody(formula) => Some(formula),
+                    })
+                    .map(|f| f.to_predicate())
+                    .collect::<Vec<_>>();
+                Box::new(move |tcx, def_id| preds.iter().any(|p| p(tcx, def_id)))
+            }
+
+            let include = to_predicate(&self.include);
+            let exclude = to_predicate(&self.exclude);
+
+            move |tcx, def_id| {
+                if include(tcx, def_id) {
+                    Some(true)
+                } else if exclude(tcx, def_id) {
+                    Some(false)
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
+    impl<T: ToPredicate> ToPredicate for LogicFormula<T> {
+        fn to_predicate<'tcx>(&self) -> Predicate {
+            match self {
+                LogicFormula::None {} => Box::new(|_, _| false),
+                LogicFormula::Atom(f) => f.to_predicate(),
+                LogicFormula::Not(NotFormula { of }) => {
+                    let pred = of.to_predicate();
+                    Box::new(move |tcx, def_id| !pred(tcx, def_id))
+                }
+                LogicFormula::Any(AnyFormula { of }) => {
+                    let preds = of.iter().map(|f| f.to_predicate()).collect::<Vec<_>>();
+                    Box::new(move |tcx, def_id| preds.iter().any(|p| p(tcx, def_id)))
+                }
+                LogicFormula::All(AllFormula { of }) => {
+                    let preds = of.iter().map(|f| f.to_predicate()).collect::<Vec<_>>();
+                    Box::new(move |tcx, def_id| preds.iter().all(|p| p(tcx, def_id)))
+                }
+            }
+        }
+    }
+
+    impl ToPredicate for EntityLocationFilter {
+        fn to_predicate<'tcx>(&self) -> Predicate {
+            match self {
+                EntityLocationFilter::Crate(crate_filter) => match crate_filter.clone() {
+                    CrateFilter::Externality(is_external) => {
+                        Box::new(move |_, def_id| def_id.is_local() != is_external)
+                    }
+                    CrateFilter::Name(name) => {
+                        Box::new(move |tcx, def_id| tcx.crate_name(def_id.krate).as_str() == name)
+                    }
+                },
+                EntityLocationFilter::DefPathMatch(pattern) => {
+                    let regex = regex_lite::Regex::new(&pattern).expect("Invalid regex pattern");
+                    Box::new(move |tcx, def_id| {
+                        let def_path = tcx.def_path_str(def_id);
+                        regex.is_match(&def_path)
+                    })
+                }
+            }
+        }
+    }
+}

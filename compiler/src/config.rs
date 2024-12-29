@@ -15,6 +15,8 @@ pub(crate) struct LeafCompilerConfig {
     pub codegen_all_mir: bool,
     #[serde(default = "default_marker_cfg_name")]
     pub marker_cfg_name: String,
+    #[serde(default)]
+    pub rules: InstrumentationRules,
 }
 
 fn default_override_sysroot() -> bool {
@@ -90,6 +92,83 @@ impl Default for RuntimeShimLocation {
 
 fn default_runtime_shim_crate_name() -> String {
     "leaf".to_string()
+}
+
+/* NOTE: How is serde's structure is defined?
+ * We want to make the rules easy and intuitive to define in TOML.
+ * - The default enum representation in serde uses the variant name as the key.
+ * - The untagged representation selects the variant based on unique fields matched.
+ * We mostly utilize these two and flattening.
+ * For example, a `LogicFormula` can be represented as any of the following:
+ * ```toml
+ * [[f]]
+ * crate = { is_external = true }
+ * [[f]]
+ * not = { crate = { name = "std" } }
+ * [[f]]
+ * any = [{ crate = { name = "std" } }, { crate = { name = "core" } }]
+ * [[f]]
+ * all = [{ crate = { is_external = true } }, { crate = { name = "core" } }]
+ * ```
+ */
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub(crate) struct InstrumentationRules {
+    #[serde(default)]
+    pub(crate) include: Vec<EntityFilter>,
+    #[serde(default)]
+    pub(crate) exclude: Vec<EntityFilter>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub(crate) enum EntityFilter {
+    WholeBody(LogicFormula<EntityLocationFilter>),
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub(crate) enum LogicFormula<T> {
+    Not(NotFormula<T>),
+    Any(AnyFormula<T>),
+    All(AllFormula<T>),
+    Atom(T),
+    // NOTE: This variant helps with parsing empty tables by preventing the infinite search over the name of fields.
+    None {},
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct NotFormula<T> {
+    #[serde(rename = "not")]
+    pub(crate) of: Box<LogicFormula<T>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct AnyFormula<T> {
+    #[serde(rename = "any")]
+    pub(crate) of: Vec<LogicFormula<T>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct AllFormula<T> {
+    #[serde(rename = "all")]
+    pub(crate) of: Vec<LogicFormula<T>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum EntityLocationFilter {
+    #[serde(alias = "def_path")]
+    DefPathMatch(String),
+    Crate(CrateFilter),
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum CrateFilter {
+    #[serde(alias = "is_external")]
+    Externality(bool),
+    Name(String),
 }
 
 const CONFIG_FILENAME: &str = "leafc_config";

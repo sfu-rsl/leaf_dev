@@ -203,7 +203,7 @@ mod driver_callbacks {
             <LeafToolAdder>,
             <TypeExporter>,
             nctfe_pass,
-            Instrumentor::new(true, None /* FIXME */),
+            Instrumentor::new(true, None /* FIXME */, config.rules.clone()),
         );
 
         if config.codegen_all_mir {

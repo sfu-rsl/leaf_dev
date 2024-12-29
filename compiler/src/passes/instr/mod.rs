@@ -19,6 +19,7 @@ use common::{log_debug, log_info, log_warn};
 use std::{collections::HashSet, num::NonZeroUsize, sync::atomic};
 
 use crate::{
+    config::InstrumentationRules,
     mir_transform::{self, BodyInstrumentationUnit, JumpTargetModifier},
     passes::{instr::call::context::PriItems, StorageExt},
     utils::mir::TyCtxtExt,
@@ -50,13 +51,19 @@ const KEY_TOTAL_COUNT: &str = "total_body_count";
 pub(crate) struct Instrumentor {
     enabled: bool,
     total_body_count: Option<NonZeroUsize>,
+    rules: Option<InstrumentationRules>,
 }
 
 impl Instrumentor {
-    pub(crate) fn new(enabled: bool, total_body_count: Option<NonZeroUsize>) -> Self {
+    pub(crate) fn new(
+        enabled: bool,
+        total_body_count: Option<NonZeroUsize>,
+        filters: InstrumentationRules,
+    ) -> Self {
         Self {
             enabled,
             total_body_count,
+            rules: Some(filters),
         }
     }
 }
@@ -76,6 +83,9 @@ impl CompilationPass for Instrumentor {
         // As early as possible, we use transform_ast to set the enabled flag.
         storage.get_or_insert_with(KEY_ENABLED.to_owned(), || self.enabled);
         storage.get_or_insert_with(KEY_TOTAL_COUNT.to_owned(), || self.total_body_count);
+        storage.get_or_insert_with(decision::KEY_RULES.to_owned(), || {
+            self.rules.take().unwrap()
+        });
         rustc_driver::Compilation::Continue
     }
 
@@ -97,7 +107,7 @@ fn transform<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>, storage: &mut dyn S
 
     let def_id = body.source.def_id();
 
-    if !decision::should_instrument(tcx, body) {
+    if !decision::should_instrument(tcx, body, storage) {
         log_info!(
             target: decision::TAG_INSTR_DECISION,
             "Skipping instrumentation for {:#?}",

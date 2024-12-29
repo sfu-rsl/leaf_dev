@@ -158,7 +158,7 @@ pub(crate) trait Storage: std::fmt::Debug {
     fn get_raw_or_insert_with<'a>(
         &'a mut self,
         key: String,
-        default: Box<dyn FnOnce() -> Box<dyn Any> + 'a>,
+        default: Box<dyn FnOnce(&mut dyn Storage) -> Box<dyn Any> + 'a>,
     ) -> ValueBorrow<'a>;
 
     fn get_raw_mut<'a>(&'a mut self, key: &String) -> Option<ValueBorrow<'a>>;
@@ -175,6 +175,14 @@ pub(crate) trait StorageExt {
         &'a mut self,
         key: String,
         default: impl FnOnce() -> V + 'a,
+    ) -> Self::MutAccessor<'a, V> {
+        self.get_or_insert_with_acc(key, |_| default())
+    }
+
+    fn get_or_insert_with_acc<'a, V: Any>(
+        &'a mut self,
+        key: String,
+        default: impl FnOnce(&mut dyn Storage) -> V + 'a,
     ) -> Self::MutAccessor<'a, V>;
 
     fn get_or_default<'a, V: Default + Any>(&'a mut self, key: String) -> Self::MutAccessor<'a, V> {
@@ -772,15 +780,12 @@ mod implementation {
             fn get_raw_or_insert_with<'a>(
                 &'a mut self,
                 key: String,
-                default: Box<dyn FnOnce() -> Box<dyn Any> + 'a>,
+                default: Box<dyn FnOnce(&mut dyn Storage) -> Box<dyn Any> + 'a>,
             ) -> ValueBorrow<'a> {
                 /* Although the signature requires mutably borrowing the storage,
                  * for the global storage, we use interior mutability. */
-                let value = self
-                    .0
-                    .borrow_mut()
-                    .remove(&key)
-                    .unwrap_or_else(|| default());
+                let value = self.0.borrow_mut().remove(&key);
+                let value = value.unwrap_or_else(|| default(self));
 
                 ValueBorrow::new(self, key, value)
             }
@@ -851,12 +856,12 @@ mod implementation {
             type MutAccessor<'a, T> = DowncastValueBorrow<'a, T> where Self: 'a, T: 'a;
             type ManualBorrow<T> = ManualBorrow<T>;
 
-            fn get_or_insert_with<'a, V: Any>(
+            fn get_or_insert_with_acc<'a, V: Any>(
                 &'a mut self,
                 key: String,
-                default: impl FnOnce() -> V + 'a,
+                default: impl FnOnce(&mut dyn Storage) -> V + 'a,
             ) -> Self::MutAccessor<'a, V> {
-                self.get_raw_or_insert_with(key.clone(), Box::new(|| Box::new(default())));
+                self.get_raw_or_insert_with(key.clone(), Box::new(|s| Box::new(default(s))));
                 self.get_mut(&key).unwrap()
             }
 
@@ -921,7 +926,7 @@ mod implementation {
 
         impl<V: 'static> ManualBorrow<V> {
             pub(crate) fn return_to(self, storage: &mut dyn Storage) {
-                storage.get_raw_or_insert_with(self.key, Box::new(|| self.value));
+                storage.get_raw_or_insert_with(self.key, Box::new(|_| self.value));
             }
         }
     }
