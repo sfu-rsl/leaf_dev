@@ -156,3 +156,43 @@ mod tests {
         );
     }
 }
+
+#[macro_export]
+/// Defines a fuzz target for hybrid fuzzing using leaf and `cargo fuzz`.
+/// It works as a drop-in replacement for [fuzz_target] macro.
+/// Given a closure, it generates two versions of the program:
+/// one for the fuzzing as it would work with `cargo fuzz`,
+/// and another to be compiled with `leafc` for concolic execution.
+/// The latter symbolizes all bytes in the standard input and then gives it to the closure.
+/// The versions are exclusively compiled by the config flag `leafc`.
+/// 
+/// After replacing [fuzz_target] invocations with [hybrid_fuzz_target], you also
+/// need to disable `no_main` feature when the program is compiled with `leafc`. i.e.:
+/// ```rust
+/// #![cfg_attr(not(leafc), no_main)]
+/// ```
+macro_rules! hybrid_fuzz_target {
+    /* NOTE: We use token tree because fuzz_target has explicit parsing rules
+     * for closures (and does not accept expr directly).
+    */
+    ($($closure:tt)+) => {
+        #[cfg(not(leafc))]
+        $crate::fuzz_target!($($closure)+);
+
+        #[cfg(leafc)]
+        fn main() {
+            use leaf::annotations::*;
+            use std::io::Read;
+
+            let mut buffer = Vec::new();
+            let count = std::io::stdin().read_to_end(&mut buffer).unwrap();
+
+            for i in 0..count {
+                buffer[i] = buffer[i].mark_symbolic();
+            }
+
+            let f = $($closure)+;
+            f(&buffer);
+        }
+    };
+}

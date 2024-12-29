@@ -1,7 +1,7 @@
-#![no_main]
+#![cfg_attr(not(leafc), no_main)]
 
-use libfuzzer_sys::fuzz_target;
+use libfuzzer_sys::hybrid_fuzz_target;
 
-fuzz_target!(|data: &[u8]| {
+hybrid_fuzz_target!(|data: &[u8]| {
     basic_pro_conc::run_input(data);
 });

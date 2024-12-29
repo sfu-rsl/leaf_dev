@@ -20,9 +20,7 @@ pub struct DivergingMutator {
 impl DivergingMutator {
     pub fn new(orchestrator_path: &Path, program_path: &Path, work_dir: &Path) -> Self {
         Self {
-            orchestrator_path: orchestrator_path
-                .canonicalize()
-                .expect("Invalid orchestrator path"),
+            orchestrator_path: orchestrator_path.to_path_buf(),
             program_path: program_path.canonicalize().expect("Invalid program path"),
             work_dir: work_dir.canonicalize().expect("Invalid work directory"),
         }

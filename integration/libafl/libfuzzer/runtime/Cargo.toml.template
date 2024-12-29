@@ -65,7 +65,6 @@ libafl_targets = { workspace = true, features = [
   "sanitizer_interfaces",
 ] }
 libafl_leaf = { version = "0.1.0" }
-# libafl_leaf = { workspace = true }
 
 ahash = { version = "0.8.11", default-features = false }
 libc = "0.2.159"

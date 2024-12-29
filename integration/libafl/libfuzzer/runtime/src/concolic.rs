@@ -5,7 +5,7 @@ use crate::options::LibfuzzerOptions;
 use libafl::{
     corpus::Corpus,
     events::EventProcessor,
-    inputs::{HasMutatorBytes, Input, UsesInput},
+    inputs::{HasMutatorBytes, Input},
     stages::{HasNestedStageStatus, OptionalStage, Stage},
     state::{HasCorpus, HasRand, State, UsesState},
     Evaluator, HasNamedMetadata,

@@ -6,10 +6,6 @@ edition = "2021"
 
 [lib]
 
-[[bin]]
-name = "program"
-path = "src/program.rs"
-
 [package.metadata]
 cargo-fuzz = true
 
