@@ -170,7 +170,7 @@ mod driver_callbacks {
                 && is_dependency_crate(crate_options.crate_name.as_ref())
             {
                 log_info!("Setting up passes as for a dependency in codegen all mode.");
-                build_dep_passes_in_codegen_all_mode()
+                build_dep_passes_in_codegen_all_mode(&config)
             } else {
                 log_info!("Setting up passes as for a primary package.");
                 let mut passes = build_primary_passes(&config);
@@ -219,7 +219,7 @@ mod driver_callbacks {
             <LeafToolAdder>,
             <TypeExporter>,
             nctfe_pass,
-            Instrumentor::new(true, None /* FIXME */, config.rules.clone()),
+            Instrumentor::new(true, None /* FIXME */, config.instr_rules.clone()),
         );
 
         if config.codegen_all_mir {
@@ -233,13 +233,13 @@ mod driver_callbacks {
         }
     }
 
-    fn build_dep_passes_in_codegen_all_mode() -> Box<Callbacks> {
+    fn build_dep_passes_in_codegen_all_mode(config: &LeafCompilerConfig) -> Box<Callbacks> {
         /* In this mode, we only internalize the items in the compiled objects,
          * and do the instrumentation with the final crate. */
         Box::new(
             chain!(
                 force_codegen_all_pass(),
-                <MonoItemInternalizer>,
+                MonoItemInternalizer::new(config.internalization_rules.clone()),
             )
             .to_callbacks(),
         )

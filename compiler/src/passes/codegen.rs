@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 use rustc_hir::{def::DefKind, def_id::LOCAL_CRATE};
 use rustc_middle::{
     middle::codegen_fn_attrs::CodegenFnAttrFlags,
@@ -7,20 +9,41 @@ use rustc_middle::{
 
 use common::{log_debug, log_info, log_warn};
 
-use super::CompilationPass;
+use crate::config::InternalizationRules;
 
-#[derive(Debug, Default)]
-pub(crate) struct MonoItemInternalizer;
+use super::{CompilationPass, StorageExt};
+
+const KEY_RULES: &str = "internalization_rules";
+const KEY_BAKED_RULES: &str = "internalization_rules_baked";
+
+#[derive(Debug)]
+pub(crate) struct MonoItemInternalizer {
+    rules: Option<InternalizationRules>,
+}
+
+impl MonoItemInternalizer {
+    pub fn new(rules: InternalizationRules) -> Self {
+        Self { rules: Some(rules) }
+    }
+}
 
 impl CompilationPass for MonoItemInternalizer {
     fn override_flags() -> super::OverrideFlags {
         super::OverrideFlags::COLLECT_PARTITION
     }
 
+    fn visit_tcx_at_codegen_before<'tcx>(
+        &mut self,
+        _tcx: TyCtxt<'tcx>,
+        storage: &mut dyn super::Storage,
+    ) {
+        storage.get_or_insert_with(KEY_RULES.to_owned(), || self.rules.take().unwrap());
+    }
+
     fn visit_codegen_units<'tcx>(
         tcx: TyCtxt<'tcx>,
         units: &mut [CodegenUnit<'tcx>],
-        _storage: &mut dyn super::Storage,
+        storage: &mut dyn super::Storage,
     ) {
         log_info!(
             "Internalizing items for crate `{}`",
@@ -34,9 +57,14 @@ impl CompilationPass for MonoItemInternalizer {
             )
         }
 
+        let rules = storage.get_or_insert_with_acc(KEY_BAKED_RULES.to_owned(), |storage| {
+            let rules = storage.get_or_default::<InternalizationRules>(KEY_RULES.to_owned());
+            rules.to_baked()
+        });
+
         for unit in units {
             unit.items_mut().iter_mut().for_each(|(item, data)| {
-                if should_be_internalized(tcx, item) {
+                if should_be_internalized(tcx, item, |name| rules.accept(name)) {
                     data.linkage = Linkage::Internal;
                 } else {
                     log_debug!("Not internalizing item: {:?}", item.def_id());
@@ -46,7 +74,11 @@ impl CompilationPass for MonoItemInternalizer {
     }
 }
 
-fn should_be_internalized<'tcx>(tcx: TyCtxt<'tcx>, item: &MonoItem<'tcx>) -> bool {
+fn should_be_internalized<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    item: &MonoItem<'tcx>,
+    rules: impl FnOnce(&str) -> Option<bool>,
+) -> bool {
     // pub extern "C" functions. Example: `__rdl_alloc`
     let def_id = item.def_id();
     if matches!(tcx.def_kind(def_id), DefKind::Fn)
@@ -83,6 +115,13 @@ fn should_be_internalized<'tcx>(tcx: TyCtxt<'tcx>, item: &MonoItem<'tcx>) -> boo
             .generate_proc_macro_decls_symbol(tcx.stable_crate_id(LOCAL_CRATE))
     {
         false
+    } else if let Some(ruled) = rules(item.symbol_name(tcx).name) {
+        log_info!(
+            "Internalization rule applied for: {:?} -> {}",
+            item.def_id(),
+            ruled,
+        );
+        ruled
     }
     // Everything else
     else {

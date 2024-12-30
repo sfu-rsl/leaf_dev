@@ -107,3 +107,120 @@ pub(super) mod file {
             .or_else(try_exe_path)
     }
 }
+
+pub(crate) mod rules {
+
+    pub(crate) trait Predicate<I: ?Sized> {
+        fn accept(&self, i: &I) -> bool;
+    }
+
+    pub(crate) trait ToPredicate<I: ?Sized> {
+        type Predicate: Predicate<I>;
+
+        fn to_predicate(&self) -> Self::Predicate;
+    }
+
+    impl<'b, I: ?Sized, F: ?Sized + for<'a> Fn(&'a I) -> bool, T: Deref<Target = F>> Predicate<I>
+        for T
+    {
+        fn accept(&self, i: &I) -> bool {
+            self(i)
+        }
+    }
+
+    use std::ops::Deref;
+
+    use crate::config::rules::*;
+
+    impl<T> InclusionRules<T> {
+        pub(crate) fn to_baked<I: ?Sized>(&self) -> InclusionPredicate<T::Predicate>
+        where
+            T: ToPredicate<I>,
+        {
+            fn to_any<I: ?Sized, T: ToPredicate<I>>(filters: &[T]) -> LogicFormula<T::Predicate> {
+                let predicates = filters
+                    .iter()
+                    .map(|f| f.to_predicate())
+                    .map(LogicFormula::Atom)
+                    .collect::<Vec<_>>();
+                if predicates.is_empty() {
+                    LogicFormula::Empty {}
+                } else {
+                    LogicFormula::Any(AnyFormula { of: predicates })
+                }
+            }
+
+            let include = to_any(&self.include);
+            let exclude = to_any(&self.exclude);
+
+            InclusionPredicate { include, exclude }
+        }
+    }
+
+    pub(crate) struct InclusionPredicate<P> {
+        include: LogicFormula<P>,
+        exclude: LogicFormula<P>,
+    }
+
+    impl<P> InclusionPredicate<P> {
+        pub(crate) fn accept<I: ?Sized>(&self, i: &I) -> Option<bool>
+        where
+            P: Predicate<I>,
+        {
+            if self.include.accept(i) {
+                Some(true)
+            } else if self.exclude.accept(i) {
+                Some(false)
+            } else {
+                None
+            }
+        }
+    }
+
+    impl<I: ?Sized, T: Predicate<I>> Predicate<I> for LogicFormula<T> {
+        fn accept(&self, i: &I) -> bool {
+            match self {
+                LogicFormula::Empty {} => false,
+                LogicFormula::Atom(f) => f.accept(i),
+                LogicFormula::Not(NotFormula { of }) => !of.accept(i),
+                LogicFormula::Any(AnyFormula { of }) => of.iter().any(|f| f.accept(i)),
+                LogicFormula::All(AllFormula { of }) => of.iter().all(|f| f.accept(i)),
+            }
+        }
+    }
+
+    impl<I: ?Sized, T: ToPredicate<I>> ToPredicate<I> for LogicFormula<T> {
+        type Predicate = LogicFormula<T::Predicate>;
+
+        fn to_predicate(&self) -> Self::Predicate {
+            match self {
+                LogicFormula::Empty {} => LogicFormula::Empty {},
+                LogicFormula::Atom(f) => LogicFormula::Atom(f.to_predicate()),
+                LogicFormula::Not(NotFormula { of }) => LogicFormula::Not(NotFormula {
+                    of: Box::new(of.to_predicate()),
+                }),
+                LogicFormula::Any(AnyFormula { of }) => LogicFormula::Any(AnyFormula {
+                    of: of.iter().map(ToPredicate::to_predicate).collect::<Vec<_>>(),
+                }),
+                LogicFormula::All(AllFormula { of }) => LogicFormula::All(AllFormula {
+                    of: of.iter().map(ToPredicate::to_predicate).collect::<Vec<_>>(),
+                }),
+            }
+        }
+    }
+
+    pub(crate) struct RegexWrapper(regex_lite::Regex);
+    impl Predicate<str> for RegexWrapper {
+        fn accept(&self, i: &str) -> bool {
+            self.0.is_match(i)
+        }
+    }
+
+    impl ToPredicate<str> for PatternMatch {
+        type Predicate = RegexWrapper;
+
+        fn to_predicate(&self) -> Self::Predicate {
+            RegexWrapper(regex_lite::Regex::new(self).expect("Invalid regex pattern"))
+        }
+    }
+}

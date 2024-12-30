@@ -158,7 +158,7 @@ pub(crate) trait Storage: std::fmt::Debug {
     fn get_raw_or_insert_with<'a>(
         &'a mut self,
         key: String,
-        default: Box<dyn FnOnce(&mut dyn Storage) -> Box<dyn Any> + 'a>,
+        default: Box<dyn FnOnce(&mut dyn Storage) -> Box<dyn Any> + '_>,
     ) -> ValueBorrow<'a>;
 
     fn get_raw_mut<'a>(&'a mut self, key: &String) -> Option<ValueBorrow<'a>>;
@@ -780,7 +780,7 @@ mod implementation {
             fn get_raw_or_insert_with<'a>(
                 &'a mut self,
                 key: String,
-                default: Box<dyn FnOnce(&mut dyn Storage) -> Box<dyn Any> + 'a>,
+                default: Box<dyn FnOnce(&mut dyn Storage) -> Box<dyn Any> + '_>,
             ) -> ValueBorrow<'a> {
                 /* Although the signature requires mutably borrowing the storage,
                  * for the global storage, we use interior mutability. */

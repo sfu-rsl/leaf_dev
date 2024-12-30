@@ -36,7 +36,11 @@ pub(super) fn should_instrument<'tcx>(
         rules.to_baked()
     });
 
-    if let Some((decision, item)) = find_inheritable_first_filtered(tcx, def_id, rules.deref()) {
+    if let Some((decision, item)) =
+        find_inheritable_first_filtered(tcx, def_id, move |tcx, def_id| {
+            rules.accept(&(tcx, def_id))
+        })
+    {
         log_debug!(
             target: TAG_INSTR_DECISION,
             "Found a rule for instrumentation of {:?} on {:?} with decision: {}",
@@ -97,7 +101,7 @@ fn decide_instance_kind(kind: &InstanceKind) -> bool {
 fn find_inheritable_first_filtered<'tcx>(
     tcx: TyCtxt<'tcx>,
     def_id: DefId,
-    rules: &dyn Fn(TyCtxt<'tcx>, DefId) -> Option<bool>,
+    rules: impl Fn(TyCtxt<'tcx>, DefId) -> Option<bool>,
 ) -> Option<(bool, DefId)> {
     let mut current = def_id;
     loop {
@@ -847,82 +851,39 @@ use super::{Storage, StorageExt};
 mod rules {
     use super::*;
 
-    use crate::config::{
-        AllFormula, AnyFormula, CrateFilter, EntityFilter, EntityLocationFilter,
-        InstrumentationRules, LogicFormula, NotFormula,
+    use crate::{
+        config::{rules::LogicFormula, CrateFilter, EntityFilter, EntityLocationFilter},
+        utils::rules::{Predicate, ToPredicate},
     };
 
-    type Predicate = Box<dyn Fn(TyCtxt<'_>, DefId) -> bool>;
-
-    trait ToPredicate {
-        fn to_predicate<'tcx>(&self) -> Predicate;
-    }
-
-    impl InstrumentationRules {
-        pub(super) fn to_baked<'tcx>(&self) -> impl Fn(TyCtxt<'_>, DefId) -> Option<bool> {
-            fn to_predicate(filters: &[EntityFilter]) -> Predicate {
-                let preds = filters
-                    .iter()
-                    .filter_map(|f| match &f {
-                        EntityFilter::WholeBody(formula) => Some(formula),
-                    })
-                    .map(|f| f.to_predicate())
-                    .collect::<Vec<_>>();
-                Box::new(move |tcx, def_id| preds.iter().any(|p| p(tcx, def_id)))
-            }
-
-            let include = to_predicate(&self.include);
-            let exclude = to_predicate(&self.exclude);
-
-            move |tcx, def_id| {
-                if include(tcx, def_id) {
-                    Some(true)
-                } else if exclude(tcx, def_id) {
-                    Some(false)
-                } else {
-                    None
-                }
-            }
-        }
-    }
-
-    impl<T: ToPredicate> ToPredicate for LogicFormula<T> {
-        fn to_predicate<'tcx>(&self) -> Predicate {
+    impl<'tcx> ToPredicate<(TyCtxt<'tcx>, DefId)> for EntityFilter {
+        type Predicate =
+            <LogicFormula<EntityLocationFilter> as ToPredicate<(TyCtxt<'tcx>, DefId)>>::Predicate;
+        fn to_predicate(&self) -> Self::Predicate {
             match self {
-                LogicFormula::None {} => Box::new(|_, _| false),
-                LogicFormula::Atom(f) => f.to_predicate(),
-                LogicFormula::Not(NotFormula { of }) => {
-                    let pred = of.to_predicate();
-                    Box::new(move |tcx, def_id| !pred(tcx, def_id))
-                }
-                LogicFormula::Any(AnyFormula { of }) => {
-                    let preds = of.iter().map(|f| f.to_predicate()).collect::<Vec<_>>();
-                    Box::new(move |tcx, def_id| preds.iter().any(|p| p(tcx, def_id)))
-                }
-                LogicFormula::All(AllFormula { of }) => {
-                    let preds = of.iter().map(|f| f.to_predicate()).collect::<Vec<_>>();
-                    Box::new(move |tcx, def_id| preds.iter().all(|p| p(tcx, def_id)))
-                }
+                EntityFilter::WholeBody(formula) => formula.to_predicate(),
             }
         }
     }
 
-    impl ToPredicate for EntityLocationFilter {
-        fn to_predicate<'tcx>(&self) -> Predicate {
+    impl ToPredicate<(TyCtxt<'_>, DefId)> for EntityLocationFilter {
+        type Predicate = Box<dyn Fn(&(TyCtxt, DefId)) -> bool>;
+
+        fn to_predicate(&self) -> Self::Predicate {
             match self {
                 EntityLocationFilter::Crate(crate_filter) => match crate_filter.clone() {
                     CrateFilter::Externality(is_external) => {
-                        Box::new(move |_, def_id| def_id.is_local() != is_external)
+                        Box::new(move |(_, def_id)| def_id.is_local() != is_external)
                     }
                     CrateFilter::Name(name) => {
-                        Box::new(move |tcx, def_id| tcx.crate_name(def_id.krate).as_str() == name)
+                        Box::new(move |(tcx, def_id)| tcx.crate_name(def_id.krate).as_str() == name)
                     }
                 },
                 EntityLocationFilter::DefPathMatch(pattern) => {
-                    let regex = regex_lite::Regex::new(&pattern).expect("Invalid regex pattern");
-                    Box::new(move |tcx, def_id| {
+                    let pred = pattern.to_predicate();
+                    Box::new(move |(tcx, def_id)| {
                         let def_path = tcx.def_path_str(def_id);
-                        regex.is_match(&def_path)
+                        pred.accept(&def_path)
                     })
                 }
             }
