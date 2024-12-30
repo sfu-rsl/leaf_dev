@@ -66,7 +66,7 @@ fn main() {
 fn init_logging() {
     use env;
     use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
-    let env = env::var(constants::LOG_ENV).unwrap_or("warn".to_string());
+    let env = env::var(constants::ENV_LOG).unwrap_or("warn".to_string());
 
     let off_tags = [LOG_PASS_OBJECTS_TAG, LOG_PRI_DISCOVERY_TAG, LOG_BB_JUMP_TAG]
         .map(|t| format!("{}=off", t))
@@ -76,7 +76,7 @@ fn init_logging() {
     // Create a formatting layer with optional write style based on environment variable
     let fmt_layer = fmt::layer()
         .with_writer(std::io::stderr)
-        .with_ansi(env::var(constants::LOG_WRITE_STYLE_ENV).map_or(true, |val| val != "never"));
+        .with_ansi(env::var(constants::ENV_LOG_WRITE_STYLE).map_or(true, |val| val != "never"));
 
     // Create a subscriber
     tracing_subscriber::registry()
@@ -128,6 +128,17 @@ fn is_ineffective_crate(opts: &driver_args::CrateOptions) -> bool {
     false
 }
 
+fn is_noop_forced() -> bool {
+    let Ok(value) = env::var(ENV_FORCE_NOOP) else {
+        return false;
+    };
+
+    match value.to_lowercase().as_str() {
+        "1" | "true" | "on" | "yes" | "y" => true,
+        _ => false,
+    }
+}
+
 mod driver_callbacks {
     use common::{log_debug, log_info, log_warn};
 
@@ -143,8 +154,13 @@ mod driver_callbacks {
         crate_options: &driver_args::CrateOptions,
     ) -> Box<Callbacks> {
         let is_ineffective_crate = super::is_ineffective_crate(crate_options);
-        if (!config.codegen_all_mir || config.building_core) && is_ineffective_crate {
-            log_info!("Leafc will work as the normal Rust compiler.");
+        if is_noop_forced() {
+            log_info!("Leafc is forced to work as a normal Rust compiler.");
+            Box::new(NoOpPass.to_callbacks())
+        } else if (!config.codegen_all_mir || config.building_core) && is_ineffective_crate {
+            log_info!(
+                "Leafc will work as the normal Rust compiler as the crate is identified as ineffective."
+            );
             Box::new(NoOpPass.to_callbacks())
         } else {
             let mut passes = if config.codegen_all_mir && is_ineffective_crate {
@@ -502,8 +518,10 @@ pub mod constants {
 
     pub(super) const URL_BUG_REPORT: &str = "https://github.com/sfu-rsl/leaf/issues/new";
 
-    pub const LOG_ENV: &str = concatcp!(CONFIG_ENV_PREFIX, "_LOG");
-    pub const LOG_WRITE_STYLE_ENV: &str = concatcp!(CONFIG_ENV_PREFIX, "_LOG_STYLE");
+    pub const ENV_LOG: &str = concatcp!(CONFIG_ENV_PREFIX, "_LOG");
+    pub const ENV_LOG_WRITE_STYLE: &str = concatcp!(CONFIG_ENV_PREFIX, "_LOG_STYLE");
+
+    pub const ENV_FORCE_NOOP: &str = concatcp!(CONFIG_ENV_PREFIX, "_FORCE_NOOP");
 
     pub const LOG_PASS_OBJECTS_TAG: &str = super::passes::logger::TAG_OBJECTS;
     pub const LOG_PRI_DISCOVERY_TAG: &str = super::pri_utils::TAG_DISCOVERY;
