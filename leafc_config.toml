@@ -6,3 +6,6 @@ override_sysroot = true
 [runtime_shim.location.external]
 crate_name = "leaf"
 search_path = "sysroot"
+
+[internalization_rules]
+exclude = ["LLVMFuzzerInitialize"]
