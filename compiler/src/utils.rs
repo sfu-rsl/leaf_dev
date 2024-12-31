@@ -133,6 +133,13 @@ pub(crate) mod rules {
     use crate::config::rules::*;
 
     impl<T> InclusionRules<T> {
+        pub(crate) fn filter(self, f: impl Fn(&T) -> bool) -> Self {
+            InclusionRules {
+                include: self.include.into_iter().filter(&f).collect(),
+                exclude: self.exclude.into_iter().filter(&f).collect(),
+            }
+        }
+
         pub(crate) fn to_baked<I: ?Sized>(&self) -> InclusionPredicate<T::Predicate>
         where
             T: ToPredicate<I>,

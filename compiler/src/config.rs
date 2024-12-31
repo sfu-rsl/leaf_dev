@@ -101,10 +101,20 @@ fn default_runtime_shim_crate_name() -> String {
 pub(crate) type InstrumentationRules = InclusionRules<EntityFilter>;
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(untagged)]
+#[serde(tag = "entity")]
+#[serde(rename_all = "snake_case")]
 pub(crate) enum EntityFilter {
-    WholeBody(LogicFormula<EntityLocationFilter>),
+    #[serde(alias = "body")]
+    WholeBody(WholeBodyFilter),
+    #[serde(alias = "dyn_def")]
+    MethodDynDefinition(MethodDynDefinitionFilter),
 }
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct WholeBodyFilter(pub(crate) LogicFormula<EntityLocationFilter>);
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct MethodDynDefinitionFilter(pub(crate) LogicFormula<EntityLocationFilter>);
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "snake_case")]

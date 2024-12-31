@@ -7,18 +7,16 @@ use rustc_middle::{
 };
 use rustc_span::Symbol;
 
-use core::ops::Deref;
-
 use common::{log_debug, log_info, log_warn};
 
-use crate::{config::InstrumentationRules, utils::mir::TyCtxtExt};
+use crate::{config::InstrumentationRules, passes::Storage, utils::mir::TyCtxtExt};
 
 pub(super) const TAG_INSTR_DECISION: &str = concatcp!(super::TAG_INSTRUMENTATION, "::decision");
 
 const TOOL_NAME: &str = crate::constants::TOOL_LEAF;
 const ATTR_NAME: &str = "instrument";
-pub(super) const KEY_RULES: &str = "instr_rules";
-const KEY_BAKED_RULES: &str = "instr_rules_baked";
+
+pub(super) use rules::{get_baked_dyn_def_rules, KEY_RULES};
 
 pub(super) fn should_instrument<'tcx>(
     tcx: TyCtxt<'tcx>,
@@ -31,11 +29,8 @@ pub(super) fn should_instrument<'tcx>(
         return false;
     }
 
-    let rules = storage.get_or_insert_with_acc(KEY_BAKED_RULES.to_owned(), |storage| {
-        let rules = storage.get_or_default::<InstrumentationRules>(KEY_RULES.to_owned());
-        rules.to_baked()
-    });
-
+    rules::bake_rules(storage);
+    let rules = rules::get_baked_body_rules(storage);
     if let Some((decision, item)) =
         find_inheritable_first_filtered(tcx, def_id, move |tcx, def_id| {
             rules.accept(&(tcx, def_id))
@@ -846,22 +841,71 @@ mod intrinsics {
 }
 pub(super) use intrinsics::{decide_intrinsic_call, AtomicIntrinsicKind, IntrinsicDecision};
 
-use super::{Storage, StorageExt};
-
 mod rules {
-    use super::*;
+    use std::ops::DerefMut;
 
     use crate::{
-        config::{rules::LogicFormula, CrateFilter, EntityFilter, EntityLocationFilter},
+        config::{
+            rules::LogicFormula, CrateFilter, EntityFilter, EntityLocationFilter,
+            MethodDynDefinitionFilter, WholeBodyFilter,
+        },
+        passes::StorageExt,
         utils::rules::{Predicate, ToPredicate},
     };
+
+    use super::*;
+
+    pub(crate) const KEY_RULES: &str = "instr_rules";
+    pub(crate) const KEY_BAKED_BODY_RULES: &str = "instr_rules_baked_body";
+    pub(crate) const KEY_BAKED_DYN_DEF_RULES: &str = "instr_rules_baked_dyn_def";
+
+    type BakedEntityFilterRules<'tcx> = crate::utils::rules::InclusionPredicate<
+        <EntityFilter as ToPredicate<(TyCtxt<'tcx>, DefId)>>::Predicate,
+    >;
+
+    pub(crate) fn get_baked_body_rules<'tcx>(
+        storage: &mut dyn Storage,
+    ) -> impl DerefMut<Target = BakedEntityFilterRules<'tcx>> + '_ {
+        storage
+            .get_mut::<BakedEntityFilterRules<'tcx>>(&KEY_BAKED_BODY_RULES.to_owned())
+            .expect("Filter rules are expected to be baked at this point.")
+    }
+
+    pub(crate) fn get_baked_dyn_def_rules<'tcx>(
+        storage: &mut dyn Storage,
+    ) -> impl DerefMut<Target = BakedEntityFilterRules<'tcx>> + '_ {
+        storage
+            .get_mut::<BakedEntityFilterRules<'tcx>>(&KEY_BAKED_DYN_DEF_RULES.to_owned())
+            .expect("Filter rules are expected to be baked at this point.")
+    }
+
+    pub(super) fn bake_rules(storage: &mut dyn Storage) {
+        let _ = storage.get_or_insert_with_acc(KEY_BAKED_DYN_DEF_RULES.to_owned(), |storage| {
+            let rules = storage.get_or_default::<InstrumentationRules>(KEY_RULES.to_owned());
+            rules
+                .clone()
+                .filter(|r| matches!(r, EntityFilter::MethodDynDefinition(..)))
+                .to_baked()
+        });
+        let _ = storage.get_or_insert_with_acc(KEY_BAKED_BODY_RULES.to_owned(), |storage| {
+            let rules = storage.get_or_default::<InstrumentationRules>(KEY_RULES.to_owned());
+            let baked: BakedEntityFilterRules<'_> = rules
+                .clone()
+                .filter(|r| matches!(r, EntityFilter::WholeBody(..)))
+                .to_baked();
+            baked
+        });
+    }
 
     impl<'tcx> ToPredicate<(TyCtxt<'tcx>, DefId)> for EntityFilter {
         type Predicate =
             <LogicFormula<EntityLocationFilter> as ToPredicate<(TyCtxt<'tcx>, DefId)>>::Predicate;
         fn to_predicate(&self) -> Self::Predicate {
             match self {
-                EntityFilter::WholeBody(formula) => formula.to_predicate(),
+                EntityFilter::WholeBody(WholeBodyFilter(formula))
+                | EntityFilter::MethodDynDefinition(MethodDynDefinitionFilter(formula)) => {
+                    formula.to_predicate()
+                }
             }
         }
     }

@@ -613,6 +613,16 @@ mod implementation {
             }
         }
     }
+    impl<'tcx, C> StorageProvider for RuntimeCallAdder<C>
+    where
+        C: StorageProvider,
+    {
+        delegate! {
+            to self.context {
+                fn storage(&mut self) -> &mut dyn Storage;
+            }
+        }
+    }
 
     impl<'tcx, C> MirCallAdder<'tcx> for RuntimeCallAdder<C>
     where
@@ -3075,8 +3085,11 @@ mod implementation {
         }
 
         pub(super) mod func {
+            use common::log_info;
             use mir_ty::{AssocItem, ExistentialTraitRef, TraitRef};
             use rustc_trait_selection::traits::is_vtable_safe_method;
+
+            use crate::passes::instr::decision::get_baked_dyn_def_rules;
 
             use super::*;
 
@@ -3087,6 +3100,7 @@ mod implementation {
                          + BodyProvider<'tcx>
                          + MirCallAdder<'tcx>
                          + PriItemsProvider<'tcx>
+                         + StorageProvider
                      ),
                 fn_def_ty: Ty<'tcx>,
                 param_env: mir_ty::ParamEnv<'tcx>,
@@ -3103,14 +3117,25 @@ mod implementation {
                 if let Some((trait_ref, trait_item)) = as_dyn_compatible_method(tcx, def_id)
                     && trait_ref.self_ty().is_sized(tcx, param_env)
                 {
-                    def_of_dyn_compatible_method(
-                        tcx,
-                        call_adder,
-                        param_env,
-                        fn_value,
-                        trait_ref,
-                        trait_item.def_id,
-                    )
+                    let ruled_out = get_baked_dyn_def_rules(call_adder.storage())
+                        .accept(&(tcx, def_id))
+                        .map_or(false, |include| !include);
+                    if ruled_out {
+                        log_info!(
+                            "Dyn-compatible method will be defined as static: {:?}",
+                            def_id
+                        );
+                        def_of_static_func(tcx, call_adder, fn_value)
+                    } else {
+                        def_of_dyn_compatible_method(
+                            tcx,
+                            call_adder,
+                            param_env,
+                            fn_value,
+                            trait_ref,
+                            trait_item.def_id,
+                        )
+                    }
                 } else {
                     def_of_static_func(tcx, call_adder, fn_value)
                 }
