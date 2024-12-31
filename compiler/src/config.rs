@@ -1,4 +1,4 @@
-use derive_more::Deref;
+use derive_more::{derive::From, Deref};
 use serde::Deserialize;
 
 use crate::CONFIG_ENV_PREFIX;
@@ -110,7 +110,7 @@ pub(crate) enum EntityFilter {
     MethodDynDefinition(MethodDynDefinitionFilter),
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, From)]
 pub(crate) struct WholeBodyFilter(pub(crate) LogicFormula<EntityLocationFilter>);
 
 #[derive(Debug, Clone, Deserialize)]
@@ -206,7 +206,7 @@ pub(crate) mod rules {
      * all = [{ crate = { is_external = true } }, { crate = { name = "core" } }]
      * ``` */
 
-    #[derive(Debug, Clone, Deserialize, Deref)]
+    #[derive(Debug, Clone, Deserialize, Deref, From)]
     pub(crate) struct PatternMatch(String);
 
     #[derive(Debug, Clone, Deserialize)]
@@ -226,19 +226,19 @@ pub(crate) mod rules {
         }
     }
 
-    #[derive(Debug, Clone, Deserialize)]
+    #[derive(Debug, Clone, Deserialize, From)]
     pub(crate) struct NotFormula<T> {
         #[serde(rename = "not")]
         pub(crate) of: Box<LogicFormula<T>>,
     }
 
-    #[derive(Debug, Clone, Deserialize)]
+    #[derive(Debug, Clone, Deserialize, From)]
     pub(crate) struct AnyFormula<T> {
         #[serde(rename = "any")]
         pub(crate) of: Vec<LogicFormula<T>>,
     }
 
-    #[derive(Debug, Clone, Deserialize)]
+    #[derive(Debug, Clone, Deserialize, From)]
     pub(crate) struct AllFormula<T> {
         #[serde(rename = "all")]
         pub(crate) of: Vec<LogicFormula<T>>,

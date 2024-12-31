@@ -9,7 +9,7 @@ use rustc_span::Symbol;
 
 use common::{log_debug, log_info, log_warn};
 
-use crate::{config::InstrumentationRules, passes::Storage, utils::mir::TyCtxtExt};
+use crate::{config::WholeBodyFilter, passes::Storage, utils::mir::TyCtxtExt};
 
 pub(super) const TAG_INSTR_DECISION: &str = concatcp!(super::TAG_INSTRUMENTATION, "::decision");
 
@@ -29,7 +29,7 @@ pub(super) fn should_instrument<'tcx>(
         return false;
     }
 
-    rules::bake_rules(storage);
+    rules::bake_rules(storage, get_exceptional_exclusions);
     let rules = rules::get_baked_body_rules(storage);
     if let Some((decision, item)) =
         find_inheritable_first_filtered(tcx, def_id, move |tcx, def_id| {
@@ -60,20 +60,6 @@ pub(super) fn should_instrument<'tcx>(
         return false;
     }
 
-    // Some functions and modules found problematic to instrument.
-    // FIXME: To be replaced with a better-specified list.
-    let def_path = &tcx.def_path_debug_str(def_id);
-    if def_path.contains("panicking")
-        || (def_path.contains("core_arch")
-            || (def_path.starts_with("core") && def_path.contains("arch::")))
-        || (def_path.starts_with("std")
-            && (def_path.contains("thread")
-                || def_path.contains("sync")
-                || def_path.contains("arch::")))
-    {
-        return false;
-    }
-
     true
 }
 
@@ -91,6 +77,43 @@ fn decide_instance_kind(kind: &InstanceKind) -> bool {
         | FnPtrAddrShim(..)
         | AsyncDropGlueCtorShim(..) => false,
     }
+}
+
+/// Returns a set of filters to exclude some functions (mostly in the standard library)
+/// that are currently problematic to instrument.
+fn get_exceptional_exclusions() -> Vec<WholeBodyFilter> {
+    use crate::config::{
+        rules::{AllFormula, AnyFormula, LogicFormula::*, PatternMatch},
+        EntityLocationFilter,
+    };
+
+    fn def_path_pattern(pattern: &str) -> EntityLocationFilter {
+        EntityLocationFilter::DefPathMatch(PatternMatch::from(pattern.to_owned()))
+    }
+
+    fn crate_name(name: &str) -> EntityLocationFilter {
+        EntityLocationFilter::Crate(crate::config::CrateFilter::Name(name.to_owned()))
+    }
+
+    vec![
+        Atom(def_path_pattern(".*panicking.*")),
+        Any(AnyFormula::from(vec![
+            Atom(def_path_pattern(".*core_arch.*")),
+            All(vec![Atom(crate_name("core")), Atom(def_path_pattern(".*arch.*"))].into()),
+        ])),
+        All(AllFormula::from(vec![
+            Atom(crate_name("std")),
+            Any(vec![
+                Atom(def_path_pattern(".*thread.*")),
+                Atom(def_path_pattern(".*sync.*")),
+                Atom(def_path_pattern(".*arch.*")),
+            ]
+            .into()),
+        ])),
+    ]
+    .into_iter()
+    .map(Into::into)
+    .collect()
 }
 
 fn find_inheritable_first_filtered<'tcx>(
@@ -847,7 +870,7 @@ mod rules {
     use crate::{
         config::{
             rules::LogicFormula, CrateFilter, EntityFilter, EntityLocationFilter,
-            MethodDynDefinitionFilter, WholeBodyFilter,
+            InstrumentationRules, MethodDynDefinitionFilter, WholeBodyFilter,
         },
         passes::StorageExt,
         utils::rules::{Predicate, ToPredicate},
@@ -879,22 +902,36 @@ mod rules {
             .expect("Filter rules are expected to be baked at this point.")
     }
 
-    pub(super) fn bake_rules(storage: &mut dyn Storage) {
-        let _ = storage.get_or_insert_with_acc(KEY_BAKED_DYN_DEF_RULES.to_owned(), |storage| {
-            let rules = storage.get_or_default::<InstrumentationRules>(KEY_RULES.to_owned());
-            rules
-                .clone()
-                .filter(|r| matches!(r, EntityFilter::MethodDynDefinition(..)))
-                .to_baked()
-        });
-        let _ = storage.get_or_insert_with_acc(KEY_BAKED_BODY_RULES.to_owned(), |storage| {
-            let rules = storage.get_or_default::<InstrumentationRules>(KEY_RULES.to_owned());
-            let baked: BakedEntityFilterRules<'_> = rules
-                .clone()
-                .filter(|r| matches!(r, EntityFilter::WholeBody(..)))
-                .to_baked();
-            baked
-        });
+    pub(super) fn bake_rules(
+        storage: &mut dyn Storage,
+        additional_exclusions: impl FnOnce() -> Vec<WholeBodyFilter>,
+    ) {
+        // We use explicit types to ensure not using the wrong type by mistake.
+        let _ = storage.get_or_insert_with_acc(
+            KEY_BAKED_DYN_DEF_RULES.to_owned(),
+            |storage| -> BakedEntityFilterRules<'_> {
+                let rules = storage.get_or_default::<InstrumentationRules>(KEY_RULES.to_owned());
+                rules
+                    .clone()
+                    .filter(|r| matches!(r, EntityFilter::MethodDynDefinition(..)))
+                    .to_baked()
+            },
+        );
+        let _ = storage.get_or_insert_with_acc(
+            KEY_BAKED_BODY_RULES.to_owned(),
+            |storage| -> BakedEntityFilterRules<'_> {
+                let rules = storage.get_or_default::<InstrumentationRules>(KEY_RULES.to_owned());
+                let mut rules = rules
+                    .clone()
+                    .filter(|r| matches!(r, EntityFilter::WholeBody(..)));
+                rules.exclude.extend(
+                    additional_exclusions()
+                        .into_iter()
+                        .map(EntityFilter::WholeBody),
+                );
+                rules.to_baked()
+            },
+        );
     }
 
     impl<'tcx> ToPredicate<(TyCtxt<'tcx>, DefId)> for EntityFilter {
