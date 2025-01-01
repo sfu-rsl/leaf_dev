@@ -9,7 +9,7 @@ write = "stamping"
 
 [[outputs]]
 type = "file"
-directory = "output"
+directory = "leaf_out"
 format = "binary"
 
 [[exe_trace.inspectors]]

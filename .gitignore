@@ -53,3 +53,5 @@ scripts/**/venv
 
 .z3-trace
 *.smt2
+
+**/leaf_out/**
