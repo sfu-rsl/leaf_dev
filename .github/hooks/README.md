@@ -1,0 +1,1 @@
+These are actually git hooks that are pushed under this folder. Copy them to `.git/hooks`
