@@ -11,7 +11,7 @@ use self::utils::*;
 const SHIM_LIB_PROJECT_DIR: [&str; 2] = ["runtime", "shim"];
 const SHIM_LIB_FILE_NAME: &str = "libleafrtsh.rlib";
 
-const PATH_TOOLCHAIN_BUILDER: [&str; 2] = ["scripts", "core_builder"];
+const PATH_TOOLCHAIN_BUILDER: [&str; 2] = ["scripts", "toolchain_builder"];
 const FILE_TOOLCHAIN_BUILDER: &str = "toolchain_builder";
 
 const ENV_DEPS_DIR: &str = "DEPS_DIR";
