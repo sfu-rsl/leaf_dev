@@ -130,14 +130,21 @@ fn provide_toolchain_builder(workspace_dir: &Path) {
     let script_path = workspace_dir.join(PathBuf::from_iter(PATH_TOOLCHAIN_BUILDER));
     println!("cargo:rerun-if-changed={}", script_path.display());
     let link_path = deps_path().join(FILE_TOOLCHAIN_BUILDER);
-    if fs::read_link(&link_path).is_ok_and(|p| p == script_path) {
-        return;
-    }
 
-    let _ = fs::remove_file(&link_path);
-    #[cfg(unix)]
-    std::os::unix::fs::symlink(script_path, link_path)
-        .expect("Could not create symlink to the toolchain builder script.");
+    retry(5, core::time::Duration::from_secs(1), || {
+        if let Ok(target) = fs::read_link(&link_path) {
+            if target == script_path {
+                return Ok(());
+            } else {
+                let _ = fs::remove_file(&link_path);
+            }
+        } else if fs::exists(&link_path).is_ok_and(|e| e) {
+            let _ = fs::remove_file(&link_path);
+        }
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&script_path, &link_path)
+    })
+    .expect("Could not create symlink to the toolchain builder script.");
 }
 
 fn add_dylib_search_path_headers() {
@@ -195,5 +202,23 @@ mod utils {
             .unwrap();
         output.status.exit_ok().unwrap();
         PathBuf::from(String::from_utf8(output.stdout).unwrap().trim())
+    }
+
+    // FIXME: Duplicate code
+    pub(super) fn retry<T, E>(
+        times: usize,
+        sleep_dur: std::time::Duration,
+        mut f: impl FnMut() -> Result<T, E>,
+    ) -> Result<T, E> {
+        let mut result = f();
+        for _ in 0..times {
+            if result.is_ok() {
+                break;
+            } else {
+                std::thread::sleep(sleep_dur);
+            }
+            result = f();
+        }
+        result
     }
 }
