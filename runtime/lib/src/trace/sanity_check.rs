@@ -34,8 +34,8 @@ where
     S::Value: core::fmt::Debug,
     for<'a> &'a mut AI: IntoIterator<Item = &'a Constraint<S::Value>>,
 {
+    #[tracing::instrument(level = "debug", skip_all)]
     fn inspect(&mut self, _steps: &[TS], constraints: &[Constraint<S::Value>]) {
-        log_debug!("Checking constraints sanity");
         let constrained = self.assumptions.into_iter().chain(constraints.into_iter());
         if !matches!(self.solver.check(constrained), SolveResult::Sat(_)) {
             if PANIC {
