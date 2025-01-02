@@ -10,9 +10,10 @@
     - [Hybrid Fuzzing](./user_guide/hybrid_fuzzing.md)
 - [Configurations](./user_guide/configs.md)
 
-# Technical Documentation
-- [Overview](./technical/overview.md)
-- [Compiler]()
-- [Runtime]()
-- [Orchestrators]()
-- [Integrations]()
+# Technical Reference
+- [Workflow Overview]()
+- [Components]()
+    - [Compiler]()
+    - [Runtime]()
+    - [Orchestrators]()
+    - [Integrations]()
