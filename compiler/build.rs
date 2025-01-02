@@ -130,9 +130,11 @@ fn provide_toolchain_builder(workspace_dir: &Path) {
     let script_path = workspace_dir.join(PathBuf::from_iter(PATH_TOOLCHAIN_BUILDER));
     println!("cargo:rerun-if-changed={}", script_path.display());
     let link_path = deps_path().join(FILE_TOOLCHAIN_BUILDER);
-    if link_path.exists() {
+    if fs::read_link(&link_path).is_ok_and(|p| p == script_path) {
         return;
     }
+
+    let _ = fs::remove_file(&link_path);
     #[cfg(unix)]
     std::os::unix::fs::symlink(script_path, link_path)
         .expect("Could not create symlink to the toolchain builder script.");
