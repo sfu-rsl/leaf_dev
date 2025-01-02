@@ -1,6 +1,13 @@
 {
     "rust-analyzer.debug.engine": "vadimcn.vscode-lldb",
     "rust-analyzer.rustc.source": "discover",
+    "rust-analyzer.procMacro.enable": true,
     "editor.formatOnSave": true,
     "githubIssues.issueBranchTitle": "${issueNumber}-${sanitizedIssueTitle}",
+    "rust-analyzer.linkedProjects": [
+        "Cargo.toml",
+        "runtime/shim/Cargo.toml",
+        "integration/libafl/examples/Cargo.toml",
+        // "samples/crates/xyz/Cargo.toml",
+    ],
 }

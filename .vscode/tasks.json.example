@@ -108,16 +108,22 @@
                 "cwd": "${fileDirname}",
                 "env": {
                     // Your desired logging settings.
-                    "LEAFC_LOG": "info,instrumentation=info,instrumentation::counter=info,pri_discovery=off,type_export=off,pass_objects=off",
+                    "LEAFC_LOG": "info,instrumentation=info,pri_discovery=off,type_export=off,pass_objects=off",
                 },
             },
             "args": [
+                "--bin",
+                "leafc",
                 "--",
                 "${file}",
+                "--edition=2021",
                 "-o",
-                "${fileBasenameNoExtension}.o",
+                "${fileBasenameNoExtension}-leaf",
+                "-C",
+                "overflow-checks=off",
                 "-g", // Debug info
-                // "-O" // Release mode
+                "-C",
+                "opt-level=1",
             ],
         },
         {
@@ -131,17 +137,24 @@
             "options": {
                 "cwd": "${fileDirname}",
                 "env": {
-                    "LEAFC_LOG": "trace"
+                    // Your desired logging settings.
+                    "LEAFC_LOG": "info,instrumentation=info,pri_discovery=off,type_export=off,pass_objects=off",
                 },
             },
             "args": [
+                "--bin",
+                "leafc",
                 "--",
                 "${file}",
+                "--edition=2021",
                 "--emit=mir",
                 "-o",
                 "${fileBasenameNoExtension}-leaf.mir",
+                "-C",
+                "overflow-checks=off",
                 "-g", // Debug info
-                "-O" // Release mode
+                "-C",
+                "opt-level=1",
             ],
         },
         {
@@ -171,12 +184,19 @@
                 },
             },
             "args": [
+                "--bin",
+                "leafc",
                 "--",
                 "${file}",
+                "--edition=2021",
                 "--emit=llvm-ir",
                 "-o",
-                "${fileBasenameNoExtension}-leaf.ll",
-                // "-O" // Release mode
+                "${fileBasenameNoExtension}-leaf.mir",
+                "-C",
+                "overflow-checks=off",
+                "-g", // Debug info
+                "-C",
+                "opt-level=1",
             ],
         },
         {
@@ -194,7 +214,7 @@
         {
             "label": "leaf: run",
             "type": "process",
-            "command": "${fileBasenameNoExtension}.o",
+            "command": "${fileBasenameNoExtension}-leaf",
             "dependsOn": [
                 "leaf: compile"
             ],
@@ -205,7 +225,7 @@
             "options": {
                 "cwd": "${fileDirname}",
                 "env": {
-                    "RUST_BACKTRACE": "1",
+                    "RUST_BACKTRACE": "full",
                     // Your desired logging settings.
                     "LEAF_LOG": "info",
                 }

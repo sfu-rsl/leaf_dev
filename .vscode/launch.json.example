@@ -22,7 +22,7 @@
                 "LD_LIBRARY_PATH": "${env:RUSTUP_HOME}/toolchains/<TOOLCHAIN_VERSION in rust-toolchain.toml>/lib",
                 // Your desired logging settings.
                 "RUST_LOG": "debug",
-                "LEAF_LOG": "runtime::backends::basic=debug",
+                "LEAFC_LOG": "info,instrumentation=info,pri_discovery=off,type_export=off,pass_objects=off",
             }
         },
         {
@@ -36,11 +36,10 @@
             ],
             "args": [],
             "env": {
-                "LD_LIBRARY_PATH": "${env:RUSTUP_HOME}/toolchains/<TOOLCHAIN_VERSION in rust-toolchain.toml>/lib",
+                "LD_LIBRARY_PATH": "<TOOLCHAIN_PATH_BUILT_BY_LEAFC>/lib",
                 "RUST_BACKTRACE": "1",
                 // Your desired logging settings.
-                "RUST_LOG": "debug",
-                "LEAF_LOG": "runtime::backends::basic=debug",
+                "LEAF_LOG": "info",
             }
         },
         {
@@ -49,7 +48,7 @@
             "name": "Launch Current File",
             "cwd": "${fileDirname}",
             "preLaunchTask": "leaf: compile",
-            "program": "${fileDirname}/${fileBasenameNoExtension}.o",
+            "program": "${fileDirname}/${fileBasenameNoExtension}-leaf",
             "sourceLanguages": [
                 "rust"
             ],
@@ -61,8 +60,7 @@
                 "LD_LIBRARY_PATH": "${env:RUSTUP_HOME}/toolchains/<TOOLCHAIN_VERSION in rust-toolchain.toml>/lib",
                 "RUST_BACKTRACE": "1",
                 // Your desired logging settings.
-                "RUST_LOG": "debug",
-                "LEAF_LOG": "runtime::backends::basic=debug",
+                "LEAF_LOG": "info",
             }
         },
     ]
