@@ -1,5 +1,5 @@
 ### Profiling
-The project includes a script to automatically setup profiling for you
+The project includes a script to automatically setup profiling for you.
 
 1. **Profiling Setup**
 
@@ -36,6 +36,8 @@ profile_flame
 profile_tracy 
 profile_full 
 ```
+
+Note: Extracting the flame graph using this approach has performance issues and does not scale well.
 
 > even though it's the script's job to build the runtime when it executes the sample program, it might fail sometimes so make sure runtime library is built with one of these flags. 
 

@@ -52,5 +52,5 @@ For further information please refer to documentations.
 
 ## Documentation
 
-(TBD)
-
+Further information, tutorials, and technical details are collected in Leaf Book hosted at:
+[sfu-rsl.github.io/leaf](https://sfu-rsl.github.io/leaf).
