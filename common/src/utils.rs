@@ -288,3 +288,38 @@ pub fn current_instant_millis() -> u128 {
         .unwrap()
         .as_millis()
 }
+
+#[cfg(all(feature = "std", feature = "serde"))]
+pub mod serde {
+
+    #[derive(Default)]
+    pub struct JsonLinesFormatter {
+        depth: usize,
+    }
+
+    use serde_json::ser::{CompactFormatter, Formatter as JsonFormatter};
+
+    impl JsonFormatter for JsonLinesFormatter {
+        fn begin_object<W>(&mut self, writer: &mut W) -> std::io::Result<()>
+        where
+            W: ?Sized + std::io::Write,
+        {
+            self.depth += 1;
+            CompactFormatter.begin_object(writer)
+        }
+
+        fn end_object<W>(&mut self, writer: &mut W) -> std::io::Result<()>
+        where
+            W: ?Sized + std::io::Write,
+        {
+            self.depth -= 1;
+            CompactFormatter.end_object(writer).and_then(|_| {
+                if self.depth == 0 {
+                    writer.write(&[b'\n']).map(|_| ())
+                } else {
+                    Ok(())
+                }
+            })
+        }
+    }
+}

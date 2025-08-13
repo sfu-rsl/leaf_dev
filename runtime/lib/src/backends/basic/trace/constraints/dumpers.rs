@@ -73,7 +73,7 @@ where
                         });
                     serde_json::Serializer::with_formatter(
                         file,
-                        crate::utils::file::JsonLinesFormatter::default(),
+                        common::utils::serde::JsonLinesFormatter::default(),
                     )
                 }
                 FileFormat::Text => {

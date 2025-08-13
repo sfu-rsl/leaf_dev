@@ -2,7 +2,7 @@ use std::fs::File;
 
 use serde::{Serialize, Serializer, ser::SerializeStruct};
 
-use crate::utils::file::JsonLinesFormatter;
+use common::utils::serde::JsonLinesFormatter;
 
 use super::{Constraint, StepInspector};
 
