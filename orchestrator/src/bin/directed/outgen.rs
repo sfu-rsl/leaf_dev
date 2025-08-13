@@ -58,6 +58,10 @@ impl NextInputGenerator {
             return None;
         };
 
+        let result = result
+            .map(|write_result| write_result.map_err(|e| BinaryFileAnswerError::Io(e)))
+            .flatten();
+
         match result {
             Ok(path) => {
                 self.total_count += 1;

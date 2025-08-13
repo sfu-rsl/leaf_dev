@@ -8,6 +8,7 @@
 #![feature(hash_extract_if)]
 #![feature(iterator_try_reduce)]
 #![feature(iter_map_windows)]
+#![feature(result_flattening)]
 
 mod outgen;
 mod reachability;
@@ -192,11 +193,7 @@ fn get_reachability(
     }
 
     log_info!("Calculating reachabilities");
-    let result = tokio::runtime::Builder::new_current_thread()
-        .enable_io()
-        .build()
-        .unwrap()
-        .block_on(calc_program_reachability(p_map));
+    let result = run_blocking(calc_program_reachability(p_map));
 
     let _ = cache(cache_path, &result)
         .inspect_err(|e| log_debug!("Could not cache reachability info: {e}"));
@@ -255,7 +252,7 @@ fn execute_and_load_trace(
     const NAME_SYM_TRACE: &str = "sym_trace";
     const NAME_PRECONDITIONS: &str = "preconditions";
 
-    let exe_result = execute_once_for_trace(
+    let exe_result = run_blocking(execute_once_for_trace(
         ExecutionParams::new(
             &args.program,
             args.env.iter().cloned(),
@@ -268,7 +265,7 @@ fn execute_and_load_trace(
         NAME_FULL_TRACE,
         NAME_SYM_TRACE,
         NAME_PRECONDITIONS,
-    )
+    ))
     .expect("Failed to execute the program");
 
     exe_result.status.exit_ok().map_err(|s| {
