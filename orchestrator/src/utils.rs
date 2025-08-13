@@ -4,7 +4,7 @@ use std::{
     fs::OpenOptions,
     io,
     path::Path,
-    process::{self, Command, Stdio},
+    process::{self, Stdio},
     time::{Duration, Instant},
 };
 
@@ -12,6 +12,17 @@ use common::{conc_loop::GeneratedInputRecord, log_debug};
 use derive_more::{Deref, From};
 
 use crate::args::OutputFormat;
+
+pub fn run_blocking<Fut>(f: Fut) -> Fut::Output
+where
+    Fut: futures::Future,
+{
+    tokio::runtime::Builder::new_current_thread()
+        .enable_io()
+        .build()
+        .unwrap()
+        .block_on(f)
+}
 
 #[derive(Debug, Deref, From)]
 pub struct ExecutionOutput {
@@ -55,7 +66,7 @@ pub fn execute_once_for_div_inputs(
     diverging_inputs_dir: &Path,
     diverging_input_prefix: &str,
 ) -> Result<ExecutionOutput, io::Error> {
-    execute_once(
+    blocking_execute_once(
         params,
         format!(
             r#"
@@ -76,8 +87,8 @@ pub fn execute_once_for_div_inputs(
 }
 
 #[tracing::instrument(level = "debug", skip(params))]
-pub fn execute_once_for_trace(
-    params: ExecutionParams,
+pub async fn execute_once_for_trace<'a>(
+    params: ExecutionParams<'a>,
     traces_dir: &Path,
     full_trace_filename: &str,
     sym_trace_filename: &str,
@@ -85,8 +96,24 @@ pub fn execute_once_for_trace(
 ) -> Result<ExecutionOutput, io::Error> {
     execute_once(
         params,
-        format!(
-            r#"
+        config_for_execute_for_trace(
+            traces_dir,
+            full_trace_filename,
+            sym_trace_filename,
+            preconditions_filename,
+        ),
+    )
+    .await
+}
+
+pub fn config_for_execute_for_trace(
+    traces_dir: &Path,
+    full_trace_filename: &str,
+    sym_trace_filename: &str,
+    preconditions_filename: &str,
+) -> String {
+    format!(
+        r#"
             [exe_trace.control_flow_dump]
             type = "file"
             directory = "{dir}"
@@ -109,12 +136,18 @@ pub fn execute_once_for_trace(
             dump_interval = 5
             inspectors = []
             "#,
-            dir = traces_dir.display(),
-        ),
+        dir = traces_dir.display(),
     )
 }
 
-fn execute_once(
+fn blocking_execute_once(
+    params: ExecutionParams,
+    config_toml: String,
+) -> Result<ExecutionOutput, io::Error> {
+    run_blocking(execute_once(params, config_toml))
+}
+
+pub async fn execute_once<'a>(
     ExecutionParams {
         program,
         env,
@@ -122,23 +155,24 @@ fn execute_once(
         stdout,
         stderr,
         args,
-    }: ExecutionParams,
-    config_toml: String,
+    }: ExecutionParams<'a>,
+    config_toml: impl AsRef<str>,
 ) -> Result<ExecutionOutput, io::Error> {
     const ENV_PREFIX: &str = "LEAF_";
     use common::config::{CONFIG_STR, CONFIG_STR_FORMAT};
-    let (result, elapsed) = measure_time(|| {
-        let mut cmd = Command::new(program);
+    let (result, elapsed) = measure_time_async(async || {
+        let mut cmd = tokio::process::Command::new(program);
         cmd.envs(env)
-            .env(format!("{ENV_PREFIX}{CONFIG_STR}"), config_toml)
+            .env(format!("{ENV_PREFIX}{CONFIG_STR}"), config_toml.as_ref())
             .env(format!("{ENV_PREFIX}{CONFIG_STR_FORMAT}"), "toml")
             .stdin(stdin)
             .stdout(stdout)
             .stderr(stderr)
             .args(args);
         log_debug!("Command for execution: {:?}", cmd);
-        cmd.output()
-    });
+        cmd.output().await
+    })
+    .await;
     Ok(ExecutionOutput {
         output: result?,
         elapsed_time: elapsed,
@@ -151,14 +185,18 @@ pub fn measure_time<T>(f: impl FnOnce() -> T) -> (T, Duration) {
     (result, now.elapsed())
 }
 
+pub async fn measure_time_async<T, Fut: futures::Future<Output = T>>(
+    f: impl FnOnce() -> Fut,
+) -> (T, Duration) {
+    let now = Instant::now();
+    let result = f().await;
+    (result, now.elapsed())
+}
+
 const PATH_INHERIT: &str = "-";
 
 pub fn output_silence_as_path(silent: bool) -> Option<impl AsRef<Path>> {
-    if silent {
-        None
-    } else {
-        Some(PATH_INHERIT.to_owned())
-    }
+    if silent { None } else { Some(PATH_INHERIT) }
 }
 
 pub fn is_inherit(path: impl AsRef<Path>) -> bool {

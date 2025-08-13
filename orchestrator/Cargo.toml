@@ -16,6 +16,11 @@ name = "leafo_directed"
 path = "src/bin/directed/main.rs"
 edition = "2024"
 
+[[bin]]
+name = "leafo_corpus_based"
+path = "src/bin/corpus-based/main.rs"
+edition = "2024"
+
 [build-dependencies]
 common = { workspace = true, features = ["building"] }
 
@@ -46,7 +51,18 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 bincode = { version = "2.0", features = ["serde"] }
 z3 = { workspace = true }
-tokio = { version = "1", features = ["io-std", "io-util", "process", "rt"] }
+tokio = { version = "1", features = [
+    "fs",
+    "io-std",
+    "io-util",
+    "process",
+    "rt",
+    "rt-multi-thread",
+    "macros",
+    "sync",
+    "signal",
+] }
+tokio-stream = { version = "0.1.17", features = ["fs"] }
 futures = "0.3.31"
 rkyv = { workspace = true }
 disjoint = "0.8.0"
