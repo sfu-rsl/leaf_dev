@@ -8,6 +8,7 @@ use common::{
     directed::RawCaseValue,
     log_debug, log_warn,
     types::{InstanceKindId, trace::BranchRecord},
+    utils::serde::JsonLinesFormatter,
 };
 
 use crate::{
@@ -15,7 +16,7 @@ use crate::{
         BasicBlockLocation, ConstraintKind, FuncDef,
         backend::{CallTraceRecorder, DecisionTraceRecorder, PhasedCallTraceRecorder},
     },
-    utils::{HasIndex, Indexed, RefView, alias::RRef, file::JsonLinesFormatter},
+    utils::{HasIndex, Indexed, RefView, alias::RRef},
 };
 
 use super::backend;

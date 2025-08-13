@@ -123,34 +123,3 @@ impl FileFormat {
         }
     }
 }
-
-#[derive(Default)]
-pub(crate) struct JsonLinesFormatter {
-    depth: usize,
-}
-
-use serde_json::ser::{CompactFormatter, Formatter as JsonFormatter};
-
-impl JsonFormatter for JsonLinesFormatter {
-    fn begin_object<W>(&mut self, writer: &mut W) -> io::Result<()>
-    where
-        W: ?Sized + io::Write,
-    {
-        self.depth += 1;
-        CompactFormatter.begin_object(writer)
-    }
-
-    fn end_object<W>(&mut self, writer: &mut W) -> io::Result<()>
-    where
-        W: ?Sized + io::Write,
-    {
-        self.depth -= 1;
-        CompactFormatter.end_object(writer).and_then(|_| {
-            if self.depth == 0 {
-                writer.write(&[b'\n']).map(|_| ())
-            } else {
-                Ok(())
-            }
-        })
-    }
-}
