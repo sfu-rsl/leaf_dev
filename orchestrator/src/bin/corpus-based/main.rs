@@ -1,0 +1,137 @@
+#![feature(exit_status_error)]
+#![feature(impl_trait_in_assoc_type)]
+#![feature(result_flattening)]
+
+use std::path::PathBuf;
+
+use clap::Parser;
+use common::log_info;
+use derive_more::derive::Deref;
+
+use orchestrator::args::CommonArgs;
+
+mod exe;
+mod inputs;
+mod output;
+mod potentials;
+mod solve;
+mod utils;
+
+use self::{
+    exe::Input,
+    output::{HasBaseBytes, HasByteAnswers},
+    potentials::{SwitchStep, SwitchTrace, Trace},
+    solve::{HasByteInput, IntoQuery, SolveQuery},
+};
+
+#[derive(Parser, Debug, Deref)]
+struct Args {
+    #[command(flatten)]
+    #[deref]
+    common: CommonArgs,
+    /// Path to the directory containing the inputs.
+    #[arg(long, short = 'i')]
+    input_corpus_dir: PathBuf,
+
+    #[arg(long, action)]
+    offline: bool,
+
+    #[arg(long)]
+    workdir: Option<PathBuf>,
+}
+
+#[tokio::main]
+async fn main() {
+    orchestrator::logging::init_logging();
+
+    let args = process_args();
+
+    let (input_process_handle, inputs) =
+        inputs::prioritized_inputs(args.input_corpus_dir.clone(), args.offline)
+            .await
+            .expect("Failed to process inputs from corpus directory");
+
+    let traces = exe::traces(
+        exe::ExecutionConfig::new(
+            &args.program,
+            args.env.iter().cloned(),
+            args.args.iter().cloned(),
+            args.silent,
+            args.workdir.as_ref().unwrap(),
+        ),
+        inputs,
+    );
+
+    let (potential_process_handle, potentials) = potentials::prioritized_potential(traces);
+
+    let outputs = solve::realize_potentials(potentials);
+    let output_dump_handle = output::dump_outputs(&args.outdir, outputs);
+
+    if !args.offline {
+        log_info!("The orchestrator is watching for new inputs in the corpus directory...");
+    }
+
+    await_all_handles(
+        [
+            input_process_handle,
+            potential_process_handle,
+            output_dump_handle,
+        ],
+        args.offline,
+    )
+    .await;
+}
+
+fn process_args() -> Args {
+    let mut args = Args::parse();
+    args.workdir
+        .get_or_insert(std::env::temp_dir().join("leaf").join("corpus-based"));
+    args
+}
+
+async fn await_all_handles(
+    handles: impl IntoIterator<Item = tokio::task::JoinHandle<()>>,
+    offline: bool,
+) {
+    // FIXME: The following does not handle failures in tasks properly (user signal should be cancelled in that case).
+
+    let mut abort_handles = Vec::new();
+
+    let join_all = futures::future::try_join_all(
+        handles
+            .into_iter()
+            .inspect(|h| abort_handles.push(h.abort_handle())),
+    );
+
+    let user_signal = async {
+        if !offline {
+            log_info!("Press Ctrl+C to stop the orchestrator");
+            tokio::signal::ctrl_c()
+                .await
+                .expect("Failed to listen for Ctrl+C signal");
+
+            abort_handles.into_iter().for_each(|handle| {
+                handle.abort();
+            });
+        }
+    };
+
+    let (_, task_results) = futures::future::join(user_signal, join_all).await;
+
+    if task_results.is_ok() {
+        if !offline {
+            panic!("Normal completion of background tasks is unexpected in online mode");
+        } else {
+            log_info!("Orchestrator finished successfully");
+            return;
+        }
+    }
+
+    let finish_reason = task_results.unwrap_err();
+
+    if let Ok(err) = finish_reason.try_into_panic() {
+        std::panic::resume_unwind(err);
+    }
+
+    log_info!("Orchestrator stopped successfully");
+}

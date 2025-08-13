@@ -246,7 +246,7 @@ mod binary {
         }
     }
 
-    impl<W> BinaryFileMultiAnswersWriter<W> {
+    impl BinaryFileMultiAnswersWriter {
         pub fn new_with_write_async<F, Fut>(
             dir_path: PathBuf,
             prefix: Option<String>,
