@@ -4,7 +4,7 @@ use common::{
     answers::{
         AnswersWriter, BinaryFileAnswerError, BinaryFileMultiAnswersWriter, SwitchableAnswersWriter,
     },
-    log_warn,
+    log_debug, log_warn,
 };
 
 use crate::{
@@ -83,11 +83,16 @@ impl BasicAnswersWriter for BinaryFileAnswersWriter {
                 TryInto::<u8>::try_into(AsRef::<Value>::as_ref(&v)).ok(),
             )
         })) else {
+            // Disabled
             return;
         };
 
-        if let Err(err) = result {
-            match err {
+        let result = result
+            .map(|write_result| write_result.map_err(|e| BinaryFileAnswerError::Io(e)))
+            .flatten();
+
+        match result {
+            Err(err) => match err {
                 BinaryFileAnswerError::Incomplete => {
                     log_warn!("Unexpected answers format. Not all symbolic values are present.");
                 }
@@ -102,6 +107,9 @@ impl BasicAnswersWriter for BinaryFileAnswersWriter {
                 BinaryFileAnswerError::Io(error) => {
                     panic!("Could not write output: {error}")
                 }
+            },
+            Ok(path) => {
+                log_debug!("Generated an output: {}", path.display());
             }
         }
     }
