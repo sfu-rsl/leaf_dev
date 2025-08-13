@@ -1,4 +1,4 @@
-use core::{error::Error, fmt::Display};
+use core::{error::Error, fmt::Display, future::Future};
 use std::prelude::rust_2021::*;
 
 use super::{log_debug, log_info, log_warn};
@@ -14,6 +14,19 @@ pub trait AnswersWriter {
         &mut self,
         answers: impl ExactSizeIterator<Item = (Self::Id, Self::Answer)>,
     ) -> Result<Self::Output, Self::Error>;
+}
+
+/// Outputs answers found for the symbolic values.
+pub trait AsyncAnswersWriter {
+    type Id;
+    type Answer;
+    type Output;
+    type Error;
+
+    fn write(
+        &mut self,
+        answers: impl ExactSizeIterator<Item = (Self::Id, Self::Answer)>,
+    ) -> impl Future<Output = Result<Self::Output, Self::Error>>;
 }
 
 /// Provides a switch for an existing [AnswersWriter].
@@ -54,7 +67,7 @@ impl<W: AnswersWriter> AnswersWriter for SwitchableAnswersWriter<W> {
 }
 
 mod binary {
-    use core::ops::Range;
+    use core::ops::Deref;
     use std::{
         format,
         io::{self, Write},
@@ -94,13 +107,53 @@ mod binary {
         }
     }
 
+    pub trait BinaryFileAnswersWriteFn {
+        type Output;
+
+        fn call(&mut self, path: PathBuf, buffer: &[u8]) -> Self::Output;
+    }
+
+    pub struct DefaultBinaryFileAnswersWriteFn;
+
+    impl BinaryFileAnswersWriteFn for DefaultBinaryFileAnswersWriteFn {
+        type Output = Result<PathBuf, io::Error>;
+
+        fn call(&mut self, path: PathBuf, buffer: &[u8]) -> Self::Output {
+            log_debug!("Writing values to file: {}", path.display());
+
+            std::fs::File::create(&path)
+                .and_then(|mut f| f.write_all(buffer))
+                .map(|_| path)
+        }
+    }
+
+    pub trait BinaryFileAnswersWriteAsyncFn {
+        type Output;
+
+        fn call(&mut self, path: PathBuf, buffer: &[u8]) -> impl Future<Output = Self::Output>;
+    }
+
+    pub struct AsyncFnMutBinaryFileAnswersWriteFn<F: FnMut(PathBuf, Box<[u8]>) -> Fut, Fut>(pub F);
+
+    impl<F, Fut> BinaryFileAnswersWriteAsyncFn for AsyncFnMutBinaryFileAnswersWriteFn<F, Fut>
+    where
+        F: FnMut(PathBuf, Box<[u8]>) -> Fut,
+        Fut: Future,
+    {
+        type Output = Fut::Output;
+
+        async fn call(&mut self, path: PathBuf, buffer: &[u8]) -> Self::Output {
+            (self.0)(path, buffer.into()).await
+        }
+    }
+
     /// Outputs answers found for byte-typed symbolic values over time.
     /// It takes a directory and outputs each answer in a separate file named
     /// with the format `{prefix}{counter}.{extension}`.
     /// # Remarks
     /// - Ids are the index of the byte in the output buffer.
     /// - A `None` answer means it is not byte-typed.
-    pub struct BinaryFileMultiAnswersWriter {
+    pub struct BinaryFileMultiAnswersWriter<W = DefaultBinaryFileAnswersWriteFn> {
         dir_path: PathBuf,
         counter: usize,
         prefix: String,
@@ -108,16 +161,16 @@ mod binary {
         buffer: Vec<u8>,
         /// The output buffer will be initially filled with this buffer.
         /// Useful when the output will be used as input again.
-        default_answers: Box<[u8]>,
-        _phantom: core::marker::PhantomData<()>,
+        default_answers: Box<dyn AsRef<[u8]> + Send + 'static>,
+        write_fn: W,
     }
 
-    impl BinaryFileMultiAnswersWriter {
-        pub fn new(
+    impl<W> BinaryFileMultiAnswersWriter<W> {
+        pub fn new_with_write(
             dir_path: PathBuf,
             prefix: Option<String>,
             extension: String,
-            default_answers: Option<&[u8]>,
+            write_fn: W,
         ) -> Self {
             std::fs::create_dir_all(&dir_path).unwrap();
 
@@ -127,68 +180,28 @@ mod binary {
             );
             let dir_path = std::fs::canonicalize(dir_path).unwrap();
 
-            Self::check_out_dir(&dir_path, prefix.as_ref(), &extension);
+            check_out_dir(&dir_path, prefix.as_ref(), &extension);
 
             Self {
                 dir_path,
                 counter: 0,
                 prefix: prefix.unwrap_or_default(),
                 extension,
-                buffer: default_answers.map(Vec::from).unwrap_or_default(),
-                default_answers: default_answers.map(Into::into).unwrap_or_default(),
-                _phantom: Default::default(),
+                buffer: Vec::new(),
+                default_answers: Box::new(Vec::new()),
+                write_fn,
             }
         }
 
-        fn write(&mut self, range: Range<usize>) -> Result<PathBuf, io::Error> {
-            let path = self
-                .dir_path
-                .join(format!("{}{}", self.prefix, self.counter))
-                .with_added_extension(&self.extension);
-            log_debug!("Writing values to file: {}.", path.display());
-
-            std::fs::File::create(&path)
-                .and_then(|mut f| f.write(&self.buffer[range]))
-                .inspect(|_| {
-                    self.counter += 1;
-                })
-                .map(|_| path)
-        }
-
-        fn check_out_dir(dir_path: &PathBuf, file_prefix: Option<&String>, file_ext: &str) {
-            if std::fs::read_dir(&dir_path)
-                .unwrap()
-                .filter_map(io::Result::ok)
-                .filter(|e| e.metadata().is_ok_and(|t| t.is_file()))
-                .any(|e| {
-                    e.file_name().to_string_lossy().ends_with(file_ext)
-                        && file_prefix.is_none_or(|prefix| {
-                            e.file_name().to_string_lossy().starts_with(prefix)
-                        })
-                })
-            {
-                log_warn!(
-                    "Output directory has some previous answers, which may may be overwritten: {}",
-                    dir_path.display(),
-                );
-            }
-        }
-    }
-
-    impl AnswersWriter for BinaryFileMultiAnswersWriter {
-        type Id = usize;
-        type Answer = Option<u8>;
-        type Output = PathBuf;
-        type Error = BinaryFileAnswerError;
-
-        fn write(
+        fn write_to_buffer(
             &mut self,
-            answers: impl ExactSizeIterator<Item = (Self::Id, Self::Answer)>,
-        ) -> Result<PathBuf, BinaryFileAnswerError> {
+            answers: impl ExactSizeIterator<Item = (usize, Option<u8>)>,
+        ) -> Result<usize, BinaryFileAnswerError> {
             // The buffer is growing and at least as wide as the default answers.
-            self.buffer[0..self.default_answers.len()].copy_from_slice(&self.default_answers);
-            let mut filled = self.default_answers.len();
-            let mut max_upper = self.default_answers.len();
+            let default_answers: &[u8] = self.default_answers.deref().as_ref();
+            self.buffer[0..default_answers.len()].copy_from_slice(default_answers.as_ref());
+            let mut filled = default_answers.len();
+            let mut max_upper = default_answers.len();
 
             if answers.len() > self.buffer.len() {
                 self.buffer.reserve(answers.len() - self.buffer.len());
@@ -205,7 +218,7 @@ mod binary {
                     }
                 }
                 self.buffer[index] = byte_ans;
-                if index >= self.default_answers.len() {
+                if index >= default_answers.len() {
                     filled += 1;
                 }
             }
@@ -214,8 +227,132 @@ mod binary {
                 return Err(BinaryFileAnswerError::Incomplete);
             }
 
-            self.write(0..max_upper).map_err(BinaryFileAnswerError::Io)
+            Ok(max_upper)
+        }
+
+        fn get_path_and_incr(&mut self) -> PathBuf {
+            let path = self
+                .dir_path
+                .join(format!("{}{}", self.prefix, self.counter))
+                .with_added_extension(&self.extension);
+
+            self.counter += 1;
+            path
+        }
+
+        pub fn set_default_answers(&mut self, default_answers: impl AsRef<[u8]> + Send + 'static) {
+            self.buffer.resize(default_answers.as_ref().len(), 0);
+            self.default_answers = Box::new(default_answers);
+        }
+    }
+
+    impl<W> BinaryFileMultiAnswersWriter<W> {
+        pub fn new_with_write_async<F, Fut>(
+            dir_path: PathBuf,
+            prefix: Option<String>,
+            extension: String,
+            write_fn: F,
+        ) -> BinaryFileMultiAnswersWriter<AsyncFnMutBinaryFileAnswersWriteFn<F, Fut>>
+        where
+            F: FnMut(PathBuf, Box<[u8]>) -> Fut,
+            Fut: Future,
+            AsyncFnMutBinaryFileAnswersWriteFn<F, Fut>: BinaryFileAnswersWriteAsyncFn,
+        {
+            BinaryFileMultiAnswersWriter::new_with_write(
+                dir_path,
+                prefix,
+                extension,
+                AsyncFnMutBinaryFileAnswersWriteFn(write_fn),
+            )
+        }
+    }
+
+    impl BinaryFileMultiAnswersWriter {
+        pub fn new(
+            dir_path: PathBuf,
+            prefix: Option<String>,
+            extension: String,
+            default_answers: Option<&[u8]>,
+        ) -> BinaryFileMultiAnswersWriter {
+            let mut instance = BinaryFileMultiAnswersWriter::new_with_write(
+                dir_path,
+                prefix,
+                extension,
+                DefaultBinaryFileAnswersWriteFn,
+            );
+
+            instance.set_default_answers(
+                default_answers
+                    .map(|buf| buf.to_owned())
+                    .unwrap_or_default(),
+            );
+            instance
+        }
+    }
+
+    impl<W> AnswersWriter for BinaryFileMultiAnswersWriter<W>
+    where
+        W: BinaryFileAnswersWriteFn,
+    {
+        type Id = usize;
+        type Answer = Option<u8>;
+        type Output = <W as BinaryFileAnswersWriteFn>::Output;
+        type Error = BinaryFileAnswerError;
+
+        fn write(
+            &mut self,
+            answers: impl ExactSizeIterator<Item = (Self::Id, Self::Answer)>,
+        ) -> Result<Self::Output, BinaryFileAnswerError> {
+            let max_upper = self.write_to_buffer(answers)?;
+
+            let path = self.get_path_and_incr();
+            let result = self.write_fn.call(path, &self.buffer[0..max_upper]);
+
+            Ok(result)
+        }
+    }
+
+    impl<W> AsyncAnswersWriter for BinaryFileMultiAnswersWriter<W>
+    where
+        W: BinaryFileAnswersWriteAsyncFn,
+    {
+        type Id = usize;
+        type Answer = Option<u8>;
+        type Output = <W as BinaryFileAnswersWriteAsyncFn>::Output;
+        type Error = BinaryFileAnswerError;
+
+        async fn write(
+            &mut self,
+            answers: impl ExactSizeIterator<Item = (Self::Id, Self::Answer)>,
+        ) -> Result<Self::Output, BinaryFileAnswerError> {
+            let max_upper = self.write_to_buffer(answers)?;
+
+            let path = self.get_path_and_incr();
+            let result = self.write_fn.call(path, &self.buffer[0..max_upper]).await;
+
+            Ok(result)
+        }
+    }
+
+    fn check_out_dir(dir_path: &PathBuf, file_prefix: Option<&String>, file_ext: &str) {
+        if std::fs::read_dir(&dir_path)
+            .unwrap()
+            .filter_map(io::Result::ok)
+            .filter(|e| e.metadata().is_ok_and(|t| t.is_file()))
+            .any(|e| {
+                e.file_name().to_string_lossy().ends_with(file_ext)
+                    && file_prefix
+                        .is_none_or(|prefix| e.file_name().to_string_lossy().starts_with(prefix))
+            })
+        {
+            log_warn!(
+                "Output directory has some previous answers, which may may be overwritten: {}",
+                dir_path.display(),
+            );
         }
     }
 }
-pub use binary::{BinaryFileAnswerError, BinaryFileMultiAnswersWriter};
+pub use binary::{
+    BinaryFileAnswerError, BinaryFileAnswersWriteAsyncFn, BinaryFileAnswersWriteFn,
+    BinaryFileMultiAnswersWriter,
+};
