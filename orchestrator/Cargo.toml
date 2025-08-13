@@ -9,11 +9,11 @@ name = "orchestrator"
 
 [[bin]]
 name = "leafo_onetime"
-path = "src/modes/onetime/main.rs"
+path = "src/bin/onetime/main.rs"
 
 [[bin]]
 name = "leafo_directed"
-path = "src/modes/directed/main.rs"
+path = "src/bin/directed/main.rs"
 edition = "2024"
 
 [build-dependencies]
