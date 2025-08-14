@@ -1,13 +1,8 @@
 use std::{fs::OpenOptions, path::Path};
 
-use common::{
-    types::trace::{Constraint, ConstraintKind, ExeTraceRecord},
-    z3::serdes::SmtLibExpr,
-};
+use common::types::trace::{ConstraintKind, ExeTraceRecord};
 
-use crate::{SwitchStep, SwitchTrace};
-
-type Expression = SmtLibExpr;
+use crate::{SwitchTrace, TraceSwitchStep};
 
 trait TraceReader {
     fn read_trace(&mut self) -> SwitchTrace;
@@ -17,7 +12,7 @@ pub(crate) async fn read_switch_trace(
     full_trace_path: &Path,
     sym_trace_path: &Path,
     preconditions_path: &Path,
-) -> SwitchTrace {
+) -> Vec<TraceSwitchStep> {
     // FIXME: Change to async
     json_sync::JsonListTraceReader {
         full_trace_reader: OpenOptions::new()
@@ -50,6 +45,8 @@ mod json_sync {
     use serde_json::Value;
 
     use common::{directed::RawCaseValue, pri::BasicBlockLocation, types::trace::BranchRecord};
+
+    use crate::trace::TraceConstraint;
 
     use super::*;
 
@@ -98,12 +95,7 @@ mod json_sync {
                 .collect()
         }
 
-        fn read_sym_trace(
-            &mut self,
-        ) -> Vec<(
-            usize,
-            (BasicBlockLocation, Constraint<Expression, Expression>),
-        )>
+        fn read_sym_trace(&mut self) -> Vec<(usize, (BasicBlockLocation, TraceConstraint))>
         where
             R: Read,
         {
@@ -204,33 +196,23 @@ mod json_sync {
             with_preconditions
                 .enumerate()
                 .map(
-                    |(result_index, (index, ((loc, taken), decision, preconditions)))| SwitchStep {
-                        trace_index: index,
-                        location: loc,
-                        decision: taken,
-                        discr: decision.map(|c| c.discr),
-                        implied_by_offset: preconditions
-                            .into_iter()
-                            .map(|abs_step_index| {
-                                result_index - step_indices.binary_search(&abs_step_index).unwrap()
-                            })
-                            .collect(),
+                    |(result_index, (index, ((loc, taken), sym_constraint, preconditions)))| {
+                        TraceSwitchStep {
+                            trace_index: index,
+                            location: loc,
+                            decision: taken,
+                            constraint: sym_constraint,
+                            implied_by_offset: preconditions
+                                .into_iter()
+                                .map(|abs_step_index| {
+                                    result_index
+                                        - step_indices.binary_search(&abs_step_index).unwrap()
+                                })
+                                .collect(),
+                        }
                     },
                 )
                 .collect()
         }
-    }
-}
-
-impl core::fmt::Display for SwitchStep {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "@{}: {}", self.location, Constraint {
-            discr: self
-                .discr
-                .as_ref()
-                .map(|d| d.to_string())
-                .unwrap_or("<Conc>".to_owned()),
-            kind: self.decision.as_ref(),
-        })
     }
 }

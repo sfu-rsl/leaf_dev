@@ -35,6 +35,7 @@ common = { workspace = true, features = [
     "rkyv",
     "conc_loop",
     "serde",
+    "serde_json",
 ] }
 
 tracing-subscriber = { workspace = true, features = ["json"] }

@@ -289,7 +289,7 @@ pub fn current_instant_millis() -> u128 {
         .as_millis()
 }
 
-#[cfg(all(feature = "std", feature = "serde"))]
+#[cfg(all(feature = "std", feature = "serde_json"))]
 pub mod serde {
 
     #[derive(Default)]

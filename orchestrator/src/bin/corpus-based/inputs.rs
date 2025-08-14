@@ -5,9 +5,7 @@ use tokio::{pin, task::JoinHandle};
 
 use common::{log_debug, log_info};
 
-use crate::Input;
-
-type GenericError = Box<dyn core::error::Error + Send + Sync>;
+use crate::{Input, utils::GenericError};
 
 type Result<T> = std::result::Result<T, GenericError>;
 

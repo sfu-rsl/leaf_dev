@@ -8,11 +8,9 @@ use futures::{Stream, StreamExt, TryStream, TryStreamExt};
 use tracing::Instrument;
 use tracing_indicatif::{span_ext::IndicatifSpanExt, style::ProgressStyle};
 
-use crate::{Trace, potentials::SwitchTrace};
+use crate::{Trace, potentials::SwitchTrace, utils::GenericError};
 
 mod trace;
-
-type GenericError = Box<dyn core::error::Error + Send + Sync>;
 
 #[derive(Clone)]
 pub(crate) struct ExecutionConfig {
