@@ -3,10 +3,8 @@ use std::{
     sync::Arc,
 };
 
-use common::log_warn;
+use common::{log_debug, log_warn};
 use futures::{Stream, StreamExt, TryStream, TryStreamExt};
-use tracing::Instrument;
-use tracing_indicatif::{span_ext::IndicatifSpanExt, style::ProgressStyle};
 
 use crate::{Trace, potentials::SwitchTrace, utils::GenericError};
 
@@ -48,7 +46,6 @@ pub(crate) struct Input {
 struct Executor {
     exe_config: ExecutionConfig,
     config_toml: Arc<str>,
-    progress_bar: tracing::Span,
 }
 
 impl Executor {
@@ -56,7 +53,7 @@ impl Executor {
     const NAME_SYM_TRACE: &str = "sym_trace";
     const NAME_PRECONDITIONS: &str = "preconditions";
 
-    pub(crate) fn new(exe_config: ExecutionConfig, progress_bar: tracing::Span) -> Self {
+    pub(crate) fn new(exe_config: ExecutionConfig) -> Self {
         let config_toml = orchestrator::utils::config_for_execute_for_trace(
             exe_config.workdir.as_ref(),
             Self::NAME_FULL_TRACE,
@@ -67,7 +64,6 @@ impl Executor {
         Executor {
             exe_config,
             config_toml,
-            progress_bar,
         }
     }
 }
@@ -82,14 +78,11 @@ impl Executor {
             .then(async move |(this, input)| this.exec(input).await)
     }
 
+    #[tracing::instrument(level = "info", skip(self, input), fields(input = %input.path.display()))]
     async fn exec(&self, input: Input) -> Result<Trace, GenericError> {
-        use orchestrator::utils::*;
+        log_debug!("Executing");
 
-        let pb_span = {
-            let span = self.progress_bar.clone();
-            span.pb_set_message(&format!("Executing Input: {}", input.path.display()));
-            span
-        };
+        use orchestrator::utils::*;
 
         // FIXME: Send it through pipe to the executor
         let input_buf = tokio::fs::read(&input.path)
@@ -107,10 +100,20 @@ impl Executor {
             ),
             self.config_toml.as_ref(),
         )
-        .instrument(pb_span)
         .await
         .map_err(GenericError::from)?;
-        exe_result.status.exit_ok().map_err(GenericError::from)?;
+
+        exe_result
+            .status
+            .exit_ok()
+            .or_else(|e| {
+                if self.exe_config.silent {
+                    Ok(())
+                } else {
+                    Err(e)
+                }
+            })
+            .map_err(GenericError::from)?;
 
         let switch_trace = (self).read_switch_trace().await;
         Ok(Trace {
@@ -119,6 +122,7 @@ impl Executor {
         })
     }
 
+    #[tracing::instrument(level = "debug", skip(self))]
     async fn read_switch_trace(&self) -> SwitchTrace {
         let artifact_path = |name| self.exe_config.workdir.join(name).with_extension("jsonl");
 
@@ -135,10 +139,7 @@ pub(crate) fn traces(
     config: ExecutionConfig,
     inputs: impl Stream<Item = Input> + Send,
 ) -> impl Stream<Item = Trace> + Send {
-    let pb_span = tracing::info_span!("Symbolic Execution");
-    pb_span.pb_set_style(&ProgressStyle::default_spinner());
-
-    let executor = Executor::new(config, pb_span);
+    let executor = Executor::new(config);
     executor
         .execute_inputs(inputs)
         .into_stream()

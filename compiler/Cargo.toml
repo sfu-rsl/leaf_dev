@@ -35,7 +35,7 @@ paste = "1.0"
 bimap = "0.6.3"
 derive_more = { workspace = true }
 const_format = { workspace = true }
-glob = "0.3.1"
+glob = { workspace = true }
 itertools = { workspace = true }
 config = { workspace = true }
 serde = { workspace = true }

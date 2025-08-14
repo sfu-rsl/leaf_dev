@@ -1,6 +1,7 @@
 #![feature(exit_status_error)]
 #![feature(impl_trait_in_assoc_type)]
 #![feature(result_flattening)]
+#![feature(iterator_try_collect)]
 
 mod exe;
 mod inputs;
@@ -31,9 +32,9 @@ struct Args {
     #[command(flatten)]
     #[deref]
     common: CommonArgs,
-    /// Path to the directory containing the inputs.
-    #[arg(long, short = 'i')]
-    input_corpus_dir: PathBuf,
+
+    #[command(flatten)]
+    input_corpus: InputCorpusArgs,
 
     #[arg(long, action)]
     offline: bool,
@@ -45,6 +46,19 @@ struct Args {
     solver: PathBuf,
 }
 
+#[derive(Parser, Debug)]
+struct InputCorpusArgs {
+    /// Path to the directory containing the inputs.
+    #[arg(long, short = 'i')]
+    dir: PathBuf,
+    /// Files to be excluded when grabbing inputs.
+    #[arg(long, alias = "exclude")]
+    exclude_patterns: Vec<String>,
+    /// Files to be included when grabbing inputs.
+    #[arg(long, alias = "include")]
+    include_patterns: Vec<String>,
+}
+
 #[tokio::main]
 async fn main() {
     orchestrator::logging::init_logging();
@@ -52,7 +66,7 @@ async fn main() {
     let args = process_args();
 
     let (input_process_handle, inputs) =
-        inputs::prioritized_inputs(args.input_corpus_dir.clone(), args.offline)
+        inputs::prioritized_inputs(&args.input_corpus, args.offline)
             .await
             .expect("Failed to process inputs from corpus directory");
 
