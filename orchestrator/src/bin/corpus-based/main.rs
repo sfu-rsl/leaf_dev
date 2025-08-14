@@ -2,6 +2,14 @@
 #![feature(impl_trait_in_assoc_type)]
 #![feature(result_flattening)]
 
+mod exe;
+mod inputs;
+mod output;
+mod potentials;
+mod solve;
+mod trace;
+mod utils;
+
 use std::path::PathBuf;
 
 use clap::Parser;
@@ -10,18 +18,12 @@ use derive_more::derive::Deref;
 
 use orchestrator::args::CommonArgs;
 
-mod exe;
-mod inputs;
-mod output;
-mod potentials;
-mod solve;
-mod utils;
-
 use self::{
     exe::Input,
     output::{HasBaseBytes, HasByteAnswers},
-    potentials::{SwitchStep, SwitchTrace, Trace},
+    potentials::{SwitchTrace, Trace},
     solve::{HasByteInput, IntoQuery, SolveQuery},
+    trace::{TraceConstraint, TraceSwitchStep},
 };
 
 #[derive(Parser, Debug, Deref)]
@@ -38,6 +40,9 @@ struct Args {
 
     #[arg(long)]
     workdir: Option<PathBuf>,
+
+    #[arg(long, default_value = "leafsolver")]
+    solver: PathBuf,
 }
 
 #[tokio::main]
@@ -64,7 +69,8 @@ async fn main() {
 
     let (potential_process_handle, potentials) = potentials::prioritized_potential(traces);
 
-    let outputs = solve::realize_potentials(potentials);
+    let outputs =
+        solve::realize_potentials(&args.solver, args.workdir.as_ref().unwrap(), potentials);
     let output_dump_handle = output::dump_outputs(&args.outdir, outputs);
 
     if !args.offline {

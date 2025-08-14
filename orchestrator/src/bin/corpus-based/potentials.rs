@@ -2,31 +2,11 @@ use std::sync::Arc;
 
 use futures::{Stream, StreamExt};
 
-use common::{
-    directed::RawCaseValue,
-    types::{
-        BasicBlockLocation,
-        trace::{Constraint, ConstraintKind},
-    },
-    z3::serdes::SmtLibExpr,
-};
 
-use crate::{HasByteInput, IntoQuery, SolveQuery};
+use crate::{HasByteInput, IntoQuery, SolveQuery, TraceConstraint, TraceSwitchStep};
 
-type Expression = SmtLibExpr;
+pub(crate) type SwitchTrace = Vec<TraceSwitchStep>;
 
-#[derive(Debug, Clone)]
-pub(crate) struct SwitchStep<V = Expression> {
-    pub trace_index: usize,
-    pub location: BasicBlockLocation,
-    pub decision: ConstraintKind<RawCaseValue>,
-    pub discr: Option<V>,
-    pub implied_by_offset: Vec<usize>,
-}
-
-pub(crate) type SwitchTrace = Vec<SwitchStep>;
-
-type TraceConstraint = Constraint<Expression, RawCaseValue>;
 type ConstraintsRef = Arc<[Option<TraceConstraint>]>;
 
 #[derive(Debug)]
@@ -70,10 +50,7 @@ mod last_diverging {
     impl SolveQuery for LastDivergingPotentialQuery {
         type Constraint = TraceConstraint;
 
-        fn into_constraints<'a>(self) -> impl Iterator<Item = Self::Constraint> + 'a
-        where
-            Self: 'a,
-        {
+        fn into_constraints(self) -> impl Iterator<Item = Self::Constraint> {
             let last = self.all_constraints[self.at].clone().unwrap();
             let all_constraints = self.all_constraints.clone();
             (0..self.at)
@@ -107,21 +84,14 @@ mod collect {
         traces.flat_map(|trace| {
             let trace = Arc::new(trace);
 
-            let influenceable_steps = trace
-                .switches
-                .iter()
-                .enumerate()
-                .filter(|(_, step)| step.discr.is_some() || !step.implied_by_offset.is_empty());
+            let influenceable_steps = trace.switches.iter().enumerate().filter(|(_, step)| {
+                step.constraint.is_some() || !step.implied_by_offset.is_empty()
+            });
 
             let all_constraints = trace
                 .switches
                 .iter()
-                .map(|step| {
-                    step.discr.clone().map(|d| Constraint {
-                        discr: d,
-                        kind: step.decision.clone(),
-                    })
-                })
+                .map(|step| step.constraint.clone())
                 .collect::<Vec<_>>();
 
             let all_constraints: ConstraintsRef = Arc::from(all_constraints.into_boxed_slice());
@@ -129,7 +99,7 @@ mod collect {
             // Additionally, we filter out steps that are only influenceable implicitly for simplicity.
             let directly_influenceable_step_indices = influenceable_steps
                 .into_iter()
-                .filter(|(_, step)| step.discr.is_some())
+                .filter(|(_, step)| step.constraint.is_some())
                 .map(|(i, _)| i)
                 .collect::<Vec<_>>();
 

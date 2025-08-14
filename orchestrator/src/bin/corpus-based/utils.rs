@@ -137,3 +137,5 @@ pub(crate) mod priority_channel {
         )
     }
 }
+
+pub(crate) type GenericError = Box<dyn core::error::Error + Send + Sync>;
