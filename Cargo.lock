@@ -2109,6 +2109,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "pure_concolic_dir_sync"
+version = "0.2.0"
+dependencies = [
+ "clap",
+ "common",
+ "libafl",
+ "libafl_bolts",
+ "libafl_leaf",
+ "serde",
+ "tracing-log",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "quote"
 version = "1.0.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
