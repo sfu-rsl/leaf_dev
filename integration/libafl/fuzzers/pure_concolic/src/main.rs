@@ -34,7 +34,7 @@ struct Args {
     /// Original program to test with the generated inputs, defaults to the conc_program
     #[arg(short, long)]
     program: Option<PathBuf>,
-    /// Argument to pass to the orchestrator
+    /// Argument to pass to the program
     #[arg(long = "program-arg", alias = "parg", alias = "p-arg", alias = "pa")]
     program_args: Vec<String>,
     /// Leaf's One-time orchestrator, defaults to `leafo_onetime`
