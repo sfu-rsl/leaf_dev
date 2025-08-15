@@ -1,9 +1,10 @@
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
+    time::Duration,
 };
 
-use common::{log_debug, log_warn};
+use common::{log_debug, log_info, log_warn};
 use futures::{Stream, StreamExt, TryStream, TryStreamExt};
 
 use crate::{Trace, potentials::SwitchTrace, utils::GenericError};
@@ -16,6 +17,7 @@ pub(crate) struct ExecutionConfig {
     env: Arc<[(String, String)]>,
     args: Arc<[String]>,
     silent: bool,
+    timeout: Option<Duration>,
     workdir: Arc<Path>,
 }
 
@@ -25,6 +27,7 @@ impl ExecutionConfig {
         env: impl IntoIterator<Item = (String, String)>,
         args: impl IntoIterator<Item = String>,
         silent: bool,
+        timeout: Option<Duration>,
         workdir: impl AsRef<Path>,
     ) -> Self {
         ExecutionConfig {
@@ -32,6 +35,7 @@ impl ExecutionConfig {
             env: env.into_iter().collect::<Vec<_>>().into(),
             args: args.into_iter().collect::<Vec<_>>().into(),
             silent,
+            timeout,
             workdir: workdir.as_ref().to_owned().into_boxed_path().into(),
         }
     }
@@ -89,31 +93,44 @@ impl Executor {
             .await
             .map_err(GenericError::from)?;
 
-        let exe_result = execute_once(
-            ExecutionParams::new(
-                &self.exe_config.program_path,
-                self.exe_config.env.iter().cloned(),
-                Some(&input.path),
-                output_silence_as_path(self.exe_config.silent),
-                output_silence_as_path(self.exe_config.silent),
-                self.exe_config.args.iter().cloned(),
-            ),
-            self.config_toml.as_ref(),
-        )
-        .await
-        .map_err(GenericError::from)?;
+        let exe_result = {
+            let execution = execute_once(
+                ExecutionParams::new(
+                    &self.exe_config.program_path,
+                    self.exe_config.env.iter().cloned(),
+                    Some(&input.path),
+                    output_silence_as_path(self.exe_config.silent),
+                    output_silence_as_path(self.exe_config.silent),
+                    self.exe_config.args.iter().cloned(),
+                ),
+                self.config_toml.as_ref(),
+            );
+            if let Some(timeout) = self.exe_config.timeout {
+                tokio::time::timeout(timeout, execution).await
+            } else {
+                Ok(execution.await)
+            }
+        };
 
-        exe_result
-            .status
-            .exit_ok()
-            .or_else(|e| {
-                if self.exe_config.silent {
-                    Ok(())
-                } else {
-                    Err(e)
-                }
-            })
-            .map_err(GenericError::from)?;
+        match exe_result {
+            Err(..) => {
+                log_info!("Execution timed out");
+            }
+            Ok(exe_result) => {
+                exe_result
+                    .map_err(GenericError::from)?
+                    .status
+                    .exit_ok()
+                    .or_else(|e| {
+                        if self.exe_config.silent {
+                            Ok(())
+                        } else {
+                            Err(e)
+                        }
+                    })
+                    .map_err(GenericError::from)?;
+            }
+        }
 
         let switch_trace = (self).read_switch_trace().await;
         Ok(Trace {

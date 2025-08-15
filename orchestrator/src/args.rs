@@ -1,4 +1,4 @@
-use std::{default, path::PathBuf};
+use std::{num::NonZero, path::PathBuf};
 
 use clap::{Args, ValueEnum};
 
@@ -42,4 +42,7 @@ pub struct CommonArgs {
     /// Whether to return failure exit code in case the program does not finish successfully
     #[arg(short, long, action)]
     pub silent: bool,
+    /// Timeout for the program execution in seconds, 0 means no timeout
+    #[arg(long, default_value = "60")]
+    pub timeout: Option<NonZero<u64>>,
 }
