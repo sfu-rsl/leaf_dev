@@ -38,6 +38,7 @@ macro_rules! services_from_backend {
     ($backend:expr) => {{
         use crate::backends::basic::CallStackInfo;
         AssignmentServices {
+            #[cfg(feature = "implicit_flow")]
             current_func: $backend.call_stack_manager.current_func().body_id,
             vars_state: $backend.call_stack_manager.top(),
             expr_builder: $backend.expr_builder.clone(),
