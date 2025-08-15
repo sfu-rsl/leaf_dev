@@ -76,6 +76,8 @@ async fn main() {
             args.env.iter().cloned(),
             args.args.iter().cloned(),
             args.silent,
+            args.timeout
+                .map(|s| core::time::Duration::from_secs(s.get())),
             args.workdir.as_ref().unwrap(),
         ),
         inputs,
