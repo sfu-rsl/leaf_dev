@@ -448,6 +448,7 @@ checksum = "5b63caa9aa9397e2d9480a9b13673856c78d8ac123288526c37d7839f2a86990"
 name = "common"
 version = "0.2.0"
 dependencies = [
+ "bincode 2.0.1",
  "config",
  "delegate",
  "derive_more",
@@ -2287,6 +2288,7 @@ dependencies = [
 name = "runtime"
 version = "0.2.0"
 dependencies = [
+ "bincode 2.0.1",
  "cfg-if",
  "chrono",
  "clippy-tracing-attributes",

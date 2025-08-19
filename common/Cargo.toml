@@ -37,6 +37,7 @@ z3 = [
 ]
 answers = ["std"]
 rkyv = ["dep:rkyv"]
+bincode = ["dep:bincode", "serde"]
 unsafe_wrappers = ["dep:derive_more"]
 conc_loop = ["std"]
 building = ["std"]
@@ -48,6 +49,7 @@ program_dep = ["std", "rkyv", "serde", "dep:macros"]
 
 macros = { workspace = true, optional = true }
 
+bincode = { workspace = true, optional = true, features = ["serde"] }
 delegate = { workspace = true, optional = true }
 derive_more = { workspace = true, optional = true, default-features = false, features = [
     "full",

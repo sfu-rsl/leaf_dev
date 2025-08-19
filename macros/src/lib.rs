@@ -109,18 +109,20 @@ pub fn trait_log_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
         #[tracing::instrument(#attr)]
     };
     let clippy_ignore: Attribute = syn::parse_quote! {
-    #[cfg_attr(any(feature = "profile_flame", feature = "profile_tracy", feature = "profile_full"),
+        #[cfg_attr(any(feature = "profile_flame", feature = "profile_tracy", feature = "profile_full"),
                clippy_tracing_attributes::clippy_tracing_skip)]
-        };
+    };
 
     for item in &mut input.items {
         if let ImplItem::Fn(method) = item {
-            let att = &mut method.attrs;
-            let att_string = format!("{:?}", att);
+            let attrs = &mut method.attrs;
 
-            if !function_contains_log_fn(att_string.as_str()) {
-                att.insert(0, instrument_stmt.clone());
-                att.insert(0, clippy_ignore.clone());
+            if !attrs
+                .iter()
+                .any(|a| function_contains_log_fn(&a.to_token_stream().to_string()))
+            {
+                attrs.insert(0, instrument_stmt.clone());
+                attrs.insert(0, clippy_ignore.clone());
             }
         }
     }
@@ -132,11 +134,41 @@ pub fn trait_log_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
 
 /// Conditionally derives serde's and rkyv's traits if the features are enabled.
 #[proc_macro_attribute]
-pub fn cond_derive_serde_rkyv(_attr: TokenStream, input: TokenStream) -> TokenStream {
-    let attrs: Vec<Attribute> = syn::parse_quote! {
-        #[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]
-        #[cfg_attr(feature = "rkyv", derive(::rkyv::Archive, ::rkyv::Serialize, ::rkyv::Deserialize))]
-    };
+pub fn cond_derive_serialization(args: TokenStream, input: TokenStream) -> TokenStream {
+    let mut skip_list = Vec::new();
+
+    let args_parser = syn::meta::parser(|meta| {
+        if meta.path.is_ident("skip") {
+            meta.parse_nested_meta(|meta| {
+                skip_list.push(meta.path.require_ident()?.clone());
+                Ok(())
+            })
+        } else {
+            Err(meta.error("Unexpected argument"))
+        }
+    });
+    parse_macro_input!(args with args_parser);
+
+    let mut attrs = Vec::new();
+
+    if !skip_list.iter().any(|s| s == "serde") {
+        attrs.push(syn::parse_quote! {
+            #[cfg_attr(feature = "serde", derive(::serde::Serialize, ::serde::Deserialize))]
+        });
+    }
+
+    if !skip_list.iter().any(|s| s == "rkyv") {
+        attrs.push(syn::parse_quote! {
+            #[cfg_attr(feature = "rkyv", derive(::rkyv::Archive, ::rkyv::Serialize, ::rkyv::Deserialize))]
+        });
+    }
+
+    if !skip_list.iter().any(|s| s == "bincode") {
+        attrs.push(syn::parse_quote! {
+            #[cfg_attr(feature = "bincode", derive(::bincode::Encode, ::bincode::Decode))]
+        });
+    }
+
     let mut input = parse_macro_input!(input as syn::DeriveInput);
     input.attrs.extend(attrs);
     input.to_token_stream().into()

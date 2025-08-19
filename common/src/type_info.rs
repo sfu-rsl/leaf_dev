@@ -1,12 +1,12 @@
 use core::ops::RangeInclusive;
 use std::{collections::HashMap, fs::OpenOptions, prelude::rust_2021::*};
 
-use macros::cond_derive_serde_rkyv;
+use macros::cond_derive_serialization;
 
 pub use crate::types::{Alignment, TypeId, TypeSize};
 use crate::{log_info, types::*, utils::array_backed_struct};
 
-#[cond_derive_serde_rkyv]
+#[cond_derive_serialization]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeInfo {
     pub id: TypeId,
@@ -40,14 +40,14 @@ impl TypeInfo {
     }
 }
 
-#[cond_derive_serde_rkyv]
+#[cond_derive_serialization]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VariantInfo {
     pub index: VariantIndex,
     pub fields: FieldsShapeInfo,
 }
 
-#[cond_derive_serde_rkyv]
+#[cond_derive_serialization]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FieldsShapeInfo {
     NoFields,
@@ -56,14 +56,14 @@ pub enum FieldsShapeInfo {
     Union(UnionShape),
 }
 
-#[cond_derive_serde_rkyv]
+#[cond_derive_serialization]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArrayShape {
     pub len: u64,
     pub item_ty: TypeId,
 }
 
-#[cond_derive_serde_rkyv]
+#[cond_derive_serialization]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StructShape {
     fields: Vec<FieldInfo>,
@@ -73,14 +73,14 @@ pub struct StructShape {
 // We use the same struct to avoid redundancy. Offset is not used for unions.
 pub type UnionShape = StructShape;
 
-#[cond_derive_serde_rkyv]
+#[cond_derive_serialization]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FieldInfo {
     pub ty: TypeId,
     pub offset: u64,
 }
 
-#[cond_derive_serde_rkyv]
+#[cond_derive_serialization]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TagInfo {
     Constant {
@@ -92,7 +92,7 @@ pub enum TagInfo {
     },
 }
 
-#[cond_derive_serde_rkyv]
+#[cond_derive_serialization]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TagEncodingInfo {
     Direct,
@@ -157,7 +157,7 @@ pub use pass_core_type_names_to;
 macro_rules! define_core_types {
     ($($name: ident),*$(,)?) => {
         array_backed_struct! {
-            #[cond_derive_serde_rkyv]
+            #[cond_derive_serialization]
             #[derive(Clone)]
             pub struct CoreTypes<V = TypeId> {
                 $($name),*
@@ -197,7 +197,7 @@ impl<V: Copy> From<NamedCoreTypes<V>> for CoreTypes<V> {
     }
 }
 
-#[cond_derive_serde_rkyv]
+#[cond_derive_serialization]
 pub struct GenericTypesData<All, Cores> {
     pub all_types: All,
     pub core_types: Cores,
