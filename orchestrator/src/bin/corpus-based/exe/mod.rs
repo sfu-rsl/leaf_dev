@@ -61,8 +61,11 @@ impl Executor {
         let config_toml = orchestrator::utils::config_for_execute_for_trace(
             exe_config.workdir.as_ref(),
             Self::NAME_FULL_TRACE,
+            false,
             Self::NAME_SYM_TRACE,
+            true,
             Self::NAME_PRECONDITIONS,
+            true,
         )
         .into();
         Executor {
@@ -141,7 +144,7 @@ impl Executor {
 
     #[tracing::instrument(level = "debug", skip(self))]
     async fn read_switch_trace(&self) -> SwitchTrace {
-        let artifact_path = |name| self.exe_config.workdir.join(name).with_extension("jsonl");
+        let artifact_path = |name| self.exe_config.workdir.join(name);
 
         self::trace::read_switch_trace(
             &artifact_path(Self::NAME_FULL_TRACE),

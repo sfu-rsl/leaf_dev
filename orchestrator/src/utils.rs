@@ -99,8 +99,11 @@ pub async fn execute_once_for_trace<'a>(
         config_for_execute_for_trace(
             traces_dir,
             full_trace_filename,
+            true,
             sym_trace_filename,
+            true,
             preconditions_filename,
+            true,
         ),
     )
     .await
@@ -109,34 +112,47 @@ pub async fn execute_once_for_trace<'a>(
 pub fn config_for_execute_for_trace(
     traces_dir: &Path,
     full_trace_filename: &str,
+    is_full_trace_jsonl: bool,
     sym_trace_filename: &str,
+    is_sym_trace_jsonl: bool,
     preconditions_filename: &str,
+    is_preconditions_jsonl: bool,
 ) -> String {
+    let format_name = |is_jsonl: bool| {
+        if is_jsonl { "jsonl" } else { "bins" }
+    };
+
     format!(
         r#"
             [exe_trace.control_flow_dump]
             type = "file"
             directory = "{dir}"
             prefix = "{full_trace_filename}"
-            format = "jsonl"
+            format = "{full_trace_format}"
+            extension = ""
 
             [exe_trace.constraints_dump]
             type = "file"
             directory = "{dir}"
             prefix = "{sym_trace_filename}"
-            format = "jsonl"
+            format = "{sym_trace_format}"
+            extension = ""
 
             [exe_trace.preconditions_dump]
             type = "file"
             directory = "{dir}"
             prefix = "{preconditions_filename}"
-            format = "jsonl"
+            format = "{preconditions_format}"
+            extension = ""
 
             [exe_trace]
             dump_interval = 5
             inspectors = []
             "#,
         dir = traces_dir.display(),
+        full_trace_format = format_name(is_full_trace_jsonl),
+        sym_trace_format = format_name(is_sym_trace_jsonl),
+        preconditions_format = format_name(is_preconditions_jsonl),
     )
 }
 

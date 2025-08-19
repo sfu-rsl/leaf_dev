@@ -36,6 +36,7 @@ common = { workspace = true, features = [
     "conc_loop",
     "serde",
     "serde_json",
+    "bincode",
 ] }
 
 tracing-subscriber = { workspace = true, features = ["json"] }

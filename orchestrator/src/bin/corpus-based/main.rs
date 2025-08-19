@@ -2,6 +2,7 @@
 #![feature(impl_trait_in_assoc_type)]
 #![feature(result_flattening)]
 #![feature(iterator_try_collect)]
+#![feature(buf_read_has_data_left)]
 
 mod exe;
 mod inputs;
