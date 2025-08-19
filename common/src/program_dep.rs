@@ -1,7 +1,7 @@
 use core::hash::Hash;
 use std::{collections::HashMap, fs::OpenOptions, prelude::rust_2021::*};
 
-use macros::cond_derive_serde_rkyv;
+use macros::cond_derive_serialization;
 
 use super::types::{AdjListGraph, AssignmentId, BasicBlockIndex, InstanceKindId};
 
@@ -13,14 +13,14 @@ type AssignmentMap<V> = Vec<V>;
 type AssignmentIdMap = AssignmentMap<BasicBlockIndex>;
 
 #[derive(Clone)]
-#[cond_derive_serde_rkyv]
+#[cond_derive_serialization]
 pub struct AssignmentsInfo {
     pub bb_map: AssignmentIdMap,
     pub has_alternatives: AssignmentMap<bool>,
 }
 
 #[derive(Default, Clone)]
-#[cond_derive_serde_rkyv]
+#[cond_derive_serialization]
 pub struct PlainProgramDependenceMap<I: Eq + Hash = InstanceKindId> {
     pub control_dep: HashMap<I, ControlDependencyGraph>,
     pub assignments: HashMap<I, AssignmentsInfo>,

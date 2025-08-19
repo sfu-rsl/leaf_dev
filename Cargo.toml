@@ -34,6 +34,7 @@ runtime_basic_li_no_implicit = { path = "runtime/flavors/basic_li_no_implicit" }
 runtime_noop = { path = "runtime/flavors/noop" }
 libafl_leaf = { path = "integration/libafl/lib" }
 
+bincode = "2.0.1"
 clap = { version = "4.5", features = ["derive"] }
 config = "0.15.7"
 const_format = "0.2.34"
