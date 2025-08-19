@@ -1,14 +1,11 @@
 use core::borrow::Borrow;
 
 use derive_more as dm;
-use serde::{Serialize, Serializer};
-use serde_json::Serializer as JsonSerializer;
 
 use common::{
     directed::RawCaseValue,
     log_debug, log_warn,
     types::{InstanceKindId, trace::BranchRecord},
-    utils::serde::JsonLinesFormatter,
 };
 
 use crate::{
@@ -16,7 +13,7 @@ use crate::{
         BasicBlockLocation, ConstraintKind, FuncDef,
         backend::{CallTraceRecorder, DecisionTraceRecorder, PhasedCallTraceRecorder},
     },
-    utils::{HasIndex, Indexed, RefView, alias::RRef},
+    utils::{HasIndex, Indexed, RefView, alias::RRef, serdes::TypeSerializer},
 };
 
 use super::backend;
@@ -24,7 +21,7 @@ use backend::{ConstValue, ExeTraceRecorder, ExeTraceStorage, config::OutputConfi
 
 type ExeTraceRecord = crate::abs::ExeTraceRecord<ConstValue>;
 
-#[derive(Debug, Serialize, dm::Deref)]
+#[derive(Debug, dm::Deref)]
 pub(crate) struct Record {
     #[deref]
     record: Indexed<crate::abs::ExeTraceRecord<ConstValue>>,
@@ -43,35 +40,60 @@ impl Borrow<crate::abs::ExeTraceRecord<ConstValue>> for Record {
     }
 }
 
+type SerializerObj = Box<dyn TypeSerializer<SerializedRecord>>;
+
 pub(crate) struct BasicExeTraceRecorder {
     counter: usize,
     records: RRef<Vec<Record>>,
     stack: Vec<BasicBlockLocation<FuncDef>>,
     last_ret_point: Option<BasicBlockLocation<FuncDef>>,
-    serializer: Option<JsonSerializer<std::fs::File, JsonLinesFormatter>>,
+    serializer: Option<SerializerObj>,
 }
 
 impl BasicExeTraceRecorder {
     fn new(config: Option<&OutputConfig>) -> Self {
-        let file = config
-            .and_then(|c| match c {
-                OutputConfig::File(file) => Some(file),
-            })
-            .filter(|c| matches!(c.format, crate::utils::file::FileFormat::JsonLines))
-            .map(|c| {
-                c.open_or_create_single("exe_trace", None, true)
-                    .unwrap_or_else(|e| panic!("Could not create file for trace recording: {e}"))
-            });
+        let serializer = create_serializer(config);
 
         Self {
-            serializer: file
-                .map(|f| JsonSerializer::with_formatter(f, JsonLinesFormatter::default())),
+            serializer,
             counter: 0,
             records: Default::default(),
             stack: Default::default(),
             last_ret_point: Default::default(),
         }
     }
+}
+
+fn create_serializer(
+    config: Option<&OutputConfig>,
+) -> Option<Box<dyn TypeSerializer<SerializedRecord>>> {
+    use crate::utils::file::FileFormat;
+    config
+        .and_then(|c| match c {
+            OutputConfig::File(file) => Some(file),
+        })
+        .and_then(|cfg| match cfg.format {
+            FileFormat::JsonLines | FileFormat::BinaryStream => {
+                let file = cfg
+                    .open_or_create_single("exe_trace", None, true)
+                    .unwrap_or_else(|e| panic!("Could not create file for trace recording: {e}"));
+                let serializer: SerializerObj = match cfg.format {
+                    FileFormat::JsonLines => Box::new(serde_json::Serializer::with_formatter(
+                        file,
+                        common::utils::serde::JsonLinesFormatter::default(),
+                    )),
+                    FileFormat::BinaryStream => {
+                        Box::new(crate::utils::serdes::BincodeAdapter(file))
+                    }
+                    _ => unreachable!(),
+                };
+                Some(serializer)
+            }
+            FileFormat::Text => {
+                unimplemented!("Format is not supported for this dumper: {:?}", cfg.format);
+            }
+            FileFormat::Binary | FileFormat::Json => None,
+        })
 }
 
 pub(crate) fn create_trace_recorder(config: Option<&OutputConfig>) -> BasicExeTraceRecorder
@@ -215,7 +237,10 @@ impl BasicExeTraceRecorder {
         let Some(serializer) = self.serializer.as_mut() else {
             return;
         };
-        let _ = serialize_rec(self.records.as_ref().borrow().last().unwrap(), serializer)
+        let _ = serializer
+            .serialize(&SerializedRecord::from(
+                self.records.as_ref().borrow().last().unwrap(),
+            ))
             .inspect_err(|e| log_debug!("Failed to dump trace: {}", e));
     }
 
@@ -263,23 +288,30 @@ impl BasicExeTraceRecorder {
     }
 }
 
-fn serialize_rec<S: Serializer>(record: &Record, serializer: S) -> Result<S::Ok, S::Error> {
-    let Record {
-        record: record @ Indexed {
-            ref value,
-            ref index,
-        },
-        ..
-    } = record;
+#[derive(serde::Serialize, bincode::Encode)]
+struct SerializedRecord(Indexed<crate::abs::ExeTraceRecord<RawCaseValue>>);
 
-    use crate::abs::ExeTraceRecord::*;
-    match value {
-        Branch(ref branch) => Indexed {
-            value: Branch(to_raw_case(branch)),
-            index: *index,
-        }
-        .serialize(serializer),
-        _ => record.serialize(serializer),
+impl From<&Record> for SerializedRecord {
+    #[inline]
+    fn from(value: &Record) -> Self {
+        use crate::abs::ExeTraceRecord::*;
+        let record = match &value.record.value {
+            Call { from, to, broken } => Call {
+                from: *from,
+                to: *to,
+                broken: *broken,
+            },
+            Return { from, to, broken } => Return {
+                from: *from,
+                to: *to,
+                broken: *broken,
+            },
+            Branch(branch) => Branch(to_raw_case(branch)),
+        };
+        Self(Indexed {
+            value: record,
+            index: value.record.index,
+        })
     }
 }
 

@@ -10,6 +10,7 @@ pub(crate) mod alias;
 pub(crate) mod file;
 pub(crate) mod logging;
 pub(crate) mod meta;
+pub(crate) mod serdes;
 
 use alias::RRef;
 
@@ -107,7 +108,7 @@ pub(crate) trait HasIndex {
     fn index(&self) -> usize;
 }
 
-#[derive(Clone, Copy, Debug, dm::Deref, dm::From, serde::Serialize)]
+#[derive(Clone, Copy, Debug, dm::Deref, dm::From, serde::Serialize, bincode::Encode)]
 pub(crate) struct Indexed<T> {
     #[deref]
     pub value: T,

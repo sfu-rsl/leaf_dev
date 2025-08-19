@@ -1,49 +1,41 @@
-use std::fs::File;
-
-use serde::{Serialize, Serializer, ser::SerializeStruct};
-
-use common::utils::serde::JsonLinesFormatter;
+use crate::utils::serdes::TypeSerializer;
 
 use super::{Constraint, StepInspector};
 
-pub(crate) struct StreamDumperStepInspector<S: Serialize, V: Serialize, C: Serialize, Ser> {
+pub(crate) struct StreamDumperStepInspector<S, V, C, Ser> {
     serializer: Ser,
     _phantom: core::marker::PhantomData<(S, V, C)>,
 }
 
-impl<S: Serialize, V: Serialize, C: Serialize, Ser> StreamDumperStepInspector<S, V, C, Ser> {
-    pub fn new(serializer: Ser) -> Self {
+impl<S, V, C, Ser> StreamDumperStepInspector<S, V, C, Ser> {
+    pub fn new(serializer: Ser) -> Self
+    where
+        Ser: for<'a> TypeSerializer<Record<'a, S, V, C>>,
+    {
         Self {
             serializer,
             _phantom: Default::default(),
         }
     }
 }
-impl<S: Serialize, V: Serialize, C: Serialize>
-    StreamDumperStepInspector<S, V, C, serde_json::Serializer<std::fs::File, JsonLinesFormatter>>
-{
-    pub fn json_lines(stream_file: File) -> Self {
-        Self::new(serde_json::Serializer::with_formatter(
-            stream_file,
-            JsonLinesFormatter::default(),
-        ))
-    }
+
+#[derive(serde::Serialize, bincode::Encode)]
+pub(crate) struct Record<'a, S, V, C> {
+    step: &'a S,
+    constraint: Constraint<&'a V, &'a C>,
 }
 
-impl<S: Serialize, V: Serialize, C: Serialize, Ser> StepInspector<S, V, C>
-    for StreamDumperStepInspector<S, V, C, Ser>
+impl<S, V, C, Ser> StepInspector<S, V, C> for StreamDumperStepInspector<S, V, C, Ser>
 where
-    for<'a> &'a mut Ser: Serializer,
+    Ser: for<'a> TypeSerializer<Record<'a, S, V, C>>,
 {
     fn inspect(&mut self, step: &S, constraint: Constraint<&V, &C>) {
-        let serializer = &mut self.serializer;
-        serializer
-            .serialize_struct("Record", 2)
-            .and_then(|mut rec_ser| {
-                rec_ser.serialize_field(stringify!(step), step)?;
-                rec_ser.serialize_field(stringify!(constraint), &constraint)?;
-                rec_ser.end()
-            })
+        let record = Record {
+            step: step,
+            constraint: constraint,
+        };
+        self.serializer
+            .serialize(&record)
             .unwrap_or_else(|e| panic!("Could not dump step: {e}"));
     }
 }

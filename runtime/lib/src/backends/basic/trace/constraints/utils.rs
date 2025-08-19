@@ -138,7 +138,10 @@ pub(super) mod dumping {
                             Ok(())
                         })
                     }
-                    FileFormat::Text | FileFormat::JsonLines | FileFormat::Binary => {
+                    FileFormat::Text
+                    | FileFormat::JsonLines
+                    | FileFormat::Binary
+                    | FileFormat::BinaryStream => {
                         unimplemented!(
                             "Format is not supported for this dumper: {:?}",
                             config.format
