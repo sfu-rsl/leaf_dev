@@ -21,7 +21,10 @@ pub struct AssignmentsInfo {
 
 #[derive(Default, Clone)]
 #[cond_derive_serialization]
-pub struct PlainProgramDependenceMap<I: Eq + Hash = InstanceKindId> {
+pub struct PlainProgramDependenceMap<I = InstanceKindId>
+where
+    I: Eq + Hash,
+{
     pub control_dep: HashMap<I, ControlDependencyGraph>,
     pub assignments: HashMap<I, AssignmentsInfo>,
 }
@@ -103,6 +106,7 @@ pub mod rw {
             Ok(data)
         }
 
+        #[cfg(feature = "serde_json")]
         pub(super) fn write<'a>(
             pdm: &PlainProgramDependenceMap,
             file: File,
