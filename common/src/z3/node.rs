@@ -1,8 +1,9 @@
 use std::prelude::rust_2021::*;
 
 use derive_more as dm;
-use serde::{Deserialize, Serialize};
 use z3::ast::{self, Ast};
+
+use macros::cond_derive_serialization;
 
 /* NOTE: Why not using `Dynamic`?
  * In this way we have a little more freedom to include our information such
@@ -60,19 +61,22 @@ impl<'ctx> BVNode<'ctx> {
 #[display("{_0}")]
 pub struct ArrayNode<'ctx>(pub ast::Array<'ctx>, pub ArraySort);
 
-#[derive(Debug, Clone, PartialEq, Eq, dm::From, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, dm::From)]
+#[cond_derive_serialization(skip(rkyv))]
 pub enum AstNodeSort {
     Bool,
     BitVector(BVSort),
     Array(ArraySort),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cond_derive_serialization(skip(rkyv))]
 pub struct BVSort {
     pub is_signed: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, dm::From, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, dm::From)]
+#[cond_derive_serialization(skip(rkyv))]
 pub struct ArraySort {
     pub range: Box<AstNodeSort>,
 }

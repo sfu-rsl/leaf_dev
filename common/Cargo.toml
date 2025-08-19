@@ -12,7 +12,7 @@ doctest = false
 [features]
 std = []
 logging = ["dep:tracing"]
-serde = ["dep:serde"]
+serde = ["std", "dep:serde"]
 serde_json = ["serde", "dep:serde_json"]
 type_info = ["std", "dep:delegate"]
 type_info_rw = [
@@ -26,11 +26,13 @@ type_info_rw = [
 ]
 config = ["std", "dep:config", "logging"]
 directed = ["std", "serde", "dep:serde_json"]
-trace_types = ["std", "dep:derive_more"]
+trace_types = ["std", "dep:derive_more", "dep:macros"]
 z3 = [
     "std",
     "trace_types",
     "unsafe_wrappers",
+    "logging",
+    "dep:macros",
     "dep:z3",
     "dep:z3-sys",
     "dep:delegate",
@@ -41,7 +43,7 @@ bincode = ["dep:bincode", "serde"]
 unsafe_wrappers = ["dep:derive_more"]
 conc_loop = ["std"]
 building = ["std"]
-program_dep = ["std", "rkyv", "serde", "dep:macros"]
+program_dep = ["std", "rkyv", "serde", "serde_json", "dep:macros"]
 
 [dependencies]
 # No dependencies are supposed to be used by this crate in the mode that is used by the shim library.

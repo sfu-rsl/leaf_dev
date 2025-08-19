@@ -29,6 +29,7 @@ pub type InstanceKindDiscr = u8;
     derive(Debug, Hash, PartialEq, Eq),
     compare(PartialEq),
 ))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 // FIXME: a u32 for the crate number seems to be unnecessarily large.
 pub struct DefId(pub u32, pub u32);
 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
@@ -53,6 +54,7 @@ impl core::fmt::Display for DefId {
     derive(Debug, Hash, PartialEq, Eq),
     compare(PartialEq),
 ))]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 pub struct InstanceKindId(pub InstanceKindDiscr, pub DefId);
 impl InstanceKindId {
     pub const INVALID: Self = InstanceKindId(InstanceKindDiscr::MAX, DefId(u32::MAX, u32::MAX));
@@ -71,6 +73,7 @@ impl core::fmt::Display for InstanceKindId {
 
 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
+#[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
 #[repr(C)]
 pub struct BasicBlockLocation<B = InstanceKindId> {
     pub body: B,
@@ -142,10 +145,12 @@ impl From<FuncDef> for InstanceKindId {
 pub mod trace {
     use std::{vec, vec::Vec};
 
+    use macros::cond_derive_serialization;
+
     use super::{BasicBlockLocation, InstanceKindId};
 
     #[derive(Debug, Clone)]
-    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+    #[cond_derive_serialization(skip(rkyv))]
     pub struct Constraint<V, C> {
         pub discr: V,
         pub kind: ConstraintKind<C>,
@@ -197,7 +202,7 @@ pub mod trace {
     }
 
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+    #[cond_derive_serialization(skip(rkyv))]
     pub enum ConstraintKind<C> {
         True,
         False,
@@ -307,14 +312,14 @@ pub mod trace {
     pub type RawCaseValue = u128;
 
     #[derive(Debug, Clone)]
-    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+    #[cond_derive_serialization(skip(rkyv))]
     pub struct BranchRecord<C> {
         pub location: BasicBlockLocation,
         pub decision: ConstraintKind<C>,
     }
 
     #[derive(Debug, Clone)]
-    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+    #[cond_derive_serialization(skip(rkyv))]
     pub enum ExeTraceRecord<C> {
         Call {
             from: BasicBlockLocation,

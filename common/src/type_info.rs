@@ -157,7 +157,7 @@ pub use pass_core_type_names_to;
 macro_rules! define_core_types {
     ($($name: ident),*$(,)?) => {
         array_backed_struct! {
-            #[cond_derive_serialization]
+            #[cond_derive_serialization(skip(bincode))]
             #[derive(Clone)]
             pub struct CoreTypes<V = TypeId> {
                 $($name),*

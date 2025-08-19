@@ -1,33 +1,35 @@
-use core::hash::Hash;
-use core::{iter, str::FromStr};
-use std::prelude::rust_2021::*;
-use std::{collections::HashMap, ffi, format};
+use core::{hash::Hash, iter, str::FromStr};
+use std::{collections::HashMap, ffi, format, prelude::rust_2021::*};
 
 use derive_more as dm;
-use serde::{Deserialize, Serialize};
 use z3::{Context, ast, ast::Ast};
 use z3_sys::{
     Z3_ast_vector_get, Z3_ast_vector_size, Z3_get_app_decl, Z3_get_decl_name,
     Z3_parse_smtlib2_string, Z3_to_app,
 };
 
+use macros::cond_derive_serialization;
+
 use super::node::{AstAndVars, AstNode, AstNodeSort};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
+#[cond_derive_serialization(skip(rkyv))]
 struct VarDecl {
     name: String,
     sort: AstNodeSort,
     smtlib_rep: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, dm::Display)]
+#[derive(Debug, Clone, dm::Display)]
+#[cond_derive_serialization(skip(rkyv))]
 #[display("{smtlib_rep}")]
-struct Expr {
+pub struct Expr {
     sort: AstNodeSort,
     smtlib_rep: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, dm::Display)]
+#[derive(Debug, Clone, dm::Display)]
+#[cond_derive_serialization(skip(rkyv))]
 #[display("{expr}")]
 pub struct SmtLibExpr {
     #[serde(default)]
@@ -46,7 +48,7 @@ impl From<Expr> for SmtLibExpr {
 }
 
 impl<'ctx, I: ToString + FromStr> AstAndVars<'ctx, I> {
-    pub fn serializable(&self) -> impl Serialize {
+    pub fn serializable(&self) -> SmtLibExpr {
         SmtLibExpr {
             expr: Expr {
                 sort: self.value.sort(),
@@ -122,7 +124,7 @@ impl SmtLibExpr {
 }
 
 impl<'ctx> AstNode<'ctx> {
-    pub fn serializable(&self) -> impl Serialize {
+    pub fn serializable(&self) -> Expr {
         Expr {
             sort: self.sort(),
             smtlib_rep: self.to_smtlib2(),
