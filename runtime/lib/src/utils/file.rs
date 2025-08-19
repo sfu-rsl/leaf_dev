@@ -102,6 +102,8 @@ pub(crate) enum FileFormat {
     #[serde(alias = "jsonl")]
     JsonLines,
     Binary,
+    #[serde(alias = "bins")]
+    BinaryStream,
 }
 
 impl FileFormat {
@@ -111,6 +113,7 @@ impl FileFormat {
             Self::Json => "json",
             Self::JsonLines => "jsonl",
             Self::Binary => "bin",
+            Self::BinaryStream => "bins",
         }
     }
 
@@ -120,6 +123,7 @@ impl FileFormat {
             Self::Json => false,
             Self::JsonLines => true,
             Self::Binary => false,
+            Self::BinaryStream => true,
         }
     }
 }

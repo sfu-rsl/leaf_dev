@@ -25,9 +25,11 @@ common = { workspace = true, features = [
     "directed",
     "program_dep",
     "serde_json",
+    "bincode",
 ] }
 leaf_macros = { path = "../../macros", package = "macros" }
 
+bincode = { version = "2.0", features = ["serde"] }
 config = { workspace = true, features = ["toml", "json"] }
 tracing-subscriber = { workspace = true }
 tracing = { workspace = true }

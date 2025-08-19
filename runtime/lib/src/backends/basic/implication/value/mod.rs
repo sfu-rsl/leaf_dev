@@ -353,9 +353,10 @@ mod enabled {
     }
 
     mod serdes {
+        use bincode::Encode;
         use serde::Serialize;
 
-        use super::Precondition;
+        use super::{ConstraintId, Precondition};
 
         impl Serialize for Precondition {
             fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -366,6 +367,22 @@ mod enabled {
                     Precondition::NoneOrUnknown => serializer.serialize_none(),
                     Precondition::Constraints(constraints) => {
                         constraints.expect_whole().serialize(serializer)
+                    }
+                }
+            }
+        }
+
+        impl Encode for Precondition {
+            fn encode<E: bincode::enc::Encoder>(
+                &self,
+                encoder: &mut E,
+            ) -> Result<(), bincode::error::EncodeError> {
+                match self {
+                    Precondition::NoneOrUnknown => {
+                        std::collections::BTreeSet::<ConstraintId>::new().encode(encoder)
+                    }
+                    Precondition::Constraints(constraints) => {
+                        constraints.expect_whole().encode(encoder)
                     }
                 }
             }

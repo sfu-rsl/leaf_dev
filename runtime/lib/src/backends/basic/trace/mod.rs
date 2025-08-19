@@ -31,6 +31,8 @@ pub(crate) use query::default_trace_querier;
     dm::Display,
     serde::Serialize,
     serde::Deserialize,
+    bincode::Encode,
+    bincode::Decode,
 )]
 pub(crate) struct Step(BasicBlockLocation);
 

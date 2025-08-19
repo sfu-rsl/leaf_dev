@@ -218,7 +218,7 @@ impl ValueType {
  * Enums are not much a favorable option, since they are against the abstract
  * representation of integers and floats in the engine.
  */
-#[derive(Clone, Copy, Eq, PartialEq, Hash, dm::Debug)]
+#[derive(Clone, Copy, Eq, PartialEq, Hash, dm::Debug, bincode::Encode)]
 #[debug("{}", self)]
 pub(crate) struct IntType {
     pub bit_size: u64,
