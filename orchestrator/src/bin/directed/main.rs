@@ -278,7 +278,7 @@ fn execute_and_load_trace(
         }
     })?;
 
-    let artifact_path = |name| args.outdir.join(name).with_extension("jsonl");
+    let artifact_path = |name| args.outdir.join(name);
 
     Ok(load_trace(
         &artifact_path(NAME_FULL_TRACE),
