@@ -17,8 +17,8 @@ path = "src/bin/directed/main.rs"
 edition = "2024"
 
 [[bin]]
-name = "leafo_corpus_based"
-path = "src/bin/corpus-based/main.rs"
+name = "leafo_fuzzer_comp"
+path = "src/bin/fuzzer-comp/main.rs"
 edition = "2024"
 
 [build-dependencies]

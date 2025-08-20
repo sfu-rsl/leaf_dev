@@ -37,12 +37,18 @@ struct Args {
     #[command(flatten)]
     input_corpus: InputCorpusArgs,
 
+    /// In offline mode, the orchestrator will not watch for new inputs
+    /// and will finish after processing the existing ones.
     #[arg(long, action)]
     offline: bool,
 
+    /// The working directory for the orchestrator.
+    /// Various use cases include execution of the program and storing its traces at this location.
+    /// Default to a temporary directory.
     #[arg(long)]
     workdir: Option<PathBuf>,
 
+    /// The solver process to be used for solving queries.
     #[arg(long, default_value = "leafsolver")]
     solver: PathBuf,
 }
@@ -50,7 +56,7 @@ struct Args {
 #[derive(Parser, Debug)]
 struct InputCorpusArgs {
     /// Path to the directory containing the inputs.
-    #[arg(long, short = 'i')]
+    #[arg(long = "input_dir", short = 'i')]
     dir: PathBuf,
     /// Files to be excluded when grabbing inputs.
     #[arg(long, alias = "exclude")]
@@ -107,8 +113,11 @@ async fn main() {
 
 fn process_args() -> Args {
     let mut args = Args::parse();
-    args.workdir
-        .get_or_insert(std::env::temp_dir().join("leaf").join("corpus-based"));
+    args.workdir.get_or_insert(
+        std::env::temp_dir()
+            .join("leaf")
+            .join(env!("CARGO_BIN_NAME")),
+    );
     args
 }
 
