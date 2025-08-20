@@ -15,9 +15,9 @@ mod utils;
 use std::path::PathBuf;
 
 use clap::Parser;
-use common::log_info;
 use derive_more::derive::Deref;
 
+use common::{log_debug, log_info};
 use orchestrator::args::CommonArgs;
 
 use self::{
@@ -116,15 +116,7 @@ async fn await_all_handles(
     handles: impl IntoIterator<Item = tokio::task::JoinHandle<()>>,
     offline: bool,
 ) {
-    // FIXME: The following does not handle failures in tasks properly (user signal should be cancelled in that case).
-
-    let mut abort_handles = Vec::new();
-
-    let join_all = futures::future::try_join_all(
-        handles
-            .into_iter()
-            .inspect(|h| abort_handles.push(h.abort_handle())),
-    );
+    use futures::future;
 
     let user_signal = async {
         if !offline {
@@ -132,14 +124,33 @@ async fn await_all_handles(
             tokio::signal::ctrl_c()
                 .await
                 .expect("Failed to listen for Ctrl+C signal");
+            log_debug!("Ctrl+C received");
+        } else {
+            core::future::pending::<()>().await;
+        }
+    };
+    tokio::pin!(user_signal);
 
+    let mut abort_handles = Vec::new();
+    let join_all = future::try_join_all(
+        handles
+            .into_iter()
+            .inspect(|h| abort_handles.push(h.abort_handle())),
+    );
+
+    let task_results = match future::select(user_signal, join_all).await {
+        future::Either::Left((_user, join_all)) => {
+            assert!(!offline, "User signal should not complete in offline mode");
+
+            log_info!("Cancelling background tasks...");
             abort_handles.into_iter().for_each(|handle| {
                 handle.abort();
             });
-        }
-    };
 
-    let (_, task_results) = futures::future::join(user_signal, join_all).await;
+            join_all.await
+        }
+        future::Either::Right((task_results, _user)) => task_results,
+    };
 
     if task_results.is_ok() {
         if !offline {
@@ -151,7 +162,6 @@ async fn await_all_handles(
     }
 
     let finish_reason = task_results.unwrap_err();
-
     if let Ok(err) = finish_reason.try_into_panic() {
         std::panic::resume_unwind(err);
     }
