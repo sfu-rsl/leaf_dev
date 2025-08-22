@@ -256,7 +256,6 @@ pub(crate) fn traces(
     config: ExecutionConfig,
     parallel_execution_job_count: usize,
     inputs: impl Stream<Item = Input> + Send + 'static,
-    inputs_pb: indicatif::ProgressBar,
 ) -> (JoinHandle<()>, impl Stream<Item = Trace> + Send) {
     let execution_span = tracing::info_span!("Execution");
 
@@ -269,8 +268,7 @@ pub(crate) fn traces(
         .collect();
     let executor = ExecutorPool::<SeqExecutor>::new(executors);
 
-    let (process_handle, traces) =
-        executor.execute_inputs(inputs.inspect(move |_| inputs_pb.inc(1)));
+    let (process_handle, traces) = executor.execute_inputs(inputs);
 
     (
         process_handle.unwrap(),

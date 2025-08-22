@@ -16,8 +16,10 @@ use std::path::PathBuf;
 
 use clap::Parser;
 use derive_more::derive::Deref;
+use futures::StreamExt;
 
 use common::{log_debug, log_info};
+
 use orchestrator::args::CommonArgs;
 
 use self::{
@@ -79,16 +81,15 @@ async fn main() {
 
     let args = process_args();
 
-    let pb = init_progress_bar(args.pb_target.as_ref());
+    let (_, [inputs_pb, potentials_pb]) = pb::init_progress_bars(args.pb_target.as_ref());
 
-    let (input_process_handle, inputs_pb, inputs) =
-        inputs::prioritized_inputs(&args.input_corpus, args.offline)
+    // 1. Grab, preprocess, and prioritize inputs. (N)
+    let (input_process_handle, inputs) =
+        inputs::prioritized_inputs(&args.input_corpus, args.offline, inputs_pb.clone())
             .await
-            .expect("Failed to process inputs from corpus directory");
-    pb.add(inputs_pb.clone());
+            .expect("Failed to process inputs from the corpus directory");
 
-    // tokio::time::sleep(core::time::Duration::from_secs(2)).await;
-
+    // 2. Execute and obtain traces for each input. (N)
     let (input_consumption_handle, traces) = exe::traces(
         exe::ExecutionConfig::new(
             &args.program,
@@ -100,19 +101,22 @@ async fn main() {
             args.workdir.as_ref().unwrap(),
         ),
         args.j_exe,
-        inputs,
-        inputs_pb,
+        inputs.inspect(move |_| inputs_pb.inc(1)),
     );
 
-    let (potential_process_handle, potentials) = potentials::prioritized_potential(traces);
+    // 3. Derive potentials from each trace and prioritize. (N * M)
+    let (potential_process_handle, potentials) =
+        potentials::prioritized_potential(traces, potentials_pb.clone());
 
-    let outputs =
-        solve::realize_potentials(&args.solver, args.workdir.as_ref().unwrap(), potentials);
+    // 4. Solve the potentials to obtain outputs (new inputs). (N * M)
+    let outputs = solve::realize_potentials(
+        &args.solver,
+        args.workdir.as_ref().unwrap(),
+        potentials.inspect(move |_| potentials_pb.inc(1)),
+    );
+
+    // 5. Dump outputs to the output directory.
     let output_dump_handle = output::dump_outputs(&args.outdir, outputs);
-
-    if !args.offline {
-        log_info!("The orchestrator is watching for new inputs in the corpus directory...");
-    }
 
     await_all_handles(
         [
@@ -134,30 +138,6 @@ fn process_args() -> Args {
             .join(env!("CARGO_BIN_NAME")),
     );
     args
-}
-
-fn init_progress_bar(target: Option<&PathBuf>) -> indicatif::MultiProgress {
-    let pb = indicatif::MultiProgress::new();
-    if let Some(path) = target {
-        let target = std::fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .open(path)
-            .expect("Failed to open progress bar file");
-        #[cfg(unix)]
-        pb.set_draw_target(indicatif::ProgressDrawTarget::term(
-            console::Term::read_write_pair(
-                target.try_clone().expect("Target file should be cloneable"),
-                target,
-            ),
-            20,
-        ));
-    } else {
-        pb.set_draw_target(indicatif::ProgressDrawTarget::hidden());
-    }
-
-    pb
 }
 
 async fn await_all_handles(
@@ -215,4 +195,46 @@ async fn await_all_handles(
     }
 
     log_info!("Orchestrator stopped successfully");
+}
+
+mod pb {
+    use std::path::PathBuf;
+
+    #[cfg(unix)]
+    use indicatif::ProgressDrawTarget;
+    use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+
+    pub(super) fn init_progress_bars(
+        target: Option<&PathBuf>,
+    ) -> (MultiProgress, [ProgressBar; 2]) {
+        let pb = MultiProgress::new();
+        if let Some(path) = target {
+            let target = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .open(path)
+                .expect("Failed to open progress bar file");
+            #[cfg(unix)]
+            pb.set_draw_target(ProgressDrawTarget::term(
+                console::Term::read_write_pair(
+                    target.try_clone().expect("Target file should be cloneable"),
+                    target,
+                ),
+                20,
+            ));
+        } else {
+            pb.set_draw_target(indicatif::ProgressDrawTarget::hidden());
+        }
+
+        const PB_STYLE: &str = "{wide_bar} {pos}/{len}";
+        let inputs_pb = ProgressBar::new(0)
+            .with_style(ProgressStyle::with_template(&format!("Inputs {}", PB_STYLE)).unwrap());
+        let potentials_pb = ProgressBar::new(0)
+            .with_style(ProgressStyle::with_template(&format!("Potentials {}", PB_STYLE)).unwrap());
+        pb.add(inputs_pb.clone());
+        pb.add(potentials_pb.clone());
+
+        (pb, [inputs_pb, potentials_pb])
+    }
 }

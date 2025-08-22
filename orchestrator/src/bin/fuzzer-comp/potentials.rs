@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use futures::{Stream, StreamExt};
-
+use indicatif::ProgressBar;
 
 use crate::{HasByteInput, IntoQuery, SolveQuery, TraceConstraint, TraceSwitchStep};
 
@@ -122,13 +122,17 @@ mod priority {
 
     pub(super) struct NoOpCorpusPotentialPrioritizer {
         potentials_tx: priority_channel::Sender<NoOrderPotential>,
+        pb: ProgressBar,
     }
 
     impl NoOpCorpusPotentialPrioritizer {
-        pub fn new() -> (Self, impl Stream<Item = Potential>) {
+        pub fn new(pb: ProgressBar) -> (Self, impl Stream<Item = Potential>) {
             let (tx, rx) = priority_channel::channel::<NoOrderPotential>();
             (
-                Self { potentials_tx: tx },
+                Self {
+                    potentials_tx: tx,
+                    pb,
+                },
                 rx.to_stream().map(|potential| potential.0),
             )
         }
@@ -137,6 +141,7 @@ mod priority {
             potentials
                 .for_each(async |potential| {
                     let no_ordered = NoOrderPotential(potential);
+                    self.pb.inc_length(1);
                     self.potentials_tx.send(no_ordered).await;
                 })
                 .await;
@@ -146,14 +151,16 @@ mod priority {
 
 pub(crate) fn prioritized_potential(
     traces: impl Stream<Item = Trace> + Send + 'static,
-) -> (tokio::task::JoinHandle<()>, impl Stream<Item = Potential>)
+    pb: ProgressBar,
+) -> (tokio::task::JoinHandle<()>, impl Stream<Item = Potential> + 'static)
 where
     // Ensure interfaces are compatible
     Potential: HasByteInput,
     Potential: IntoQuery<Constraint = TraceConstraint> + Send,
     <Potential as IntoQuery>::Query: Send,
 {
-    let (prioritizer, prioritized_potentials) = priority::NoOpCorpusPotentialPrioritizer::new();
+    let (prioritizer, prioritized_potentials) =
+        priority::NoOpCorpusPotentialPrioritizer::new(pb.clone());
 
     let process_handle = tokio::task::spawn(async move {
         let potentials = collect::assess_traces(traces);
