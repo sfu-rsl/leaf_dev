@@ -5,6 +5,7 @@ use std::{
 
 use futures::{Stream, StreamExt, TryStream, TryStreamExt};
 use glob::Pattern;
+use indicatif::{ProgressBar, ProgressStyle};
 use tokio::{pin, task::JoinHandle};
 
 use common::{log_debug, log_info};
@@ -144,12 +145,16 @@ mod process {
 
     pub(super) struct NoOpCorpusInputProcessor {
         inputs_tx: priority_channel::Sender<NoOrderInput>,
+        pb: ProgressBar,
     }
 
     impl NoOpCorpusInputProcessor {
-        pub fn new() -> (Self, impl Stream<Item = Input>) {
+        pub fn new(pb: ProgressBar) -> (Self, impl Stream<Item = Input>) {
             let (tx, rx) = priority_channel::channel::<NoOrderInput>();
-            (Self { inputs_tx: tx }, rx.to_stream().map(|input| input.0))
+            (
+                Self { inputs_tx: tx, pb },
+                rx.to_stream().map(|input| input.0),
+            )
         }
 
         pub(super) async fn process_existing(&self, inputs: impl Stream<Item = Result<PathBuf>>) {
@@ -169,6 +174,7 @@ mod process {
                 };
 
                 self.inputs_tx.send(self.to_input(path).into()).await;
+                self.pb.inc_length(1);
             }
         }
 
@@ -181,8 +187,15 @@ mod process {
 pub(crate) async fn prioritized_inputs(
     input_corpus: &super::InputCorpusArgs,
     offline: bool,
-) -> Result<(JoinHandle<()>, impl Stream<Item = Input> + use<>)> {
-    let (processor, inputs) = process::NoOpCorpusInputProcessor::new();
+) -> Result<(
+    JoinHandle<()>,
+    ProgressBar,
+    impl Stream<Item = Input> + use<>,
+)> {
+    let pb = ProgressBar::new(0)
+        .with_style(ProgressStyle::with_template("Inputs {wide_bar} {pos}/{len}").unwrap());
+
+    let (processor, inputs) = process::NoOpCorpusInputProcessor::new(pb.clone());
 
     let inputs_dir = &input_corpus.dir;
     let filter = PathFilter::new(
@@ -202,7 +215,7 @@ pub(crate) async fn prioritized_inputs(
             .process_existing(existing.into_stream().inspect(|_| counter += 1))
             .await;
 
-        log_info!("Processed {} existing inputs", counter);
+        log_info!("Grabbed and preprocessed {} existing inputs", counter);
 
         if let Some((watch_handle, new_live)) = new_files {
             log_info!("Watching for new inputs ...");
@@ -212,5 +225,5 @@ pub(crate) async fn prioritized_inputs(
         }
     });
 
-    Ok((process_handle, inputs))
+    Ok((process_handle, pb, inputs))
 }

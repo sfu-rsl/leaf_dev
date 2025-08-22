@@ -51,6 +51,13 @@ struct Args {
     /// The solver process to be used for solving queries.
     #[arg(long, default_value = "leafsolver")]
     solver: PathBuf,
+
+    #[arg(long, default_value = "4")]
+    j_exe: usize,
+
+    /// The (tty) file to which the progress bars will be rendered.
+    #[arg(long)]
+    pb_target: Option<PathBuf>,
 }
 
 #[derive(Parser, Debug)]
@@ -72,12 +79,17 @@ async fn main() {
 
     let args = process_args();
 
-    let (input_process_handle, inputs) =
+    let pb = init_progress_bar(args.pb_target.as_ref());
+
+    let (input_process_handle, inputs_pb, inputs) =
         inputs::prioritized_inputs(&args.input_corpus, args.offline)
             .await
             .expect("Failed to process inputs from corpus directory");
+    pb.add(inputs_pb.clone());
 
-    let traces = exe::traces(
+    // tokio::time::sleep(core::time::Duration::from_secs(2)).await;
+
+    let (input_consumption_handle, traces) = exe::traces(
         exe::ExecutionConfig::new(
             &args.program,
             args.env.iter().cloned(),
@@ -87,7 +99,9 @@ async fn main() {
                 .map(|s| core::time::Duration::from_secs(s.get())),
             args.workdir.as_ref().unwrap(),
         ),
+        args.j_exe,
         inputs,
+        inputs_pb,
     );
 
     let (potential_process_handle, potentials) = potentials::prioritized_potential(traces);
@@ -103,6 +117,7 @@ async fn main() {
     await_all_handles(
         [
             input_process_handle,
+            input_consumption_handle,
             potential_process_handle,
             output_dump_handle,
         ],
@@ -119,6 +134,30 @@ fn process_args() -> Args {
             .join(env!("CARGO_BIN_NAME")),
     );
     args
+}
+
+fn init_progress_bar(target: Option<&PathBuf>) -> indicatif::MultiProgress {
+    let pb = indicatif::MultiProgress::new();
+    if let Some(path) = target {
+        let target = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(path)
+            .expect("Failed to open progress bar file");
+        #[cfg(unix)]
+        pb.set_draw_target(indicatif::ProgressDrawTarget::term(
+            console::Term::read_write_pair(
+                target.try_clone().expect("Target file should be cloneable"),
+                target,
+            ),
+            20,
+        ));
+    } else {
+        pb.set_draw_target(indicatif::ProgressDrawTarget::hidden());
+    }
+
+    pb
 }
 
 async fn await_all_handles(
