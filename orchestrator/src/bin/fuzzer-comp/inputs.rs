@@ -5,7 +5,7 @@ use std::{
 
 use futures::{Stream, StreamExt, TryStream, TryStreamExt};
 use glob::Pattern;
-use indicatif::{ProgressBar, ProgressStyle};
+use indicatif::ProgressBar;
 use tokio::{pin, task::JoinHandle};
 
 use common::{log_debug, log_info};
@@ -187,15 +187,9 @@ mod process {
 pub(crate) async fn prioritized_inputs(
     input_corpus: &super::InputCorpusArgs,
     offline: bool,
-) -> Result<(
-    JoinHandle<()>,
-    ProgressBar,
-    impl Stream<Item = Input> + use<>,
-)> {
-    let pb = ProgressBar::new(0)
-        .with_style(ProgressStyle::with_template("Inputs {wide_bar} {pos}/{len}").unwrap());
-
-    let (processor, inputs) = process::NoOpCorpusInputProcessor::new(pb.clone());
+    pb: ProgressBar,
+) -> Result<(JoinHandle<()>, impl Stream<Item = Input> + use<>)> {
+    let (processor, inputs) = process::NoOpCorpusInputProcessor::new(pb);
 
     let inputs_dir = &input_corpus.dir;
     let filter = PathFilter::new(
@@ -225,5 +219,5 @@ pub(crate) async fn prioritized_inputs(
         }
     });
 
-    Ok((process_handle, pb, inputs))
+    Ok((process_handle, inputs))
 }
