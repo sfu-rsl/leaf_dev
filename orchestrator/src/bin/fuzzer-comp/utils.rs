@@ -27,7 +27,7 @@ macro_rules! no_order_wrapper {
 pub(crate) use no_order_wrapper;
 
 pub(crate) mod priority_channel {
-    use std::{future::Future, sync::Arc, task::Poll};
+    use std::sync::Arc;
 
     use futures::Stream;
     use tokio::sync::{Mutex, mpsc};
@@ -104,24 +104,12 @@ pub(crate) mod priority_channel {
         }
 
         pub(crate) fn to_stream(self) -> impl Stream<Item = T> {
-            struct StreamWrapper<T: Ord> {
-                receiver: Receiver<T>,
-            }
-
-            impl<T: Ord> Stream for StreamWrapper<T> {
-                type Item = T;
-
-                fn poll_next(
-                    mut self: std::pin::Pin<&mut Self>,
-                    cx: &mut std::task::Context<'_>,
-                ) -> Poll<Option<Self::Item>> {
-                    let future = self.receiver.recv();
-                    tokio::pin!(future);
-                    future.poll(cx)
+            futures::stream::unfold(self, |mut this| async move {
+                match this.recv().await {
+                    Some(item) => Some((item, this)),
+                    None => None,
                 }
-            }
-
-            StreamWrapper { receiver: self }
+            })
         }
     }
 
