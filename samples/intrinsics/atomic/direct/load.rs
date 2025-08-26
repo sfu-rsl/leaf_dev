@@ -6,11 +6,24 @@ use leaf::annotations::Symbolizable;
 
 fn main() {
     macro_rules! call_all_and_test {
-        ($($op:expr),*$(,)?) => {
+        ($($op:ident),*$(,)?) => {
+            $(
+                call_all_and_test!(
+                    $op,
+                    {
+                        AtomicOrdering::Acquire,
+                        AtomicOrdering::Relaxed,
+                        AtomicOrdering::SeqCst,
+                        AtomicOrdering::Unordered,
+                    },
+                );
+            )*
+        };
+        ($op:ident, { $($ordering:expr),* $(,)? } $(,)?) => {
             $(
                 let mut a = 20u16.mark_symbolic();
                 let ptr = &mut a as *const u16;
-                let b = unsafe { $op(ptr) };
+                let b = unsafe { $op::<{ $ordering }>(ptr) };
                 if b == 30 {
                     core::hint::black_box(0);
                 }
@@ -18,10 +31,5 @@ fn main() {
         };
     }
 
-    call_all_and_test!(
-        atomic_load_acquire,
-        atomic_load_relaxed,
-        atomic_load_seqcst,
-        atomic_load_unordered,
-    );
+    call_all_and_test!(atomic_load);
 }
