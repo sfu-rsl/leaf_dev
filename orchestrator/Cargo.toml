@@ -69,3 +69,5 @@ futures = "0.3.31"
 rkyv = { workspace = true }
 disjoint = "0.8.0"
 itertools = { workspace = true }
+indicatif = "0.18.0"
+console = "0.16.0"
