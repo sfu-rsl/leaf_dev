@@ -90,8 +90,8 @@ pub struct WrappedSolver<'ctx, I> {
 }
 
 impl<'ctx, I> WrappedSolver<'ctx, I> {
-    pub fn new_in_global_context() -> Self {
-        Self::new(context::get_context_for_thread())
+    pub fn new_in_global_context() -> WrappedSolver<'static, I> {
+        WrappedSolver::new(context::get_context_for_thread())
     }
 
     pub fn new(context: &'ctx Context) -> Self {
@@ -241,7 +241,7 @@ mod context {
 
     fn init_contexts() -> Vec<UnsafeSync<UnsafeSend<Context>>> {
         // Statically allocate some in advance.
-        const TOTAL_CONTEXTS: usize = 1;
+        const TOTAL_CONTEXTS: usize = 20;
 
         let mut list = Vec::with_capacity(TOTAL_CONTEXTS);
         for _ in 0..TOTAL_CONTEXTS {
