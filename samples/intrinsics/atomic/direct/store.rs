@@ -14,7 +14,6 @@ fn main() {
                         AtomicOrdering::Relaxed,
                         AtomicOrdering::Release,
                         AtomicOrdering::SeqCst,
-                        AtomicOrdering::Unordered,
                     },
                 );
             )*
@@ -24,7 +23,7 @@ fn main() {
                 let mut a = 0u16;
                 let ptr = &mut a as *mut u16;
                 let value = 20u16.mark_symbolic();
-                unsafe { $op::<{ $ordering }>(ptr, value) };
+                unsafe { $op::<_, { $ordering }>(ptr, value) };
                 let b = unsafe { *ptr };
                 if b == 30 {
                     core::hint::black_box(0);

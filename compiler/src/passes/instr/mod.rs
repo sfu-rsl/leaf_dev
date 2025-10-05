@@ -37,16 +37,16 @@ use super::{CompilationPass, OverrideFlags, Storage};
 
 use self::{
     call::{
-    AssertionHandler, Assigner, AtomicIntrinsicHandler, BranchingHandler, BranchingReferencer,
-    CastAssigner, EntryFunctionHandler, FunctionHandler,
-    InsertionLocation::*,
-    IntrinsicHandler, MemoryIntrinsicHandler, OperandRef, OperandReferencer, PlaceRef,
-    PlaceReferencer, RuntimeCallAdder, StorageMarker,
-    context::{
-        AtLocationContext, BlockIndexProvider, BlockOriginalIndexProvider, BodyProvider,
+        AssertionHandler, Assigner, AtomicIntrinsicHandler, BranchingHandler, BranchingReferencer,
+        CastAssigner, EntryFunctionHandler, FunctionHandler,
+        InsertionLocation::*,
+        IntrinsicHandler, MemoryIntrinsicHandler, OperandRef, OperandReferencer, PlaceRef,
+        PlaceReferencer, RuntimeCallAdder, StorageMarker,
+        context::{
+            AtLocationContext, BlockIndexProvider, BlockOriginalIndexProvider, BodyProvider,
             PointerPackage, PriItems, PriItemsProvider, SourceInfoProvider, TyContextProvider,
-    },
-    ctxtreqs,
+        },
+        ctxtreqs,
     },
     decision::AtomicIntrinsicKind,
 };
@@ -614,14 +614,14 @@ where
         let tcx = self.call_adder.tcx();
         let opt_def_id =
             if let mir_ty::TyKind::FnDef(def_id, ..) = func.ty(&self.call_adder, tcx).kind() {
-            assert!(
-                !self.call_adder.all_pri_items().contains(def_id),
-                "Instrumenting our own instrumentation."
-            );
-            Some(*def_id)
-        } else {
-            None
-        };
+                assert!(
+                    !self.call_adder.all_pri_items().contains(def_id),
+                    "Instrumenting our own instrumentation."
+                );
+                Some(*def_id)
+            } else {
+                None
+            };
 
         let params = CallParams {
             func,
@@ -741,11 +741,16 @@ where
                         .unwrap_leaf()
                         .to_atomic_ordering()
                 };
+                use AtomicIntrinsicKind::*;
                 self.instrument_atomic_intrinsic_call(
                     &params,
-                    parse_ordering(1),
+                    parse_ordering(match kind {
+                        Load | Store | Exchange | CompareExchange { .. } => 1,
+                        BinOp(..) => 2,
+                        Fence { .. } => 0,
+                    }),
                     match kind {
-                        AtomicIntrinsicKind::CompareExchange { weak } => Some(parse_ordering(2)),
+                        CompareExchange { .. } => Some(parse_ordering(2)),
                         _ => None,
                     },
                     kind,
