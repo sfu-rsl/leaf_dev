@@ -1,7 +1,7 @@
 [package]
 name = "orchestrator"
 version = { workspace = true }
-edition = "2021"
+edition = "2024"
 
 [lib]
 name = "orchestrator"
@@ -14,12 +14,10 @@ path = "src/bin/onetime/main.rs"
 [[bin]]
 name = "leafo_directed"
 path = "src/bin/directed/main.rs"
-edition = "2024"
 
 [[bin]]
 name = "leafo_fuzzer_comp"
 path = "src/bin/fuzzer-comp/main.rs"
-edition = "2024"
 
 [build-dependencies]
 common = { workspace = true, features = ["building"] }
