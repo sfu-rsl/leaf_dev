@@ -79,19 +79,7 @@ pub fn set_place_address_typed<T>(place: PlaceRef, address: *const T) {
 )]
 #[inline(always)]
 pub const fn type_id_of<T: ?Sized + 'static>() -> TypeId {
-    /* NOTE: Once this function is const in stable build, we can mark this
-     * function as constant as well. */
-    /* NOTE: Do we need to bother about inlining?
-     * Based on the last checks, LLVM is smart enough to inline this function
-     * automatically and even replace everything with u128. */
-    fn rt<T: ?Sized + 'static>() -> TypeId {
-        super::run_rec_guarded::<true, _>(
-            /* If we are recursing, the value doesn't matter (although unsafe) */
-            unsafe { intrinsics::transmute([0xFFu8; intrinsics::size_of::<TypeId>()]) },
-            || common::utils::type_id_of::<T>(),
-        )
-    }
-    intrinsics::const_eval_select((), common::utils::type_id_of::<T>, rt::<T>)
+    common::utils::type_id_of::<T>()
 }
 
 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]

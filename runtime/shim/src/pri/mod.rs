@@ -63,6 +63,8 @@ mod ffi {
     impl FfiPri for ForeignPri {}
 }
 
+#[linkage = "internal"]
+#[thread_local]
 static mut REC_GUARD: bool = false;
 
 pub(crate) fn run_rec_guarded<const UNLIKELY: bool, T>(default: T, f: impl FnOnce() -> T) -> T {
@@ -86,7 +88,7 @@ pub(crate) fn run_rec_guarded<const UNLIKELY: bool, T>(default: T, f: impl FnOnc
 macro_rules! export_to_rust_abi {
     ($(#[$($attr: meta)*])* fn $name:ident ($($(#[$($arg_attr: meta)*])* $arg:ident : $arg_type:ty),* $(,)?) $(-> $ret_ty:ty)?;) => {
         $(#[$($attr)*])*
-        // #[inline(always)]
+        #[inline(always)]
         #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
         pub fn $name ($($(#[$($arg_attr)*])* $arg : $arg_type),*) $(-> $ret_ty)? {
             /* NOTE: This might be an inefficient way of preventing recursions.
