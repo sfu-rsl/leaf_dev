@@ -25,7 +25,7 @@ use crate::config::LeafCompilerConfig;
 use crate::utils::Chain;
 
 pub(crate) use codegen::MonoItemInternalizer;
-pub(crate) use instr::Instrumentor;
+pub(crate) use instr::{InstrumentationCounter, Instrumentor, pri_utils};
 pub(crate) use logger::CompilationPassLogExt;
 #[allow(unused)]
 pub(crate) use noop::NoOpPass;
@@ -754,7 +754,10 @@ mod implementation {
 
         pub(super) fn get_backend_maker<T: CompilationPass + Send + Sync + ?Sized + 'static>(
             pass: PassHolder<T>,
-        ) -> Box<dyn FnOnce(&config::Options, &rustc_target::spec::Target) -> Box<dyn CodegenBackend> + Send> {
+        ) -> Box<
+            dyn FnOnce(&config::Options, &rustc_target::spec::Target) -> Box<dyn CodegenBackend>
+                + Send,
+        > {
             Box::new(|opts, target| {
                 // This is the default implementation taken from `interface::run_compiler`.
                 let early_dcx = rustc_session::EarlyDiagCtxt::new(opts.error_format);

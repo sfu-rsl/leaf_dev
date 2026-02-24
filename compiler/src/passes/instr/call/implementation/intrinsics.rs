@@ -1,14 +1,13 @@
 use common::pri::{AtomicBinaryOp, AtomicOrdering};
 
-use crate::pri_utils::sym::intrinsics::{
-    LeafIntrinsicSymbol, atomic::LeafAtomicIntrinsicSymbol, memory::LeafMemoryIntrinsicSymbol,
-};
-
 use super::{
     Assigner, AtomicIntrinsicHandler, IntrinsicHandler,
     context::{AssignmentInfoProvider, PointerInfoProvider},
     ctxt_reqs::{Basic, ForAssignment, ForAtomicIntrinsic, ForMemoryIntrinsic},
     prelude::{mir::*, *},
+    pri_utils::sym::intrinsics::{
+        LeafIntrinsicSymbol, atomic::LeafAtomicIntrinsicSymbol, memory::LeafMemoryIntrinsicSymbol,
+    },
     utils::operand,
 };
 

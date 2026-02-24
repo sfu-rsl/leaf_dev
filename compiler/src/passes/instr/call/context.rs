@@ -18,8 +18,10 @@ use crate::{
     passes::Storage,
 };
 
-use super::{AssignmentId, AtomicOrdering, InsertionLocation, OperandRef, PlaceRef, SwitchInfo};
-use crate::pri_utils::{FunctionInfo, PriHelperFunctions, PriTypes, sym::LeafSymbol};
+use super::{
+    AssignmentId, AtomicOrdering, InsertionLocation, OperandRef, PlaceRef, SwitchInfo,
+    pri_utils::{FunctionInfo, PriHelperFunctions, PriTypes, sym::LeafSymbol},
+};
 
 pub(crate) trait TyContextProvider<'tcx> {
     fn tcx(&self) -> TyCtxt<'tcx>;

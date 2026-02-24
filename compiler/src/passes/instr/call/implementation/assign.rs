@@ -6,8 +6,6 @@ use rustc_middle::{
     ty::Const,
 };
 
-use crate::pri_utils::sym::LeafSymbol;
-
 use super::{
     Assigner, CastAssigner,
     context::{CastAssignmentContext, CastOperandProvider},

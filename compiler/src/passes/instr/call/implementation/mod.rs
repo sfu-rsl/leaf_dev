@@ -10,14 +10,17 @@ use delegate::delegate;
 
 use crate::mir_transform::*;
 use crate::passes::Storage;
-use crate::pri_utils::{
-    FunctionInfo,
-    sym::{self, LeafSymbol},
-};
 use crate::utils::mir::TyCtxtExt;
 
 use self::ctxtreqs::*;
-use super::{context::*, *};
+use super::{
+    context::*,
+    pri_utils::{
+        FunctionInfo, PriHelperFunctions, PriTypes,
+        sym::{self, LeafSymbol},
+    },
+    *,
+};
 
 use utils::*;
 
@@ -28,6 +31,7 @@ mod func;
 mod intrinsics;
 mod operand;
 mod place;
+
 pub(crate) struct RuntimeCallAdder<C> {
     context: C,
 }
@@ -288,8 +292,8 @@ where
     delegate! {
         to self.context {
             fn get_pri_func_info(&self, func_name: LeafSymbol) -> &FunctionInfo;
-            fn pri_types(&self) -> &crate::pri_utils::PriTypes;
-            fn pri_helper_funcs(&self) -> &crate::pri_utils::PriHelperFunctions;
+            fn pri_types(&self) -> &PriTypes;
+            fn pri_helper_funcs(&self) -> &PriHelperFunctions;
             fn all_pri_items(&self) -> &std::collections::HashSet<DefId>;
         }
     }
@@ -977,7 +981,7 @@ mod prelude {
 
     pub(super) use super::{OperandRef, PlaceRef};
 
-    pub(super) use crate::pri_utils::sym;
+    pub(super) use super::pri_utils::{sym, sym::LeafSymbol};
 
     pub(super) mod mir {
         pub use rustc_middle::{

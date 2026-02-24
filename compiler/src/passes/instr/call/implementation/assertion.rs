@@ -1,5 +1,3 @@
-use crate::pri_utils::sym::LeafSymbol;
-
 use super::{
     AssertionHandler, OperandReferencer,
     ctxt_reqs::ForAssertion,

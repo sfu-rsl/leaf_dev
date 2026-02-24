@@ -230,14 +230,14 @@ fn is_drop_fn(tcx: TyCtxt<'_>, def_id: DefId) -> bool {
 }
 
 mod intrinsics {
-    use common::pri::{AtomicBinaryOp, AtomicOrdering};
+    use common::pri::AtomicBinaryOp;
 
-    use crate::pri_utils::sym::intrinsics::LeafIntrinsicSymbol;
+    use super::super::pri_utils;
 
     use super::*;
 
     pub(crate) enum IntrinsicDecision {
-        OneToOneAssign(LeafIntrinsicSymbol),
+        OneToOneAssign(pri_utils::sym::intrinsics::LeafIntrinsicSymbol),
         Atomic(AtomicIntrinsicKind),
         Memory {
             kind: MemoryIntrinsicKind,
@@ -705,7 +705,7 @@ mod intrinsics {
         const _ALL_INTRINSICS: [(); EXPECTED_COUNT] = [(); LISTED_COUNT];
     }
 
-    use crate::pri_utils::sym::intrinsics as psym;
+    use pri_utils::sym::intrinsics as psym;
     use rustc_span::sym as rsym;
 
     pub(crate) fn decide_intrinsic_call<'tcx>(intrinsic: IntrinsicDef) -> IntrinsicDecision {
