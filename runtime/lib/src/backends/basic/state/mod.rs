@@ -26,6 +26,10 @@ impl<'s> BasicMemoryHandler<'s> {
 impl<'s> MemoryHandler for BasicMemoryHandler<'s> {
     type Place = BasicPlaceValue;
 
+    fn mark_live(self, _place: Self::Place) {
+        // Nothing to do for now.
+    }
+
     fn mark_dead(self, place: Self::Place) {
         self.vars_state.drop_place(&place);
     }

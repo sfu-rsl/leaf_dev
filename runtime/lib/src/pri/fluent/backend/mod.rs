@@ -228,6 +228,8 @@ pub(crate) trait AssignmentHandler: Sized {
 pub(crate) trait MemoryHandler {
     type Place;
 
+    fn mark_live(self, place: Self::Place);
+
     fn mark_dead(self, place: Self::Place);
 }
 
