@@ -212,6 +212,8 @@ pub(crate) mod noop {
     impl MemoryHandler for NoOpMemoryHandler {
         type Place = NullPlace;
 
+        fn mark_live(self, _place: Self::Place) {}
+
         fn mark_dead(self, _place: Self::Place) {}
     }
 

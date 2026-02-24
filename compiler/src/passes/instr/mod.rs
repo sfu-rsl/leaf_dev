@@ -169,10 +169,11 @@ fn transform<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>, storage: &mut dyn S
         handle_entry_function_pre(&mut call_adder, body);
     }
 
-    call_adder
-        .at(Before(body.basic_blocks.indices().next().unwrap()))
-        .with_source_info(*body.source_info(Location::START))
-        .enter_func();
+    handle_body_pre_blocks(
+        &mut call_adder
+            .at(Before(body.basic_blocks.indices().next().unwrap()))
+            .with_source_info(*body.source_info(Location::START)),
+    );
 
     VisitorFactory::make_body_visitor(&mut call_adder).visit_body(body);
 
@@ -296,6 +297,32 @@ fn clear_existing_instrumentation_inner(body: &mut Body<'_>, pri_funcs: &HashSet
     cleared_some
 }
 
+fn requires_immediate_instr_after(stmt: &Statement) -> bool {
+    use rustc_middle::mir::StatementKind::*;
+    matches!(
+        &stmt.kind,
+        Assign(..) | SetDiscriminant { .. } | StorageLive(..)
+    )
+}
+
+fn handle_body_pre_blocks<'tcx, C>(call_adder: &mut RuntimeCallAdder<C>)
+where
+    C: ctxtreqs::ForFunctionCalling<'tcx>,
+{
+    call_adder.enter_func();
+
+    rustc_mir_dataflow::impls::always_storage_live_locals(call_adder.body())
+        .iter()
+        .for_each(|l| match call_adder.body().local_kind(l) {
+            mir::LocalKind::Temp => {
+                let place = call_adder.reference_place(&l.into());
+                call_adder.mark_live(place);
+            }
+            mir::LocalKind::Arg => {}
+            mir::LocalKind::ReturnPointer => {}
+        });
+}
+
 fn handle_entry_function_pre<'tcx, C>(call_adder: &mut RuntimeCallAdder<C>, body: &Body<'tcx>)
 where
     C: ctxtreqs::Basic<'tcx>,
@@ -321,11 +348,6 @@ where
                 .with_source_info(bb.terminator().source_info)
                 .shutdown_runtime_lib();
         });
-}
-
-fn requires_immediate_instr_after(stmt: &Statement) -> bool {
-    use rustc_middle::mir::StatementKind::*;
-    matches!(&stmt.kind, Assign(..) | SetDiscriminant { .. })
 }
 
 struct VisitorFactory;
@@ -543,6 +565,12 @@ where
                 );
             }
         }
+    }
+
+    fn visit_storage_live(&mut self, local: &mir::Local) -> () {
+        let mut call_adder = self.call_adder.after();
+        let place = call_adder.reference_place(&(*local).into());
+        call_adder.mark_live(place);
     }
 
     fn visit_storage_dead(&mut self, local: &mir::Local) {

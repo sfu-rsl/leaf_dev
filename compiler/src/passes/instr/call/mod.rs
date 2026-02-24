@@ -150,6 +150,7 @@ pub(crate) trait CastAssigner<'tcx> {
 }
 
 pub(crate) trait StorageMarker {
+    fn mark_live(&mut self, place: PlaceRef);
     fn mark_dead(&mut self, place: PlaceRef);
 }
 

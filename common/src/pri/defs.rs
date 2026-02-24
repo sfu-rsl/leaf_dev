@@ -213,6 +213,7 @@ pub mod macros {
           { fn assign_wrap_unsafe_binder(id: AssignmentId, dest: PlaceRef, operand: OperandRef, binder_type_id: ($type_id_ty)) }
 
           // ----- Memory -----
+          { fn mark_storage_live(place: PlaceRef) }
           { fn mark_storage_dead(place: PlaceRef) }
 
           // ----- Switch -----
@@ -668,6 +669,8 @@ pub mod macros {
                 #[allow(unused_parens)]fn assign_shallow_init_box(id:AssignmentId,dest:PlaceRef,operand:OperandRef,boxed_type_id:($type_id_ty));
             }$modifier!{
                 #[allow(unused_parens)]fn assign_wrap_unsafe_binder(id:AssignmentId,dest:PlaceRef,operand:OperandRef,binder_type_id:($type_id_ty));
+            }$modifier!{
+                fn mark_storage_live(place:PlaceRef);
             }$modifier!{
                 fn mark_storage_dead(place:PlaceRef);
             }$modifier!{

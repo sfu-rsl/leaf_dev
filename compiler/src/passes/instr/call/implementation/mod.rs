@@ -31,6 +31,7 @@ mod func;
 mod intrinsics;
 mod operand;
 mod place;
+mod storage;
 
 pub(crate) struct RuntimeCallAdder<C> {
     context: C,
@@ -462,25 +463,6 @@ where
         let BlocksAndResult(blocks, operand_ref) = self.internal_reference_const_some();
         self.insert_blocks(blocks);
         self.by_use(operand_ref.into());
-    }
-}
-
-impl<'tcx, C> StorageMarker for RuntimeCallAdder<C>
-where
-    Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
-    C: ForInsertion<'tcx>,
-{
-    fn mark_dead(&mut self, place: PlaceRef) {
-        debug_assert_matches!(
-            self.context.insertion_loc(),
-            InsertionLocation::Before(..),
-            "Marking storage as dead after it takes place is not expected."
-        );
-        let block = self.make_bb_for_call(
-            sym::mark_storage_dead,
-            vec![utils::operand::move_for_local(place.into())],
-        );
-        self.insert_blocks([block]);
     }
 }
 

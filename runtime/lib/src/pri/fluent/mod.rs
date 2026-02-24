@@ -522,6 +522,11 @@ where
         })
     }
 
+    fn mark_storage_live(place: PlaceRef) {
+        let place_info = Self::take_back_place_info(place);
+        let place = Self::get_backend_place(abs::PlaceUsage::Write, |h| h.from_info(place_info));
+        Self::memory(|h| h.mark_live(place));
+    }
     fn mark_storage_dead(place: PlaceRef) {
         let place_info = Self::take_back_place_info(place);
         let place = Self::get_backend_place(abs::PlaceUsage::Write, |h| h.from_info(place_info));
