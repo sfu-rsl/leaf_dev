@@ -5,7 +5,7 @@ use rustc_span::{
     symbol::{Ident, Symbol},
 };
 
-use crate::pri_utils::sym::RUNTIME_LIB_CRATE;
+use super::instr::pri_utils::sym::RUNTIME_LIB_CRATE;
 
 use super::CompilationPass;
 use common::log_info;

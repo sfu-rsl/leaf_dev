@@ -1,5 +1,7 @@
 mod call;
+mod counter;
 mod decision;
+pub(crate) mod pri_utils;
 
 use const_format::concatcp;
 
@@ -50,6 +52,8 @@ use self::{
     },
     decision::AtomicIntrinsicKind,
 };
+
+pub(crate) use counter::InstrumentationCounter;
 
 const TAG_INSTRUMENTATION: &str = "instrumentation";
 use TAG_INSTRUMENTATION as TAG_INSTR;
@@ -205,7 +209,7 @@ fn on_start(_tcx: TyCtxt, storage: &mut dyn Storage) {
 }
 
 fn make_pri_items(tcx: TyCtxt) -> PriItems {
-    use crate::pri_utils::*;
+    use pri_utils::*;
     let all_items = all_pri_items(tcx);
     let main_funcs = filter_main_funcs(tcx, &all_items);
     let helper_items = filter_helper_items(tcx, &all_items);
@@ -610,14 +614,14 @@ where
         let tcx = self.call_adder.tcx();
         let opt_def_id =
             if let mir_ty::TyKind::FnDef(def_id, ..) = func.ty(&self.call_adder, tcx).kind() {
-            assert!(
-                !self.call_adder.all_pri_items().contains(def_id),
-                "Instrumenting our own instrumentation."
-            );
-            Some(*def_id)
-        } else {
-            None
-        };
+                assert!(
+                    !self.call_adder.all_pri_items().contains(def_id),
+                    "Instrumenting our own instrumentation."
+                );
+                Some(*def_id)
+            } else {
+                None
+            };
 
         let params = CallParams {
             func,
@@ -1223,7 +1227,7 @@ fn is_instrumentation_block<'tcx>(
     let terminator = bb.terminator.as_ref().unwrap();
     match &terminator.kind {
         TerminatorKind::Call { .. } | TerminatorKind::TailCall { .. } => {
-            is_call_to_any_of(&terminator.kind, all_pri_funcs)
+            called_pri_func(&terminator.kind, all_pri_funcs).is_some()
         }
         TerminatorKind::Goto { target } => {
             bb.statements.is_empty() && *target == mir_transform::NEXT_BLOCK
@@ -1233,13 +1237,14 @@ fn is_instrumentation_block<'tcx>(
 }
 
 #[inline]
-fn is_call_to_any_of<'tcx>(terminator: &TerminatorKind, all_funcs: &HashSet<DefId>) -> bool {
+fn called_pri_func(terminator: &TerminatorKind, all_funcs: &HashSet<DefId>) -> Option<DefId> {
     let (TerminatorKind::Call { func, .. } | TerminatorKind::TailCall { func, .. }) = terminator
     else {
-        return false;
+        return None;
     };
     func.const_fn_def()
-        .is_some_and(|(def_id, _)| all_funcs.contains(&def_id))
+        .filter(|(def_id, _)| all_funcs.contains(&def_id))
+        .map(|(def_id, _)| def_id)
 }
 
 trait MirSourceExt {

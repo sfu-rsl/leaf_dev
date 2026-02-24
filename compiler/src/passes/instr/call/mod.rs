@@ -2,24 +2,23 @@
 /// PRI in MIR bodies.
 pub(super) mod context;
 
-use context::AssignmentInfoProvider;
 use rustc_abi::{FieldIdx, VariantIdx};
 use rustc_middle::{
-    mir::{
-        BasicBlock, BinOp, Body, CastKind, ConstOperand, Local, Operand, Place, ProjectionElem,
-        RuntimeChecks, Statement, UnOp,
-    },
+    mir::{BasicBlock, BinOp, Body, CastKind, ConstOperand, Local, Operand, Place, UnOp},
     ty::{Const, GenericArg, Ty, TyCtxt},
 };
 use rustc_span::{def_id::DefId, source_map::Spanned};
 
-use common::{
-    log_debug, log_warn,
-    pri::{AssignmentId, AtomicBinaryOp, AtomicOrdering},
-};
 use core::iter;
-use serde::Serialize;
 use std::vec;
+
+use serde::Serialize;
+
+use common::pri::{AssignmentId, AtomicBinaryOp, AtomicOrdering};
+
+use super::pri_utils::{self, sym::intrinsics::LeafIntrinsicSymbol};
+
+use context::AssignmentInfoProvider;
 
 /*
  * Contexts and RuntimeCallAdder.
@@ -287,5 +286,3 @@ mod implementation;
 
 pub(super) use implementation::RuntimeCallAdder;
 pub(super) use implementation::ctxt_reqs as ctxtreqs;
-
-use crate::pri_utils::sym::intrinsics::LeafIntrinsicSymbol;

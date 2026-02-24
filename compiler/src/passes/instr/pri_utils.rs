@@ -7,9 +7,9 @@ use rustc_hir::{
 };
 use rustc_middle::ty::{Ty, TyCtxt};
 
-pub(super) const TAG_DISCOVERY: &str = "pri_discovery";
+pub(crate) const TAG_DISCOVERY: &str = "pri_discovery";
 
-pub mod sym {
+pub(crate) mod sym {
     #![allow(non_upper_case_globals)]
 
     use derive_more as dm;
@@ -282,7 +282,7 @@ pub mod sym {
 use sym::LeafSymbol;
 
 #[derive(Clone, Copy, Debug, derive_more::From, derive_more::Deref)]
-pub(crate) struct FunctionInfo {
+pub(super) struct FunctionInfo {
     pub def_id: DefId,
 }
 
@@ -297,7 +297,7 @@ impl TypeHolder {
 }
 
 /// Provides types that are used in PRI functions along with primitive types.
-pub(crate) struct PriTypes {
+pub(super) struct PriTypes {
     place_ref: TypeHolder,
     operand_ref: TypeHolder,
     binary_op: TypeHolder,
@@ -328,7 +328,7 @@ macro_rules! define_pri_helper_funcs {
 sym::pass_compiler_helpers_to!(define_pri_helper_funcs, just_funcs);
 
 /// Lists all the PRI items, including the compiler helper items.
-pub(crate) fn all_pri_items(tcx: TyCtxt) -> Vec<DefId> {
+pub(super) fn all_pri_items(tcx: TyCtxt) -> Vec<DefId> {
     let crate_num = find_pri_host_crate(tcx);
     let marker_id = find_pri_marker(tcx, crate_num);
     let result = collect_all_pri_items(tcx, marker_id);
@@ -456,7 +456,7 @@ fn collect_all_pri_items<'tcx>(tcx: TyCtxt<'tcx>, module_marker_id: DefId) -> Ve
 /// i.e. the ones in [`common::pri::ProgramRuntimeInterface`].
 /// These items are recognized as being on the same hierarchical level as the marker item.
 /// At the moment, the items that are not selected are compiler helpers.
-pub(crate) fn filter_main_funcs<'tcx>(
+pub(super) fn filter_main_funcs<'tcx>(
     tcx: TyCtxt<'tcx>,
     all_pri_items: &[DefId],
 ) -> HashMap<LeafSymbol, FunctionInfo> {
@@ -482,7 +482,7 @@ pub(crate) fn filter_main_funcs<'tcx>(
 }
 
 /// Filters out the compiler helper items out of the list of all PRI items.
-pub(crate) fn filter_helper_items<'tcx>(
+pub(super) fn filter_helper_items<'tcx>(
     tcx: TyCtxt<'tcx>,
     all_pri_items: &[DefId],
 ) -> HashMap<LeafSymbol, DefId> {
@@ -492,7 +492,7 @@ pub(crate) fn filter_helper_items<'tcx>(
 }
 
 /// Collects the helper type holders out of the list of compiler helper PRI items.
-pub(crate) fn collect_helper_types<'tcx>(helper_def_ids: &HashMap<LeafSymbol, DefId>) -> PriTypes {
+pub(super) fn collect_helper_types<'tcx>(helper_def_ids: &HashMap<LeafSymbol, DefId>) -> PriTypes {
     /* FIXME: The desired enums and type aliases don't show up in the exported symbols.
      * It may be because of the MIR phases that clean up/optimize/unify things,
      * the way that the library is added (using the compiled file), or
@@ -515,7 +515,7 @@ pub(crate) fn collect_helper_types<'tcx>(helper_def_ids: &HashMap<LeafSymbol, De
 }
 
 /// Collects the helper functions out of the list of compiler helper PRI items.
-pub(crate) fn collect_helper_funcs<'tcx>(
+pub(super) fn collect_helper_funcs<'tcx>(
     helper_def_ids: &HashMap<LeafSymbol, DefId>,
 ) -> PriHelperFunctions {
     let get_func_info = |name: LeafSymbol| {

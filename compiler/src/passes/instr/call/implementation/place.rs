@@ -2,8 +2,6 @@ use rustc_middle::mir::ProjectionElem;
 
 use common::log_warn;
 
-use crate::pri_utils::sym::LeafSymbol;
-
 use super::{
     BodyProvider, PlaceReferencer,
     ctxt_reqs::ForPlaceRef,

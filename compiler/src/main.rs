@@ -12,7 +12,6 @@
 mod config;
 mod mir_transform;
 mod passes;
-mod pri_utils;
 mod toolchain_build;
 mod utils;
 mod visit;
@@ -501,7 +500,7 @@ pub mod constants {
     pub const ENV_FORCE_NOOP: &str = concatcp!(CONFIG_ENV_PREFIX, "_FORCE_NOOP");
 
     pub const LOG_PASS_OBJECTS_TAG: &str = super::passes::logger::TAG_OBJECTS;
-    pub const LOG_PRI_DISCOVERY_TAG: &str = super::pri_utils::TAG_DISCOVERY;
+    pub const LOG_PRI_DISCOVERY_TAG: &str = super::passes::pri_utils::TAG_DISCOVERY;
     pub const LOG_BB_JUMP_TAG: &str = super::mir_transform::TAG_BB_JUMP;
 
     pub const TOOL_LEAF: &str = "leaf_attr";

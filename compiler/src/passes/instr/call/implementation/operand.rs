@@ -2,8 +2,6 @@ use rustc_middle::mir::{ConstOperand, RuntimeChecks, UnevaluatedConst};
 
 use common::log_warn;
 
-use crate::pri_utils::sym::LeafSymbol;
-
 use super::{
     OperandReferencer,
     ctxt_reqs::{Basic, ForOperandRef, ForPlaceRef},
