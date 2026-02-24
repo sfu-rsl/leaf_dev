@@ -651,27 +651,30 @@ macro_rules! make_caller_macro {
 
 // A macro that calls all "impl" macros defined above for the target type
 // except the ones to be excluded.
-make_caller_macro!(impl_traits, [
-    impl_pri_items_provider,
-    impl_local_manager,
-    impl_block_manager,
-    impl_jump_target_modifier,
-    impl_ty_ctxt_provider,
-    impl_body_provider,
-    impl_in_entry_function,
-    impl_has_local_decls,
-    impl_storage_provider,
-    impl_location_provider,
-    impl_orig_location_provider,
-    impl_insertion_location_provider,
-    impl_source_info_provider,
-    impl_dest_ref_provider,
-    impl_cast_operand_provider,
-    impl_discr_info_provider,
-    impl_ptr_info_provider,
-    impl_atomic_intrinsic_params_provider,
-    impl_memory_intrinsic_params_provider,
-]);
+make_caller_macro!(
+    impl_traits,
+    [
+        impl_pri_items_provider,
+        impl_local_manager,
+        impl_block_manager,
+        impl_jump_target_modifier,
+        impl_ty_ctxt_provider,
+        impl_body_provider,
+        impl_in_entry_function,
+        impl_has_local_decls,
+        impl_storage_provider,
+        impl_location_provider,
+        impl_orig_location_provider,
+        impl_insertion_location_provider,
+        impl_source_info_provider,
+        impl_dest_ref_provider,
+        impl_cast_operand_provider,
+        impl_discr_info_provider,
+        impl_ptr_info_provider,
+        impl_atomic_intrinsic_params_provider,
+        impl_memory_intrinsic_params_provider,
+    ]
+);
 
 impl_traits!(all for TransparentContext);
 impl_traits!(all - [ impl_body_provider impl_orig_location_provider ] for InBodyContext<'tcxb, 'bd>);
