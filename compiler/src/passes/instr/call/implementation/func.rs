@@ -229,7 +229,7 @@ mod utils {
     use core::{assert_matches::debug_assert_matches, iter};
 
     use crate::{
-        passes::instr::{MirSourceExt, decision::get_baked_dyn_def_rules},
+        passes::instr::{MirSourceExt, decision::rules::accept_dyn_def_filter_rules},
         utils::mir::{BodyExt, InstanceKindExt},
     };
 
@@ -486,8 +486,7 @@ mod utils {
         if let Some((trait_ref, trait_item)) = as_dyn_compatible_method(tcx, def_id)
             && trait_ref.self_ty().is_sized(tcx, typing_env)
         {
-            let ruled_out = get_baked_dyn_def_rules(call_adder.storage())
-                .accept(&(tcx, def_id))
+            let ruled_out = accept_dyn_def_filter_rules(call_adder.storage(), &(tcx, def_id))
                 .map_or(false, |include| !include);
             if ruled_out {
                 log_info!(

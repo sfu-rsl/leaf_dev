@@ -111,9 +111,10 @@ impl<'tcx, 'm, 'p, 's> RuntimeCallAdder<DefaultContext<'tcx, 'm, 'p, 's>> {
         modification_unit: &'m mut BodyInstrumentationUnit<'tcx>,
         pri: &'p PriItems,
         storage: &'s mut dyn Storage,
+        config: Config,
     ) -> Self {
         Self {
-            context: DefaultContext::new(tcx, modification_unit, pri, storage),
+            context: DefaultContext::new(tcx, modification_unit, pri, storage, config),
         }
     }
 }

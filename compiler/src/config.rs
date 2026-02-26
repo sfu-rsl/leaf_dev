@@ -109,6 +109,10 @@ pub(crate) enum EntityFilter {
     WholeBody(WholeBodyFilter),
     #[serde(alias = "dyn_def")]
     MethodDynDefinition(MethodDynDefinitionFilter),
+    #[serde(alias = "place_info")]
+    PlaceInfo(PlaceInfoFilter),
+    #[serde(alias = "storage_lifetime")]
+    StorageLifetime(StorageLifetimeFilter),
 }
 
 #[derive(Debug, Clone, Deserialize, From)]
@@ -116,6 +120,25 @@ pub(crate) struct WholeBodyFilter(pub(crate) LogicFormula<EntityLocationFilter>)
 
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct MethodDynDefinitionFilter(pub(crate) LogicFormula<EntityLocationFilter>);
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "kind")]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum PlaceInfoFilter {
+    Structure(PlaceInfoStructureFilter),
+    #[serde(alias = "addr")]
+    Address(PlaceAddressFilter),
+    #[serde(alias = "ty")]
+    Type(PlaceTypeFilter),
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "kind")]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum StorageLifetimeFilter {
+    Live(StorageLiveFilter),
+    Dead(StorageDeadFilter),
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -132,6 +155,41 @@ pub(crate) enum CrateFilter {
     Externality(bool),
     Name(String),
 }
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "kind")]
+#[serde(rename_all = "snake_case")]
+pub(crate) struct PlaceInfoStructureFilter {
+    pub(crate) piece: LogicFormula<PlaceStructurePiece>,
+    #[serde(flatten)]
+    pub(crate) loc: LogicFormula<EntityLocationFilter>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum PlaceStructurePiece {
+    Local,
+    Deref,
+    Field,
+    Index,
+    ConstantIndex,
+    Subslice,
+    Downcast,
+    OpaqueCast,
+    UnwrapUnsafeBinder,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct PlaceAddressFilter(pub(crate) LogicFormula<EntityLocationFilter>);
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct PlaceTypeFilter(pub(crate) LogicFormula<EntityLocationFilter>);
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct StorageLiveFilter(pub(crate) LogicFormula<EntityLocationFilter>);
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct StorageDeadFilter(pub(crate) LogicFormula<EntityLocationFilter>);
 
 pub(crate) type InternalizationRules = InclusionRules<LogicFormula<PatternMatch>>;
 

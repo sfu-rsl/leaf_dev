@@ -8,6 +8,7 @@
 #![feature(assert_matches)]
 #![feature(core_intrinsics)]
 #![feature(if_let_guard)]
+#![feature(option_into_flat_iter)]
 
 mod config;
 mod mir_transform;

@@ -16,7 +16,10 @@ use serde::Serialize;
 
 use common::pri::{AssignmentId, AtomicBinaryOp, AtomicOrdering};
 
-use super::pri_utils::{self, sym::intrinsics::LeafIntrinsicSymbol};
+use super::{
+    decision::rules::{PlaceInfoRules, PlaceStructurePieceRules, StorageLifetimeRules},
+    pri_utils::{self, sym::intrinsics::LeafIntrinsicSymbol},
+};
 
 use context::AssignmentInfoProvider;
 
@@ -149,9 +152,9 @@ pub(crate) trait CastAssigner<'tcx> {
     fn subtyped(&mut self, ty: Ty<'tcx>);
 }
 
-pub(crate) trait StorageMarker {
-    fn mark_live(&mut self, place: PlaceRef);
-    fn mark_dead(&mut self, place: PlaceRef);
+pub(crate) trait StorageMarker: Sized {
+    fn mark_live(&mut self, place: impl FnOnce(&mut Self) -> PlaceRef);
+    fn mark_dead(&mut self, place: impl FnOnce(&mut Self) -> PlaceRef);
 }
 
 #[derive(Clone, Copy)]
@@ -281,6 +284,11 @@ impl InsertionLocation {
             Self::Before(bb) | Self::After(bb) => *bb,
         }
     }
+}
+
+pub(crate) struct Config {
+    pub place_info_filter: PlaceInfoRules<PlaceStructurePieceRules<bool>, bool>,
+    pub storage_lifetime_filter: StorageLifetimeRules<bool>,
 }
 
 mod implementation;

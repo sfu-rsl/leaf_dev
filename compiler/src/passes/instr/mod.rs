@@ -30,7 +30,7 @@ use common::{log_debug, log_info, log_warn, pri::AssignmentId};
 use crate::{
     config::InstrumentationRules,
     mir_transform::{self, BodyInstrumentationUnit, JumpTargetModifier},
-    passes::StorageExt,
+    passes::{StorageExt, instr::call::Config},
     utils::mir::{BodyExt, TyCtxtExt},
     visit::*,
 };
@@ -100,7 +100,7 @@ impl CompilationPass for Instrumentor {
         // As early as possible, we use transform_ast to set the enabled flag.
         storage.get_or_insert_with(KEY_ENABLED.to_owned(), || self.enabled);
         storage.get_or_insert_with(KEY_TOTAL_COUNT.to_owned(), || self.total_body_count);
-        storage.get_or_insert_with(decision::KEY_RULES.to_owned(), || {
+        storage.get_or_insert_with(decision::rules::KEY_RULES.to_owned(), || {
             self.rules.take().unwrap()
         });
         rustc_driver::Compilation::Continue
@@ -152,6 +152,8 @@ fn transform<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>, storage: &mut dyn S
         .get_or_insert_with(KEY_PRI_ITEMS.to_owned(), || make_pri_items(tcx))
         .leak();
 
+    let config = make_config(storage, tcx, def_id);
+
     if clear_existing_instrumentation_inner(body, &pri_items.all_items) {
         log_warn!("Instrumentations exist at the transformation {:?}", def_id);
     }
@@ -160,7 +162,7 @@ fn transform<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>, storage: &mut dyn S
     let orig_index_map = make_orig_index_map(body, storage);
 
     let mut modification = BodyInstrumentationUnit::new(body.local_decls());
-    let mut call_adder = RuntimeCallAdder::new(tcx, &mut modification, &pri_items, storage);
+    let mut call_adder = RuntimeCallAdder::new(tcx, &mut modification, &pri_items, storage, config);
     let mut call_adder = call_adder.in_body(body, orig_index_map);
 
     let is_entry = tcx.entry_fn(()).is_some_and(|(id, _)| id == def_id);
@@ -222,6 +224,29 @@ fn make_pri_items(tcx: TyCtxt) -> PriItems {
     }
 }
 
+fn make_config<'tcx>(storage: &mut dyn Storage, tcx: TyCtxt<'tcx>, def_id: DefId) -> Config {
+    use decision::rules::{
+        PlaceInfoFilterResult, PlaceInfoRules, StorageLifetimeRules, accept_place_info_rules,
+        accept_storage_lifetime_rules,
+    };
+    let place_info_filter = (|rules: PlaceInfoFilterResult| PlaceInfoRules {
+        structure: rules.structure.map(|r| r.unwrap_or(true)),
+        address: rules.address.unwrap_or(true),
+        ty: rules.ty.unwrap_or(true),
+    })(accept_place_info_rules(storage, &(tcx, def_id)));
+
+    let storage_lifetime_filter =
+        (|rules: StorageLifetimeRules<Option<bool>>| StorageLifetimeRules {
+            live: rules.live.unwrap_or(false),
+            dead: rules.dead.unwrap_or(true),
+        })(accept_storage_lifetime_rules(storage, &(tcx, def_id)));
+
+    Config {
+        place_info_filter,
+        storage_lifetime_filter,
+    }
+}
+
 fn record_original_indices(body: &Body, storage: &mut dyn Storage) {
     let mut entry = storage.get_or_default::<Vec<BasicBlock>>(KEY_SWITCH_ORIG_INDICES.to_owned());
     *entry = TerminatorLocationRecorder::default().visit_body(body);
@@ -248,9 +273,7 @@ pub(crate) fn clear_existing_instrumentation<'tcx>(
     body: &mut Body<'tcx>,
     storage: &mut dyn Storage,
 ) -> bool {
-    let pri_items = storage
-        .get_or_insert_with(KEY_PRI_ITEMS.to_owned(), || make_pri_items(tcx))
-        .leak();
+    let pri_items = storage.get_or_insert_with(KEY_PRI_ITEMS.to_owned(), || make_pri_items(tcx));
     clear_existing_instrumentation_inner(body, &pri_items.all_items)
 }
 
@@ -307,7 +330,7 @@ fn requires_immediate_instr_after(stmt: &Statement) -> bool {
 
 fn handle_body_pre_blocks<'tcx, C>(call_adder: &mut RuntimeCallAdder<C>)
 where
-    C: ctxtreqs::ForFunctionCalling<'tcx>,
+    C: ctxtreqs::ForFunctionCalling<'tcx> + ctxtreqs::ForStorageMarking<'tcx>,
 {
     call_adder.enter_func();
 
@@ -315,8 +338,7 @@ where
         .iter()
         .for_each(|l| match call_adder.body().local_kind(l) {
             mir::LocalKind::Temp => {
-                let place = call_adder.reference_place(&l.into());
-                call_adder.mark_live(place);
+                call_adder.mark_live(|call_adder| call_adder.reference_place(&l.into()));
             }
             mir::LocalKind::Arg => {}
             mir::LocalKind::ReturnPointer => {}
@@ -569,13 +591,13 @@ where
 
     fn visit_storage_live(&mut self, local: &mir::Local) -> () {
         let mut call_adder = self.call_adder.after();
-        let place = call_adder.reference_place(&(*local).into());
-        call_adder.mark_live(place);
+        call_adder.mark_live(|call_adder| call_adder.reference_place(&(*local).into()));
     }
 
     fn visit_storage_dead(&mut self, local: &mir::Local) {
-        let place = self.call_adder.reference_place(&(*local).into());
-        self.call_adder.before().mark_dead(place);
+        self.call_adder
+            .before()
+            .mark_dead(|call_adder| call_adder.reference_place(&(*local).into()));
     }
 }
 
@@ -608,8 +630,9 @@ where
                 if self.call_adder.body().local_kind(l) == mir::LocalKind::ReturnPointer {
                     return;
                 }
-                let place = self.call_adder.reference_place(&l.into());
-                self.call_adder.before().mark_dead(place);
+                self.call_adder
+                    .before()
+                    .mark_dead(|call_adder| call_adder.reference_place(&l.into()));
             });
 
         self.call_adder.return_from_func();
