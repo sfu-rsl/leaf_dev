@@ -225,15 +225,28 @@ fn make_pri_items(tcx: TyCtxt) -> PriItems {
 }
 
 fn make_config<'tcx>(storage: &mut dyn Storage, tcx: TyCtxt<'tcx>, def_id: DefId) -> Config {
-    use decision::rules::{
-        PlaceInfoFilterResult, PlaceInfoRules, StorageLifetimeRules, accept_place_info_rules,
-        accept_storage_lifetime_rules,
-    };
+    use decision::rules::*;
     let place_info_filter = (|rules: PlaceInfoFilterResult| PlaceInfoRules {
         structure: rules.structure.map(|r| r.unwrap_or(true)),
         address: rules.address.unwrap_or(true),
         ty: rules.ty.unwrap_or(true),
     })(accept_place_info_rules(storage, &(tcx, def_id)));
+
+    let operand_info_filter = {
+        let top_level = (|rules: OperandInfoFilterResult| OperandInfoRules {
+            copy: rules.copy.unwrap_or(true),
+            mov: rules.mov.unwrap_or(true),
+            constant: rules.constant.unwrap_or(true),
+        })(accept_operand_info_rules(storage, &(tcx, def_id)));
+
+        OperandInfoRules {
+            copy: top_level.copy,
+            mov: top_level.copy,
+            constant: top_level.constant.then(|| {
+                accept_constant_type_rules(storage, &(tcx, def_id)).map(|r| r.unwrap_or(true))
+            }),
+        }
+    };
 
     let storage_lifetime_filter =
         (|rules: StorageLifetimeRules<Option<bool>>| StorageLifetimeRules {
@@ -243,6 +256,7 @@ fn make_config<'tcx>(storage: &mut dyn Storage, tcx: TyCtxt<'tcx>, def_id: DefId
 
     Config {
         place_info_filter,
+        operand_info_filter,
         storage_lifetime_filter,
     }
 }

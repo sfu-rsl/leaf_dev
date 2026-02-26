@@ -3,7 +3,7 @@ use rustc_middle::mir::{ConstOperand, RuntimeChecks, UnevaluatedConst};
 use common::log_warn;
 
 use super::{
-    OperandReferencer,
+    ConstantTypeRules, OperandReferencer,
     ctxt_reqs::{Basic, ForOperandRef, ForPlaceRef},
     prelude::{mir::*, *},
     utils::ty::TyExt,
@@ -30,12 +30,27 @@ where
     where
         C: ForOperandRef<'tcx>,
     {
+        let config = &self.context.config().operand_info_filter;
+
+        use Operand::*;
         match operand {
-            Operand::Copy(place) => self.internal_reference_place_operand(place, true),
-            Operand::Move(place) => self.internal_reference_place_operand(place, false),
-            Operand::Constant(constant) => self.internal_reference_const_operand(constant),
-            Operand::RuntimeChecks(checks) => self.internal_reference_runtime_checks(checks),
+            Copy(place) if config.copy => self.internal_reference_place_operand(place, true),
+            Move(place) if config.mov => self.internal_reference_place_operand(place, false),
+            Constant(constant) if config.constant.is_some() => {
+                self.internal_reference_const_operand(constant)
+            }
+            RuntimeChecks(checks) if config.constant.is_some() => {
+                self.internal_reference_runtime_checks(checks)
+            }
+            Copy(..) | Move(..) | Constant(..) | RuntimeChecks(..) => {
+                self.internal_reference_operand_some()
+            }
         }
+    }
+
+    fn internal_reference_operand_some(&mut self) -> BlocksAndResult<'tcx> {
+        self.make_bb_for_operand_ref_call(sym::ref_operand_some, Default::default())
+            .into()
     }
 
     fn internal_reference_place_operand(
@@ -74,6 +89,8 @@ where
     where
         C: ForOperandRef<'tcx>,
     {
+        let config = self.const_config();
+
         /* NOTE: Although there might be some ways to obtain/evaluate the values, we prefer to use
          * the constant as it is, and rely on high-level conversions to support all types of
          * constants in an abstract fashion. */
@@ -82,33 +99,43 @@ where
         if ty.is_primitive() {
             self.internal_reference_const_primitive(constant)
         } else if ty.is_raw_ptr() {
-            self.internal_reference_const_ptr(constant)
+            config
+                .ptr
+                .then(|| self.internal_reference_const_ptr(constant))
         } else if cfg!(feature = "abs_concrete") {
-            self.internal_reference_const_some()
+            None
         }
         // &str
         else if ty.peel_refs().is_str() {
-            self.internal_reference_const_operand_directly(sym::ref_operand_const_str, constant)
+            config.str.then(|| {
+                self.internal_reference_const_operand_directly(sym::ref_operand_const_str, constant)
+            })
         }
         // &[u8]
         else if Self::is_u8_slice_ref(tcx, ty) {
-            self.internal_reference_const_operand_directly(
-                sym::ref_operand_const_byte_str,
-                constant,
-            )
+            config.byte_str.then(|| {
+                self.internal_reference_const_operand_directly(
+                    sym::ref_operand_const_byte_str,
+                    constant,
+                )
+            })
         }
         // &[u8; N]
         else if ty.peel_refs().is_array()
             && ty.peel_refs().sequence_element_type(tcx) == tcx.types.u8
         {
-            self.internal_reference_byte_str_const_operand(constant)
-        } else if let TyKind::FnDef(..) = ty.kind() {
-            self.internal_reference_func_def_const_operand(constant)
+            config
+                .byte_str
+                .then(|| self.internal_reference_byte_str_const_operand(constant))
         }
         // NOTE: Check this after all other ZSTs that you want to distinguish.
         else if ty.size(tcx, self.current_typing_env()) == rustc_abi::Size::ZERO {
-            self.make_bb_for_operand_ref_call(sym::ref_operand_const_zst, Default::default())
-                .into()
+            config.zst.then(|| {
+                self.make_bb_for_operand_ref_call(sym::ref_operand_const_zst, Default::default())
+                    .into()
+            })
+        } else if let TyKind::FnDef(..) = ty.kind() {
+            self.internal_reference_func_def_const_operand(constant)
         } else if let Some(c) = operand::const_try_as_unevaluated(constant) {
             self.internal_reference_unevaluated_const_operand(&c)
         } else if let Some(def_id) = Self::try_as_immut_static(tcx, constant) {
@@ -120,35 +147,47 @@ where
                 ty
             )
         }
+        .unwrap_or_else(|| self.internal_reference_const_some())
     }
 
-    fn internal_reference_runtime_checks(
-        &mut self,
-        checks: &RuntimeChecks,
-    ) -> BlocksAndResult<'tcx> {
+    fn internal_reference_runtime_checks(&mut self, checks: &RuntimeChecks) -> BlocksAndResult<'tcx>
+    where
+        C: ForOperandRef<'tcx>,
+    {
         let value = checks.value(self.tcx().sess);
-        self.make_bb_for_operand_ref_call(
-            sym::ref_operand_const_bool,
-            vec![operand::const_from_bool(self.tcx(), value)],
-        )
-        .into()
+        self.internal_reference_operand(&operand::const_from_bool(self.tcx(), value))
     }
 
     fn internal_reference_const_primitive(
         &mut self,
         constant: &Box<ConstOperand<'tcx>>,
-    ) -> BlocksAndResult<'tcx> {
+    ) -> Option<BlocksAndResult<'tcx>> {
         let ty = constant.ty();
         debug_assert!(ty.is_primitive(), "Expected primitive type, found {:?}", ty);
 
+        let config = self.const_config();
         if ty.is_bool() {
-            self.internal_reference_const_operand_directly(sym::ref_operand_const_bool, constant)
+            config.bool.then(|| {
+                self.internal_reference_const_operand_directly(
+                    sym::ref_operand_const_bool,
+                    constant,
+                )
+            })
         } else if ty.is_char() {
-            self.internal_reference_const_operand_directly(sym::ref_operand_const_char, constant)
+            config.char.then(|| {
+                self.internal_reference_const_operand_directly(
+                    sym::ref_operand_const_char,
+                    constant,
+                )
+            })
         } else if ty.is_integral() {
-            self.internal_reference_int_const_operand(constant)
+            config
+                .int
+                .then(|| self.internal_reference_int_const_operand(constant))
         } else if ty.is_floating_point() {
-            self.internal_reference_float_const_operand(constant)
+            config
+                .float
+                .then(|| self.internal_reference_float_const_operand(constant))
         } else {
             unreachable!()
         }
@@ -268,25 +307,18 @@ where
     fn internal_reference_func_def_const_operand(
         &mut self,
         _constant: &Box<ConstOperand<'tcx>>,
-    ) -> BlocksAndResult<'tcx> {
+    ) -> ! {
         panic!("Function definition constant is not supported by this configuration.")
     }
 
-    fn internal_reference_unevaluated_const_operand(
-        &mut self,
-        _constant: &UnevaluatedConst,
-    ) -> BlocksAndResult<'tcx>
+    fn internal_reference_unevaluated_const_operand(&mut self, _constant: &UnevaluatedConst) -> !
     where
         C: ForOperandRef<'tcx>,
     {
         panic!("Unevaluated constant is not supported by this configuration.")
     }
 
-    fn internal_reference_static_ref_const_operand(
-        &mut self,
-        _def_id: DefId,
-        _ty: Ty<'tcx>,
-    ) -> BlocksAndResult<'tcx>
+    fn internal_reference_static_ref_const_operand(&mut self, _def_id: DefId, _ty: Ty<'tcx>) -> !
     where
         C: ForOperandRef<'tcx>,
     {
@@ -328,6 +360,15 @@ where
             .is_some_and(|m| m.is_not())
             .then(|| constant.check_static_ptr(tcx))
             .flatten()
+    }
+
+    fn const_config(&self) -> &ConstantTypeRules<bool> {
+        self.context
+            .config()
+            .operand_info_filter
+            .constant
+            .as_ref()
+            .unwrap()
     }
 }
 

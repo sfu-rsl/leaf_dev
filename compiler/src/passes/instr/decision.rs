@@ -870,8 +870,9 @@ pub(super) mod rules {
 
     use crate::{
         config::{
-            CrateFilter, EntityFilter, EntityLocationFilter, InstrumentationRules,
-            MethodDynDefinitionFilter, PlaceAddressFilter, PlaceInfoFilter,
+            ConstantType, ConstantTypeFilter, CrateFilter, EntityFilter, EntityLocationFilter,
+            InstrumentationRules, MethodDynDefinitionFilter, OperandInfoFilter,
+            OperandInfoLocationFilter, OperandKind, PlaceAddressFilter, PlaceInfoFilter,
             PlaceInfoStructureFilter, PlaceStructurePiece, PlaceTypeFilter, StorageDeadFilter,
             StorageLifetimeFilter, StorageLiveFilter, WholeBodyFilter, rules::LogicFormula,
         },
@@ -885,6 +886,8 @@ pub(super) mod rules {
     pub(crate) const KEY_BAKED_BODY_RULES: &str = "i_r_b_body";
     pub(crate) const KEY_BAKED_DYN_DEF_RULES: &str = "i_r_b_dyn_def";
     pub(crate) const KEY_BAKED_PLACE_INFO_RULES: &str = "i_r_b_place_info";
+    pub(crate) const KEY_BAKED_OPERAND_INFO_RULES: &str = "i_r_b_operand_info";
+    pub(crate) const KEY_BAKED_CONST_TYPE_RULES: &str = "i_r_b_const_ty";
     pub(crate) const KEY_BAKED_STORAGE_LIFETIME_RULES: &str = "i_r_b_storage_lifetime";
 
     type LocationQuery<'tcx> = (TyCtxt<'tcx>, DefId);
@@ -935,8 +938,50 @@ pub(super) mod rules {
         }
     }
 
-    type PlaceInfoBakedFilterRules<'tcx> =
+    type BakedPlaceInfoFilterRules<'tcx> =
         PlaceInfoRules<BakedPlaceStructureFilterRules<'tcx>, BakedEntityLocationFilterRules<'tcx>>;
+
+    pub(crate) struct OperandInfoRules<T, TC = T> {
+        pub copy: T,
+        pub mov: T,
+        pub constant: TC,
+    }
+
+    type OperandInfoQuery<'tcx> = (OperandKind, LocationQuery<'tcx>);
+
+    type BakedOperandInfoFilterRules<'tcx> =
+        InclusionPredicate<<OperandInfoFilter as ToPredicate<OperandInfoQuery<'tcx>>>::Predicate>;
+
+    pub(crate) struct ConstantTypeRules<T> {
+        pub bool: T,
+        pub char: T,
+        pub int: T,
+        pub float: T,
+        pub str: T,
+        pub byte_str: T,
+        pub ptr: T,
+        pub zst: T,
+    }
+
+    impl<T> ConstantTypeRules<T> {
+        pub(crate) fn map<U>(self, f: impl Fn(T) -> U) -> ConstantTypeRules<U> {
+            ConstantTypeRules {
+                bool: f(self.bool),
+                char: f(self.char),
+                int: f(self.int),
+                float: f(self.float),
+                str: f(self.str),
+                byte_str: f(self.byte_str),
+                ptr: f(self.ptr),
+                zst: f(self.zst),
+            }
+        }
+    }
+
+    type ConstantTypeQuery<'tcx> = (ConstantType, LocationQuery<'tcx>);
+
+    type BakedConstantTypeFilterRules<'tcx> =
+        InclusionPredicate<<ConstantTypeFilter as ToPredicate<ConstantTypeQuery<'tcx>>>::Predicate>;
 
     pub(crate) struct StorageLifetimeRules<T> {
         pub live: T,
@@ -975,11 +1020,11 @@ pub(super) mod rules {
         item: &LocationQuery<'tcx>,
     ) -> PlaceInfoFilterResult
     where
-        PlaceInfoBakedFilterRules<'tcx>: core::any::Any,
+        BakedPlaceInfoFilterRules<'tcx>: core::any::Any,
         EntityLocationFilterPredicate<'tcx>: Predicate<LocationQuery<'tcx>>,
     {
         let rules = storage
-            .get_mut::<PlaceInfoBakedFilterRules<'tcx>>(&KEY_BAKED_PLACE_INFO_RULES.to_owned())
+            .get_mut::<BakedPlaceInfoFilterRules<'tcx>>(&KEY_BAKED_PLACE_INFO_RULES.to_owned())
             .expect("Filter rules are expected to be baked at this point.");
         use PlaceStructurePiece::*;
         PlaceInfoRules {
@@ -996,6 +1041,55 @@ pub(super) mod rules {
             },
             address: rules.address.accept(item),
             ty: rules.ty.accept(item),
+        }
+    }
+
+    pub(crate) type OperandInfoFilterResult = OperandInfoRules<Option<bool>>;
+
+    pub(crate) fn accept_operand_info_rules<'tcx>(
+        storage: &mut dyn Storage,
+        item: &LocationQuery<'tcx>,
+    ) -> OperandInfoFilterResult
+    where
+        BakedOperandInfoFilterRules<'tcx>: core::any::Any,
+        EntityLocationFilterPredicate<'tcx>: Predicate<LocationQuery<'tcx>>,
+    {
+        let rules = storage
+            .get_mut::<BakedOperandInfoFilterRules<'tcx>>(&KEY_BAKED_OPERAND_INFO_RULES.to_owned())
+            .expect("Filter rules are expected to be baked at this point.");
+
+        use OperandKind::*;
+        OperandInfoRules {
+            copy: rules.accept(&(Copy, *item)),
+            mov: rules.accept(&(Move, *item)),
+            constant: rules.accept(&(Constant, *item)),
+        }
+    }
+
+    pub(crate) type ConstantTypeFilterResult = ConstantTypeRules<Option<bool>>;
+
+    pub(crate) fn accept_constant_type_rules<'tcx>(
+        storage: &mut dyn Storage,
+        item: &LocationQuery<'tcx>,
+    ) -> ConstantTypeFilterResult
+    where
+        BakedConstantTypeFilterRules<'tcx>: core::any::Any,
+        EntityLocationFilterPredicate<'tcx>: Predicate<LocationQuery<'tcx>>,
+    {
+        let rules = storage
+            .get_mut::<BakedConstantTypeFilterRules<'tcx>>(&KEY_BAKED_CONST_TYPE_RULES.to_owned())
+            .expect("Filter rules are expected to be baked at this point.");
+
+        use ConstantType::*;
+        ConstantTypeRules {
+            bool: rules.accept(&(Bool, *item)),
+            char: rules.accept(&(Char, *item)),
+            int: rules.accept(&(Int, *item)),
+            float: rules.accept(&(Float, *item)),
+            str: rules.accept(&(Str, *item)),
+            byte_str: rules.accept(&(ByteStr, *item)),
+            ptr: rules.accept(&(Ptr, *item)),
+            zst: rules.accept(&(Zst, *item)),
         }
     }
 
@@ -1050,13 +1144,13 @@ pub(super) mod rules {
         );
         let _ = storage.get_or_insert_with_acc(
             KEY_BAKED_PLACE_INFO_RULES.to_owned(),
-            |storage| -> PlaceInfoBakedFilterRules<'_> {
+            |storage| -> BakedPlaceInfoFilterRules<'_> {
                 let rules = storage.get_or_default::<InstrumentationRules>(KEY_RULES.to_owned());
                 let rules = rules.clone().filter_map(|r| match r {
                     EntityFilter::PlaceInfo(filter) => Some(filter),
                     _ => None,
                 });
-                PlaceInfoBakedFilterRules {
+                BakedPlaceInfoFilterRules {
                     structure: rules
                         .clone()
                         .filter_map(|r| match r {
@@ -1079,6 +1173,28 @@ pub(super) mod rules {
                         })
                         .to_baked(),
                 }
+            },
+        );
+        let _ = storage.get_or_insert_with_acc(
+            KEY_BAKED_OPERAND_INFO_RULES.to_owned(),
+            |storage| -> BakedOperandInfoFilterRules<'_> {
+                let rules = storage.get_or_default::<InstrumentationRules>(KEY_RULES.to_owned());
+                let rules = rules.clone().filter_map(|r| match r {
+                    EntityFilter::OperandInfo(filter) => Some(filter),
+                    _ => None,
+                });
+                rules.to_baked()
+            },
+        );
+        let _ = storage.get_or_insert_with_acc(
+            KEY_BAKED_CONST_TYPE_RULES.to_owned(),
+            |storage| -> BakedConstantTypeFilterRules<'_> {
+                let rules = storage.get_or_default::<InstrumentationRules>(KEY_RULES.to_owned());
+                let rules = rules.clone().filter_map(|r| match r {
+                    EntityFilter::ConstantType(filter) => Some(filter),
+                    _ => None,
+                });
+                rules.to_baked()
             },
         );
         let _ = storage.get_or_insert_with_acc(
@@ -1133,6 +1249,7 @@ pub(super) mod rules {
         MethodDynDefinitionFilter,
         PlaceAddressFilter,
         PlaceTypeFilter,
+        OperandInfoLocationFilter,
         StorageLiveFilter,
         StorageDeadFilter,
     );
@@ -1143,9 +1260,7 @@ pub(super) mod rules {
         fn to_predicate(&self) -> Self::Predicate {
             let piece = self.piece.to_predicate();
             let loc = self.loc.to_predicate();
-            Box::new(move |(other_piece, other_loc)| {
-                piece.accept(other_piece) && loc.accept(other_loc)
-            })
+            Box::new(move |(q_piece, q_loc)| piece.accept(q_piece) && loc.accept(q_loc))
         }
     }
 
@@ -1173,8 +1288,46 @@ pub(super) mod rules {
         }
     }
 
-    impl ToPredicate<PlaceStructurePiece> for PlaceStructurePiece {
-        type Predicate = Box<dyn Fn(&PlaceStructurePiece) -> bool>;
+    impl ToPredicate<Self> for PlaceStructurePiece {
+        type Predicate = Box<dyn Fn(&Self) -> bool>;
+
+        fn to_predicate(&self) -> Self::Predicate {
+            let this = *self;
+            Box::new(move |other| this.eq(other))
+        }
+    }
+
+    impl ToPredicate<OperandInfoQuery<'_>> for OperandInfoFilter {
+        type Predicate = Box<dyn Fn(&OperandInfoQuery<'_>) -> bool>;
+
+        fn to_predicate(&self) -> Self::Predicate {
+            let kind = self.kind.to_predicate();
+            let loc = self.loc.to_predicate();
+            Box::new(move |(q_kind, q_loc)| kind.accept(q_kind) && loc.accept(q_loc))
+        }
+    }
+
+    impl ToPredicate<Self> for OperandKind {
+        type Predicate = Box<dyn Fn(&Self) -> bool>;
+
+        fn to_predicate(&self) -> Self::Predicate {
+            let this = *self;
+            Box::new(move |other| this.eq(other))
+        }
+    }
+
+    impl ToPredicate<ConstantTypeQuery<'_>> for ConstantTypeFilter {
+        type Predicate = Box<dyn Fn(&ConstantTypeQuery<'_>) -> bool>;
+
+        fn to_predicate(&self) -> Self::Predicate {
+            let ty = self.ty.to_predicate();
+            let loc = self.loc.to_predicate();
+            Box::new(move |(q_ty, q_loc)| ty.accept(q_ty) && loc.accept(q_loc))
+        }
+    }
+
+    impl ToPredicate<Self> for ConstantType {
+        type Predicate = Box<dyn Fn(&Self) -> bool>;
 
         fn to_predicate(&self) -> Self::Predicate {
             let this = *self;
