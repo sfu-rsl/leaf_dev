@@ -178,6 +178,8 @@ pub(crate) trait OperandHandler {
 
     fn const_from(self, info: super::Constant) -> Self::Operand;
 
+    fn some(self) -> Self::Operand;
+
     fn new_symbolic(self, var: SymVariable<Self::Operand>) -> Self::Operand;
 }
 
