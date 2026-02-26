@@ -111,6 +111,10 @@ pub(crate) enum EntityFilter {
     MethodDynDefinition(MethodDynDefinitionFilter),
     #[serde(alias = "place_info")]
     PlaceInfo(PlaceInfoFilter),
+    #[serde(alias = "operand_info")]
+    OperandInfo(OperandInfoFilter),
+    #[serde(alias = "const_type")]
+    ConstantType(ConstantTypeFilter),
     #[serde(alias = "storage_lifetime")]
     StorageLifetime(StorageLifetimeFilter),
 }
@@ -184,6 +188,49 @@ pub(crate) struct PlaceAddressFilter(pub(crate) LogicFormula<EntityLocationFilte
 
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct PlaceTypeFilter(pub(crate) LogicFormula<EntityLocationFilter>);
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "kind")]
+#[serde(rename_all = "snake_case")]
+pub(crate) struct OperandInfoFilter {
+    #[serde(alias = "type")]
+    pub(crate) kind: LogicFormula<OperandKind>,
+    #[serde(flatten)]
+    pub(crate) loc: OperandInfoLocationFilter,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum OperandKind {
+    Copy,
+    Move,
+    #[serde(alias = "const")]
+    Constant,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct ConstantTypeFilter {
+    #[serde(alias = "type")]
+    pub(crate) ty: LogicFormula<ConstantType>,
+    #[serde(flatten)]
+    pub(crate) loc: OperandInfoLocationFilter,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ConstantType {
+    Bool,
+    Char,
+    Int,
+    Float,
+    Str,
+    ByteStr,
+    Ptr,
+    Zst,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct OperandInfoLocationFilter(pub(crate) LogicFormula<EntityLocationFilter>);
 
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct StorageLiveFilter(pub(crate) LogicFormula<EntityLocationFilter>);

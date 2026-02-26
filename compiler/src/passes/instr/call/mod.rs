@@ -17,7 +17,10 @@ use serde::Serialize;
 use common::pri::{AssignmentId, AtomicBinaryOp, AtomicOrdering};
 
 use super::{
-    decision::rules::{PlaceInfoRules, PlaceStructurePieceRules, StorageLifetimeRules},
+    decision::rules::{
+        ConstantTypeRules, OperandInfoRules, PlaceInfoRules, PlaceStructurePieceRules,
+        StorageLifetimeRules,
+    },
     pri_utils::{self, sym::intrinsics::LeafIntrinsicSymbol},
 };
 
@@ -288,6 +291,7 @@ impl InsertionLocation {
 
 pub(crate) struct Config {
     pub place_info_filter: PlaceInfoRules<PlaceStructurePieceRules<bool>, bool>,
+    pub operand_info_filter: OperandInfoRules<bool, Option<ConstantTypeRules<bool>>>,
     pub storage_lifetime_filter: StorageLifetimeRules<bool>,
 }
 
