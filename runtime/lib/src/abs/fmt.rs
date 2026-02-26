@@ -29,7 +29,7 @@ impl PlaceFormatter {
             .projections()
             .iter()
             .try_for_each(|proj| Self::pre(proj.into(), f))
-            .and_then(|_| write!(f, "{}", place.local()))
+            .and_then(|_| write!(f, "{}", place.base()))
             .and_then(|_| {
                 place
                     .projections()

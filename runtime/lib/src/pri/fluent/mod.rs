@@ -97,15 +97,19 @@ where
 
     #[tracing::instrument(target = "pri::place", level = "debug", ret)]
     fn ref_place_return_value() -> PlaceRef {
-        Self::push_place_info(|p| p.of_local(Local::ReturnValue))
+        Self::push_place_info(|p| p.from_base(Local::ReturnValue.into()))
     }
     #[tracing::instrument(target = "pri::place", level = "debug", ret)]
     fn ref_place_argument(local_index: LocalIndex) -> PlaceRef {
-        Self::push_place_info(|p| p.of_local(Local::Argument(local_index)))
+        Self::push_place_info(|p| p.from_base(Local::Argument(local_index).into()))
     }
     #[tracing::instrument(target = "pri::place", level = "debug", ret)]
     fn ref_place_local(local_index: LocalIndex) -> PlaceRef {
-        Self::push_place_info(|p| p.of_local(Local::Normal(local_index)))
+        Self::push_place_info(|p| p.from_base(Local::Normal(local_index).into()))
+    }
+    #[tracing::instrument(target = "pri::place", level = "debug", ret)]
+    fn ref_place_some() -> PlaceRef {
+        Self::push_place_info(|p| p.from_base(PlaceInfoBase::Some))
     }
     #[tracing::instrument(target = "pri::place", level = "debug", ret)]
     fn ref_place_deref(place: PlaceRef) {
@@ -146,6 +150,12 @@ where
     #[tracing::instrument(target = "pri::place", level = "debug", ret)]
     fn ref_place_unwrap_unsafe_binder(place: PlaceRef /*, type */) {
         Self::mut_place_info(place, |p, place| p.project_on(place).unwrap_unsafe_binder());
+    }
+    #[tracing::instrument(target = "pri::place", level = "debug", ret)]
+    fn ref_place_some_proj(place: PlaceRef) {
+        Self::mut_place_info(place, |p, place| {
+            p.project_on(place).by(PlaceInfoProjection::Some)
+        });
     }
     #[tracing::instrument(target = "pri::place", level = "debug", ret)]
     fn set_place_address(place: PlaceRef, raw_ptr: RawAddress) {

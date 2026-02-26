@@ -26,7 +26,7 @@ impl<EB: SymValueRefExprBuilder> RawPointerVariableState<EB> {
         usage: PlaceUsage,
     ) -> PlaceValueRef {
         self.get_place_iter_raw(
-            place.local().metadata(),
+            place.base().metadata(),
             place.projections(),
             place.projs_metadata(),
             self.sym_place_handler_for(usage),

@@ -105,6 +105,7 @@ pub mod macros {
           { fn ref_place_return_value() -> PlaceRef }
           { fn ref_place_argument(local_index: LocalIndex) -> PlaceRef }
           { fn ref_place_local(local_index: LocalIndex) -> PlaceRef }
+          { fn ref_place_some() -> PlaceRef }
 
           { fn ref_place_deref(place: PlaceRef) }
           { fn ref_place_field(place: PlaceRef, field: FieldIndex /*, type */) }
@@ -114,6 +115,7 @@ pub mod macros {
           { fn ref_place_downcast(place: PlaceRef, variant_index: u32 /*, type */) }
           { fn ref_place_opaque_cast(place: PlaceRef /*, type */) }
           { fn ref_place_unwrap_unsafe_binder(place: PlaceRef /*, type */) }
+          { fn ref_place_some_proj(place: PlaceRef) }
 
           { fn set_place_address(place: PlaceRef, raw_ptr: RawAddress) }
           #[allow(unused_parens)]
@@ -552,6 +554,8 @@ pub mod macros {
             }$modifier!{
                 fn ref_place_local(local_index:LocalIndex)->PlaceRef;
             }$modifier!{
+                fn ref_place_some()->PlaceRef;
+            }$modifier!{
                 fn ref_place_deref(place:PlaceRef);
             }$modifier!{
                 fn ref_place_field(place:PlaceRef,field:FieldIndex);
@@ -567,6 +571,8 @@ pub mod macros {
                 fn ref_place_opaque_cast(place:PlaceRef);
             }$modifier!{
                 fn ref_place_unwrap_unsafe_binder(place:PlaceRef);
+            }$modifier!{
+                fn ref_place_some_proj(place:PlaceRef);
             }$modifier!{
                 fn set_place_address(place:PlaceRef,raw_ptr:RawAddress);
             }$modifier!{

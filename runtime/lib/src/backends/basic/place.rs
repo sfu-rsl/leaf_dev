@@ -121,7 +121,7 @@ mod data_types {
 
         fn try_from(place: PlaceWithMetadata) -> Result<Self, Self::Error> {
             if !place.has_projection() {
-                Ok(place.local().clone())
+                Ok(place.base().clone())
             } else {
                 Err(place)
             }
@@ -143,9 +143,11 @@ mod data_types {
 pub(crate) use data_types::*;
 
 mod builders {
+    use common::log_info;
+
     use crate::pri::fluent::backend::{
-        PlaceBuilder, PlaceMetadataHandler, PlaceProjector,
-        shared::{DefaultPlaceBuilder, DefaultPlaceProjectionHandler},
+        PlaceBuilder, PlaceInfoBase, PlaceInfoProjection, PlaceMetadataHandler, PlaceProjector,
+        shared::DefaultPlaceProjectionHandler,
     };
 
     use super::*;
@@ -153,14 +155,25 @@ mod builders {
     #[derive(Default)]
     pub(crate) struct BasicPlaceBuilder;
 
+    macro_rules! err_on_partial_place_info {
+        () => {{
+            log_info!("Place info is not fully available.");
+            unimplemented!("Partial place info is not supported in this backend yet.")
+        }};
+    }
+
     impl PlaceBuilder for BasicPlaceBuilder {
         type Place = PlaceWithMetadata;
         type Index = PlaceValueRef;
         type Projector<'a> = BasicProjectionBuilder<'a>;
         type MetadataHandler<'a> = BasicPlaceMetadataHandler<'a>;
 
-        fn of_local(self, local: Local) -> Self::Place {
-            PlaceWithMetadata::from(DefaultPlaceBuilder::default().of_local(local))
+        fn from_base(self, base: PlaceInfoBase) -> Self::Place {
+            let base = match base {
+                PlaceInfoBase::Local(local) => local,
+                PlaceInfoBase::Some => err_on_partial_place_info!(),
+            };
+            PlaceWithMetadata::from(Self::Place::from(base))
         }
 
         fn project_on<'a>(self, place: &'a mut Self::Place) -> Self::Projector<'a> {
@@ -177,10 +190,21 @@ mod builders {
     impl PlaceProjector for BasicProjectionBuilder<'_> {
         type Index = PlaceValueRef;
 
-        fn by(self, proj: crate::abs::Projection<Self::Index>) {
+        fn by(self, proj: PlaceInfoProjection<Self::Index>) {
             self.0.push_metadata(PlaceMetadata::default());
-            let projection = proj.map(|index| DeterPlaceValueRef::new(index));
-            DefaultPlaceProjectionHandler::new(&mut self.0.deref_mut()).by(projection);
+            DefaultPlaceProjectionHandler::new(&mut self.0.deref_mut()).by(proj);
+        }
+    }
+
+    impl From<PlaceInfoProjection<PlaceValueRef>> for Projection {
+        #[inline]
+        fn from(value: PlaceInfoProjection<PlaceValueRef>) -> Self {
+            match value {
+                PlaceInfoProjection::Projection(proj) => {
+                    proj.map(|index| DeterPlaceValueRef::new(index))
+                }
+                PlaceInfoProjection::Some => err_on_partial_place_info!(),
+            }
         }
     }
 
@@ -192,7 +216,7 @@ mod builders {
                 let last = &mut self.0.projs_metadata_mut().last().unwrap();
                 last.set_address(address);
             } else {
-                self.0.local_mut().set_address(address);
+                self.0.base_mut().set_address(address);
             }
         }
 
@@ -202,7 +226,7 @@ mod builders {
                 debug_assert!(last.type_id().is_none());
                 last.set_type_id(type_id);
             } else {
-                self.0.local_mut().set_type_id(type_id);
+                self.0.base_mut().set_type_id(type_id);
             }
         }
 
