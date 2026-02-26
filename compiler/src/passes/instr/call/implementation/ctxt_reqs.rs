@@ -78,3 +78,6 @@ impl<'tcx, C> ForMemoryIntrinsic<'tcx> for C where
     C: ForAssignment<'tcx> + MemoryIntrinsicParamsProvider<'tcx> + PointerInfoProvider<'tcx>
 {
 }
+
+pub(crate) trait ForStorageMarking<'tcx>: ForInsertion<'tcx> {}
+impl<'tcx, C> ForStorageMarking<'tcx> for C where C: ForInsertion<'tcx> {}

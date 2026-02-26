@@ -16,8 +16,6 @@ pub(super) const TAG_INSTR_DECISION: &str = concatcp!(super::TAG_INSTRUMENTATION
 const TOOL_NAME: &str = crate::constants::TOOL_LEAF;
 const ATTR_NAME: &str = "instrument";
 
-pub(super) use rules::{KEY_RULES, get_baked_dyn_def_rules};
-
 pub(super) fn should_instrument<'tcx>(
     tcx: TyCtxt<'tcx>,
     body: &mut Body<'tcx>,
@@ -865,42 +863,159 @@ pub(super) use intrinsics::{
     AtomicIntrinsicKind, IntrinsicDecision, MemoryIntrinsicKind, decide_intrinsic_call,
 };
 
-mod rules {
+pub(super) mod rules {
     use std::ops::DerefMut;
+
+    use delegate::delegate;
 
     use crate::{
         config::{
             CrateFilter, EntityFilter, EntityLocationFilter, InstrumentationRules,
-            MethodDynDefinitionFilter, WholeBodyFilter, rules::LogicFormula,
+            MethodDynDefinitionFilter, PlaceAddressFilter, PlaceInfoFilter,
+            PlaceInfoStructureFilter, PlaceStructurePiece, PlaceTypeFilter, StorageDeadFilter,
+            StorageLifetimeFilter, StorageLiveFilter, WholeBodyFilter, rules::LogicFormula,
         },
         passes::StorageExt,
-        utils::rules::{Predicate, ToPredicate},
+        utils::rules::{InclusionPredicate, Predicate, ToPredicate},
     };
 
     use super::*;
 
     pub(crate) const KEY_RULES: &str = "instr_rules";
-    pub(crate) const KEY_BAKED_BODY_RULES: &str = "instr_rules_baked_body";
-    pub(crate) const KEY_BAKED_DYN_DEF_RULES: &str = "instr_rules_baked_dyn_def";
+    pub(crate) const KEY_BAKED_BODY_RULES: &str = "i_r_b_body";
+    pub(crate) const KEY_BAKED_DYN_DEF_RULES: &str = "i_r_b_dyn_def";
+    pub(crate) const KEY_BAKED_PLACE_INFO_RULES: &str = "i_r_b_place_info";
+    pub(crate) const KEY_BAKED_STORAGE_LIFETIME_RULES: &str = "i_r_b_storage_lifetime";
 
-    type BakedEntityFilterRules<'tcx> = crate::utils::rules::InclusionPredicate<
-        <EntityFilter as ToPredicate<(TyCtxt<'tcx>, DefId)>>::Predicate,
+    type LocationQuery<'tcx> = (TyCtxt<'tcx>, DefId);
+
+    type EntityLocationFilterPredicate<'tcx> =
+        <LogicFormula<EntityLocationFilter> as ToPredicate<LocationQuery<'tcx>>>::Predicate;
+
+    type BakedEntityLocationFilterRules<'tcx> =
+        InclusionPredicate<EntityLocationFilterPredicate<'tcx>>;
+
+    type PlaceStructureQuery<'tcx> = (PlaceStructurePiece, LocationQuery<'tcx>);
+
+    type BakedPlaceStructureFilterRules<'tcx> = InclusionPredicate<
+        <PlaceInfoStructureFilter as ToPredicate<PlaceStructureQuery<'tcx>>>::Predicate,
     >;
+
+    pub(crate) struct PlaceInfoRules<TS, TA = TS, TT = TA> {
+        pub structure: TS,
+        pub address: TA,
+        pub ty: TT,
+    }
+
+    pub(crate) struct PlaceStructurePieceRules<T> {
+        pub local: T,
+        pub deref: T,
+        pub field: T,
+        pub index: T,
+        pub constant_index: T,
+        pub subslice: T,
+        pub downcast: T,
+        pub opaque_cast: T,
+        pub unwrap_unsafe_binder: T,
+    }
+
+    impl<T> PlaceStructurePieceRules<T> {
+        pub(crate) fn map<U>(self, f: impl Fn(T) -> U) -> PlaceStructurePieceRules<U> {
+            PlaceStructurePieceRules {
+                local: f(self.local),
+                deref: f(self.deref),
+                field: f(self.field),
+                index: f(self.index),
+                constant_index: f(self.constant_index),
+                subslice: f(self.subslice),
+                downcast: f(self.downcast),
+                opaque_cast: f(self.opaque_cast),
+                unwrap_unsafe_binder: f(self.unwrap_unsafe_binder),
+            }
+        }
+    }
+
+    type PlaceInfoBakedFilterRules<'tcx> =
+        PlaceInfoRules<BakedPlaceStructureFilterRules<'tcx>, BakedEntityLocationFilterRules<'tcx>>;
+
+    pub(crate) struct StorageLifetimeRules<T> {
+        pub live: T,
+        pub dead: T,
+    }
+
+    type StorageLifetimeBakedEntityFilterRules<'tcx> =
+        StorageLifetimeRules<BakedEntityLocationFilterRules<'tcx>>;
 
     pub(crate) fn get_baked_body_rules<'tcx>(
         storage: &mut dyn Storage,
-    ) -> impl DerefMut<Target = BakedEntityFilterRules<'tcx>> + '_ {
+    ) -> impl DerefMut<Target = BakedEntityLocationFilterRules<'tcx>> + '_ {
         storage
-            .get_mut::<BakedEntityFilterRules<'tcx>>(&KEY_BAKED_BODY_RULES.to_owned())
+            .get_mut::<BakedEntityLocationFilterRules<'tcx>>(&KEY_BAKED_BODY_RULES.to_owned())
             .expect("Filter rules are expected to be baked at this point.")
     }
 
-    pub(crate) fn get_baked_dyn_def_rules<'tcx>(
+    pub(crate) fn accept_dyn_def_filter_rules<'tcx, I>(
         storage: &mut dyn Storage,
-    ) -> impl DerefMut<Target = BakedEntityFilterRules<'tcx>> + '_ {
+        item: &I,
+    ) -> Option<bool>
+    where
+        EntityLocationFilterPredicate<'tcx>: Predicate<I>,
+    {
         storage
-            .get_mut::<BakedEntityFilterRules<'tcx>>(&KEY_BAKED_DYN_DEF_RULES.to_owned())
+            .get_mut::<BakedEntityLocationFilterRules<'tcx>>(&KEY_BAKED_DYN_DEF_RULES.to_owned())
             .expect("Filter rules are expected to be baked at this point.")
+            .accept(item)
+    }
+
+    pub(crate) type PlaceInfoFilterResult =
+        PlaceInfoRules<PlaceStructurePieceRules<Option<bool>>, Option<bool>>;
+
+    pub(crate) fn accept_place_info_rules<'tcx>(
+        storage: &mut dyn Storage,
+        item: &LocationQuery<'tcx>,
+    ) -> PlaceInfoFilterResult
+    where
+        PlaceInfoBakedFilterRules<'tcx>: core::any::Any,
+        EntityLocationFilterPredicate<'tcx>: Predicate<LocationQuery<'tcx>>,
+    {
+        let rules = storage
+            .get_mut::<PlaceInfoBakedFilterRules<'tcx>>(&KEY_BAKED_PLACE_INFO_RULES.to_owned())
+            .expect("Filter rules are expected to be baked at this point.");
+        use PlaceStructurePiece::*;
+        PlaceInfoRules {
+            structure: PlaceStructurePieceRules {
+                local: rules.structure.accept(&(Local, *item)),
+                deref: rules.structure.accept(&(Deref, *item)),
+                field: rules.structure.accept(&(Field, *item)),
+                index: rules.structure.accept(&(Index, *item)),
+                constant_index: rules.structure.accept(&(ConstantIndex, *item)),
+                subslice: rules.structure.accept(&(Subslice, *item)),
+                downcast: rules.structure.accept(&(Downcast, *item)),
+                opaque_cast: rules.structure.accept(&(OpaqueCast, *item)),
+                unwrap_unsafe_binder: rules.structure.accept(&(UnwrapUnsafeBinder, *item)),
+            },
+            address: rules.address.accept(item),
+            ty: rules.ty.accept(item),
+        }
+    }
+
+    pub(crate) fn accept_storage_lifetime_rules<'tcx, I>(
+        storage: &mut dyn Storage,
+        item: &I,
+    ) -> StorageLifetimeRules<Option<bool>>
+    where
+        StorageLifetimeBakedEntityFilterRules<'tcx>: 'static,
+        EntityLocationFilterPredicate<'tcx>: Predicate<I>,
+    {
+        let rules = storage
+            .get_mut::<StorageLifetimeBakedEntityFilterRules<'tcx>>(
+                &KEY_BAKED_STORAGE_LIFETIME_RULES.to_owned(),
+            )
+            .expect("Filter rules are expected to be baked at this point.");
+        StorageLifetimeRules {
+            live: rules.live.accept(item),
+            dead: rules.dead.accept(item),
+        }
     }
 
     pub(super) fn bake_rules(
@@ -910,46 +1025,132 @@ mod rules {
         // We use explicit types to ensure not using the wrong type by mistake.
         let _ = storage.get_or_insert_with_acc(
             KEY_BAKED_DYN_DEF_RULES.to_owned(),
-            |storage| -> BakedEntityFilterRules<'_> {
+            |storage| -> BakedEntityLocationFilterRules<'_> {
                 let rules = storage.get_or_default::<InstrumentationRules>(KEY_RULES.to_owned());
                 rules
                     .clone()
-                    .filter(|r| matches!(r, EntityFilter::MethodDynDefinition(..)))
+                    .filter_map(|r| match r {
+                        EntityFilter::MethodDynDefinition(filter) => Some(filter),
+                        _ => None,
+                    })
                     .to_baked()
             },
         );
         let _ = storage.get_or_insert_with_acc(
             KEY_BAKED_BODY_RULES.to_owned(),
-            |storage| -> BakedEntityFilterRules<'_> {
+            |storage| -> BakedEntityLocationFilterRules<'_> {
                 let rules = storage.get_or_default::<InstrumentationRules>(KEY_RULES.to_owned());
-                let mut rules = rules
-                    .clone()
-                    .filter(|r| matches!(r, EntityFilter::WholeBody(..)));
-                rules.exclude.extend(
-                    additional_exclusions()
-                        .into_iter()
-                        .map(EntityFilter::WholeBody),
-                );
+                let mut rules = rules.clone().filter_map(|r| match r {
+                    EntityFilter::WholeBody(filter) => Some(filter),
+                    _ => None,
+                });
+                rules.exclude.extend(additional_exclusions());
                 rules.to_baked()
+            },
+        );
+        let _ = storage.get_or_insert_with_acc(
+            KEY_BAKED_PLACE_INFO_RULES.to_owned(),
+            |storage| -> PlaceInfoBakedFilterRules<'_> {
+                let rules = storage.get_or_default::<InstrumentationRules>(KEY_RULES.to_owned());
+                let rules = rules.clone().filter_map(|r| match r {
+                    EntityFilter::PlaceInfo(filter) => Some(filter),
+                    _ => None,
+                });
+                PlaceInfoBakedFilterRules {
+                    structure: rules
+                        .clone()
+                        .filter_map(|r| match r {
+                            PlaceInfoFilter::Structure(filter) => Some(filter),
+                            _ => None,
+                        })
+                        .to_baked(),
+                    address: rules
+                        .clone()
+                        .filter_map(|r| match r {
+                            PlaceInfoFilter::Address(filter) => Some(filter),
+                            _ => None,
+                        })
+                        .to_baked(),
+                    ty: rules
+                        .clone()
+                        .filter_map(|r| match r {
+                            PlaceInfoFilter::Type(filter) => Some(filter),
+                            _ => None,
+                        })
+                        .to_baked(),
+                }
+            },
+        );
+        let _ = storage.get_or_insert_with_acc(
+            KEY_BAKED_STORAGE_LIFETIME_RULES.to_owned(),
+            |storage| -> StorageLifetimeBakedEntityFilterRules<'_> {
+                let rules = storage.get_or_default::<InstrumentationRules>(KEY_RULES.to_owned());
+                let rules = rules.clone().filter_map(|r| match r {
+                    EntityFilter::StorageLifetime(filter) => Some(filter),
+                    _ => None,
+                });
+                StorageLifetimeBakedEntityFilterRules {
+                    live: rules
+                        .clone()
+                        .filter_map(|r| match r {
+                            StorageLifetimeFilter::Live(filter) => Some(filter),
+                            _ => None,
+                        })
+                        .to_baked(),
+                    dead: rules
+                        .filter_map(|r| match r {
+                            StorageLifetimeFilter::Dead(filter) => Some(filter),
+                            _ => None,
+                        })
+                        .to_baked(),
+                }
             },
         );
     }
 
-    impl<'tcx> ToPredicate<(TyCtxt<'tcx>, DefId)> for EntityFilter {
-        type Predicate =
-            <LogicFormula<EntityLocationFilter> as ToPredicate<(TyCtxt<'tcx>, DefId)>>::Predicate;
-        fn to_predicate(&self) -> Self::Predicate {
-            match self {
-                EntityFilter::WholeBody(WholeBodyFilter(formula))
-                | EntityFilter::MethodDynDefinition(MethodDynDefinitionFilter(formula)) => {
-                    formula.to_predicate()
+    macro_rules! impl_to_predicate_for_newtype {
+        ($name:ty, $query:ty, $filter:ty) => {
+            impl<'tcx> ToPredicate<$query> for $name {
+                type Predicate = <$filter as ToPredicate<$query>>::Predicate;
+
+                delegate! {
+                    to self.0 {
+                        fn to_predicate(&self) -> Self::Predicate;
+                    }
                 }
             }
+        };
+
+        (loc: $($name:ty),+$(,)?) => {
+            $(
+                 impl_to_predicate_for_newtype!($name, LocationQuery<'tcx>, LogicFormula<EntityLocationFilter>);
+            )*
+        };
+    }
+
+    impl_to_predicate_for_newtype!(loc:
+        WholeBodyFilter,
+        MethodDynDefinitionFilter,
+        PlaceAddressFilter,
+        PlaceTypeFilter,
+        StorageLiveFilter,
+        StorageDeadFilter,
+    );
+
+    impl ToPredicate<PlaceStructureQuery<'_>> for PlaceInfoStructureFilter {
+        type Predicate = Box<dyn Fn(&PlaceStructureQuery<'_>) -> bool>;
+
+        fn to_predicate(&self) -> Self::Predicate {
+            let piece = self.piece.to_predicate();
+            let loc = self.loc.to_predicate();
+            Box::new(move |(other_piece, other_loc)| {
+                piece.accept(other_piece) && loc.accept(other_loc)
+            })
         }
     }
 
-    impl ToPredicate<(TyCtxt<'_>, DefId)> for EntityLocationFilter {
-        type Predicate = Box<dyn Fn(&(TyCtxt, DefId)) -> bool>;
+    impl ToPredicate<LocationQuery<'_>> for EntityLocationFilter {
+        type Predicate = Box<dyn Fn(&LocationQuery<'_>) -> bool>;
 
         fn to_predicate(&self) -> Self::Predicate {
             match self {
@@ -969,6 +1170,15 @@ mod rules {
                     })
                 }
             }
+        }
+    }
+
+    impl ToPredicate<PlaceStructurePiece> for PlaceStructurePiece {
+        type Predicate = Box<dyn Fn(&PlaceStructurePiece) -> bool>;
+
+        fn to_predicate(&self) -> Self::Predicate {
+            let this = *self;
+            Box::new(move |other| this.eq(other))
         }
     }
 }

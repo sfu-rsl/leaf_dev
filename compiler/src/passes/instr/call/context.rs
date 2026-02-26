@@ -19,7 +19,7 @@ use crate::{
 };
 
 use super::{
-    AssignmentId, AtomicOrdering, InsertionLocation, OperandRef, PlaceRef, SwitchInfo,
+    AssignmentId, AtomicOrdering, Config, InsertionLocation, OperandRef, PlaceRef, SwitchInfo,
     pri_utils::{FunctionInfo, PriHelperFunctions, PriTypes, sym::LeafSymbol},
 };
 
@@ -42,6 +42,10 @@ pub(crate) trait PriItemsProvider<'tcx> {
 
 pub(crate) trait StorageProvider {
     fn storage(&mut self) -> &mut dyn Storage;
+}
+
+pub(crate) trait ConfigProvider {
+    fn config(&self) -> &Config;
 }
 
 pub(crate) trait BlockIndexProvider {
@@ -101,7 +105,8 @@ where
         + BodyBlockManager<'tcx>
         + PriItemsProvider<'tcx>
         + HasLocalDecls<'tcx>
-        + StorageProvider,
+        + StorageProvider
+        + ConfigProvider,
 {
 }
 
@@ -112,6 +117,7 @@ impl<'tcx, C> BaseContext<'tcx> for C where
         + PriItemsProvider<'tcx>
         + HasLocalDecls<'tcx>
         + StorageProvider
+        + ConfigProvider
 {
 }
 
@@ -120,6 +126,7 @@ pub(crate) struct DefaultContext<'tcx, 'm, 'p, 's> {
     modification_unit: &'m mut BodyInstrumentationUnit<'tcx>,
     pri: &'p PriItems,
     storage: &'s mut dyn Storage,
+    config: Config,
 }
 
 pub(crate) struct PriItems {
@@ -135,12 +142,14 @@ impl<'tcx, 'm, 'p, 's> DefaultContext<'tcx, 'm, 'p, 's> {
         modification_unit: &'m mut BodyInstrumentationUnit<'tcx>,
         pri: &'p PriItems,
         storage: &'s mut dyn Storage,
+        config: Config,
     ) -> Self {
         Self {
             tcx,
             modification_unit,
             pri,
             storage,
+            config,
         }
     }
 }
@@ -238,6 +247,12 @@ impl<'tcx> PriItemsProvider<'tcx> for DefaultContext<'tcx, '_, '_, '_> {
 impl StorageProvider for DefaultContext<'_, '_, '_, '_> {
     fn storage(&mut self) -> &mut dyn Storage {
         self.storage
+    }
+}
+
+impl ConfigProvider for DefaultContext<'_, '_, '_, '_> {
+    fn config(&self) -> &Config {
+        &self.config
     }
 }
 
@@ -530,6 +545,13 @@ make_impl_macro! {
 }
 
 make_impl_macro! {
+    impl_config_provider,
+    ConfigProvider,
+    self,
+    fn config(&self) -> &Config;
+}
+
+make_impl_macro! {
     impl_location_provider,
     BlockIndexProvider,
     self,
@@ -665,6 +687,7 @@ make_caller_macro!(
         impl_in_entry_function,
         impl_has_local_decls,
         impl_storage_provider,
+        impl_config_provider,
         impl_location_provider,
         impl_orig_location_provider,
         impl_insertion_location_provider,

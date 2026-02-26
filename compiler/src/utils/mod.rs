@@ -339,10 +339,13 @@ pub(crate) mod rules {
     use crate::config::rules::*;
 
     impl<T> InclusionRules<T> {
-        pub(crate) fn filter(self, f: impl Fn(&T) -> bool) -> Self {
+        pub(crate) fn filter_map<B>(
+            self,
+            f: impl (FnMut(T) -> Option<B>) + Clone,
+        ) -> InclusionRules<B> {
             InclusionRules {
-                include: self.include.into_iter().filter(&f).collect(),
-                exclude: self.exclude.into_iter().filter(&f).collect(),
+                include: self.include.into_iter().filter_map(f.clone()).collect(),
+                exclude: self.exclude.into_iter().filter_map(f).collect(),
             }
         }
 

@@ -1,9 +1,9 @@
-use rustc_middle::mir::ProjectionElem;
+use rustc_middle::mir::{PlaceRef as MirPlaceRef, ProjectionElem};
 
 use common::log_warn;
 
 use super::{
-    BodyProvider, PlaceReferencer,
+    BodyProvider, PlaceReferencer, PlaceStructurePieceRules,
     ctxt_reqs::ForPlaceRef,
     prelude::{mir::*, *},
 };
@@ -28,29 +28,80 @@ where
         &mut self,
         place: &Place<'tcx>,
     ) -> BlocksAndResult<'tcx> {
-        let BlocksAndResult(mut blocks, place_ref) = self.reference_place_local(place.local);
+        let mut blocks = Vec::new();
 
         let tcx = self.tcx();
 
+        let referrals =
+            filter_and_fold_place(&self.context.config().place_info_filter.structure, place);
+
+        let set_type_addr = |this: &mut Self,
+                             blocks: &mut Vec<BasicBlockData<'tcx>>,
+                             place_ref: Local,
+                             rel_place: MirPlaceRef<'tcx>| {
+            let ty = rel_place.ty(this.local_decls(), tcx).ty;
+            blocks.extend(this.set_place_type(place_ref, ty).into_flat_iter());
+            blocks.extend(this.set_place_addr(place_ref, rel_place.to_place(tcx), ty));
+        };
+
         // For setting addresses we have to remake a cumulative place up to each projection.
-        let mut cum_place = Place::from(place.local);
-        let mut cum_ty = cum_place.ty(&self.context, tcx);
+        let place_ref = {
+            let (block, place_ref, rel_place) = match referrals.base {
+                PlaceReferralBase::Local(local) => {
+                    let (block, place_ref) = self.internal_reference_place_local(local);
+                    (block, place_ref, local.into())
+                }
+                PlaceReferralBase::SomePlace(rel_place) => {
+                    let (block, place_ref) =
+                        self.make_bb_for_place_ref_call(sym::ref_place_some, Default::default());
+                    (block, place_ref, rel_place)
+                }
+            };
+            blocks.push(block);
+            set_type_addr(self, &mut blocks, place_ref, rel_place);
 
-        for (_, proj) in place.iter_projections() {
-            let added_blocks = self.reference_place_projection(place_ref, proj);
+            place_ref
+        };
+
+        for proj in referrals.projs {
+            let (added_blocks, cur_place) = match proj {
+                PlaceReferralProj::Projection(rel_place) => (
+                    self.internal_reference_place_projection(
+                        place_ref,
+                        rel_place.last_projection().unwrap().1,
+                    ),
+                    rel_place,
+                ),
+                PlaceReferralProj::SomeProjection(rel_place) => (
+                    vec![
+                        self.make_bb_for_place_ref_call(
+                            sym::ref_place_some_proj,
+                            vec![operand::copy_for_local(place_ref)],
+                        )
+                        .0, // The result is unit.
+                    ],
+                    rel_place,
+                ),
+            };
             blocks.extend(added_blocks);
-
-            cum_place = cum_place.project_deeper(&[proj], tcx);
-            cum_ty = cum_ty.projection_ty(tcx, proj);
-
-            blocks.extend(self.set_place_type(place_ref, cum_ty.ty));
-            blocks.push(self.set_place_addr(place_ref, &cum_place, cum_ty.ty));
+            set_type_addr(self, &mut blocks, place_ref, cur_place);
         }
 
         BlocksAndResult(blocks, place_ref)
     }
 
     pub(super) fn reference_place_local(&mut self, local: Local) -> BlocksAndResult<'tcx> {
+        let (block, place_ref) = self.internal_reference_place_local(local);
+        let mut blocks = vec![block];
+
+        let ty = self.local_decls()[local].ty;
+        blocks.extend(self.set_place_type(place_ref, ty).into_flat_iter());
+        blocks.extend(self.set_place_addr(place_ref, local.into(), ty));
+
+        BlocksAndResult(blocks, place_ref)
+    }
+
+    fn internal_reference_place_local(&mut self, local: Local) -> (BasicBlockData<'tcx>, Local) {
         let kind = self.body().local_kind(local);
         use rustc_middle::mir::LocalKind::*;
         let func_name = match kind {
@@ -63,22 +114,15 @@ where
             _ => vec![operand::const_from_uint(self.context.tcx(), local.as_u32())],
         };
 
-        let (block, place_ref) = self.make_bb_for_place_ref_call(func_name, args);
-        let mut blocks = vec![block];
-
-        let ty = self.local_decls()[local].ty;
-        blocks.extend(self.set_place_type(place_ref, ty));
-        blocks.push(self.set_place_addr(place_ref, &local.into(), ty));
-
-        BlocksAndResult(blocks, place_ref)
+        self.make_bb_for_place_ref_call(func_name, args)
     }
 
-    fn reference_place_projection<T>(
+    fn internal_reference_place_projection<T>(
         &mut self,
         current_ref: Local,
         proj: ProjectionElem<Local, T>,
     ) -> Vec<BasicBlockData<'tcx>> {
-        let mut new_blocks = Vec::new();
+        let mut blocks = Vec::new();
 
         let (func_name, additional_args) = match proj {
             ProjectionElem::Deref => (sym::ref_place_deref, vec![]),
@@ -92,7 +136,7 @@ where
             ProjectionElem::Index(index) => {
                 let BlocksAndResult(additional_blocks, index_ref) =
                     self.internal_reference_place(&Place::from(index));
-                new_blocks.extend(additional_blocks);
+                blocks.extend(additional_blocks);
                 (
                     sym::ref_place_index,
                     vec![operand::copy_for_local(index_ref)],
@@ -129,14 +173,14 @@ where
             ProjectionElem::UnwrapUnsafeBinder(..) => (sym::ref_place_unwrap_unsafe_binder, vec![]),
         };
 
-        new_blocks.push(
+        blocks.push(
             self.make_bb_for_place_ref_call(
                 func_name,
                 [vec![operand::copy_for_local(current_ref)], additional_args].concat(),
             )
             .0, // The result is unit.
         );
-        new_blocks
+        blocks
     }
 
     fn make_bb_for_place_ref_call(
@@ -150,9 +194,13 @@ where
     fn set_place_addr(
         &mut self,
         place_ref: Local,
-        place: &Place<'tcx>,
+        place: Place<'tcx>,
         place_ty: Ty<'tcx>,
-    ) -> BasicBlockData<'tcx> {
+    ) -> Option<BasicBlockData<'tcx>> {
+        if !self.context.config().place_info_filter.address {
+            return None;
+        }
+
         let (stmt, ptr_local) = utils::ptr_to_place(self.tcx(), &mut self.context, place, place_ty);
         let (mut block, _) = {
             self.make_bb_for_helper_call_with_all(
@@ -166,7 +214,7 @@ where
             )
         };
         block.statements.push(stmt);
-        block
+        Some(block)
     }
 
     pub(super) fn set_place_size(
@@ -197,7 +245,15 @@ where
         vec![get_call_block, set_call_block]
     }
 
-    fn set_place_type(&mut self, place_ref: Local, ty: Ty<'tcx>) -> Vec<BasicBlockData<'tcx>> {
+    fn set_place_type(
+        &mut self,
+        place_ref: Local,
+        ty: Ty<'tcx>,
+    ) -> Option<Vec<BasicBlockData<'tcx>>> {
+        if !self.context.config().place_info_filter.ty {
+            return None;
+        }
+
         let mut blocks = vec![];
 
         let tcx = self.context.tcx();
@@ -246,8 +302,72 @@ where
             ],
         ));
 
-        blocks
+        Some(blocks)
     }
+}
+
+enum PlaceReferralBase<'tcx> {
+    Local(Local),
+    SomePlace(MirPlaceRef<'tcx>),
+}
+
+enum PlaceReferralProj<'tcx> {
+    SomeProjection(MirPlaceRef<'tcx>),
+    Projection(MirPlaceRef<'tcx>),
+}
+
+struct PlaceReferralChain<'tcx> {
+    base: PlaceReferralBase<'tcx>,
+    projs: Vec<PlaceReferralProj<'tcx>>,
+}
+
+fn filter_and_fold_place<'tcx>(
+    config: &PlaceStructurePieceRules<bool>,
+    place: &Place<'tcx>,
+) -> PlaceReferralChain<'tcx> {
+    let mut base = if config.local {
+        PlaceReferralBase::Local(place.local)
+    } else {
+        PlaceReferralBase::SomePlace(MirPlaceRef {
+            local: place.local,
+            projection: rustc_middle::ty::List::empty(),
+        })
+    };
+
+    let mut projs = Vec::new();
+    for place_ref in (0..place.projection.len()).map(move |i| MirPlaceRef {
+        local: place.local,
+        projection: &place.projection[..=i],
+    }) {
+        let include = match place_ref.last_projection().unwrap().1 {
+            ProjectionElem::Deref => config.deref,
+            ProjectionElem::Field(..) => config.field,
+            ProjectionElem::Index(_) => config.index,
+            ProjectionElem::ConstantIndex { .. } => config.constant_index,
+            ProjectionElem::Subslice { .. } => config.subslice,
+            ProjectionElem::Downcast(..) => config.downcast,
+            ProjectionElem::OpaqueCast(..) => config.opaque_cast,
+            ProjectionElem::UnwrapUnsafeBinder(..) => config.unwrap_unsafe_binder,
+        };
+
+        if include {
+            projs.push(PlaceReferralProj::Projection(place_ref));
+        } else {
+            match projs.last_mut() {
+                Some(PlaceReferralProj::SomeProjection(prev_ref)) => {
+                    *prev_ref = place_ref;
+                }
+                None if let PlaceReferralBase::SomePlace(base_ref) = &mut base => {
+                    *base_ref = place_ref;
+                }
+                _ => {
+                    projs.push(PlaceReferralProj::SomeProjection(place_ref));
+                }
+            }
+        }
+    }
+
+    PlaceReferralChain { base, projs }
 }
 
 mod utils {
@@ -260,13 +380,13 @@ mod utils {
     pub(super) fn ptr_to_place<'tcx>(
         tcx: TyCtxt<'tcx>,
         local_manager: &mut impl BodyLocalManager<'tcx>,
-        place: &Place<'tcx>,
+        place: Place<'tcx>,
         place_ty: Ty<'tcx>,
     ) -> (Statement<'tcx>, Local) {
         let ptr_local = local_manager.add_local(Ty::new_imm_ptr(tcx, place_ty));
         let ptr_assignment = assignment::create(
             Place::from(ptr_local),
-            Rvalue::RawPtr(RawPtrKind::Const, place.clone()),
+            Rvalue::RawPtr(RawPtrKind::Const, place),
         );
 
         (ptr_assignment, ptr_local)
