@@ -518,7 +518,7 @@ where
         _binder_type_id: Self::TypeId,
     ) {
         Self::assign_to(id, dest, |h| {
-            h.shallow_init_box_from(Self::take_back_operand(operand))
+            h.wrap_in_unsafe_binder(Self::take_back_operand(operand))
         })
     }
 
