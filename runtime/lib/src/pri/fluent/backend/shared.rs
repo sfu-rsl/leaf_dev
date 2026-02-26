@@ -146,6 +146,10 @@ pub(crate) mod noop {
             Default::default()
         }
 
+        fn some(self) -> Self::Operand {
+            Default::default()
+        }
+
         fn new_symbolic(self, _var: SymVariable<Self::Operand>) -> Self::Operand {
             Default::default()
         }

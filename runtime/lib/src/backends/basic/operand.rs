@@ -1,3 +1,5 @@
+use common::log_error;
+
 use crate::{
     abs::{Constant, SymVariable},
     pri::fluent::backend::OperandHandler,
@@ -40,6 +42,11 @@ impl OperandHandler for BasicOperandHandler<'_> {
 
     fn const_from(self, info: Constant) -> Self::Operand {
         Implied::always(ConcreteValue::from(info).to_value_ref())
+    }
+
+    fn some(self) -> Self::Operand {
+        log_error!("Operand info is not available.");
+        panic!("Operand details are expected in this backend.")
     }
 
     fn new_symbolic(self, var: SymVariable<Self::Operand>) -> Self::Operand {

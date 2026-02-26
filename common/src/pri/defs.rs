@@ -145,6 +145,8 @@ pub mod macros {
           { fn ref_operand_const_zst() -> OperandRef }
           { fn ref_operand_const_some() -> OperandRef }
 
+          { fn ref_operand_some() -> OperandRef }
+
           { fn new_sym_value_bool(conc_val: bool) -> OperandRef }
           { fn new_sym_value_char(conc_val: char) -> OperandRef }
           #[allow(unused_parens)]
@@ -609,6 +611,8 @@ pub mod macros {
                 fn ref_operand_const_zst()->OperandRef;
             }$modifier!{
                 fn ref_operand_const_some()->OperandRef;
+            }$modifier!{
+                fn ref_operand_some()->OperandRef;
             }$modifier!{
                 fn new_sym_value_bool(conc_val:bool)->OperandRef;
             }$modifier!{

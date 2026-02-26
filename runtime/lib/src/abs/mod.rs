@@ -111,12 +111,19 @@ pub(crate) enum Operand<P, C, S> {
 pub(crate) enum Constant {
     Bool(bool),
     Char(char),
-    Int { bit_rep: u128, ty: IntType },
-    Float { bit_rep: u128, ty: FloatType },
+    Int {
+        bit_rep: u128,
+        ty: IntType,
+    },
+    Float {
+        bit_rep: u128,
+        ty: FloatType,
+    },
     Str(&'static str),
     ByteStr(&'static [u8]),
     Addr(RawAddress),
     Zst,
+    /// Constant of some type that is not modeled by instrumentation but exists in MIR.
     Some,
 }
 

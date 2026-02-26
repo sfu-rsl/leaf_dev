@@ -243,6 +243,11 @@ where
         Self::push_const_operand(Constant::Some)
     }
 
+    #[tracing::instrument(target = "pri::operand", level = "debug", ret)]
+    fn ref_operand_some() -> OperandRef {
+        Self::push_operand(|o| o.some())
+    }
+
     fn new_sym_value_bool(conc_val: bool) -> OperandRef {
         // FIXME: Redundant referencing.
         let conc_val = Self::take_back_operand(Self::ref_operand_const_bool(conc_val));
