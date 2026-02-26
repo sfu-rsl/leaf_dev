@@ -17,28 +17,28 @@ impl Local {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(crate) struct Place<L = Local, P = Projection<L>> {
-    local: L,
+pub(crate) struct Place<B, P = Projection<B>> {
+    base: B,
     projections: Vec<P>,
 }
 
-impl<L, P> Place<L, P> {
-    pub fn new(local: L) -> Self {
+impl<B, P> Place<B, P> {
+    pub fn new(base: B) -> Self {
         Self {
-            local,
+            base,
             /* As most of the places are just locals, we try not to allocate at start. */
             projections: Vec::with_capacity(0),
         }
     }
 
     #[inline]
-    pub fn local(&self) -> &L {
-        &self.local
+    pub fn base(&self) -> &B {
+        &self.base
     }
 
     #[inline]
-    pub fn local_mut(&mut self) -> &mut L {
-        &mut self.local
+    pub fn base_mut(&mut self) -> &mut B {
+        &mut self.base
     }
 
     #[inline]
@@ -63,8 +63,8 @@ impl<L, P> Place<L, P> {
     }
 }
 
-impl<L, P> From<L> for Place<L, P> {
-    fn from(value: L) -> Self {
+impl<B, P> From<B> for Place<B, P> {
+    fn from(value: B) -> Self {
         Self::new(value)
     }
 }
@@ -74,7 +74,7 @@ impl<P> TryFrom<Place<Local, P>> for Local {
 
     fn try_from(value: Place<Local, P>) -> Result<Self, Self::Error> {
         if !value.has_projection() {
-            Ok(value.local)
+            Ok(value.base)
         } else {
             Err(value)
         }
@@ -208,7 +208,7 @@ where
             debug_assert_eq!(self.projs_metadata.len(), self.projections().len());
             &self.projs_metadata.last().unwrap()
         } else {
-            self.place.local().metadata()
+            self.place.base().metadata()
         }
     }
 
@@ -217,7 +217,7 @@ where
             debug_assert_eq!(self.projs_metadata.len(), self.projections().len());
             self.projs_metadata.last_mut().unwrap()
         } else {
-            self.place.local_mut().metadata_mut()
+            self.place.base_mut().metadata_mut()
         }
     }
 }

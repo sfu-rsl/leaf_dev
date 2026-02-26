@@ -4,8 +4,8 @@ use crate::abs::{Place, Projection};
 
 use super::*;
 
-pub(crate) struct DefaultPlaceBuilder<L = Local, P = Projection<Local>> {
-    _phantom: PhantomData<(L, P)>,
+pub(crate) struct DefaultPlaceBuilder<B = Local, I = B, P = Projection<I>> {
+    _phantom: PhantomData<(B, I, P)>,
 }
 
 impl<L, P> Default for DefaultPlaceBuilder<L, P> {
@@ -16,45 +16,54 @@ impl<L, P> Default for DefaultPlaceBuilder<L, P> {
     }
 }
 
-impl<L, I> PlaceBuilder for DefaultPlaceBuilder<L, Projection<I>>
+impl<B, I, P> PlaceBuilder for DefaultPlaceBuilder<B, I, P>
 where
-    L: From<Local>,
-    for<'a> L: 'a,
+    B: From<PlaceInfoBase>,
+    P: From<PlaceInfoProjection<I>>,
+    for<'a> B: 'a,
     for<'a> I: 'a,
+    for<'a> P: 'a,
 {
-    type Place = Place<L, Projection<I>>;
+    type Place = Place<B, P>;
     type Index = I;
     type Projector<'a>
-        = DefaultPlaceProjectionHandler<'a, Self::Place>
+        = DefaultPlaceProjectionHandler<'a, Self::Place, Self::Index>
     where
         Self::Place: 'a;
     type MetadataHandler<'a> = ();
 
-    fn of_local(self, local: Local) -> Self::Place {
-        Place::new(local.into())
+    fn from_base(self, base: PlaceInfoBase) -> Self::Place {
+        Place::new(base.into())
     }
 
     fn project_on<'a>(self, place: &'a mut Self::Place) -> Self::Projector<'a> {
-        DefaultPlaceProjectionHandler { place }
+        DefaultPlaceProjectionHandler::new(place)
     }
 
     fn metadata(self, _place: &mut Self::Place) {}
 }
 
-pub(crate) struct DefaultPlaceProjectionHandler<'a, P> {
+pub(crate) struct DefaultPlaceProjectionHandler<'a, P, I> {
     place: &'a mut P,
+    _phantom: PhantomData<I>,
 }
 
-impl<'a, L, P> DefaultPlaceProjectionHandler<'a, Place<L, P>> {
-    pub(crate) fn new(place: &'a mut Place<L, P>) -> Self {
-        Self { place }
+impl<'a, B, I, P> DefaultPlaceProjectionHandler<'a, Place<B, P>, I> {
+    pub(crate) fn new(place: &'a mut Place<B, P>) -> Self {
+        Self {
+            place,
+            _phantom: Default::default(),
+        }
     }
 }
 
-impl<'a, L, I> PlaceProjector for DefaultPlaceProjectionHandler<'a, Place<L, Projection<I>>> {
+impl<'a, B, I, P> PlaceProjector for DefaultPlaceProjectionHandler<'a, Place<B, P>, I>
+where
+    P: From<PlaceInfoProjection<I>>,
+{
     type Index = I;
 
-    fn by(self, projection: Projection<Self::Index>) {
+    fn by(self, projection: PlaceInfoProjection<Self::Index>) {
         self.place.add_projection(projection.into())
     }
 }
@@ -83,7 +92,7 @@ pub(crate) mod noop {
         type Projector<'a> = Self;
         type MetadataHandler<'a> = ();
 
-        fn of_local(self, _local: Local) -> Self::Place {
+        fn from_base(self, _base: PlaceInfoBase) -> Self::Place {
             Default::default()
         }
 
@@ -99,7 +108,7 @@ pub(crate) mod noop {
     impl<P, I> PlaceProjector for NoOpPlaceBuilder<P, I> {
         type Index = I;
 
-        fn by(self, _proj: Projection<Self::Index>) {}
+        fn by(self, _proj: PlaceInfoProjection<Self::Index>) {}
     }
 
     #[derive(Default)]

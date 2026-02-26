@@ -1,3 +1,5 @@
+use derive_more as dm;
+
 pub(crate) mod shared;
 
 use crate::abs::{
@@ -80,13 +82,25 @@ pub(crate) trait PlaceHandler {
     fn tag_of<'a>(self, info: Self::PlaceInfo<'a>) -> Self::DiscriminablePlace;
 }
 
+#[derive(dm::From)]
+pub(crate) enum PlaceInfoBase {
+    Local(Local),
+    Some,
+}
+
+#[derive(dm::From)]
+pub(crate) enum PlaceInfoProjection<I> {
+    Projection(Projection<I>),
+    Some,
+}
+
 pub(crate) trait PlaceBuilder {
     type Place;
     type Index = Self::Place;
     type Projector<'a>: PlaceProjector<Index = Self::Index>;
     type MetadataHandler<'a>: PlaceMetadataHandler;
 
-    fn of_local(self, local: Local) -> Self::Place;
+    fn from_base(self, base: PlaceInfoBase) -> Self::Place;
 
     fn project_on<'a>(self, place: &'a mut Self::Place) -> Self::Projector<'a>;
 
@@ -96,21 +110,21 @@ pub(crate) trait PlaceBuilder {
 pub(crate) trait PlaceProjector: Sized {
     type Index;
 
-    fn by(self, projection: Projection<Self::Index>);
+    fn by(self, projection: PlaceInfoProjection<Self::Index>);
 
     #[inline]
     fn deref(self) {
-        self.by(Projection::Deref)
+        self.by(Projection::Deref.into())
     }
 
     #[inline]
     fn for_field(self, field: FieldIndex) {
-        self.by(Projection::Field(field))
+        self.by(Projection::Field(field).into())
     }
 
     #[inline]
     fn at_index(self, index: Self::Index) {
-        self.by(Projection::Index(index))
+        self.by(Projection::Index(index).into())
     }
 
     #[inline]
@@ -119,27 +133,28 @@ pub(crate) trait PlaceProjector: Sized {
             offset,
             min_length,
             from_end,
-        })
+        }
+        .into())
     }
 
     #[inline]
     fn subslice(self, from: u64, to: u64, from_end: bool) {
-        self.by(Projection::Subslice { from, to, from_end })
+        self.by(Projection::Subslice { from, to, from_end }.into())
     }
 
     #[inline]
     fn downcast(self, variant: VariantIndex) {
-        self.by(Projection::Downcast(variant))
+        self.by(Projection::Downcast(variant).into())
     }
 
     #[inline]
     fn opaque_cast(self) {
-        self.by(Projection::OpaqueCast)
+        self.by(Projection::OpaqueCast.into())
     }
 
     #[inline]
     fn unwrap_unsafe_binder(self) {
-        self.by(Projection::UnwrapUnsafeBinder)
+        self.by(Projection::UnwrapUnsafeBinder.into())
     }
 }
 
