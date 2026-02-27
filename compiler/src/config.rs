@@ -116,7 +116,7 @@ pub(crate) enum EntityFilter {
     #[serde(alias = "const_type")]
     ConstantType(ConstantTypeFilter),
     #[serde(alias = "storage_lifetime")]
-    StorageLifetime(StorageLifetimeFilter),
+    StorageLifetime(StorageLifetimeMarkerFilter),
 }
 
 #[derive(Debug, Clone, Deserialize, From)]
@@ -129,6 +129,7 @@ pub(crate) struct MethodDynDefinitionFilter(pub(crate) LogicFormula<EntityLocati
 #[serde(tag = "kind")]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum PlaceInfoFilter {
+    #[serde(alias = "struct")]
     Structure(PlaceInfoStructureFilter),
     #[serde(alias = "addr")]
     Address(PlaceAddressFilter),
@@ -139,9 +140,10 @@ pub(crate) enum PlaceInfoFilter {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "kind")]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum StorageLifetimeFilter {
-    Live(StorageLiveFilter),
-    Dead(StorageDeadFilter),
+pub(crate) struct StorageLifetimeMarkerFilter {
+    pub(crate) kind: LogicFormula<StorageLifetimeMarker>,
+    #[serde(flatten)]
+    pub(crate) loc: LogicFormula<StorageLifetimeLocationFilter>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -232,11 +234,15 @@ pub(crate) enum ConstantType {
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct OperandInfoLocationFilter(pub(crate) LogicFormula<EntityLocationFilter>);
 
-#[derive(Debug, Clone, Deserialize)]
-pub(crate) struct StorageLiveFilter(pub(crate) LogicFormula<EntityLocationFilter>);
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum StorageLifetimeMarker {
+    Live,
+    Dead,
+}
 
 #[derive(Debug, Clone, Deserialize)]
-pub(crate) struct StorageDeadFilter(pub(crate) LogicFormula<EntityLocationFilter>);
+pub(crate) struct StorageLifetimeLocationFilter(pub(crate) LogicFormula<EntityLocationFilter>);
 
 pub(crate) type InternalizationRules = InclusionRules<LogicFormula<PatternMatch>>;
 
