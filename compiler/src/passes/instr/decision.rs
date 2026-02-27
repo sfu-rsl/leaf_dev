@@ -873,8 +873,9 @@ pub(super) mod rules {
             ConstantType, ConstantTypeFilter, CrateFilter, EntityFilter, EntityLocationFilter,
             InstrumentationRules, MethodDynDefinitionFilter, OperandInfoFilter,
             OperandInfoLocationFilter, OperandKind, PlaceAddressFilter, PlaceInfoFilter,
-            PlaceInfoStructureFilter, PlaceStructurePiece, PlaceTypeFilter, StorageDeadFilter,
-            StorageLifetimeFilter, StorageLiveFilter, WholeBodyFilter, rules::LogicFormula,
+            PlaceInfoStructureFilter, PlaceStructurePiece, PlaceTypeFilter,
+            StorageLifetimeLocationFilter, StorageLifetimeMarker, StorageLifetimeMarkerFilter,
+            WholeBodyFilter, rules::LogicFormula,
         },
         passes::StorageExt,
         utils::rules::{InclusionPredicate, Predicate, ToPredicate},
@@ -983,13 +984,16 @@ pub(super) mod rules {
     type BakedConstantTypeFilterRules<'tcx> =
         InclusionPredicate<<ConstantTypeFilter as ToPredicate<ConstantTypeQuery<'tcx>>>::Predicate>;
 
+    type StorageLifetimeMarkerQuery<'tcx> = (StorageLifetimeMarker, LocationQuery<'tcx>);
+
+    type BakedStorageLifetimeMarkerFilterRules<'tcx> = InclusionPredicate<
+        <StorageLifetimeMarkerFilter as ToPredicate<StorageLifetimeMarkerQuery<'tcx>>>::Predicate,
+    >;
+
     pub(crate) struct StorageLifetimeRules<T> {
         pub live: T,
         pub dead: T,
     }
-
-    type StorageLifetimeBakedEntityFilterRules<'tcx> =
-        StorageLifetimeRules<BakedEntityLocationFilterRules<'tcx>>;
 
     pub(crate) fn get_baked_body_rules<'tcx>(
         storage: &mut dyn Storage,
@@ -1093,22 +1097,25 @@ pub(super) mod rules {
         }
     }
 
-    pub(crate) fn accept_storage_lifetime_rules<'tcx, I>(
+    pub(crate) type StorageLifetimeFilterResult = StorageLifetimeRules<Option<bool>>;
+
+    pub(crate) fn accept_storage_lifetime_rules<'tcx>(
         storage: &mut dyn Storage,
-        item: &I,
-    ) -> StorageLifetimeRules<Option<bool>>
+        item: &LocationQuery<'tcx>,
+    ) -> StorageLifetimeFilterResult
     where
-        StorageLifetimeBakedEntityFilterRules<'tcx>: 'static,
-        EntityLocationFilterPredicate<'tcx>: Predicate<I>,
+        BakedStorageLifetimeMarkerFilterRules<'tcx>: 'static,
+        EntityLocationFilterPredicate<'tcx>: Predicate<LocationQuery<'tcx>>,
     {
         let rules = storage
-            .get_mut::<StorageLifetimeBakedEntityFilterRules<'tcx>>(
+            .get_mut::<BakedStorageLifetimeMarkerFilterRules<'tcx>>(
                 &KEY_BAKED_STORAGE_LIFETIME_RULES.to_owned(),
             )
             .expect("Filter rules are expected to be baked at this point.");
+        use StorageLifetimeMarker::*;
         StorageLifetimeRules {
-            live: rules.live.accept(item),
-            dead: rules.dead.accept(item),
+            live: rules.accept(&(Live, *item)),
+            dead: rules.accept(&(Dead, *item)),
         }
     }
 
@@ -1199,27 +1206,13 @@ pub(super) mod rules {
         );
         let _ = storage.get_or_insert_with_acc(
             KEY_BAKED_STORAGE_LIFETIME_RULES.to_owned(),
-            |storage| -> StorageLifetimeBakedEntityFilterRules<'_> {
+            |storage| -> BakedStorageLifetimeMarkerFilterRules<'_> {
                 let rules = storage.get_or_default::<InstrumentationRules>(KEY_RULES.to_owned());
                 let rules = rules.clone().filter_map(|r| match r {
                     EntityFilter::StorageLifetime(filter) => Some(filter),
                     _ => None,
                 });
-                StorageLifetimeBakedEntityFilterRules {
-                    live: rules
-                        .clone()
-                        .filter_map(|r| match r {
-                            StorageLifetimeFilter::Live(filter) => Some(filter),
-                            _ => None,
-                        })
-                        .to_baked(),
-                    dead: rules
-                        .filter_map(|r| match r {
-                            StorageLifetimeFilter::Dead(filter) => Some(filter),
-                            _ => None,
-                        })
-                        .to_baked(),
-                }
+                rules.to_baked()
             },
         );
     }
@@ -1250,8 +1243,29 @@ pub(super) mod rules {
         PlaceAddressFilter,
         PlaceTypeFilter,
         OperandInfoLocationFilter,
-        StorageLiveFilter,
-        StorageDeadFilter,
+        StorageLifetimeLocationFilter,
+    );
+
+    macro_rules! impl_to_predicate_by_eq {
+        ($($name:ty),+$(,)?) => {
+            $(
+                 impl ToPredicate<$name> for $name {
+                     type Predicate = Box<dyn Fn(&Self) -> bool>;
+
+                     fn to_predicate(&self) -> Self::Predicate {
+                         let this = *self;
+                         Box::new(move |other| this.eq(other))
+                     }
+                 }
+            )*
+        };
+    }
+
+    impl_to_predicate_by_eq!(
+        PlaceStructurePiece,
+        OperandKind,
+        ConstantType,
+        StorageLifetimeMarker,
     );
 
     impl ToPredicate<PlaceStructureQuery<'_>> for PlaceInfoStructureFilter {
@@ -1288,15 +1302,6 @@ pub(super) mod rules {
         }
     }
 
-    impl ToPredicate<Self> for PlaceStructurePiece {
-        type Predicate = Box<dyn Fn(&Self) -> bool>;
-
-        fn to_predicate(&self) -> Self::Predicate {
-            let this = *self;
-            Box::new(move |other| this.eq(other))
-        }
-    }
-
     impl ToPredicate<OperandInfoQuery<'_>> for OperandInfoFilter {
         type Predicate = Box<dyn Fn(&OperandInfoQuery<'_>) -> bool>;
 
@@ -1304,15 +1309,6 @@ pub(super) mod rules {
             let kind = self.kind.to_predicate();
             let loc = self.loc.to_predicate();
             Box::new(move |(q_kind, q_loc)| kind.accept(q_kind) && loc.accept(q_loc))
-        }
-    }
-
-    impl ToPredicate<Self> for OperandKind {
-        type Predicate = Box<dyn Fn(&Self) -> bool>;
-
-        fn to_predicate(&self) -> Self::Predicate {
-            let this = *self;
-            Box::new(move |other| this.eq(other))
         }
     }
 
@@ -1326,12 +1322,13 @@ pub(super) mod rules {
         }
     }
 
-    impl ToPredicate<Self> for ConstantType {
-        type Predicate = Box<dyn Fn(&Self) -> bool>;
+    impl ToPredicate<StorageLifetimeMarkerQuery<'_>> for StorageLifetimeMarkerFilter {
+        type Predicate = Box<dyn Fn(&StorageLifetimeMarkerQuery<'_>) -> bool>;
 
         fn to_predicate(&self) -> Self::Predicate {
-            let this = *self;
-            Box::new(move |other| this.eq(other))
+            let kind = self.kind.to_predicate();
+            let loc = self.loc.to_predicate();
+            Box::new(move |(q_kind, q_loc)| kind.accept(q_kind) && loc.accept(q_loc))
         }
     }
 }
