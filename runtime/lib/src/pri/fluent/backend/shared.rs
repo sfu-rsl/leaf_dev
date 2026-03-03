@@ -217,6 +217,8 @@ pub(crate) mod noop {
         ) {
         }
         fn use_and_check_eq(self, _val: Self::Operand, _expected: Self::Operand) {}
+
+        fn some(self) {}
     }
 
     #[derive(Default)]

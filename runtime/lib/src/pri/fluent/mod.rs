@@ -544,6 +544,10 @@ where
         })
     }
 
+    fn assign_some(id: AssignmentId, dest: PlaceRef) {
+        Self::assign_to(id, dest, |h| h.some())
+    }
+
     fn mark_storage_live(place: PlaceRef) {
         let place_info = Self::take_back_place_info(place);
         let place = Self::get_backend_place(abs::PlaceUsage::Write, |h| h.from_info(place_info));

@@ -30,7 +30,10 @@ use common::{log_debug, log_info, log_warn, pri::AssignmentId};
 use crate::{
     config::InstrumentationRules,
     mir_transform::{self, BodyInstrumentationUnit, JumpTargetModifier},
-    passes::{StorageExt, instr::call::Config},
+    passes::{
+        StorageExt,
+        instr::call::{Config, context::ConfigProvider},
+    },
     utils::mir::{BodyExt, TyCtxtExt},
     visit::*,
 };
@@ -219,7 +222,7 @@ fn make_pri_items(tcx: TyCtxt) -> PriItems {
     PriItems {
         funcs: main_funcs,
         types: collect_helper_types(&helper_items),
-        helper_funcs: collect_helper_funcs(&helper_items),
+        helper_funcs: collect_helper_funcs(helper_items),
         all_items: all_items.into_iter().collect(),
     }
 }
@@ -248,6 +251,30 @@ fn make_config<'tcx>(storage: &mut dyn Storage, tcx: TyCtxt<'tcx>, def_id: DefId
         }
     };
 
+    let assignment_filter = {
+        let top_level =
+            accept_assignment_rules(storage, &(tcx, def_id), false).map(|f| f.unwrap_or(true));
+        (|rules: AssignmentFilterResult| {
+            let rules = rules.map(|r| r.unwrap_or(true));
+            AssignmentKindRules {
+                use_: top_level.use_.then(|| rules.use_),
+                repeat: top_level.repeat.then(|| rules.repeat),
+                ref_: top_level.ref_.then(|| rules.ref_),
+                thread_local_ref: top_level.thread_local_ref.then(|| rules.thread_local_ref),
+                raw_ptr: top_level.raw_ptr.then(|| rules.raw_ptr),
+                cast: top_level.cast.then(|| rules.cast),
+                binary_op: top_level.binary_op.then(|| rules.binary_op),
+                unary_op: top_level.unary_op.then(|| rules.unary_op),
+                discriminant: top_level.discriminant.then(|| rules.discriminant),
+                aggregate: top_level.aggregate.then(|| rules.aggregate),
+                shallow_init_box: top_level.shallow_init_box.then(|| rules.shallow_init_box),
+                wrap_unsafe_binder: top_level
+                    .wrap_unsafe_binder
+                    .then(|| rules.wrap_unsafe_binder),
+            }
+        })(accept_assignment_rules(storage, &(tcx, def_id), true))
+    };
+
     let storage_lifetime_filter =
         (|rules: StorageLifetimeRules<Option<bool>>| StorageLifetimeRules {
             live: rules.live.unwrap_or(false),
@@ -257,6 +284,7 @@ fn make_config<'tcx>(storage: &mut dyn Storage, tcx: TyCtxt<'tcx>, def_id: DefId
     Config {
         place_info_filter,
         operand_info_filter,
+        assignment_filter,
         storage_lifetime_filter,
     }
 }
@@ -457,10 +485,10 @@ impl VisitorFactory {
         C: ctxtreqs::ForPlaceRef<'tcx> + ctxtreqs::ForOperandRef<'tcx>,
         'tcx: 'b,
     {
-        let dest_ref = call_adder.reference_place(destination);
-        let dest_ty = destination.ty(call_adder, call_adder.tcx()).ty;
-        LeafAssignmentVisitor {
-            call_adder: call_adder.assign(id, dest_ref, dest_ty),
+        LeafAssignmentFilteredVisitor {
+            call_adder: RuntimeCallAdder::borrow_from(call_adder),
+            assignment_id: id,
+            place: destination.clone(),
         }
     }
 }
@@ -998,6 +1026,55 @@ where
     }
 }
 
+struct LeafAssignmentFilteredVisitor<'tcx, C> {
+    call_adder: RuntimeCallAdder<C>,
+    assignment_id: AssignmentId,
+    place: Place<'tcx>,
+}
+
+impl<'tcx, C> RvalueVisitor<'tcx, ()> for LeafAssignmentFilteredVisitor<'tcx, C>
+where
+    C: ctxtreqs::ForPlaceRef<'tcx> + ctxtreqs::ForOperandRef<'tcx>,
+{
+    fn visit_rvalue(&mut self, rvalue: &Rvalue<'tcx>) {
+        log_debug!(target: TAG_INSTR, "Visiting Rvalue: {:#?}", rvalue);
+
+        let rules = &self.call_adder.config().assignment_filter;
+        let filter = match rvalue {
+            Rvalue::Use(..) => rules.use_,
+            Rvalue::Repeat(..) => rules.repeat,
+            Rvalue::Ref(..) => rules.ref_,
+            Rvalue::ThreadLocalRef(..) => rules.thread_local_ref,
+            Rvalue::RawPtr(..) => rules.raw_ptr,
+            Rvalue::Cast(..) => rules.cast,
+            Rvalue::BinaryOp(..) => rules.binary_op,
+            Rvalue::UnaryOp(..) => rules.unary_op,
+            Rvalue::Discriminant(..) => rules.discriminant,
+            Rvalue::Aggregate(..) => rules.aggregate,
+            Rvalue::ShallowInitBox(..) => rules.shallow_init_box,
+            Rvalue::CopyForDeref(..) => rules.use_,
+            Rvalue::WrapUnsafeBinder(..) => rules.wrap_unsafe_binder,
+        };
+        match filter {
+            Some(include_info) => {
+                let dest_ref = self.call_adder.reference_place(&self.place);
+                let dest_ty = self.place.ty(&self.call_adder, self.call_adder.tcx()).ty;
+                let mut call_adder = self
+                    .call_adder
+                    .assign(self.assignment_id, dest_ref, dest_ty);
+                if include_info {
+                    LeafAssignmentVisitor { call_adder }.super_rvalue(rvalue)
+                } else {
+                    call_adder.by_some()
+                }
+            }
+            None => {
+                // Filter out completely
+            }
+        }
+    }
+}
+
 make_general_visitor!(LeafAssignmentVisitor);
 
 impl<'tcx, C> RvalueVisitor<'tcx, ()> for LeafAssignmentVisitor<C>
@@ -1005,7 +1082,6 @@ where
     C: ctxtreqs::ForPlaceRef<'tcx> + ctxtreqs::ForOperandRef<'tcx> + ctxtreqs::ForAssignment<'tcx>,
 {
     fn visit_rvalue(&mut self, rvalue: &Rvalue<'tcx>) {
-        log_debug!(target: TAG_INSTR, "Visiting Rvalue: {:#?}", rvalue);
         self.super_rvalue(rvalue)
     }
 

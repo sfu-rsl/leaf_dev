@@ -18,8 +18,8 @@ use common::pri::{AssignmentId, AtomicBinaryOp, AtomicOrdering};
 
 use super::{
     decision::rules::{
-        ConstantTypeRules, OperandInfoRules, PlaceInfoRules, PlaceStructurePieceRules,
-        StorageLifetimeRules,
+        AssignmentKindRules, ConstantTypeRules, OperandInfoRules, PlaceInfoRules,
+        PlaceStructurePieceRules, StorageLifetimeRules,
     },
     pri_utils::{self, sym::intrinsics::LeafIntrinsicSymbol},
 };
@@ -133,6 +133,8 @@ pub(crate) trait Assigner<'tcx>: AssignmentInfoProvider<'tcx> {
 
     // Special case for SetDiscriminant StatementType since it is similar to a regular assignment
     fn its_discriminant_to(&mut self, variant_index: &VariantIdx);
+
+    fn by_some(&mut self);
 }
 
 pub(crate) trait CastAssigner<'tcx> {
@@ -292,6 +294,7 @@ impl InsertionLocation {
 pub(crate) struct Config {
     pub place_info_filter: PlaceInfoRules<PlaceStructurePieceRules<bool>, bool>,
     pub operand_info_filter: OperandInfoRules<bool, Option<ConstantTypeRules<bool>>>,
+    pub assignment_filter: AssignmentKindRules<Option<bool>>,
     pub storage_lifetime_filter: StorageLifetimeRules<bool>,
 }
 

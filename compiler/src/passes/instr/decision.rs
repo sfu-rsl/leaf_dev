@@ -870,7 +870,8 @@ pub(super) mod rules {
 
     use crate::{
         config::{
-            ConstantType, ConstantTypeFilter, CrateFilter, EntityFilter, EntityLocationFilter,
+            AssignmentFilter, AssignmentKind, AssignmentLocationFilter, ConstantType,
+            ConstantTypeFilter, CrateFilter, EntityFilter, EntityLocationFilter,
             InstrumentationRules, MethodDynDefinitionFilter, OperandInfoFilter,
             OperandInfoLocationFilter, OperandKind, PlaceAddressFilter, PlaceInfoFilter,
             PlaceInfoStructureFilter, PlaceStructurePiece, PlaceTypeFilter,
@@ -889,6 +890,8 @@ pub(super) mod rules {
     pub(crate) const KEY_BAKED_PLACE_INFO_RULES: &str = "i_r_b_place_info";
     pub(crate) const KEY_BAKED_OPERAND_INFO_RULES: &str = "i_r_b_operand_info";
     pub(crate) const KEY_BAKED_CONST_TYPE_RULES: &str = "i_r_b_const_ty";
+    pub(crate) const KEY_BAKED_ASSIGNMENT_RULES: &str = "i_r_b_assignment";
+    pub(crate) const KEY_BAKED_ASSIGNMENT_INFO_RULES: &str = "i_r_b_assignment_info";
     pub(crate) const KEY_BAKED_STORAGE_LIFETIME_RULES: &str = "i_r_b_storage_lifetime";
 
     type LocationQuery<'tcx> = (TyCtxt<'tcx>, DefId);
@@ -983,6 +986,45 @@ pub(super) mod rules {
 
     type BakedConstantTypeFilterRules<'tcx> =
         InclusionPredicate<<ConstantTypeFilter as ToPredicate<ConstantTypeQuery<'tcx>>>::Predicate>;
+
+    pub(crate) struct AssignmentKindRules<T> {
+        pub use_: T,
+        pub repeat: T,
+        pub ref_: T,
+        pub thread_local_ref: T,
+        pub raw_ptr: T,
+        pub cast: T,
+        pub binary_op: T,
+        pub unary_op: T,
+        pub discriminant: T,
+        pub aggregate: T,
+        pub shallow_init_box: T,
+        pub wrap_unsafe_binder: T,
+    }
+
+    impl<T> AssignmentKindRules<T> {
+        pub(crate) fn map<U>(self, f: impl Fn(T) -> U) -> AssignmentKindRules<U> {
+            AssignmentKindRules {
+                use_: f(self.use_),
+                repeat: f(self.repeat),
+                ref_: f(self.ref_),
+                thread_local_ref: f(self.thread_local_ref),
+                raw_ptr: f(self.raw_ptr),
+                cast: f(self.cast),
+                binary_op: f(self.binary_op),
+                unary_op: f(self.unary_op),
+                discriminant: f(self.discriminant),
+                aggregate: f(self.aggregate),
+                shallow_init_box: f(self.shallow_init_box),
+                wrap_unsafe_binder: f(self.wrap_unsafe_binder),
+            }
+        }
+    }
+
+    type AssignmentQuery<'tcx> = (AssignmentKind, LocationQuery<'tcx>);
+
+    type BakedAssignmentFilterRules<'tcx> =
+        InclusionPredicate<<AssignmentFilter as ToPredicate<AssignmentQuery<'tcx>>>::Predicate>;
 
     type StorageLifetimeMarkerQuery<'tcx> = (StorageLifetimeMarker, LocationQuery<'tcx>);
 
@@ -1097,6 +1139,42 @@ pub(super) mod rules {
         }
     }
 
+    pub(crate) type AssignmentFilterResult = AssignmentKindRules<Option<bool>>;
+
+    pub(crate) fn accept_assignment_rules<'tcx>(
+        storage: &mut dyn Storage,
+        item: &LocationQuery<'tcx>,
+        info: bool,
+    ) -> AssignmentFilterResult
+    where
+        BakedAssignmentFilterRules<'tcx>: core::any::Any,
+        EntityLocationFilterPredicate<'tcx>: Predicate<LocationQuery<'tcx>>,
+    {
+        let rules = storage
+            .get_mut::<BakedAssignmentFilterRules<'tcx>>(&if !info {
+                KEY_BAKED_ASSIGNMENT_RULES.to_owned()
+            } else {
+                KEY_BAKED_ASSIGNMENT_INFO_RULES.to_owned()
+            })
+            .expect("Filter rules are expected to be baked at this point.");
+
+        use AssignmentKind::*;
+        AssignmentKindRules {
+            use_: rules.accept(&(Use, *item)),
+            repeat: rules.accept(&(Repeat, *item)),
+            ref_: rules.accept(&(Ref, *item)),
+            thread_local_ref: rules.accept(&(ThreadLocalRef, *item)),
+            raw_ptr: rules.accept(&(RawPtr, *item)),
+            cast: rules.accept(&(Cast, *item)),
+            binary_op: rules.accept(&(BinaryOp, *item)),
+            unary_op: rules.accept(&(UnaryOp, *item)),
+            discriminant: rules.accept(&(Discriminant, *item)),
+            aggregate: rules.accept(&(Aggregate, *item)),
+            shallow_init_box: rules.accept(&(ShallowInitBox, *item)),
+            wrap_unsafe_binder: rules.accept(&(WrapUnsafeBinder, *item)),
+        }
+    }
+
     pub(crate) type StorageLifetimeFilterResult = StorageLifetimeRules<Option<bool>>;
 
     pub(crate) fn accept_storage_lifetime_rules<'tcx>(
@@ -1205,6 +1283,28 @@ pub(super) mod rules {
             },
         );
         let _ = storage.get_or_insert_with_acc(
+            KEY_BAKED_ASSIGNMENT_RULES.to_owned(),
+            |storage| -> BakedAssignmentFilterRules<'_> {
+                let rules = storage.get_or_default::<InstrumentationRules>(KEY_RULES.to_owned());
+                let rules = rules.clone().filter_map(|r| match r {
+                    EntityFilter::Assignment(filter) => Some(filter),
+                    _ => None,
+                });
+                rules.to_baked()
+            },
+        );
+        let _ = storage.get_or_insert_with_acc(
+            KEY_BAKED_ASSIGNMENT_INFO_RULES.to_owned(),
+            |storage| -> BakedAssignmentFilterRules<'_> {
+                let rules = storage.get_or_default::<InstrumentationRules>(KEY_RULES.to_owned());
+                let rules = rules.clone().filter_map(|r| match r {
+                    EntityFilter::AssignmentInfo(filter) => Some(filter),
+                    _ => None,
+                });
+                rules.to_baked()
+            },
+        );
+        let _ = storage.get_or_insert_with_acc(
             KEY_BAKED_STORAGE_LIFETIME_RULES.to_owned(),
             |storage| -> BakedStorageLifetimeMarkerFilterRules<'_> {
                 let rules = storage.get_or_default::<InstrumentationRules>(KEY_RULES.to_owned());
@@ -1243,6 +1343,7 @@ pub(super) mod rules {
         PlaceAddressFilter,
         PlaceTypeFilter,
         OperandInfoLocationFilter,
+        AssignmentLocationFilter,
         StorageLifetimeLocationFilter,
     );
 
@@ -1265,6 +1366,7 @@ pub(super) mod rules {
         PlaceStructurePiece,
         OperandKind,
         ConstantType,
+        AssignmentKind,
         StorageLifetimeMarker,
     );
 
@@ -1319,6 +1421,16 @@ pub(super) mod rules {
             let ty = self.ty.to_predicate();
             let loc = self.loc.to_predicate();
             Box::new(move |(q_ty, q_loc)| ty.accept(q_ty) && loc.accept(q_loc))
+        }
+    }
+
+    impl ToPredicate<AssignmentQuery<'_>> for AssignmentFilter {
+        type Predicate = Box<dyn Fn(&AssignmentQuery<'_>) -> bool>;
+
+        fn to_predicate(&self) -> Self::Predicate {
+            let kind = self.kind.to_predicate();
+            let loc = self.loc.to_predicate();
+            Box::new(move |(q_kind, q_loc)| kind.accept(q_kind) && loc.accept(q_loc))
         }
     }
 
