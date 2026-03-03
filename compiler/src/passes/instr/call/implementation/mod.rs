@@ -318,6 +318,16 @@ where
         }
     }
 }
+impl<'tcx, C> ConfigProvider for RuntimeCallAdder<C>
+where
+    C: ConfigProvider,
+{
+    delegate! {
+        to self.context {
+            fn config(&self) -> &Config;
+        }
+    }
+}
 impl<'tcx, C> AssignmentInfoProvider<'tcx> for RuntimeCallAdder<C>
 where
     C: AssignmentInfoProvider<'tcx>,
@@ -388,7 +398,12 @@ where
         args: Vec<Operand<'tcx>>,
         target: Option<BasicBlock>,
     ) -> (BasicBlockData<'tcx>, Local) {
-        assert_eq!(func_info.num_inputs(self.tcx()), args.len());
+        assert_eq!(
+            func_info.num_inputs(self.tcx()),
+            args.len(),
+            "Argument number mismatch for function {:?}",
+            func_info,
+        );
         let generic_args = generic_args.into_iter().collect::<Vec<_>>();
         let result_local = self.context.add_local((
             func_info.ret_ty(self.tcx(), &generic_args),

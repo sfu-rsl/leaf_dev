@@ -238,6 +238,10 @@ where
             )],
         )
     }
+
+    fn by_some(&mut self) {
+        self.add_bb_for_assign_call(sym::assign_some, vec![])
+    }
 }
 
 impl<'tcx, C> RuntimeCallAdder<C>

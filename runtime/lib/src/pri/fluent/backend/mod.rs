@@ -240,6 +240,8 @@ pub(crate) trait AssignmentHandler: Sized {
     fn use_if_eq(self, current: Self::Operand, expected: Self::Operand, then: Self::Operand);
 
     fn use_and_check_eq(self, val: Self::Operand, expected: Self::Operand);
+
+    fn some(self);
 }
 
 pub(crate) trait MemoryHandler {

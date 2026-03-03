@@ -314,6 +314,10 @@ impl<EB: BasicValueExprBuilder> AssignmentHandler for BasicAssignmentHandler<'_,
             [Some(val.clone()), Some(are_eq)].into_iter(),
         )
     }
+
+    fn some(mut self) {
+        self.set_value(Implied::always(UnevalValue::Some.into()))
+    }
 }
 
 impl<'a, EB> BasicAssignmentHandler<'_, 'a, EB> {

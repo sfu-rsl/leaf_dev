@@ -115,6 +115,10 @@ pub(crate) enum EntityFilter {
     OperandInfo(OperandInfoFilter),
     #[serde(alias = "const_type")]
     ConstantType(ConstantTypeFilter),
+    #[serde(alias = "assignment")]
+    Assignment(AssignmentFilter),
+    #[serde(alias = "assignment_info")]
+    AssignmentInfo(AssignmentFilter),
     #[serde(alias = "storage_lifetime")]
     StorageLifetime(StorageLifetimeMarkerFilter),
 }
@@ -195,7 +199,6 @@ pub(crate) struct PlaceTypeFilter(pub(crate) LogicFormula<EntityLocationFilter>)
 #[serde(tag = "kind")]
 #[serde(rename_all = "snake_case")]
 pub(crate) struct OperandInfoFilter {
-    #[serde(alias = "type")]
     pub(crate) kind: LogicFormula<OperandKind>,
     #[serde(flatten)]
     pub(crate) loc: OperandInfoLocationFilter,
@@ -233,6 +236,33 @@ pub(crate) enum ConstantType {
 
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct OperandInfoLocationFilter(pub(crate) LogicFormula<EntityLocationFilter>);
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct AssignmentFilter {
+    pub(crate) kind: LogicFormula<AssignmentKind>,
+    #[serde(flatten)]
+    pub(crate) loc: AssignmentLocationFilter,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum AssignmentKind {
+    Use,
+    Repeat,
+    Ref,
+    ThreadLocalRef,
+    RawPtr,
+    Cast,
+    BinaryOp,
+    UnaryOp,
+    Discriminant,
+    Aggregate,
+    ShallowInitBox,
+    WrapUnsafeBinder,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct AssignmentLocationFilter(pub(crate) LogicFormula<EntityLocationFilter>);
 
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
