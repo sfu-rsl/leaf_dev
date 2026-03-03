@@ -64,6 +64,14 @@ pub(crate) trait MirCallAdder<'tcx> {
         self.make_bb_for_call_with_all(func_name, iter::empty(), args, None)
     }
 
+    fn make_bb_for_helper_call_with_ret(
+        &mut self,
+        func_info: FunctionInfo,
+        args: Vec<Operand<'tcx>>,
+    ) -> (BasicBlockData<'tcx>, Local) {
+        self.make_bb_for_helper_call_with_all(func_info, iter::empty(), args, None)
+    }
+
     fn make_bb_for_call_with_all(
         &mut self,
         func_name: LeafSymbol,

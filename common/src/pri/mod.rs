@@ -1,9 +1,9 @@
 mod types;
 pub use types::*;
 
-pub mod tags;
-
 mod defs;
+pub mod refs;
+pub mod tags;
 
 #[cfg(not(core_build))]
 pub use defs::{

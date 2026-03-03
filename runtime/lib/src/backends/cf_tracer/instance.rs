@@ -21,6 +21,10 @@ static INIT: Once = Once::new();
 pub struct CftInstanceManager;
 
 impl InstanceManager for CftInstanceManager {
+    type PlaceInfo = NullPlace;
+    type Place = NullPlace;
+    type Operand = NullOperand;
+
     type Backend = CftBackend;
 
     type PlaceBuilder = NoOpPlaceBuilder<NullPlace, NullPlace>;

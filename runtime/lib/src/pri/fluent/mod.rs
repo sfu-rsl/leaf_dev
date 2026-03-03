@@ -5,7 +5,7 @@ pub(crate) mod backend;
 use common::pri::{
     AssertionInfo, AssignmentId, BasicBlockIndex, CalleeDef, FieldIndex, FuncDef, LocalIndex,
     OperandRef, PlaceRef, ProgramRuntimeInterface, RawAddress, SwitchInfo, TypeId, TypeSize,
-    VariantIndex,
+    VariantIndex, refs::encoding as ref_enc,
 };
 use common::{log_debug, log_info};
 use leaf_macros::trait_log_fn;
@@ -21,13 +21,14 @@ use self::backend::*;
 
 /// Manages the instance(s) of the runtime backend and provide access to them.
 pub(crate) trait InstanceManager {
-    type Backend: RuntimeBackend;
-    type PlaceBuilder: PlaceBuilder<
-            Place = <Self::Backend as RuntimeBackend>::PlaceInfo,
-            Index = <Self::Backend as RuntimeBackend>::Place,
-        > + Default;
-    type PlaceRefManager: RefManager<Ref = PlaceRef, Value = <Self::Backend as RuntimeBackend>::PlaceInfo>;
-    type OperandRefManager: RefManager<Ref = OperandRef, Value = <Self::Backend as RuntimeBackend>::Operand>;
+    type PlaceInfo;
+    type Place;
+    type Operand;
+
+    type Backend: RuntimeBackend<PlaceInfo = Self::PlaceInfo, Place = Self::Place, Operand = Self::Operand>;
+    type PlaceBuilder: PlaceBuilder<Place = Self::PlaceInfo, Index = Self::Place> + Default;
+    type PlaceRefManager: RefManager<Ref = PlaceRef, Value = Self::PlaceInfo>;
+    type OperandRefManager: RefManager<Ref = OperandRef, Value = Self::Operand>;
 
     fn init();
 
@@ -97,93 +98,99 @@ where
 
     #[tracing::instrument(target = "pri::place", level = "debug", ret)]
     fn ref_place_return_value() -> PlaceRef {
-        Self::push_place_info(|p| p.from_base(Local::ReturnValue.into()))
+        Self::push_place_info(Self::build_return_value_place)
     }
     #[tracing::instrument(target = "pri::place", level = "debug", ret)]
     fn ref_place_argument(local_index: LocalIndex) -> PlaceRef {
-        Self::push_place_info(|p| p.from_base(Local::Argument(local_index).into()))
+        Self::push_place_info(|p| Self::build_arg_place(p, local_index))
     }
     #[tracing::instrument(target = "pri::place", level = "debug", ret)]
     fn ref_place_local(local_index: LocalIndex) -> PlaceRef {
-        Self::push_place_info(|p| p.from_base(Local::Normal(local_index).into()))
+        Self::push_place_info(|p| Self::build_local_place(p, local_index))
     }
     #[tracing::instrument(target = "pri::place", level = "debug", ret)]
     fn ref_place_some() -> PlaceRef {
-        Self::push_place_info(|p| p.from_base(PlaceInfoBase::Some))
+        Self::push_place_info(Self::build_some_place)
+    }
+
+    #[tracing::instrument(target = "pri::place", level = "debug", ret)]
+    fn ref_place_deref(place: PlaceRef) -> PlaceRef {
+        Self::transform_place_info(place, |p, place| p.project_on(place).deref())
     }
     #[tracing::instrument(target = "pri::place", level = "debug", ret)]
-    fn ref_place_deref(place: PlaceRef) {
-        Self::mut_place_info(place, |p, place| p.project_on(place).deref());
+    fn ref_place_field(place: PlaceRef, field: FieldIndex /*, type */) -> PlaceRef {
+        Self::transform_place_info(place, |p, place| p.project_on(place).for_field(field))
     }
     #[tracing::instrument(target = "pri::place", level = "debug", ret)]
-    fn ref_place_field(place: PlaceRef, field: FieldIndex /*, type */) {
-        Self::mut_place_info(place, |p, place| p.project_on(place).for_field(field));
-    }
-    #[tracing::instrument(target = "pri::place", level = "debug", ret)]
-    fn ref_place_index(place: PlaceRef, index_place: PlaceRef) {
+    fn ref_place_index(place: PlaceRef, index_place: PlaceRef) -> PlaceRef {
         let index = Self::take_place_info_to_read(index_place);
-        Self::mut_place_info(place, |p, place| p.project_on(place).at_index(index));
+        Self::transform_place_info(place, |p, place| p.project_on(place).at_index(index))
     }
     #[tracing::instrument(target = "pri::place", level = "debug", ret)]
-    fn ref_place_constant_index(place: PlaceRef, offset: u64, min_length: u64, from_end: bool) {
-        Self::mut_place_info(place, |p, place| {
+    fn ref_place_constant_index(
+        place: PlaceRef,
+        offset: u64,
+        min_length: u64,
+        from_end: bool,
+    ) -> PlaceRef {
+        Self::transform_place_info(place, |p, place| {
             p.project_on(place)
                 .at_constant_index(offset, min_length, from_end)
-        });
+        })
     }
     #[tracing::instrument(target = "pri::place", level = "debug", ret)]
-    fn ref_place_subslice(place: PlaceRef, from: u64, to: u64, from_end: bool) {
-        Self::mut_place_info(place, |p, place| {
+    fn ref_place_subslice(place: PlaceRef, from: u64, to: u64, from_end: bool) -> PlaceRef {
+        Self::transform_place_info(place, |p, place| {
             p.project_on(place).subslice(from, to, from_end)
-        });
+        })
     }
     #[tracing::instrument(target = "pri::place", level = "debug", ret)]
-    fn ref_place_downcast(place: PlaceRef, variant_index: u32 /*, type */) {
-        Self::mut_place_info(place, |p, place| {
+    fn ref_place_downcast(place: PlaceRef, variant_index: u32 /*, type */) -> PlaceRef {
+        Self::transform_place_info(place, |p, place| {
             p.project_on(place).downcast(variant_index)
-        });
+        })
     }
     #[tracing::instrument(target = "pri::place", level = "debug", ret)]
-    fn ref_place_opaque_cast(place: PlaceRef /*, type */) {
-        Self::mut_place_info(place, |p, place| p.project_on(place).opaque_cast());
+    fn ref_place_opaque_cast(place: PlaceRef /*, type */) -> PlaceRef {
+        Self::transform_place_info(place, |p, place| p.project_on(place).opaque_cast())
     }
     #[tracing::instrument(target = "pri::place", level = "debug", ret)]
-    fn ref_place_unwrap_unsafe_binder(place: PlaceRef /*, type */) {
-        Self::mut_place_info(place, |p, place| p.project_on(place).unwrap_unsafe_binder());
+    fn ref_place_unwrap_unsafe_binder(place: PlaceRef /*, type */) -> PlaceRef {
+        Self::transform_place_info(place, |p, place| p.project_on(place).unwrap_unsafe_binder())
     }
     #[tracing::instrument(target = "pri::place", level = "debug", ret)]
-    fn ref_place_some_proj(place: PlaceRef) {
-        Self::mut_place_info(place, |p, place| {
+    fn ref_place_some_proj(place: PlaceRef) -> PlaceRef {
+        Self::transform_place_info(place, |p, place| {
             p.project_on(place).by(PlaceInfoProjection::Some)
-        });
+        })
     }
     #[tracing::instrument(target = "pri::place", level = "debug", ret)]
-    fn set_place_address(place: PlaceRef, raw_ptr: RawAddress) {
-        Self::mut_place_info(place, |p, place| p.metadata(place).set_address(raw_ptr));
+    fn place_with_address(place: PlaceRef, raw_ptr: RawAddress) -> PlaceRef {
+        Self::transform_place_info(place, |p, place| p.metadata(place).set_address(raw_ptr))
     }
     #[tracing::instrument(target = "pri::place", level = "debug", ret)]
-    fn set_place_type_id(place: PlaceRef, type_id: Self::TypeId) {
-        Self::mut_place_info(place, |h, p| h.metadata(p).set_type_id(type_id))
+    fn place_with_type_id(place: PlaceRef, type_id: Self::TypeId) -> PlaceRef {
+        Self::transform_place_info(place, |h, p| h.metadata(p).set_type_id(type_id))
     }
     #[tracing::instrument(target = "pri::place", level = "debug", ret)]
-    fn set_place_type_bool(place: PlaceRef) {
-        Self::set_place_type(place, ValueType::Bool)
+    fn place_with_type_bool(place: PlaceRef) -> PlaceRef {
+        Self::place_with_type(place, ValueType::Bool)
     }
     #[tracing::instrument(target = "pri::place", level = "debug", ret)]
-    fn set_place_type_char(place: PlaceRef) {
-        Self::set_place_type(place, ValueType::Char)
+    fn place_with_type_char(place: PlaceRef) -> PlaceRef {
+        Self::place_with_type(place, ValueType::Char)
     }
     #[tracing::instrument(target = "pri::place", level = "debug", ret)]
-    fn set_place_type_int(place: PlaceRef, bit_size: u64, is_signed: bool) {
-        Self::set_place_type(place, ValueType::new_int(bit_size, is_signed))
+    fn place_with_type_int(place: PlaceRef, bit_size: u64, is_signed: bool) -> PlaceRef {
+        Self::place_with_type(place, ValueType::new_int(bit_size, is_signed))
     }
     #[tracing::instrument(target = "pri::place", level = "debug", ret)]
-    fn set_place_type_float(place: PlaceRef, e_bits: u64, s_bits: u64) {
-        Self::set_place_type(place, ValueType::new_float(e_bits, s_bits))
+    fn place_with_type_float(place: PlaceRef, e_bits: u64, s_bits: u64) -> PlaceRef {
+        Self::place_with_type(place, ValueType::new_float(e_bits, s_bits))
     }
     #[tracing::instrument(target = "pri::place", level = "debug", ret)]
-    fn set_place_size(place: PlaceRef, byte_size: TypeSize) {
-        Self::mut_place_info(place, |h, p| h.metadata(p).set_size(byte_size))
+    fn place_with_size(place: PlaceRef, byte_size: TypeSize) -> PlaceRef {
+        Self::transform_place_info(place, |h, p| h.metadata(p).set_size(byte_size))
     }
 
     #[tracing::instrument(target = "pri::operand", level = "debug", ret)]
@@ -1027,17 +1034,37 @@ where
 }
 
 #[allow(private_bounds)]
-impl<IM: InstanceManager> FluentPri<IM>
-where
-    <IM::Backend as RuntimeBackend>::Operand: Clone,
-{
-    #[inline]
-    fn push_const_operand<T: Into<Constant>>(constant: T) -> OperandRef {
-        Self::push_operand(|o| o.const_from(constant.into()))
+impl<IM: InstanceManager> FluentPri<IM> {
+    fn build_return_value_place(builder: IM::PlaceBuilder) -> IM::PlaceInfo {
+        builder.from_base(Local::ReturnValue.into())
     }
 
-    fn set_place_type(place: PlaceRef, ty: ValueType) {
-        Self::mut_place_info(place, |p, place| p.metadata(place).set_primitive_type(ty));
+    fn build_arg_place(builder: IM::PlaceBuilder, arg_index: LocalIndex) -> IM::PlaceInfo {
+        builder.from_base(Local::Argument(arg_index).into())
+    }
+
+    fn build_local_place(builder: IM::PlaceBuilder, local: LocalIndex) -> IM::PlaceInfo {
+        builder.from_base(Local::Normal(local).into())
+    }
+
+    fn build_some_place(builder: IM::PlaceBuilder) -> IM::PlaceInfo {
+        builder.from_base(PlaceInfoBase::Some)
+    }
+
+    fn build_const_operand<T: Into<Constant>>(
+        builder: <IM::Backend as RuntimeBackend>::OperandHandler<'_>,
+        constant: T,
+    ) -> IM::Operand {
+        builder.const_from(constant.into())
+    }
+
+    #[inline]
+    fn push_const_operand<T: Into<Constant>>(constant: T) -> OperandRef {
+        Self::push_operand(|o| Self::build_const_operand(o, constant))
+    }
+
+    fn place_with_type(place: PlaceRef, ty: ValueType) -> PlaceRef {
+        Self::transform_place_info(place, |p, place| p.metadata(place).set_primitive_type(ty))
     }
 
     fn take_fields(fields: &[OperandRef]) -> Vec<<IM::Backend as RuntimeBackend>::Operand> {
@@ -1071,6 +1098,149 @@ where
         })
     }
 
+    #[inline]
+    fn constraint_at<T>(
+        location: BasicBlockIndex,
+        constraint_action: impl for<'a> FnOnce(
+            <IM::Backend as RuntimeBackend>::ConstraintHandler<'a>,
+        ) -> T,
+    ) -> T {
+        IM::perform_on_backend(|r| {
+            let handler = r.constraint_at(location);
+            constraint_action(handler)
+        })
+    }
+
+    #[inline]
+    fn switch<T>(
+        info: SwitchInfo,
+        switch_action: impl for<'a> FnOnce(
+        <<IM::Backend as RuntimeBackend>::ConstraintHandler<'a> as ConstraintHandler>::SwitchHandler,
+    ) -> T,
+    ) -> T {
+        Self::constraint_at(info.node_location, |c| {
+            let handler = c.switch(Self::take_back_operand(info.discriminant));
+            switch_action(handler)
+        })
+    }
+
+    #[inline]
+    fn func_control<T>(
+        call_action: impl FnOnce(<IM::Backend as RuntimeBackend>::CallHandler<'_>) -> T,
+    ) -> T {
+        IM::perform_on_backend(|r| {
+            let call_control = r.call_control();
+            call_action(call_control)
+        })
+    }
+
+    #[inline]
+    fn annotate<T>(
+        annotate_action: impl FnOnce(<IM::Backend as RuntimeBackend>::AnnotationHandler<'_>) -> T,
+    ) -> T {
+        IM::perform_on_backend(|r| {
+            let annotate = r.annotate();
+            annotate_action(annotate)
+        })
+    }
+
+    #[inline]
+    fn push_place_info(
+        build: impl FnOnce(IM::PlaceBuilder) -> <IM::Backend as RuntimeBackend>::PlaceInfo,
+    ) -> PlaceRef {
+        let builder = IM::PlaceBuilder::default();
+        let place = build(builder);
+        IM::perform_on_place_ref_manager(|rm| rm.push(place))
+    }
+    #[inline]
+    fn transform_place_info(
+        place_ref: PlaceRef,
+        mut_place: impl FnOnce(IM::PlaceBuilder, &mut <IM::Backend as RuntimeBackend>::PlaceInfo),
+    ) -> PlaceRef {
+        let opt_place = ref_enc::place::decode_ref::<IM::PlaceInfo, Self>(place_ref);
+        IM::perform_on_place_ref_manager(|rm| {
+            let builder = IM::PlaceBuilder::default();
+            match opt_place {
+                Some(mut place) => {
+                    mut_place(builder, &mut place);
+                    rm.push(place)
+                }
+                None => {
+                    let place = rm.get_mut(place_ref);
+                    mut_place(builder, place);
+                    place_ref
+                }
+            }
+        })
+    }
+    #[inline]
+    fn take_back_place_info(reference: PlaceRef) -> <IM::Backend as RuntimeBackend>::PlaceInfo {
+        ref_enc::place::decode_ref::<IM::PlaceInfo, Self>(reference)
+            .unwrap_or_else(|| IM::perform_on_place_ref_manager(|rm| rm.take(reference)))
+    }
+    #[inline]
+    fn take_place_info_to_read(reference: PlaceRef) -> <IM::Backend as RuntimeBackend>::Place {
+        let place_info = Self::take_back_place_info(reference);
+        Self::get_backend_place(PlaceUsage::Read, |h| h.from_info(place_info))
+    }
+    #[inline]
+    fn take_place_info_to_write(reference: PlaceRef) -> <IM::Backend as RuntimeBackend>::Place {
+        let place_info = Self::take_back_place_info(reference);
+        Self::get_backend_place(PlaceUsage::Write, |h| h.from_info(place_info))
+    }
+    #[inline]
+    fn take_place_info_to_ref(reference: PlaceRef) -> <IM::Backend as RuntimeBackend>::Place {
+        let place_info = Self::take_back_place_info(reference);
+        Self::get_backend_place(PlaceUsage::Ref, |h| h.from_info(place_info))
+    }
+    #[inline]
+    fn get_backend_place<T>(
+        usage: PlaceUsage,
+        get_place: impl FnOnce(<IM::Backend as RuntimeBackend>::PlaceHandler<'_>) -> T,
+    ) -> T {
+        IM::perform_on_backend(|r| get_place(r.place(usage)))
+    }
+
+    #[inline]
+    fn assign_to<T>(
+        id: AssignmentId,
+        dest_ref: PlaceRef,
+        assign_action: impl FnOnce(<IM::Backend as RuntimeBackend>::AssignmentHandler<'_>) -> T,
+    ) -> T {
+        let dest = Self::take_place_info_to_write(dest_ref);
+        Self::assign_to_place(id, dest, assign_action)
+    }
+
+    #[inline]
+    fn assign_to_place<T>(
+        id: AssignmentId,
+        dest: <IM::Backend as RuntimeBackend>::Place,
+        assign_action: impl FnOnce(<IM::Backend as RuntimeBackend>::AssignmentHandler<'_>) -> T,
+    ) -> T {
+        IM::perform_on_backend(|r| assign_action(r.assign_to(id, dest)))
+    }
+
+    #[inline]
+    fn push_operand(
+        get_operand: impl FnOnce(
+            <IM::Backend as RuntimeBackend>::OperandHandler<'_>,
+        ) -> <IM::Backend as RuntimeBackend>::Operand,
+    ) -> OperandRef {
+        let operand = IM::perform_on_backend(|r| get_operand(r.operand()));
+        IM::perform_on_operand_ref_manager(|rm| rm.push(operand))
+    }
+    #[inline]
+    fn take_back_operand(reference: OperandRef) -> IM::Operand {
+        ref_enc::operand::decode_ref::<IM::Operand, Self>(reference)
+            .unwrap_or_else(|| IM::perform_on_operand_ref_manager(|rm| rm.take(reference)))
+    }
+}
+
+#[allow(private_bounds)]
+impl<IM: InstanceManager> FluentPri<IM>
+where
+    <IM::Backend as RuntimeBackend>::Operand: Clone,
+{
     fn load(
         id: AssignmentId,
         ptr: OperandRef,
@@ -1175,85 +1345,6 @@ where
     }
 
     #[inline]
-    fn push_place_info(
-        build: impl FnOnce(IM::PlaceBuilder) -> <IM::Backend as RuntimeBackend>::PlaceInfo,
-    ) -> PlaceRef {
-        let builder = IM::PlaceBuilder::default();
-        let place = build(builder);
-        IM::perform_on_place_ref_manager(|rm| rm.push(place))
-    }
-    #[inline]
-    fn mut_place_info<T>(
-        place_ref: PlaceRef,
-        mut_place: impl FnOnce(IM::PlaceBuilder, &mut <IM::Backend as RuntimeBackend>::PlaceInfo) -> T,
-    ) -> T {
-        IM::perform_on_place_ref_manager(|rm| {
-            let place = rm.get_mut(place_ref);
-            let builder = IM::PlaceBuilder::default();
-            mut_place(builder, place)
-        })
-    }
-    #[inline]
-    fn take_back_place_info(reference: PlaceRef) -> <IM::Backend as RuntimeBackend>::PlaceInfo {
-        IM::perform_on_place_ref_manager(|rm| rm.take(reference))
-    }
-    #[inline]
-    fn take_place_info_to_read(reference: PlaceRef) -> <IM::Backend as RuntimeBackend>::Place {
-        let place_info = Self::take_back_place_info(reference);
-        Self::get_backend_place(PlaceUsage::Read, |h| h.from_info(place_info))
-    }
-    #[inline]
-    fn take_place_info_to_write(reference: PlaceRef) -> <IM::Backend as RuntimeBackend>::Place {
-        let place_info = Self::take_back_place_info(reference);
-        Self::get_backend_place(PlaceUsage::Write, |h| h.from_info(place_info))
-    }
-    #[inline]
-    fn take_place_info_to_ref(reference: PlaceRef) -> <IM::Backend as RuntimeBackend>::Place {
-        let place_info = Self::take_back_place_info(reference);
-        Self::get_backend_place(PlaceUsage::Ref, |h| h.from_info(place_info))
-    }
-    #[inline]
-    fn get_backend_place<T>(
-        usage: PlaceUsage,
-        get_place: impl FnOnce(<IM::Backend as RuntimeBackend>::PlaceHandler<'_>) -> T,
-    ) -> T {
-        IM::perform_on_backend(|r| get_place(r.place(usage)))
-    }
-
-    #[inline]
-    fn assign_to<T>(
-        id: AssignmentId,
-        dest_ref: PlaceRef,
-        assign_action: impl FnOnce(<IM::Backend as RuntimeBackend>::AssignmentHandler<'_>) -> T,
-    ) -> T {
-        let dest = Self::take_place_info_to_write(dest_ref);
-        Self::assign_to_place(id, dest, assign_action)
-    }
-
-    #[inline]
-    fn assign_to_place<T>(
-        id: AssignmentId,
-        dest: <IM::Backend as RuntimeBackend>::Place,
-        assign_action: impl FnOnce(<IM::Backend as RuntimeBackend>::AssignmentHandler<'_>) -> T,
-    ) -> T {
-        IM::perform_on_backend(|r| assign_action(r.assign_to(id, dest)))
-    }
-
-    #[inline]
-    fn push_operand(
-        get_operand: impl FnOnce(
-            <IM::Backend as RuntimeBackend>::OperandHandler<'_>,
-        ) -> <IM::Backend as RuntimeBackend>::Operand,
-    ) -> OperandRef {
-        let operand = IM::perform_on_backend(|r| get_operand(r.operand()));
-        IM::perform_on_operand_ref_manager(|rm| rm.push(operand))
-    }
-    #[inline]
-    fn take_back_operand(reference: OperandRef) -> <IM::Backend as RuntimeBackend>::Operand {
-        IM::perform_on_operand_ref_manager(|rm| rm.take(reference))
-    }
-
-    #[inline]
     fn memory<T>(
         memory_action: impl FnOnce(<IM::Backend as RuntimeBackend>::MemoryHandler<'_>) -> T,
     ) -> T {
@@ -1272,50 +1363,44 @@ where
             memory_action(handler)
         })
     }
+}
 
-    #[inline]
-    fn constraint_at<T>(
-        location: BasicBlockIndex,
-        constraint_action: impl for<'a> FnOnce(
-            <IM::Backend as RuntimeBackend>::ConstraintHandler<'a>,
-        ) -> T,
-    ) -> T {
-        IM::perform_on_backend(|r| {
-            let handler = r.constraint_at(location);
-            constraint_action(handler)
-        })
+#[allow(private_interfaces)]
+impl<IM: InstanceManager> ref_enc::place::PlaceRefInlinedDecoder<IM::PlaceInfo> for FluentPri<IM> {
+    fn return_value() -> IM::PlaceInfo {
+        Self::build_return_value_place(IM::PlaceBuilder::default())
     }
 
-    #[inline]
-    fn switch<T>(
-        info: SwitchInfo,
-        switch_action: impl for<'a> FnOnce(
-        <<IM::Backend as RuntimeBackend>::ConstraintHandler<'a> as ConstraintHandler>::SwitchHandler,
-    ) -> T,
-    ) -> T {
-        Self::constraint_at(info.node_location, |c| {
-            let handler = c.switch(Self::take_back_operand(info.discriminant));
-            switch_action(handler)
-        })
+    fn argument(arg_index: u32) -> IM::PlaceInfo {
+        Self::build_arg_place(IM::PlaceBuilder::default(), arg_index)
     }
 
-    #[inline]
-    fn func_control<T>(
-        call_action: impl FnOnce(<IM::Backend as RuntimeBackend>::CallHandler<'_>) -> T,
-    ) -> T {
-        IM::perform_on_backend(|r| {
-            let call_control = r.call_control();
-            call_action(call_control)
-        })
+    fn local(local_index: u32) -> IM::PlaceInfo {
+        Self::build_local_place(IM::PlaceBuilder::default(), local_index)
     }
 
-    #[inline]
-    fn annotate<T>(
-        annotate_action: impl FnOnce(<IM::Backend as RuntimeBackend>::AnnotationHandler<'_>) -> T,
-    ) -> T {
-        IM::perform_on_backend(|r| {
-            let annotate = r.annotate();
-            annotate_action(annotate)
-        })
+    fn some() -> IM::PlaceInfo {
+        Self::build_some_place(IM::PlaceBuilder::default())
+    }
+}
+
+#[allow(private_interfaces)]
+impl<IM: InstanceManager> ref_enc::operand::OperandRefInlinedDecoder<IM::Operand>
+    for FluentPri<IM>
+{
+    fn const_zst() -> IM::Operand {
+        IM::perform_on_backend(|r| Self::build_const_operand(r.operand(), Constant::Zst))
+    }
+
+    fn const_bool(value: bool) -> IM::Operand {
+        IM::perform_on_backend(|r| Self::build_const_operand(r.operand(), Constant::Bool(value)))
+    }
+
+    fn const_some() -> IM::Operand {
+        IM::perform_on_backend(|r| Self::build_const_operand(r.operand(), Constant::Some))
+    }
+
+    fn some() -> IM::Operand {
+        IM::perform_on_backend(|r| r.operand().some())
     }
 }

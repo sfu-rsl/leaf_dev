@@ -210,7 +210,7 @@ pub(crate) mod sym {
                 f32_to_bits,
                 f64_to_bits,
 
-                set_place_address_typed,
+                place_with_address_typed,
                 type_id_of,
                 size_of,
 
@@ -232,6 +232,16 @@ pub(crate) mod sym {
                 const_atomic_binary_op_of,
 
                 special_func_placeholder,
+
+                ref_place_return_value_encoded,
+                ref_place_argument_encoded,
+                ref_place_local_encoded,
+                ref_place_some_encoded,
+
+                ref_operand_const_zst_encoded,
+                ref_operand_const_bool_encoded,
+                ref_operand_const_some_encoded,
+                ref_operand_some_encoded,
             ],
             others: [
                 CH_MODULE_MARKER,
@@ -261,7 +271,7 @@ pub(crate) mod sym {
 
         pass_compiler_helpers_to!(symbols_in_compiler_helpers);
 
-        pub(crate) const ALL_HELPERS: [LS; 24] = pass_compiler_helpers_to!(bracket);
+        pub(crate) const ALL_HELPERS: [LS; 32] = pass_compiler_helpers_to!(bracket);
     }
     pub(crate) use compiler_helpers::*;
 

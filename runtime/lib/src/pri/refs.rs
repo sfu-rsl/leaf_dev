@@ -46,7 +46,7 @@ mod circular {
     }
 
     impl<V> RefManager for CircularBufferRefManager<V> {
-        type Ref = u64;
+        type Ref = common::pri::Ref;
         type Value = V;
 
         fn push(&mut self, value: V) -> Self::Ref {
