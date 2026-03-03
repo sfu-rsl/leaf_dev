@@ -2,10 +2,7 @@ pub use super::super::types::{
     Alignment, AssignmentId, BasicBlockIndex, BasicBlockLocation, CalleeDef, DefId, DynRawMetadata,
     FieldIndex, FuncDef, LocalIndex, RawAddress, TypeId, TypeSize, VariantIndex,
 };
-
-pub type Ref = u64;
-pub type PlaceRef = Ref;
-pub type OperandRef = Ref;
+pub use super::refs::{OperandRef, PlaceRef, Ref};
 
 pub type Tag = &'static str;
 

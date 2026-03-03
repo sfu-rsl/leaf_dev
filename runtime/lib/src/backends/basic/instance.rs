@@ -23,7 +23,7 @@ use crate::pri::{
 use super::{BasicBackendConfig, BasicPlaceBuilder};
 
 type BackendImpl = crate::backends::basic::BasicBackend;
-type PlaceInfo = <BackendImpl as RuntimeBackend>::PlaceInfo;
+type PlaceInfoImpl = <BackendImpl as RuntimeBackend>::PlaceInfo;
 type OperandImpl =
     <<BackendImpl as RuntimeBackend>::OperandHandler<'static> as OperandHandler>::Operand;
 
@@ -51,7 +51,7 @@ cfg_if! {
 
 cfg_if! {
     if #[cfg(feature = "runtime_access_raw_ptr")] {
-        static mut PLACE_REF_MANAGER: DefaultRefManager<PlaceInfo> = DefaultRefManager::new();
+        static mut PLACE_REF_MANAGER: DefaultRefManager<PlaceInfoImpl> = DefaultRefManager::new();
     } else {
         thread_local! {
             // Place and operand references are local to functions, so they need not and should not be shared
@@ -96,9 +96,12 @@ impl BasicInstanceManager {
 }
 
 impl InstanceManager for BasicInstanceManager {
+    type PlaceInfo = PlaceInfoImpl;
+    type Place = <BackendImpl as RuntimeBackend>::Place;
+    type Operand = OperandImpl;
     type Backend = BackendImpl;
     type PlaceBuilder = BasicPlaceBuilder;
-    type PlaceRefManager = DefaultRefManager<PlaceInfo>;
+    type PlaceRefManager = DefaultRefManager<PlaceInfoImpl>;
     type OperandRefManager = DefaultRefManager<OperandImpl>;
 
     fn init() {

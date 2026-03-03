@@ -107,24 +107,24 @@ pub mod macros {
           { fn ref_place_local(local_index: LocalIndex) -> PlaceRef }
           { fn ref_place_some() -> PlaceRef }
 
-          { fn ref_place_deref(place: PlaceRef) }
-          { fn ref_place_field(place: PlaceRef, field: FieldIndex /*, type */) }
-          { fn ref_place_index(place: PlaceRef, index_place: PlaceRef) }
-          { fn ref_place_constant_index(place: PlaceRef, offset: u64, min_length: u64, from_end: bool) }
-          { fn ref_place_subslice(place: PlaceRef, from: u64, to: u64, from_end: bool) }
-          { fn ref_place_downcast(place: PlaceRef, variant_index: u32 /*, type */) }
-          { fn ref_place_opaque_cast(place: PlaceRef /*, type */) }
-          { fn ref_place_unwrap_unsafe_binder(place: PlaceRef /*, type */) }
-          { fn ref_place_some_proj(place: PlaceRef) }
+          { fn ref_place_deref(place: PlaceRef) -> PlaceRef }
+          { fn ref_place_field(place: PlaceRef, field: FieldIndex) -> PlaceRef }
+          { fn ref_place_index(place: PlaceRef, index_place: PlaceRef) -> PlaceRef }
+          { fn ref_place_constant_index(place: PlaceRef, offset: u64, min_length: u64, from_end: bool) -> PlaceRef }
+          { fn ref_place_subslice(place: PlaceRef, from: u64, to: u64, from_end: bool) -> PlaceRef }
+          { fn ref_place_downcast(place: PlaceRef, variant_index: u32) -> PlaceRef }
+          { fn ref_place_opaque_cast(place: PlaceRef) -> PlaceRef }
+          { fn ref_place_unwrap_unsafe_binder(place: PlaceRef) -> PlaceRef }
+          { fn ref_place_some_proj(place: PlaceRef) -> PlaceRef }
 
-          { fn set_place_address(place: PlaceRef, raw_ptr: RawAddress) }
+          { fn place_with_address(place: PlaceRef, raw_ptr: RawAddress) -> PlaceRef }
           #[allow(unused_parens)]
-          { fn set_place_type_id(place: PlaceRef, type_id: ($type_id_ty)) }
-          { fn set_place_type_bool(place: PlaceRef) }
-          { fn set_place_type_char(place: PlaceRef) }
-          { fn set_place_type_int(place: PlaceRef, bit_size: u64, is_signed: bool) }
-          { fn set_place_type_float(place: PlaceRef, e_bits: u64, s_bits: u64) }
-          { fn set_place_size(place: PlaceRef, byte_size: TypeSize) }
+          { fn place_with_type_id(place: PlaceRef, type_id: ($type_id_ty)) -> PlaceRef }
+          { fn place_with_type_bool(place: PlaceRef) -> PlaceRef }
+          { fn place_with_type_char(place: PlaceRef) -> PlaceRef }
+          { fn place_with_type_int(place: PlaceRef, bit_size: u64, is_signed: bool) -> PlaceRef }
+          { fn place_with_type_float(place: PlaceRef, e_bits: u64, s_bits: u64) -> PlaceRef }
+          { fn place_with_size(place: PlaceRef, byte_size: TypeSize) -> PlaceRef }
 
           // ----- Operand -----
           { fn ref_operand_copy(place: PlaceRef) -> OperandRef }
@@ -558,37 +558,37 @@ pub mod macros {
             }$modifier!{
                 fn ref_place_some()->PlaceRef;
             }$modifier!{
-                fn ref_place_deref(place:PlaceRef);
+                fn ref_place_deref(place:PlaceRef)->PlaceRef;
             }$modifier!{
-                fn ref_place_field(place:PlaceRef,field:FieldIndex);
+                fn ref_place_field(place:PlaceRef,field:FieldIndex)->PlaceRef;
             }$modifier!{
-                fn ref_place_index(place:PlaceRef,index_place:PlaceRef);
+                fn ref_place_index(place:PlaceRef,index_place:PlaceRef)->PlaceRef;
             }$modifier!{
-                fn ref_place_constant_index(place:PlaceRef,offset:u64,min_length:u64,from_end:bool);
+                fn ref_place_constant_index(place:PlaceRef,offset:u64,min_length:u64,from_end:bool)->PlaceRef;
             }$modifier!{
-                fn ref_place_subslice(place:PlaceRef,from:u64,to:u64,from_end:bool);
+                fn ref_place_subslice(place:PlaceRef,from:u64,to:u64,from_end:bool)->PlaceRef;
             }$modifier!{
-                fn ref_place_downcast(place:PlaceRef,variant_index:u32);
+                fn ref_place_downcast(place:PlaceRef,variant_index:u32)->PlaceRef;
             }$modifier!{
-                fn ref_place_opaque_cast(place:PlaceRef);
+                fn ref_place_opaque_cast(place:PlaceRef)->PlaceRef;
             }$modifier!{
-                fn ref_place_unwrap_unsafe_binder(place:PlaceRef);
+                fn ref_place_unwrap_unsafe_binder(place:PlaceRef)->PlaceRef;
             }$modifier!{
-                fn ref_place_some_proj(place:PlaceRef);
+                fn ref_place_some_proj(place:PlaceRef)->PlaceRef;
             }$modifier!{
-                fn set_place_address(place:PlaceRef,raw_ptr:RawAddress);
+                fn place_with_address(place:PlaceRef,raw_ptr:RawAddress)->PlaceRef;
             }$modifier!{
-                #[allow(unused_parens)]fn set_place_type_id(place:PlaceRef,type_id:($type_id_ty));
+                #[allow(unused_parens)]fn place_with_type_id(place:PlaceRef,type_id:($type_id_ty))->PlaceRef;
             }$modifier!{
-                fn set_place_type_bool(place:PlaceRef);
+                fn place_with_type_bool(place:PlaceRef)->PlaceRef;
             }$modifier!{
-                fn set_place_type_char(place:PlaceRef);
+                fn place_with_type_char(place:PlaceRef)->PlaceRef;
             }$modifier!{
-                fn set_place_type_int(place:PlaceRef,bit_size:u64,is_signed:bool);
+                fn place_with_type_int(place:PlaceRef,bit_size:u64,is_signed:bool)->PlaceRef;
             }$modifier!{
-                fn set_place_type_float(place:PlaceRef,e_bits:u64,s_bits:u64);
+                fn place_with_type_float(place:PlaceRef,e_bits:u64,s_bits:u64)->PlaceRef;
             }$modifier!{
-                fn set_place_size(place:PlaceRef,byte_size:TypeSize);
+                fn place_with_size(place:PlaceRef,byte_size:TypeSize)->PlaceRef;
             }$modifier!{
                 fn ref_operand_copy(place:PlaceRef)->OperandRef;
             }$modifier!{

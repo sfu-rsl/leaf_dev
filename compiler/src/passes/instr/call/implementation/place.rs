@@ -37,34 +37,42 @@ where
 
         let set_type_addr = |this: &mut Self,
                              blocks: &mut Vec<BasicBlockData<'tcx>>,
-                             place_ref: Local,
+                             mut place_ref: Local,
                              rel_place: MirPlaceRef<'tcx>| {
             let ty = rel_place.ty(this.local_decls(), tcx).ty;
-            blocks.extend(this.set_place_type(place_ref, ty).into_flat_iter());
-            blocks.extend(this.set_place_addr(place_ref, rel_place.to_place(tcx), ty));
+            if let Some(BlocksAndResult(new_blocks, new_ref)) = this.add_place_type(place_ref, ty) {
+                blocks.extend(new_blocks);
+                place_ref = new_ref;
+            }
+            if let Some(BlocksAndResult(new_blocks, new_ref)) =
+                this.add_place_addr(place_ref, rel_place.to_place(tcx), ty)
+            {
+                blocks.extend(new_blocks);
+                place_ref = new_ref;
+            }
+            place_ref
         };
 
         // For setting addresses we have to remake a cumulative place up to each projection.
-        let place_ref = {
-            let (block, place_ref, rel_place) = match referrals.base {
+        let mut place_ref = {
+            let (block, mut place_ref, rel_place) = match referrals.base {
                 PlaceReferralBase::Local(local) => {
                     let (block, place_ref) = self.internal_reference_place_local(local);
                     (block, place_ref, local.into())
                 }
                 PlaceReferralBase::SomePlace(rel_place) => {
-                    let (block, place_ref) =
-                        self.make_bb_for_place_ref_call(sym::ref_place_some, Default::default());
+                    let (block, place_ref) = self.internal_ref_place_some();
                     (block, place_ref, rel_place)
                 }
             };
             blocks.push(block);
-            set_type_addr(self, &mut blocks, place_ref, rel_place);
+            place_ref = set_type_addr(self, &mut blocks, place_ref, rel_place);
 
             place_ref
         };
 
         for proj in referrals.projs {
-            let (added_blocks, cur_place) = match proj {
+            let (BlocksAndResult(added_blocks, new_ref), cur_place) = match proj {
                 PlaceReferralProj::Projection(rel_place) => (
                     self.internal_reference_place_projection(
                         place_ref,
@@ -73,30 +81,44 @@ where
                     rel_place,
                 ),
                 PlaceReferralProj::SomeProjection(rel_place) => (
-                    vec![
-                        self.make_bb_for_place_ref_call(
-                            sym::ref_place_some_proj,
-                            vec![operand::copy_for_local(place_ref)],
-                        )
-                        .0, // The result is unit.
-                    ],
+                    self.make_bb_for_place_ref_call(
+                        sym::ref_place_some_proj,
+                        vec![operand::copy_for_local(place_ref)],
+                    )
+                    .into(),
                     rel_place,
                 ),
             };
             blocks.extend(added_blocks);
-            set_type_addr(self, &mut blocks, place_ref, cur_place);
+            place_ref = new_ref;
+            place_ref = set_type_addr(self, &mut blocks, place_ref, cur_place);
         }
 
         BlocksAndResult(blocks, place_ref)
     }
 
+    fn internal_ref_place_some(&mut self) -> (BasicBlockData<'tcx>, Local) {
+        self.make_bb_for_helper_call_with_ret(
+            self.pri_helper_funcs().ref_place_some_encoded,
+            Vec::default(),
+        )
+    }
+
     pub(super) fn reference_place_local(&mut self, local: Local) -> BlocksAndResult<'tcx> {
-        let (block, place_ref) = self.internal_reference_place_local(local);
+        let (block, mut place_ref) = self.internal_reference_place_local(local);
         let mut blocks = vec![block];
 
         let ty = self.local_decls()[local].ty;
-        blocks.extend(self.set_place_type(place_ref, ty).into_flat_iter());
-        blocks.extend(self.set_place_addr(place_ref, local.into(), ty));
+        if let Some(BlocksAndResult(new_blocks, new_ref)) = self.add_place_type(place_ref, ty) {
+            blocks.extend(new_blocks);
+            place_ref = new_ref;
+        }
+        if let Some(BlocksAndResult(new_blocks, new_ref)) =
+            self.add_place_addr(place_ref, local.into(), ty)
+        {
+            blocks.extend(new_blocks);
+            place_ref = new_ref;
+        }
 
         BlocksAndResult(blocks, place_ref)
     }
@@ -104,24 +126,24 @@ where
     fn internal_reference_place_local(&mut self, local: Local) -> (BasicBlockData<'tcx>, Local) {
         let kind = self.body().local_kind(local);
         use rustc_middle::mir::LocalKind::*;
-        let func_name = match kind {
-            Temp => sym::ref_place_local,
-            Arg => sym::ref_place_argument,
-            ReturnPointer => sym::ref_place_return_value,
+        let func = match kind {
+            Temp => self.pri_helper_funcs().ref_place_local_encoded,
+            Arg => self.pri_helper_funcs().ref_place_argument_encoded,
+            ReturnPointer => self.pri_helper_funcs().ref_place_return_value_encoded,
         };
         let args = match kind {
             ReturnPointer => vec![],
             _ => vec![operand::const_from_uint(self.context.tcx(), local.as_u32())],
         };
 
-        self.make_bb_for_place_ref_call(func_name, args)
+        self.make_bb_for_helper_call_with_ret(func, args)
     }
 
     fn internal_reference_place_projection<T>(
         &mut self,
         current_ref: Local,
         proj: ProjectionElem<Local, T>,
-    ) -> Vec<BasicBlockData<'tcx>> {
+    ) -> BlocksAndResult<'tcx> {
         let mut blocks = Vec::new();
 
         let (func_name, additional_args) = match proj {
@@ -173,14 +195,12 @@ where
             ProjectionElem::UnwrapUnsafeBinder(..) => (sym::ref_place_unwrap_unsafe_binder, vec![]),
         };
 
-        blocks.push(
-            self.make_bb_for_place_ref_call(
-                func_name,
-                [vec![operand::copy_for_local(current_ref)], additional_args].concat(),
-            )
-            .0, // The result is unit.
+        let (block, place_ref) = self.make_bb_for_place_ref_call(
+            func_name,
+            [vec![operand::copy_for_local(current_ref)], additional_args].concat(),
         );
-        blocks
+        blocks.push(block);
+        BlocksAndResult(blocks, place_ref)
     }
 
     fn make_bb_for_place_ref_call(
@@ -191,20 +211,20 @@ where
         self.make_bb_for_call_with_ret(func_name, args)
     }
 
-    fn set_place_addr(
+    fn add_place_addr(
         &mut self,
         place_ref: Local,
         place: Place<'tcx>,
         place_ty: Ty<'tcx>,
-    ) -> Option<BasicBlockData<'tcx>> {
+    ) -> Option<BlocksAndResult<'tcx>> {
         if !self.context.config().place_info_filter.address {
             return None;
         }
 
         let (stmt, ptr_local) = utils::ptr_to_place(self.tcx(), &mut self.context, place, place_ty);
-        let (mut block, _) = {
+        let (mut block, place_ref) = {
             self.make_bb_for_helper_call_with_all(
-                self.context.pri_helper_funcs().set_place_address_typed,
+                self.context.pri_helper_funcs().place_with_address_typed,
                 vec![place_ty.into()],
                 vec![
                     operand::copy_for_local(place_ref),
@@ -214,17 +234,17 @@ where
             )
         };
         block.statements.push(stmt);
-        Some(block)
+        Some((block, place_ref).into())
     }
 
-    pub(super) fn set_place_size(
+    pub(super) fn add_place_size(
         &mut self,
         place_ref: Local,
         place_ty: Ty<'tcx>,
-    ) -> Vec<BasicBlockData<'tcx>> {
+    ) -> Option<BlocksAndResult<'tcx>> {
         if !place_ty.is_sized(self.tcx(), self.current_typing_env()) {
             log_warn!("Encountered unsized type. Skipping size setting.");
-            return vec![BasicBlockData::new(Some(terminator::goto(None)), false)];
+            return None;
         }
 
         let (get_call_block, size_local) = self.make_bb_for_helper_call_with_all(
@@ -234,22 +254,25 @@ where
             None,
         );
 
-        let set_call_block = self.make_bb_for_call(
-            sym::set_place_size,
+        let (set_call_block, place_ref) = self.make_bb_for_call_with_ret(
+            sym::place_with_size,
             vec![
                 operand::copy_for_local(place_ref),
                 operand::move_for_local(size_local),
             ],
         );
 
-        vec![get_call_block, set_call_block]
+        Some(BlocksAndResult(
+            vec![get_call_block, set_call_block],
+            place_ref,
+        ))
     }
 
-    fn set_place_type(
+    fn add_place_type(
         &mut self,
-        place_ref: Local,
+        mut place_ref: Local,
         ty: Ty<'tcx>,
-    ) -> Option<Vec<BasicBlockData<'tcx>>> {
+    ) -> Option<BlocksAndResult<'tcx>> {
         if !self.context.config().place_info_filter.ty {
             return None;
         }
@@ -259,12 +282,12 @@ where
         let tcx = self.context.tcx();
         // FIXME: To be removed when type information passing is complete.
         if let Some((func_name, additional_args)) = if ty.is_bool() {
-            Some((sym::set_place_type_bool, vec![]))
+            Some((sym::place_with_type_bool, vec![]))
         } else if ty.is_char() {
-            Some((sym::set_place_type_char, vec![]))
+            Some((sym::place_with_type_char, vec![]))
         } else if ty.is_integral() {
             Some((
-                sym::set_place_type_int,
+                sym::place_with_type_int,
                 vec![
                     operand::const_from_uint(tcx, ty.primitive_size(tcx).bits()),
                     operand::const_from_bool(tcx, ty.is_signed()),
@@ -273,7 +296,7 @@ where
         } else if ty.is_floating_point() {
             let (e_bits, s_bits) = ty::ebit_sbit_size(ty);
             Some((
-                sym::set_place_type_float,
+                sym::place_with_type_float,
                 vec![
                     operand::const_from_uint(tcx, e_bits),
                     operand::const_from_uint(tcx, s_bits),
@@ -282,10 +305,12 @@ where
         } else {
             None
         } {
-            blocks.push(self.make_bb_for_call(
+            let (block, new_ref) = self.make_bb_for_call_with_ret(
                 func_name,
                 [vec![operand::copy_for_local(place_ref)], additional_args].concat(),
-            ));
+            );
+            blocks.push(block);
+            place_ref = new_ref;
         }
 
         let id_local = {
@@ -294,15 +319,17 @@ where
             id_local
         };
 
-        blocks.push(self.make_bb_for_call(
-            sym::set_place_type_id,
+        let (block, new_ref) = self.make_bb_for_call_with_ret(
+            sym::place_with_type_id,
             vec![
                 operand::copy_for_local(place_ref),
                 operand::move_for_local(id_local),
             ],
-        ));
+        );
+        blocks.push(block);
+        place_ref = new_ref;
 
-        Some(blocks)
+        Some(BlocksAndResult(blocks, place_ref))
     }
 }
 
@@ -375,7 +402,7 @@ mod utils {
 
     pub(super) use super::super::prelude::{mir::*, *};
 
-    pub(super) use super::super::utils::{assignment, operand, terminator, ty};
+    pub(super) use super::super::utils::{assignment, operand, ty};
 
     pub(super) fn ptr_to_place<'tcx>(
         tcx: TyCtxt<'tcx>,

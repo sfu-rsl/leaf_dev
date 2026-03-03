@@ -6,7 +6,7 @@ use core::{
 
 use super::common::{
     self,
-    pri::*,
+    pri::{refs::encoding as r_enc, *},
     types::{BasicBlockLocation, DefId, InstanceKindDiscr, InstanceKindId},
 };
 
@@ -43,8 +43,8 @@ pub fn f64_to_bits(value: f64) -> u128 {
  */
 
 #[used]
-static _SET_PLACE_ADDR_TYPED_REFERENCER: fn(PlaceRef, *const u32) -> () =
-    set_place_address_typed::<u32>;
+static _PLACE_WITH_ADDRESS_TYPED_REFERENCER: fn(PlaceRef, *const u32) -> PlaceRef =
+    place_with_address_typed::<u32>;
 
 #[used]
 static _TYPE_ID_OF_REFERENCER: fn() -> TypeId = type_id_of::<u32>;
@@ -68,8 +68,8 @@ static _CONST_ATOMIC_ORD_OF_REFERENCER: fn(u8) -> AtomicOrdering = const_atomic_
 static _CONST_ATOMIC_BINARY_OP_OF_REFERENCER: fn(u8) -> AtomicBinaryOp = const_atomic_binary_op_of;
 
 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
-pub fn set_place_address_typed<T>(place: PlaceRef, address: *const T) {
-    super::set_place_address(place, address as RawAddress)
+pub fn place_with_address_typed<T>(place: PlaceRef, address: *const T) -> PlaceRef {
+    super::place_with_address(place, address as RawAddress)
 }
 
 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
@@ -273,3 +273,43 @@ pub const fn const_atomic_binary_op_of(raw: u8) -> AtomicBinaryOp {
  * that cannot be treated as ordinary ones. */
 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
 pub fn special_func_placeholder() {}
+
+#[inline(always)]
+pub const fn ref_place_return_value_encoded() -> PlaceRef {
+    r_enc::place::encode_return_value()
+}
+
+#[inline(always)]
+pub const fn ref_place_argument_encoded(arg_index: u32) -> PlaceRef {
+    r_enc::place::encode_argument(arg_index)
+}
+
+#[inline(always)]
+pub const fn ref_place_local_encoded(arg_index: u32) -> PlaceRef {
+    r_enc::place::encode_local(arg_index)
+}
+
+#[inline(always)]
+pub const fn ref_place_some_encoded() -> PlaceRef {
+    r_enc::place::encode_some()
+}
+
+#[inline(always)]
+pub const fn ref_operand_const_zst_encoded() -> OperandRef {
+    r_enc::operand::encode_const_zst()
+}
+
+#[inline(always)]
+pub const fn ref_operand_const_bool_encoded(value: bool) -> OperandRef {
+    r_enc::operand::encode_const_bool(value)
+}
+
+#[inline(always)]
+pub const fn ref_operand_const_some_encoded() -> OperandRef {
+    r_enc::operand::encode_const_some()
+}
+
+#[inline(always)]
+pub const fn ref_operand_some_encoded() -> OperandRef {
+    r_enc::operand::encode_some()
+}

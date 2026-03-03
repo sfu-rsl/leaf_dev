@@ -49,8 +49,11 @@ where
     }
 
     fn internal_reference_operand_some(&mut self) -> BlocksAndResult<'tcx> {
-        self.make_bb_for_operand_ref_call(sym::ref_operand_some, Default::default())
-            .into()
+        self.make_bb_for_helper_call_with_ret(
+            self.pri_helper_funcs().ref_operand_some_encoded,
+            Vec::default(),
+        )
+        .into()
     }
 
     fn internal_reference_place_operand(
@@ -61,13 +64,16 @@ where
     where
         C: ForPlaceRef<'tcx>,
     {
-        let BlocksAndResult(mut additional_blocks, place_ref) =
+        let BlocksAndResult(mut additional_blocks, mut place_ref) =
             self.internal_reference_place(place);
 
         let tcx = self.tcx();
         let ty = place.ty(&self.context, tcx).ty;
         if ty.is_adt() || ty.is_trivially_tuple() || ty.is_array() || !ty.is_known_rigid() {
-            additional_blocks.extend(self.set_place_size(place_ref, ty));
+            if let Some(BlocksAndResult(new_blocks, new_ref)) = self.add_place_size(place_ref, ty) {
+                additional_blocks.extend(new_blocks);
+                place_ref = new_ref;
+            }
         }
 
         let func_name = if is_copy {
@@ -130,10 +136,9 @@ where
         }
         // NOTE: Check this after all other ZSTs that you want to distinguish.
         else if ty.size(tcx, self.current_typing_env()) == rustc_abi::Size::ZERO {
-            config.zst.then(|| {
-                self.make_bb_for_operand_ref_call(sym::ref_operand_const_zst, Default::default())
-                    .into()
-            })
+            config
+                .zst
+                .then(|| self.internal_reference_zst_const_operand())
         } else if let TyKind::FnDef(..) = ty.kind() {
             self.internal_reference_func_def_const_operand(constant)
         } else if let Some(c) = operand::const_try_as_unevaluated(constant) {
@@ -168,10 +173,11 @@ where
         let config = self.const_config();
         if ty.is_bool() {
             config.bool.then(|| {
-                self.internal_reference_const_operand_directly(
-                    sym::ref_operand_const_bool,
-                    constant,
+                self.make_bb_for_helper_call_with_ret(
+                    self.pri_helper_funcs().ref_operand_const_bool_encoded,
+                    vec![operand::const_from_existing(constant)],
                 )
+                .into()
             })
         } else if ty.is_char() {
             config.char.then(|| {
@@ -226,7 +232,11 @@ where
     }
 
     pub(super) fn internal_reference_const_some(&mut self) -> BlocksAndResult<'tcx> {
-        self.make_bb_for_some_const_ref_call().into()
+        self.make_bb_for_helper_call_with_ret(
+            self.pri_helper_funcs().ref_operand_const_some_encoded,
+            Vec::default(),
+        )
+        .into()
     }
 
     fn internal_reference_const_operand_directly(
@@ -282,6 +292,14 @@ where
         BlocksAndResult::from(block_pair).prepend([conversion_block])
     }
 
+    fn internal_reference_zst_const_operand(&mut self) -> BlocksAndResult<'tcx> {
+        self.make_bb_for_helper_call_with_ret(
+            self.pri_helper_funcs().ref_operand_const_zst_encoded,
+            Default::default(),
+        )
+        .into()
+    }
+
     fn internal_reference_byte_str_const_operand(
         &mut self,
         constant: &Box<ConstOperand<'tcx>>,
@@ -323,10 +341,6 @@ where
         C: ForOperandRef<'tcx>,
     {
         panic!("Static reference constant is not supported by this configuration.")
-    }
-
-    fn make_bb_for_some_const_ref_call(&mut self) -> (BasicBlockData<'tcx>, Local) {
-        self.make_bb_for_operand_ref_call(sym::ref_operand_const_some, Vec::default())
     }
 
     fn make_bb_for_operand_ref_call(
