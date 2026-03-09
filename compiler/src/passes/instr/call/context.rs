@@ -130,6 +130,8 @@ pub(crate) struct DefaultContext<'tcx, 'm, 'p, 's> {
 }
 
 pub(crate) struct PriItems {
+    /// Maps from leaf symbols to their corresponding function information.
+    /// Of main functions (not including helpers)
     pub funcs: HashMap<LeafSymbol, FunctionInfo>,
     pub types: PriTypes,
     pub helper_funcs: PriHelperFunctions,

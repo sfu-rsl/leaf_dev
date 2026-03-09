@@ -74,7 +74,7 @@ pub(crate) mod sym {
 
         common::pri::pass_func_names_to!(symbols_in_pri, all_comma_separated);
 
-        pub(crate) const ALL_MAINS: [LeafSymbol; 119] =
+        pub(crate) const ALL_MAINS: [LeafSymbol; 122] =
             common::pri::pass_func_names_to!(bracket, all_comma_separated);
 
         pub(crate) mod intrinsics {
@@ -331,6 +331,7 @@ macro_rules! define_pri_helper_funcs {
             $(
                 pub $name: FunctionInfo,
             )*
+            pub all_helpers: HashMap<LeafSymbol, DefId>,
         }
     };
 }
@@ -526,7 +527,7 @@ pub(super) fn collect_helper_types<'tcx>(helper_def_ids: &HashMap<LeafSymbol, De
 
 /// Collects the helper functions out of the list of compiler helper PRI items.
 pub(super) fn collect_helper_funcs<'tcx>(
-    helper_def_ids: &HashMap<LeafSymbol, DefId>,
+    helper_def_ids: HashMap<LeafSymbol, DefId>,
 ) -> PriHelperFunctions {
     let get_func_info = |name: LeafSymbol| {
         helper_def_ids
@@ -541,7 +542,8 @@ pub(super) fn collect_helper_funcs<'tcx>(
     macro_rules! create {
         ($($name: ident),*$(,)?) => {
             PriHelperFunctions {
-                $($name: get_func_info(sym::$name)),*
+                $($name: get_func_info(sym::$name)),*,
+                all_helpers: helper_def_ids,
             }
         };
     }

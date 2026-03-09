@@ -4,21 +4,16 @@ use crate::{
         utils::BasicBlockLocationExt,
     },
     backends::cf_tracer::{CftBackend, record::Recorder},
-    call::{
-        CallFlowManager, CallFlowSanity, CallShadowMemory, DefaultCallFlowManager,
-        NoOpCallFlowBreakageCallback, SignaturePlaces,
-    },
+    call::{CallControlFlowManager, CallFlowManager, CallShadowMemory, DefaultCallFlowManager},
     pri::fluent::backend::{ArgsTupling, CallHandler, RuntimeBackend},
 };
 
 use super::{NullOperand, NullPlace};
 
-pub(super) type BCallback = NoOpCallFlowBreakageCallback<fn() -> super::NullOperand>;
-
 pub(super) type CftCallFlowManager = DefaultCallFlowManager<
     <super::CftBackend as RuntimeBackend>::Place,
-    super::NullOperand,
-    BCallback,
+    <super::CftBackend as RuntimeBackend>::Operand,
+    (),
 >;
 
 pub(super) struct NoOpCallShadowMemory;
@@ -56,60 +51,52 @@ impl CallHandler for CftCallHandler<'_> {
 
     type MetadataHandler = ();
 
-    fn before_call(
-        self,
-        def: CalleeDef,
-        call_site: BasicBlockIndex,
-        func: Self::Operand,
-        args: impl IntoIterator<Item = Self::Arg>,
-        are_args_tupled: bool,
-    ) {
-        self.flow_manager
-            .prepare_for_call(def, func, args.into_iter().collect(), are_args_tupled);
+    fn before_call(self, def: CalleeDef, call_site: BasicBlockIndex) {
+        self.flow_manager.prepare_for_calling(def);
         self.recorder
             .start_call(self.flow_manager.current_func().at_basic_block(call_site));
     }
 
-    fn enter(
+    fn before_call_some(self) {
+        self.flow_manager.prepare_for_call();
+        self.recorder
+            .start_call(self.flow_manager.current_func().at_basic_block(0));
+    }
+
+    fn take_data_before_call(
         self,
-        def: FuncDef,
-        arg_places: Vec<Self::Place>,
-        ret_val_place: Self::Place,
+        _func: Self::Operand,
+        _args: impl IntoIterator<Item = Self::Arg>,
+        _are_args_tupled: bool,
+    ) {
+    }
+
+    fn enter(self, def: FuncDef) {
+        let sanity = self.flow_manager.enter(def);
+        self.recorder.finish_call(def, sanity.is_broken());
+    }
+
+    fn emplace_arguments(
+        self,
+        _arg_places: Vec<Self::Place>,
+        _ret_val_place: Self::Place,
         _tupling: ArgsTupling,
     ) {
-        let token = self.flow_manager.start_enter(
-            def,
-            SignaturePlaces {
-                arg_places,
-                return_val_place: ret_val_place,
-            },
-        );
-        let sanity = self.flow_manager.finalize_enter(
-            token,
-            crate::call::NoOpArgsTuplingInfoProvider,
-            &mut NoOpCallShadowMemory,
-        );
-
-        self.recorder
-            .finish_call(def, matches!(sanity, CallFlowSanity::Broken));
     }
 
-    fn override_return_value(self, value: Self::Operand) {
-        self.flow_manager.override_return_value(value);
-    }
+    fn override_return_value(self, _value: Self::Operand) {}
 
     fn ret(self, ret_point: BasicBlockIndex) {
         self.recorder
             .start_return(self.flow_manager.current_func().at_basic_block(ret_point));
 
-        self.flow_manager.start_return(&mut NoOpCallShadowMemory);
+        self.flow_manager.start_return();
     }
 
     fn after_call(self, _assignment_id: AssignmentId, _result_dest: Self::Place) {
-        let (_, sanity) = self.flow_manager.finalize_call();
-
+        let token = self.flow_manager.finalize_call();
         self.recorder
-            .finish_return(matches!(sanity, CallFlowSanity::Broken));
+            .finish_return(token.sanity().is_broken().unwrap());
     }
 
     fn metadata(self) -> Self::MetadataHandler {

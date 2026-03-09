@@ -870,13 +870,13 @@ pub(super) mod rules {
 
     use crate::{
         config::{
-            AssignmentFilter, AssignmentKind, AssignmentLocationFilter, ConstantType,
-            ConstantTypeFilter, CrateFilter, EntityFilter, EntityLocationFilter,
-            InstrumentationRules, MethodDynDefinitionFilter, OperandInfoFilter,
-            OperandInfoLocationFilter, OperandKind, PlaceAddressFilter, PlaceInfoFilter,
-            PlaceInfoStructureFilter, PlaceStructurePiece, PlaceTypeFilter,
-            StorageLifetimeLocationFilter, StorageLifetimeMarker, StorageLifetimeMarkerFilter,
-            WholeBodyFilter, rules::LogicFormula,
+            AssignmentFilter, AssignmentKind, AssignmentLocationFilter, CallFlowFilter,
+            CallFlowLocationFilter, CallFlowPartKind, ConstantType, ConstantTypeFilter,
+            CrateFilter, EntityFilter, EntityLocationFilter, InstrumentationRules,
+            MethodDynDefinitionFilter, OperandInfoFilter, OperandInfoLocationFilter, OperandKind,
+            PlaceAddressFilter, PlaceInfoFilter, PlaceInfoStructureFilter, PlaceStructurePiece,
+            PlaceTypeFilter, StorageLifetimeLocationFilter, StorageLifetimeMarker,
+            StorageLifetimeMarkerFilter, WholeBodyFilter, rules::LogicFormula,
         },
         passes::StorageExt,
         utils::rules::{InclusionPredicate, Predicate, ToPredicate},
@@ -893,6 +893,7 @@ pub(super) mod rules {
     pub(crate) const KEY_BAKED_ASSIGNMENT_RULES: &str = "i_r_b_assignment";
     pub(crate) const KEY_BAKED_ASSIGNMENT_INFO_RULES: &str = "i_r_b_assignment_info";
     pub(crate) const KEY_BAKED_STORAGE_LIFETIME_RULES: &str = "i_r_b_storage_lifetime";
+    pub(crate) const KEY_BAKED_CALL_FLOW_RULES: &str = "i_r_b_call_flow";
 
     type LocationQuery<'tcx> = (TyCtxt<'tcx>, DefId);
 
@@ -986,6 +987,27 @@ pub(super) mod rules {
 
     type BakedConstantTypeFilterRules<'tcx> =
         InclusionPredicate<<ConstantTypeFilter as ToPredicate<ConstantTypeQuery<'tcx>>>::Predicate>;
+
+    pub(crate) struct CallFlowRules<T> {
+        pub call_control: T,
+        pub call_input: T,
+        pub func_data: T,
+    }
+
+    impl<T> CallFlowRules<T> {
+        pub(crate) fn map<U>(self, f: impl Fn(T) -> U) -> CallFlowRules<U> {
+            CallFlowRules {
+                call_control: f(self.call_control),
+                call_input: f(self.call_input),
+                func_data: f(self.func_data),
+            }
+        }
+    }
+
+    type CallFlowQuery<'tcx> = (CallFlowPartKind, LocationQuery<'tcx>);
+
+    type BakedallFlowFilterRules<'tcx> =
+        InclusionPredicate<<CallFlowFilter as ToPredicate<CallFlowQuery<'tcx>>>::Predicate>;
 
     pub(crate) struct AssignmentKindRules<T> {
         pub use_: T,
@@ -1197,6 +1219,27 @@ pub(super) mod rules {
         }
     }
 
+    pub(crate) type CallFlowFilterResult = CallFlowRules<Option<bool>>;
+
+    pub(crate) fn accept_call_flow_rules<'tcx>(
+        storage: &mut dyn Storage,
+        item: &LocationQuery<'tcx>,
+    ) -> CallFlowFilterResult
+    where
+        BakedallFlowFilterRules<'tcx>: 'static,
+        EntityLocationFilterPredicate<'tcx>: Predicate<LocationQuery<'tcx>>,
+    {
+        let rules = storage
+            .get_mut::<BakedallFlowFilterRules<'tcx>>(&KEY_BAKED_CALL_FLOW_RULES.to_owned())
+            .expect("Filter rules are expected to be baked at this point.");
+        use CallFlowPartKind::*;
+        CallFlowRules {
+            call_control: rules.accept(&(CallControl, *item)),
+            call_input: rules.accept(&(CallInput, *item)),
+            func_data: rules.accept(&(FunctionData, *item)),
+        }
+    }
+
     pub(super) fn bake_rules(
         storage: &mut dyn Storage,
         additional_exclusions: impl FnOnce() -> Vec<WholeBodyFilter>,
@@ -1315,6 +1358,17 @@ pub(super) mod rules {
                 rules.to_baked()
             },
         );
+        let _ = storage.get_or_insert_with_acc(
+            KEY_BAKED_CALL_FLOW_RULES.to_owned(),
+            |storage| -> BakedallFlowFilterRules<'_> {
+                let rules = storage.get_or_default::<InstrumentationRules>(KEY_RULES.to_owned());
+                let rules = rules.clone().filter_map(|r| match r {
+                    EntityFilter::CallFlow(filter) => Some(filter),
+                    _ => None,
+                });
+                rules.to_baked()
+            },
+        );
     }
 
     macro_rules! impl_to_predicate_for_newtype {
@@ -1345,6 +1399,7 @@ pub(super) mod rules {
         OperandInfoLocationFilter,
         AssignmentLocationFilter,
         StorageLifetimeLocationFilter,
+        CallFlowLocationFilter,
     );
 
     macro_rules! impl_to_predicate_by_eq {
@@ -1368,6 +1423,7 @@ pub(super) mod rules {
         ConstantType,
         AssignmentKind,
         StorageLifetimeMarker,
+        CallFlowPartKind,
     );
 
     impl ToPredicate<PlaceStructureQuery<'_>> for PlaceInfoStructureFilter {
@@ -1436,6 +1492,16 @@ pub(super) mod rules {
 
     impl ToPredicate<StorageLifetimeMarkerQuery<'_>> for StorageLifetimeMarkerFilter {
         type Predicate = Box<dyn Fn(&StorageLifetimeMarkerQuery<'_>) -> bool>;
+
+        fn to_predicate(&self) -> Self::Predicate {
+            let kind = self.kind.to_predicate();
+            let loc = self.loc.to_predicate();
+            Box::new(move |(q_kind, q_loc)| kind.accept(q_kind) && loc.accept(q_loc))
+        }
+    }
+
+    impl ToPredicate<CallFlowQuery<'_>> for CallFlowFilter {
+        type Predicate = Box<dyn Fn(&CallFlowQuery<'_>) -> bool>;
 
         fn to_predicate(&self) -> Self::Predicate {
             let kind = self.kind.to_predicate();

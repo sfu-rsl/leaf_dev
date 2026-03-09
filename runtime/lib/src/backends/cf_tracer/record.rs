@@ -134,7 +134,7 @@ impl PhasedCallTraceRecorder for Recorder {
         );
     }
 
-    fn finish_call(&mut self, entered_func: FuncDef, broken: bool) {
+    fn finish_call(&mut self, entered_func: FuncDef, broken: Option<bool>) {
         let call_site = self.stack.last().and_then(|s| {
             s.last_call_site.map(|index| BasicBlockLocation {
                 body: s.current,
@@ -155,7 +155,7 @@ impl PhasedCallTraceRecorder for Recorder {
         });
 
         let Some(call_site) = call_site else {
-            if !broken {
+            if broken == Some(false) {
                 panic!(
                     "Last call site is expected when not broken, current: {}",
                     entered_func

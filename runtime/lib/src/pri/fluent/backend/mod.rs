@@ -328,18 +328,21 @@ pub(crate) trait CallHandler {
     type Arg: From<Self::Operand> = Self::Operand;
     type MetadataHandler;
 
-    fn before_call(
+    fn before_call(self, def: CalleeDef, call_site: BasicBlockIndex);
+
+    fn before_call_some(self);
+
+    fn take_data_before_call(
         self,
-        def: CalleeDef,
-        call_site: BasicBlockIndex,
         func: Self::Operand,
         args: impl IntoIterator<Item = Self::Arg>,
         are_args_tupled: bool,
     );
 
-    fn enter(
+    fn enter(self, def: FuncDef);
+
+    fn emplace_arguments(
         self,
-        def: FuncDef,
         arg_places: Vec<Self::Place>,
         ret_val_place: Self::Place,
         tupling: ArgsTupling,

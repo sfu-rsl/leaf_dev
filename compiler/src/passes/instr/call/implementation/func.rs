@@ -4,7 +4,10 @@ use rustc_type_ir::ClosureArgs;
 
 use core::{assert_matches::debug_assert_matches, iter};
 
-use crate::utils::mir::BodyExt;
+use crate::{
+    passes::instr::{call::context::ConfigProvider, ctxtreqs::ForPlaceRef},
+    utils::mir::BodyExt,
+};
 
 use super::{
     InsertionLocation, OperandReferencer,
@@ -24,134 +27,38 @@ where
         args: &[Spanned<Operand<'tcx>>],
         no_def: bool,
     ) {
-        let tcx = self.tcx();
-        let mut blocks = vec![];
-
-        self.debug_info(&format!("{}", func.ty(self, self.tcx())));
-
-        let def_local = {
-            let func = if !no_def {
-                func.clone()
-            } else {
-                operand::func(
-                    self.tcx(),
-                    *self.pri_helper_funcs().special_func_placeholder,
-                    iter::empty(),
-                )
-            };
-            let BlocksAndResult(def_blocks, def_local) = definition_of_callee(
-                tcx,
-                self,
-                self.current_typing_env(),
-                func,
-                args.first().map(|a| &a.node),
-            );
-            blocks.extend(def_blocks);
-            def_local
-        };
-
-        let func_ref = self.reference_operand(func);
-
-        let arg_refs = args
-            .iter()
-            .map(|a| self.reference_operand_spanned(a))
-            .map(|a| operand::move_for_local(a.into()))
-            .collect();
-        let operand_ref_ty = self.context.pri_types().operand_ref(tcx);
-        let (arguments_local, additional_stmts) =
-            utils::prepare_operand_for_slice(tcx, &mut self.context, operand_ref_ty, arg_refs);
-
-        let are_args_tupled = are_args_tupled(
-            tcx,
-            self,
-            func,
-            args.iter().map(|a| &a.node),
-            self.current_typing_env(),
-        );
-
-        let mut block = self.make_bb_for_call(
-            sym::before_call_func,
-            vec![
-                operand::move_for_local(def_local),
-                self.original_bb_index_as_arg(),
-                operand::move_for_local(func_ref.into()),
-                operand::move_for_local(arguments_local),
-                operand::const_from_bool(tcx, are_args_tupled),
-            ],
-        );
-        block.statements.extend(additional_stmts);
-        blocks.push(block);
-
         debug_assert_matches!(
             self.context.insertion_loc(),
             InsertionLocation::Before(..),
             "Inserting before_call after a block is not expected."
         );
-        self.insert_blocks(blocks);
+
+        self.debug_info(&format!("{}", func.ty(self, self.tcx())));
+
+        let mut added = false;
+        if self.config().call_flow_filter.call_control {
+            self.before_call_control(no_def, func, args.first().map(|a| &a.node));
+            added = true;
+        }
+
+        if self.config().call_flow_filter.call_input {
+            self.before_call_data(func, args);
+            added = true;
+        }
+
+        if !added {
+            self.before_call_some();
+        }
     }
 
     fn enter_func(&mut self) {
-        let tcx = self.tcx();
-        let mut blocks = vec![];
+        self.debug_info(&format!("{}", utils::body_func_ty(self.tcx(), self.body())));
 
-        self.debug_info(&format!("{}", utils::body_func_ty(tcx, self.body())));
+        self.enter_func();
 
-        let def_local = {
-            let BlocksAndResult(def_blocks, def_local) =
-                utils::definition_of_func(tcx, self, self.current_typing_env());
-            blocks.extend(def_blocks);
-            def_local
-        };
-
-        let (argument_places_local, additional_stmts) = {
-            let arg_places_refs = self
-                .body()
-                .args_iter_x()
-                .map(|a| self.reference_place_local(a))
-                .map(|BlocksAndResult(ref_blocks, place_ref)| {
-                    blocks.extend(ref_blocks);
-                    place_ref
-                })
-                .map(|place_ref| operand::move_for_local(place_ref))
-                .collect();
-            let place_ref_ty = self.context.pri_types().place_ref(tcx);
-            utils::prepare_operand_for_slice(tcx, &mut self.context, place_ref_ty, arg_places_refs)
-        };
-
-        let ret_val_place_local = {
-            let BlocksAndResult(ref_blocks, place_ref) =
-                self.reference_place_local(Place::return_place().as_local().unwrap());
-            blocks.extend(ref_blocks);
-            place_ref
-        };
-
-        let base_args = vec![
-            operand::move_for_local(def_local),
-            operand::move_for_local(argument_places_local),
-            operand::move_for_local(ret_val_place_local),
-        ];
-
-        let mut block = if let TyKind::Closure(_, args) = tcx
-            .type_of(self.current_func_id())
-            .instantiate_identity()
-            .kind()
-        {
-            let (arg_blocks, tupled_args) = self.make_enter_func_tupled_args(args.as_closure());
-            blocks.extend(arg_blocks);
-            self.make_bb_for_call(
-                sym::enter_func_untupled_args,
-                [base_args, tupled_args.to_vec()].concat(),
-            )
-        } else if utils::is_fn_trait_call_func(tcx, self.current_func_id()) {
-            self.make_bb_for_call(sym::enter_func_tupled_args, base_args)
-        } else {
-            self.make_bb_for_call(sym::enter_func, base_args)
-        };
-
-        block.statements.extend(additional_stmts);
-        blocks.push(block);
-
-        self.insert_blocks(blocks);
+        if self.config().call_flow_filter.call_input {
+            self.enter_func_data();
+        }
     }
 
     fn return_from_func(&mut self) {
@@ -185,6 +92,161 @@ where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
     C: Basic<'tcx> + SourceInfoProvider,
 {
+    fn before_call_control(
+        &mut self,
+        no_def: bool,
+        func: &Operand<'tcx>,
+        first_arg: Option<&Operand<'tcx>>,
+    ) where
+        C: ForFunctionCalling<'tcx>,
+    {
+        let mut blocks = vec![];
+
+        let def_local = {
+            let func = if !no_def {
+                func.clone()
+            } else {
+                operand::func(
+                    self.tcx(),
+                    *self.pri_helper_funcs().special_func_placeholder,
+                    iter::empty(),
+                )
+            };
+            let BlocksAndResult(def_blocks, def_local) =
+                definition_of_callee(self.tcx(), self, self.current_typing_env(), func, first_arg);
+            blocks.extend(def_blocks);
+            def_local
+        };
+
+        blocks.push(self.make_bb_for_call(
+            sym::before_call_control,
+            vec![
+                operand::move_for_local(def_local),
+                self.original_bb_index_as_arg(),
+            ],
+        ));
+
+        self.insert_blocks(blocks);
+    }
+
+    fn before_call_data(&mut self, func: &Operand<'tcx>, args: &[Spanned<Operand<'tcx>>])
+    where
+        C: ForFunctionCalling<'tcx>,
+    {
+        let tcx = self.tcx();
+        let mut blocks = vec![];
+
+        let func_ref = self.reference_operand(func);
+
+        let arg_refs = args
+            .iter()
+            .map(|a| self.reference_operand_spanned(a))
+            .map(|a| operand::move_for_local(a.into()))
+            .collect();
+        let operand_ref_ty = self.context.pri_types().operand_ref(tcx);
+        let (arguments_local, additional_stmts) =
+            utils::prepare_operand_for_slice(tcx, &mut self.context, operand_ref_ty, arg_refs);
+
+        let are_args_tupled = are_args_tupled(
+            tcx,
+            self,
+            func,
+            args.iter().map(|a| &a.node),
+            self.current_typing_env(),
+        );
+
+        let mut block = self.make_bb_for_call(
+            sym::before_call_data,
+            vec![
+                operand::move_for_local(func_ref.into()),
+                operand::move_for_local(arguments_local),
+                operand::const_from_bool(tcx, are_args_tupled),
+            ],
+        );
+        block.statements.extend(additional_stmts);
+        blocks.push(block);
+
+        self.insert_blocks(blocks);
+    }
+
+    fn before_call_some(&mut self) {
+        let block = self.make_bb_for_call(sym::before_call_some, vec![]);
+        self.insert_blocks([block]);
+    }
+
+    fn enter_func(&mut self) {
+        let mut blocks = vec![];
+
+        let def_local = {
+            let BlocksAndResult(def_blocks, def_local) =
+                utils::definition_of_func(self.tcx(), self, self.current_typing_env());
+            blocks.extend(def_blocks);
+            def_local
+        };
+
+        blocks
+            .push(self.make_bb_for_call(sym::enter_func, vec![operand::move_for_local(def_local)]));
+
+        self.insert_blocks(blocks);
+    }
+
+    fn enter_func_data(&mut self)
+    where
+        C: ForPlaceRef<'tcx>,
+    {
+        let tcx = self.tcx();
+        let mut blocks = vec![];
+
+        let (argument_places_local, additional_stmts) = {
+            let arg_places_refs = self
+                .body()
+                .args_iter_x()
+                .map(|a| self.reference_place_local(a))
+                .map(|BlocksAndResult(ref_blocks, place_ref)| {
+                    blocks.extend(ref_blocks);
+                    place_ref
+                })
+                .map(|place_ref| operand::move_for_local(place_ref))
+                .collect();
+            let place_ref_ty = self.context.pri_types().place_ref(tcx);
+            utils::prepare_operand_for_slice(tcx, &mut self.context, place_ref_ty, arg_places_refs)
+        };
+
+        let ret_val_place_local = {
+            let BlocksAndResult(ref_blocks, place_ref) =
+                self.reference_place_local(Place::return_place().as_local().unwrap());
+            blocks.extend(ref_blocks);
+            place_ref
+        };
+
+        let base_args = vec![
+            operand::move_for_local(argument_places_local),
+            operand::move_for_local(ret_val_place_local),
+        ];
+
+        let mut block = if let TyKind::Closure(_, args) = tcx
+            .type_of(self.current_func_id())
+            .instantiate_identity()
+            .kind()
+        {
+            let (arg_blocks, tupled_args) = self.make_enter_func_tupled_args(args.as_closure());
+            blocks.extend(arg_blocks);
+            self.make_bb_for_call(
+                sym::enter_func_data_untupled_args,
+                [base_args, tupled_args.to_vec()].concat(),
+            )
+        } else if utils::is_fn_trait_call_func(tcx, self.current_func_id()) {
+            self.make_bb_for_call(sym::enter_func_data_tupled_args, base_args)
+        } else {
+            self.make_bb_for_call(sym::enter_func_data, base_args)
+        };
+
+        block.statements.extend(additional_stmts);
+        blocks.push(block);
+
+        self.insert_blocks(blocks);
+    }
+
     fn make_enter_func_tupled_args(
         &mut self,
         args: ClosureArgs<TyCtxt<'tcx>>,

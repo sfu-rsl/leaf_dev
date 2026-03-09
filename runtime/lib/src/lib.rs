@@ -13,6 +13,7 @@
 #![feature(cold_path)]
 #![feature(more_qualified_paths)]
 #![feature(likely_unlikely)]
+#![feature(never_type)]
 
 pub mod abs;
 mod backends;

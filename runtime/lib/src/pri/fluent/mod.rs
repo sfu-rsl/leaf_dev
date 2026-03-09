@@ -693,17 +693,13 @@ where
     }
 
     #[tracing::instrument(target = "pri::call", level = "debug")]
-    fn before_call_func(
-        def: CalleeDef,
-        call_site: BasicBlockIndex,
-        func: OperandRef,
-        args: &[OperandRef],
-        are_args_tupled: bool,
-    ) {
+    fn before_call_control(def: CalleeDef, call_site: BasicBlockIndex) {
+        Self::func_control(|h| h.before_call(def.into(), call_site));
+    }
+    #[tracing::instrument(target = "pri::call", level = "debug")]
+    fn before_call_data(func: OperandRef, args: &[OperandRef], are_args_tupled: bool) {
         Self::func_control(|h| {
-            h.before_call(
-                def.into(),
-                call_site,
+            h.take_data_before_call(
                 Self::take_back_operand(func),
                 args.iter().map(|o| Self::take_back_operand(*o).into()),
                 are_args_tupled,
@@ -711,19 +707,28 @@ where
         });
     }
     #[tracing::instrument(target = "pri::call", level = "debug")]
-    fn enter_func(def: FuncDef, arg_places: &[PlaceRef], ret_val_place: PlaceRef) {
-        Self::enter_func_with_tupling(def, arg_places, ret_val_place, ArgsTupling::Normal);
+    fn before_call_some() {
+        Self::func_control(|h| {
+            h.before_call_some();
+        });
+    }
+
+    #[tracing::instrument(target = "pri::call", level = "debug")]
+    fn enter_func(def: FuncDef) {
+        Self::func_control(|h| h.enter(def.into()));
     }
     #[tracing::instrument(target = "pri::call", level = "debug")]
-    fn enter_func_untupled_args(
-        def: FuncDef,
+    fn enter_func_data(arg_places: &[PlaceRef], ret_val_place: PlaceRef) {
+        Self::enter_func_data_with_tupling(arg_places, ret_val_place, ArgsTupling::Normal);
+    }
+    #[tracing::instrument(target = "pri::call", level = "debug")]
+    fn enter_func_data_untupled_args(
         arg_places: &[PlaceRef],
         ret_val_place: PlaceRef,
         tupled_arg_index: LocalIndex,
         tupled_arg_type_id: TypeId,
     ) {
-        Self::enter_func_with_tupling(
-            def,
+        Self::enter_func_data_with_tupling(
             arg_places,
             ret_val_place,
             ArgsTupling::Untupled {
@@ -732,8 +737,9 @@ where
             },
         )
     }
-    fn enter_func_tupled_args(def: FuncDef, arg_places: &[PlaceRef], ret_val_place: PlaceRef) {
-        Self::enter_func_with_tupling(def, arg_places, ret_val_place, ArgsTupling::Tupled)
+    #[tracing::instrument(target = "pri::call", level = "debug")]
+    fn enter_func_data_tupled_args(arg_places: &[PlaceRef], ret_val_place: PlaceRef) {
+        Self::enter_func_data_with_tupling(arg_places, ret_val_place, ArgsTupling::Tupled)
     }
     #[tracing::instrument(target = "pri::call", level = "debug")]
     fn return_from_func(ret_point: BasicBlockIndex) {
@@ -1334,8 +1340,7 @@ where
         Self::assign_to(id, prev_dest, |h| dest_assign_action(h, current.clone()));
     }
 
-    fn enter_func_with_tupling(
-        def: FuncDef,
+    fn enter_func_data_with_tupling(
         arg_places: &[PlaceRef],
         ret_val_place: PlaceRef,
         tupling: ArgsTupling,
@@ -1345,7 +1350,7 @@ where
             .map(|p| Self::take_place_info_to_read(*p))
             .collect::<Vec<_>>();
         let ret_val_place = Self::take_place_info_to_write(ret_val_place);
-        Self::func_control(|h| h.enter(def.into(), arg_places, ret_val_place, tupling));
+        Self::func_control(|h| h.emplace_arguments(arg_places, ret_val_place, tupling));
     }
 
     #[inline]

@@ -267,27 +267,22 @@ pub mod macros {
           { fn assert_invalid_enum_ctn(info: AssertionInfo, discr: OperandRef) }
 
           // ----- Calling -----
+          { fn before_call_control(def: CalleeDef, call_site: BasicBlockIndex) }
           #[allow(unused_parens)]
-          { fn before_call_func(
-              def: CalleeDef,
-              call_site: BasicBlockIndex,
-              func: OperandRef,
-              args: ($slice_ty!(OperandRef)),
-              are_args_tupled: bool
-          ) }
-          { fn enter_func(def: FuncDef, arg_places: &[PlaceRef], ret_val_place: PlaceRef) }
-          { fn enter_func_untupled_args(
-              def: FuncDef,
-              arg_places: &[PlaceRef],
+          { fn before_call_data(func: OperandRef, args: ($slice_ty!(OperandRef)), are_args_tupled: bool) }
+          { fn before_call_some() }
+          { fn enter_func(def: FuncDef) }
+          #[allow(unused_parens)]
+          { fn enter_func_data(arg_places: ($slice_ty!(PlaceRef)), ret_val_place: PlaceRef) }
+          #[allow(unused_parens)]
+          { fn enter_func_data_untupled_args(
+              arg_places: ($slice_ty!(PlaceRef)),
               ret_val_place: PlaceRef,
               tupled_arg_index: LocalIndex,
               tuple_type_id: TypeId,
           ) }
-          { fn enter_func_tupled_args(
-              def: FuncDef,
-              arg_places: &[PlaceRef],
-              ret_val_place: PlaceRef,
-          ) }
+          #[allow(unused_parens)]
+          { fn enter_func_data_tupled_args(arg_places: ($slice_ty!(PlaceRef)), ret_val_place: PlaceRef) }
           { fn return_from_func(ret_point: BasicBlockIndex) }
           { fn override_return_value(operand: OperandRef) }
           { fn after_call_func(id: AssignmentId, dest: PlaceRef) }
@@ -716,13 +711,19 @@ pub mod macros {
             }$modifier!{
                 fn assert_invalid_enum_ctn(info:AssertionInfo,discr:OperandRef);
             }$modifier!{
-                #[allow(unused_parens)]fn before_call_func(def:CalleeDef,call_site:BasicBlockIndex,func:OperandRef,args:($slice_ty!(OperandRef)),are_args_tupled:bool);
+                fn before_call_control(def:CalleeDef,call_site:BasicBlockIndex);
             }$modifier!{
-                fn enter_func(def:FuncDef,arg_places: &[PlaceRef],ret_val_place:PlaceRef);
+                #[allow(unused_parens)]fn before_call_data(func:OperandRef,args:($slice_ty!(OperandRef)),are_args_tupled:bool);
             }$modifier!{
-                fn enter_func_untupled_args(def:FuncDef,arg_places: &[PlaceRef],ret_val_place:PlaceRef,tupled_arg_index:LocalIndex,tuple_type_id:TypeId,);
+                fn before_call_some();
             }$modifier!{
-                fn enter_func_tupled_args(def:FuncDef,arg_places: &[PlaceRef],ret_val_place:PlaceRef,);
+                fn enter_func(def:FuncDef);
+            }$modifier!{
+                #[allow(unused_parens)]fn enter_func_data(arg_places:($slice_ty!(PlaceRef)),ret_val_place:PlaceRef);
+            }$modifier!{
+                #[allow(unused_parens)]fn enter_func_data_untupled_args(arg_places:($slice_ty!(PlaceRef)),ret_val_place:PlaceRef,tupled_arg_index:LocalIndex,tuple_type_id:TypeId,);
+            }$modifier!{
+                #[allow(unused_parens)]fn enter_func_data_tupled_args(arg_places:($slice_ty!(PlaceRef)),ret_val_place:PlaceRef);
             }$modifier!{
                 fn return_from_func(ret_point:BasicBlockIndex);
             }$modifier!{

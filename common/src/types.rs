@@ -319,7 +319,7 @@ pub mod trace {
         Call {
             from: BasicBlockLocation,
             to: InstanceKindId,
-            broken: bool,
+            broken: Option<bool>,
         },
         Return {
             from: BasicBlockLocation,
@@ -381,7 +381,7 @@ pub mod trace {
                     ExeTraceRecord::Call { from, to, broken } => write!(
                         f,
                         "{from} {sym}⤞ {to}",
-                        sym = if *broken { "~" } else { "" }
+                        sym = if *broken == Some(true) { "~" } else { "" }
                     ),
                     ExeTraceRecord::Return { from, to, broken } => write!(
                         f,
