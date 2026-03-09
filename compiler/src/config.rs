@@ -109,18 +109,14 @@ pub(crate) enum EntityFilter {
     WholeBody(WholeBodyFilter),
     #[serde(alias = "dyn_def")]
     MethodDynDefinition(MethodDynDefinitionFilter),
-    #[serde(alias = "place_info")]
     PlaceInfo(PlaceInfoFilter),
-    #[serde(alias = "operand_info")]
     OperandInfo(OperandInfoFilter),
     #[serde(alias = "const_type")]
     ConstantType(ConstantTypeFilter),
-    #[serde(alias = "assignment")]
     Assignment(AssignmentFilter),
-    #[serde(alias = "assignment_info")]
     AssignmentInfo(AssignmentFilter),
-    #[serde(alias = "storage_lifetime")]
     StorageLifetime(StorageLifetimeMarkerFilter),
+    CallFlow(CallFlowFilter),
 }
 
 #[derive(Debug, Clone, Deserialize, From)]
@@ -273,6 +269,25 @@ pub(crate) enum StorageLifetimeMarker {
 
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct StorageLifetimeLocationFilter(pub(crate) LogicFormula<EntityLocationFilter>);
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct CallFlowFilter {
+    pub(crate) kind: LogicFormula<CallFlowPartKind>,
+    #[serde(flatten)]
+    pub(crate) loc: CallFlowLocationFilter,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum CallFlowPartKind {
+    CallControl,
+    CallInput,
+    #[serde(alias = "func_data")]
+    FunctionData,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct CallFlowLocationFilter(pub(crate) LogicFormula<EntityLocationFilter>);
 
 pub(crate) type InternalizationRules = InclusionRules<LogicFormula<PatternMatch>>;
 

@@ -72,7 +72,7 @@ pub trait CoreTypeProvider<V> {
 pub(crate) trait PhasedCallTraceRecorder {
     fn start_call(&mut self, call_site: BasicBlockLocation<FuncDef>);
 
-    fn finish_call(&mut self, entered_func: FuncDef, broken: bool);
+    fn finish_call(&mut self, entered_func: FuncDef, broken: Option<bool>);
 
     fn start_return(&mut self, ret_point: BasicBlockLocation<FuncDef>);
 

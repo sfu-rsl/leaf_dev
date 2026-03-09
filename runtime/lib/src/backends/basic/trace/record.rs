@@ -94,14 +94,14 @@ impl PhasedCallTraceRecorder for BasicExeTraceRecorder {
     }
 
     #[tracing::instrument(level = "debug", skip(self))]
-    fn finish_call(&mut self, entered_func: FuncDef, broken: bool) {
+    fn finish_call(&mut self, entered_func: FuncDef, broken: Option<bool>) {
         let call_site = self.stack.last().copied();
         self.stack.push(BasicBlockLocation {
             body: entered_func,
             index: 0,
         });
         let Some(call_site) = call_site else {
-            if !broken {
+            if broken == Some(false) {
                 panic!(
                     "Last call site is expected when not broken, current: {}",
                     entered_func

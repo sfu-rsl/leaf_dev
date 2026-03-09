@@ -6,8 +6,8 @@ use crate::{
         backend::PhasedCallTraceRecorder, utils::BasicBlockLocationExt,
     },
     call::{
-        CallFlowManager, CallShadowMemory, DefaultCallFlowManager, SignaturePlaces,
-        tupling::ArgsTuplingInfo,
+        CallControlFlowManager, CallDataFlowManager, CallFlowManager, CallShadowMemory,
+        DefaultCallFlowManager, SignaturePlaces, tupling::ArgsTuplingInfo,
     },
     pri::fluent::backend::{ArgsTupling, CallHandler},
     utils::InPlaceSelfHierarchical,
@@ -24,7 +24,8 @@ pub(super) type BasicCallFlowManager =
 
 pub(crate) fn default_flow_manager(config: CallConfig) -> BasicCallFlowManager
 where
-    BasicCallFlowManager: CallFlowManager<Place = DeterPlaceValueRef, Value = BasicValue>,
+    BasicCallFlowManager: CallControlFlowManager
+        + CallDataFlowManager<Place = DeterPlaceValueRef, Value = BasicValue>,
 {
     DefaultCallFlowManager::new(breakage::BasicBreakageCallback {
         strategy: config.external_call,
@@ -64,24 +65,38 @@ impl<'a> CallHandler for BasicCallHandler<'a> {
     type Operand = BasicValue;
     type MetadataHandler = ();
 
-    #[inline]
-    fn before_call(
-        mut self,
-        def: CalleeDef,
-        call_site: BasicBlockIndex,
+    fn before_call(mut self, def: CalleeDef, call_site: BasicBlockIndex) {
+        let call_site = self.current_func().at_basic_block(call_site);
+        self.trace_recorder.start_call(call_site);
+        self.flow_manager.prepare_for_calling(def);
+    }
+
+    fn before_call_some(mut self) {
+        let call_site = self.current_func().at_basic_block(Default::default());
+        self.trace_recorder.start_call(call_site);
+        self.flow_manager.prepare_for_call();
+    }
+
+    fn take_data_before_call(
+        self,
         func: Self::Operand,
         args: impl IntoIterator<Item = Self::Arg>,
         are_args_tupled: bool,
     ) {
-        let call_site = self.current_func().at_basic_block(call_site);
-        self.trace_recorder.start_call(call_site);
-        self.flow_manager
-            .prepare_for_call(def, func, args.into_iter().collect(), are_args_tupled);
+        self.flow_manager.prepare_for_call_with_values(
+            func,
+            args.into_iter().collect(),
+            are_args_tupled,
+        );
     }
 
-    fn enter(
-        mut self,
-        def: FuncDef,
+    fn enter(mut self, def: FuncDef) {
+        let sanity = self.flow_manager.enter(def);
+        self.trace_recorder.finish_call(def, sanity.is_broken());
+    }
+
+    fn emplace_arguments(
+        self,
         arg_places: Vec<Self::Place>,
         ret_val_place: Self::Place,
         tupling: ArgsTupling,
@@ -93,14 +108,6 @@ impl<'a> CallHandler for BasicCallHandler<'a> {
             DeterPlaceValueRef::new(place)
         }
 
-        let token = self.flow_manager.start_enter(
-            def,
-            SignaturePlaces {
-                arg_places: arg_places.into_iter().map(ensure_deter_place).collect(),
-                return_val_place: ensure_deter_place(ret_val_place),
-            },
-        );
-
         let tupling_info = Self::make_lazy_tupling_info(
             tupling,
             arg_types,
@@ -108,12 +115,15 @@ impl<'a> CallHandler for BasicCallHandler<'a> {
             self.variables_state_factory,
         );
         self.variables_state.add_layer();
-        let sanity = self
-            .flow_manager
-            .finalize_enter(token, tupling_info, self.variables_state);
 
-        self.trace_recorder
-            .finish_call(def, matches!(sanity, crate::call::CallFlowSanity::Broken));
+        self.flow_manager.emplace_args(
+            SignaturePlaces {
+                args: arg_places.into_iter().map(ensure_deter_place).collect(),
+                return_val: ensure_deter_place(ret_val_place),
+            },
+            tupling_info,
+            self.variables_state,
+        );
     }
 
     #[inline]
@@ -125,18 +135,23 @@ impl<'a> CallHandler for BasicCallHandler<'a> {
     fn ret(mut self, ret_point: BasicBlockIndex) {
         self.trace_recorder
             .start_return(self.flow_manager.current_func().at_basic_block(ret_point));
-        self.flow_manager.start_return(self.variables_state);
+        let token = self.flow_manager.start_return();
+        self.flow_manager
+            .grab_return_value(token, self.variables_state);
         self.variables_state.drop_layer();
     }
 
     #[cfg_attr(not(feature = "implicit_flow"), allow(unused))]
     fn after_call(mut self, assignment_id: AssignmentId, result_dest: Self::Place) {
         debug_assert!(!result_dest.is_symbolic());
-        let (mut return_val, sanity) = self.flow_manager.finalize_call();
+
+        let token = self.flow_manager.finalize_call();
         let caller = self
             .trace_recorder
-            .finish_return(matches!(sanity, crate::call::CallFlowSanity::Broken));
+            .finish_return(token.sanity().is_broken().unwrap());
         debug_assert_eq!(caller, self.current_func());
+
+        let mut return_val = self.flow_manager.give_return_value(token);
 
         #[cfg(feature = "implicit_flow")]
         super::assignment::precondition::add_antecedent(
@@ -385,7 +400,12 @@ mod breakage {
             symbolic_args
         }
 
-        fn inspect_returned_value<'a>(&self, current_func: FuncDef, returned_value: &BasicValue) {
+        fn inspect_returned_value<'a>(
+            &self,
+            callee: FuncDef,
+            current_func: FuncDef,
+            returned_value: &BasicValue,
+        ) {
             if !check_sym_value_loss!() {
                 return;
             }
@@ -394,9 +414,10 @@ mod breakage {
                 log_warn!(
                     target: TAG,
                     concat!(
-                        "Possible loss of symbolic return value in external function call",
+                        "Possible loss of symbolic returned value from {:?}, ",
                         "current internal function: {:?}",
                     ),
+                    callee,
                     current_func,
                 );
                 log_debug!(
@@ -415,7 +436,7 @@ mod breakage {
     impl<P> CallFlowBreakageCallback<P, BasicValue> for BasicBreakageCallback {
         fn after_return_with_args(
             &mut self,
-            _callee: CalleeDef,
+            _callee: Option<CalleeDef>,
             current: FuncDef,
             unconsumed_args: Vec<BasicValue>,
         ) -> BasicValue {
@@ -464,6 +485,15 @@ mod breakage {
             self.at_enter_with_no_caller(current, current_arg_places)
         }
 
+        fn at_enter_with_return_val(
+            &mut self,
+            callee: FuncDef,
+            current: FuncDef,
+            unconsumed_return_value: BasicValue,
+        ) {
+            self.inspect_returned_value(callee, current, &unconsumed_return_value);
+        }
+
         fn at_enter_with_no_caller(
             &mut self,
             _current: FuncDef,
@@ -472,22 +502,13 @@ mod breakage {
             core::iter::repeat_n(unknown_value(), current_arg_places.len()).collect()
         }
 
-        fn before_return_with_return_val(
-            &mut self,
-            _callee: FuncDef,
-            current: FuncDef,
-            unconsumed_return_value: BasicValue,
-        ) {
-            self.inspect_returned_value(current, &unconsumed_return_value);
-        }
-
         fn after_return_with_return_val(
             &mut self,
-            _callee: FuncDef,
+            callee: FuncDef,
             current: FuncDef,
             unconsumed_return_value: BasicValue,
         ) -> BasicValue {
-            self.inspect_returned_value(current, &unconsumed_return_value);
+            self.inspect_returned_value(callee, current, &unconsumed_return_value);
             unknown_value()
         }
     }

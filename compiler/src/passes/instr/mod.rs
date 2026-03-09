@@ -281,11 +281,16 @@ fn make_config<'tcx>(storage: &mut dyn Storage, tcx: TyCtxt<'tcx>, def_id: DefId
             dead: rules.dead.unwrap_or(true),
         })(accept_storage_lifetime_rules(storage, &(tcx, def_id)));
 
+    let call_flow_filter = (|rules: CallFlowFilterResult| rules.map(|r| r.unwrap_or(true)))(
+        accept_call_flow_rules(storage, &(tcx, def_id)),
+    );
+
     Config {
         place_info_filter,
         operand_info_filter,
         assignment_filter,
         storage_lifetime_filter,
+        call_flow_filter,
     }
 }
 

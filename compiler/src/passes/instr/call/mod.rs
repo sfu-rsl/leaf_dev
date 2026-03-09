@@ -18,7 +18,7 @@ use common::pri::{AssignmentId, AtomicBinaryOp, AtomicOrdering};
 
 use super::{
     decision::rules::{
-        AssignmentKindRules, ConstantTypeRules, OperandInfoRules, PlaceInfoRules,
+        AssignmentKindRules, CallFlowRules, ConstantTypeRules, OperandInfoRules, PlaceInfoRules,
         PlaceStructurePieceRules, StorageLifetimeRules,
     },
     pri_utils::{self, sym::intrinsics::LeafIntrinsicSymbol},
@@ -296,6 +296,7 @@ pub(crate) struct Config {
     pub operand_info_filter: OperandInfoRules<bool, Option<ConstantTypeRules<bool>>>,
     pub assignment_filter: AssignmentKindRules<Option<bool>>,
     pub storage_lifetime_filter: StorageLifetimeRules<bool>,
+    pub call_flow_filter: CallFlowRules<bool>,
 }
 
 mod implementation;
