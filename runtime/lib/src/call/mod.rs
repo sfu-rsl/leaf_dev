@@ -83,7 +83,11 @@ use crate::abs::{CalleeDef, FuncDef};
  * - internal -> external -> internal+
  *   When entered the first internal callee, same as above.
  *   When entered the second internal callee, `from_caller` is not available, but `from_callee` is available.
- *   When return to the initial caller, `from_callee` from the latest internal callee is not consumed.
+ *   When returned to the initial caller, `from_callee` from the latest internal callee is not consumed.
+ * - internal -> drop -> internal
+ *   (Temporarily unsupported by instrumentation)
+ *   When entered the internal callee, `from_caller` is not available.
+ *   When returned to the caller, `from_callee` is not consumed, but no finalization is performed either.
  */
 
 /// The places corresponding to the function base locals, i.e., arguments and return value.
@@ -688,7 +692,7 @@ mod implementation {
                     } else {
                         log_debug!(
                             target: TAG,
-                            "External function call detected. Expected: {} but got: {}",
+                            "External 3: Expected: {} got: {}",
                             expected_func,
                             entered_func,
                         );
@@ -698,10 +702,11 @@ mod implementation {
                     EntranceInfo(CallFlowSanity::Unknown(Some(call_info)))
                 }
             } else {
-                log_debug!(target: TAG, "External function call detected with no call information available");
                 if let Some(from_callee) = self.ephemeral.from_callee.take() {
+                    log_debug!(target: TAG, "External 4: No call information available");
                     EntranceInfo(CallFlowSanity::Broken(Either::Right(from_callee)))
                 } else {
+                    log_debug!(target: TAG, "External 2: No call information available");
                     EntranceInfo(CallFlowSanity::Unknown(None))
                 }
             };
@@ -720,23 +725,21 @@ mod implementation {
 
             self.ephemeral.entrance = Some(entrance);
 
-            log_debug!(target: TAG, "Entered the function");
             self.log_span_reset();
+            log_debug!(target: TAG, "Entered the function");
 
             sanity
         }
 
         fn start_return(&mut self) -> Self::ReturnToken {
             self.clear_entrance();
-            debug_assert!(
-                self.ephemeral.from_callee.is_none(),
-                concat!(
-                    "The callee parcel is not consumed or cleaned correctly. ",
-                    "This is due to a problem in external function handling or instrumentation. ",
-                    "{:?}",
-                ),
-                self.ephemeral.from_callee
-            );
+            if let Some(from_caller) = self.ephemeral.from_callee.take() {
+                log_debug!(
+                    target: TAG,
+                    "External 5: Unconsumed callee parcel found at return. {:?}",
+                    from_caller,
+                );
+            }
 
             let current_func = self.current_func();
             let popped_frame = self.stack.pop().unwrap();
@@ -759,15 +762,16 @@ mod implementation {
 
         fn finalize_call(&mut self) -> Self::FinalizationToken {
             self.log_span_reset();
+            log_debug!(target: TAG, "Finalizing call");
 
             let sanity = self
-            .top_frame()
-            .latest_call_sanity
-            .take()
-            .unwrap_or_else(|| {
-                log_debug!(target: TAG, "External function call detected with no acknowledged entrance.");
-                CallFlowSanity::Broken(())
-            });
+                .top_frame()
+                .latest_call_sanity
+                .take()
+                .unwrap_or_else(|| {
+                    log_debug!(target: TAG, "External 1: No entrance was acknowledged.");
+                    CallFlowSanity::Broken(())
+                });
 
             match sanity {
                 CallFlowSanity::Expected(..) | CallFlowSanity::Unknown(..) => {
@@ -1055,7 +1059,7 @@ mod implementation {
         impl<V, P, BC> DefaultCallFlowManager<V, P, BC> {
             #[inline(always)]
             pub(super) fn log_span_reset(&mut self) {
-                if !tracing::enabled!(tracing::Level::DEBUG) {
+                if !tracing::enabled!(target: TAG_STACK, tracing::Level::DEBUG) {
                     return;
                 }
 
@@ -1076,7 +1080,7 @@ mod implementation {
 
             #[inline(always)]
             pub(super) fn log_span_start_trans(&mut self, direction: TransitionDirection) {
-                if !tracing::enabled!(tracing::Level::DEBUG) {
+                if !tracing::enabled!(target: TAG_STACK, tracing::Level::DEBUG) {
                     return;
                 }
 
