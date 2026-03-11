@@ -295,6 +295,16 @@ pub const fn ref_place_some_encoded() -> PlaceRef {
 }
 
 #[inline(always)]
+pub const fn ref_operand_place_copy_encoded(place_ref: PlaceRef) -> OperandRef {
+    r_enc::operand::encode_place_copy(place_ref)
+}
+
+#[inline(always)]
+pub const fn ref_operand_place_move_encoded(place_ref: PlaceRef) -> OperandRef {
+    r_enc::operand::encode_place_move(place_ref)
+}
+
+#[inline(always)]
 pub const fn ref_operand_const_zst_encoded() -> OperandRef {
     r_enc::operand::encode_const_zst()
 }

@@ -325,7 +325,6 @@ pub(crate) enum ArgsTupling {
 pub(crate) trait CallHandler {
     type Place;
     type Operand;
-    type Arg: From<Self::Operand> = Self::Operand;
     type MetadataHandler;
 
     fn before_call(self, def: CalleeDef, call_site: BasicBlockIndex);
@@ -335,7 +334,7 @@ pub(crate) trait CallHandler {
     fn take_data_before_call(
         self,
         func: Self::Operand,
-        args: impl IntoIterator<Item = Self::Arg>,
+        args: impl IntoIterator<Item = Self::Operand>,
         are_args_tupled: bool,
     );
 

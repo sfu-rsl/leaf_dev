@@ -76,14 +76,14 @@ where
             }
         }
 
-        let func_name = if is_copy {
-            sym::ref_operand_copy
+        let func = if is_copy {
+            self.pri_helper_funcs().ref_operand_place_copy_encoded
         } else {
-            sym::ref_operand_move
+            self.pri_helper_funcs().ref_operand_place_move_encoded
         };
 
         BlocksAndResult::from(
-            self.make_bb_for_operand_ref_call(func_name, vec![operand::copy_for_local(place_ref)]),
+            self.make_bb_for_helper_call_with_ret(func, vec![operand::copy_for_local(place_ref)]),
         )
         .prepend(additional_blocks)
     }

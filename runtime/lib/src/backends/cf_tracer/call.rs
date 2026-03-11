@@ -47,7 +47,6 @@ impl<'a> CftCallHandler<'a> {
 impl CallHandler for CftCallHandler<'_> {
     type Place = NullPlace;
     type Operand = NullOperand;
-    type Arg = Self::Operand;
 
     type MetadataHandler = ();
 
@@ -66,7 +65,7 @@ impl CallHandler for CftCallHandler<'_> {
     fn take_data_before_call(
         self,
         _func: Self::Operand,
-        _args: impl IntoIterator<Item = Self::Arg>,
+        _args: impl IntoIterator<Item = Self::Operand>,
         _are_args_tupled: bool,
     ) {
     }

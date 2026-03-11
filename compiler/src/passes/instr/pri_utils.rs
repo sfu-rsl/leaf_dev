@@ -238,6 +238,8 @@ pub(crate) mod sym {
                 ref_place_local_encoded,
                 ref_place_some_encoded,
 
+                ref_operand_place_copy_encoded,
+                ref_operand_place_move_encoded,
                 ref_operand_const_zst_encoded,
                 ref_operand_const_bool_encoded,
                 ref_operand_const_some_encoded,
@@ -271,7 +273,7 @@ pub(crate) mod sym {
 
         pass_compiler_helpers_to!(symbols_in_compiler_helpers);
 
-        pub(crate) const ALL_HELPERS: [LS; 32] = pass_compiler_helpers_to!(bracket);
+        pub(crate) const ALL_HELPERS: [LS; 34] = pass_compiler_helpers_to!(bracket);
     }
     pub(crate) use compiler_helpers::*;
 

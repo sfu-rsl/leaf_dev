@@ -80,7 +80,7 @@ impl<'a> CallHandler for BasicCallHandler<'a> {
     fn take_data_before_call(
         self,
         func: Self::Operand,
-        args: impl IntoIterator<Item = Self::Arg>,
+        args: impl IntoIterator<Item = Self::Operand>,
         are_args_tupled: bool,
     ) {
         self.flow_manager.prepare_for_call_with_values(

@@ -305,12 +305,12 @@ where
     }
 
     fn assign_use(id: AssignmentId, dest: PlaceRef, operand: OperandRef) {
-        Self::assign_to(id, dest, |h| h.use_of(Self::take_back_operand(operand)))
+        let operand = Self::take_back_operand(operand);
+        Self::assign_to(id, dest, |h| h.use_of(operand))
     }
     fn assign_repeat(id: AssignmentId, dest: PlaceRef, operand: OperandRef, count: usize) {
-        Self::assign_to(id, dest, |h| {
-            h.repeat_of(Self::take_back_operand(operand), count)
-        })
+        let operand = Self::take_back_operand(operand);
+        Self::assign_to(id, dest, |h| h.repeat_of(operand, count))
     }
     fn assign_ref(id: AssignmentId, dest: PlaceRef, place: PlaceRef, is_mutable: bool) {
         // FIXME: Mutability does not necessarily mean writing.
@@ -326,9 +326,8 @@ where
     }
 
     fn assign_cast_char(id: AssignmentId, dest: PlaceRef, operand: OperandRef) {
-        Self::assign_to(id, dest, |h| {
-            h.cast_of(Self::take_back_operand(operand), CastKind::ToChar)
-        })
+        let operand = Self::take_back_operand(operand);
+        Self::assign_to(id, dest, |h| h.cast_of(operand, CastKind::ToChar))
     }
     fn assign_cast_integer(
         id: AssignmentId,
@@ -337,9 +336,10 @@ where
         bit_size: u64,
         is_signed: bool,
     ) {
+        let operand = Self::take_back_operand(operand);
         Self::assign_to(id, dest, |h| {
             h.cast_of(
-                Self::take_back_operand(operand),
+                operand,
                 CastKind::ToInt(IntType {
                     bit_size,
                     is_signed,
@@ -354,17 +354,14 @@ where
         e_bits: u64,
         s_bits: u64,
     ) {
+        let operand = Self::take_back_operand(operand);
         Self::assign_to(id, dest, |h| {
-            h.cast_of(
-                Self::take_back_operand(operand),
-                CastKind::ToFloat(FloatType { e_bits, s_bits }),
-            )
+            h.cast_of(operand, CastKind::ToFloat(FloatType { e_bits, s_bits }))
         })
     }
     fn assign_cast_expose_prov(id: AssignmentId, dest: PlaceRef, operand: OperandRef) {
-        Self::assign_to(id, dest, |h| {
-            h.cast_of(Self::take_back_operand(operand), CastKind::ExposeProvenance)
-        })
+        let operand = Self::take_back_operand(operand);
+        Self::assign_to(id, dest, |h| h.cast_of(operand, CastKind::ExposeProvenance))
     }
     fn assign_cast_with_exposed_prov(
         id: AssignmentId,
@@ -384,9 +381,8 @@ where
     }
 
     fn assign_cast_unsize(id: AssignmentId, dest: PlaceRef, operand: OperandRef) {
-        Self::assign_to(id, dest, |h| {
-            h.cast_of(Self::take_back_operand(operand), CastKind::PointerUnsize)
-        })
+        let operand = Self::take_back_operand(operand);
+        Self::assign_to(id, dest, |h| h.cast_of(operand, CastKind::PointerUnsize))
     }
     fn assign_cast_transmute(
         id: AssignmentId,
@@ -394,11 +390,9 @@ where
         operand: OperandRef,
         dst_type_id: Self::TypeId,
     ) {
+        let operand = Self::take_back_operand(operand);
         Self::assign_to(id, dest, |h| {
-            h.cast_of(
-                Self::take_back_operand(operand),
-                CastKind::Transmute(dst_type_id),
-            )
+            h.cast_of(operand, CastKind::Transmute(dst_type_id))
         })
     }
     fn assign_cast_subtype(
@@ -407,11 +401,9 @@ where
         operand: OperandRef,
         dst_type_id: Self::TypeId,
     ) {
+        let operand = Self::take_back_operand(operand);
         Self::assign_to(id, dest, |h| {
-            h.cast_of(
-                Self::take_back_operand(operand),
-                CastKind::Subtype(dst_type_id),
-            )
+            h.cast_of(operand, CastKind::Subtype(dst_type_id))
         })
     }
 
@@ -422,13 +414,9 @@ where
         first: OperandRef,
         second: OperandRef,
     ) {
-        Self::assign_to(id, dest, |h| {
-            h.binary_op_between(
-                operator,
-                Self::take_back_operand(first),
-                Self::take_back_operand(second),
-            )
-        })
+        let first = Self::take_back_operand(first);
+        let second = Self::take_back_operand(second);
+        Self::assign_to(id, dest, |h| h.binary_op_between(operator, first, second))
     }
     fn assign_unary_op(
         id: AssignmentId,
@@ -436,9 +424,8 @@ where
         operator: Self::UnaryOp,
         operand: OperandRef,
     ) {
-        Self::assign_to(id, dest, |h| {
-            h.unary_op_on(operator, Self::take_back_operand(operand))
-        })
+        let operand = Self::take_back_operand(operand);
+        Self::assign_to(id, dest, |h| h.unary_op_on(operator, operand))
     }
 
     fn set_discriminant(id: AssignmentId, dest: PlaceRef, variant_index: u32) {
@@ -452,21 +439,16 @@ where
 
     // We use slice to simplify working with the interface.
     fn assign_aggregate_array(id: AssignmentId, dest: PlaceRef, items: &[OperandRef]) {
-        Self::assign_to(id, dest, |h| {
-            h.array_from(items.iter().map(|o| Self::take_back_operand(*o)))
-        })
+        let items = items.iter().map(|o| Self::take_back_operand(*o));
+        Self::assign_to(id, dest, |h| h.array_from(items))
     }
     fn assign_aggregate_tuple(id: AssignmentId, dest: PlaceRef, fields: &[OperandRef]) {
-        Self::assign_to(id, dest, |h| {
-            let fields = Self::take_fields(fields);
-            h.tuple_from(fields.into_iter())
-        })
+        let fields = Self::take_fields(fields);
+        Self::assign_to(id, dest, |h| h.tuple_from(fields.into_iter()))
     }
     fn assign_aggregate_struct(id: AssignmentId, dest: PlaceRef, fields: &[OperandRef]) {
-        Self::assign_to(id, dest, |h| {
-            let fields = Self::take_fields(fields);
-            h.adt_from(fields.into_iter(), None)
-        })
+        let fields = Self::take_fields(fields);
+        Self::assign_to(id, dest, |h| h.adt_from(fields.into_iter(), None))
     }
     fn assign_aggregate_enum(
         id: AssignmentId,
@@ -474,10 +456,8 @@ where
         fields: &[OperandRef],
         variant: VariantIndex,
     ) {
-        Self::assign_to(id, dest, |h| {
-            let fields = Self::take_fields(fields);
-            h.adt_from(fields.into_iter(), Some(variant))
-        })
+        let fields = Self::take_fields(fields);
+        Self::assign_to(id, dest, |h| h.adt_from(fields.into_iter(), Some(variant)))
     }
     fn assign_aggregate_union(
         id: AssignmentId,
@@ -485,26 +465,20 @@ where
         active_field: FieldIndex,
         value: OperandRef,
     ) {
-        Self::assign_to(id, dest, |h| {
-            let field = Self::take_fields(&[value]).pop().unwrap();
-            h.union_from(active_field, field)
-        })
+        let field = Self::take_fields(&[value]).pop().unwrap();
+        Self::assign_to(id, dest, |h| h.union_from(active_field, field))
     }
     fn assign_aggregate_closure(id: AssignmentId, dest: PlaceRef, upvars: &[OperandRef]) {
         let upvars = Self::take_fields(upvars);
         Self::assign_to(id, dest, |h| h.closure_from(upvars.into_iter()))
     }
     fn assign_aggregate_coroutine(id: AssignmentId, dest: PlaceRef, upvars: &[OperandRef]) {
-        Self::assign_to(id, dest, |h| {
-            let upvars = Self::take_fields(upvars);
-            h.coroutine_from(upvars.into_iter())
-        })
+        let upvars = Self::take_fields(upvars);
+        Self::assign_to(id, dest, |h| h.coroutine_from(upvars.into_iter()))
     }
     fn assign_aggregate_coroutine_closure(id: AssignmentId, dest: PlaceRef, upvars: &[OperandRef]) {
-        Self::assign_to(id, dest, |h| {
-            let upvars = Self::take_fields(upvars);
-            h.coroutine_closure_from(upvars.into_iter())
-        })
+        let upvars = Self::take_fields(upvars);
+        Self::assign_to(id, dest, |h| h.coroutine_closure_from(upvars.into_iter()))
     }
     fn assign_aggregate_raw_ptr(
         id: AssignmentId,
@@ -513,13 +487,9 @@ where
         metadata: OperandRef,
         is_mutable: bool,
     ) {
-        Self::assign_to(id, dest, |h| {
-            h.raw_ptr_from(
-                Self::take_back_operand(data_ptr),
-                Self::take_back_operand(metadata),
-                is_mutable,
-            )
-        })
+        let data_ptr = Self::take_back_operand(data_ptr);
+        let metadata = Self::take_back_operand(metadata);
+        Self::assign_to(id, dest, |h| h.raw_ptr_from(data_ptr, metadata, is_mutable))
     }
 
     fn assign_shallow_init_box(
@@ -528,9 +498,8 @@ where
         operand: OperandRef,
         _boxed_type_id: Self::TypeId,
     ) {
-        Self::assign_to(id, dest, |h| {
-            h.shallow_init_box_from(Self::take_back_operand(operand))
-        })
+        let operand = Self::take_back_operand(operand);
+        Self::assign_to(id, dest, |h| h.shallow_init_box_from(operand))
     }
 
     fn assign_wrap_unsafe_binder(
@@ -539,9 +508,8 @@ where
         operand: OperandRef,
         _binder_type_id: Self::TypeId,
     ) {
-        Self::assign_to(id, dest, |h| {
-            h.wrap_in_unsafe_binder(Self::take_back_operand(operand))
-        })
+        let operand = Self::take_back_operand(operand);
+        Self::assign_to(id, dest, |h| h.wrap_in_unsafe_binder(operand))
     }
 
     fn assign_some(id: AssignmentId, dest: PlaceRef) {
@@ -561,15 +529,17 @@ where
 
     fn take_branch_false(info: SwitchInfo) {
         // Self::switch(info, |h| h.take(false.into()))
+        let discriminant = Self::take_back_operand(info.discriminant);
         Self::constraint_at(info.node_location, |c| {
-            let handler = c.switch(Self::take_back_operand(info.discriminant));
+            let handler = c.switch(discriminant);
             handler.take(false.into())
         })
     }
     fn take_branch_ow_bool(info: SwitchInfo) {
         // Self::switch(info, |h| h.take_otherwise(vec![false.into()]))
+        let discriminant = Self::take_back_operand(info.discriminant);
         Self::constraint_at(info.node_location, |c| {
-            let handler = c.switch(Self::take_back_operand(info.discriminant));
+            let handler = c.switch(discriminant);
             handler.take_otherwise(vec![false.into()])
         })
     }
@@ -584,8 +554,9 @@ where
         //         },
         //     })
         // })
+        let discriminant = Self::take_back_operand(info.discriminant);
         Self::constraint_at(info.node_location, |c| {
-            let handler = c.switch(Self::take_back_operand(info.discriminant));
+            let handler = c.switch(discriminant);
             handler.take(Constant::Int {
                 bit_rep: value_bit_rep,
                 ty: IntType {
@@ -610,8 +581,9 @@ where
         //             .collect(),
         //     )
         // })
+        let discriminant = Self::take_back_operand(info.discriminant);
         Self::constraint_at(info.node_location, |c| {
-            let handler = c.switch(Self::take_back_operand(info.discriminant));
+            let handler = c.switch(discriminant);
             handler.take_otherwise(
                 non_values
                     .iter()
@@ -629,8 +601,9 @@ where
 
     fn take_branch_char(info: SwitchInfo, value: char) {
         // Self::switch(info, |h| h.take(value.into()))
+        let discriminant = Self::take_back_operand(info.discriminant);
         Self::constraint_at(info.node_location, |c| {
-            let handler = c.switch(Self::take_back_operand(info.discriminant));
+            let handler = c.switch(discriminant);
             handler.take(value.into())
         })
     }
@@ -638,8 +611,9 @@ where
         // Self::switch(info, |h| {
         //     h.take_otherwise(non_values.iter().map(|c| (*c).into()).collect())
         // })
+        let discriminant = Self::take_back_operand(info.discriminant);
         Self::constraint_at(info.node_location, |c| {
-            let handler = c.switch(Self::take_back_operand(info.discriminant));
+            let handler = c.switch(discriminant);
             handler.take_otherwise(non_values.iter().map(|c| (*c).into()).collect())
         })
     }
@@ -698,19 +672,16 @@ where
     }
     #[tracing::instrument(target = "pri::call", level = "debug")]
     fn before_call_data(func: OperandRef, args: &[OperandRef], are_args_tupled: bool) {
-        Self::func_control(|h| {
-            h.take_data_before_call(
-                Self::take_back_operand(func),
-                args.iter().map(|o| Self::take_back_operand(*o).into()),
-                are_args_tupled,
-            )
-        });
+        let func = Self::take_back_operand(func);
+        let args = args
+            .iter()
+            .map(|o| Self::take_back_operand(*o).into())
+            .collect::<Vec<_>>();
+        Self::func_control(move |h| h.take_data_before_call(func, args, are_args_tupled));
     }
     #[tracing::instrument(target = "pri::call", level = "debug")]
     fn before_call_some() {
-        Self::func_control(|h| {
-            h.before_call_some();
-        });
+        Self::func_control(|h| h.before_call_some());
     }
 
     #[tracing::instrument(target = "pri::call", level = "debug")]
@@ -750,7 +721,8 @@ where
     /// until it is consumed at the point of return to an internal caller.
     #[tracing::instrument(target = "pri::call", level = "debug")]
     fn override_return_value(operand: OperandRef) {
-        Self::func_control(|h| h.override_return_value(Self::take_back_operand(operand)))
+        let operand = Self::take_back_operand(operand);
+        Self::func_control(|h| h.override_return_value(operand))
     }
     #[tracing::instrument(target = "pri::call", level = "debug")]
     fn after_call_func(id: AssignmentId, dest: PlaceRef) {
@@ -1087,11 +1059,9 @@ impl<IM: InstanceManager> FluentPri<IM> {
         operand: OperandRef,
         dst_type_id: TypeId,
     ) {
+        let operand = Self::take_back_operand(operand);
         Self::assign_to(id, dest, |h| {
-            h.cast_of(
-                Self::take_back_operand(operand),
-                CastKind::ToPointer(dst_type_id),
-            )
+            h.cast_of(operand, CastKind::ToPointer(dst_type_id))
         })
     }
 
@@ -1099,12 +1069,9 @@ impl<IM: InstanceManager> FluentPri<IM> {
         info: AssertionInfo,
         assert_kind: AssertKind<<IM::Backend as RuntimeBackend>::Operand>,
     ) {
+        let condition = Self::take_back_operand(info.condition);
         Self::constraint_at(info.location, |h| {
-            h.assert(
-                Self::take_back_operand(info.condition),
-                info.expected,
-                assert_kind,
-            )
+            h.assert(condition, info.expected, assert_kind)
         })
     }
 
@@ -1128,8 +1095,9 @@ impl<IM: InstanceManager> FluentPri<IM> {
         <<IM::Backend as RuntimeBackend>::ConstraintHandler<'a> as ConstraintHandler>::SwitchHandler,
     ) -> T,
     ) -> T {
+        let discriminant = Self::take_back_operand(info.discriminant);
         Self::constraint_at(info.node_location, |c| {
-            let handler = c.switch(Self::take_back_operand(info.discriminant));
+            let handler = c.switch(discriminant);
             switch_action(handler)
         })
     }
@@ -1397,6 +1365,18 @@ impl<IM: InstanceManager> ref_enc::place::PlaceRefInlinedDecoder<IM::PlaceInfo> 
 impl<IM: InstanceManager> ref_enc::operand::OperandRefInlinedDecoder<IM::Operand>
     for FluentPri<IM>
 {
+    fn copy_of(place_ref: PlaceRef) -> IM::Operand {
+        let place = Self::take_place_info_to_read(place_ref);
+        IM::perform_on_backend(|r| r.operand().copy_of(place))
+    }
+
+    fn move_of(place_ref: PlaceRef) -> IM::Operand {
+        let place = Self::take_place_info_to_read(place_ref);
+        IM::perform_on_backend(|r: &mut <IM as InstanceManager>::Backend| {
+            r.operand().move_of(place)
+        })
+    }
+
     fn const_zst() -> IM::Operand {
         IM::perform_on_backend(|r| Self::build_const_operand(r.operand(), Constant::Zst))
     }
