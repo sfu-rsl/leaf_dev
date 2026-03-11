@@ -109,7 +109,11 @@ const FIELD_FROM_BLOCK: &str = "from_block";
 const FIELD_TO_BODY: &str = "to_body";
 const FIELD_TO_BLOCK: &str = "to_block";
 const FIELD_LOCATION_BLOCK: &str = "block_index";
+const FIELD_TRANSFER_KIND: &str = "kind";
 const FIELD_DECISION_KIND: &str = "kind";
+
+const TRANSFER_KIND_CALL: &str = "call";
+const TRANSFER_KIND_RETURN: &str = "return";
 
 const EVENT_TRANSFER_START: &str = "transfer_start";
 const EVENT_TRANSFER: &str = "transfer";
@@ -131,6 +135,7 @@ impl PhasedCallTraceRecorder for Recorder {
             LEVEL,
             { FIELD_FROM_BODY } = body_id_to_str!(call_site.body.body_id),
             { FIELD_FROM_BLOCK } = call_site.index,
+            { FIELD_TRANSFER_KIND } = TRANSFER_KIND_CALL,
         );
     }
 
@@ -174,6 +179,7 @@ impl PhasedCallTraceRecorder for Recorder {
             { FIELD_FROM_BLOCK } = call_site.index,
             { FIELD_TO_BODY } = body_id_to_str!(entered_func.body_id),
             { FIELD_TO_BLOCK } = 0,
+            { FIELD_TRANSFER_KIND } = TRANSFER_KIND_CALL,
             { FIELD_BROKEN } = broken,
         );
     }
@@ -190,6 +196,7 @@ impl PhasedCallTraceRecorder for Recorder {
             LEVEL,
             { FIELD_FROM_BODY } = body_id_to_str!(ret_point.body.body_id),
             { FIELD_FROM_BLOCK } = ret_point.index,
+            { FIELD_TRANSFER_KIND } = TRANSFER_KIND_RETURN,
         );
     }
 
@@ -222,6 +229,7 @@ impl PhasedCallTraceRecorder for Recorder {
             { FIELD_FROM_BLOCK } = ret_point.index,
             { FIELD_TO_BODY } = body_id_to_str!(caller.body.body_id),
             { FIELD_TO_BLOCK } = caller.index,
+            { FIELD_TRANSFER_KIND } = TRANSFER_KIND_RETURN,
             { FIELD_BROKEN } = broken,
         );
         caller.body
