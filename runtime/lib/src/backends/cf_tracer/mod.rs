@@ -66,6 +66,11 @@ impl RuntimeBackend for CftBackend {
     where
         Self: 'a;
 
+    type DropHandler<'a>
+        = CftCallHandler<'a>
+    where
+        Self: 'a;
+
     type AnnotationHandler<'a>
         = NoOpAnnotationHandler
     where
@@ -115,6 +120,10 @@ impl RuntimeBackend for CftBackend {
     }
 
     fn call_control(&mut self) -> Self::CallHandler<'_> {
+        CftCallHandler::new(self)
+    }
+
+    fn dropping(&mut self) -> Self::DropHandler<'_> {
         CftCallHandler::new(self)
     }
 

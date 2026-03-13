@@ -730,6 +730,26 @@ where
         Self::func_control(|h| h.after_call(id, dest_place))
     }
 
+    #[tracing::instrument(target = "pri::drop", level = "debug")]
+    fn before_drop_control(def: CalleeDef, call_site: BasicBlockIndex) {
+        Self::dropping(|h| h.before_drop(def.into(), call_site));
+    }
+    #[tracing::instrument(target = "pri::drop", level = "debug")]
+    fn before_drop_data(func: OperandRef, arg: OperandRef, place: PlaceRef) {
+        let func = Self::take_back_operand(func);
+        let arg = Self::take_back_operand(arg);
+        let place = Self::take_place_info_to_write(place);
+        Self::dropping(move |h| h.take_data_before_drop(func, arg, place));
+    }
+    #[tracing::instrument(target = "pri::drop", level = "debug")]
+    fn before_drop_some() {
+        Self::dropping(|h| h.before_drop_some());
+    }
+    #[tracing::instrument(target = "pri::drop", level = "debug")]
+    fn after_drop() {
+        Self::dropping(|h| h.after_drop());
+    }
+
     fn intrinsic_assign_identity(id: AssignmentId, dest: PlaceRef, x: OperandRef) {
         Self::assign_use(id, dest, x)
     }
@@ -1106,10 +1126,14 @@ impl<IM: InstanceManager> FluentPri<IM> {
     fn func_control<T>(
         call_action: impl FnOnce(<IM::Backend as RuntimeBackend>::CallHandler<'_>) -> T,
     ) -> T {
-        IM::perform_on_backend(|r| {
-            let call_control = r.call_control();
-            call_action(call_control)
-        })
+        IM::perform_on_backend(|r| call_action(r.call_control()))
+    }
+
+    #[inline]
+    fn dropping<T>(
+        call_action: impl FnOnce(<IM::Backend as RuntimeBackend>::DropHandler<'_>) -> T,
+    ) -> T {
+        IM::perform_on_backend(|r| call_action(r.dropping()))
     }
 
     #[inline]

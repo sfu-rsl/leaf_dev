@@ -398,25 +398,7 @@ fn filter_and_fold_place<'tcx>(
 }
 
 mod utils {
-    use rustc_middle::mir::RawPtrKind;
 
-    pub(super) use super::super::prelude::{mir::*, *};
-
-    pub(super) use super::super::utils::{assignment, operand, ty};
-
-    pub(super) fn ptr_to_place<'tcx>(
-        tcx: TyCtxt<'tcx>,
-        local_manager: &mut impl BodyLocalManager<'tcx>,
-        place: Place<'tcx>,
-        place_ty: Ty<'tcx>,
-    ) -> (Statement<'tcx>, Local) {
-        let ptr_local = local_manager.add_local(Ty::new_imm_ptr(tcx, place_ty));
-        let ptr_assignment = assignment::create(
-            Place::from(ptr_local),
-            Rvalue::RawPtr(RawPtrKind::Const, place),
-        );
-
-        (ptr_assignment, ptr_local)
-    }
+    pub(super) use super::super::utils::{operand, ptr_to_place, ty};
 }
 use utils::*;

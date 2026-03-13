@@ -40,6 +40,9 @@ pub(crate) trait RuntimeBackend: Shutdown {
     type CallHandler<'a>: CallHandler<Place = Self::Place, Operand = Self::Operand>
     where
         Self: 'a;
+    type DropHandler<'a>: DropHandler<Place = Self::Place, Operand = Self::Operand>
+    where
+        Self: 'a;
     type AnnotationHandler<'a>: AnnotationHandler
     where
         Self: 'a;
@@ -66,6 +69,8 @@ pub(crate) trait RuntimeBackend: Shutdown {
     fn constraint_at<'a>(&'a mut self, location: BasicBlockIndex) -> Self::ConstraintHandler<'a>;
 
     fn call_control(&mut self) -> Self::CallHandler<'_>;
+
+    fn dropping(&mut self) -> Self::DropHandler<'_>;
 
     fn annotate(&mut self) -> Self::AnnotationHandler<'_>;
 }
@@ -354,6 +359,19 @@ pub(crate) trait CallHandler {
     fn after_call(self, assignment_id: AssignmentId, result_dest: Self::Place);
 
     fn metadata(self) -> Self::MetadataHandler;
+}
+
+pub(crate) trait DropHandler {
+    type Place;
+    type Operand;
+
+    fn before_drop(self, def: CalleeDef, call_site: BasicBlockIndex);
+
+    fn before_drop_some(self);
+
+    fn take_data_before_drop(self, func: Self::Operand, arg: Self::Operand, place: Self::Place);
+
+    fn after_drop(self);
 }
 
 pub(crate) trait AnnotationHandler {

@@ -947,6 +947,21 @@ pub(super) mod utils {
         }
     }
 
+    pub(super) fn ptr_to_place<'tcx>(
+        tcx: TyCtxt<'tcx>,
+        local_manager: &mut impl BodyLocalManager<'tcx>,
+        place: Place<'tcx>,
+        place_ty: Ty<'tcx>,
+    ) -> (Statement<'tcx>, Local) {
+        let ptr_local = local_manager.add_local(Ty::new_imm_ptr(tcx, place_ty));
+        let ptr_assignment = assignment::create(
+            Place::from(ptr_local),
+            Rvalue::RawPtr(mir::RawPtrKind::Const, place),
+        );
+
+        (ptr_assignment, ptr_local)
+    }
+
     impl FunctionInfo {
         pub(super) fn num_inputs<'tcx>(&self, tcx: TyCtxt<'tcx>) -> usize {
             tcx.fn_sig(self.def_id)
@@ -977,8 +992,8 @@ pub(crate) mod ctxt_reqs;
 
 mod prelude {
     pub(super) use super::{
-        BlockInserter, BlocksAndResult, DebugInfoHandler, FunctionHandler, MemoryIntrinsicHandler,
-        MirCallAdder, RuntimeCallAdder,
+        BlockInserter, BlocksAndResult, DebugInfoHandler, MemoryIntrinsicHandler, MirCallAdder,
+        RuntimeCallAdder,
     };
 
     pub(super) use super::{

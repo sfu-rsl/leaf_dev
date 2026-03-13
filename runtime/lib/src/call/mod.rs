@@ -2,7 +2,7 @@ use core::fmt::Debug;
 
 use derive_more as dm;
 
-use common::{log_debug, log_trace};
+use common::{log_debug, log_trace, log_warn};
 
 use crate::abs::{CalleeDef, FuncDef};
 
@@ -734,9 +734,12 @@ mod implementation {
         fn start_return(&mut self) -> Self::ReturnToken {
             self.clear_entrance();
             if let Some(from_caller) = self.ephemeral.from_callee.take() {
-                log_debug!(
+                log_warn!(
                     target: TAG,
-                    "External 5: Unconsumed callee parcel found at return. {:?}",
+                    concat!(
+                        "Unconsumed callee parcel found at return. {:?}. ",
+                        "Unless this is happening in an exceptional path, it should be a problem in instrumentation.",
+                    ),
                     from_caller,
                 );
             }

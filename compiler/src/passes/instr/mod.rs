@@ -43,7 +43,7 @@ use super::{CompilationPass, OverrideFlags, Storage};
 use self::{
     call::{
         AssertionHandler, Assigner, AtomicIntrinsicHandler, BranchingHandler, BranchingReferencer,
-        CastAssigner, EntryFunctionHandler, FunctionHandler,
+        CastAssigner, DropHandler, EntryFunctionHandler, FunctionHandler,
         InsertionLocation::*,
         IntrinsicHandler, MemoryIntrinsicHandler, OperandRef, OperandReferencer, PlaceRef,
         PlaceReferencer, RuntimeCallAdder, StorageMarker,
@@ -657,7 +657,9 @@ where
     C: ctxtreqs::ForOperandRef<'tcx>
         + ctxtreqs::ForPlaceRef<'tcx>
         + ctxtreqs::ForBranching<'tcx>
-        + ctxtreqs::ForReturning<'tcx>,
+        + ctxtreqs::ForReturning<'tcx>
+        + ctxtreqs::ForFunctionCalling<'tcx>
+        + ctxtreqs::ForDropping<'tcx>,
 {
     fn visit_switch_int(&mut self, discr: &Operand<'tcx>, targets: &mir::SwitchTargets) {
         let switch_info = self.call_adder.store_branching_info(discr);
@@ -691,12 +693,16 @@ where
 
     fn visit_drop(
         &mut self,
-        _place: &Place<'tcx>,
+        place: &Place<'tcx>,
         _target: &BasicBlock,
         _unwind: &UnwindAction,
         _replace: &bool,
     ) {
-        Default::default()
+        let mut call_adder = self.call_adder.before();
+        call_adder.before_call_drop(place);
+
+        let mut call_adder = call_adder.after();
+        call_adder.after_call_drop();
     }
 
     fn visit_call(
@@ -1480,6 +1486,16 @@ impl<'tcx> TerminatorKindVisitor<'tcx, ()> for TerminatorLocationRecorder {
     }
 
     fn visit_return(&mut self) -> () {
+        self.record();
+    }
+
+    fn visit_drop(
+        &mut self,
+        _place: &Place<'tcx>,
+        _target: &BasicBlock,
+        _unwind: &UnwindAction,
+        _replace: &bool,
+    ) -> () {
         self.record();
     }
 }

@@ -5,14 +5,17 @@ use rustc_type_ir::ClosureArgs;
 use core::{assert_matches::debug_assert_matches, iter};
 
 use crate::{
-    passes::instr::{call::context::ConfigProvider, ctxtreqs::ForPlaceRef},
+    passes::instr::{
+        call::{PlaceReferencer, context::ConfigProvider},
+        ctxtreqs::ForPlaceRef,
+    },
     utils::mir::BodyExt,
 };
 
 use super::{
-    InsertionLocation, OperandReferencer,
+    DropHandler, FunctionHandler, InsertionLocation, OperandReferencer,
     context::{AssignmentInfoProvider, BodyProvider, SourceInfoProvider},
-    ctxt_reqs::{Basic, ForFunctionCalling},
+    ctxt_reqs::{Basic, ForDropping, ForFunctionCalling},
     prelude::{mir::*, *},
 };
 
@@ -78,6 +81,56 @@ where
                 operand::copy_for_local(self.dest_ref().into()),
             ],
         );
+        debug_assert_matches!(
+            self.context.insertion_loc(),
+            InsertionLocation::After(..),
+            "Inserting after_call before a block is not expected."
+        );
+        self.insert_blocks([block]);
+    }
+}
+
+impl<'tcx, C> DropHandler<'tcx> for RuntimeCallAdder<C>
+where
+    Self: MirCallAdder<'tcx> + BlockInserter<'tcx> + DebugInfoHandler,
+    C: ForDropping<'tcx>,
+{
+    fn before_call_drop(&mut self, place: &Place<'tcx>) {
+        debug_assert_matches!(
+            self.context.insertion_loc(),
+            InsertionLocation::Before(..),
+            "Inserting before_drop after a block is not expected."
+        );
+
+        let tcx = self.tcx();
+        let func = operand::func(
+            tcx,
+            tcx.lang_items()
+                .drop_in_place_fn()
+                .expect("Lang item required for instrumenting drops"),
+            [place.ty(self, tcx).ty.into()],
+        );
+
+        self.debug_info(&format!("{}", func.ty(self, self.tcx())));
+
+        let mut added = false;
+        if true {
+            self.before_drop_control(func.clone());
+            added = true;
+        }
+
+        if true {
+            self.before_drop_data(&func, place.clone());
+            added = true;
+        }
+
+        if !added {
+            self.before_drop_some();
+        }
+    }
+
+    fn after_call_drop(&mut self) {
+        let block = self.make_bb_for_call(sym::after_drop, vec![]);
         debug_assert_matches!(
             self.context.insertion_loc(),
             InsertionLocation::After(..),
@@ -270,6 +323,83 @@ where
     }
 }
 
+impl<'tcx, C> RuntimeCallAdder<C>
+where
+    Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
+    C: Basic<'tcx> + SourceInfoProvider,
+{
+    fn before_drop_control(&mut self, drop_in_place_fn: Operand<'tcx>)
+    where
+        C: ForDropping<'tcx>,
+    {
+        let mut blocks = vec![];
+
+        let def_local = {
+            let BlocksAndResult(def_blocks, def_local) = definition_of_callee(
+                self.tcx(),
+                self,
+                self.current_typing_env(),
+                drop_in_place_fn,
+                None,
+            );
+            blocks.extend(def_blocks);
+            def_local
+        };
+
+        blocks.push(self.make_bb_for_call(
+            sym::before_drop_control,
+            vec![
+                operand::move_for_local(def_local),
+                self.original_bb_index_as_arg(),
+            ],
+        ));
+
+        self.insert_blocks(blocks);
+    }
+
+    fn before_drop_data(&mut self, drop_in_place_fn: &Operand<'tcx>, place: Place<'tcx>)
+    where
+        C: ForDropping<'tcx>,
+    {
+        let tcx = self.tcx();
+        let mut blocks = vec![];
+
+        let func_ref = self.reference_operand(drop_in_place_fn);
+
+        let place_ref = self.reference_place(&place);
+        let arg_ref = {
+            let (additional_stmt, ptr_local) =
+                utils::ptr_to_place(tcx, self, place, place.ty(self, tcx).ty);
+            let BlocksAndResult(mut additional_blocks, local) =
+                self.internal_reference_operand(&operand::move_for_local(ptr_local));
+            additional_blocks
+                .first_mut()
+                .unwrap()
+                .statements
+                .insert(0, additional_stmt);
+            blocks.extend(additional_blocks);
+            local
+        };
+
+        let block = self.make_bb_for_call(
+            sym::before_drop_data,
+            vec![
+                operand::move_for_local(func_ref.into()),
+                operand::move_for_local(arg_ref),
+                operand::move_for_local(place_ref.into()),
+            ],
+        );
+        blocks.push(block);
+
+        self.insert_blocks(blocks);
+    }
+
+    fn before_drop_some(&mut self) {
+        let block = self.make_bb_for_call(sym::before_drop_some, vec![]);
+        self.insert_blocks([block]);
+    }
+}
+
 mod utils {
     use rustc_middle::{
         mir::{
@@ -296,7 +426,7 @@ mod utils {
     };
 
     pub(super) use super::super::utils::{
-        assignment, operand, prepare_operand_for_slice, terminator, ty::TyExt,
+        assignment, operand, prepare_operand_for_slice, ptr_to_place, terminator, ty::TyExt,
     };
     use super::super::{
         BlocksAndResult, BodyLocalManager, BodyProvider, HasLocalDecls, MirCallAdder,
@@ -508,6 +638,7 @@ mod utils {
                 ty::fn_def_of_closure_once_shim(tcx, call_once, &arg_tys)
             }
             CloneShim(clone_fn_id, self_ty) => ty::fn_def_of_clone_shim(tcx, clone_fn_id, self_ty),
+            DropGlue(def_id, Some(ty)) => Ty::new_fn_def(tcx, def_id, [ty]),
             instance @ _ => unreachable!("Unsupported instance: {:?}", instance),
         };
 

@@ -196,6 +196,11 @@ impl RuntimeBackend for BasicBackend {
     where
         Self: 'a;
 
+    type DropHandler<'a>
+        = BasicCallHandler<'a>
+    where
+        Self: 'a;
+
     type AnnotationHandler<'a>
         = BasicAnnotationHandler<'a>
     where
@@ -235,6 +240,10 @@ impl RuntimeBackend for BasicBackend {
     }
 
     fn call_control(&mut self) -> Self::CallHandler<'_> {
+        BasicCallHandler::new(self)
+    }
+
+    fn dropping(&mut self) -> Self::DropHandler<'_> {
         BasicCallHandler::new(self)
     }
 

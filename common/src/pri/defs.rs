@@ -287,6 +287,13 @@ pub mod macros {
           { fn override_return_value(operand: OperandRef) }
           { fn after_call_func(id: AssignmentId, dest: PlaceRef) }
 
+          // ----- Drop ------
+          { fn before_drop_control(def: CalleeDef, call_site: BasicBlockIndex) }
+          { fn before_drop_data(func: OperandRef, arg: OperandRef, place: PlaceRef) }
+          { fn before_drop_some() }
+          { fn after_drop() }
+
+
           // ----- Intrinsics -----
           { fn intrinsic_assign_identity(id: AssignmentId, dest: PlaceRef, x: OperandRef) }
           { fn intrinsic_assign_rotate_left(id: AssignmentId, dest: PlaceRef, x: OperandRef, shift: OperandRef) }
@@ -730,6 +737,14 @@ pub mod macros {
                 fn override_return_value(operand:OperandRef);
             }$modifier!{
                 fn after_call_func(id:AssignmentId,dest:PlaceRef);
+            }$modifier!{
+                fn before_drop_control(def:CalleeDef,call_site:BasicBlockIndex);
+            }$modifier!{
+                fn before_drop_data(func:OperandRef,arg:OperandRef,place:PlaceRef);
+            }$modifier!{
+                fn before_drop_some();
+            }$modifier!{
+                fn after_drop();
             }$modifier!{
                 fn intrinsic_assign_identity(id:AssignmentId,dest:PlaceRef,x:OperandRef);
             }$modifier!{
