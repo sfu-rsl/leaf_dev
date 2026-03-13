@@ -18,8 +18,8 @@ use common::pri::{AssignmentId, AtomicBinaryOp, AtomicOrdering};
 
 use super::{
     decision::rules::{
-        AssignmentKindRules, CallFlowRules, ConstantTypeRules, OperandInfoRules, PlaceInfoRules,
-        PlaceStructurePieceRules, StorageLifetimeRules,
+        AssignmentKindRules, CallFlowRules, ConstantTypeRules, DropRules, OperandInfoRules,
+        PlaceInfoRules, PlaceStructurePieceRules, StorageLifetimeRules,
     },
     pri_utils::{self, sym::intrinsics::LeafIntrinsicSymbol},
 };
@@ -303,6 +303,7 @@ pub(crate) struct Config {
     pub assignment_filter: AssignmentKindRules<Option<bool>>,
     pub storage_lifetime_filter: StorageLifetimeRules<bool>,
     pub call_flow_filter: CallFlowRules<bool>,
+    pub drop_filter: DropRules<bool>,
 }
 
 mod implementation;
