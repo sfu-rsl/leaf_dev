@@ -48,8 +48,8 @@ pub(super) fn should_instrument<'tcx>(
         return false;
     }
 
-    // FIXME: Drops are important for bug detection, however we avoid instrumenting them for now.
-    if is_drop_fn(tcx, def_id) {
+    // To be removed once we ensure it is working correctly.
+    if false && is_drop_fn(tcx, def_id) {
         return false;
     }
 
@@ -64,16 +64,21 @@ pub(super) fn should_instrument<'tcx>(
 fn decide_instance_kind(kind: &InstanceKind) -> bool {
     use InstanceKind::*;
     match kind {
-        Item(..) | FnPtrShim(..) | ClosureOnceShim { .. } | CloneShim(..) | ReifyShim(..) => true,
+        Item(..)
+        | FnPtrShim(..)
+        | ClosureOnceShim { .. }
+        | CloneShim(..)
+        | ReifyShim(..)
+        | DropGlue(_, Some(..)) => true,
         Intrinsic(..)
         | VTableShim(..)
         | Virtual(..)
         | ConstructCoroutineInClosureShim { .. }
         | ThreadLocalShim(..)
         | FutureDropPollShim(..)
-        | DropGlue(..)
         | FnPtrAddrShim(..)
         | AsyncDropGlue(..)
+        | DropGlue(_, None)
         | AsyncDropGlueCtorShim(..) => false,
     }
 }

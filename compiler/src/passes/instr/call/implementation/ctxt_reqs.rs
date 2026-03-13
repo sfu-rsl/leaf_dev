@@ -55,6 +55,9 @@ impl<'tcx, C> ForFunctionCalling<'tcx> for C where
 {
 }
 
+pub(crate) trait ForDropping<'tcx>: ForInsertion<'tcx> + BlockOriginalIndexProvider {}
+impl<'tcx, C> ForDropping<'tcx> for C where C: ForInsertion<'tcx> + BlockOriginalIndexProvider {}
+
 pub(crate) trait ForReturning<'tcx>: ForInsertion<'tcx> {}
 impl<'tcx, C> ForReturning<'tcx> for C where C: ForInsertion<'tcx> {}
 

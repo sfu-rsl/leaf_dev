@@ -5,7 +5,7 @@ use crate::{
     },
     backends::cf_tracer::{CftBackend, record::Recorder},
     call::{CallControlFlowManager, CallFlowManager, CallShadowMemory, DefaultCallFlowManager},
-    pri::fluent::backend::{ArgsTupling, CallHandler, RuntimeBackend},
+    pri::fluent::backend::{ArgsTupling, CallHandler, DropHandler, RuntimeBackend},
 };
 
 use super::{NullOperand, NullPlace};
@@ -100,5 +100,27 @@ impl CallHandler for CftCallHandler<'_> {
 
     fn metadata(self) -> Self::MetadataHandler {
         Default::default()
+    }
+}
+
+impl DropHandler for CftCallHandler<'_> {
+    type Place = NullPlace;
+    type Operand = NullOperand;
+
+    fn before_drop(self, def: CalleeDef, call_site: BasicBlockIndex) {
+        <Self as CallHandler>::before_call(self, def, call_site);
+    }
+
+    fn before_drop_some(self) {
+        <Self as CallHandler>::before_call_some(self);
+    }
+
+    fn take_data_before_drop(self, _func: Self::Operand, _arg: Self::Operand, _place: Self::Place) {
+    }
+
+    fn after_drop(self) {
+        let token = self.flow_manager.finalize_call();
+        self.recorder
+            .finish_return(token.sanity().is_broken().unwrap());
     }
 }

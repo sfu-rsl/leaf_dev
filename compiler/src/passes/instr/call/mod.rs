@@ -198,6 +198,12 @@ pub(crate) trait FunctionHandler<'tcx> {
         Self: AssignmentInfoProvider<'tcx>;
 }
 
+pub(crate) trait DropHandler<'tcx> {
+    fn before_call_drop(&mut self, place: &Place<'tcx>);
+
+    fn after_call_drop(&mut self);
+}
+
 pub(crate) trait IntrinsicHandler<'tcx> {
     fn intrinsic_one_to_one_by(
         &mut self,

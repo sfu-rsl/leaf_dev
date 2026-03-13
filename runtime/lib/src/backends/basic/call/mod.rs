@@ -9,7 +9,7 @@ use crate::{
         CallControlFlowManager, CallDataFlowManager, CallFlowManager, CallShadowMemory,
         DefaultCallFlowManager, SignaturePlaces, tupling::ArgsTuplingInfo,
     },
-    pri::fluent::backend::{ArgsTupling, CallHandler},
+    pri::fluent::backend::{ArgsTupling, CallHandler, DropHandler},
     utils::InPlaceSelfHierarchical,
 };
 
@@ -170,6 +170,34 @@ impl<'a> CallHandler for BasicCallHandler<'a> {
 
     fn metadata(self) -> Self::MetadataHandler {
         Default::default()
+    }
+}
+
+// Currently, we have no special mechanism for dropping beyond calling the (possible) glue
+impl DropHandler for BasicCallHandler<'_> {
+    type Place = PlaceValueRef;
+    type Operand = BasicValue;
+
+    fn before_drop(self, def: CalleeDef, call_site: BasicBlockIndex) {
+        <Self as CallHandler>::before_call(self, def, call_site);
+    }
+
+    fn before_drop_some(self) {
+        <Self as CallHandler>::before_call_some(self);
+    }
+
+    fn take_data_before_drop(self, func: Self::Operand, arg: Self::Operand, _place: Self::Place) {
+        <Self as CallHandler>::take_data_before_call(self, func, vec![arg], false);
+    }
+
+    fn after_drop(mut self) {
+        let token = self.flow_manager.finalize_call();
+        let caller = self
+            .trace_recorder
+            .finish_return(token.sanity().is_broken().unwrap());
+        debug_assert_eq!(caller, self.current_func());
+
+        let _ = self.flow_manager.give_return_value(token);
     }
 }
 

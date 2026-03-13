@@ -26,7 +26,10 @@ where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
     C: Basic<'tcx> + SourceInfoProvider,
 {
-    fn internal_reference_operand(&mut self, operand: &Operand<'tcx>) -> BlocksAndResult<'tcx>
+    pub(super) fn internal_reference_operand(
+        &mut self,
+        operand: &Operand<'tcx>,
+    ) -> BlocksAndResult<'tcx>
     where
         C: ForOperandRef<'tcx>,
     {
