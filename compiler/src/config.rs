@@ -117,6 +117,7 @@ pub(crate) enum EntityFilter {
     AssignmentInfo(AssignmentFilter),
     StorageLifetime(StorageLifetimeMarkerFilter),
     CallFlow(CallFlowFilter),
+    Drop(DropFilter),
 }
 
 #[derive(Debug, Clone, Deserialize, From)]
@@ -288,6 +289,23 @@ pub(crate) enum CallFlowPartKind {
 
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct CallFlowLocationFilter(pub(crate) LogicFormula<EntityLocationFilter>);
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct DropFilter {
+    pub(crate) kind: LogicFormula<DropPartKind>,
+    #[serde(flatten)]
+    pub(crate) loc: DropLocationFilter,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum DropPartKind {
+    CallControl,
+    CallInput,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct DropLocationFilter(pub(crate) LogicFormula<EntityLocationFilter>);
 
 pub(crate) type InternalizationRules = InclusionRules<LogicFormula<PatternMatch>>;
 

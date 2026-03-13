@@ -285,12 +285,17 @@ fn make_config<'tcx>(storage: &mut dyn Storage, tcx: TyCtxt<'tcx>, def_id: DefId
         accept_call_flow_rules(storage, &(tcx, def_id)),
     );
 
+    let drop_filter = (|rules: DropFilterResult| rules.map(|r| r.unwrap_or(true)))(
+        accept_drop_rules(storage, &(tcx, def_id)),
+    );
+
     Config {
         place_info_filter,
         operand_info_filter,
         assignment_filter,
         storage_lifetime_filter,
         call_flow_filter,
+        drop_filter,
     }
 }
 

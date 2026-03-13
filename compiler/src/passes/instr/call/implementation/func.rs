@@ -114,12 +114,12 @@ where
         self.debug_info(&format!("{}", func.ty(self, self.tcx())));
 
         let mut added = false;
-        if true {
+        if self.config().drop_filter.control {
             self.before_drop_control(func.clone());
             added = true;
         }
 
-        if true {
+        if self.config().drop_filter.input {
             self.before_drop_data(&func, place.clone());
             added = true;
         }
