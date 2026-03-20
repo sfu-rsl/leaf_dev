@@ -155,6 +155,52 @@ pub enum AssertKind<Operand> {
     InvalidEnumConstruction(Operand),
 }
 
+#[derive(Clone, Copy, Debug)]
+#[repr(i8)]
+pub enum PrimitiveType {
+    U8 = common::pri::PrimitiveType::U8.to_raw(),
+    U16 = common::pri::PrimitiveType::U16.to_raw(),
+    U32 = common::pri::PrimitiveType::U32.to_raw(),
+    U64 = common::pri::PrimitiveType::U64.to_raw(),
+    U128 = common::pri::PrimitiveType::U128.to_raw(),
+
+    I8 = common::pri::PrimitiveType::I8.to_raw(),
+    I16 = common::pri::PrimitiveType::I16.to_raw(),
+    I32 = common::pri::PrimitiveType::I32.to_raw(),
+    I64 = common::pri::PrimitiveType::I64.to_raw(),
+    I128 = common::pri::PrimitiveType::I128.to_raw(),
+
+    F32 = common::pri::PrimitiveType::F32.to_raw(),
+    F64 = common::pri::PrimitiveType::F64.to_raw(),
+
+    Bool = common::pri::PrimitiveType::BOOL.to_raw(),
+
+    Char = common::pri::PrimitiveType::CHAR.to_raw(),
+}
+
+impl PrimitiveType {
+    pub const fn bit_size(&self) -> NonZeroU64 {
+        NonZeroU64::new(self.byte_size().get() * 8).unwrap()
+    }
+
+    pub const fn byte_size(&self) -> NonZeroU64 {
+        use PrimitiveType::*;
+        let byte_size = match self {
+            U8 | I8 => 1,
+            U16 | I16 => 2,
+            U32 | I32 => 4,
+            U64 | I64 => 8,
+            U128 | I128 => 16,
+            F32 => 4,
+            F64 => 8,
+            Bool => size_of::<bool>(),
+            Char => size_of::<char>(),
+        };
+        NonZeroU64::new(byte_size as u64).unwrap()
+    }
+}
+
+// FIXME: Replace with PrimitiveType
 #[derive(Clone, Copy, Debug, PartialEq, Eq, derive_more::From)]
 pub(crate) enum ValueType {
     Bool,
@@ -218,6 +264,32 @@ impl ValueType {
         match self {
             Self::Int(int_type) => int_type,
             _ => panic!("Expected an IntType, found: {:?}", self),
+        }
+    }
+}
+
+impl From<PrimitiveType> for ValueType {
+    fn from(value: PrimitiveType) -> Self {
+        use PrimitiveType::*;
+        match value {
+            U8 | U16 | U32 | U64 | U128 | I8 | I16 | I32 | I64 | I128 => ValueType::Int(IntType {
+                bit_size: value.bit_size().get(),
+                is_signed: matches!(value, I8 | I16 | I32 | I64 | I128),
+            }),
+            F32 | F64 => ValueType::Float(FloatType {
+                e_bits: match value {
+                    F32 => size_of::<f32>() as u64 * 8 - f32::MANTISSA_DIGITS as u64,
+                    F64 => size_of::<f64>() as u64 * 8 - f64::MANTISSA_DIGITS as u64,
+                    _ => unreachable!(),
+                },
+                s_bits: match value {
+                    F32 => f32::MANTISSA_DIGITS as u64,
+                    F64 => f64::MANTISSA_DIGITS as u64,
+                    _ => unreachable!(),
+                },
+            }),
+            PrimitiveType::Bool => ValueType::Bool,
+            PrimitiveType::Char => ValueType::Char,
         }
     }
 }

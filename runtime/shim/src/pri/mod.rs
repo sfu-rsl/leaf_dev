@@ -50,6 +50,7 @@ mod ffi {
         type ConstByteStr = ConstByteStrPack;
         type Slice<'a, T: 'a> = SlicePack<T>;
         type TypeId = U128Pack<TypeId>;
+        type PrimitiveType = common::pri::PrimitiveType;
         type BinaryOp = common::pri::BinaryOp;
         type UnaryOp = common::pri::UnaryOp;
         type AtomicOrdering = common::pri::AtomicOrdering;
@@ -173,6 +174,7 @@ common::pri::macros::list_func_decls! {
         &[u8]: &'static [u8],
         slice: slice_of,
         type_id: TypeId,
+        primitive_type: PrimitiveType,
         binary_op: BinaryOp,
         unary_op: UnaryOp,
         atomic_ord: AtomicOrdering,

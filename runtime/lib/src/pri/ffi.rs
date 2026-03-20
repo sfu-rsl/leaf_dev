@@ -27,3 +27,10 @@ impl From<common::pri::AtomicBinaryOp> for abs::AtomicBinaryOp {
         unsafe { core::mem::transmute(value) }
     }
 }
+
+impl From<common::pri::PrimitiveType> for abs::PrimitiveType {
+    #[inline(always)]
+    fn from(value: common::pri::PrimitiveType) -> Self {
+        unsafe { core::mem::transmute(value) }
+    }
+}
