@@ -274,52 +274,123 @@ pub const fn const_atomic_binary_op_of(raw: u8) -> AtomicBinaryOp {
 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
 pub fn special_func_placeholder() {}
 
+// FIXME: Clean up
+#[cfg(refs_inlining)]
 #[inline(always)]
 pub const fn ref_place_return_value_encoded() -> PlaceRef {
     r_enc::place::encode_return_value()
 }
 
+#[cfg(refs_inlining)]
 #[inline(always)]
 pub const fn ref_place_argument_encoded(arg_index: u32) -> PlaceRef {
     r_enc::place::encode_argument(arg_index)
 }
 
+#[cfg(refs_inlining)]
 #[inline(always)]
 pub const fn ref_place_local_encoded(arg_index: u32) -> PlaceRef {
     r_enc::place::encode_local(arg_index)
 }
 
+#[cfg(refs_inlining)]
 #[inline(always)]
 pub const fn ref_place_some_encoded() -> PlaceRef {
     r_enc::place::encode_some()
 }
 
+#[cfg(refs_inlining)]
 #[inline(always)]
-pub const fn ref_operand_place_copy_encoded(place_ref: PlaceRef) -> OperandRef {
+pub const fn ref_operand_copy_encoded(place_ref: PlaceRef) -> OperandRef {
     r_enc::operand::encode_place_copy(place_ref)
 }
 
+#[cfg(refs_inlining)]
 #[inline(always)]
-pub const fn ref_operand_place_move_encoded(place_ref: PlaceRef) -> OperandRef {
+pub const fn ref_operand_move_encoded(place_ref: PlaceRef) -> OperandRef {
     r_enc::operand::encode_place_move(place_ref)
 }
 
+#[cfg(refs_inlining)]
 #[inline(always)]
 pub const fn ref_operand_const_zst_encoded() -> OperandRef {
     r_enc::operand::encode_const_zst()
 }
 
+#[cfg(refs_inlining)]
 #[inline(always)]
 pub const fn ref_operand_const_bool_encoded(value: bool) -> OperandRef {
     r_enc::operand::encode_const_bool(value)
 }
 
+#[cfg(refs_inlining)]
 #[inline(always)]
 pub const fn ref_operand_const_some_encoded() -> OperandRef {
     r_enc::operand::encode_const_some()
 }
 
+#[cfg(refs_inlining)]
 #[inline(always)]
 pub const fn ref_operand_some_encoded() -> OperandRef {
     r_enc::operand::encode_some()
+}
+
+#[cfg(not(refs_inlining))]
+#[inline(always)]
+pub fn ref_place_return_value_encoded() -> PlaceRef {
+    super::ref_place_return_value()
+}
+
+#[cfg(not(refs_inlining))]
+#[inline(always)]
+pub fn ref_place_argument_encoded(arg_index: u32) -> PlaceRef {
+    super::ref_place_argument(arg_index)
+}
+
+#[cfg(not(refs_inlining))]
+#[inline(always)]
+pub fn ref_place_local_encoded(local_index: u32) -> PlaceRef {
+    super::ref_place_local(local_index)
+}
+
+#[cfg(not(refs_inlining))]
+#[inline(always)]
+pub fn ref_place_some_encoded() -> PlaceRef {
+    super::ref_place_some()
+}
+
+#[cfg(not(refs_inlining))]
+#[inline(always)]
+pub fn ref_operand_copy_encoded(place_ref: PlaceRef) -> OperandRef {
+    super::ref_operand_copy(place_ref)
+}
+
+#[cfg(not(refs_inlining))]
+#[inline(always)]
+pub fn ref_operand_move_encoded(place_ref: PlaceRef) -> OperandRef {
+    super::ref_operand_move(place_ref)
+}
+
+#[cfg(not(refs_inlining))]
+#[inline(always)]
+pub fn ref_operand_const_zst_encoded() -> OperandRef {
+    super::ref_operand_const_zst()
+}
+
+#[cfg(not(refs_inlining))]
+#[inline(always)]
+pub fn ref_operand_const_bool_encoded(value: bool) -> OperandRef {
+    super::ref_operand_const_bool(value)
+}
+
+#[cfg(not(refs_inlining))]
+#[inline(always)]
+pub fn ref_operand_const_some_encoded() -> OperandRef {
+    super::ref_operand_const_some()
+}
+
+#[cfg(not(refs_inlining))]
+#[inline(always)]
+pub fn ref_operand_some_encoded() -> OperandRef {
+    super::ref_operand_some()
 }

@@ -22,4 +22,5 @@ common = { path = "../../common", package = "common" }
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = [
     'cfg(core_build)',
+    'cfg(refs_inlining)',
 ] }

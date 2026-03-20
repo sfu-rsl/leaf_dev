@@ -238,8 +238,8 @@ pub(crate) mod sym {
                 ref_place_local_encoded,
                 ref_place_some_encoded,
 
-                ref_operand_place_copy_encoded,
-                ref_operand_place_move_encoded,
+                ref_operand_copy_encoded,
+                ref_operand_move_encoded,
                 ref_operand_const_zst_encoded,
                 ref_operand_const_bool_encoded,
                 ref_operand_const_some_encoded,

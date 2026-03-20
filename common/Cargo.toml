@@ -68,4 +68,5 @@ z3-sys = { workspace = true, optional = true }
 unexpected_cfgs = { level = "warn", check-cfg = [
     'cfg(core_build)',
     'cfg(info_db_fmt, values("json", "rkyv"))',
+    'cfg(refs_inlining)'
 ] }
