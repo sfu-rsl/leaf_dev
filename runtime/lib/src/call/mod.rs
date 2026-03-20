@@ -248,10 +248,10 @@ pub(crate) trait CallFlowBreakageCallback<P, V> {
         current_arg_places: &[P],
     ) -> Vec<V>;
 
-    /// Handles a breakage detected when returning from an internal function.
+    /// Handles a breakage detected when entering an internal function with a previously returned value.
     /// # Arguments
     /// * `callee` - The previous callee function whose returned value is not consumed.
-    /// * `current` - The current function being returned from.
+    /// * `current` - The current function being entered.
     /// * `unconsumed_returned_value` - The returned value from `callee`.
     /// # Remarks
     /// The only case currently know to be possible for this is
@@ -291,6 +291,15 @@ pub(crate) trait CallFlowBreakageCallback<P, V> {
         current: FuncDef,
         unconsumed_return_value: V,
     ) -> V;
+
+    /// Handles a breakage detected when returning from an unexpected call.
+    /// # Arguments
+    /// * `current` - The current function returning from.
+    /// * `returned_value` - The returned value.
+    /// # Remarks
+    /// The only case currently know to be possible for this is the return path of the following call chain:
+    /// `i ? i`, where `i` is internal.
+    fn at_return_with_return_val(&mut self, current: FuncDef, unconsumed_return_value: V);
 }
 
 pub(crate) mod tupling {
@@ -387,6 +396,8 @@ mod implementation {
         /// value from the external call when storing the returned value in the
         /// destination variable.
         overridden_return_val: Option<V>,
+        /// This call was unexpected, i.e., the caller did not ask for preparation for it. (due to uninstrumented call)
+        is_unexpected: bool,
     }
 
     // FIXME: The fields here are probably exclusive. May be replaced with an enum.
@@ -707,6 +718,14 @@ mod implementation {
                     EntranceInfo(CallFlowSanity::Broken(Either::Right(from_callee)))
                 } else {
                     log_debug!(target: TAG, "External 2: No call information available");
+                    if !self.stack.is_empty() {
+                        log_warn!(
+                            target: TAG,
+                            "Observing unexpected call. Probable caller: {}, entered: {}.",
+                            self.current_func(),
+                            entered_func,
+                        );
+                    }
                     EntranceInfo(CallFlowSanity::Unknown(None))
                 }
             };
@@ -721,6 +740,8 @@ mod implementation {
                 latest_call_sanity: None,
                 return_val_place: None,
                 overridden_return_val: None,
+                is_unexpected: matches!(entrance.0, CallFlowSanity::Unknown(None))
+                    && !self.stack.is_empty(),
             });
 
             self.ephemeral.entrance = Some(entrance);
@@ -732,19 +753,21 @@ mod implementation {
         }
 
         fn start_return(&mut self) -> Self::ReturnToken {
+            let current_func = self.current_func();
+
             self.clear_entrance();
             if let Some(from_caller) = self.ephemeral.from_callee.take() {
                 log_warn!(
                     target: TAG,
                     concat!(
-                        "Unconsumed callee parcel found at return. {:?}. ",
+                        "Unconsumed callee parcel found at return of {}. {:?}. ",
                         "Unless this is happening in an exceptional path, it should be a problem in instrumentation.",
                     ),
+                    current_func,
                     from_caller,
                 );
             }
 
-            let current_func = self.current_func();
             let popped_frame = self.stack.pop().unwrap();
 
             self.log_span_reset();
@@ -752,14 +775,20 @@ mod implementation {
             let caller_frame = self.stack.last();
             if caller_frame
                 .is_some_and(|f| !f.latest_call_sanity.unwrap().is_broken().unwrap_or(false))
+                && !popped_frame.is_unexpected
             {
                 self.log_span_start_trans(logging::TransitionDirection::Return);
             }
 
-            self.ephemeral.from_callee = Some(CalleeParcel {
-                func: current_func,
-                return_val: None,
-            });
+            if !popped_frame.is_unexpected {
+                self.ephemeral.from_callee = Some(CalleeParcel {
+                    func: current_func,
+                    return_val: None,
+                });
+            } else {
+                log_debug!(target:TAG, "Returning from an unexpected call {}.", current_func);
+            }
+
             ReturnToken { popped_frame }
         }
 
@@ -908,7 +937,12 @@ mod implementation {
                 return_val = overridden;
             }
 
-            self.ephemeral.from_callee.as_mut().unwrap().return_val = Some(return_val);
+            if !token.popped_frame.is_unexpected {
+                self.ephemeral.from_callee.as_mut().unwrap().return_val = Some(return_val);
+            } else {
+                self.breakage_callback
+                    .at_return_with_return_val(token.popped_frame.def, return_val);
+            }
         }
 
         fn give_return_value(&mut self, token: Self::FinalizationToken) -> Self::Value {
@@ -1019,6 +1053,8 @@ mod implementation {
         ) -> V {
             (self.unknown_value_factory)()
         }
+
+        fn at_return_with_return_val(&mut self, _current: FuncDef, _unconsumed_return_value: V) {}
     }
 
     impl PartialEq<CalleeDef> for FuncDef {
