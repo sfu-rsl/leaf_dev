@@ -380,6 +380,7 @@ mod driver_callbacks {
     }
 
     mod codegen_all {
+        use rustc_session::config::LtoCli;
 
         use super::*;
 
@@ -407,6 +408,14 @@ mod driver_callbacks {
                         );
                     }
                 });
+
+            if !matches!(rustc_config.opts.cg.lto, LtoCli::Unspecified | LtoCli::No) {
+                log_warn!(
+                    "Disabling LTO ({:?}) as we are forcing a single codegen unit and there are issues with LTO in codegen all mode.",
+                    rustc_config.opts.cg.lto
+                );
+                rustc_config.opts.cg.lto = LtoCli::No;
+            }
 
             let is_building_core = leafc_config.building_core
                 || rustc_config
