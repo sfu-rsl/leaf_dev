@@ -80,9 +80,9 @@ where
         }
 
         let func = if is_copy {
-            self.pri_helper_funcs().ref_operand_place_copy_encoded
+            self.pri_helper_funcs().ref_operand_copy_encoded
         } else {
-            self.pri_helper_funcs().ref_operand_place_move_encoded
+            self.pri_helper_funcs().ref_operand_move_encoded
         };
 
         BlocksAndResult::from(

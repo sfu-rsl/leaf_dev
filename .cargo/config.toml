@@ -4,6 +4,8 @@ rustflags = [
     "info_db_fmt=\"rkyv\"",
     "--cfg",
     "tracing_unstable",
+    "--cfg",
+    "refs_inlining",
 ]
 
 [env]
