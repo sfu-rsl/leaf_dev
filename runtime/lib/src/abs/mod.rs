@@ -18,81 +18,81 @@ use core::panic;
 #[derive(Clone, Copy, Debug)]
 #[repr(u8)]
 pub enum BinaryOp {
-    Add = common::pri::BinaryOp::ADD.as_u8(),
-    AddUnchecked = common::pri::BinaryOp::ADD_UNCHECKED.as_u8(),
-    AddWithOverflow = common::pri::BinaryOp::ADD_WITH_OVERFLOW.as_u8(),
-    AddSaturating = common::pri::BinaryOp::ADD_SATURATING.as_u8(),
-    Sub = common::pri::BinaryOp::SUB.as_u8(),
-    SubUnchecked = common::pri::BinaryOp::SUB_UNCHECKED.as_u8(),
-    SubWithOverflow = common::pri::BinaryOp::SUB_WITH_OVERFLOW.as_u8(),
-    SubSaturating = common::pri::BinaryOp::SUB_SATURATING.as_u8(),
-    Mul = common::pri::BinaryOp::MUL.as_u8(),
-    MulUnchecked = common::pri::BinaryOp::MUL_UNCHECKED.as_u8(),
-    MulWithOverflow = common::pri::BinaryOp::MUL_WITH_OVERFLOW.as_u8(),
-    Div = common::pri::BinaryOp::DIV.as_u8(),
-    DivExact = common::pri::BinaryOp::DIV_EXACT.as_u8(),
-    Rem = common::pri::BinaryOp::REM.as_u8(),
+    Add = common::pri::BinaryOp::ADD.to_raw(),
+    AddUnchecked = common::pri::BinaryOp::ADD_UNCHECKED.to_raw(),
+    AddWithOverflow = common::pri::BinaryOp::ADD_WITH_OVERFLOW.to_raw(),
+    AddSaturating = common::pri::BinaryOp::ADD_SATURATING.to_raw(),
+    Sub = common::pri::BinaryOp::SUB.to_raw(),
+    SubUnchecked = common::pri::BinaryOp::SUB_UNCHECKED.to_raw(),
+    SubWithOverflow = common::pri::BinaryOp::SUB_WITH_OVERFLOW.to_raw(),
+    SubSaturating = common::pri::BinaryOp::SUB_SATURATING.to_raw(),
+    Mul = common::pri::BinaryOp::MUL.to_raw(),
+    MulUnchecked = common::pri::BinaryOp::MUL_UNCHECKED.to_raw(),
+    MulWithOverflow = common::pri::BinaryOp::MUL_WITH_OVERFLOW.to_raw(),
+    Div = common::pri::BinaryOp::DIV.to_raw(),
+    DivExact = common::pri::BinaryOp::DIV_EXACT.to_raw(),
+    Rem = common::pri::BinaryOp::REM.to_raw(),
 
-    BitXor = common::pri::BinaryOp::BIT_XOR.as_u8(),
-    BitAnd = common::pri::BinaryOp::BIT_AND.as_u8(),
-    BitOr = common::pri::BinaryOp::BIT_OR.as_u8(),
-    Shl = common::pri::BinaryOp::SHL.as_u8(),
-    ShlUnchecked = common::pri::BinaryOp::SHL_UNCHECKED.as_u8(),
-    Shr = common::pri::BinaryOp::SHR.as_u8(),
-    ShrUnchecked = common::pri::BinaryOp::SHR_UNCHECKED.as_u8(),
-    RotateL = common::pri::BinaryOp::ROT_L.as_u8(),
-    RotateR = common::pri::BinaryOp::ROT_R.as_u8(),
+    BitXor = common::pri::BinaryOp::BIT_XOR.to_raw(),
+    BitAnd = common::pri::BinaryOp::BIT_AND.to_raw(),
+    BitOr = common::pri::BinaryOp::BIT_OR.to_raw(),
+    Shl = common::pri::BinaryOp::SHL.to_raw(),
+    ShlUnchecked = common::pri::BinaryOp::SHL_UNCHECKED.to_raw(),
+    Shr = common::pri::BinaryOp::SHR.to_raw(),
+    ShrUnchecked = common::pri::BinaryOp::SHR_UNCHECKED.to_raw(),
+    RotateL = common::pri::BinaryOp::ROT_L.to_raw(),
+    RotateR = common::pri::BinaryOp::ROT_R.to_raw(),
 
-    Eq = common::pri::BinaryOp::EQ.as_u8(),
-    Lt = common::pri::BinaryOp::LT.as_u8(),
-    Le = common::pri::BinaryOp::LE.as_u8(),
-    Ne = common::pri::BinaryOp::NE.as_u8(),
-    Ge = common::pri::BinaryOp::GE.as_u8(),
-    Gt = common::pri::BinaryOp::GT.as_u8(),
-    Cmp = common::pri::BinaryOp::CMP.as_u8(),
+    Eq = common::pri::BinaryOp::EQ.to_raw(),
+    Lt = common::pri::BinaryOp::LT.to_raw(),
+    Le = common::pri::BinaryOp::LE.to_raw(),
+    Ne = common::pri::BinaryOp::NE.to_raw(),
+    Ge = common::pri::BinaryOp::GE.to_raw(),
+    Gt = common::pri::BinaryOp::GT.to_raw(),
+    Cmp = common::pri::BinaryOp::CMP.to_raw(),
 
-    Offset = common::pri::BinaryOp::OFFSET.as_u8(),
+    Offset = common::pri::BinaryOp::OFFSET.to_raw(),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum UnaryOp {
-    Not = common::pri::UnaryOp::NOT.as_u8(),
-    Neg = common::pri::UnaryOp::NEG.as_u8(),
-    PtrMetadata = common::pri::UnaryOp::PTR_METADATA.as_u8(),
-    BitReverse = common::pri::UnaryOp::BIT_REVERSE.as_u8(),
-    NonZeroTrailingZeros = common::pri::UnaryOp::CTTZ_NONZERO.as_u8(),
-    TrailingZeros = common::pri::UnaryOp::CTTZ.as_u8(),
-    CountOnes = common::pri::UnaryOp::CTPOP.as_u8(),
-    NonZeroLeadingZeros = common::pri::UnaryOp::CTLZ_NONZERO.as_u8(),
-    LeadingZeros = common::pri::UnaryOp::CTLZ.as_u8(),
-    ByteSwap = common::pri::UnaryOp::BSWAP.as_u8(),
+    Not = common::pri::UnaryOp::NOT.to_raw(),
+    Neg = common::pri::UnaryOp::NEG.to_raw(),
+    PtrMetadata = common::pri::UnaryOp::PTR_METADATA.to_raw(),
+    BitReverse = common::pri::UnaryOp::BIT_REVERSE.to_raw(),
+    NonZeroTrailingZeros = common::pri::UnaryOp::CTTZ_NONZERO.to_raw(),
+    TrailingZeros = common::pri::UnaryOp::CTTZ.to_raw(),
+    CountOnes = common::pri::UnaryOp::CTPOP.to_raw(),
+    NonZeroLeadingZeros = common::pri::UnaryOp::CTLZ_NONZERO.to_raw(),
+    LeadingZeros = common::pri::UnaryOp::CTLZ.to_raw(),
+    ByteSwap = common::pri::UnaryOp::BSWAP.to_raw(),
 }
 
 #[derive(Clone, Copy, Debug)]
 #[repr(u8)]
 pub enum AtomicOrdering {
-    Unordered = common::pri::AtomicOrdering::UNORDERED.as_u8(),
-    Relaxed = common::pri::AtomicOrdering::RELAXED.as_u8(),
-    Acquire = common::pri::AtomicOrdering::ACQUIRE.as_u8(),
-    Release = common::pri::AtomicOrdering::RELEASE.as_u8(),
-    AcquireRelease = common::pri::AtomicOrdering::ACQ_REL.as_u8(),
-    SequentiallyConsistent = common::pri::AtomicOrdering::SEQ_CST.as_u8(),
+    Unordered = common::pri::AtomicOrdering::UNORDERED.to_raw(),
+    Relaxed = common::pri::AtomicOrdering::RELAXED.to_raw(),
+    Acquire = common::pri::AtomicOrdering::ACQUIRE.to_raw(),
+    Release = common::pri::AtomicOrdering::RELEASE.to_raw(),
+    AcquireRelease = common::pri::AtomicOrdering::ACQ_REL.to_raw(),
+    SequentiallyConsistent = common::pri::AtomicOrdering::SEQ_CST.to_raw(),
 }
 
 #[derive(Clone, Copy, Debug)]
 #[repr(u8)]
 pub enum AtomicBinaryOp {
-    Add = common::pri::AtomicBinaryOp::ADD.as_u8(),
-    Sub = common::pri::AtomicBinaryOp::SUB.as_u8(),
+    Add = common::pri::AtomicBinaryOp::ADD.to_raw(),
+    Sub = common::pri::AtomicBinaryOp::SUB.to_raw(),
 
-    Xor = common::pri::AtomicBinaryOp::XOR.as_u8(),
-    And = common::pri::AtomicBinaryOp::AND.as_u8(),
-    Nand = common::pri::AtomicBinaryOp::NAND.as_u8(),
-    Or = common::pri::AtomicBinaryOp::OR.as_u8(),
+    Xor = common::pri::AtomicBinaryOp::XOR.to_raw(),
+    And = common::pri::AtomicBinaryOp::AND.to_raw(),
+    Nand = common::pri::AtomicBinaryOp::NAND.to_raw(),
+    Or = common::pri::AtomicBinaryOp::OR.to_raw(),
 
-    Min = common::pri::AtomicBinaryOp::MIN.as_u8(),
-    Max = common::pri::AtomicBinaryOp::MAX.as_u8(),
+    Min = common::pri::AtomicBinaryOp::MIN.to_raw(),
+    Max = common::pri::AtomicBinaryOp::MAX.to_raw(),
 }
 
 pub(crate) use place::Local;

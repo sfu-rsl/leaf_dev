@@ -73,7 +73,7 @@ where
                     let (block, local) = self.make_bb_for_helper_call_with_all(
                         self.context.pri_helper_funcs().const_binary_op_of,
                         vec![],
-                        vec![operand::const_from_uint(tcx, operator.as_u8())],
+                        vec![operand::const_from_uint(tcx, operator.to_raw())],
                         Default::default(),
                     );
                     self.insert_blocks([block]);
