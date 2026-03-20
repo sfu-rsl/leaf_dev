@@ -539,6 +539,14 @@ mod breakage {
             self.inspect_returned_value(callee, current, &unconsumed_return_value);
             unknown_value()
         }
+
+        fn at_return_with_return_val(
+            &mut self,
+            current: FuncDef,
+            unconsumed_return_value: BasicValue,
+        ) {
+            self.inspect_returned_value(current, current, &unconsumed_return_value);
+        }
     }
 }
 
