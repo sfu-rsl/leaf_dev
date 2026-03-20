@@ -284,7 +284,7 @@ where
             let (block, local) = self.make_bb_for_helper_call_with_all(
                 self.pri_helper_funcs().const_atomic_binary_op_of,
                 vec![],
-                vec![operand::const_from_uint(tcx, operator.as_u8())],
+                vec![operand::const_from_uint(tcx, operator.to_raw())],
                 Default::default(),
             );
             additional_blocks.push(block);
@@ -432,7 +432,7 @@ where
         self.make_bb_for_helper_call_with_all(
             self.pri_helper_funcs().const_atomic_ord_of,
             vec![],
-            vec![operand::const_from_uint(tcx, ordering.as_u8())],
+            vec![operand::const_from_uint(tcx, ordering.to_raw())],
             Default::default(),
         )
         .into()

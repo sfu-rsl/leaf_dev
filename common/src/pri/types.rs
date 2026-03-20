@@ -21,7 +21,7 @@ macro_rules! cases_ifs {
             unreachable!()
         }
         $(
-        else if $raw_val == Self::$name.as_u8() {
+        else if $raw_val == Self::$name.to_raw() {
             Self::$name
         }
         )*
@@ -32,13 +32,13 @@ macro_rules! cases_ifs {
 }
 
 macro_rules! enum_like_type {
-    ($name:ident {
+    ($name:ident [$t:ty] {
         $($variant:ident = $value:expr;)*
     }) => {
         #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
         #[repr(transparent)]
         #[derive(Clone, Copy, Debug)]
-        pub struct $name(pub u8);
+        pub struct $name(pub $t);
 
         #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
         impl $name {
@@ -48,18 +48,23 @@ macro_rules! enum_like_type {
 
             #[cfg_attr(core_build, rustc_const_stable(feature = "rust1", since = "1.0.0"))]
             #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
-            pub const fn from_raw(raw: u8) -> Self {
+            pub const fn from_raw(raw: $t) -> Self {
                 cases_ifs!(raw, $($variant),*)
             }
 
             #[cfg_attr(core_build, rustc_const_stable(feature = "rust1", since = "1.0.0"))]
             #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
             #[inline]
-            pub const fn as_u8(self) -> u8 {
+            pub const fn to_raw(self) -> $t {
                 self.0
             }
         }
     };
+    ($name:ident {
+        $($variant:ident = $value:expr;)*
+    }) => {
+        enum_like_type!($name[u8] { $($variant = $value;)* });
+    }
 }
 
 enum_like_type! {
