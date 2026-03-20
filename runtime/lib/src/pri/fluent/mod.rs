@@ -11,8 +11,8 @@ use common::{log_debug, log_info};
 use leaf_macros::trait_log_fn;
 
 use crate::abs::{
-    self, AssertKind, CastKind, Constant, FloatType, IntType, Local, PlaceUsage, SymVariable,
-    ValueType, backend::Shutdown,
+    self, AssertKind, CastKind, Constant, FloatType, IntType, Local, PlaceUsage, PrimitiveType,
+    SymVariable, ValueType, backend::Shutdown,
 };
 
 use super::refs::RefManager;
@@ -58,6 +58,7 @@ where
     type ConstByteStr = &'static [u8];
     type Slice<'a, T: 'a> = &'a [T];
     type TypeId = abs::TypeId;
+    type PrimitiveType = abs::PrimitiveType;
     type BinaryOp = abs::BinaryOp;
     type UnaryOp = abs::UnaryOp;
     type AtomicOrdering = abs::AtomicOrdering;
@@ -172,21 +173,8 @@ where
     fn place_with_type_id(place: PlaceRef, type_id: Self::TypeId) -> PlaceRef {
         Self::transform_place_info(place, |h, p| h.metadata(p).set_type_id(type_id))
     }
-    #[tracing::instrument(target = "pri::place", level = "debug", ret)]
-    fn place_with_type_bool(place: PlaceRef) -> PlaceRef {
-        Self::place_with_type(place, ValueType::Bool)
-    }
-    #[tracing::instrument(target = "pri::place", level = "debug", ret)]
-    fn place_with_type_char(place: PlaceRef) -> PlaceRef {
-        Self::place_with_type(place, ValueType::Char)
-    }
-    #[tracing::instrument(target = "pri::place", level = "debug", ret)]
-    fn place_with_type_int(place: PlaceRef, bit_size: u64, is_signed: bool) -> PlaceRef {
-        Self::place_with_type(place, ValueType::new_int(bit_size, is_signed))
-    }
-    #[tracing::instrument(target = "pri::place", level = "debug", ret)]
-    fn place_with_type_float(place: PlaceRef, e_bits: u64, s_bits: u64) -> PlaceRef {
-        Self::place_with_type(place, ValueType::new_float(e_bits, s_bits))
+    fn place_with_primitive_type(place: PlaceRef, ty: Self::PrimitiveType) -> PlaceRef {
+        Self::place_with_type(place, ty)
     }
     #[tracing::instrument(target = "pri::place", level = "debug", ret)]
     fn place_with_size(place: PlaceRef, byte_size: TypeSize) -> PlaceRef {
@@ -1065,8 +1053,10 @@ impl<IM: InstanceManager> FluentPri<IM> {
         Self::push_operand(|o| Self::build_const_operand(o, constant))
     }
 
-    fn place_with_type(place: PlaceRef, ty: ValueType) -> PlaceRef {
-        Self::transform_place_info(place, |p, place| p.metadata(place).set_primitive_type(ty))
+    fn place_with_type(place: PlaceRef, ty: PrimitiveType) -> PlaceRef {
+        Self::transform_place_info(place, |p, place| {
+            p.metadata(place).set_primitive_type(ty.into())
+        })
     }
 
     fn take_fields(fields: &[OperandRef]) -> Vec<<IM::Backend as RuntimeBackend>::Operand> {

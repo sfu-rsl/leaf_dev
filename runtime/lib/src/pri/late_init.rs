@@ -64,6 +64,7 @@ mod instantiations {
                         type ConstByteStr = &'static [u8];
                         type Slice<'a, T: 'a> = &'a [T];
                         type TypeId = abs::TypeId;
+                        type PrimitiveType = abs::PrimitiveType;
                         type BinaryOp = abs::BinaryOp;
                         type UnaryOp = abs::UnaryOp;
                         type AtomicOrdering = abs::AtomicOrdering;

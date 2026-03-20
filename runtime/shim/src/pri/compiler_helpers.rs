@@ -269,6 +269,13 @@ pub const fn const_atomic_binary_op_of(raw: u8) -> AtomicBinaryOp {
     AtomicBinaryOp::from_raw(raw)
 }
 
+#[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
+#[cfg_attr(core_build, rustc_const_stable(feature = "rust1", since = "1.0.0"))]
+#[inline(always)]
+pub const fn const_primitive_type_of(raw: i8) -> PrimitiveType {
+    PrimitiveType::from_raw(raw)
+}
+
 /* This function is used as a replacement for special functions like intrinsics
  * that cannot be treated as ordinary ones. */
 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]

@@ -281,26 +281,25 @@ where
 
         let tcx = self.context.tcx();
         // FIXME: To be removed when type information passing is complete.
-        if let Some((func_name, additional_args)) = if ty.is_bool() {
-            Some((sym::place_with_type_bool, vec![]))
-        } else if ty.is_char() {
-            Some((sym::place_with_type_char, vec![]))
-        } else if ty.is_integral() {
+        if let Some((func_name, additional_args)) = if ty.is_primitive() {
+            let primitive_type = convert_ty_to_pri_primitive(tcx, ty);
+            let primitive_type_local = {
+                let (block, local) = self.make_bb_for_helper_call_with_all(
+                    self.context.pri_helper_funcs().const_primitive_type_of,
+                    vec![],
+                    vec![operand::const_from_scalar_int(
+                        tcx,
+                        primitive_type.to_raw().into(),
+                        tcx.types.i8,
+                    )],
+                    Default::default(),
+                );
+                self.insert_blocks([block]);
+                local
+            };
             Some((
-                sym::place_with_type_int,
-                vec![
-                    operand::const_from_uint(tcx, ty.primitive_size(tcx).bits()),
-                    operand::const_from_bool(tcx, ty.is_signed()),
-                ],
-            ))
-        } else if ty.is_floating_point() {
-            let (e_bits, s_bits) = ty::ebit_sbit_size(ty);
-            Some((
-                sym::place_with_type_float,
-                vec![
-                    operand::const_from_uint(tcx, e_bits),
-                    operand::const_from_uint(tcx, s_bits),
-                ],
+                sym::place_with_primitive_type,
+                vec![operand::move_for_local(primitive_type_local)],
             ))
         } else {
             None
@@ -398,7 +397,43 @@ fn filter_and_fold_place<'tcx>(
 }
 
 mod utils {
+    use rustc_middle::ty::{FloatTy, Ty, TyCtxt, TyKind};
 
     pub(super) use super::super::utils::{operand, ptr_to_place, ty};
+
+    pub(super) fn convert_ty_to_pri_primitive<'tcx>(
+        tcx: TyCtxt<'tcx>,
+        ty: Ty<'tcx>,
+    ) -> common::pri::PrimitiveType {
+        use common::pri::PrimitiveType;
+        match ty.kind() {
+            TyKind::Bool => PrimitiveType::BOOL,
+            TyKind::Char => PrimitiveType::CHAR,
+            TyKind::Int(_) => match ty.primitive_size(tcx).bytes() {
+                1 => PrimitiveType::I8,
+                2 => PrimitiveType::I16,
+                4 => PrimitiveType::I32,
+                8 => PrimitiveType::I64,
+                16 => PrimitiveType::I128,
+                s => panic!("Unexpected integer size: {s}"),
+            },
+            TyKind::Uint(_) => match ty.primitive_size(tcx).bytes() {
+                1 => PrimitiveType::U8,
+                2 => PrimitiveType::U16,
+                4 => PrimitiveType::U32,
+                8 => PrimitiveType::U64,
+                16 => PrimitiveType::U128,
+                s => panic!("Unexpected integer size: {s}"),
+            },
+            TyKind::Float(float_ty) => match float_ty {
+                FloatTy::F16 => PrimitiveType::F16,
+                FloatTy::F32 => PrimitiveType::F32,
+                FloatTy::F64 => PrimitiveType::F64,
+                FloatTy::F128 => PrimitiveType::F128,
+            },
+            _ if ty.is_primitive() => panic!("Unexpected primitive type: {}", ty),
+            _ => panic!("Unexpected non-primitive type."),
+        }
+    }
 }
 use utils::*;

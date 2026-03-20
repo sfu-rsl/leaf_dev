@@ -182,3 +182,28 @@ enum_like_type! {
 
 #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
 pub type DebugInfo = &'static [u8];
+
+enum_like_type! {
+    PrimitiveType [i8] {
+        U8 = 1;
+        U16 = 2;
+        U32 = 4;
+        U64 = 8;
+        U128 = 16;
+
+        I8 = -1;
+        I16 = -2;
+        I32 = -4;
+        I64 = -8;
+        I128 = -16;
+
+        F16 = 5;
+        F32 = 9;
+        F64 = 17;
+        F128 = 33;
+
+        BOOL = -3;
+
+        CHAR = -5;
+    }
+}

@@ -74,7 +74,7 @@ pub(crate) mod sym {
 
         common::pri::pass_func_names_to!(symbols_in_pri, all_comma_separated);
 
-        pub(crate) const ALL_MAINS: [LeafSymbol; 126] =
+        pub(crate) const ALL_MAINS: [LeafSymbol; 123] =
             common::pri::pass_func_names_to!(bracket, all_comma_separated);
 
         pub(crate) mod intrinsics {
@@ -231,6 +231,8 @@ pub(crate) mod sym {
                 const_atomic_ord_of,
                 const_atomic_binary_op_of,
 
+                const_primitive_type_of,
+
                 special_func_placeholder,
 
                 ref_place_return_value_encoded,
@@ -273,7 +275,7 @@ pub(crate) mod sym {
 
         pass_compiler_helpers_to!(symbols_in_compiler_helpers);
 
-        pub(crate) const ALL_HELPERS: [LS; 34] = pass_compiler_helpers_to!(bracket);
+        pub(crate) const ALL_HELPERS: [LS; 35] = pass_compiler_helpers_to!(bracket);
     }
     pub(crate) use compiler_helpers::*;
 
