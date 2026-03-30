@@ -132,7 +132,9 @@ pub mod macros {
 
           { fn ref_operand_const_bool(value: bool) -> OperandRef }
           #[allow(unused_parens)]
-          { fn ref_operand_const_int(bit_rep: ($u128_ty), bit_size: u64, is_signed: bool) -> OperandRef }
+          { fn ref_operand_const_int(bit_rep: u64, ty: ($primitive_type_ty)) -> OperandRef }
+          #[allow(unused_parens)]
+          { fn ref_operand_const_int_arb(bit_rep: u128, bit_size: TypeSize, is_signed: bool) -> OperandRef }
           #[allow(unused_parens)]
           { fn ref_operand_const_float(bit_rep: ($u128_ty), e_bits: u64, s_bits: u64) -> OperandRef }
           #[allow(unused_parens)]
@@ -598,7 +600,9 @@ pub mod macros {
             }$modifier!{
                 fn ref_operand_const_bool(value:bool)->OperandRef;
             }$modifier!{
-                #[allow(unused_parens)]fn ref_operand_const_int(bit_rep:($u128_ty),bit_size:u64,is_signed:bool)->OperandRef;
+                #[allow(unused_parens)]fn ref_operand_const_int(bit_rep:u64,ty:($primitive_type_ty))->OperandRef;
+            }$modifier!{
+                #[allow(unused_parens)]fn ref_operand_const_int_arb(bit_rep:($u128_ty),bit_size:TypeSize,is_signed:bool)->OperandRef;
             }$modifier!{
                 #[allow(unused_parens)]fn ref_operand_const_float(bit_rep:($u128_ty),e_bits:u64,s_bits:u64)->OperandRef;
             }$modifier!{

@@ -197,7 +197,13 @@ where
         Self::push_const_operand(value)
     }
     #[tracing::instrument(target = "pri::operand", level = "debug", ret)]
-    fn ref_operand_const_int(bit_rep: u128, bit_size: u64, is_signed: bool) -> OperandRef {
+    fn ref_operand_const_int(bit_rep: u64, ty: Self::PrimitiveType) -> OperandRef {
+        Self::push_const_operand(Constant::Int {
+            bit_rep: bit_rep.into(),
+            ty: ValueType::from(ty).expect_int(),
+        })
+    }
+    fn ref_operand_const_int_arb(bit_rep: u128, bit_size: TypeSize, is_signed: bool) -> OperandRef {
         Self::push_const_operand(Constant::Int {
             bit_rep,
             ty: IntType {
@@ -265,7 +271,7 @@ where
     }
     fn new_sym_value_int(conc_val_bit_rep: u128, bit_size: u64, is_signed: bool) -> OperandRef {
         // FIXME: Redundant referencing.
-        let conc_val = Self::take_back_operand(Self::ref_operand_const_int(
+        let conc_val = Self::take_back_operand(Self::ref_operand_const_int_arb(
             conc_val_bit_rep,
             bit_size,
             is_signed,

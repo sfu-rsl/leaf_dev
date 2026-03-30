@@ -526,6 +526,21 @@ where
             None,
         )
     }
+
+    fn make_primitive_type_of_bb(&mut self, ty: Ty<'tcx>) -> (BasicBlockData<'tcx>, Local) {
+        let tcx = self.tcx();
+        let pri_ty = convert_primitive_ty_to_pri(tcx, ty);
+        self.make_bb_for_helper_call_with_all(
+            self.context.pri_helper_funcs().const_primitive_type_of,
+            vec![],
+            vec![utils::operand::const_from_scalar_int(
+                tcx,
+                pri_ty.to_raw().into(),
+                tcx.types.i8,
+            )],
+            Default::default(),
+        )
+    }
 }
 
 impl<'tcx, C> DebugInfoHandler for RuntimeCallAdder<C>
@@ -945,6 +960,42 @@ pub(super) mod utils {
             mir::UnOp::Neg => common::pri::UnaryOp::NEG,
             mir::UnOp::PtrMetadata => common::pri::UnaryOp::PTR_METADATA,
         }
+    }
+
+    pub(super) fn convert_primitive_ty_to_pri<'tcx>(
+        tcx: TyCtxt<'tcx>,
+        ty: Ty<'tcx>,
+    ) -> common::pri::PrimitiveType {
+            use mir_ty::FloatTy;
+            use common::pri::PrimitiveType;
+            match ty.kind() {
+                TyKind::Bool => PrimitiveType::BOOL,
+                TyKind::Char => PrimitiveType::CHAR,
+                TyKind::Int(_) => match ty.primitive_size(tcx).bytes() {
+                    1 => PrimitiveType::I8,
+                    2 => PrimitiveType::I16,
+                    4 => PrimitiveType::I32,
+                    8 => PrimitiveType::I64,
+                    16 => PrimitiveType::I128,
+                    s => panic!("Unexpected integer size: {s}"),
+                },
+                TyKind::Uint(_) => match ty.primitive_size(tcx).bytes() {
+                    1 => PrimitiveType::U8,
+                    2 => PrimitiveType::U16,
+                    4 => PrimitiveType::U32,
+                    8 => PrimitiveType::U64,
+                    16 => PrimitiveType::U128,
+                    s => panic!("Unexpected integer size: {s}"),
+                },
+                TyKind::Float(float_ty) => match float_ty {
+                    FloatTy::F16 => PrimitiveType::F16,
+                    FloatTy::F32 => PrimitiveType::F32,
+                    FloatTy::F64 => PrimitiveType::F64,
+                    FloatTy::F128 => PrimitiveType::F128,
+                },
+                _ if ty.is_primitive() => panic!("Unexpected primitive type: {}", ty),
+                _ => panic!("Unexpected non-primitive type."),
+            }
     }
 
     pub(super) fn ptr_to_place<'tcx>(
