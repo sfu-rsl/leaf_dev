@@ -259,18 +259,42 @@ where
         debug_assert!(ty.is_integral());
 
         let tcx = self.tcx();
-        let (bit_rep_local, additional_stmts) =
-            utils::cast_int_to_bit_rep(tcx, &mut self.context, constant);
-        let (mut block, result) = self.make_bb_for_operand_ref_call(
-            sym::ref_operand_const_int,
-            vec![
-                operand::move_for_local(bit_rep_local),
-                operand::const_from_uint(tcx, ty.primitive_size(tcx).bits()),
-                operand::const_from_bool(tcx, ty.is_signed()),
-            ],
-        );
-        block.statements.extend(additional_stmts);
-        (block, result).into()
+        if ty.primitive_size(tcx) <= tcx.types.u64.primitive_size(tcx) {
+            let mut blocks = Vec::new();
+
+            let primitive_ty_local = {
+                let (block, local) = self.make_primitive_type_of_bb(ty);
+                blocks.push(block);
+                local
+            };
+
+            let (bit_rep_local, additional_stmts) =
+                utils::cast_int_to_bit_rep(&mut self.context, constant, tcx.types.u64);
+            let (mut block, result) = self.make_bb_for_operand_ref_call(
+                sym::ref_operand_const_int,
+                vec![
+                    operand::move_for_local(bit_rep_local),
+                    operand::move_for_local(primitive_ty_local),
+                ],
+            );
+            block.statements.extend(additional_stmts);
+            blocks.push(block);
+
+            BlocksAndResult(blocks, result)
+        } else {
+            let (bit_rep_local, additional_stmts) =
+                utils::cast_int_to_bit_rep(&mut self.context, constant, tcx.types.u128);
+            let (mut block, result) = self.make_bb_for_operand_ref_call(
+                sym::ref_operand_const_int_arb,
+                vec![
+                    operand::move_for_local(bit_rep_local),
+                    operand::const_from_uint(tcx, ty.primitive_size(tcx).bits()),
+                    operand::const_from_bool(tcx, ty.is_signed()),
+                ],
+            );
+            block.statements.extend(additional_stmts);
+            (block, result).into()
+        }
     }
 
     fn internal_reference_float_const_operand(
@@ -427,18 +451,18 @@ mod utils {
 
     #[allow(clippy::borrowed_box)]
     pub(super) fn cast_int_to_bit_rep<'tcx>(
-        tcx: TyCtxt<'tcx>,
         context: &mut impl BodyLocalManager<'tcx>,
         constant: &Box<ConstOperand<'tcx>>,
+        dest_ty: Ty<'tcx>,
     ) -> (Local, [Statement<'tcx>; 1]) {
         debug_assert!(constant.ty().is_integral());
-        let bit_rep_local = context.add_local(tcx.types.u128);
+        let bit_rep_local = context.add_local(dest_ty);
         let bit_rep_assign = assignment::create(
             Place::from(bit_rep_local),
             Rvalue::Cast(
                 CastKind::IntToInt,
                 operand::const_from_existing(constant),
-                tcx.types.u128,
+                dest_ty,
             ),
         );
         (bit_rep_local, [bit_rep_assign])
