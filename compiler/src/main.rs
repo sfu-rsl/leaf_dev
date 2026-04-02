@@ -417,6 +417,18 @@ mod driver_callbacks {
                 rustc_config.opts.cg.lto = LtoCli::No;
             }
 
+            if rustc_config
+                .opts
+                .cg
+                .panic
+                .is_some_and(|s| s != rustc_target::spec::PanicStrategy::Unwind)
+            {
+                log_warn!(
+                    "Changing panic strategy to unwind as the current sysroot only support this strategy."
+                );
+                rustc_config.opts.cg.panic = Some(rustc_target::spec::PanicStrategy::Unwind);
+            }
+
             let is_building_core = leafc_config.building_core
                 || rustc_config
                     .crate_cfg
