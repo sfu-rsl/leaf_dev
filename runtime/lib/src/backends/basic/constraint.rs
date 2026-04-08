@@ -2,7 +2,7 @@ use std::cell::RefMut;
 
 use crate::{
     abs::{
-        self, AssertKind, BasicBlockIndex, BasicBlockLocation, ConstraintKind,
+        self, AssertKind, BasicBlockIndex, BasicBlockLocation, ConstraintKind, SwitchCaseIndex,
         utils::BasicBlockLocationExt,
     },
     pri::fluent::backend::{ConstraintHandler, SwitchHandler},
@@ -43,8 +43,10 @@ impl<'a, EB: BasicValueUnaryExprBuilder> ConstraintHandler for BasicConstraintHa
     type Operand = BasicValue;
     type SwitchHandler = BasicSwitchHandler<'a, EB>;
 
-    fn switch(self, discriminant: Self::Operand) -> Self::SwitchHandler {
-        let discr = self.expr_builder.borrow_mut().no_op(discriminant);
+    #[inline]
+    fn switch(self, discriminant: Option<Self::Operand>) -> Self::SwitchHandler {
+        let discr = discriminant.expect("Data is missing");
+        let discr = self.expr_builder.borrow_mut().no_op(discr);
         BasicSwitchHandler {
             discr,
             parent: self,
@@ -89,12 +91,15 @@ pub(crate) struct BasicSwitchHandler<'a, EB> {
 }
 
 impl<'a, EB> SwitchHandler for BasicSwitchHandler<'a, EB> {
-    fn take(mut self, value: abs::Constant) {
+    #[inline]
+    fn take(mut self, _case_index: SwitchCaseIndex, value: Option<abs::Constant>) {
+        let value = value.expect("Data is missing");
         let constraint = self.create_constraint(vec![value]);
         self.parent.notify_constraint(constraint);
     }
 
-    fn take_otherwise(mut self, non_values: Vec<abs::Constant>) {
+    fn take_otherwise(mut self, non_values: Option<Vec<abs::Constant>>) {
+        let non_values = non_values.expect("Data is missing");
         let constraint = self.create_constraint(non_values).not();
         self.parent.notify_constraint(constraint);
     }

@@ -4,8 +4,8 @@ pub(crate) mod shared;
 
 use crate::abs::{
     AssertKind, AssignmentId, BasicBlockIndex, BinaryOp, CalleeDef, CastKind, Constant, FieldIndex,
-    FuncDef, Local, PlaceUsage, Projection, RawAddress, SymVariable, Tag, TypeId, TypeSize,
-    UnaryOp, ValueType, VariantIndex, backend::Shutdown,
+    FuncDef, Local, PlaceUsage, Projection, RawAddress, SwitchCaseIndex, SymVariable, Tag, TypeId,
+    TypeSize, UnaryOp, ValueType, VariantIndex, backend::Shutdown,
 };
 
 pub(crate) trait RuntimeBackend: Shutdown {
@@ -307,14 +307,14 @@ pub(crate) trait ConstraintHandler {
     type Operand;
     type SwitchHandler: SwitchHandler;
 
-    fn switch(self, discriminant: Self::Operand) -> Self::SwitchHandler;
+    fn switch(self, discriminant: Option<Self::Operand>) -> Self::SwitchHandler;
 
     fn assert(self, cond: Self::Operand, expected: bool, assert_kind: AssertKind<Self::Operand>);
 }
 
 pub(crate) trait SwitchHandler {
-    fn take(self, value: super::Constant);
-    fn take_otherwise(self, non_values: Vec<super::Constant>);
+    fn take(self, case_index: SwitchCaseIndex, value: Option<super::Constant>);
+    fn take_otherwise(self, non_values: Option<Vec<super::Constant>>);
 }
 
 #[derive(Clone, Copy)]
@@ -327,6 +327,7 @@ pub(crate) enum ArgsTupling {
     Tupled,
 }
 
+// FIXME: Merge before calls and shift temporary storage to PRI.
 pub(crate) trait CallHandler {
     type Place;
     type Operand;

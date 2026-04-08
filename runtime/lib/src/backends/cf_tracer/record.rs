@@ -3,15 +3,16 @@ use tracing::{Span, event, span};
 use valuable::Valuable;
 
 use crate::abs::{
-    BasicBlockLocation, Constant, ConstraintKind, FuncDef,
+    BasicBlockLocation, Constant, ConstraintKind, FuncDef, SwitchCaseIndex,
     backend::{DecisionTraceRecorder, PhasedCallTraceRecorder},
 };
 
 use super::tracing_i::{LEVEL, TARGET};
 
-pub(super) struct Recorder {
+pub(super) struct Recorder<C = Constant> {
     stack: Vec<StackedData>,
     ephemeral: EphemeralData,
+    _phantom: core::marker::PhantomData<C>,
 }
 
 struct StackedData {
@@ -30,18 +31,19 @@ macro_rules! body_id_to_str {
     };
 }
 
-impl Default for Recorder {
+impl<C> Default for Recorder<C> {
     fn default() -> Self {
         Self {
             stack: Vec::new(),
             ephemeral: EphemeralData {
                 last_ret_point: None,
             },
+            _phantom: Default::default(),
         }
     }
 }
 
-impl Recorder {
+impl<C> Recorder<C> {
     fn current_span(&self) -> &Span {
         static NONE_SPAN: Span = Span::none();
         &self
@@ -119,7 +121,7 @@ const EVENT_TRANSFER_START: &str = "transfer_start";
 const EVENT_TRANSFER: &str = "transfer";
 const EVENT_DECISION: &str = "decision";
 
-impl PhasedCallTraceRecorder for Recorder {
+impl<C> PhasedCallTraceRecorder for Recorder<C> {
     fn start_call(&mut self, call_site: BasicBlockLocation<FuncDef>) {
         let last_ret_point = self.ephemeral.last_ret_point.take();
         self.handle_maybe_unfinished_return(last_ret_point, call_site);
@@ -236,8 +238,12 @@ impl PhasedCallTraceRecorder for Recorder {
     }
 }
 
-impl DecisionTraceRecorder for Recorder {
-    type Case = Constant;
+impl<C> DecisionTraceRecorder for Recorder<C>
+where
+    Decision<C>: for<'a> From<&'a ConstraintKind<C>> + Valuable,
+    C: Valuable,
+{
+    type Case = C;
 
     fn notify_decision(
         &mut self,
@@ -275,9 +281,9 @@ fn to_value(constant: &Constant) -> Box<dyn tracing::Value> {
 }
 
 #[derive(Valuable)]
-enum Decision {
-    Value(CaseValue),
-    NoneOf(Vec<CaseValue>),
+enum Decision<C: Valuable> {
+    Case(C),
+    NoneOf(Vec<C>),
 }
 
 #[derive(Valuable)]
@@ -287,14 +293,26 @@ enum CaseValue {
     Char(char),
 }
 
-impl From<&ConstraintKind<Constant>> for Decision {
+impl From<&ConstraintKind<Constant>> for Decision<CaseValue> {
     #[inline]
     fn from(value: &ConstraintKind<Constant>) -> Self {
         match value {
-            ConstraintKind::True => Self::Value(CaseValue::Bool(true)),
-            ConstraintKind::False => Self::Value(CaseValue::Bool(false)),
-            ConstraintKind::OneOf(vals) => Self::Value(vals.iter().map(Into::into).next().unwrap()),
+            ConstraintKind::True => Self::Case(CaseValue::Bool(true)),
+            ConstraintKind::False => Self::Case(CaseValue::Bool(false)),
+            ConstraintKind::OneOf(vals) => Self::Case(vals.iter().map(Into::into).next().unwrap()),
             ConstraintKind::NoneOf(vals) => Self::NoneOf(vals.iter().map(Into::into).collect()),
+        }
+    }
+}
+
+impl From<&ConstraintKind<SwitchCaseIndex>> for Decision<SwitchCaseIndex> {
+    #[inline]
+    fn from(value: &ConstraintKind<SwitchCaseIndex>) -> Self {
+        match value {
+            ConstraintKind::False => Self::Case(0),
+            ConstraintKind::True => Self::NoneOf(vec![0]),
+            ConstraintKind::OneOf(vals) => Self::Case(vals.iter().next().cloned().unwrap()),
+            ConstraintKind::NoneOf(vals) => Self::NoneOf(vals.clone()),
         }
     }
 }

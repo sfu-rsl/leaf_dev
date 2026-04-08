@@ -19,7 +19,7 @@ use common::pri::{AssignmentId, AtomicBinaryOp, AtomicOrdering};
 use super::{
     decision::rules::{
         AssignmentKindRules, CallFlowRules, ConstantTypeRules, DropRules, OperandInfoRules,
-        PlaceInfoRules, PlaceStructurePieceRules, StorageLifetimeRules,
+        PlaceInfoRules, PlaceStructurePieceRules, StorageLifetimeRules, SwitchRules,
     },
     pri_utils::{self, sym::intrinsics::LeafIntrinsicSymbol},
 };
@@ -166,14 +166,14 @@ pub(crate) trait StorageMarker: Sized {
 pub struct SwitchInfo<'tcx> {
     pub(super) node_index: BasicBlock,
     pub(super) discr_ty: Ty<'tcx>,
-    pub(super) info_local: Local,
+    pub(super) discr: Option<OperandRef>,
 }
 
 pub(crate) trait BranchingReferencer<'tcx> {
     fn store_branching_info(&mut self, discr: &Operand<'tcx>) -> SwitchInfo<'tcx>;
 }
 pub(crate) trait BranchingHandler {
-    fn take_by_value(&mut self, value: u128);
+    fn take_case(&mut self, index: usize, value: u128);
 
     fn take_otherwise<I>(&mut self, non_values: I)
     where
@@ -304,6 +304,7 @@ pub(crate) struct Config {
     pub storage_lifetime_filter: StorageLifetimeRules<bool>,
     pub call_flow_filter: CallFlowRules<bool>,
     pub drop_filter: DropRules<bool>,
+    pub switch_filter: SwitchRules<bool>,
 }
 
 mod implementation;

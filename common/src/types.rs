@@ -4,6 +4,7 @@ pub type LocalIndex = u32;
 pub type BasicBlockIndex = u32;
 pub type VariantIndex = u32;
 pub type FieldIndex = u32;
+pub type SwitchCaseIndex = u16;
 
 pub type RawAddress = *const ();
 pub type PointerOffset = u64;
