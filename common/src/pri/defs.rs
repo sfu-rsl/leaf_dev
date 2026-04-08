@@ -225,28 +225,58 @@ pub mod macros {
           { fn mark_storage_dead(place: PlaceRef) }
 
           // ----- Switch -----
-          #[allow(unused_parens)]
-          { fn take_branch_false(info: SwitchInfo) }
-          #[allow(unused_parens)]
-          { fn take_branch_ow_bool(info: SwitchInfo) }
+          { fn take_branch(node_loc: BasicBlockIndex, case_index: SwitchCaseIndex) }
+          { fn take_branch_ow(node_loc: BasicBlockIndex) }
+
+          { fn take_branch_false(node_loc: BasicBlockIndex, discr: OperandRef) }
+          { fn take_branch_ow_bool(node_loc: BasicBlockIndex, discr: OperandRef) }
           #[allow(unused_parens)]
           { fn take_branch_int(
-              info: SwitchInfo,
-              value_bit_rep: ($u128_ty),
-              bit_size: u64,
-              is_signed: bool,
-            ) }
-          #[allow(unused_parens)]
-          { fn take_branch_ow_int(
-              info: SwitchInfo,
-              non_values: ($slice_ty!($u128_ty)),
-              bit_size: u64,
-              is_signed: bool,
+              node_loc: BasicBlockIndex,
+              case_index: SwitchCaseIndex,
+              discr: OperandRef,
+              value_bit_rep: u32,
+              // FIXME: Should be removed as we have the discriminant
+              ty: ($primitive_type_ty),
           ) }
           #[allow(unused_parens)]
-          { fn take_branch_char(info: SwitchInfo, value: (($char_ty))) }
+          { fn take_branch_ow_int(
+              node_loc: BasicBlockIndex,
+              discr: OperandRef,
+              non_values: ($slice_ty!(u32)),
+              // FIXME: Should be removed as we have the discriminant
+              ty: ($primitive_type_ty),
+          ) }
           #[allow(unused_parens)]
-          { fn take_branch_ow_char(info: SwitchInfo, non_values: ($slice_ty!($char_ty))) }
+          { fn take_branch_int_lg(
+              node_loc: BasicBlockIndex,
+              case_index: SwitchCaseIndex,
+              discr: OperandRef,
+              value_bit_rep: ($u128_ty),
+              // FIXME: Should be removed as we have the discriminant
+              ty: ($primitive_type_ty),
+          ) }
+          #[allow(unused_parens)]
+          { fn take_branch_ow_int_lg(
+              node_loc: BasicBlockIndex,
+              discr: OperandRef,
+              non_values: ($slice_ty!($u128_ty)),
+              // FIXME: Should be removed as we have the discriminant
+              ty: ($primitive_type_ty),
+          ) }
+          #[allow(unused_parens)]
+          { fn take_branch_char(
+              node_loc: BasicBlockIndex,
+              case_index: SwitchCaseIndex,
+              discr: OperandRef,
+              value: (($char_ty))
+          ) }
+          #[allow(unused_parens)]
+          { fn take_branch_ow_char(
+            node_loc: BasicBlockIndex,
+            discr: OperandRef,
+            non_values: ($slice_ty!($char_ty))
+          ) }
 
           // ----- Assertion -----
           { fn assert_bounds_check(info: AssertionInfo, len: OperandRef, index: OperandRef) }
@@ -602,7 +632,7 @@ pub mod macros {
             }$modifier!{
                 #[allow(unused_parens)]fn ref_operand_const_int(bit_rep:u64,ty:($primitive_type_ty))->OperandRef;
             }$modifier!{
-                #[allow(unused_parens)]fn ref_operand_const_int_arb(bit_rep:($u128_ty),bit_size:TypeSize,is_signed:bool)->OperandRef;
+                #[allow(unused_parens)]fn ref_operand_const_int_arb(bit_rep:u128,bit_size:TypeSize,is_signed:bool)->OperandRef;
             }$modifier!{
                 #[allow(unused_parens)]fn ref_operand_const_float(bit_rep:($u128_ty),e_bits:u64,s_bits:u64)->OperandRef;
             }$modifier!{
@@ -692,17 +722,25 @@ pub mod macros {
             }$modifier!{
                 fn mark_storage_dead(place:PlaceRef);
             }$modifier!{
-                #[allow(unused_parens)]fn take_branch_false(info:SwitchInfo);
+                fn take_branch(node_loc:BasicBlockIndex,case_index:SwitchCaseIndex);
             }$modifier!{
-                #[allow(unused_parens)]fn take_branch_ow_bool(info:SwitchInfo);
+                fn take_branch_ow(node_loc:BasicBlockIndex);
             }$modifier!{
-                #[allow(unused_parens)]fn take_branch_int(info:SwitchInfo,value_bit_rep:($u128_ty),bit_size:u64,is_signed:bool,);
+                fn take_branch_false(node_loc:BasicBlockIndex,discr:OperandRef);
             }$modifier!{
-                #[allow(unused_parens)]fn take_branch_ow_int(info:SwitchInfo,non_values:($slice_ty!($u128_ty)),bit_size:u64,is_signed:bool,);
+                fn take_branch_ow_bool(node_loc:BasicBlockIndex,discr:OperandRef);
             }$modifier!{
-                #[allow(unused_parens)]fn take_branch_char(info:SwitchInfo,value:(($char_ty)));
+                #[allow(unused_parens)]fn take_branch_int(node_loc:BasicBlockIndex,case_index:SwitchCaseIndex,discr:OperandRef,value_bit_rep:u32,ty:($primitive_type_ty),);
             }$modifier!{
-                #[allow(unused_parens)]fn take_branch_ow_char(info:SwitchInfo,non_values:($slice_ty!($char_ty)));
+                #[allow(unused_parens)]fn take_branch_ow_int(node_loc:BasicBlockIndex,discr:OperandRef,non_values:($slice_ty!(u32)),ty:($primitive_type_ty),);
+            }$modifier!{
+                #[allow(unused_parens)]fn take_branch_int_lg(node_loc:BasicBlockIndex,case_index:SwitchCaseIndex,discr:OperandRef,value_bit_rep:($u128_ty),ty:($primitive_type_ty),);
+            }$modifier!{
+                #[allow(unused_parens)]fn take_branch_ow_int_lg(node_loc:BasicBlockIndex,discr:OperandRef,non_values:($slice_ty!($u128_ty)),ty:($primitive_type_ty),);
+            }$modifier!{
+                #[allow(unused_parens)]fn take_branch_char(node_loc:BasicBlockIndex,case_index:SwitchCaseIndex,discr:OperandRef,value:(($char_ty)));
+            }$modifier!{
+                #[allow(unused_parens)]fn take_branch_ow_char(node_loc:BasicBlockIndex,discr:OperandRef,non_values:($slice_ty!($char_ty)));
             }$modifier!{
                 fn assert_bounds_check(info:AssertionInfo,len:OperandRef,index:OperandRef);
             }$modifier!{

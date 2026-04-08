@@ -882,7 +882,8 @@ pub(super) mod rules {
             OperandInfoFilter, OperandInfoLocationFilter, OperandKind, PlaceAddressFilter,
             PlaceInfoFilter, PlaceInfoStructureFilter, PlaceStructurePiece, PlaceTypeFilter,
             StorageLifetimeLocationFilter, StorageLifetimeMarker, StorageLifetimeMarkerFilter,
-            WholeBodyFilter, rules::LogicFormula,
+            SwitchFilter, SwitchLocationFilter, SwitchPartKind, WholeBodyFilter,
+            rules::LogicFormula,
         },
         passes::StorageExt,
         utils::rules::{InclusionPredicate, Predicate, ToPredicate},
@@ -901,6 +902,7 @@ pub(super) mod rules {
     pub(crate) const KEY_BAKED_STORAGE_LIFETIME_RULES: &str = "i_r_b_storage_lifetime";
     pub(crate) const KEY_BAKED_CALL_FLOW_RULES: &str = "i_r_b_call_flow";
     pub(crate) const KEY_BAKED_DROP_RULES: &str = "i_r_b_drop";
+    pub(crate) const KEY_BAKED_SWITCH_RULES: &str = "i_r_b_switch";
 
     type LocationQuery<'tcx> = (TyCtxt<'tcx>, DefId);
 
@@ -1084,6 +1086,25 @@ pub(super) mod rules {
 
     type BakedDropFilterRules<'tcx> =
         InclusionPredicate<<DropFilter as ToPredicate<DropQuery<'tcx>>>::Predicate>;
+
+    pub(crate) struct SwitchRules<T> {
+        pub control: T,
+        pub data: T,
+    }
+
+    impl<T> SwitchRules<T> {
+        pub(crate) fn map<U>(self, f: impl Fn(T) -> U) -> SwitchRules<U> {
+            SwitchRules {
+                control: f(self.control),
+                data: f(self.data),
+            }
+        }
+    }
+
+    type SwitchQuery<'tcx> = (SwitchPartKind, LocationQuery<'tcx>);
+
+    type BakedSwitchFilterRules<'tcx> =
+        InclusionPredicate<<SwitchFilter as ToPredicate<SwitchQuery<'tcx>>>::Predicate>;
 
     pub(crate) fn get_baked_body_rules<'tcx>(
         storage: &mut dyn Storage,
@@ -1286,6 +1307,26 @@ pub(super) mod rules {
         }
     }
 
+    pub(crate) type SwitchFilterResult = SwitchRules<Option<bool>>;
+
+    pub(crate) fn accept_switch_rules<'tcx>(
+        storage: &mut dyn Storage,
+        item: &LocationQuery<'tcx>,
+    ) -> SwitchFilterResult
+    where
+        BakedSwitchFilterRules<'tcx>: 'static,
+        EntityLocationFilterPredicate<'tcx>: Predicate<LocationQuery<'tcx>>,
+    {
+        let rules = storage
+            .get_mut::<BakedSwitchFilterRules<'tcx>>(&KEY_BAKED_SWITCH_RULES.to_owned())
+            .expect("Filter rules are expected to be baked at this point.");
+        use SwitchPartKind::*;
+        SwitchRules {
+            control: rules.accept(&(Control, *item)),
+            data: rules.accept(&(Data, *item)),
+        }
+    }
+
     pub(super) fn bake_rules(
         storage: &mut dyn Storage,
         additional_exclusions: impl FnOnce() -> Vec<WholeBodyFilter>,
@@ -1426,6 +1467,17 @@ pub(super) mod rules {
                 rules.to_baked()
             },
         );
+        let _ = storage.get_or_insert_with_acc(
+            KEY_BAKED_SWITCH_RULES.to_owned(),
+            |storage| -> BakedSwitchFilterRules<'_> {
+                let rules = storage.get_or_default::<InstrumentationRules>(KEY_RULES.to_owned());
+                let rules = rules.clone().filter_map(|r| match r {
+                    EntityFilter::Switch(filter) => Some(filter),
+                    _ => None,
+                });
+                rules.to_baked()
+            },
+        );
     }
 
     macro_rules! impl_to_predicate_for_newtype {
@@ -1458,6 +1510,7 @@ pub(super) mod rules {
         StorageLifetimeLocationFilter,
         CallFlowLocationFilter,
         DropLocationFilter,
+        SwitchLocationFilter,
     );
 
     macro_rules! impl_to_predicate_by_eq {
@@ -1483,6 +1536,7 @@ pub(super) mod rules {
         StorageLifetimeMarker,
         CallFlowPartKind,
         DropPartKind,
+        SwitchPartKind,
     );
 
     impl ToPredicate<PlaceStructureQuery<'_>> for PlaceInfoStructureFilter {
@@ -1571,6 +1625,16 @@ pub(super) mod rules {
 
     impl ToPredicate<DropQuery<'_>> for DropFilter {
         type Predicate = Box<dyn Fn(&DropQuery<'_>) -> bool>;
+
+        fn to_predicate(&self) -> Self::Predicate {
+            let kind = self.kind.to_predicate();
+            let loc = self.loc.to_predicate();
+            Box::new(move |(q_kind, q_loc)| kind.accept(q_kind) && loc.accept(q_loc))
+        }
+    }
+
+    impl ToPredicate<SwitchQuery<'_>> for SwitchFilter {
+        type Predicate = Box<dyn Fn(&SwitchQuery<'_>) -> bool>;
 
         fn to_predicate(&self) -> Self::Predicate {
             let kind = self.kind.to_predicate();

@@ -5,7 +5,7 @@ mod record;
 mod tracing_i;
 
 use crate::{
-    abs::{backend::Shutdown, utils::BasicBlockLocationExt},
+    abs::{SwitchCaseIndex, backend::Shutdown, utils::BasicBlockLocationExt},
     call::CallFlowManager,
     pri::fluent::backend::{AssignmentHandler, RuntimeBackend, shared::noop::*},
 };
@@ -18,7 +18,7 @@ pub use instance::CftInstanceManager;
 /// A backend meant for control flow tracing (CFT).
 pub(crate) struct CftBackend {
     call_flow_manager: call::CftCallFlowManager,
-    recorder: record::Recorder,
+    recorder: record::Recorder<SwitchCaseIndex>,
 }
 
 impl CftBackend {

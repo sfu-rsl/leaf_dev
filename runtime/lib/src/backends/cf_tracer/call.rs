@@ -1,7 +1,7 @@
 use crate::{
     abs::{
-        AssignmentId, BasicBlockIndex, CalleeDef, FuncDef, backend::PhasedCallTraceRecorder,
-        utils::BasicBlockLocationExt,
+        AssignmentId, BasicBlockIndex, CalleeDef, FuncDef, SwitchCaseIndex,
+        backend::PhasedCallTraceRecorder, utils::BasicBlockLocationExt,
     },
     backends::cf_tracer::{CftBackend, record::Recorder},
     call::{CallControlFlowManager, CallFlowManager, CallShadowMemory, DefaultCallFlowManager},
@@ -32,7 +32,7 @@ impl CallShadowMemory<super::NullPlace> for NoOpCallShadowMemory {
 
 pub(crate) struct CftCallHandler<'a> {
     flow_manager: &'a mut CftCallFlowManager,
-    recorder: &'a mut Recorder,
+    recorder: &'a mut Recorder<SwitchCaseIndex>,
 }
 
 impl<'a> CftCallHandler<'a> {

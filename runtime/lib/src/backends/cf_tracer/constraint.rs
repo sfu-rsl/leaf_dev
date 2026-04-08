@@ -1,14 +1,14 @@
 use common::types::trace::ConstraintKind;
 
 use crate::{
-    abs::{BasicBlockLocation, Constant, backend::DecisionTraceRecorder},
+    abs::{BasicBlockLocation, Constant, SwitchCaseIndex, backend::DecisionTraceRecorder},
     pri::fluent::backend::{ConstraintHandler, SwitchHandler},
 };
 
 use super::{CftBackend, NullOperand, Recorder};
 
 pub(crate) struct CftConstraintHandler<'a> {
-    recorder: &'a mut Recorder,
+    recorder: &'a mut Recorder<SwitchCaseIndex>,
     node_location: BasicBlockLocation,
 }
 
@@ -22,7 +22,7 @@ impl<'a> CftConstraintHandler<'a> {
 }
 
 pub(crate) struct CftSwitchHandler<'a> {
-    recorder: &'a mut Recorder,
+    recorder: &'a mut Recorder<SwitchCaseIndex>,
     node_location: BasicBlockLocation,
 }
 
@@ -31,7 +31,7 @@ impl<'a> ConstraintHandler for CftConstraintHandler<'a> {
 
     type SwitchHandler = CftSwitchHandler<'a>;
 
-    fn switch(self, _discriminant: Self::Operand) -> Self::SwitchHandler {
+    fn switch(self, _discriminant: Option<Self::Operand>) -> Self::SwitchHandler {
         CftSwitchHandler {
             node_location: self.node_location,
             recorder: self.recorder,
@@ -56,13 +56,13 @@ impl<'a> ConstraintHandler for CftConstraintHandler<'a> {
 }
 
 impl<'a> SwitchHandler for CftSwitchHandler<'a> {
-    fn take(self, value: Constant) {
+    fn take(self, case_index: SwitchCaseIndex, _value: Option<Constant>) {
         self.recorder
-            .notify_decision(self.node_location, &ConstraintKind::OneOf(vec![value]));
+            .notify_decision(self.node_location, &ConstraintKind::OneOf(vec![case_index]));
     }
 
-    fn take_otherwise(self, non_values: Vec<Constant>) {
+    fn take_otherwise(self, _non_values: Option<Vec<Constant>>) {
         self.recorder
-            .notify_decision(self.node_location, &ConstraintKind::NoneOf(non_values));
+            .notify_decision(self.node_location, &ConstraintKind::NoneOf(Vec::default()));
     }
 }

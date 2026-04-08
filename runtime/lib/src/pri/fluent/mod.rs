@@ -2,10 +2,12 @@
 
 pub(crate) mod backend;
 
+use std::primitive;
+
 use common::pri::{
     AssertionInfo, AssignmentId, BasicBlockIndex, CalleeDef, FieldIndex, FuncDef, LocalIndex,
-    OperandRef, PlaceRef, ProgramRuntimeInterface, RawAddress, SwitchInfo, TypeId, TypeSize,
-    VariantIndex, refs::encoding as ref_enc,
+    OperandRef, PlaceRef, ProgramRuntimeInterface, RawAddress, SwitchCaseIndex, SwitchInfo, TypeId,
+    TypeSize, VariantIndex, refs::encoding as ref_enc,
 };
 use common::{log_debug, log_info};
 use leaf_macros::trait_log_fn;
@@ -521,24 +523,62 @@ where
         Self::memory(|h| h.mark_dead(place));
     }
 
-    fn take_branch_false(info: SwitchInfo) {
-        // Self::switch(info, |h| h.take(false.into()))
-        let discriminant = Self::take_back_operand(info.discriminant);
-        Self::constraint_at(info.node_location, |c| {
-            let handler = c.switch(discriminant);
-            handler.take(false.into())
+    fn take_branch(node_loc: BasicBlockIndex, case_index: SwitchCaseIndex) {
+        Self::constraint_at(node_loc, |c| {
+            let handler = c.switch(None);
+            handler.take(case_index, None)
         })
     }
-    fn take_branch_ow_bool(info: SwitchInfo) {
-        // Self::switch(info, |h| h.take_otherwise(vec![false.into()]))
-        let discriminant = Self::take_back_operand(info.discriminant);
-        Self::constraint_at(info.node_location, |c| {
-            let handler = c.switch(discriminant);
-            handler.take_otherwise(vec![false.into()])
+    fn take_branch_ow(node_loc: BasicBlockIndex) {
+        Self::constraint_at(node_loc, |c| {
+            let handler = c.switch(None);
+            handler.take_otherwise(None)
         })
     }
 
-    fn take_branch_int(info: SwitchInfo, value_bit_rep: u128, bit_size: u64, is_signed: bool) {
+    fn take_branch_false(node_loc: BasicBlockIndex, discr: OperandRef) {
+        // Self::switch(info, |h| h.take(false.into()))
+        let discriminant = Self::take_back_operand(discr);
+        Self::constraint_at(node_loc, |c| {
+            let handler = c.switch(Some(discriminant));
+            handler.take(0, Some(false.into()))
+        })
+    }
+    fn take_branch_ow_bool(node_loc: BasicBlockIndex, discr: OperandRef) {
+        // Self::switch(info, |h| h.take_otherwise(vec![false.into()]))
+        let discriminant = Self::take_back_operand(discr);
+        Self::constraint_at(node_loc, |c| {
+            let handler = c.switch(Some(discriminant));
+            handler.take_otherwise(Some(vec![false.into()]))
+        })
+    }
+
+    fn take_branch_int(
+        node_loc: BasicBlockIndex,
+        case_index: SwitchCaseIndex,
+        discr: OperandRef,
+        value_bit_rep: u32,
+        ty: Self::PrimitiveType,
+    ) {
+        Self::take_branch_int_lg(node_loc, case_index, discr, value_bit_rep.into(), ty)
+    }
+    fn take_branch_ow_int(
+        node_loc: BasicBlockIndex,
+        discr: OperandRef,
+        non_values: &[u32],
+        ty: Self::PrimitiveType,
+    ) {
+        let non_values = non_values.iter().map(|nv| (*nv).into()).collect::<Vec<_>>();
+        Self::take_branch_ow_int_lg(node_loc, discr, &non_values, ty)
+    }
+
+    fn take_branch_int_lg(
+        node_loc: BasicBlockIndex,
+        case_index: SwitchCaseIndex,
+        discr: OperandRef,
+        value_bit_rep: u128,
+        ty: Self::PrimitiveType,
+    ) {
         // Self::switch(info, |h| {
         //     h.take(Constant::Int {
         //         bit_rep: value_bit_rep,
@@ -548,19 +588,24 @@ where
         //         },
         //     })
         // })
-        let discriminant = Self::take_back_operand(info.discriminant);
-        Self::constraint_at(info.node_location, |c| {
-            let handler = c.switch(discriminant);
-            handler.take(Constant::Int {
-                bit_rep: value_bit_rep,
-                ty: IntType {
-                    bit_size,
-                    is_signed,
-                },
-            })
+        let discriminant = Self::take_back_operand(discr);
+        Self::constraint_at(node_loc, |c| {
+            let handler = c.switch(Some(discriminant));
+            handler.take(
+                case_index,
+                Some(Constant::Int {
+                    bit_rep: value_bit_rep.into(),
+                    ty: ValueType::from(ty).expect_int(),
+                }),
+            )
         })
     }
-    fn take_branch_ow_int(info: SwitchInfo, non_values: &[u128], bit_size: u64, is_signed: bool) {
+    fn take_branch_ow_int_lg(
+        node_loc: BasicBlockIndex,
+        discr: OperandRef,
+        non_values: &[u128],
+        ty: Self::PrimitiveType,
+    ) {
         // Self::switch(info, |h| {
         //     h.take_otherwise(
         //         non_values
@@ -575,40 +620,42 @@ where
         //             .collect(),
         //     )
         // })
-        let discriminant = Self::take_back_operand(info.discriminant);
-        Self::constraint_at(info.node_location, |c| {
-            let handler = c.switch(discriminant);
-            handler.take_otherwise(
+        let discriminant = Self::take_back_operand(discr);
+        Self::constraint_at(node_loc, |c| {
+            let handler = c.switch(Some(discriminant));
+            handler.take_otherwise(Some(
                 non_values
                     .iter()
                     .map(|nv| Constant::Int {
-                        bit_rep: *nv,
-                        ty: IntType {
-                            bit_size,
-                            is_signed,
-                        },
+                        bit_rep: (*nv).into(),
+                        ty: ValueType::from(ty).expect_int(),
                     })
                     .collect(),
-            )
+            ))
         })
     }
 
-    fn take_branch_char(info: SwitchInfo, value: char) {
+    fn take_branch_char(
+        node_loc: BasicBlockIndex,
+        case_index: SwitchCaseIndex,
+        discr: OperandRef,
+        value: char,
+    ) {
         // Self::switch(info, |h| h.take(value.into()))
-        let discriminant = Self::take_back_operand(info.discriminant);
-        Self::constraint_at(info.node_location, |c| {
-            let handler = c.switch(discriminant);
-            handler.take(value.into())
+        let discriminant = Self::take_back_operand(discr);
+        Self::constraint_at(node_loc, |c| {
+            let handler = c.switch(Some(discriminant));
+            handler.take(case_index, Some(value.into()))
         })
     }
-    fn take_branch_ow_char(info: SwitchInfo, non_values: &[char]) {
+    fn take_branch_ow_char(node_loc: BasicBlockIndex, discr: OperandRef, non_values: &[char]) {
         // Self::switch(info, |h| {
         //     h.take_otherwise(non_values.iter().map(|c| (*c).into()).collect())
         // })
-        let discriminant = Self::take_back_operand(info.discriminant);
-        Self::constraint_at(info.node_location, |c| {
-            let handler = c.switch(discriminant);
-            handler.take_otherwise(non_values.iter().map(|c| (*c).into()).collect())
+        let discriminant = Self::take_back_operand(discr);
+        Self::constraint_at(node_loc, |c| {
+            let handler = c.switch(Some(discriminant));
+            handler.take_otherwise(Some(non_values.iter().map(|c| (*c).into()).collect()))
         })
     }
 
@@ -1113,7 +1160,7 @@ impl<IM: InstanceManager> FluentPri<IM> {
     ) -> T {
         let discriminant = Self::take_back_operand(info.discriminant);
         Self::constraint_at(info.node_location, |c| {
-            let handler = c.switch(discriminant);
+            let handler = c.switch(Some(discriminant));
             switch_action(handler)
         })
     }

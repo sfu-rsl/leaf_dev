@@ -289,6 +289,10 @@ fn make_config<'tcx>(storage: &mut dyn Storage, tcx: TyCtxt<'tcx>, def_id: DefId
         accept_drop_rules(storage, &(tcx, def_id)),
     );
 
+    let switch_filter = (|rules: SwitchFilterResult| rules.map(|r| r.unwrap_or(true)))(
+        accept_switch_rules(storage, &(tcx, def_id)),
+    );
+
     Config {
         place_info_filter,
         operand_info_filter,
@@ -296,6 +300,7 @@ fn make_config<'tcx>(storage: &mut dyn Storage, tcx: TyCtxt<'tcx>, def_id: DefId
         storage_lifetime_filter,
         call_flow_filter,
         drop_filter,
+        switch_filter,
     }
 }
 
@@ -667,10 +672,16 @@ where
         + ctxtreqs::ForDropping<'tcx>,
 {
     fn visit_switch_int(&mut self, discr: &Operand<'tcx>, targets: &mir::SwitchTargets) {
+        if !self.call_adder.config().switch_filter.control
+            && !self.call_adder.config().switch_filter.data
+        {
+            return;
+        }
+
         let switch_info = self.call_adder.store_branching_info(discr);
         let mut call_adder = self.call_adder.branch(switch_info);
-        for (value, target) in targets.iter() {
-            call_adder.at(Before(target)).take_by_value(value);
+        for (i, (value, target)) in targets.iter().enumerate() {
+            call_adder.at(Before(target)).take_case(i, value);
         }
         call_adder
             .at(Before(targets.otherwise()))

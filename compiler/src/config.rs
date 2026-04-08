@@ -118,6 +118,7 @@ pub(crate) enum EntityFilter {
     StorageLifetime(StorageLifetimeMarkerFilter),
     CallFlow(CallFlowFilter),
     Drop(DropFilter),
+    Switch(SwitchFilter),
 }
 
 #[derive(Debug, Clone, Deserialize, From)]
@@ -306,6 +307,23 @@ pub(crate) enum DropPartKind {
 
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct DropLocationFilter(pub(crate) LogicFormula<EntityLocationFilter>);
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct SwitchFilter {
+    pub(crate) kind: LogicFormula<SwitchPartKind>,
+    #[serde(flatten)]
+    pub(crate) loc: SwitchLocationFilter,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum SwitchPartKind {
+    Control,
+    Data,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct SwitchLocationFilter(pub(crate) LogicFormula<EntityLocationFilter>);
 
 pub(crate) type InternalizationRules = InclusionRules<LogicFormula<PatternMatch>>;
 
