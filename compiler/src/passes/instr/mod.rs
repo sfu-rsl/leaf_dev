@@ -25,7 +25,10 @@ use std::{
     sync::atomic,
 };
 
-use common::{log_debug, log_info, log_warn, pri::AssignmentId};
+use common::{
+    log_debug, log_info, log_warn,
+    pri::{AssignmentId, AtomicBinaryOp},
+};
 
 use crate::{
     config::InstrumentationRules,
@@ -866,6 +869,7 @@ where
                     &params,
                     parse_ordering(match kind {
                         Load | Store | Exchange | CompareExchange { .. } => 1,
+                        BinOp(AtomicBinaryOp::MAX | AtomicBinaryOp::MIN) => 1,
                         BinOp(..) => 2,
                         Fence { .. } => 0,
                     }),

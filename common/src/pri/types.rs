@@ -37,7 +37,7 @@ macro_rules! enum_like_type {
     }) => {
         #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
         #[repr(transparent)]
-        #[derive(Clone, Copy, Debug)]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
         pub struct $name(pub $t);
 
         #[cfg_attr(core_build, stable(feature = "rust1", since = "1.0.0"))]
