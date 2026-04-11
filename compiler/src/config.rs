@@ -161,7 +161,7 @@ pub(crate) enum EntityLocationFilter {
 pub(crate) enum CrateFilter {
     #[serde(alias = "is_external")]
     Externality(bool),
-    Name(String),
+    Name(PatternMatch),
 }
 
 #[derive(Debug, Clone, Deserialize)]

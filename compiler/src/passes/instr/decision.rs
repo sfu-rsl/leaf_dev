@@ -96,7 +96,9 @@ fn get_exceptional_exclusions() -> Vec<WholeBodyFilter> {
     }
 
     fn crate_name(name: &str) -> EntityLocationFilter {
-        EntityLocationFilter::Crate(crate::config::CrateFilter::Name(name.to_owned()))
+        EntityLocationFilter::Crate(crate::config::CrateFilter::Name(PatternMatch::from(
+            name.to_owned(),
+        )))
     }
 
     vec![
@@ -1559,7 +1561,10 @@ pub(super) mod rules {
                         Box::new(move |(_, def_id)| def_id.is_local() != is_external)
                     }
                     CrateFilter::Name(name) => {
-                        Box::new(move |(tcx, def_id)| tcx.crate_name(def_id.krate).as_str() == name)
+                        let pred = name.to_predicate();
+                        Box::new(move |(tcx, def_id)| {
+                            pred.accept(tcx.crate_name(def_id.krate).as_str())
+                        })
                     }
                 },
                 EntityLocationFilter::DefPathMatch(pattern) => {
