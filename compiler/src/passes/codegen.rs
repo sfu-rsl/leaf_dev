@@ -7,12 +7,15 @@ use rustc_middle::{
 
 use common::{log_debug, log_info, log_warn};
 
-use crate::config::InternalizationRules;
+use crate::config::rules::{InclusionRules, LogicFormula};
 
 use super::{CompilationPass, StorageExt};
 
 const KEY_RULES: &str = "internalization_rules";
 const KEY_BAKED_RULES: &str = "internalization_rules_baked";
+
+pub(crate) type InternalizationRules =
+    InclusionRules<LogicFormula<crate::config::rules::PatternMatch>>;
 
 #[derive(Debug)]
 pub(crate) struct MonoItemInternalizer {

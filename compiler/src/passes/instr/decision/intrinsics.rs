@@ -1,0 +1,628 @@
+use rustc_middle::ty::IntrinsicDef;
+
+use common::pri::AtomicBinaryOp;
+
+use super::super::pri_utils;
+
+pub(crate) enum IntrinsicDecision {
+    OneToOneAssign(pri_utils::sym::intrinsics::LeafIntrinsicSymbol),
+    Atomic(AtomicIntrinsicKind),
+    Memory {
+        kind: MemoryIntrinsicKind,
+        is_volatile: bool,
+    },
+    NoOp,
+    ConstEvaluated,
+    Contract,
+    ToDo,
+    NotPlanned,
+    Unsupported,
+    Unexpected,
+}
+
+pub(crate) enum AtomicIntrinsicKind {
+    Load,
+    Store,
+    Exchange,
+    CompareExchange { weak: bool },
+    BinOp(AtomicBinaryOp),
+    Fence { single_thread: bool },
+}
+
+pub(crate) enum MemoryIntrinsicKind {
+    Load { is_ptr_aligned: bool },
+    Store { is_ptr_aligned: bool },
+    Copy { is_overlapping: bool },
+    Set,
+    Swap,
+}
+
+macro_rules! of_mir_translated_funcs {
+    ($macro:ident) => {
+        // These functions are expected to be translated to MIR elements and not appear at the
+        // phase we perform the instrumentation.
+        $macro!(
+            transmute,
+            transmute_unchecked,
+            aggregate_raw_ptr,
+            ptr_metadata,
+            discriminant_value,
+            offset,
+            align_of,
+            add_with_overflow,
+            sub_with_overflow,
+            mul_with_overflow,
+            three_way_compare,
+            size_of,
+            slice_get_unchecked,
+            unchecked_add,
+            unchecked_div,
+            unchecked_mul,
+            unchecked_rem,
+            unchecked_shl,
+            unchecked_shr,
+            unchecked_sub,
+            wrapping_add,
+            wrapping_mul,
+            wrapping_sub,
+            write_via_move,
+            read_via_copy,
+            ub_checks,
+        )
+    };
+}
+
+macro_rules! of_const_evaluated_funcs {
+    ($macro:ident) => {
+        // These functions are expected to be evaluated and not appear at the
+        // phase we perform the instrumentation.
+        $macro!(
+            variant_count,
+            type_name,
+            type_id,
+            type_id_eq,
+            ptr_guaranteed_cmp,
+            needs_drop,
+            align_of_val,
+            // FIXME: These two are probably not intrinsics anymore.
+            likely,
+            unlikely,
+            forget,
+            const_allocate,
+            const_eval_select,
+            const_make_global,
+            const_deallocate,
+            caller_location,
+            assert_zero_valid,
+            assert_mem_uninitialized_valid,
+            assume,
+        )
+    };
+}
+
+macro_rules! of_contract_funcs {
+    ($macro:ident) => {
+        $macro!(
+            contract_check_requires,
+            contract_check_ensures,
+            contract_checks
+        )
+    };
+}
+
+macro_rules! of_noop_funcs {
+    ($macro:ident) => {
+        $macro!(
+            unreachable,
+            rustc_peek,
+            prefetch_write_instruction,
+            prefetch_read_instruction,
+            prefetch_write_data,
+            prefetch_read_data,
+            breakpoint,
+            assert_inhabited,
+            cold_path,
+        )
+    };
+}
+
+macro_rules! of_float_arith_funcs {
+    ($macro:ident) => {
+        $macro!(
+            truncf16,
+            truncf32,
+            truncf64,
+            truncf128,
+            sqrtf128,
+            sqrtf64,
+            sqrtf16,
+            sqrtf32,
+            sinf128,
+            sinf32,
+            sinf16,
+            sinf64,
+            roundf32,
+            roundf64,
+            roundf128,
+            roundf16,
+            round_ties_even_f16,
+            round_ties_even_f32,
+            round_ties_even_f64,
+            round_ties_even_f128,
+            powif64,
+            powif128,
+            powif16,
+            powif32,
+            powf32,
+            powf64,
+            powf128,
+            powf16,
+            minimumf16,
+            minimumf32,
+            minimumf64,
+            minimumf128,
+            minnumf16,
+            minnumf32,
+            minnumf64,
+            minnumf128,
+            logf128,
+            logf64,
+            maximumf16,
+            maximumf32,
+            maximumf64,
+            maximumf128,
+            maxnumf16,
+            maxnumf32,
+            maxnumf64,
+            maxnumf128,
+            log10f128,
+            log10f32,
+            log10f16,
+            logf16,
+            log10f64,
+            logf32,
+            log2f128,
+            log2f16,
+            log2f32,
+            log2f64,
+            fsub_fast,
+            frem_fast,
+            frem_algebraic,
+            fsub_algebraic,
+            fmul_algebraic,
+            fmul_fast,
+            fmuladdf16,
+            fmuladdf32,
+            fmuladdf64,
+            fmuladdf128,
+            fmaf128,
+            fmaf64,
+            floorf64,
+            floorf128,
+            floorf32,
+            fmaf32,
+            fmaf16,
+            floorf16,
+            fdiv_fast,
+            fadd_fast,
+            fdiv_algebraic,
+            fabsf32,
+            fadd_algebraic,
+            fabsf128,
+            fabsf64,
+            fabsf16,
+            expf64,
+            exp2f128,
+            expf32,
+            expf128,
+            expf16,
+            exp2f64,
+            exp2f32,
+            exp2f16,
+            cosf128,
+            cosf64,
+            cosf32,
+            copysignf32,
+            copysignf64,
+            copysignf128,
+            cosf16,
+            copysignf16,
+            ceilf128,
+            ceilf64,
+            ceilf16,
+            ceilf32,
+            float_to_int_unchecked,
+        )
+    };
+}
+
+macro_rules! of_atomic_load_funcs {
+    ($macro:ident) => {
+        $macro!(atomic_load,)
+    };
+}
+
+macro_rules! of_atomic_store_funcs {
+    ($macro:ident) => {
+        $macro!(atomic_store,)
+    };
+}
+
+macro_rules! of_atomic_xchg_funcs {
+    ($macro:ident) => {
+        $macro!(atomic_xchg,)
+    };
+}
+
+macro_rules! of_atomic_cxchg_funcs {
+    ($macro:ident) => {
+        $macro!(atomic_cxchg, atomic_cxchgweak,)
+    };
+}
+
+macro_rules! of_atomic_binop_funcs {
+    ($macro:ident) => {
+        $macro!(
+            atomic_and,
+            atomic_max,
+            atomic_min,
+            atomic_nand,
+            atomic_or,
+            atomic_umax,
+            atomic_umin,
+            atomic_xadd,
+            atomic_xor,
+            atomic_xsub,
+        )
+    };
+}
+
+macro_rules! of_atomic_fence_funcs {
+    ($macro:ident) => {
+        $macro!(atomic_fence, atomic_singlethreadfence,)
+    };
+}
+
+macro_rules! of_simd_op_funcs {
+    ($macro:ident) => {
+        $macro!(
+            simd_add,
+            simd_and,
+            simd_arith_offset,
+            simd_as,
+            simd_bitmask,
+            simd_bitreverse,
+            simd_bswap,
+            simd_cast,
+            simd_cast_ptr,
+            simd_ceil,
+            simd_ctlz,
+            simd_ctpop,
+            simd_cttz,
+            simd_div,
+            simd_eq,
+            simd_expose_provenance,
+            simd_extract,
+            simd_extract_dyn,
+            simd_fabs,
+            simd_fcos,
+            simd_fexp,
+            simd_fexp2,
+            simd_flog,
+            simd_flog2,
+            simd_flog10,
+            simd_floor,
+            simd_fma,
+            simd_fmax,
+            simd_fmin,
+            simd_fsin,
+            simd_fsqrt,
+            simd_funnel_shl,
+            simd_funnel_shr,
+            simd_gather,
+            simd_ge,
+            simd_gt,
+            simd_insert,
+            simd_insert_dyn,
+            simd_le,
+            simd_lt,
+            simd_masked_load,
+            simd_masked_store,
+            simd_mul,
+            simd_ne,
+            simd_neg,
+            simd_or,
+            simd_reduce_add_ordered,
+            simd_reduce_add_unordered,
+            simd_reduce_all,
+            simd_reduce_and,
+            simd_reduce_any,
+            simd_reduce_max,
+            simd_reduce_min,
+            simd_reduce_mul_ordered,
+            simd_reduce_mul_unordered,
+            simd_reduce_or,
+            simd_reduce_xor,
+            simd_relaxed_fma,
+            simd_rem,
+            simd_round,
+            simd_round_ties_even,
+            simd_saturating_add,
+            simd_saturating_sub,
+            simd_scatter,
+            simd_select,
+            simd_select_bitmask,
+            simd_shl,
+            simd_shr,
+            simd_shuffle,
+            simd_sub,
+            simd_trunc,
+            simd_with_exposed_provenance,
+            simd_xor,
+        )
+    };
+}
+
+macro_rules! of_memory_funcs {
+    ($macro:ident) => {
+        $macro!(
+            volatile_load,
+            volatile_store,
+            unaligned_volatile_load,
+            unaligned_volatile_store,
+            nontemporal_store,
+            copy,
+            copy_nonoverlapping,
+            volatile_copy_nonoverlapping_memory,
+            volatile_copy_memory,
+            write_bytes,
+            volatile_set_memory,
+            typed_swap_nonoverlapping,
+        )
+    };
+}
+
+macro_rules! of_to_be_supported_funcs {
+    ($macro:ident) => {
+        $macro!(
+            vtable_size,
+            vtable_align,
+            select_unpredictable,
+            raw_eq,
+            ptr_mask,
+            ptr_offset_from_unsigned,
+            ptr_offset_from,
+            compare_bytes,
+            catch_unwind,
+            abort,
+            size_of_val,
+            is_val_statically_known,
+            arith_offset,
+            carrying_mul_add,
+            autodiff,
+            va_arg,
+            va_copy,
+            va_end,
+        )
+    };
+}
+
+macro_rules! of_one_to_one_funcs {
+    ($macro:ident) => {
+        $macro!(
+            rotate_left,
+            rotate_right,
+            saturating_sub,
+            saturating_add,
+            disjoint_bitor,
+            exact_div,
+            bitreverse,
+            cttz_nonzero,
+            cttz,
+            ctpop,
+            ctlz_nonzero,
+            ctlz,
+            bswap,
+            black_box,
+        )
+    };
+}
+
+// To make sure all intrinsics are covered.
+mod sanity_check {
+    #![allow(unused)]
+
+    macro_rules! str_array {
+        ($($intrinsic:ident),*$(,)?) => {
+            [$(stringify!($intrinsic)),*]
+        };
+    }
+
+    macro_rules! count_all {
+        ($($macro:ident),*$(,)?) => {
+            0 $(+count($macro!(str_array)))*
+        };
+    }
+
+    const fn count<const N: usize>(_: [&str; N]) -> usize {
+        N
+    }
+
+    const LISTED_COUNT: usize = count_all!(
+        of_mir_translated_funcs,
+        of_const_evaluated_funcs,
+        of_noop_funcs,
+        of_contract_funcs,
+        of_float_arith_funcs,
+        of_atomic_load_funcs,
+        of_atomic_store_funcs,
+        of_atomic_xchg_funcs,
+        of_atomic_binop_funcs,
+        of_atomic_cxchg_funcs,
+        of_atomic_fence_funcs,
+        of_simd_op_funcs,
+        of_to_be_supported_funcs,
+        of_one_to_one_funcs,
+        of_memory_funcs,
+    );
+
+    /* NTOE: This is used as a test to make sure that the list do not contain duplicates.
+     * Do not change the count unless some intrinsics are added or removed to Rust.
+     */
+    const EXPECTED_COUNT: usize = 293;
+    const _ALL_INTRINSICS: [(); EXPECTED_COUNT] = [(); LISTED_COUNT];
+}
+
+use pri_utils::sym::intrinsics as psym;
+use rustc_span::sym as rsym;
+
+pub(crate) fn decide_intrinsic_call<'tcx>(intrinsic: IntrinsicDef) -> IntrinsicDecision {
+    macro_rules! any_of {
+        ($($intrinsic:ident),*$(,)?) => {
+            $(rsym::$intrinsic)|*
+        };
+    }
+
+    match intrinsic.name {
+        of_one_to_one_funcs!(any_of) => decide_one_to_one_intrinsic_call(intrinsic),
+        of_noop_funcs!(any_of) => IntrinsicDecision::NoOp,
+        of_contract_funcs!(any_of) => IntrinsicDecision::Contract,
+        of_const_evaluated_funcs!(any_of) => IntrinsicDecision::ConstEvaluated,
+        of_to_be_supported_funcs!(any_of) => IntrinsicDecision::ToDo,
+        of_float_arith_funcs!(any_of) => IntrinsicDecision::NotPlanned,
+        of_mir_translated_funcs!(any_of) => IntrinsicDecision::Unexpected,
+        of_simd_op_funcs!(any_of) => IntrinsicDecision::Unsupported,
+        other if other.as_str().starts_with("atomic") => decide_atomic_intrinsic_call(intrinsic),
+        of_memory_funcs!(any_of) => decide_memory_intrinsic_call(intrinsic),
+        _ => panic!("Uncovered intrinsic: {:?}", intrinsic),
+    }
+}
+
+fn decide_one_to_one_intrinsic_call(intrinsic: IntrinsicDef) -> IntrinsicDecision {
+    let pri_sym = match intrinsic.name {
+        rsym::rotate_left => psym::intrinsic_assign_rotate_left,
+        rsym::rotate_right => psym::intrinsic_assign_rotate_right,
+        rsym::saturating_add => psym::intrinsic_assign_saturating_add,
+        rsym::saturating_sub => psym::intrinsic_assign_saturating_sub,
+        rsym::disjoint_bitor => psym::intrinsic_assign_disjoint_bitor,
+        rsym::exact_div => psym::intrinsic_assign_exact_div,
+        rsym::bitreverse => psym::intrinsic_assign_bitreverse,
+        rsym::cttz_nonzero => psym::intrinsic_assign_cttz_nonzero,
+        rsym::cttz => psym::intrinsic_assign_cttz,
+        rsym::ctpop => psym::intrinsic_assign_ctpop,
+        rsym::ctlz_nonzero => psym::intrinsic_assign_ctlz_nonzero,
+        rsym::ctlz => psym::intrinsic_assign_ctlz,
+        rsym::bswap => psym::intrinsic_assign_bswap,
+        rsym::black_box => psym::intrinsic_assign_identity,
+        _ => unreachable!(),
+    };
+    IntrinsicDecision::OneToOneAssign(pri_sym)
+}
+
+fn decide_memory_intrinsic_call(intrinsic: IntrinsicDef) -> IntrinsicDecision {
+    let (kind, is_volatile) = match intrinsic.name {
+        rsym::volatile_load => (
+            MemoryIntrinsicKind::Load {
+                is_ptr_aligned: true,
+            },
+            true,
+        ),
+        rsym::unaligned_volatile_load => (
+            MemoryIntrinsicKind::Load {
+                is_ptr_aligned: false,
+            },
+            true,
+        ),
+        rsym::volatile_store => (
+            MemoryIntrinsicKind::Store {
+                is_ptr_aligned: true,
+            },
+            true,
+        ),
+        rsym::unaligned_volatile_store => (
+            MemoryIntrinsicKind::Store {
+                is_ptr_aligned: false,
+            },
+            true,
+        ),
+        rsym::nontemporal_store => (
+            MemoryIntrinsicKind::Store {
+                is_ptr_aligned: true,
+            },
+            false,
+        ),
+        rsym::copy => (
+            MemoryIntrinsicKind::Copy {
+                is_overlapping: true,
+            },
+            false,
+        ),
+        rsym::copy_nonoverlapping => (
+            MemoryIntrinsicKind::Copy {
+                is_overlapping: false,
+            },
+            false,
+        ),
+        rsym::volatile_copy_memory => (
+            MemoryIntrinsicKind::Copy {
+                is_overlapping: true,
+            },
+            true,
+        ),
+        rsym::volatile_copy_nonoverlapping_memory => (
+            MemoryIntrinsicKind::Copy {
+                is_overlapping: false,
+            },
+            true,
+        ),
+        rsym::write_bytes => (MemoryIntrinsicKind::Set, false),
+        rsym::volatile_set_memory => (MemoryIntrinsicKind::Set, true),
+        rsym::typed_swap_nonoverlapping => (MemoryIntrinsicKind::Swap, false),
+        _ => unreachable!(),
+    };
+    IntrinsicDecision::Memory { kind, is_volatile }
+}
+
+fn decide_atomic_intrinsic_call<'tcx>(intrinsic: IntrinsicDef) -> IntrinsicDecision {
+    macro_rules! str_any_of {
+        ($($intrinsic:ident),*$(,)?) => {
+            $(stringify!($intrinsic))|*
+        };
+    }
+
+    let name = intrinsic.name.as_str();
+    let parts = name.split('_').skip(1).collect::<Vec<_>>();
+    let operation = parts[0];
+    let kind = match name {
+        of_atomic_load_funcs!(str_any_of) => AtomicIntrinsicKind::Load,
+        of_atomic_store_funcs!(str_any_of) => AtomicIntrinsicKind::Store,
+        of_atomic_xchg_funcs!(str_any_of) => AtomicIntrinsicKind::Exchange,
+        of_atomic_cxchg_funcs!(str_any_of) => AtomicIntrinsicKind::CompareExchange {
+            weak: operation.contains("weak"),
+        },
+        of_atomic_binop_funcs!(str_any_of) => {
+            AtomicIntrinsicKind::BinOp(atomic_binop_from_str(&operation))
+        }
+        of_atomic_fence_funcs!(str_any_of) => AtomicIntrinsicKind::Fence {
+            single_thread: operation.contains("singlethread"),
+        },
+        _ => unreachable!(),
+    };
+    IntrinsicDecision::Atomic(kind)
+}
+
+fn atomic_binop_from_str(binop: &str) -> AtomicBinaryOp {
+    match binop {
+        "and" => AtomicBinaryOp::AND,
+        "max" => AtomicBinaryOp::MAX,
+        "min" => AtomicBinaryOp::MIN,
+        "nand" => AtomicBinaryOp::NAND,
+        "or" => AtomicBinaryOp::OR,
+        "umax" => AtomicBinaryOp::MAX,
+        "umin" => AtomicBinaryOp::MIN,
+        "xadd" => AtomicBinaryOp::ADD,
+        "xor" => AtomicBinaryOp::XOR,
+        "xsub" => AtomicBinaryOp::SUB,
+        _ => unreachable!(),
+    }
+}

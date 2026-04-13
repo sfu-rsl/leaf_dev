@@ -18,8 +18,8 @@ use common::pri::{AssignmentId, AtomicBinaryOp, AtomicOrdering};
 
 use super::{
     decision::rules::{
-        AssignmentKindRules, CallFlowRules, ConstantTypeRules, DropRules, OperandInfoRules,
-        PlaceInfoRules, PlaceStructurePieceRules, StorageLifetimeRules, SwitchRules,
+        AssignmentRules, CallFlowRules, ConstantTypeRules, DropRules, OperandKindRules,
+        PlaceInfoRules, PlaceStructureRules, StorageLifetimeMarkerRules, SwitchRules,
     },
     pri_utils::{self, sym::intrinsics::LeafIntrinsicSymbol},
 };
@@ -298,10 +298,10 @@ impl InsertionLocation {
 }
 
 pub(crate) struct Config {
-    pub place_info_filter: PlaceInfoRules<PlaceStructurePieceRules<bool>, bool>,
-    pub operand_info_filter: OperandInfoRules<bool, Option<ConstantTypeRules<bool>>>,
-    pub assignment_filter: AssignmentKindRules<Option<bool>>,
-    pub storage_lifetime_filter: StorageLifetimeRules<bool>,
+    pub place_info_filter: PlaceInfoRules<PlaceStructureRules<bool>, bool>,
+    pub operand_info_filter: OperandKindRules<bool, Option<ConstantTypeRules<bool>>>,
+    pub assignment_filter: AssignmentRules<Option<bool>>,
+    pub storage_lifetime_filter: StorageLifetimeMarkerRules<bool>,
     pub call_flow_filter: CallFlowRules<bool>,
     pub drop_filter: DropRules<bool>,
     pub switch_filter: SwitchRules<bool>,
