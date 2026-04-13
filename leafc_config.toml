@@ -11,9 +11,71 @@ search_path = "sysroot"
 [[instr_rules.exclude]]
 entity = "dyn_def"
 all = [
-    { crate = { name = "aho_corasick" } }   ,
+    { crate = { name = "aho_corasick" } },
     { def_path = '<&.* as .*Automaton>::\w+' },
 ]
+
+# Examples of entity types and their pieces. Refer to the definitions for the complete list.
+
+# [[instr_rules.exclude]]
+# entity = "body"
+# all = []
+
+# [[instr_rules.exclude]]
+# entity = "place_info"
+# kind = "address"
+# all = []
+
+# [[instr_rules.exclude]]
+# entity = "place_info"
+# kind = "type"
+# all = []
+
+# [[instr_rules.exclude]]
+# entity = "place_info"
+# kind = "structure"
+# piece = { not = { any = [ "index" ] } }
+# all = []
+
+# [[instr_rules.exclude]]
+# entity = "operand_kind"
+# kind = { any = [ "move", "copy" ] }
+# all = []
+
+# [[instr_rules.exclude]]
+# entity = "const_type"
+# ty = { any = ["int", "bool"] }
+# all = []
+
+# [[instr_rules.exclude]]
+# entity = "assignment"
+# kind = { any = [ "thread_local_ref" ] }
+# all = []
+
+# [[instr_rules.exclude]]
+# entity = "assignment_info"
+# kind = { any = [ "shallow_init_box" ] }
+# all = []
+
+# [[instr_rules.exclude]]
+# entity = "storage_lifetime"
+# kind = { any = [ "live" ] }
+# all = []
+
+# [[instr_rules.exclude]]
+# entity = "call_flow"
+# kind = { any = ["call_control", "call_input", "func_data"] }
+# all = []
+
+# [[instr_rules.exclude]]
+# entity = "drop"
+# kind = { any = ["call_control", "call_input"] }
+# all = []
+
+# [[instr_rules.exclude]]
+# entity = "switch"
+# kind = { any = ["data"] }
+# all = []
 
 [internalization_rules]
 exclude = ["LLVMFuzzerInitialize"]
