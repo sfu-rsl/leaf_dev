@@ -1,4 +1,5 @@
 mod call;
+mod config;
 mod counter;
 mod decision;
 pub(crate) mod pri_utils;
@@ -31,7 +32,6 @@ use common::{
 };
 
 use crate::{
-    config::InstrumentationRules,
     mir_transform::{self, BodyInstrumentationUnit, JumpTargetModifier},
     passes::{
         StorageExt,
@@ -59,6 +59,7 @@ use self::{
     decision::AtomicIntrinsicKind,
 };
 
+pub(crate) use config::InstrumentationRules;
 pub(crate) use counter::InstrumentationCounter;
 
 const TAG_INSTRUMENTATION: &str = "instrumentation";
@@ -239,15 +240,15 @@ fn make_config<'tcx>(storage: &mut dyn Storage, tcx: TyCtxt<'tcx>, def_id: DefId
     })(accept_place_info_rules(storage, &(tcx, def_id)));
 
     let operand_info_filter = {
-        let top_level = (|rules: OperandInfoFilterResult| OperandInfoRules {
+        let top_level = (|rules: OperandKindFilterResult| OperandKindRules {
             copy: rules.copy.unwrap_or(true),
             mov: rules.mov.unwrap_or(true),
             constant: rules.constant.unwrap_or(true),
         })(accept_operand_info_rules(storage, &(tcx, def_id)));
 
-        OperandInfoRules {
+        OperandKindRules {
             copy: top_level.copy,
-            mov: top_level.copy,
+            mov: top_level.mov,
             constant: top_level.constant.then(|| {
                 accept_constant_type_rules(storage, &(tcx, def_id)).map(|r| r.unwrap_or(true))
             }),
@@ -259,7 +260,7 @@ fn make_config<'tcx>(storage: &mut dyn Storage, tcx: TyCtxt<'tcx>, def_id: DefId
             accept_assignment_rules(storage, &(tcx, def_id), false).map(|f| f.unwrap_or(true));
         (|rules: AssignmentFilterResult| {
             let rules = rules.map(|r| r.unwrap_or(true));
-            AssignmentKindRules {
+            AssignmentRules {
                 use_: top_level.use_.then(|| rules.use_),
                 repeat: top_level.repeat.then(|| rules.repeat),
                 ref_: top_level.ref_.then(|| rules.ref_),
@@ -279,7 +280,7 @@ fn make_config<'tcx>(storage: &mut dyn Storage, tcx: TyCtxt<'tcx>, def_id: DefId
     };
 
     let storage_lifetime_filter =
-        (|rules: StorageLifetimeRules<Option<bool>>| StorageLifetimeRules {
+        (|rules: StorageLifetimeMarkerRules<Option<bool>>| StorageLifetimeMarkerRules {
             live: rules.live.unwrap_or(false),
             dead: rules.dead.unwrap_or(true),
         })(accept_storage_lifetime_rules(storage, &(tcx, def_id)));
