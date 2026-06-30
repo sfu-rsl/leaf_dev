@@ -1,7 +1,0 @@
-[book]
-language = "en"
-src = "src"
-title = "Leaf Book"
-
-[output.html]
-git-repository-url = "https://github.com/sfu-rsl/leaf"
