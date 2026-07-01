@@ -79,3 +79,30 @@ all = [
 
 [internalization_rules]
 exclude = ["LLVMFuzzerInitialize"]
+
+# Let's include everything for now
+
+[[instr_rules.include]]
+entity = "place_info"
+kind = "address"
+all = []
+
+[[instr_rules.include]]
+entity = "place_info"
+kind = "type"
+all = []
+
+[[instr_rules.include]]
+entity = "storage_lifetime"
+kind = { all = [] }
+all = []
+
+[[instr_rules.include]]
+entity = "call_flow"
+kind = { any = ["call_addr", "func_addr"] }
+all = []
+
+[[instr_rules.include]]
+entity = "drop"
+kind = { any = ["call_addr"] }
+all = []
