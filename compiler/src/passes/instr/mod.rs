@@ -912,7 +912,7 @@ where
                 Default::default()
             }
             ToDo | ConstEvaluated => {
-                log_warn!(
+                log_info!(
                     target: TAG_INSTR,
                     "Intrinsic call to {:?} observed.",
                     def.name
@@ -920,7 +920,7 @@ where
                 self.instrument_unsupported_call(params);
             }
             NotPlanned => {
-                log_warn!(
+                log_info!(
                     target: TAG_INSTR,
                     concat!(
                         "Intrinsic call to {:?} observed, which is not planned to be supported.",
