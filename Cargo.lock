@@ -1220,14 +1220,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "runtime_symex"
-version = "0.2.0"
-dependencies = [
- "common",
- "runtime",
-]
-
-[[package]]
 name = "runtime_symex_li"
 version = "0.2.0"
 dependencies = [
