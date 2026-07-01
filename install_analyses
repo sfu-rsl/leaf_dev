@@ -1,0 +1,26 @@
+#! /usr/bin/bash
+
+set -e
+# set -x
+
+cargo build --package runtime_* --profile release
+
+install_dir="$(dirname "$(command -v leafc 2>/dev/null)")"
+if [[ -z "$install_dir" ]]; then
+	install_dir="./target/release"
+fi
+
+build_dir="./target/release"
+for file in "$build_dir"/libleafrt_*.so; do
+    base="$(basename "$file")"
+    name="${base#libleafrt_}"
+    name="${name%.so}"
+    folder_path="$install_dir/runtime_$name"
+    link_path="$folder_path/libleafrt.so"
+
+    mkdir -p "$folder_path"
+    ln -sfn "$(realpath "$file")" "$link_path"
+done
+
+echo "Analyses are installed in $install_dir"
+ls $install_dir | grep runtime_*
