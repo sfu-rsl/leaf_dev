@@ -1,0 +1,16 @@
+codegen_all_mir = true
+marker_cfg_name = "leafc"
+override_sysroot = true
+
+[runtime_shim]
+[runtime_shim.location.external]
+crate_name = "leaf"
+search_path = "sysroot"
+
+# The problematic recursive implementation in aho_corasick. More info: BurntSushi/aho-corasick#149
+[[instr_rules.exclude]]
+entity = "body"
+all = []
+
+[internalization_rules]
+exclude = ["v8.+"]

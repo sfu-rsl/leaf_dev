@@ -1,0 +1,53 @@
+[defaults]
+profile = ["release", "dev"]
+target_args = []
+only_enabled = true
+
+
+[[target]]
+crate = "bufreader"
+
+
+[[target]]
+crate = "compression"
+
+
+[[target]]
+crate = "css"
+
+
+[[target]]
+crate = "fmt"
+enabled = false
+
+[[target]]
+crate = "fmt2"
+
+[[target]]
+crate = "hashmap"
+
+
+[[target]]
+crate = "nbody"
+enabled = false
+
+
+[[target]]
+crate = "nes"
+
+
+[[target]]
+crate = "parsing"
+
+
+[[target]]
+crate = "raytracer"
+enabled = false
+
+
+[[target]]
+crate = "svg"
+enabled = false
+
+[[target]]
+crate = "text-search"

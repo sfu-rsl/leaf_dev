@@ -1,0 +1,8 @@
+
+[[instr_rules.exclude]]
+entity = "body"
+any = [
+    { crate = { name = 'flate2' } },
+    { crate = { name = 'miniz_oxide' } },
+    { crate = { name = 'benchlib' } },
+]

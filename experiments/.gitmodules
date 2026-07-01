@@ -1,0 +1,53 @@
+[submodule "crates/rust-url"]
+	path = crates/rust-url
+	url = https://github.com/servo/rust-url.git
+[submodule "crates/nom"]
+	path = crates/nom
+	url = https://github.com/rust-bakery/nom.git
+[submodule "crates/bat"]
+	path = crates/bat
+	url = https://github.com/sharkdp/bat.git
+[submodule "crates/bitflags"]
+	path = crates/bitflags
+	url = https://github.com/bitflags/bitflags.git
+[submodule "crates/clap"]
+	path = crates/clap
+	url = https://github.com/clap-rs/clap.git
+[submodule "crates/grex"]
+	path = crates/grex
+	url = https://github.com/pemistahl/grex.git
+[submodule "crates/image"]
+	path = crates/image
+	url = https://github.com/image-rs/image.git
+[submodule "crates/RustPython"]
+	path = crates/RustPython
+	url = https://github.com/RustPython/RustPython.git
+[submodule "perf/rustc-perf"]
+	path = perf/rustc-perf
+	url = https://github.com/sfu-rsl/rustc-perf
+	branch = leaf_eval
+[submodule "perf/rustc-perf-miri"]
+	path = perf/rustc-perf-miri
+	url = https://github.com/sfu-rsl/rustc-perf
+	branch = for-miri
+[submodule "crates/syn"]
+	path = crates/syn
+	url = https://github.com/dtolnay/syn
+[submodule "crates/crossterm"]
+	path = crates/crossterm
+	url = https://github.com/crossterm-rs/crossterm
+[submodule "crates/rustls"]
+	path = crates/rustls
+	url = https://github.com/rustls/rustls/
+[submodule "crates/hashbrown"]
+	path = crates/hashbrown
+	url = https://github.com/rust-lang/hashbrown
+[submodule "crates/flate2"]
+	path = crates/flate2
+	url = https://github.com/rust-lang/flate2-rs
+[submodule "crates/deno"]
+	path = crates/deno
+	url = https://github.com/denoland/deno
+[submodule "crates/wasmer"]
+	path = crates/wasmer
+	url = https://github.com/wasmerio/wasmer

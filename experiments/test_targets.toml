@@ -1,0 +1,151 @@
+[defaults]
+profile = ["dev", "release"]
+target_args = []
+only_enabled = true
+
+[[target]]
+crate = "bat"
+target_args = [
+    "--test",
+    "integration_tests",
+    "--test",
+    "no_duplicate_extensions",
+    "--test",
+    "test_pretty_printer",
+    "--lib",
+]
+enabled = true
+doc = true
+
+[[target]]
+crate = "bitflags"
+target_args = ["--test", "compile", "--lib"]
+doc = true
+
+[[target]]
+crate = "clap"
+target_args = []
+enabled = false
+
+[[target]]
+crate = "crossterm"
+target_args = ["--lib"]
+enabled = true
+doc = true
+
+[[target]]
+crate = "deno"
+target_args = []
+package_name = "deno_core"
+enabled = false
+
+[[target]]
+crate = "flate2"
+target_args = [
+    "--lib",
+    "--test",
+    "early-flush",
+    "--test",
+    "empty-read",
+    "--test",
+    "gunzip",
+    "--test",
+    "zero-write",
+]
+enabled = true
+doc = true
+
+[[target]]
+crate = "grex"
+target_args = []
+enabled = false
+
+[[target]]
+crate = "hashbrown"
+target_args = [
+    "--lib",
+    "--test",
+    "equivalent_trait",
+    "--test",
+    "hasher",
+    "--test",
+    "hasher_unwind",
+    "--test",
+    "map",
+    "--test",
+    "set",
+]
+enabled = true
+doc = true
+
+[[target]]
+crate = "image"
+target_args = []
+enabled = false
+
+[[target]]
+crate = "nom"
+target_args = []
+enabled = false
+
+[[target]]
+crate = "rust-url"
+target_args = [
+    "--test",
+    "tests",
+    "--test",
+    "unit",
+    "--test",
+    "unit",
+    "--test",
+    "unitbis",
+    "--test",
+    "url_wpt",
+    "--test",
+    "wpt",
+]
+package_name = "url"
+enabled = true
+doc = true
+
+[[target]]
+crate = "rustls"
+target_args = [
+    "--test",
+    "api",
+    "--test",
+    "api_ffdhe",
+    "--test",
+    "bogo",
+    "--test",
+    "client_cert_verifier",
+    "--test",
+    "ech",
+    "--test",
+    "key_log_file_env",
+    "--test",
+    "process_provider",
+    "--test",
+    "server_cert_verifier",
+    "--test",
+    "unbuffered",
+    "--lib",
+]
+enabled = true
+doc = true
+
+[[target]]
+crate = "RustPython"
+target_args = []
+package_name = "rustpython"
+enabled = false
+
+[[target]]
+crate = "wasmer"
+target_args = [
+    "--no-default-features",
+    "--test",
+    "all_no_engine",
+]
+enabled = true
+doc = false

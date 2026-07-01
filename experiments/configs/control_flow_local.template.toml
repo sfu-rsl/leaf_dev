@@ -1,0 +1,82 @@
+codegen_all_mir = true
+
+marker_cfg_name = "leafc"
+override_sysroot = true
+
+[runtime_shim]
+[runtime_shim.location.external]
+crate_name = "leaf"
+search_path = "sysroot"
+
+[[instr_rules.exclude]]
+entity = "body"
+all = [
+    { crate = { is_external = true } },
+    { not = { crate = { name = '${CRATE_NAME}\w*' } } },
+]
+
+[[instr_rules.include]]
+entity = "call_flow"
+kind = { any = ["call_control"] }
+all = []
+
+[[instr_rules.include]]
+entity = "switch"
+kind = { any = ["control"] }
+all = []
+
+[[instr_rules.exclude]]
+entity = "place_info"
+kind = "address"
+all = []
+
+[[instr_rules.exclude]]
+entity = "place_info"
+kind = "type"
+all = []
+
+[[instr_rules.exclude]]
+entity = "place_info"
+kind = "structure"
+piece = { all = [] }
+all = []
+
+[[instr_rules.exclude]]
+entity = "operand_kind"
+kind = { all = [] }
+all = []
+
+[[instr_rules.exclude]]
+entity = "const_type"
+ty = { all = [] }
+all = []
+
+[[instr_rules.exclude]]
+entity = "assignment"
+kind = { all = [] }
+all = []
+
+[[instr_rules.exclude]]
+entity = "assignment_info"
+kind = { all = [] }
+all = []
+
+[[instr_rules.exclude]]
+entity = "storage_lifetime"
+kind = { all = [] }
+all = []
+
+[[instr_rules.exclude]]
+entity = "call_flow"
+kind = { any = ["call_input", "func_data", "call_addr", "func_addr"] }
+all = []
+
+[[instr_rules.exclude]]
+entity = "drop"
+kind = { any = ["call_input", "call_addr"] }
+all = []
+
+[[instr_rules.exclude]]
+entity = "switch"
+kind = { any = ["data"] }
+all = []

@@ -1,0 +1,77 @@
+[defaults]
+profile = ["dev", "release"]
+target_args = []
+only_enabled = true
+
+[[target]]
+crate = "bat"
+target_args = ["--example", "simple"]
+enabled = true
+
+[[target]]
+crate = "bitflags"
+target_args = ["--example", "custom_bits_type"]
+
+
+[[target]]
+crate = "clap"
+target_args = ["--example", "busybox"]
+enabled = false
+
+[[target]]
+crate = "crossterm"
+target_args = ["--example", "stderr"]
+enabled = true
+
+[[target]]
+crate = "deno"
+target_args = ["--package", "deno_core", "--example", "hello_world"]
+package_name = "deno_core"
+enabled = false
+
+[[target]]
+crate = "flate2"
+target_args = ["--example", "compress_file"]
+enabled = true
+
+[[target]]
+crate = "grex"
+target_args = ["--bin", "grex"]
+enabled = false
+
+[[target]]
+crate = "hashbrown"
+target_args = ["--test", "map"]
+enabled = true
+
+[[target]]
+crate = "image"
+target_args = ["--example", "fractal"]
+enabled = false
+
+[[target]]
+crate = "nom"
+target_args = ["--example", "json"]
+enabled = false
+
+[[target]]
+crate = "rust-url"
+target_args = ["--package", "url", "--test", "unit"]
+package_name = "url"
+enabled = true
+
+[[target]]
+crate = "rustls"
+target_args = ["--package", "rustls-examples", "--bin", "simpleclient"]
+enabled = true
+
+[[target]]
+crate = "RustPython"
+target_args = ["--example", "hello_embed"]
+package_name = "rustpython"
+enabled = false
+
+[[target]]
+crate = "wasmer"
+target_args = ["--example", "hello-world", "--features", "backend"]
+enabled = true

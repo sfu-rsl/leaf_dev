@@ -1,0 +1,43 @@
+codegen_all_mir = true
+
+marker_cfg_name = "leafc"
+override_sysroot = true
+
+[runtime_shim]
+[runtime_shim.location.external]
+crate_name = "leaf"
+search_path = "sysroot"
+
+# The problematic recursive implementation in aho_corasick. More info: BurntSushi/aho-corasick#149
+[[instr_rules.exclude]]
+entity = "dyn_def"
+all = [
+    { crate = { name = "aho_corasick" } },
+    { def_path = '<&.* as .*Automaton>::\w+' },
+]
+
+[[instr_rules.exclude]]
+entity = "place_info"
+kind = "address"
+all = []
+
+[[instr_rules.exclude]]
+entity = "place_info"
+kind = "type"
+all = []
+
+[[instr_rules.exclude]]
+entity = "storage_lifetime"
+kind = { all = [] }
+all = []
+
+[[instr_rules.include]]
+entity = "call_flow"
+kind = { any = ["call_addr", "func_addr"] }
+all = []
+
+[[instr_rules.include]]
+entity = "drop"
+kind = { any = ["call_addr"] }
+all = []
+

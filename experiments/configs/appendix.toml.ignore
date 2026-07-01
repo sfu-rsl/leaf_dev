@@ -1,0 +1,5 @@
+[[instr_rules.exclude]]
+entity = "body"
+any = [
+    { def_path = 'artifact::test::.*' },
+]
