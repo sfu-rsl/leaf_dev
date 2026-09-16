@@ -50,21 +50,20 @@ pub(super) fn should_instrument<'tcx>(
         return false;
     }
 
-    rules::bake_rules(storage, get_exceptional_exclusions);
-    let rules = rules::get_baked_body_rules(storage);
+    let policy = rules::get_baked_policy(storage);
     if let Some((decision, item)) =
         find_inheritable_first_filtered(tcx, def_id, move |tcx, def_id| {
-            rules.accept(&(tcx, def_id))
+            policy.body_decision(&(tcx, def_id))
         })
     {
         log_debug!(
             target: TAG_INSTR_DECISION,
-            "Found a rule for instrumentation of {:?} on {:?} with decision: {}",
+            "Found a rule for instrumentation of {:?} on {:?} with decision: {:?}",
             def_id,
             item,
             decision
         );
-        return decision;
+        return decision == rules::BodyDecision::Instrument;
     }
 
     true
@@ -99,7 +98,7 @@ fn decide_instance_kind(kind: &InstanceKind) -> bool {
 
 /// Returns a set of filters to exclude some functions (mostly in the standard library)
 /// that are currently problematic to instrument.
-fn get_exceptional_exclusions() -> Vec<WholeBodyFilter> {
+pub(super) fn get_exceptional_exclusions() -> Vec<WholeBodyFilter> {
     use super::config::{CrateFilter, EntityLocationFilter};
     use crate::config::rules::*;
 
@@ -136,8 +135,8 @@ fn get_exceptional_exclusions() -> Vec<WholeBodyFilter> {
 fn find_inheritable_first_filtered<'tcx>(
     tcx: TyCtxt<'tcx>,
     def_id: DefId,
-    rules: impl Fn(TyCtxt<'tcx>, DefId) -> Option<bool>,
-) -> Option<(bool, DefId)> {
+    rules: impl Fn(TyCtxt<'tcx>, DefId) -> Option<rules::BodyDecision>,
+) -> Option<(rules::BodyDecision, DefId)> {
     let mut current = def_id;
     loop {
         // Attributes take precedence over filters.
@@ -149,11 +148,14 @@ fn find_inheritable_first_filtered<'tcx>(
                 current,
                 explicit
             );
-            return Some((explicit, current));
+            return Some((
+                rules::BodyDecision::from_rule(Some(explicit)).unwrap(),
+                current,
+            ));
         }
 
-        if let Some(include) = rules(tcx, current) {
-            return Some((include, current));
+        if let Some(decision) = rules(tcx, current) {
+            return Some((decision, current));
         }
 
         let parent = tcx.opt_parent(current);

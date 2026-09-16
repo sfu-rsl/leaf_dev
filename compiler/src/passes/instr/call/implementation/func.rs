@@ -36,12 +36,12 @@ where
         self.debug_info(&format!("{}", func.ty(self, self.tcx())));
 
         let mut added = false;
-        if self.config().call_flow_filter.call_control {
+        if self.config().call_flow_filter.call_control.is_enabled() {
             self.before_call_control(no_def, func, args.first().map(|a| &a.node));
             added = true;
         }
 
-        if self.config().call_flow_filter.call_input {
+        if self.config().call_flow_filter.call_input.is_enabled() {
             self.before_call_data(func, args);
             added = true;
         }
@@ -59,7 +59,7 @@ where
 
         self.enter_func();
 
-        if self.config().call_flow_filter.call_input {
+        if self.config().call_flow_filter.call_input.is_enabled() {
             self.enter_func_data();
         }
     }
@@ -114,12 +114,12 @@ where
         self.debug_info(&format!("{}", func.ty(self, self.tcx())));
 
         let mut added = false;
-        if self.config().drop_filter.control {
+        if self.config().drop_filter.control.is_enabled() {
             self.before_drop_control(func.clone());
             added = true;
         }
 
-        if self.config().drop_filter.input {
+        if self.config().drop_filter.input.is_enabled() {
             self.before_drop_data(&func, place.clone());
             added = true;
         }
@@ -143,12 +143,12 @@ where
         self.debug_info(&format!("{}", func.ty(self, self.tcx())));
 
         let mut added = false;
-        if self.config().drop_filter.control {
+        if self.config().drop_filter.control.is_enabled() {
             self.before_drop_control(func.clone());
             added = true;
         }
 
-        if self.config().drop_filter.input {
+        if self.config().drop_filter.input.is_enabled() {
             self.before_drop_in_place_data(&func, to_drop);
             added = true;
         }
@@ -201,7 +201,7 @@ where
             func,
             first_arg,
             self.original_bb_index_as_arg(),
-            self.config().call_flow_filter.call_address,
+            self.config().call_flow_filter.call_address.is_enabled(),
         ));
 
         self.insert_blocks(blocks);
@@ -257,7 +257,7 @@ where
             self.tcx(),
             self,
             self.current_typing_env(),
-            self.config().call_flow_filter.func_address,
+            self.config().call_flow_filter.func_address.is_enabled(),
         );
         self.insert_blocks([block]);
     }
@@ -361,7 +361,7 @@ where
             drop_in_place_fn,
             None,
             self.original_bb_index_as_arg(),
-            self.config().call_flow_filter.call_address,
+            self.config().call_flow_filter.call_address.is_enabled(),
         ));
 
         self.insert_blocks(blocks);
@@ -464,7 +464,7 @@ mod utils {
     use core::{debug_assert_matches, iter};
 
     use crate::{
-        passes::instr::{MirSourceExt, decision::rules::accept_dyn_def_filter_rules},
+        passes::instr::{MirSourceExt, decision::rules::{BodyDecision, get_baked_policy}},
         utils::mir::{InstanceKindExt, TyCtxtExt},
     };
 
@@ -756,8 +756,12 @@ mod utils {
         if let Some((trait_ref, trait_item)) = as_dyn_compatible_method(tcx, def_id, typing_env)
             && trait_ref.self_ty().is_sized(tcx, typing_env)
         {
-            let ruled_out = accept_dyn_def_filter_rules(call_adder.storage(), &(tcx, def_id))
-                .map_or(false, |include| !include);
+            let ruled_out = {
+                let policy = get_baked_policy(call_adder.storage());
+                policy
+                    .dynamic_definition_decision(&(tcx, def_id))
+                    .is_some_and(|decision| decision == BodyDecision::Skip)
+            };
             if ruled_out {
                 log_info!(
                     "Dyn-compatible method will be defined as static: {:?}",

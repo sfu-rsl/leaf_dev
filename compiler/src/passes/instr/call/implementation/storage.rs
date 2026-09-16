@@ -8,7 +8,13 @@ where
     C: ForStorageMarking<'tcx>,
 {
     fn mark_live(&mut self, place: impl FnOnce(&mut Self) -> PlaceRef) {
-        if !self.context.config().storage_lifetime_filter.live {
+        if !self
+            .context
+            .config()
+            .storage_lifetime_filter
+            .live
+            .is_enabled()
+        {
             return;
         }
 
@@ -34,7 +40,13 @@ where
     }
 
     fn mark_dead(&mut self, place: impl FnOnce(&mut Self) -> PlaceRef) {
-        if !self.context.config().storage_lifetime_filter.dead {
+        if !self
+            .context
+            .config()
+            .storage_lifetime_filter
+            .dead
+            .is_enabled()
+        {
             return;
         }
 

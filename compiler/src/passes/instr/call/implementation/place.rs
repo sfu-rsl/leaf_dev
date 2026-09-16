@@ -217,7 +217,7 @@ where
         place: Place<'tcx>,
         place_ty: Ty<'tcx>,
     ) -> Option<BlocksAndResult<'tcx>> {
-        if !self.context.config().place_info_filter.address {
+        if !self.context.config().place_info_filter.address.is_enabled() {
             return None;
         }
 
@@ -273,7 +273,7 @@ where
         mut place_ref: Local,
         ty: Ty<'tcx>,
     ) -> Option<BlocksAndResult<'tcx>> {
-        if !self.context.config().place_info_filter.ty {
+        if !self.context.config().place_info_filter.ty.is_enabled() {
             return None;
         }
 
@@ -332,10 +332,10 @@ struct PlaceReferralChain<'tcx> {
 }
 
 fn filter_and_fold_place<'tcx>(
-    config: &PlaceStructureRules<bool>,
+    config: &PlaceStructureRules<super::DetailDecision>,
     place: &Place<'tcx>,
 ) -> PlaceReferralChain<'tcx> {
-    let mut base = if config.local {
+    let mut base = if config.local.is_enabled() {
         PlaceReferralBase::Local(place.local)
     } else {
         PlaceReferralBase::SomePlace(MirPlaceRef {
@@ -350,14 +350,14 @@ fn filter_and_fold_place<'tcx>(
         projection: &place.projection[..=i],
     }) {
         let include = match place_ref.last_projection().unwrap().1 {
-            ProjectionElem::Deref => config.deref,
-            ProjectionElem::Field(..) => config.field,
-            ProjectionElem::Index(_) => config.index,
-            ProjectionElem::ConstantIndex { .. } => config.constant_index,
-            ProjectionElem::Subslice { .. } => config.subslice,
-            ProjectionElem::Downcast(..) => config.downcast,
-            ProjectionElem::OpaqueCast(..) => config.opaque_cast,
-            ProjectionElem::UnwrapUnsafeBinder(..) => config.unwrap_unsafe_binder,
+            ProjectionElem::Deref => config.deref.is_enabled(),
+            ProjectionElem::Field(..) => config.field.is_enabled(),
+            ProjectionElem::Index(_) => config.index.is_enabled(),
+            ProjectionElem::ConstantIndex { .. } => config.constant_index.is_enabled(),
+            ProjectionElem::Subslice { .. } => config.subslice.is_enabled(),
+            ProjectionElem::Downcast(..) => config.downcast.is_enabled(),
+            ProjectionElem::OpaqueCast(..) => config.opaque_cast.is_enabled(),
+            ProjectionElem::UnwrapUnsafeBinder(..) => config.unwrap_unsafe_binder.is_enabled(),
         };
 
         if include {

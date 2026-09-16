@@ -18,8 +18,9 @@ use common::pri::{AssignmentId, AtomicBinaryOp, AtomicOrdering};
 
 use super::{
     decision::rules::{
-        AssignmentRules, CallFlowRules, ConstantTypeRules, DropRules, OperandKindRules,
-        PlaceInfoRules, PlaceStructureRules, StorageLifetimeMarkerRules, SwitchRules,
+        AssignmentRules, CallFlowRules, ConstantTypeRules, DetailDecision, DropRules,
+        EventDecision, OperandKindRules, PlaceInfoRules, PlaceStructureRules,
+        StorageLifetimeMarkerRules, SwitchRules,
     },
     pri_utils::{self, sym::intrinsics::LeafIntrinsicSymbol},
 };
@@ -309,13 +310,13 @@ impl InsertionLocation {
 }
 
 pub(crate) struct Config {
-    pub place_info_filter: PlaceInfoRules<PlaceStructureRules<bool>, bool>,
-    pub operand_info_filter: OperandKindRules<bool, Option<ConstantTypeRules<bool>>>,
-    pub assignment_filter: AssignmentRules<Option<bool>>,
-    pub storage_lifetime_filter: StorageLifetimeMarkerRules<bool>,
-    pub call_flow_filter: CallFlowRules<bool>,
-    pub drop_filter: DropRules<bool>,
-    pub switch_filter: SwitchRules<bool>,
+    pub place_info_filter: PlaceInfoRules<PlaceStructureRules<DetailDecision>, DetailDecision>,
+    pub operand_info_filter: OperandKindRules<DetailDecision, Option<ConstantTypeRules<DetailDecision>>>,
+    pub assignment_filter: AssignmentRules<EventDecision>,
+    pub storage_lifetime_filter: StorageLifetimeMarkerRules<DetailDecision>,
+    pub call_flow_filter: CallFlowRules<DetailDecision>,
+    pub drop_filter: DropRules<DetailDecision>,
+    pub switch_filter: SwitchRules<DetailDecision>,
 }
 
 mod implementation;

@@ -16,6 +16,7 @@ all = [
 ]
 
 # Examples of entity types and their pieces. Refer to the definitions for the complete list.
+# Rules distinguish whole-body selection, event omission, opaque payloads, and detailed payloads.
 
 # [[instr_rules.exclude]]
 # entity = "body"

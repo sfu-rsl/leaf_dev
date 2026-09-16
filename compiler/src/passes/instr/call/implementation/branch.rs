@@ -15,7 +15,7 @@ where
     C: ForBranching<'tcx>,
 {
     fn store_branching_info(&mut self, discr: &Operand<'tcx>) -> SwitchInfo<'tcx> {
-        let discr_ref = if self.config().switch_filter.data {
+        let discr_ref = if self.config().switch_filter.data.is_enabled() {
             Some(self.reference_operand(discr))
         } else {
             None
@@ -77,7 +77,7 @@ where
 
         let switch_info = self.context.switch_info();
 
-        if self.config().switch_filter.data {
+        if self.config().switch_filter.data.is_enabled() {
             let discr_ty = switch_info.discr_ty;
             let (func_name, add_index_arg, value_arg, additional_arg) = if discr_ty.is_bool() {
                 const FALSE_SWITCH_VALUE: u128 = 0;
@@ -139,7 +139,7 @@ where
                     Some(self.context.block_index()),
                 ),
             );
-        } else if self.config().switch_filter.control {
+        } else if self.config().switch_filter.control.is_enabled() {
             blocks.push(self.make_bb_for_call_with_target(
                 sym::take_branch,
                 vec![
@@ -173,7 +173,7 @@ where
         let tcx = self.context.tcx();
         let switch_info = self.context.switch_info();
 
-        if self.config().switch_filter.data {
+        if self.config().switch_filter.data.is_enabled() {
             let discr_ty = switch_info.discr_ty;
             let mut non_values = non_values.into_iter();
             let (additional_stmts, func_name, additional_args) = if discr_ty.is_bool() {
@@ -265,7 +265,7 @@ where
             );
             block.statements.extend(additional_stmts);
             blocks.push(block);
-        } else if self.config().switch_filter.control {
+        } else if self.config().switch_filter.control.is_enabled() {
             blocks.push(self.make_bb_for_call_with_target(
                 sym::take_branch_ow,
                 vec![switch_info.original_node_index],
