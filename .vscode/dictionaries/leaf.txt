@@ -36,6 +36,7 @@ serdes
 SESE
 smtlib
 streamable
+subpasses
 Symbolizable
 symex
 Trunc
