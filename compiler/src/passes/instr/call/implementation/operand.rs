@@ -37,8 +37,12 @@ where
 
         use Operand::*;
         match operand {
-            Copy(place) if config.copy => self.internal_reference_place_operand(place, true),
-            Move(place) if config.mov => self.internal_reference_place_operand(place, false),
+            Copy(place) if config.copy.is_enabled() => {
+                self.internal_reference_place_operand(place, true)
+            }
+            Move(place) if config.mov.is_enabled() => {
+                self.internal_reference_place_operand(place, false)
+            }
             Constant(constant) if config.constant.is_some() => {
                 self.internal_reference_const_operand(constant)
             }
@@ -110,19 +114,20 @@ where
         } else if ty.is_raw_ptr() {
             config
                 .ptr
+                .is_enabled()
                 .then(|| self.internal_reference_const_ptr(constant))
         } else if cfg!(feature = "abs_concrete") {
             None
         }
         // &str
         else if ty.peel_refs().is_str() {
-            config.str.then(|| {
+            config.str.is_enabled().then(|| {
                 self.internal_reference_const_operand_directly(sym::ref_operand_const_str, constant)
             })
         }
         // &[u8]
         else if Self::is_u8_slice_ref(tcx, ty) {
-            config.byte_str.then(|| {
+            config.byte_str.is_enabled().then(|| {
                 self.internal_reference_const_operand_directly(
                     sym::ref_operand_const_byte_str,
                     constant,
@@ -135,12 +140,14 @@ where
         {
             config
                 .byte_str
+                .is_enabled()
                 .then(|| self.internal_reference_byte_str_const_operand(constant))
         }
         // NOTE: Check this after all other ZSTs that you want to distinguish.
         else if ty.size(tcx, self.current_typing_env()) == rustc_abi::Size::ZERO {
             config
                 .zst
+                .is_enabled()
                 .then(|| self.internal_reference_zst_const_operand())
         } else if let TyKind::FnDef(..) = ty.kind() {
             self.internal_reference_func_def_const_operand(constant)
@@ -175,7 +182,7 @@ where
 
         let config = self.const_config();
         if ty.is_bool() {
-            config.bool.then(|| {
+            config.bool.is_enabled().then(|| {
                 self.make_bb_for_helper_call_with_ret(
                     self.pri_helper_funcs().ref_operand_const_bool_encoded,
                     vec![operand::const_from_existing(constant)],
@@ -183,7 +190,7 @@ where
                 .into()
             })
         } else if ty.is_char() {
-            config.char.then(|| {
+            config.char.is_enabled().then(|| {
                 self.internal_reference_const_operand_directly(
                     sym::ref_operand_const_char,
                     constant,
@@ -192,10 +199,12 @@ where
         } else if ty.is_integral() {
             config
                 .int
+                .is_enabled()
                 .then(|| self.internal_reference_int_const_operand(constant))
         } else if ty.is_floating_point() {
             config
                 .float
+                .is_enabled()
                 .then(|| self.internal_reference_float_const_operand(constant))
         } else {
             unreachable!()
@@ -403,7 +412,7 @@ where
             .flatten()
     }
 
-    fn const_config(&self) -> &ConstantTypeRules<bool> {
+    fn const_config(&self) -> &ConstantTypeRules<super::DetailDecision> {
         self.context
             .config()
             .operand_info_filter

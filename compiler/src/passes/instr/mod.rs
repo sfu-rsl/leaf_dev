@@ -105,6 +105,7 @@ impl CompilationPass for Instrumentor {
         storage.get_or_insert_with(decision::rules::KEY_RULES.to_owned(), || {
             self.rules.take().unwrap()
         });
+        decision::rules::bake_rules(storage, decision::get_exceptional_exclusions);
         rustc_driver::Compilation::Continue
     }
 
@@ -224,92 +225,27 @@ fn make_pri_items(tcx: TyCtxt) -> PriItems {
 
 fn make_config<'tcx>(storage: &mut dyn Storage, tcx: TyCtxt<'tcx>, def_id: DefId) -> Config {
     use decision::rules::*;
-    let place_info_filter = (|rules: PlaceInfoFilterResult| PlaceInfoRules {
-        structure: rules.structure.map(|r| r.unwrap_or(true)),
-        address: rules.address.unwrap_or(true),
-        ty: rules.ty.unwrap_or(true),
-    })(accept_place_info_rules(storage, &(tcx, def_id)));
-
-    let operand_info_filter = {
-        let top_level = (|rules: OperandKindFilterResult| OperandKindRules {
-            copy: rules.copy.unwrap_or(true),
-            mov: rules.mov.unwrap_or(true),
-            constant: rules.constant.unwrap_or(true),
-        })(accept_operand_info_rules(storage, &(tcx, def_id)));
-
-        OperandKindRules {
-            copy: top_level.copy,
-            mov: top_level.mov,
-            constant: top_level.constant.then(|| {
-                accept_constant_type_rules(storage, &(tcx, def_id)).map(|r| r.unwrap_or(true))
-            }),
-        }
+    let item = &(tcx, def_id);
+    let policy = decision::rules::get_baked_policy(storage);
+    let operand_info = policy.operand_info_decisions(item);
+    let operand_info_filter = OperandKindRules {
+        copy: operand_info.copy,
+        mov: operand_info.mov,
+        constant: if operand_info.constant.is_enabled() {
+            Some(policy.constant_type_decisions(item))
+        } else {
+            None
+        },
     };
-
-    let assignment_filter = {
-        let top_level =
-            accept_assignment_rules(storage, &(tcx, def_id), false).map(|f| f.unwrap_or(true));
-        (|rules: AssignmentFilterResult| {
-            let rules = rules.map(|r| r.unwrap_or(true));
-            AssignmentRules {
-                use_: top_level.use_.then(|| rules.use_),
-                repeat: top_level.repeat.then(|| rules.repeat),
-                ref_: top_level.ref_.then(|| rules.ref_),
-                thread_local_ref: top_level.thread_local_ref.then(|| rules.thread_local_ref),
-                raw_ptr: top_level.raw_ptr.then(|| rules.raw_ptr),
-                cast: top_level.cast.then(|| rules.cast),
-                binary_op: top_level.binary_op.then(|| rules.binary_op),
-                unary_op: top_level.unary_op.then(|| rules.unary_op),
-                discriminant: top_level.discriminant.then(|| rules.discriminant),
-                aggregate: top_level.aggregate.then(|| rules.aggregate),
-                wrap_unsafe_binder: top_level
-                    .wrap_unsafe_binder
-                    .then(|| rules.wrap_unsafe_binder),
-                intrinsic_unary_op: top_level
-                    .intrinsic_unary_op
-                    .then(|| rules.intrinsic_unary_op),
-                intrinsic_binary_op: top_level
-                    .intrinsic_binary_op
-                    .then(|| rules.intrinsic_binary_op),
-                intrinsic_ternary_op: top_level
-                    .intrinsic_ternary_op
-                    .then(|| rules.intrinsic_ternary_op),
-                intrinsic_misc_op: top_level.intrinsic_misc_op.then(|| rules.intrinsic_misc_op),
-                intrinsic_memory_op: top_level
-                    .intrinsic_memory_op
-                    .then(|| rules.intrinsic_memory_op),
-                atomic_binary_op: top_level.atomic_binary_op.then(|| rules.atomic_binary_op),
-                atomic_memory_op: top_level.atomic_memory_op.then(|| rules.atomic_memory_op),
-            }
-        })(accept_assignment_rules(storage, &(tcx, def_id), true))
-    };
-
-    let storage_lifetime_filter =
-        (|rules: StorageLifetimeMarkerRules<Option<bool>>| StorageLifetimeMarkerRules {
-            live: rules.live.unwrap_or(false),
-            dead: rules.dead.unwrap_or(true),
-        })(accept_storage_lifetime_rules(storage, &(tcx, def_id)));
-
-    let call_flow_filter = (|rules: CallFlowFilterResult| rules.map(|r| r.unwrap_or(true)))(
-        accept_call_flow_rules(storage, &(tcx, def_id)),
-    );
-
-    let drop_filter = (|rules: DropFilterResult| rules.map(|r| r.unwrap_or(true)))(
-        accept_drop_rules(storage, &(tcx, def_id)),
-    );
-
-    let switch_filter = (|rules: SwitchFilterResult| rules.map(|r| r.unwrap_or(true)))(
-        accept_switch_rules(storage, &(tcx, def_id)),
-    );
 
     Config {
-        place_info_filter,
+        place_info_filter: policy.place_info_decisions(item),
         operand_info_filter,
-        assignment_filter,
-        storage_lifetime_filter,
-        call_flow_filter,
-        drop_filter,
-        switch_filter,
+        assignment_filter: policy.assignment_decisions(item),
+        storage_lifetime_filter: policy.storage_lifetime_decisions(item),
+        call_flow_filter: policy.call_flow_decisions(item),
+        drop_filter: policy.drop_decisions(item),
+        switch_filter: policy.switch_decisions(item),
     }
 }
 
@@ -677,8 +613,8 @@ where
         + cr::ForDropping<'tcx>,
 {
     fn visit_switch_int(&mut self, discr: &Operand<'tcx>, targets: &mir::SwitchTargets) {
-        if !self.call_adder.config().switch_filter.control
-            && !self.call_adder.config().switch_filter.data
+        if !self.call_adder.config().switch_filter.control.is_enabled()
+            && !self.call_adder.config().switch_filter.data.is_enabled()
         {
             return;
         }
@@ -938,6 +874,8 @@ where
         func_name: LeafIntrinsicSymbol,
         params: CallParams<'_, 'tcx>,
     ) {
+        use decision::rules::EventDecision::*;
+
         let rules = &self.call_adder.config().assignment_filter;
         let filter = match params.args.len() {
             1 => rules.intrinsic_unary_op,
@@ -947,20 +885,22 @@ where
         };
 
         match filter {
-            Some(include_info) => {
+            Omit => return,
+            Opaque | Detailed => {
                 let mut call_adder = self.call_adder.before();
                 let dest_ref = call_adder.reference_place(params.destination);
                 let args = Self::ref_args(&mut call_adder, params.args);
                 let mut call_adder = call_adder.assign(self.assignment_id.unwrap(), dest_ref);
 
-                if include_info {
-                    call_adder.intrinsic_one_to_one_by(def_id, func_name, args.into_iter());
-                } else {
-                    call_adder.by_some();
+                match filter {
+                    Detailed => {
+                        call_adder.intrinsic_one_to_one_by(def_id, func_name, args.into_iter());
+                    }
+                    Opaque => {
+                        call_adder.by_some();
+                    }
+                    _ => unreachable!(),
                 }
-            }
-            None => {
-                // Filter out completely
             }
         }
     }
@@ -990,6 +930,7 @@ where
         kind: AtomicIntrinsicKind,
     ) {
         use AtomicIntrinsicKind::*;
+        use decision::rules::EventDecision::*;
 
         let convert_ordering = |ord: mir_ty::AtomicOrdering| match ord {
             mir_ty::AtomicOrdering::Relaxed => common::pri::AtomicOrdering::RELAXED,
@@ -1007,12 +948,13 @@ where
             BinOp(..) => rules.atomic_binary_op,
             Fence { .. } => {
                 // FIXME: Add config.
-                Some(true)
+                Detailed
             }
         };
 
         match filter {
-            Some(include_info) => {
+            Omit => return,
+            Opaque | Detailed => {
                 let mut call_adder = self.call_adder.before();
 
                 match kind {
@@ -1026,49 +968,52 @@ where
                         let mut call_adder =
                             call_adder.assign(self.assignment_id.unwrap(), dest_ref);
 
-                        if include_info {
-                            let ptr_arg = params.args.get(0).unwrap();
-                            let ptr = call_adder.reference_ptr_for_intrinsic(ptr_arg);
-                            let mut call_adder = call_adder.perform_atomic_op(ordering, Some(ptr));
+                        match filter {
+                            Detailed => {
+                                let ptr_arg = params.args.get(0).unwrap();
+                                let ptr = call_adder.reference_ptr_for_intrinsic(ptr_arg);
+                                let mut call_adder =
+                                    call_adder.perform_atomic_op(ordering, Some(ptr));
 
-                            match kind {
-                                Load => call_adder.load(),
-                                Store => {
-                                    let val_ref =
-                                        call_adder.reference_operand_spanned(&params.args[1]);
-                                    call_adder.store(val_ref)
-                                }
-                                BinOp(binop) => {
-                                    let src = call_adder.reference_operand_spanned(&params.args[1]);
-                                    call_adder.binary_op(binop, src);
-                                }
-                                Exchange => {
-                                    let src = call_adder.reference_operand_spanned(&params.args[1]);
-                                    call_adder.exchange(src)
-                                }
-                                CompareExchange { weak } => {
-                                    let old = call_adder.reference_operand_spanned(&params.args[1]);
-                                    let src = call_adder.reference_operand_spanned(&params.args[2]);
-                                    call_adder.compare_exchange(
-                                        failure_ordering.unwrap(),
-                                        weak,
-                                        old,
-                                        src,
-                                    )
-                                }
-                                Fence { .. } => {
-                                    unreachable!()
+                                match kind {
+                                    Load => call_adder.load(),
+                                    Store => {
+                                        let val_ref =
+                                            call_adder.reference_operand_spanned(&params.args[1]);
+                                        call_adder.store(val_ref)
+                                    }
+                                    BinOp(binop) => {
+                                        let src =
+                                            call_adder.reference_operand_spanned(&params.args[1]);
+                                        call_adder.binary_op(binop, src);
+                                    }
+                                    Exchange => {
+                                        let src =
+                                            call_adder.reference_operand_spanned(&params.args[1]);
+                                        call_adder.exchange(src)
+                                    }
+                                    CompareExchange { weak } => {
+                                        let old =
+                                            call_adder.reference_operand_spanned(&params.args[1]);
+                                        let src =
+                                            call_adder.reference_operand_spanned(&params.args[2]);
+                                        call_adder.compare_exchange(
+                                            failure_ordering.unwrap(),
+                                            weak,
+                                            old,
+                                            src,
+                                        )
+                                    }
+                                    Fence { .. } => {
+                                        unreachable!()
+                                    }
                                 }
                             }
-                        } else {
-                            call_adder.by_some()
+                            Opaque => call_adder.by_some(),
+                            _ => unreachable!(),
                         }
                     }
                 };
-            }
-            None => {
-                // Filter out completely
-                return;
             }
         }
     }
@@ -1160,6 +1105,7 @@ where
 {
     fn visit_rvalue(&mut self, rvalue: &Rvalue<'tcx>) {
         log_debug!(target: TAG_INSTR, "Visiting Rvalue: {:#?}", rvalue);
+        use decision::rules::EventDecision::*;
 
         let rules = &self.call_adder.config().assignment_filter;
         let filter = match rvalue {
@@ -1175,20 +1121,18 @@ where
             Rvalue::Aggregate(..) => rules.aggregate,
             Rvalue::CopyForDeref(..) => rules.use_,
             Rvalue::WrapUnsafeBinder(..) => rules.wrap_unsafe_binder,
-            Rvalue::Reborrow(..) => None,
+            Rvalue::Reborrow(..) => Omit,
         };
         match filter {
-            Some(include_info) => {
+            Omit => {}
+            Opaque | Detailed => {
                 let dest_ref = self.call_adder.reference_place(&self.place);
                 let mut call_adder = self.call_adder.assign(self.assignment_id, dest_ref);
-                if include_info {
-                    LeafAssignmentVisitor { call_adder }.super_rvalue(rvalue)
-                } else {
-                    call_adder.by_some()
+                match filter {
+                    Detailed => LeafAssignmentVisitor { call_adder }.super_rvalue(rvalue),
+                    Opaque => call_adder.by_some(),
+                    _ => unreachable!(),
                 }
-            }
-            None => {
-                // Filter out completely
             }
         }
     }
@@ -1435,10 +1379,12 @@ fn instrument_memory_intrinsic_call<'tcx, 'a, C>(
     C: cr::ForOperandRef<'tcx> + cr::ForPlaceRef<'tcx>,
 {
     use decision::MemoryIntrinsicKind::*;
+    use decision::rules::EventDecision::*;
 
     let filter = (&call_adder.config().assignment_filter).intrinsic_memory_op;
     match filter {
-        Some(include_info) => {
+        Omit => return,
+        Opaque | Detailed => {
             let mut call_adder = call_adder.before();
 
             // FIXME: Destination is only used for some operations. But assignment_id is used for all.
@@ -1446,7 +1392,7 @@ fn instrument_memory_intrinsic_call<'tcx, 'a, C>(
             let dest_ref = destination.map_or(PlaceRef::INVALID, |d| call_adder.reference_place(d));
             let mut call_adder = call_adder.assign(assignment_id, dest_ref);
 
-            if !include_info {
+            if matches!(filter, Opaque) {
                 if destination.is_none() {
                     // No information to report, so skip the instrumentation.
                 } else {
@@ -1504,10 +1450,6 @@ fn instrument_memory_intrinsic_call<'tcx, 'a, C>(
                     call_adder.compare_bytes(second_ref, &second.node, count_ref, &args[2].node);
                 }
             }
-        }
-        None => {
-            // Filter out completely
-            return;
         }
     }
 }

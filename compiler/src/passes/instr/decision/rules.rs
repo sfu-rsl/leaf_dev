@@ -1,4 +1,4 @@
-use core::{any::Any, ops::Deref};
+use core::ops::Deref;
 
 use delegate::delegate;
 use paste::paste;
@@ -15,17 +15,7 @@ use crate::{
 use super::super::config::*;
 
 pub(crate) const KEY_RULES: &str = "instr_rules";
-pub(crate) const KEY_BAKED_BODY_RULES: &str = "i_r_b_body";
-pub(crate) const KEY_BAKED_DYN_DEF_RULES: &str = "i_r_b_dyn_def";
-pub(crate) const KEY_BAKED_PLACE_INFO_RULES: &str = "i_r_b_place_info";
-pub(crate) const KEY_BAKED_OPERAND_INFO_RULES: &str = "i_r_b_operand_info";
-pub(crate) const KEY_BAKED_CONST_TYPE_RULES: &str = "i_r_b_const_ty";
-pub(crate) const KEY_BAKED_ASSIGNMENT_RULES: &str = "i_r_b_assignment";
-pub(crate) const KEY_BAKED_ASSIGNMENT_INFO_RULES: &str = "i_r_b_assignment_info";
-pub(crate) const KEY_BAKED_STORAGE_LIFETIME_RULES: &str = "i_r_b_storage_lifetime";
-pub(crate) const KEY_BAKED_CALL_FLOW_RULES: &str = "i_r_b_call_flow";
-pub(crate) const KEY_BAKED_DROP_RULES: &str = "i_r_b_drop";
-pub(crate) const KEY_BAKED_SWITCH_RULES: &str = "i_r_b_switch";
+pub(crate) const KEY_BAKED_POLICY: &str = "instr_baked_policy";
 
 type LocationQuery<'tcx> = (TyCtxt<'tcx>, DefId);
 
@@ -37,6 +27,63 @@ type BakedEntityLocationFilterRules<'tcx> = InclusionPredicate<EntityLocationFil
 type BakedWholeBodyFilterRules<'tcx> = BakedEntityLocationFilterRules<'tcx>;
 
 type BakedMethodDynDefinitionFilterRules<'tcx> = BakedEntityLocationFilterRules<'tcx>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BodyDecision {
+    Instrument,
+    Skip,
+}
+
+impl BodyDecision {
+    pub(crate) fn from_rule(rule: Option<bool>) -> Option<Self> {
+        rule.map(|include| {
+            if include {
+                Self::Instrument
+            } else {
+                Self::Skip
+            }
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum EventDecision {
+    Omit,
+    Opaque,
+    Detailed,
+}
+
+impl EventDecision {
+    pub(crate) fn from_rules(event: Option<bool>, detail: Option<bool>) -> Self {
+        if !event.unwrap_or(true) {
+            Self::Omit
+        } else if detail.unwrap_or(true) {
+            Self::Detailed
+        } else {
+            Self::Opaque
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DetailDecision {
+    Disabled,
+    Enabled,
+}
+
+impl DetailDecision {
+    pub(crate) fn from_rule(rule: Option<bool>, default: bool) -> Self {
+        if rule.unwrap_or(default) {
+            Self::Enabled
+        } else {
+            Self::Disabled
+        }
+    }
+
+    pub(crate) fn is_enabled(self) -> bool {
+        matches!(self, Self::Enabled)
+    }
+}
 
 macro_rules! query_and_baked_aliases {
     ($stem:ident, $part:ty) => {
@@ -142,9 +189,6 @@ pub(crate) struct PlaceInfoRules<TS, TA = TS, TT = TA> {
     pub ty: TT,
 }
 
-type BakedPlaceInfoFilterRules<'tcx> =
-    PlaceInfoRules<BakedPlaceStructureFilterRules<'tcx>, BakedEntityLocationFilterRules<'tcx>>;
-
 define_filter_rule_group!(
     PlaceStructure match PlaceStructurePiece {
         Local => local,
@@ -236,219 +280,285 @@ define_filter_rule_group!(
     }
 );
 
-pub(crate) fn get_baked_body_rules<'tcx>(
-    storage: &mut dyn Storage,
-) -> impl Deref<Target = BakedEntityLocationFilterRules<'tcx>> + '_ {
-    get_baked_rules(storage, KEY_BAKED_BODY_RULES)
-}
-
-fn get_baked_rules<'a, T: Any>(
-    storage: &'a mut dyn Storage,
-    key: &str,
-) -> impl Deref<Target = T> + 'a {
-    let key = key.to_owned();
-    storage
-        .get_mut::<T>(&key)
-        .expect("Filter rules are expected to be baked at this point.")
-}
-
-pub(crate) fn accept_dyn_def_filter_rules<'tcx, I>(
-    storage: &mut dyn Storage,
-    item: &I,
-) -> Option<bool>
+pub(crate) struct BakedInstrumentationPolicy<'tcx>
 where
-    EntityLocationFilterPredicate<'tcx>: Predicate<I>,
+    Self: 'static,
 {
-    get_baked_rules::<BakedEntityLocationFilterRules<'tcx>>(storage, KEY_BAKED_DYN_DEF_RULES)
-        .accept(item)
+    body: BakedWholeBodyFilterRules<'tcx>,
+    dyn_def: BakedMethodDynDefinitionFilterRules<'tcx>,
+    place_info:
+        PlaceInfoRules<BakedPlaceStructureFilterRules<'tcx>, BakedEntityLocationFilterRules<'tcx>>,
+    operand_info: BakedOperandKindFilterRules<'tcx>,
+    constant_type: BakedConstantTypeFilterRules<'tcx>,
+    assignment: BakedAssignmentFilterRules<'tcx>,
+    assignment_info: BakedAssignmentInfoFilterRules<'tcx>,
+    storage_lifetime: BakedStorageLifetimeMarkerFilterRules<'tcx>,
+    call_flow: BakedCallFlowFilterRules<'tcx>,
+    drop: BakedDropFilterRules<'tcx>,
+    switch: BakedSwitchFilterRules<'tcx>,
 }
 
-pub(crate) type PlaceInfoFilterResult =
-    PlaceInfoRules<PlaceStructureRules<Option<bool>>, Option<bool>>;
+impl BakedInstrumentationPolicy<'_> {
+    fn body<'tcx>(&self) -> &BakedWholeBodyFilterRules<'tcx> {
+        &self.body
+    }
 
-pub(crate) fn accept_place_info_rules<'tcx>(
-    storage: &mut dyn Storage,
-    item: &LocationQuery<'tcx>,
-) -> PlaceInfoFilterResult {
-    let rules =
-        get_baked_rules::<BakedPlaceInfoFilterRules<'tcx>>(storage, KEY_BAKED_PLACE_INFO_RULES);
+    fn dyn_def<'tcx>(&self) -> &BakedMethodDynDefinitionFilterRules<'tcx> {
+        &self.dyn_def
+    }
 
-    PlaceInfoRules {
-        structure: PlaceStructureRules::accept(|piece| rules.structure.accept(&(piece, *item))),
-        address: rules.address.accept(item),
-        ty: rules.ty.accept(item),
+    fn place_structure<'tcx>(&self) -> &BakedPlaceStructureFilterRules<'tcx> {
+        &self.place_info.structure
+    }
+
+    fn place_address<'tcx>(&self) -> &BakedEntityLocationFilterRules<'tcx> {
+        &self.place_info.address
+    }
+
+    fn place_type<'tcx>(&self) -> &BakedEntityLocationFilterRules<'tcx> {
+        &self.place_info.ty
+    }
+
+    fn operand_info<'tcx>(&self) -> &BakedOperandKindFilterRules<'tcx> {
+        &self.operand_info
+    }
+
+    fn constant_type<'tcx>(&self) -> &BakedConstantTypeFilterRules<'tcx> {
+        &self.constant_type
+    }
+
+    fn assignment<'tcx>(&self) -> &BakedAssignmentFilterRules<'tcx> {
+        &self.assignment
+    }
+
+    fn assignment_info<'tcx>(&self) -> &BakedAssignmentInfoFilterRules<'tcx> {
+        &self.assignment_info
+    }
+
+    fn storage_lifetime<'tcx>(&self) -> &BakedStorageLifetimeMarkerFilterRules<'tcx> {
+        &self.storage_lifetime
+    }
+
+    fn call_flow<'tcx>(&self) -> &BakedCallFlowFilterRules<'tcx> {
+        &self.call_flow
+    }
+
+    fn drop<'tcx>(&self) -> &BakedDropFilterRules<'tcx> {
+        &self.drop
+    }
+
+    fn switch<'tcx>(&self) -> &BakedSwitchFilterRules<'tcx> {
+        &self.switch
+    }
+
+    pub(crate) fn body_decision<'tcx>(&self, item: &LocationQuery<'tcx>) -> Option<BodyDecision> {
+        BodyDecision::from_rule(self.body().accept(item))
+    }
+
+    pub(crate) fn dynamic_definition_decision<'tcx>(
+        &self,
+        item: &LocationQuery<'tcx>,
+    ) -> Option<BodyDecision> {
+        BodyDecision::from_rule(self.dyn_def().accept(item))
+    }
+
+    pub(crate) fn place_info_decisions<'tcx>(
+        &self,
+        item: &LocationQuery<'tcx>,
+    ) -> PlaceInfoRules<PlaceStructureRules<DetailDecision>, DetailDecision> {
+        PlaceInfoRules {
+            structure: PlaceStructureRules::accept(|piece| {
+                DetailDecision::from_rule(self.place_structure().accept(&(piece, *item)), true)
+            }),
+            address: DetailDecision::from_rule(self.place_address().accept(item), true),
+            ty: DetailDecision::from_rule(self.place_type().accept(item), true),
+        }
+    }
+
+    pub(crate) fn operand_info_decisions<'tcx>(
+        &self,
+        item: &LocationQuery<'tcx>,
+    ) -> OperandKindRules<DetailDecision> {
+        use OperandKind::*;
+        OperandKindRules {
+            copy: DetailDecision::from_rule(self.operand_info().accept(&(Copy, *item)), true),
+            mov: DetailDecision::from_rule(self.operand_info().accept(&(Move, *item)), true),
+            constant: DetailDecision::from_rule(
+                self.operand_info().accept(&(Constant, *item)),
+                true,
+            ),
+        }
+    }
+
+    pub(crate) fn constant_type_decisions<'tcx>(
+        &self,
+        item: &LocationQuery<'tcx>,
+    ) -> ConstantTypeRules<DetailDecision> {
+        ConstantTypeRules::accept(|kind| {
+            DetailDecision::from_rule(self.constant_type().accept(&(kind, *item)), true)
+        })
+    }
+
+    pub(crate) fn assignment_decisions<'tcx>(
+        &self,
+        item: &LocationQuery<'tcx>,
+    ) -> AssignmentRules<EventDecision> {
+        AssignmentRules::accept(|kind| {
+            EventDecision::from_rules(
+                self.assignment().accept(&(kind, *item)),
+                self.assignment_info().accept(&(kind, *item)),
+            )
+        })
+    }
+
+    pub(crate) fn storage_lifetime_decisions<'tcx>(
+        &self,
+        item: &LocationQuery<'tcx>,
+    ) -> StorageLifetimeMarkerRules<DetailDecision> {
+        StorageLifetimeMarkerRules::accept(|kind| {
+            let default = match kind {
+                StorageLifetimeMarkerKind::Live => false,
+                StorageLifetimeMarkerKind::Dead => true,
+            };
+            DetailDecision::from_rule(self.storage_lifetime().accept(&(kind, *item)), default)
+        })
+    }
+
+    pub(crate) fn call_flow_decisions<'tcx>(
+        &self,
+        item: &LocationQuery<'tcx>,
+    ) -> CallFlowRules<DetailDecision> {
+        CallFlowRules::accept(|kind| {
+            DetailDecision::from_rule(self.call_flow().accept(&(kind, *item)), true)
+        })
+    }
+
+    pub(crate) fn drop_decisions<'tcx>(
+        &self,
+        item: &LocationQuery<'tcx>,
+    ) -> DropRules<DetailDecision> {
+        DropRules::accept(|kind| {
+            DetailDecision::from_rule(self.drop().accept(&(kind, *item)), true)
+        })
+    }
+
+    pub(crate) fn switch_decisions<'tcx>(
+        &self,
+        item: &LocationQuery<'tcx>,
+    ) -> SwitchRules<DetailDecision> {
+        SwitchRules::accept(|kind| {
+            DetailDecision::from_rule(self.switch().accept(&(kind, *item)), true)
+        })
     }
 }
 
-pub(crate) type OperandKindFilterResult = OperandKindRules<Option<bool>>;
-
-pub(crate) fn accept_operand_info_rules<'tcx>(
+pub(crate) fn get_baked_policy<'tcx>(
     storage: &mut dyn Storage,
-    item: &LocationQuery<'tcx>,
-) -> OperandKindFilterResult {
-    let rules =
-        get_baked_rules::<BakedOperandKindFilterRules<'tcx>>(storage, KEY_BAKED_OPERAND_INFO_RULES);
-
-    use OperandKind::*;
-    OperandKindRules {
-        copy: rules.accept(&(Copy, *item)),
-        mov: rules.accept(&(Move, *item)),
-        constant: rules.accept(&(Constant, *item)),
-    }
+) -> impl Deref<Target = BakedInstrumentationPolicy<'tcx>> + '_
+where
+    BakedInstrumentationPolicy<'tcx>: 'static,
+{
+    storage
+        .get_mut::<BakedInstrumentationPolicy<'tcx>>(&KEY_BAKED_POLICY.to_owned())
+        .expect("Instrumentation policy is expected to be baked at this point.")
 }
 
-pub(crate) type ConstantTypeFilterResult = ConstantTypeRules<Option<bool>>;
-
-pub(crate) fn accept_constant_type_rules<'tcx>(
-    storage: &mut dyn Storage,
-    item: &LocationQuery<'tcx>,
-) -> ConstantTypeFilterResult {
-    let rules =
-        get_baked_rules::<BakedConstantTypeFilterRules<'tcx>>(storage, KEY_BAKED_CONST_TYPE_RULES);
-
-    ConstantTypeRules::accept(|kind| rules.accept(&(kind, *item)))
+fn filter_rules<T>(
+    all_rules: &InstrumentationRules,
+    select: impl Fn(EntityFilter) -> Option<T> + Clone,
+) -> InclusionRules<T> {
+    all_rules.clone().filter_map(select)
 }
 
-pub(crate) type AssignmentFilterResult = AssignmentRules<Option<bool>>;
-
-pub(crate) fn accept_assignment_rules<'tcx>(
-    storage: &mut dyn Storage,
-    item: &LocationQuery<'tcx>,
-    info: bool,
-) -> AssignmentFilterResult {
-    let key = if !info {
-        KEY_BAKED_ASSIGNMENT_RULES
-    } else {
-        KEY_BAKED_ASSIGNMENT_INFO_RULES
-    };
-    let rules = get_baked_rules::<BakedAssignmentFilterRules<'tcx>>(storage, key);
-
-    AssignmentRules::accept(|kind| rules.accept(&(kind, *item)))
-}
-
-pub(crate) type StorageLifetimeFilterResult = StorageLifetimeMarkerRules<Option<bool>>;
-
-pub(crate) fn accept_storage_lifetime_rules<'tcx>(
-    storage: &mut dyn Storage,
-    item: &LocationQuery<'tcx>,
-) -> StorageLifetimeFilterResult {
-    let rules = get_baked_rules::<BakedStorageLifetimeMarkerFilterRules<'tcx>>(
-        storage,
-        KEY_BAKED_STORAGE_LIFETIME_RULES,
-    );
-
-    StorageLifetimeMarkerRules::accept(|kind| rules.accept(&(kind, *item)))
-}
-
-pub(crate) type CallFlowFilterResult = CallFlowRules<Option<bool>>;
-
-pub(crate) fn accept_call_flow_rules<'tcx>(
-    storage: &mut dyn Storage,
-    item: &LocationQuery<'tcx>,
-) -> CallFlowFilterResult {
-    let rules =
-        get_baked_rules::<BakedCallFlowFilterRules<'tcx>>(storage, KEY_BAKED_CALL_FLOW_RULES);
-
-    CallFlowRules::accept(|kind| rules.accept(&(kind, *item)))
-}
-
-pub(crate) type DropFilterResult = DropRules<Option<bool>>;
-
-pub(crate) fn accept_drop_rules<'tcx>(
-    storage: &mut dyn Storage,
-    item: &LocationQuery<'tcx>,
-) -> DropFilterResult {
-    let rules = get_baked_rules::<BakedDropFilterRules<'tcx>>(storage, KEY_BAKED_DROP_RULES);
-
-    DropRules::accept(|kind| rules.accept(&(kind, *item)))
-}
-
-pub(crate) type SwitchFilterResult = SwitchRules<Option<bool>>;
-
-pub(crate) fn accept_switch_rules<'tcx>(
-    storage: &mut dyn Storage,
-    item: &LocationQuery<'tcx>,
-) -> SwitchFilterResult {
-    let rules = get_baked_rules::<BakedSwitchFilterRules<'tcx>>(storage, KEY_BAKED_SWITCH_RULES);
-
-    SwitchRules::accept(|kind| rules.accept(&(kind, *item)))
-}
-
-pub(super) fn bake_rules(
+pub(crate) fn bake_rules(
     storage: &mut dyn Storage,
     additional_exclusions: impl FnOnce() -> Vec<WholeBodyFilter>,
 ) {
-    macro_rules! bake_entity_filter_rules {
-        (
-            $key:expr,
-            $variant:ident,
-            $baked:ty,
-            |$rules:ident| $body:block
-        ) => {
-            // We use explicit types to ensure not using the wrong type by mistake.
-            let _ = storage.get_or_insert_with_acc($key.to_owned(), |storage| -> $baked {
-                let all_rules = storage.get_or_default::<InstrumentationRules>(KEY_RULES.to_owned());
-                #[allow(unused_mut)]
-                let mut $rules: InclusionRules<_> = all_rules.clone().filter_map(|r| match r {
-                    EntityFilter::$variant(filter) => Some(filter),
-                    _ => None,
-                });
-                $body;
-                $rules.to_baked()
-            });
-        };
-        ($key:expr, $variant:ident, |$rules:ident| $body:block $(,)?) => {
-            paste! { bake_entity_filter_rules!($key, $variant, [<Baked $variant FilterRules>]<'_>, |$rules| $body); }
-        };
-        ($key:expr, $variant:ident $(,)?) => {
-            bake_entity_filter_rules!($key, $variant, |rules| {});
-        };
-    }
-
-    bake_entity_filter_rules!(KEY_BAKED_BODY_RULES, WholeBody, |rules| {
-        rules.exclude.extend(additional_exclusions());
-    });
-    bake_entity_filter_rules!(KEY_BAKED_DYN_DEF_RULES, MethodDynDefinition);
-    bake_entity_filter_rules!(KEY_BAKED_OPERAND_INFO_RULES, OperandKind);
-    bake_entity_filter_rules!(KEY_BAKED_CONST_TYPE_RULES, ConstantType);
-    bake_entity_filter_rules!(KEY_BAKED_ASSIGNMENT_RULES, Assignment);
-    bake_entity_filter_rules!(KEY_BAKED_ASSIGNMENT_INFO_RULES, AssignmentInfo);
-    bake_entity_filter_rules!(KEY_BAKED_STORAGE_LIFETIME_RULES, StorageLifetimeMarker);
-    bake_entity_filter_rules!(KEY_BAKED_CALL_FLOW_RULES, CallFlow);
-    bake_entity_filter_rules!(KEY_BAKED_DROP_RULES, Drop);
-    bake_entity_filter_rules!(KEY_BAKED_SWITCH_RULES, Switch);
-
-    // Place is a bit structurally different
     let _ = storage.get_or_insert_with_acc(
-        KEY_BAKED_PLACE_INFO_RULES.to_owned(),
-        |storage| -> BakedPlaceInfoFilterRules<'_> {
-            let rules = storage.get_or_default::<InstrumentationRules>(KEY_RULES.to_owned());
-            let rules = rules.clone().filter_map(|r| match r {
+        KEY_BAKED_POLICY.to_owned(),
+        |storage| -> BakedInstrumentationPolicy<'_> {
+            let all_rules = storage.get_or_default::<InstrumentationRules>(KEY_RULES.to_owned());
+
+            let mut body = filter_rules(&*all_rules, |rule| match rule {
+                EntityFilter::WholeBody(filter) => Some(filter),
+                _ => None,
+            });
+            body.exclude.extend(additional_exclusions());
+
+            let place_rules = filter_rules(&*all_rules, |rule| match rule {
                 EntityFilter::PlaceInfo(filter) => Some(filter),
                 _ => None,
             });
-            BakedPlaceInfoFilterRules {
-                structure: rules
-                    .clone()
-                    .filter_map(|r| match r {
-                        PlaceInfoFilter::Structure(filter) => Some(filter),
-                        _ => None,
-                    })
-                    .to_baked(),
-                address: rules
-                    .clone()
-                    .filter_map(|r| match r {
-                        PlaceInfoFilter::Address(filter) => Some(filter),
-                        _ => None,
-                    })
-                    .to_baked(),
-                ty: rules
-                    .clone()
-                    .filter_map(|r| match r {
-                        PlaceInfoFilter::Type(filter) => Some(filter),
-                        _ => None,
-                    })
-                    .to_baked(),
+
+            BakedInstrumentationPolicy {
+                body: body.to_baked(),
+                dyn_def: filter_rules(&*all_rules, |rule| match rule {
+                    EntityFilter::MethodDynDefinition(filter) => Some(filter),
+                    _ => None,
+                })
+                .to_baked(),
+                place_info: PlaceInfoRules {
+                    structure: place_rules
+                        .clone()
+                        .filter_map(|filter| match filter {
+                            PlaceInfoFilter::Structure(filter) => Some(filter),
+                            _ => None,
+                        })
+                        .to_baked(),
+                    address: place_rules
+                        .clone()
+                        .filter_map(|filter| match filter {
+                            PlaceInfoFilter::Address(filter) => Some(filter),
+                            _ => None,
+                        })
+                        .to_baked(),
+                    ty: place_rules
+                        .filter_map(|filter| match filter {
+                            PlaceInfoFilter::Type(filter) => Some(filter),
+                            _ => None,
+                        })
+                        .to_baked(),
+                },
+                operand_info: filter_rules(&*all_rules, |rule| match rule {
+                    EntityFilter::OperandKind(filter) => Some(filter),
+                    _ => None,
+                })
+                .to_baked(),
+                constant_type: filter_rules(&*all_rules, |rule| match rule {
+                    EntityFilter::ConstantType(filter) => Some(filter),
+                    _ => None,
+                })
+                .to_baked(),
+                assignment: filter_rules(&*all_rules, |rule| match rule {
+                    EntityFilter::Assignment(filter) => Some(filter),
+                    _ => None,
+                })
+                .to_baked(),
+                assignment_info: filter_rules(&*all_rules, |rule| match rule {
+                    EntityFilter::AssignmentInfo(filter) => Some(filter),
+                    _ => None,
+                })
+                .to_baked(),
+                storage_lifetime: filter_rules(&*all_rules, |rule| match rule {
+                    EntityFilter::StorageLifetimeMarker(filter) => Some(filter),
+                    _ => None,
+                })
+                .to_baked(),
+                call_flow: filter_rules(&*all_rules, |rule| match rule {
+                    EntityFilter::CallFlow(filter) => Some(filter),
+                    _ => None,
+                })
+                .to_baked(),
+                drop: filter_rules(&*all_rules, |rule| match rule {
+                    EntityFilter::Drop(filter) => Some(filter),
+                    _ => None,
+                })
+                .to_baked(),
+                switch: filter_rules(&*all_rules, |rule| match rule {
+                    EntityFilter::Switch(filter) => Some(filter),
+                    _ => None,
+                })
+                .to_baked(),
             }
         },
     );
@@ -574,3 +684,51 @@ impl_to_predicate_for_filter!(
     { DropFilter, DropQuery<'_> },
     { SwitchFilter, SwitchQuery<'_> },
 );
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn body_rules_preserve_unmatched_state() {
+        assert_eq!(BodyDecision::from_rule(None), None);
+        assert_eq!(
+            BodyDecision::from_rule(Some(true)),
+            Some(BodyDecision::Instrument)
+        );
+        assert_eq!(
+            BodyDecision::from_rule(Some(false)),
+            Some(BodyDecision::Skip)
+        );
+    }
+
+    #[test]
+    fn event_rules_separate_omission_from_opaque_payloads() {
+        assert_eq!(
+            EventDecision::from_rules(Some(false), Some(true)),
+            EventDecision::Omit
+        );
+        assert_eq!(
+            EventDecision::from_rules(Some(true), Some(false)),
+            EventDecision::Opaque
+        );
+        assert_eq!(
+            EventDecision::from_rules(None, None),
+            EventDecision::Detailed
+        );
+    }
+
+    #[test]
+    fn detail_rules_keep_entity_defaults() {
+        assert_eq!(
+            DetailDecision::from_rule(None, false),
+            DetailDecision::Disabled
+        );
+        assert_eq!(
+            DetailDecision::from_rule(None, true),
+            DetailDecision::Enabled
+        );
+        assert!(!DetailDecision::from_rule(Some(false), true).is_enabled());
+        assert!(DetailDecision::from_rule(Some(true), false).is_enabled());
+    }
+}
