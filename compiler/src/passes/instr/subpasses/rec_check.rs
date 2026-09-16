@@ -9,16 +9,14 @@ use rustc_span::{Span, Spanned};
 
 use common::log_info;
 
-use crate::passes::{CompilationPass, Storage, StorageExt};
-
-use super::KEY_PRI_ITEMS;
+use crate::passes::{CompilationPass, OverrideFlags, Storage};
 
 #[derive(Default)]
 pub(crate) struct InstrumentationRecursionChecker;
 
 impl CompilationPass for InstrumentationRecursionChecker {
-    fn override_flags() -> super::OverrideFlags {
-        super::OverrideFlags::MAKE_CODEGEN_BACKEND
+    fn override_flags() -> OverrideFlags {
+        OverrideFlags::MAKE_CODEGEN_BACKEND
     }
 
     fn visit_tcx_at_codegen_after(
@@ -26,8 +24,7 @@ impl CompilationPass for InstrumentationRecursionChecker {
         tcx: rustc_middle::ty::TyCtxt,
         storage: &mut dyn Storage,
     ) {
-        let pri_items =
-            storage.get_or_insert_with(KEY_PRI_ITEMS.to_owned(), || super::make_pri_items(tcx));
+        let pri_items = super::super::get_pri_items(tcx, storage);
 
         let all_available_instances = tcx
             .collect_and_partition_mono_items(())

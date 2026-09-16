@@ -9,8 +9,10 @@ mod program_dep;
 mod runtime_adder;
 pub(crate) mod type_info;
 
-use common::log_debug;
-use std::any::Any;
+use core::{
+    any::Any,
+    ops::{Deref, DerefMut},
+};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -21,6 +23,8 @@ use rustc_middle::{mir, mono, ty as mir_ty};
 use rustc_session::Session;
 
 use paste::paste;
+
+use common::log_debug;
 
 use self::implementation::CompilationPassAdapter;
 use crate::config::LeafCompilerConfig;
@@ -171,11 +175,14 @@ pub(crate) trait Storage: std::fmt::Debug {
 }
 
 pub(crate) trait StorageExt {
-    type MutAccessor<'a, T>
+    type MutAccessor<'a, T>: Deref<Target = T>
+        + DerefMut
+        + AsMut<T>
+        + Leak<Leaked = Self::Leaked<T>>
     where
         Self: 'a,
-        T: 'a;
-    type ManualBorrow<T>;
+        T: Any;
+    type Leaked<T>;
 
     fn get_or_insert_with<'a, V: Any>(
         &'a mut self,
@@ -196,6 +203,14 @@ pub(crate) trait StorageExt {
     }
 
     fn get_mut<'a, V: Any>(&'a mut self, key: &String) -> Option<Self::MutAccessor<'a, V>>;
+
+    fn take_back<'a, V: Any>(&'a mut self, b: Self::Leaked<V>);
+}
+
+pub(crate) trait Leak {
+    type Leaked;
+
+    fn leak(self) -> Self::Leaked;
 }
 
 mod implementation {
@@ -881,8 +896,9 @@ mod implementation {
                 = DowncastValueBorrow<'a, T>
             where
                 Self: 'a,
-                T: 'a;
-            type ManualBorrow<T> = ManualBorrow<T>;
+                T: Any;
+
+            type Leaked<T> = ManualBorrow<T>;
 
             fn get_or_insert_with_acc<'a, V: Any>(
                 &'a mut self,
@@ -897,21 +913,16 @@ mod implementation {
                 self.get_raw_mut(key)
                     .map(|v| DowncastValueBorrow::<'a, V>(v, Default::default()))
             }
+
+            fn take_back<'a, V: Any>(&'a mut self, b: Self::Leaked<V>) {
+                b.return_to(self);
+            }
         }
 
         pub(crate) struct DowncastValueBorrow<'a, V: 'a>(
             ValueBorrow<'a>,
             std::marker::PhantomData<&'a mut V>,
         );
-
-        impl<V: 'static> DowncastValueBorrow<'_, V> {
-            pub(crate) fn leak(mut self) -> ManualBorrow<V> {
-                ManualBorrow {
-                    key: self.0.key.take().unwrap(),
-                    value: self.0.leak().downcast::<V>().unwrap(),
-                }
-            }
-        }
 
         impl<V: 'static> Deref for DowncastValueBorrow<'_, V> {
             type Target = V;
@@ -930,6 +941,17 @@ mod implementation {
         impl<V: 'static> AsMut<V> for DowncastValueBorrow<'_, V> {
             fn as_mut(&mut self) -> &mut V {
                 self.0.downcast_mut::<V>().unwrap()
+            }
+        }
+
+        impl<V: 'static> Leak for DowncastValueBorrow<'_, V> {
+            type Leaked = ManualBorrow<V>;
+
+            fn leak(mut self) -> ManualBorrow<V> {
+                ManualBorrow {
+                    key: self.0.key.take().unwrap(),
+                    value: self.0.leak().downcast::<V>().unwrap(),
+                }
             }
         }
 
@@ -953,7 +975,7 @@ mod implementation {
         }
 
         impl<V: 'static> ManualBorrow<V> {
-            pub(crate) fn return_to(self, storage: &mut dyn Storage) {
+            pub(crate) fn return_to<S: Storage + ?Sized>(self, storage: &mut S) {
                 storage.get_raw_or_insert_with(self.key, Box::new(|_| self.value));
             }
         }

@@ -4,11 +4,11 @@ use rustc_hir::def_id::DefId;
 use rustc_middle::{mir::Body, mono::MonoItem};
 
 use crate::{
-    passes::{CompilationPass, Storage, StorageExt},
+    passes::{CompilationPass, OverrideFlags, Storage},
     utils::file::TyCtxtFileExt,
 };
 
-use super::{KEY_PRI_ITEMS, called_pri_func, pri_utils::sym::LeafSymbol};
+use super::super::{body::called_pri_func, pri_utils::sym::LeafSymbol};
 
 const FILE_OUTPUT: &str = "instr_counts.json";
 
@@ -16,8 +16,8 @@ const FILE_OUTPUT: &str = "instr_counts.json";
 pub(crate) struct InstrumentationCounter;
 
 impl CompilationPass for InstrumentationCounter {
-    fn override_flags() -> super::OverrideFlags {
-        super::OverrideFlags::MAKE_CODEGEN_BACKEND
+    fn override_flags() -> OverrideFlags {
+        OverrideFlags::MAKE_CODEGEN_BACKEND
     }
 
     fn visit_tcx_at_codegen_after(
@@ -25,8 +25,7 @@ impl CompilationPass for InstrumentationCounter {
         tcx: rustc_middle::ty::TyCtxt,
         storage: &mut dyn Storage,
     ) {
-        let pri_items =
-            storage.get_or_insert_with(KEY_PRI_ITEMS.to_owned(), || super::make_pri_items(tcx));
+        let pri_items = super::super::get_pri_items(tcx, storage);
 
         let mut counts = HashMap::new();
 
