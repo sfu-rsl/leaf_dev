@@ -8,7 +8,6 @@
 #![feature(thread_id_value)]
 
 mod config;
-mod mir_transform;
 mod passes;
 mod toolchain_build;
 mod utils;
@@ -533,7 +532,7 @@ pub mod constants {
 
     pub const LOG_PASS_OBJECTS_TAG: &str = super::passes::TAG_OBJECTS;
     pub const LOG_PRI_DISCOVERY_TAG: &str = super::passes::pri::TAG_DISCOVERY;
-    pub const LOG_BB_JUMP_TAG: &str = super::mir_transform::TAG_BB_JUMP;
+    pub const LOG_BB_JUMP_TAG: &str = super::utils::mir_transform::TAG_BB_JUMP;
 
     pub const TOOL_LEAF: &str = "leaf_attr";
 

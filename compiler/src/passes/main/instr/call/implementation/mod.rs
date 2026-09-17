@@ -8,9 +8,10 @@ use rustc_middle::{
 
 use delegate::delegate;
 
-use crate::mir_transform::*;
-use crate::passes::Storage;
-use crate::utils::mir::TyCtxtExt;
+use crate::{
+    passes::Storage,
+    utils::{mir::TyCtxtExt, mir_transform::*},
+};
 
 use super::{
     context::*,
@@ -584,7 +585,7 @@ pub(super) mod utils {
     };
     use rustc_span::DUMMY_SP;
 
-    use crate::mir_transform::{BodyLocalManager, NEXT_BLOCK};
+    use crate::utils::mir_transform::{BodyLocalManager, NEXT_BLOCK};
 
     pub(super) use self::assignment::rvalue;
 

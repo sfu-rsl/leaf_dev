@@ -17,8 +17,8 @@ use std::collections::{HashMap, HashSet};
 use common::{log_info, log_warn};
 
 use crate::{
-    mir_transform::{self, BodyInstrumentationUnit},
     passes::StorageExt,
+    utils::mir_transform::{self, BodyInstrumentationUnit},
 };
 
 use super::super::{CompilationPass, OverrideFlags, Storage};
