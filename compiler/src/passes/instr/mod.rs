@@ -3,7 +3,8 @@ mod body;
 mod call;
 mod config;
 mod decision;
-pub(crate) mod pri_utils;
+pub(crate) mod pri;
+pub(crate) use pri::pri_utils;
 mod subpasses;
 mod visit;
 
@@ -21,18 +22,12 @@ use common::{log_info, log_warn};
 
 use crate::{
     mir_transform::{self, BodyInstrumentationUnit},
-    passes::{Leak, StorageExt},
+    passes::StorageExt,
 };
 
 use super::{CompilationPass, OverrideFlags, Storage};
 
-use self::call::{
-    Config, EntryFunctionHandler, FunctionHandler,
-    InsertionLocation::Before,
-    PlaceReferencer, RuntimeCallAdder, StorageMarker,
-    context::{BodyProvider, PriItems},
-    ctxt_reqs as cr,
-};
+use self::call::{Config, InsertionLocation::Before, RuntimeCallAdder};
 
 pub(crate) use config::InstrumentationRules;
 pub(crate) use subpasses::counter::InstrumentationCounter;
@@ -42,7 +37,6 @@ const TAG_INSTRUMENTATION: &str = "instrumentation";
 use TAG_INSTRUMENTATION as TAG_INSTR;
 const TAG_INSTR_COUNTER: &str = concatcp!(TAG_INSTRUMENTATION, "::counter");
 
-const KEY_PRI_ITEMS: &str = "pri_items";
 const KEY_TOTAL_COUNT: &str = "total_body_count";
 
 #[derive(Default)]
@@ -121,7 +115,7 @@ fn transform<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>, storage: &mut dyn S
         body.span,
     );
 
-    let pri_items = get_pri_items(tcx, storage);
+    let pri_items = pri::get_pri_items(tcx, storage);
 
     let config = make_config(storage, tcx, def_id);
 
@@ -139,10 +133,10 @@ fn transform<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>, storage: &mut dyn S
     let is_entry = tcx.entry_fn(()).is_some_and(|(id, _)| id == def_id);
 
     if is_entry {
-        handle_entry_function_pre(&mut call_adder, body);
+        visit::handle_entry_function_pre(&mut call_adder, body);
     }
 
-    handle_body_pre_blocks(
+    visit::handle_body_pre_blocks(
         &mut call_adder
             .at(Before(body.basic_blocks.indices().next().unwrap()))
             .with_source_info(*body.source_info(Location::START)),
@@ -151,7 +145,7 @@ fn transform<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>, storage: &mut dyn S
     visit::instrument_body(&mut call_adder, body);
 
     if is_entry {
-        handle_entry_function_post(&mut call_adder, body);
+        visit::handle_entry_function_post(&mut call_adder, body);
     }
 
     modification.commit(
@@ -184,29 +178,11 @@ fn on_start(_tcx: TyCtxt, storage: &mut dyn Storage) {
     }
 }
 
-fn get_pri_items<'tcx>(
-    tcx: TyCtxt<'tcx>,
+pub(super) fn make_config<'tcx>(
     storage: &mut dyn Storage,
-) -> <dyn Storage as StorageExt>::Leaked<PriItems> {
-    storage
-        .get_or_insert_with(KEY_PRI_ITEMS.to_owned(), || make_pri_items(tcx))
-        .leak()
-}
-
-fn make_pri_items(tcx: TyCtxt) -> PriItems {
-    use pri_utils::*;
-    let all_items = all_pri_items(tcx);
-    let main_funcs = filter_main_funcs(tcx, &all_items);
-    let helper_items = filter_helper_items(tcx, &all_items);
-    PriItems {
-        funcs: main_funcs,
-        types: collect_helper_types(&helper_items),
-        helper_funcs: collect_helper_funcs(helper_items),
-        all_items: all_items.into_iter().collect(),
-    }
-}
-
-fn make_config<'tcx>(storage: &mut dyn Storage, tcx: TyCtxt<'tcx>, def_id: DefId) -> Config {
+    tcx: TyCtxt<'tcx>,
+    def_id: DefId,
+) -> Config {
     use decision::rules::*;
     let item = &(tcx, def_id);
     let policy = decision::rules::get_baked_policy(storage);
@@ -232,50 +208,6 @@ fn make_config<'tcx>(storage: &mut dyn Storage, tcx: TyCtxt<'tcx>, def_id: DefId
     }
 }
 
-fn handle_body_pre_blocks<'tcx, C>(call_adder: &mut RuntimeCallAdder<C>)
-where
-    C: cr::ForFunctionCalling<'tcx> + cr::ForStorageMarking<'tcx>,
-{
-    call_adder.enter_func();
-
-    rustc_mir_dataflow::impls::always_storage_live_locals(call_adder.body())
-        .iter()
-        .for_each(|l| match call_adder.body().local_kind(l) {
-            mir::LocalKind::Temp => {
-                call_adder.mark_live(|call_adder| call_adder.reference_place(&l.into()));
-            }
-            mir::LocalKind::Arg => {}
-            mir::LocalKind::ReturnPointer => {}
-        });
-}
-
-fn handle_entry_function_pre<'tcx, C>(call_adder: &mut RuntimeCallAdder<C>, body: &Body<'tcx>)
-where
-    C: cr::Basic<'tcx>,
-{
-    let mut call_adder = call_adder.in_entry_fn();
-    let first_block = body.basic_blocks.indices().next().unwrap();
-    let mut call_adder = call_adder.with_source_info(*body.source_info(Location::START));
-    let mut call_adder = call_adder.at(Before(first_block));
-    call_adder.init_runtime_lib();
-}
-
-fn handle_entry_function_post<'tcx, C>(call_adder: &mut RuntimeCallAdder<C>, body: &Body<'tcx>)
-where
-    C: cr::Basic<'tcx>,
-{
-    let mut call_adder = call_adder.in_entry_fn();
-    body.basic_blocks
-        .iter_enumerated()
-        .filter(|(_, bb)| bb.terminator().kind == mir::TerminatorKind::Return)
-        .for_each(|(index, bb)| {
-            call_adder
-                .at(Before(index))
-                .with_source_info(bb.terminator().source_info)
-                .shutdown_runtime_lib();
-        });
-}
-
 trait MirSourceExt {
     fn to_log_str(&self) -> String;
 }
@@ -296,6 +228,6 @@ pub(crate) fn clear_existing_instrumentation<'tcx>(
     body: &mut Body<'tcx>,
     storage: &mut dyn Storage,
 ) -> bool {
-    let pri_items = get_pri_items(tcx, storage);
+    let pri_items = pri::get_pri_items(tcx, storage);
     body::clear_existing_instrumentation(body, &pri_items.all_items)
 }

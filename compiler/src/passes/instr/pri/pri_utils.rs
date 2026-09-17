@@ -306,7 +306,7 @@ pub(crate) mod sym {
 use sym::LeafSymbol;
 
 #[derive(Clone, Copy, Debug, derive_more::From, derive_more::Deref)]
-pub(super) struct FunctionInfo {
+pub(in super::super) struct FunctionInfo {
     pub def_id: DefId,
 }
 
@@ -321,7 +321,7 @@ impl TypeHolder {
 }
 
 /// Provides types that are used in PRI functions along with primitive types.
-pub(super) struct PriTypes {
+pub(in super::super) struct PriTypes {
     place_ref: TypeHolder,
     operand_ref: TypeHolder,
 }
@@ -339,7 +339,7 @@ impl PriTypes {
 
 macro_rules! define_pri_helper_funcs {
     ($($name: ident),*$(,)?) => {
-        pub(super) struct PriHelperFunctions {
+        pub(in super::super) struct PriHelperFunctions {
             $(
                 pub $name: FunctionInfo,
             )*
@@ -367,7 +367,7 @@ pub(super) fn all_pri_items(tcx: TyCtxt) -> Vec<DefId> {
 /// # Remarks
 /// Currently, it is possible to have access to the PRI either as a part of
 /// the core library or as an external crate linked to the target program.
-/// This returns either crate that should be searched for the PRI items.
+/// This returns either crate that should be searched for the PRI.
 /// When building the core library, the current crate is returned.
 fn find_pri_host_crate(tcx: TyCtxt) -> CrateNum {
     log_debug!(
@@ -376,8 +376,8 @@ fn find_pri_host_crate(tcx: TyCtxt) -> CrateNum {
         tcx.crates(()).iter().map(|cnum| tcx.crate_name(*cnum)).collect::<Vec<_>>(),
     );
 
-    tcx.crate_by_name(*sym::RUNTIME_LIB_CRATE)
-        .or_else(|| tcx.crate_by_name(*sym::CORE_LIB_CRATE))
+    tcx.find_crate_by_name(*sym::RUNTIME_LIB_CRATE)
+        .or_else(|| tcx.find_crate_by_name(*sym::CORE_LIB_CRATE))
         .or_else(|| {
             /* NOTE: This is not expected to happen anymore.
              * Previously, we tried to build the core library with instrumentation directly.
@@ -405,8 +405,7 @@ fn find_pri_host_crate(tcx: TyCtxt) -> CrateNum {
 /// # Remarks
 /// The marker is a dummy static variable residing in the PRI module.
 /// As we usually search through a set of definitions (and not modules), to find
-/// the PRI module/items, we use this workaround rather than looking for the
-/// module directly.
+/// the PRI module/items, we use this workaround rather than looking at the module directly.
 fn find_pri_marker(tcx: TyCtxt, crate_num: CrateNum) -> DefId {
     log_debug!(
         target: TAG_DISCOVERY,
@@ -672,12 +671,12 @@ impl<'tcx, I: Iterator<Item = DefId>> DefIdIterExt<'tcx> for I {
 }
 
 trait TyCtxtExt<'tcx> {
-    fn crate_by_name(self, name: &str) -> Option<CrateNum>;
+    fn find_crate_by_name(self, name: &str) -> Option<CrateNum>;
     fn module_children_rec(self, module_id: DefId, submodules: bool) -> Vec<DefId>;
 }
 
 impl<'tcx> TyCtxtExt<'tcx> for TyCtxt<'tcx> {
-    fn crate_by_name(self, name: &str) -> Option<CrateNum> {
+    fn find_crate_by_name(self, name: &str) -> Option<CrateNum> {
         self.crates(())
             .iter()
             .find(|cnum| self.crate_name(**cnum).as_str() == name)
