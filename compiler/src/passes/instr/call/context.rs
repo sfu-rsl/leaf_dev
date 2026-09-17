@@ -18,9 +18,12 @@ use crate::{
     passes::Storage,
 };
 
+use crate::passes::instr::pri::{
+    FunctionInfo, PriHelperFunctions, PriItems, PriTypes, sym::LeafSymbol,
+};
+
 use super::{
     AssignmentId, AtomicOrdering, Config, InsertionLocation, OperandRef, PlaceRef, SwitchInfo,
-    pri_utils::{FunctionInfo, PriHelperFunctions, PriTypes, sym::LeafSymbol},
 };
 
 pub(crate) trait TyContextProvider<'tcx> {
@@ -126,15 +129,6 @@ pub(crate) struct DefaultContext<'tcx, 'm, 'p, 's> {
     pri: &'p PriItems,
     storage: &'s mut dyn Storage,
     config: Config,
-}
-
-pub(crate) struct PriItems {
-    /// Maps from leaf symbols to their corresponding function information.
-    /// Of main functions (not including helpers)
-    pub funcs: HashMap<LeafSymbol, FunctionInfo>,
-    pub types: PriTypes,
-    pub helper_funcs: PriHelperFunctions,
-    pub all_items: HashSet<DefId>,
 }
 
 impl<'tcx, 'm, 'p, 's> DefaultContext<'tcx, 'm, 'p, 's> {

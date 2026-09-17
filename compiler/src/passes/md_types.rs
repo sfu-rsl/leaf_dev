@@ -138,8 +138,7 @@ fn list_bodies_to_include<'tcx>(
         .iter()
         .map(|i| i.def_id())
         .filter(|def_id| {
-            tcx.crate_name(def_id.krate).as_str()
-                != *super::instr::pri_utils::sym::RUNTIME_LIB_CRATE
+            tcx.crate_name(def_id.krate).as_str() != *super::pri::sym::RUNTIME_LIB_CRATE
         })
         .map(|def_id| common::types::DefId(def_id.krate.as_u32(), def_id.index.as_u32()))
         .sorted()
