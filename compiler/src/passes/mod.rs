@@ -1,4 +1,4 @@
-mod codegen;
+mod internalizer;
 mod gated;
 mod instr;
 pub(crate) mod logger;
@@ -30,7 +30,7 @@ use self::implementation::CompilationPassAdapter;
 use crate::config::LeafCompilerConfig;
 use crate::utils::Chain;
 
-pub(crate) use codegen::{InternalizationRules, MonoItemInternalizer};
+pub(crate) use internalizer::{InternalizationRules, MonoItemInternalizer};
 pub(crate) use gated::CompilationPassLogExt as GatedCompilationPassLogExt;
 pub(crate) use instr::{
     InstrumentationCounter, InstrumentationRecursionChecker, InstrumentationRules, Instrumentor,
