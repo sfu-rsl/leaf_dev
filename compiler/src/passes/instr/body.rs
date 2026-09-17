@@ -200,7 +200,7 @@ mod validation {
         let terminator = bb.terminator.as_ref().unwrap();
         match &terminator.kind {
             TerminatorKind::Call { .. } | TerminatorKind::TailCall { .. } => {
-                called_pri_func(&terminator.kind, all_pri_funcs).is_some()
+                super::super::pri::called_pri_func(&terminator.kind, all_pri_funcs).is_some()
             }
             TerminatorKind::Goto { target } => {
                 bb.statements.is_empty() && *target == mir_transform::NEXT_BLOCK
@@ -220,19 +220,4 @@ pub(super) fn requires_immediate_instr_after(stmt: &Statement) -> bool {
         &stmt.kind,
         Assign(..) | SetDiscriminant { .. } | StorageLive(..)
     )
-}
-
-/// Returns the DefId of the called function if it is a PRI function, otherwise returns None.
-#[inline]
-pub(crate) fn called_pri_func(
-    terminator: &TerminatorKind,
-    all_pri_funcs: &HashSet<DefId>,
-) -> Option<DefId> {
-    let (TerminatorKind::Call { func, .. } | TerminatorKind::TailCall { func, .. }) = terminator
-    else {
-        return None;
-    };
-    func.const_fn_def()
-        .filter(|(def_id, _)| all_pri_funcs.contains(&def_id))
-        .map(|(def_id, _)| def_id)
 }

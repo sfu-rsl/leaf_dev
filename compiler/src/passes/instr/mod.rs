@@ -4,7 +4,6 @@ mod call;
 mod config;
 mod decision;
 pub(crate) mod pri;
-pub(crate) use pri::pri_utils;
 mod subpasses;
 mod visit;
 

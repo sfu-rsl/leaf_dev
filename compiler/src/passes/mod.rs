@@ -34,7 +34,7 @@ pub(crate) use codegen::{InternalizationRules, MonoItemInternalizer};
 pub(crate) use gated::CompilationPassLogExt as GatedCompilationPassLogExt;
 pub(crate) use instr::{
     InstrumentationCounter, InstrumentationRecursionChecker, InstrumentationRules, Instrumentor,
-    pri_utils,
+    pri,
 };
 pub(crate) use logger::CompilationPassLogExt as LoggedCompilationPassLogExt;
 pub(crate) use md_types::MdInfoExporter;

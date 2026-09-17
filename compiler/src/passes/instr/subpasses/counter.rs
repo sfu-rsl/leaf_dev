@@ -8,7 +8,7 @@ use crate::{
     utils::file::TyCtxtFileExt,
 };
 
-use super::super::{body::called_pri_func, pri_utils::sym::LeafSymbol};
+use super::super::{pri::called_pri_func, pri::sym::LeafSymbol};
 
 const FILE_OUTPUT: &str = "instr_counts.json";
 

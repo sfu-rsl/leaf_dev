@@ -5,7 +5,7 @@ use super::{
     context::{AssignmentInfoProvider, PointerInfoProvider},
     ctxt_reqs::{Basic, ForAssignment, ForAtomicIntrinsic, ForMemoryIntrinsic},
     prelude::{mir::*, *},
-    pri_utils::sym::intrinsics::{
+    pri::sym::intrinsics::{
         LeafIntrinsicSymbol, atomic::LeafAtomicIntrinsicSymbol, memory::LeafMemoryIntrinsicSymbol,
     },
     utils::operand,

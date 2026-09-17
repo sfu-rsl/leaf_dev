@@ -2,10 +2,10 @@ use rustc_middle::ty::IntrinsicDef;
 
 use common::pri::AtomicBinaryOp;
 
-use super::super::pri_utils;
+use super::super::pri;
 
 pub(crate) enum IntrinsicDecision {
-    OneToOneAssign(pri_utils::sym::intrinsics::LeafIntrinsicSymbol),
+    OneToOneAssign(pri::sym::intrinsics::LeafIntrinsicSymbol),
     Atomic(AtomicIntrinsicKind),
     Memory {
         kind: MemoryIntrinsicKind,
@@ -485,7 +485,7 @@ mod sanity_check {
     const _ALL_INTRINSICS: [(); EXPECTED_COUNT] = [(); LISTED_COUNT];
 }
 
-use pri_utils::sym::intrinsics as psym;
+use pri::sym::intrinsics as psym;
 use rustc_span::sym as rsym;
 
 pub(crate) fn decide_intrinsic_call<'tcx>(intrinsic: IntrinsicDef) -> IntrinsicDecision {

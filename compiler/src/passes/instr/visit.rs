@@ -34,7 +34,7 @@ use super::{
         ctxt_reqs as cr,
     },
     decision::{self, AtomicIntrinsicKind},
-    pri_utils::sym::intrinsics::LeafIntrinsicSymbol,
+    pri::sym::intrinsics::LeafIntrinsicSymbol,
 };
 
 pub(super) fn instrument_body<'tcx, 'c, 'body, C>(

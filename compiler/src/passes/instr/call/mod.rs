@@ -22,7 +22,7 @@ use super::{
         EventDecision, OperandKindRules, PlaceInfoRules, PlaceStructureRules,
         StorageLifetimeMarkerRules, SwitchRules,
     },
-    pri_utils::{self, sym::intrinsics::LeafIntrinsicSymbol},
+    pri::{self, sym::intrinsics::LeafIntrinsicSymbol},
 };
 
 use context::AssignmentInfoProvider;

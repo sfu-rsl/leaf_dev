@@ -14,8 +14,8 @@ use crate::utils::mir::TyCtxtExt;
 
 use super::{
     context::*,
-    pri_utils::{
-        FunctionInfo, PriHelperFunctions, PriTypes,
+    pri::{
+        FunctionInfo, PriHelperFunctions, PriItems, PriTypes,
         sym::{self, LeafSymbol},
     },
     *,
@@ -1041,7 +1041,7 @@ mod prelude {
 
     pub(super) use super::{OperandRef, PlaceRef};
 
-    pub(super) use super::pri_utils::{sym, sym::LeafSymbol};
+    pub(super) use super::pri::{sym, sym::LeafSymbol};
 
     pub(super) mod mir {
         pub use rustc_middle::{
