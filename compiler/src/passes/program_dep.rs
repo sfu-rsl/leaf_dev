@@ -15,9 +15,11 @@ use common::{
     program_dep::{AssignmentsInfo, ControlDependencyGraph, PlainProgramDependenceMap},
 };
 
-use crate::{
-    passes::instr::assignment_id::{AssignmentDestination, assignment_ids_split_agnostic},
-    utils::{control_dependence::PostDominators, file::TyCtxtFileExt, mir::InstanceKindExt},
+use crate::utils::{
+    assignment_ids::{AssignmentDestination, assignment_ids_split_agnostic},
+    control_dependence::PostDominators,
+    file::TyCtxtFileExt,
+    mir::InstanceKindExt,
 };
 
 use super::{CompilationPass, OverrideFlags, Storage, StorageExt};
