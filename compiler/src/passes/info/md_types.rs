@@ -1,4 +1,5 @@
 use itertools::Itertools;
+
 use rustc_middle::ty::{
     EarlyBinder, GenericArgsRef, Instance, Ty, TyCtxt, TyKind, TypeSuperVisitable, TypeVisitable,
     TypeVisitableExt, TypeVisitor, TypingEnv,
@@ -9,15 +10,17 @@ use rustc_middle::{
 };
 use rustc_type_ir::inherent::AdtDef;
 
+use core::ops::ControlFlow;
 use std::collections::{HashMap, HashSet};
-use std::ops::ControlFlow;
 
 use common::{
     log_debug, log_info,
     type_info::{MetadataValue, TypeId},
 };
 
-use super::{CompilationPass, Storage};
+use crate::passes::main::instr::pri;
+
+use super::super::{CompilationPass, OverrideFlags, Storage};
 
 const TAG: &str = "md_types";
 
@@ -25,8 +28,8 @@ const TAG: &str = "md_types";
 pub(crate) struct MdInfoExporter;
 
 impl CompilationPass for MdInfoExporter {
-    fn override_flags() -> super::OverrideFlags {
-        super::OverrideFlags::MAKE_CODEGEN_BACKEND
+    fn override_flags() -> OverrideFlags {
+        OverrideFlags::MAKE_CODEGEN_BACKEND
     }
 
     fn visit_tcx_at_codegen_after(
@@ -137,9 +140,7 @@ fn list_bodies_to_include<'tcx>(
     md_touching_instances
         .iter()
         .map(|i| i.def_id())
-        .filter(|def_id| {
-            tcx.crate_name(def_id.krate).as_str() != *super::pri::sym::RUNTIME_LIB_CRATE
-        })
+        .filter(|def_id| tcx.crate_name(def_id.krate).as_str() != *pri::sym::RUNTIME_LIB_CRATE)
         .map(|def_id| common::types::DefId(def_id.krate.as_u32(), def_id.index.as_u32()))
         .sorted()
         .collect()

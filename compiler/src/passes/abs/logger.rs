@@ -2,7 +2,7 @@ use rustc_middle::{mir, ty::TyCtxt};
 
 use crate::utils::mir::TyCtxtExt;
 
-use super::{Compilation, CompilationPass, Storage};
+use super::super::{Compilation, CompilationPass, OverrideFlags, Storage, ast};
 
 /// A wrapper pass that logs pass methods.
 pub(crate) struct LoggerPass<T> {
@@ -20,16 +20,12 @@ impl<T> CompilationPass for LoggerPass<T>
 where
     T: CompilationPass,
 {
-    fn override_flags() -> super::OverrideFlags {
+    fn override_flags() -> OverrideFlags {
         log_debug!("target: {} Getting override flags", target!());
         T::override_flags()
     }
 
-    fn visit_ast_before(
-        &mut self,
-        krate: &super::ast::Crate,
-        storage: &mut dyn Storage,
-    ) -> Compilation {
+    fn visit_ast_before(&mut self, krate: &ast::Crate, storage: &mut dyn Storage) -> Compilation {
         log_debug!(
             "target: {} Visiting AST before transformation {}",
             target!(),
@@ -39,11 +35,7 @@ where
         self.pass.visit_ast_before(krate, storage)
     }
 
-    fn visit_ast_after(
-        &mut self,
-        krate: &super::ast::Crate,
-        storage: &mut dyn Storage,
-    ) -> Compilation {
+    fn visit_ast_after(&mut self, krate: &ast::Crate, storage: &mut dyn Storage) -> Compilation {
         // log_debug!(target: target!(), "Visiting AST after transformation {}", krate.id);
         log_debug!(
             "target: {} Visiting AST after transformation {}",

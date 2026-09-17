@@ -9,7 +9,7 @@ use common::{log_debug, log_info, log_warn};
 
 use crate::config::rules::{InclusionRules, LogicFormula};
 
-use super::{CompilationPass, StorageExt};
+use super::super::{CompilationPass, OverrideFlags, Storage, StorageExt};
 
 const KEY_RULES: &str = "internalization_rules";
 const KEY_BAKED_RULES: &str = "internalization_rules_baked";
@@ -29,22 +29,18 @@ impl MonoItemInternalizer {
 }
 
 impl CompilationPass for MonoItemInternalizer {
-    fn override_flags() -> super::OverrideFlags {
-        super::OverrideFlags::COLLECT_PARTITION
+    fn override_flags() -> OverrideFlags {
+        OverrideFlags::COLLECT_PARTITION
     }
 
-    fn visit_tcx_at_codegen_before<'tcx>(
-        &mut self,
-        _tcx: TyCtxt<'tcx>,
-        storage: &mut dyn super::Storage,
-    ) {
+    fn visit_tcx_at_codegen_before<'tcx>(&mut self, _tcx: TyCtxt<'tcx>, storage: &mut dyn Storage) {
         storage.get_or_insert_with(KEY_RULES.to_owned(), || self.rules.take().unwrap());
     }
 
     fn visit_codegen_units<'tcx>(
         tcx: TyCtxt<'tcx>,
         units: &mut [CodegenUnit<'tcx>],
-        storage: &mut dyn super::Storage,
+        storage: &mut dyn Storage,
     ) {
         log_info!(
             "Internalizing items for crate `{}`",

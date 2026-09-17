@@ -5,10 +5,11 @@ use rustc_span::{
     symbol::{Ident, Symbol},
 };
 
-use super::pri::sym::RUNTIME_LIB_CRATE;
-
-use super::CompilationPass;
 use common::log_info;
+
+use crate::passes::instr::pri::sym::RUNTIME_LIB_CRATE;
+
+use super::super::{CompilationPass, Storage};
 
 /// A pass that adds the runtime library as an extern crate to the program.
 #[derive(Clone)]
@@ -31,7 +32,7 @@ impl CompilationPass for RuntimeExternCrateAdder {
         &mut self,
         _session: &Session,
         krate: &mut rustc_ast::Crate,
-        _storage: &mut dyn super::Storage,
+        _storage: &mut dyn Storage,
     ) {
         if !self.enabled {
             return;

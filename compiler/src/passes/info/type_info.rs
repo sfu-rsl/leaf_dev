@@ -21,7 +21,7 @@ use common::{
 use crate::passes::StorageExt;
 use crate::utils::file::TyCtxtFileExt;
 
-use super::{CompilationPass, Storage};
+use super::super::{CompilationPass, OverrideFlags, Storage};
 
 const TAG_TYPE_EXPORT: &str = "type_export";
 
@@ -29,8 +29,8 @@ const TAG_TYPE_EXPORT: &str = "type_export";
 pub(crate) struct TypeInfoExporter;
 
 impl CompilationPass for TypeInfoExporter {
-    fn override_flags() -> super::OverrideFlags {
-        super::OverrideFlags::MAKE_CODEGEN_BACKEND
+    fn override_flags() -> OverrideFlags {
+        OverrideFlags::MAKE_CODEGEN_BACKEND
     }
 
     fn visit_tcx_at_codegen_after(

@@ -21,7 +21,7 @@ use crate::{
     passes::StorageExt,
 };
 
-use super::{CompilationPass, OverrideFlags, Storage};
+use super::super::{CompilationPass, OverrideFlags, Storage};
 
 use self::call::{Config, RuntimeCallAdder};
 

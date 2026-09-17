@@ -22,7 +22,7 @@ use crate::utils::{
     mir::InstanceKindExt,
 };
 
-use super::{CompilationPass, OverrideFlags, Storage, StorageExt};
+use super::super::{CompilationPass, OverrideFlags, Storage, StorageExt};
 
 #[derive(Default)]
 pub(crate) struct ProgramDependenceMapExporter;
@@ -30,7 +30,7 @@ pub(crate) struct ProgramDependenceMapExporter;
 const KEY_MAP: &str = "program_dep";
 
 impl CompilationPass for ProgramDependenceMapExporter {
-    fn override_flags() -> super::OverrideFlags {
+    fn override_flags() -> OverrideFlags {
         OverrideFlags::OPTIMIZED_MIR
             | OverrideFlags::EXTERN_OPTIMIZED_MIR
             | OverrideFlags::MIR_SHIMS
