@@ -11,7 +11,7 @@ mod visit;
 use const_format::concatcp;
 
 use rustc_middle::{
-    mir::{self, BasicBlockData, Body, HasLocalDecls, Location, MirSource},
+    mir::{BasicBlock, BasicBlockData, Body, HasLocalDecls, MirSource},
     ty::TyCtxt,
 };
 use rustc_span::def_id::DefId;
@@ -27,7 +27,7 @@ use crate::{
 
 use super::{CompilationPass, OverrideFlags, Storage};
 
-use self::call::{Config, InsertionLocation::Before, RuntimeCallAdder};
+use self::call::{Config, RuntimeCallAdder};
 
 pub(crate) use config::InstrumentationRules;
 pub(crate) use subpasses::counter::InstrumentationCounter;
@@ -115,47 +115,60 @@ fn transform<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>, storage: &mut dyn S
         body.span,
     );
 
+    let config = make_config(storage, tcx, def_id);
     let pri_items = pri::get_pri_items(tcx, storage);
 
-    let config = make_config(storage, tcx, def_id);
+    clear_body(body, def_id, &pri_items.all_items);
 
-    if body::clear_existing_instrumentation(body, &pri_items.all_items) {
-        log_warn!("Instrumentations exist at the transformation {:?}", def_id);
-    }
-    mir_transform::split_blocks_with(body, body::requires_immediate_instr_after);
+    let orig_index_map = split_blocks(body, storage);
 
-    let orig_index_map = body::make_orig_index_map(body, storage);
+    let mut unit = BodyInstrumentationUnit::new(body.local_decls());
 
-    let mut modification = BodyInstrumentationUnit::new(body.local_decls());
-    let mut call_adder = RuntimeCallAdder::new(tcx, &mut modification, &pri_items, storage, config);
+    // Instrumentation
+    {
+        let mut call_adder = RuntimeCallAdder::new(tcx, &mut unit, &pri_items, storage, config);
     let mut call_adder = call_adder.in_body(body, orig_index_map);
 
-    let is_entry = tcx.entry_fn(()).is_some_and(|(id, _)| id == def_id);
-
-    if is_entry {
-        visit::handle_entry_function_pre(&mut call_adder, body);
-    }
-
-    visit::handle_body_pre_blocks(
-        &mut call_adder
-            .at(Before(body.basic_blocks.indices().next().unwrap()))
-            .with_source_info(*body.source_info(Location::START)),
-    );
-
     visit::instrument_body(&mut call_adder, body);
-
-    if is_entry {
-        visit::handle_entry_function_post(&mut call_adder, body);
     }
 
-    modification.commit(
+    unit.commit(
         body,
         Some(|bb: &BasicBlockData<'tcx>| {
             body::sanity_check_inserted_block(bb, &pri_items.all_items)
         }),
     );
 
-    pri_items.return_to(storage);
+    storage.take_back(pri_items);
+}
+
+fn clear_body(body: &mut Body<'_>, def_id: DefId, all_pri_items: &HashSet<DefId>) {
+    if body::clear_existing_instrumentation(body, all_pri_items) {
+        /* Why is this a warning?
+         * In the default configuration, we only perform instrumentation when the primary (final)
+         * crate is being compiled. So we don't expect to see any existing instrumentation
+         * for any body. */
+        /* Still it is possible to see this happen.
+         * As inlining happens over the optimized MIR (the same query that we override),
+         * it is possible that a body with instrumentation is inlined into another body,
+         * and then see existing instrumentation. That is why we actually clear the existing instrumentation,
+         * although it is not expected to happen.
+         * But doesn't this approach cause inefficiency?
+         * Isn't it destructive enough to propose changes to the compiler?
+         * Maybe. But we should note that LLVM optimizations with inlining are
+         * still performed after our instrumentation. Therefore, unless there is definite
+         * evidence that this is a performance bottleneck, we should not worry about it. */
+        log_warn!("Instrumentations exist at the transformation {:?}", def_id);
+    }
+}
+
+fn split_blocks<'tcx>(
+    body: &mut Body<'tcx>,
+    storage: &mut dyn Storage,
+) -> HashMap<BasicBlock, BasicBlock> {
+    mir_transform::split_blocks_with(body, body::requires_immediate_instr_after);
+    let orig_index_map = body::make_orig_index_map(body, storage);
+    orig_index_map
 }
 
 fn on_start(_tcx: TyCtxt, storage: &mut dyn Storage) {

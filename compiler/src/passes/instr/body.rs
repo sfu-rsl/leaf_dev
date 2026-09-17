@@ -22,10 +22,10 @@ mod orig_index {
     }
 
     pub(crate) fn make_orig_index_map(
-        body: &Body,
+        split_body: &Body,
         storage: &mut dyn Storage,
     ) -> HashMap<BasicBlock, BasicBlock> {
-        let split_indices = TerminatorLocationRecorder::default().visit_body(body);
+        let split_indices = TerminatorLocationRecorder::default().visit_body(split_body);
         let mut orig_indices =
             storage.get_or_default::<Vec<BasicBlock>>(KEY_SWITCH_ORIG_INDICES.to_owned());
         // Consume the saved indices.

@@ -37,10 +37,37 @@ use super::{
     pri_utils::sym::intrinsics::LeafIntrinsicSymbol,
 };
 
-pub(super) fn handle_entry_function_pre<'tcx, C>(
-    call_adder: &mut RuntimeCallAdder<C>,
-    body: &Body<'tcx>,
+pub(super) fn instrument_body<'tcx, 'c, 'body, C>(
+    call_adder: &'c mut RuntimeCallAdder<C>,
+    body: &'body Body<'tcx>,
 ) where
+    C: cr::Basic<'tcx> + BlockOriginalIndexProvider + JumpTargetModifier,
+{
+    let is_entry = call_adder
+        .tcx()
+        .entry_fn(())
+        .is_some_and(|(id, _)| id == body.source.def_id());
+
+    if is_entry {
+        handle_entry_function_pre(call_adder, body);
+    }
+
+    // Insert some instrumentation at the beginning of the body.
+    {
+        let mut call_adder = call_adder.at(Before(body.basic_blocks.indices().next().unwrap()));
+        let mut call_adder = call_adder.with_source_info(*body.source_info(Location::START));
+        handle_body_pre_blocks(&mut call_adder);
+    }
+
+    VisitorFactory::make_body_visitor(call_adder).visit_body(body);
+
+    if is_entry {
+        handle_entry_function_post(call_adder, body);
+    }
+}
+
+fn handle_entry_function_pre<'tcx, C>(call_adder: &mut RuntimeCallAdder<C>, body: &Body<'tcx>)
+where
     C: cr::Basic<'tcx>,
 {
     let mut call_adder = call_adder.in_entry_fn();
@@ -50,10 +77,8 @@ pub(super) fn handle_entry_function_pre<'tcx, C>(
     call_adder.init_runtime_lib();
 }
 
-pub(super) fn handle_entry_function_post<'tcx, C>(
-    call_adder: &mut RuntimeCallAdder<C>,
-    body: &Body<'tcx>,
-) where
+fn handle_entry_function_post<'tcx, C>(call_adder: &mut RuntimeCallAdder<C>, body: &Body<'tcx>)
+where
     C: cr::Basic<'tcx>,
 {
     let mut call_adder = call_adder.in_entry_fn();
@@ -68,7 +93,7 @@ pub(super) fn handle_entry_function_post<'tcx, C>(
         });
 }
 
-pub(super) fn handle_body_pre_blocks<'tcx, C>(call_adder: &mut RuntimeCallAdder<C>)
+fn handle_body_pre_blocks<'tcx, C>(call_adder: &mut RuntimeCallAdder<C>)
 where
     C: cr::ForFunctionCalling<'tcx> + cr::ForStorageMarking<'tcx>,
 {
@@ -83,15 +108,6 @@ where
             mir::LocalKind::Arg => {}
             mir::LocalKind::ReturnPointer => {}
         });
-}
-
-pub(super) fn instrument_body<'tcx, 'c, 'body, C>(
-    call_adder: &'c mut RuntimeCallAdder<C>,
-    body: &'body Body<'tcx>,
-) where
-    C: cr::Basic<'tcx> + BlockOriginalIndexProvider + JumpTargetModifier,
-{
-    VisitorFactory::make_body_visitor(call_adder).visit_body(body);
 }
 
 struct VisitorFactory;
