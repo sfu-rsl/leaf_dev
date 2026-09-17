@@ -11,11 +11,12 @@ use common::{
     log_info,
 };
 
-use super::{CompilationPass, OverrideFlags, Storage, StorageExt};
 use crate::utils::{
     file::TyCtxtFileExt,
     mir::{InstanceKindExt, TyCtxtExt},
 };
+
+use super::super::{CompilationPass, OverrideFlags, Storage, StorageExt};
 
 type Calls = Vec<CallGraphEdgeDestination>;
 type ReturnPoints = Vec<BasicBlockIndex>;
@@ -28,7 +29,7 @@ const KEY_MAP: &str = "program_map";
 const FILE_OUTPUT: &str = "program_map.json";
 
 impl CompilationPass for ProgramMapExporter {
-    fn override_flags() -> super::OverrideFlags {
+    fn override_flags() -> OverrideFlags {
         OverrideFlags::OPTIMIZED_MIR
             | OverrideFlags::EXTERN_OPTIMIZED_MIR
             | OverrideFlags::MIR_SHIMS

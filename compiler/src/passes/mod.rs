@@ -1,13 +1,6 @@
-mod internalizer;
-mod gated;
-mod instr;
-pub(crate) mod logger;
-mod md_types;
-mod noop;
-mod p_map_exp;
-mod program_dep;
-mod runtime_adder;
-pub(crate) mod type_info;
+mod abs;
+mod info;
+mod main;
 
 use core::{
     any::Any,
@@ -26,25 +19,27 @@ use paste::paste;
 
 use common::log_debug;
 
-use self::implementation::CompilationPassAdapter;
 use crate::config::LeafCompilerConfig;
 use crate::utils::Chain;
 
-pub(crate) use internalizer::{InternalizationRules, MonoItemInternalizer};
-pub(crate) use gated::CompilationPassLogExt as GatedCompilationPassLogExt;
-pub(crate) use instr::{
+use self::implementation::CompilationPassAdapter;
+
+use self::main::instr;
+
+pub(crate) use abs::gated::CompilationPassLogExt as GatedCompilationPassLogExt;
+pub(crate) use abs::logger::{CompilationPassLogExt as LoggedCompilationPassLogExt, TAG_OBJECTS};
+#[allow(unused)]
+pub(crate) use abs::noop::{NoOpPass, OverrideFlagsForcePass};
+pub(crate) use info::md_types::MdInfoExporter;
+pub(crate) use info::p_map_exp::ProgramMapExporter;
+pub(crate) use info::program_dep::ProgramDependenceMapExporter;
+pub(crate) use info::type_info::TypeInfoExporter;
+pub(crate) use main::instr::{
     InstrumentationCounter, InstrumentationRecursionChecker, InstrumentationRules, Instrumentor,
     pri,
 };
-pub(crate) use logger::CompilationPassLogExt as LoggedCompilationPassLogExt;
-pub(crate) use md_types::MdInfoExporter;
-#[allow(unused)]
-pub(crate) use noop::NoOpPass;
-pub(crate) use noop::OverrideFlagsForcePass;
-pub(crate) use p_map_exp::ProgramMapExporter;
-pub(crate) use program_dep::ProgramDependenceMapExporter;
-pub(crate) use runtime_adder::RuntimeExternCrateAdder;
-pub(crate) use type_info::TypeInfoExporter;
+pub(crate) use main::internalizer::{InternalizationRules, MonoItemInternalizer};
+pub(crate) use main::runtime_adder::RuntimeExternCrateAdder;
 
 pub(super) type Callbacks = dyn CallbacksExt + Send;
 

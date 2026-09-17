@@ -1,4 +1,4 @@
-use super::{CompilationPass, OverrideFlags};
+use super::super::{CompilationPass, OverrideFlags};
 
 #[derive(Debug, Default)]
 pub(crate) struct NoOpPass;

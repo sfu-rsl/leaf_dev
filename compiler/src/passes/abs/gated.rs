@@ -2,7 +2,7 @@ use rustc_middle::{mir, ty::TyCtxt};
 
 use crate::passes::StorageExt;
 
-use super::{Compilation, CompilationPass, Storage};
+use super::super::{Compilation, CompilationPass, OverrideFlags, Storage, ast};
 
 /// A wrapper pass that enables or disables the inner pass.
 pub(crate) struct GatedPass<T> {
@@ -24,15 +24,11 @@ impl<T> CompilationPass for GatedPass<T>
 where
     T: CompilationPass,
 {
-    fn override_flags() -> super::OverrideFlags {
+    fn override_flags() -> OverrideFlags {
         T::override_flags()
     }
 
-    fn visit_ast_before(
-        &mut self,
-        krate: &super::ast::Crate,
-        storage: &mut dyn Storage,
-    ) -> Compilation {
+    fn visit_ast_before(&mut self, krate: &ast::Crate, storage: &mut dyn Storage) -> Compilation {
         storage.get_or_insert_with::<bool>(storage_key!(), || self.enabled);
 
         if !is_enabled::<T>(storage) {
@@ -42,11 +38,7 @@ where
         self.pass.visit_ast_before(krate, storage)
     }
 
-    fn visit_ast_after(
-        &mut self,
-        krate: &super::ast::Crate,
-        storage: &mut dyn Storage,
-    ) -> Compilation {
+    fn visit_ast_after(&mut self, krate: &ast::Crate, storage: &mut dyn Storage) -> Compilation {
         if !is_enabled::<T>(storage) {
             return Compilation::Continue;
         }
