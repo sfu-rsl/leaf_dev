@@ -25,7 +25,7 @@ impl CompilationPass for InstrumentationCounter {
         tcx: rustc_middle::ty::TyCtxt,
         storage: &mut dyn Storage,
     ) {
-        let pri_items = super::super::get_pri_items(tcx, storage);
+        let pri_items = super::super::pri::get_pri_items(tcx, storage);
 
         let mut counts = HashMap::new();
 

@@ -24,7 +24,7 @@ impl CompilationPass for InstrumentationRecursionChecker {
         tcx: rustc_middle::ty::TyCtxt,
         storage: &mut dyn Storage,
     ) {
-        let pri_items = super::super::get_pri_items(tcx, storage);
+        let pri_items = super::super::pri::get_pri_items(tcx, storage);
 
         let all_available_instances = tcx
             .collect_and_partition_mono_items(())

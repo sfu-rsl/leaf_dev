@@ -22,7 +22,7 @@ use super::{
     TAG_INSTR, assignment_id,
     call::{
         AssertionHandler, Assigner, AtomicIntrinsicHandler, BranchingHandler, BranchingReferencer,
-        CastAssigner, DropHandler, FunctionHandler,
+        CastAssigner, DropHandler, EntryFunctionHandler, FunctionHandler,
         InsertionLocation::*,
         IntrinsicHandler, MemoryIntrinsicHandler, OperandRef, OperandReferencer, PlaceRef,
         PlaceReferencer, RuntimeCallAdder, StorageMarker,
@@ -36,6 +36,54 @@ use super::{
     decision::{self, AtomicIntrinsicKind},
     pri_utils::sym::intrinsics::LeafIntrinsicSymbol,
 };
+
+pub(super) fn handle_entry_function_pre<'tcx, C>(
+    call_adder: &mut RuntimeCallAdder<C>,
+    body: &Body<'tcx>,
+) where
+    C: cr::Basic<'tcx>,
+{
+    let mut call_adder = call_adder.in_entry_fn();
+    let first_block = body.basic_blocks.indices().next().unwrap();
+    let mut call_adder = call_adder.with_source_info(*body.source_info(Location::START));
+    let mut call_adder = call_adder.at(Before(first_block));
+    call_adder.init_runtime_lib();
+}
+
+pub(super) fn handle_entry_function_post<'tcx, C>(
+    call_adder: &mut RuntimeCallAdder<C>,
+    body: &Body<'tcx>,
+) where
+    C: cr::Basic<'tcx>,
+{
+    let mut call_adder = call_adder.in_entry_fn();
+    body.basic_blocks
+        .iter_enumerated()
+        .filter(|(_, bb)| bb.terminator().kind == mir::TerminatorKind::Return)
+        .for_each(|(index, bb)| {
+            call_adder
+                .at(Before(index))
+                .with_source_info(bb.terminator().source_info)
+                .shutdown_runtime_lib();
+        });
+}
+
+pub(super) fn handle_body_pre_blocks<'tcx, C>(call_adder: &mut RuntimeCallAdder<C>)
+where
+    C: cr::ForFunctionCalling<'tcx> + cr::ForStorageMarking<'tcx>,
+{
+    call_adder.enter_func();
+
+    rustc_mir_dataflow::impls::always_storage_live_locals(call_adder.body())
+        .iter()
+        .for_each(|l| match call_adder.body().local_kind(l) {
+            mir::LocalKind::Temp => {
+                call_adder.mark_live(|call_adder| call_adder.reference_place(&l.into()));
+            }
+            mir::LocalKind::Arg => {}
+            mir::LocalKind::ReturnPointer => {}
+        });
+}
 
 pub(super) fn instrument_body<'tcx, 'c, 'body, C>(
     call_adder: &'c mut RuntimeCallAdder<C>,
