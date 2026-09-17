@@ -9,7 +9,7 @@ use rustc_middle::{
 
 use common::pri::AssignmentId;
 
-use crate::utils::mir::BodyExt;
+use super::mir::BodyExt;
 
 #[derive(dm::From)]
 pub(crate) enum AssignmentDestination<'a, 'tcx> {

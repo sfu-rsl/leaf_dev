@@ -1,3 +1,4 @@
+pub(crate) mod assignment_ids;
 pub(crate) mod control_dependence;
 
 #[derive(Default)]

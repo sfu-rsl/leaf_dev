@@ -16,10 +16,14 @@ use common::{
     pri::{AssignmentId, AtomicBinaryOp},
 };
 
-use crate::{mir_transform::JumpTargetModifier, utils::mir::TyCtxtExt, visit::*};
+use crate::{
+    mir_transform::JumpTargetModifier,
+    utils::{assignment_ids::assignment_ids_split_agnostic, mir::TyCtxtExt},
+    visit::*,
+};
 
 use super::{
-    TAG_INSTR, assignment_id,
+    TAG_INSTR,
     call::{
         AssertionHandler, Assigner, AtomicIntrinsicHandler, BranchingHandler, BranchingReferencer,
         CastAssigner, DropHandler, EntryFunctionHandler, FunctionHandler,
@@ -119,10 +123,9 @@ impl VisitorFactory {
     where
         C: cr::Basic<'tcx> + BlockOriginalIndexProvider + JumpTargetModifier,
     {
-        let assignment_ids =
-            assignment_id::assignment_ids_split_agnostic(call_adder.tcx(), call_adder.body())
-                .map(|(loc, _, id)| (loc, id))
-                .collect();
+        let assignment_ids = assignment_ids_split_agnostic(call_adder.tcx(), call_adder.body())
+            .map(|(loc, _, id)| (loc, id))
+            .collect();
         LeafBodyVisitor {
             call_adder: RuntimeCallAdder::borrow_from(call_adder),
             assignment_ids: Rc::new(assignment_ids),
