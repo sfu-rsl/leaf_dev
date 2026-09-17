@@ -8,15 +8,13 @@ pub(crate) use pri::pri_utils;
 mod subpasses;
 mod visit;
 
-use const_format::concatcp;
-
 use rustc_middle::{
     mir::{BasicBlock, BasicBlockData, Body, HasLocalDecls, MirSource},
     ty::TyCtxt,
 };
 use rustc_span::def_id::DefId;
 
-use std::{num::NonZeroUsize, sync::atomic};
+use std::collections::{HashMap, HashSet};
 
 use common::{log_info, log_warn};
 
@@ -35,23 +33,15 @@ pub(crate) use subpasses::rec_check::InstrumentationRecursionChecker;
 
 const TAG_INSTRUMENTATION: &str = "instrumentation";
 use TAG_INSTRUMENTATION as TAG_INSTR;
-const TAG_INSTR_COUNTER: &str = concatcp!(TAG_INSTRUMENTATION, "::counter");
-
-const KEY_TOTAL_COUNT: &str = "total_body_count";
 
 #[derive(Default)]
 pub(crate) struct Instrumentor {
-    total_body_count: Option<NonZeroUsize>,
     rules: Option<InstrumentationRules>,
 }
 
 impl Instrumentor {
-    pub(crate) fn new(
-        total_body_count: Option<NonZeroUsize>,
-        filters: InstrumentationRules,
-    ) -> Self {
+    pub(crate) fn new(filters: InstrumentationRules) -> Self {
         Self {
-            total_body_count,
             rules: Some(filters),
         }
     }
@@ -69,7 +59,6 @@ impl CompilationPass for Instrumentor {
         _krate: &rustc_ast::Crate,
         storage: &mut dyn Storage,
     ) -> rustc_driver::Compilation {
-        storage.get_or_insert_with(KEY_TOTAL_COUNT.to_owned(), || self.total_body_count);
         storage.get_or_insert_with(decision::rules::KEY_RULES.to_owned(), || {
             self.rules.take().unwrap()
         });
@@ -95,8 +84,6 @@ impl CompilationPass for Instrumentor {
 }
 
 fn transform<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>, storage: &mut dyn Storage) {
-    on_start(tcx, storage);
-
     let def_id = body.source.def_id();
 
     if !decision::should_instrument(tcx, body, storage) {
@@ -127,9 +114,9 @@ fn transform<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>, storage: &mut dyn S
     // Instrumentation
     {
         let mut call_adder = RuntimeCallAdder::new(tcx, &mut unit, &pri_items, storage, config);
-    let mut call_adder = call_adder.in_body(body, orig_index_map);
+        let mut call_adder = call_adder.in_body(body, orig_index_map);
 
-    visit::instrument_body(&mut call_adder, body);
+        visit::instrument_body(&mut call_adder, body);
     }
 
     unit.commit(
@@ -169,26 +156,6 @@ fn split_blocks<'tcx>(
     mir_transform::split_blocks_with(body, body::requires_immediate_instr_after);
     let orig_index_map = body::make_orig_index_map(body, storage);
     orig_index_map
-}
-
-fn on_start(_tcx: TyCtxt, storage: &mut dyn Storage) {
-    {
-        static COUNTER: atomic::AtomicUsize = atomic::AtomicUsize::new(0);
-        let counter = COUNTER.fetch_add(1, atomic::Ordering::SeqCst);
-        let total = *storage
-            .get_mut::<Option<NonZeroUsize>>(&KEY_TOTAL_COUNT.to_owned())
-            .unwrap();
-        let total_num: usize = total.unwrap_or(NonZeroUsize::MAX).into();
-        let update_interval = total.map_or(100, |t| usize::from(t) / 100);
-        if total_num - update_interval < counter || counter % update_interval == 0 {
-            log_info!(
-                target: TAG_INSTR_COUNTER,
-                "Transforming {} / {}",
-                counter,
-                total.as_ref().map(NonZeroUsize::to_string).unwrap_or("?".to_owned()),
-            );
-        }
-    }
 }
 
 pub(super) fn make_config<'tcx>(

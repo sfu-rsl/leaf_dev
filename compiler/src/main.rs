@@ -190,10 +190,7 @@ mod driver_callbacks {
             },
         );
 
-        let instrumentation_pass = Instrumentor::new(
-            None, /* FIXME */
-            config.passes.instrumentation.rules.clone(),
-        );
+        let instrumentation_pass = Instrumentor::new(config.passes.instrumentation.rules.clone());
 
         let passes = chain!(
             prerequisites_pass,
