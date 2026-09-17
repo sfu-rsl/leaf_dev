@@ -6,7 +6,7 @@ use rustc_span::{Span, Spanned};
 
 use std::collections::{HashMap, HashSet};
 
-use crate::{mir_transform, passes::StorageExt, visit::TerminatorKindVisitor};
+use crate::{passes::StorageExt, utils::mir_transform, visit::TerminatorKindVisitor};
 
 mod orig_index {
     use crate::passes::Storage;

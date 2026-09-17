@@ -11,11 +11,11 @@ use rustc_middle::{
 use rustc_span::def_id::DefId;
 
 use crate::{
-    mir_transform::{
+    passes::Storage,
+    utils::mir_transform::{
         BodyBlockManager, BodyInstrumentationUnit, BodyLocalManager, JumpModificationConstraint,
         JumpTargetModifier, NewLocalDecl,
     },
-    passes::Storage,
 };
 
 use crate::passes::instr::pri::{

@@ -1,5 +1,6 @@
 pub(crate) mod assignment_ids;
 pub(crate) mod control_dependence;
+pub(crate) mod mir_transform;
 
 #[derive(Default)]
 pub(crate) struct Chain<A, B> {

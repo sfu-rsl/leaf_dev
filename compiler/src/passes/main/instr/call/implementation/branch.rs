@@ -1,5 +1,5 @@
 use crate::{
-    mir_transform::JumpModificationConstraint, passes::instr::call::context::ConfigProvider,
+    passes::instr::call::context::ConfigProvider, utils::mir_transform::JumpModificationConstraint,
 };
 
 use super::{

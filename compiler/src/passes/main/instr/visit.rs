@@ -17,7 +17,7 @@ use common::{
 };
 
 use crate::{
-    mir_transform::JumpTargetModifier,
+    utils::mir_transform::JumpTargetModifier,
     utils::{assignment_ids::assignment_ids_split_agnostic, mir::TyCtxtExt},
     visit::*,
 };
