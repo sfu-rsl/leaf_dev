@@ -464,7 +464,10 @@ mod utils {
     use core::{debug_assert_matches, iter};
 
     use crate::{
-        passes::instr::{MirSourceExt, decision::rules::{BodyDecision, get_baked_policy}},
+        passes::instr::{
+            MirSourceExt,
+            decision::rules::{BodyDecision, get_baked_policy},
+        },
         utils::mir::{InstanceKindExt, TyCtxtExt},
     };
 

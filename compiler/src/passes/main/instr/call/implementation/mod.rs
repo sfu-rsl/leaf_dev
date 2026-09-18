@@ -34,7 +34,7 @@ mod operand;
 mod place;
 mod storage;
 
-use ctxt_reqs::{ForEntryFunction, ForInsertion};
+use ctxt_reqs::{ForAssignment, ForEntryFunction, ForInsertion};
 
 pub(crate) struct RuntimeCallAdder<C> {
     context: C,
@@ -476,13 +476,12 @@ where
 
 impl<'tcx, C> RuntimeCallAdder<C>
 where
-    Self: Assigner<'tcx>,
-    C: ForInsertion<'tcx>,
+    C: ForAssignment<'tcx>,
 {
     fn to_some_concrete(&mut self) {
         let BlocksAndResult(blocks, operand_ref) = self.internal_reference_const_some();
         self.insert_blocks(blocks);
-        self.by_use(operand_ref.into());
+        self.add_assignment_use_call(operand_ref.into());
     }
 }
 

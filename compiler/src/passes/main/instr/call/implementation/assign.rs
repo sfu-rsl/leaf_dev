@@ -2,35 +2,107 @@ use std::debug_assert_matches;
 
 use rustc_abi::{FieldIdx, VariantIdx};
 use rustc_middle::{
-    mir::{BinOp, CastKind, UnOp},
-    ty::Const,
+    mir::{AggregateKind, BinOp, BorrowKind, CastKind, RawPtrKind, Rvalue, UnOp, WithRetag},
+    ty::{self as mir_ty, Const},
 };
+use rustc_span::def_id::DefId;
+
+use common::{log_debug, log_warn, pri::AssignmentId};
+
+use crate::visit::RvalueVisitor;
 
 use super::{
-    Assigner, CastAssigner,
-    context::{CastAssignmentContext, CastOperandProvider},
-    ctxt_reqs::{ForAssignment, ForCasting},
+    OperandReferencer, PlaceReferencer,
+    context::{ConfigProvider, SourceInfoProvider},
+    ctxt_reqs::{ForAssignment, ForOperandRef, ForPlaceRef},
     prelude::{mir::*, *},
+    pri::FunctionInfo,
 };
 
-impl<'tcx, C> Assigner<'tcx> for RuntimeCallAdder<C>
-where
-    Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
-    C: ForAssignment<'tcx>,
-{
-    type Cast<'b>
-        = RuntimeCallAdder<CastAssignmentContext<'b, C>>
-    where
-        CastAssignmentContext<'b, C>: ForCasting<'tcx> + 'b;
+use super::super::super::TAG_INSTR;
+use super::super::super::decision::rules::EventDecision;
 
-    fn by_use(&mut self, operand: OperandRef) {
-        self.add_bb_for_assign_call(
-            sym::assign_use,
-            vec![operand::copy_for_local(operand.into())],
-        )
+impl<'tcx, C> RuntimeCallAdder<C>
+where
+    C: ForPlaceRef<'tcx> + ForOperandRef<'tcx>,
+{
+    pub(crate) fn instrument_assignment(
+        &mut self,
+        assignment_id: AssignmentId,
+        destination: &Place<'tcx>,
+        rvalue: &Rvalue<'tcx>,
+    ) {
+        log_debug!(target: TAG_INSTR, "Visiting Rvalue: {:#?}", rvalue);
+
+        let filter = self.assignment_filter(rvalue);
+
+        match filter {
+            EventDecision::Omit => return,
+            EventDecision::Opaque | EventDecision::Detailed => {
+                let destination = self.reference_place(destination);
+                let mut assignment = self.assign(assignment_id, destination);
+                match filter {
+                    EventDecision::Detailed => assignment.visit_rvalue(rvalue),
+                    EventDecision::Opaque => assignment.add_opaque_assignment(),
+                    _ => unreachable!(),
+                }
+            }
+        }
     }
 
-    fn by_repeat(&mut self, operand: OperandRef, count: &Const<'tcx>) {
+    fn assignment_filter(&self, rvalue: &Rvalue<'tcx>) -> EventDecision {
+        use EventDecision::*;
+
+        let rules = &self.config().assignment_filter;
+        match rvalue {
+            Rvalue::Use(..) => rules.use_,
+            Rvalue::Repeat(..) => rules.repeat,
+            Rvalue::Ref(..) => rules.ref_,
+            Rvalue::ThreadLocalRef(..) => rules.thread_local_ref,
+            Rvalue::RawPtr(..) => rules.raw_ptr,
+            Rvalue::Cast(..) => rules.cast,
+            Rvalue::BinaryOp(..) => rules.binary_op,
+            Rvalue::UnaryOp(..) => rules.unary_op,
+            Rvalue::Discriminant(..) => rules.discriminant,
+            Rvalue::Aggregate(..) => rules.aggregate,
+            Rvalue::CopyForDeref(..) => rules.use_,
+            Rvalue::WrapUnsafeBinder(..) => rules.wrap_unsafe_binder,
+            Rvalue::Reborrow(..) => Omit,
+        }
+    }
+
+    pub(crate) fn instrument_set_discriminant(
+        &mut self,
+        assignment_id: AssignmentId,
+        destination: &Place<'tcx>,
+        variant_index: &VariantIdx,
+    ) {
+        let tcx = self.tcx();
+        let destination = self.reference_place(destination);
+        self.assign(assignment_id, destination)
+            .add_bb_for_assign_call(
+                sym::set_discriminant,
+                vec![operand::const_from_uint(tcx, variant_index.as_u32())],
+            );
+    }
+}
+
+impl<'tcx, C> RvalueVisitor<'tcx, ()> for RuntimeCallAdder<C>
+where
+    Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
+    C: ForAssignment<'tcx> + ForPlaceRef<'tcx> + ForOperandRef<'tcx>,
+{
+    fn visit_rvalue(&mut self, rvalue: &Rvalue<'tcx>) {
+        self.super_rvalue(rvalue)
+    }
+
+    fn visit_use(&mut self, operand: &Operand<'tcx>, _: &WithRetag) {
+        let operand = self.reference_operand(operand);
+        self.add_assignment_use_call(operand)
+    }
+
+    fn visit_repeat(&mut self, operand: &Operand<'tcx>, count: &Const<'tcx>) {
+        let operand = self.reference_operand(operand);
         self.add_bb_for_assign_call(
             sym::assign_repeat,
             vec![
@@ -41,17 +113,26 @@ where
         )
     }
 
-    fn by_ref(&mut self, place: PlaceRef, is_mutable: bool) {
+    fn visit_ref(
+        &mut self,
+        _region: &mir_ty::Region,
+        borrow_kind: &BorrowKind,
+        place: &Place<'tcx>,
+    ) {
+        let place = self.reference_place(place);
         self.add_bb_for_assign_call(
             sym::assign_ref,
             vec![
                 operand::copy_for_local(place.into()),
-                operand::const_from_bool(self.context.tcx(), is_mutable),
+                operand::const_from_bool(
+                    self.context.tcx(),
+                    matches!(borrow_kind, BorrowKind::Mut { .. }),
+                ),
             ],
         )
     }
 
-    fn by_thread_local_ref(&mut self, _def_id: &DefId) {
+    fn visit_thread_local_ref(&mut self, _def_id: &DefId) {
         if cfg!(feature = "abs_concrete") {
             self.to_some_concrete()
         } else {
@@ -59,147 +140,107 @@ where
         }
     }
 
-    fn by_raw_ptr(&mut self, place: PlaceRef, is_mutable: bool) {
+    fn visit_raw_ptr(&mut self, kind: &RawPtrKind, place: &Place<'tcx>) {
+        let place = self.reference_place(place);
         self.add_bb_for_assign_call(
             sym::assign_raw_ptr_of,
             vec![
                 operand::copy_for_local(place.into()),
-                operand::const_from_bool(self.context.tcx(), is_mutable),
+                operand::const_from_bool(self.context.tcx(), kind.to_mutbl_lossy().is_mut()),
             ],
         )
     }
 
-    fn by_cast(&mut self, operand: OperandRef) -> Self::Cast<'_> {
-        RuntimeCallAdder {
-            context: CastAssignmentContext {
-                base: &mut self.context,
-                operand_ref: operand,
-            },
+    fn visit_cast(&mut self, kind: &CastKind, operand: &Operand<'tcx>, ty: &Ty<'tcx>) {
+        let operand = self.reference_operand(operand);
+        use CastKind::*;
+        match kind {
+            IntToInt | FloatToInt => self.by_cast_to_int(operand, *ty),
+            IntToFloat | FloatToFloat => self.by_cast_to_float(operand, *ty),
+            PointerCoercion(coercion, _source) => {
+                use mir_ty::adjustment::PointerCoercion::*;
+                match coercion {
+                    Unsize => self.by_cast_through_unsizing(operand),
+                    ReifyFnPointer(_) | UnsafeFnPointer | ClosureFnPointer(_) => {
+                        self.by_cast_through_fn_ptr_coercion(operand)
+                    }
+                    MutToConstPointer => self.by_cast_to_another_ptr(operand, *ty, *kind),
+                    ArrayToPointer => {
+                        log_warn!(
+                            target: TAG_INSTR,
+                            concat!(
+                                "ArrayToPointer casts are expected to be optimized away by at this point.",
+                                "Sending it to runtime as a regular pointer cast."
+                            )
+                        );
+                        self.by_cast_to_another_ptr(operand, *ty, *kind)
+                    }
+                }
+            }
+            PointerExposeProvenance => self.by_cast_expose_prov(operand),
+            PointerWithExposedProvenance => self.by_cast_with_exposed_prov(operand, *ty),
+            PtrToPtr | FnPtrToPtr => self.by_cast_to_another_ptr(operand, *ty, *kind),
+            Transmute => self.by_cast_transmuted(operand, *ty),
+            Subtype => self.by_cast_subtyped(operand, *ty),
         }
     }
 
-    fn by_binary_op(&mut self, operator: &BinOp, first: OperandRef, second: OperandRef) {
-        let tcx = self.tcx();
-        let operator = convert_mir_binop_to_pri(operator);
-        let operator_local = {
-            let (block, local) = self.make_bb_for_helper_call_with_all(
-                self.context.pri_helper_funcs().const_binary_op_of,
-                vec![],
-                vec![operand::const_from_uint(tcx, operator.to_raw())],
-                Default::default(),
-            );
-            self.insert_blocks([block]);
-            local
-        };
-
-        self.add_bb_for_assign_call(
+    fn visit_binary_op(
+        &mut self,
+        operator: &BinOp,
+        operands: &Box<(Operand<'tcx>, Operand<'tcx>)>,
+    ) {
+        let first = self.reference_operand(&operands.0);
+        let second = self.reference_operand(&operands.1);
+        self.add_operator_assignment(
+            self.context.pri_helper_funcs().const_binary_op_of,
+            convert_mir_binop_to_pri(operator).to_raw().into(),
             sym::assign_binary_op,
             vec![
-                operand::move_for_local(operator_local),
                 operand::copy_for_local(first.into()),
                 operand::copy_for_local(second.into()),
             ],
         )
     }
 
-    fn by_unary_op(&mut self, operator: &UnOp, operand: OperandRef) {
-        let tcx = self.tcx();
-        let operator = convert_mir_unop_to_pri(operator);
-        let operator_local = {
-            let (block, local) = self.make_bb_for_helper_call_with_all(
-                self.context.pri_helper_funcs().const_unary_op_of,
-                vec![],
-                vec![operand::const_from_uint(tcx, operator.to_raw())],
-                Default::default(),
-            );
-            self.insert_blocks([block]);
-            local
-        };
-
-        self.add_bb_for_assign_call(
+    fn visit_unary_op(&mut self, operator: &UnOp, operand: &Operand<'tcx>) {
+        let operand = self.reference_operand(operand);
+        self.add_operator_assignment(
+            self.context.pri_helper_funcs().const_unary_op_of,
+            convert_mir_unop_to_pri(operator).to_raw().into(),
             sym::assign_unary_op,
-            vec![
-                operand::move_for_local(operator_local),
-                operand::copy_for_local(operand.into()),
-            ],
+            vec![operand::copy_for_local(operand.into())],
         )
     }
 
-    fn by_discriminant(&mut self, place: PlaceRef) {
+    fn visit_discriminant(&mut self, place: &Place<'tcx>) {
+        let place = self.reference_place(place);
         self.add_bb_for_assign_call(
             sym::assign_discriminant,
             vec![operand::copy_for_local(place.into())],
         )
     }
 
-    fn by_aggregate_array(&mut self, items: &[OperandRef]) {
-        self.add_bb_for_aggregate_assign_call(sym::assign_aggregate_array, items, vec![])
-    }
-
-    fn by_aggregate_tuple(&mut self, fields: &[OperandRef]) {
-        self.add_bb_for_adt_assign_call(sym::assign_aggregate_tuple, fields, vec![])
-    }
-
-    fn by_aggregate_struct(&mut self, fields: &[OperandRef]) {
-        self.add_bb_for_adt_assign_call(sym::assign_aggregate_struct, fields, vec![])
-    }
-
-    fn by_aggregate_enum(&mut self, fields: &[OperandRef], variant: VariantIdx) {
-        self.add_bb_for_adt_assign_call(
-            sym::assign_aggregate_enum,
-            fields,
-            vec![operand::const_from_uint(
-                self.context.tcx(),
-                variant.as_u32(),
-            )],
-        )
-    }
-
-    fn by_aggregate_union(&mut self, active_field: FieldIdx, value: OperandRef) {
-        self.add_bb_for_assign_call_with_statements(
-            sym::assign_aggregate_union,
-            vec![
-                operand::const_from_uint(self.context.tcx(), active_field.as_u32()),
-                operand::copy_for_local(value.into()),
-            ],
-            vec![],
-        )
-    }
-
-    fn by_aggregate_closure(&mut self, upvars: &[OperandRef]) {
-        self.add_bb_for_aggregate_assign_call(sym::assign_aggregate_closure, upvars, vec![])
-    }
-
-    fn by_aggregate_coroutine(&mut self, upvars: &[OperandRef]) {
-        self.add_bb_for_aggregate_assign_call(sym::assign_aggregate_coroutine, upvars, vec![])
-    }
-
-    fn by_aggregate_coroutine_closure(&mut self, upvars: &[OperandRef]) {
-        self.add_bb_for_aggregate_assign_call(
-            sym::assign_aggregate_coroutine_closure,
-            upvars,
-            vec![],
-        )
-    }
-
-    fn by_aggregate_raw_ptr(
+    fn visit_aggregate(
         &mut self,
-        data_ptr: OperandRef,
-        metadata: OperandRef,
-        is_mutable: bool,
+        kind: &Box<AggregateKind>,
+        operands: &rustc_index::IndexVec<FieldIdx, Operand<'tcx>>,
     ) {
-        self.add_bb_for_assign_call_with_statements(
-            sym::assign_aggregate_raw_ptr,
-            vec![
-                operand::move_for_local(data_ptr.into()),
-                operand::move_for_local(metadata.into()),
-                operand::const_from_bool(self.tcx(), is_mutable),
-            ],
-            vec![],
-        )
+        let operands: Vec<OperandRef> = operands
+            .iter()
+            .map(|operand| self.reference_operand(operand))
+            .collect();
+
+        self.add_aggregate_assignment(kind.as_ref(), &operands)
     }
 
-    fn by_wrap_unsafe_binder(&mut self, operand: OperandRef, ty: &Ty<'tcx>) {
+    fn visit_copy_for_deref(&mut self, place: &Place<'tcx>) {
+        let operand = Operand::Copy(*place);
+        self.visit_use(&operand, &WithRetag::No)
+    }
+
+    fn visit_wrap_unsafe_binder(&mut self, operand: &Operand<'tcx>, ty: &Ty<'tcx>) {
+        let operand = self.reference_operand(operand);
         let id_local = {
             let (block, id_local) = self.make_type_id_of_bb(*ty);
             self.insert_blocks([block]);
@@ -211,20 +252,119 @@ where
                 operand::copy_for_local(operand.into()),
                 operand::move_for_local(id_local),
             ],
-        );
-    }
-
-    fn its_discriminant_to(&mut self, variant_index: &VariantIdx) {
-        self.add_bb_for_assign_call(
-            sym::set_discriminant,
-            vec![operand::const_from_uint(
-                self.context.tcx(),
-                variant_index.as_u32(),
-            )],
         )
     }
 
-    fn by_some(&mut self) {
+    fn visit_reborrow(
+        &mut self,
+        target_ty: &Ty<'tcx>,
+        mutability: &rustc_hir::Mutability,
+        place: &Place<'tcx>,
+    ) {
+        panic!(
+            concat!(
+                "Reborrow is not expected to be observed at this point. ",
+                "It should have been optimized away by the compiler. ",
+                "({:?}, {:?}, {:?}) at {:?}"
+            ),
+            target_ty,
+            mutability,
+            place,
+            self.source_info().span,
+        );
+    }
+}
+
+impl<'tcx, C> RuntimeCallAdder<C>
+where
+    Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
+    C: ForAssignment<'tcx>,
+{
+    fn add_aggregate_assignment(&mut self, kind: &AggregateKind, operands: &[OperandRef]) {
+        let add_agg_basic = |this: &mut Self, symbol: LeafSymbol| {
+            this.add_bb_for_aggregate_assign_call(symbol, operands, Default::default())
+        };
+        let add_adt = |this: &mut Self, symbol: LeafSymbol, additional_args: Vec<Operand<'tcx>>| {
+            this.add_bb_for_adt_assign_call(symbol, operands, additional_args)
+        };
+        use AggregateKind::*;
+        match kind {
+            Array(..) => add_agg_basic(self, sym::assign_aggregate_array),
+            Closure(..) => add_agg_basic(self, sym::assign_aggregate_closure),
+            Coroutine(..) => add_agg_basic(self, sym::assign_aggregate_coroutine),
+            CoroutineClosure(..) => add_agg_basic(self, sym::assign_aggregate_coroutine_closure),
+            Tuple | Adt(_, _, _, _, None) => match kind {
+                Tuple => add_adt(self, sym::assign_aggregate_tuple, Default::default()),
+                Adt(def_id, variant, _, _, None) => {
+                    use rustc_hir::def::DefKind;
+                    match self.tcx().def_kind(*def_id) {
+                        DefKind::Enum => {
+                            let variant =
+                                operand::const_from_uint(self.context.tcx(), variant.as_u32());
+                            add_adt(self, sym::assign_aggregate_enum, vec![variant])
+                        }
+                        DefKind::Struct => {
+                            add_adt(self, sym::assign_aggregate_struct, Default::default())
+                        }
+                        kind => unreachable!("Unexpected ADT kind: {:?}", kind),
+                    }
+                }
+                _ => unreachable!(),
+            },
+            // Union
+            Adt(_, _, _, _, Some(active_field)) => {
+                assert_eq!(operands.len(), 1);
+                self.add_bb_for_assign_call_with_statements(
+                    sym::assign_aggregate_union,
+                    vec![
+                        operand::const_from_uint(self.context.tcx(), active_field.as_u32()),
+                        operand::copy_for_local(operands[0].into()),
+                    ],
+                    vec![],
+                )
+            }
+            RawPtr(_, mutability) => match operands {
+                [data_ptr, metadata] => self.add_bb_for_assign_call_with_statements(
+                    sym::assign_aggregate_raw_ptr,
+                    vec![
+                        operand::move_for_local((*data_ptr).into()),
+                        operand::move_for_local((*metadata).into()),
+                        operand::const_from_bool(self.tcx(), mutability.is_mut()),
+                    ],
+                    vec![],
+                ),
+                _ => unreachable!(),
+            },
+        }
+    }
+
+    fn add_operator_assignment(
+        &mut self,
+        operator_func: FunctionInfo,
+        operator: u128,
+        assignment_func: LeafSymbol,
+        mut args: Vec<Operand<'tcx>>,
+    ) {
+        let (block, operator_local) = self.make_bb_for_helper_call_with_all(
+            operator_func,
+            vec![],
+            vec![operand::const_from_uint(self.tcx(), operator)],
+            Default::default(),
+        );
+        self.insert_blocks([block]);
+
+        args.insert(0, operand::move_for_local(operator_local));
+        self.add_bb_for_assign_call(assignment_func, args)
+    }
+
+    pub(super) fn add_assignment_use_call(&mut self, operand: OperandRef) {
+        self.add_bb_for_assign_call(
+            sym::assign_use,
+            vec![operand::copy_for_local(operand.into())],
+        )
+    }
+
+    pub(crate) fn add_opaque_assignment(&mut self) {
         self.add_bb_for_assign_call(sym::assign_some, vec![])
     }
 }
@@ -322,14 +462,14 @@ where
     }
 }
 
-impl<'tcx, C> CastAssigner<'tcx> for RuntimeCallAdder<C>
+impl<'tcx, C> RuntimeCallAdder<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
-    C: ForCasting<'tcx>,
+    C: ForAssignment<'tcx>,
 {
-    fn to_int(&mut self, ty: Ty<'tcx>) {
+    fn by_cast_to_int(&mut self, operand: OperandRef, ty: Ty<'tcx>) {
         if ty.is_char() {
-            self.add_bb_for_cast_assign_call(sym::assign_cast_char)
+            self.add_bb_for_cast_assign_call(operand, sym::assign_cast_char)
         } else {
             assert!(ty.is_integral());
 
@@ -338,6 +478,7 @@ where
             let bits = ty.primitive_size(tcx).bits();
 
             self.add_bb_for_cast_assign_call_with_args(
+                operand,
                 sym::assign_cast_integer,
                 vec![
                     operand::const_from_uint(tcx, bits),
@@ -347,9 +488,10 @@ where
         }
     }
 
-    fn to_float(&mut self, ty: Ty<'tcx>) {
+    fn by_cast_to_float(&mut self, operand: OperandRef, ty: Ty<'tcx>) {
         let (e_bits, s_bits) = ty::ebit_sbit_size(ty);
         self.add_bb_for_cast_assign_call_with_args(
+            operand,
             sym::assign_cast_float,
             vec![
                 operand::const_from_uint(self.context.tcx(), e_bits),
@@ -358,28 +500,28 @@ where
         )
     }
 
-    fn through_unsizing(&mut self) {
-        self.add_bb_for_cast_assign_call(sym::assign_cast_unsize)
+    fn by_cast_through_unsizing(&mut self, operand: OperandRef) {
+        self.add_bb_for_cast_assign_call(operand, sym::assign_cast_unsize)
     }
 
-    fn through_fn_ptr_coercion(&mut self) {
+    fn by_cast_through_fn_ptr_coercion(&mut self, operand: OperandRef) {
         if cfg!(feature = "abs_concrete") {
             // Effective only at compile time, no operational effect.
-            self.by_use(self.context.operand_ref())
+            self.add_assignment_use_call(operand)
         } else {
             unimplemented!("Function pointer coercion is not supported in this configuration.")
         }
     }
 
-    fn expose_prov(&mut self) {
-        self.add_bb_for_cast_assign_call(sym::assign_cast_expose_prov);
+    fn by_cast_expose_prov(&mut self, operand: OperandRef) {
+        self.add_bb_for_cast_assign_call(operand, sym::assign_cast_expose_prov);
     }
 
-    fn with_exposed_prov(&mut self, ty: Ty<'tcx>) {
-        self.add_bb_for_pointer_cast_assign_call(ty, sym::assign_cast_with_exposed_prov);
+    fn by_cast_with_exposed_prov(&mut self, operand: OperandRef, ty: Ty<'tcx>) {
+        self.add_bb_for_pointer_cast_assign_call(operand, ty, sym::assign_cast_with_exposed_prov);
     }
 
-    fn to_another_ptr(&mut self, ty: Ty<'tcx>, kind: CastKind) {
+    fn by_cast_to_another_ptr(&mut self, operand: OperandRef, ty: Ty<'tcx>, kind: CastKind) {
         use CastKind::*;
         use rustc_middle::ty::adjustment::PointerCoercion::*;
         debug_assert_matches!(
@@ -389,28 +531,30 @@ where
         /* NOTE: Currently, we do not distinguish between different pointer casts.
          * This is because they all keep the data untouched and are just about
          * semantics. We can add support for them later if interested. */
-        self.add_bb_for_pointer_cast_assign_call(ty, sym::assign_cast_to_another_ptr);
+        self.add_bb_for_pointer_cast_assign_call(operand, ty, sym::assign_cast_to_another_ptr);
     }
 
-    fn transmuted(&mut self, ty: Ty<'tcx>) {
+    fn by_cast_transmuted(&mut self, operand: OperandRef, ty: Ty<'tcx>) {
         let id_local = {
             let (block, id_local) = self.make_type_id_of_bb(ty);
             self.insert_blocks([block]);
             id_local
         };
         self.add_bb_for_cast_assign_call_with_args(
+            operand,
             sym::assign_cast_transmute,
             vec![operand::move_for_local(id_local)],
         )
     }
 
-    fn subtyped(&mut self, ty: Ty<'tcx>) {
+    fn by_cast_subtyped(&mut self, operand: OperandRef, ty: Ty<'tcx>) {
         let id_local = {
             let (block, id_local) = self.make_type_id_of_bb(ty);
             self.insert_blocks([block]);
             id_local
         };
         self.add_bb_for_cast_assign_call_with_args(
+            operand,
             sym::assign_cast_subtype,
             vec![operand::move_for_local(id_local)],
         )
@@ -420,34 +564,37 @@ where
 impl<'tcx, C> RuntimeCallAdder<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
-    C: CastOperandProvider + ForAssignment<'tcx>,
+    C: ForAssignment<'tcx>,
 {
-    fn add_bb_for_cast_assign_call(&mut self, func_name: LeafSymbol) {
-        self.add_bb_for_cast_assign_call_with_args(func_name, vec![])
+    fn add_bb_for_cast_assign_call(&mut self, operand: OperandRef, func_name: LeafSymbol) {
+        self.add_bb_for_cast_assign_call_with_args(operand, func_name, vec![])
     }
 
     fn add_bb_for_cast_assign_call_with_args(
         &mut self,
+        operand: OperandRef,
         func_name: LeafSymbol,
         args: Vec<Operand<'tcx>>,
     ) {
         self.add_bb_for_assign_call(
             func_name,
-            [
-                vec![operand::copy_for_local(self.context.operand_ref().into())],
-                args,
-            ]
-            .concat(),
+            [vec![operand::copy_for_local(operand.into())], args].concat(),
         )
     }
 
-    fn add_bb_for_pointer_cast_assign_call(&mut self, ty: Ty<'tcx>, func_name: LeafSymbol) {
+    fn add_bb_for_pointer_cast_assign_call(
+        &mut self,
+        operand: OperandRef,
+        ty: Ty<'tcx>,
+        func_name: LeafSymbol,
+    ) {
         let id_local: Local = {
             let (block, id_local) = self.make_type_id_of_bb(ty);
             self.insert_blocks([block]);
             id_local
         };
         self.add_bb_for_cast_assign_call_with_args(
+            operand,
             func_name,
             vec![operand::move_for_local(id_local)],
         );

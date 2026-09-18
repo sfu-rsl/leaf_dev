@@ -2,10 +2,9 @@
 /// PRI in MIR bodies.
 pub(super) mod context;
 
-use rustc_abi::{FieldIdx, VariantIdx};
 use rustc_middle::{
-    mir::{BasicBlock, BinOp, Body, CastKind, ConstOperand, Local, Operand, Place, UnOp},
-    ty::{Const, GenericArg, Ty, TyCtxt},
+    mir::{BasicBlock, Body, ConstOperand, Local, Operand, Place},
+    ty::{GenericArg, Ty, TyCtxt},
 };
 use rustc_span::{Spanned, def_id::DefId};
 
@@ -80,80 +79,6 @@ pub(crate) trait PlaceReferencer<'tcx> {
 
 pub(crate) trait OperandReferencer<'tcx> {
     fn reference_operand(&mut self, operand: &Operand<'tcx>) -> OperandRef;
-}
-
-pub(super) trait Assigner<'tcx>: AssignmentInfoProvider {
-    type Cast<'a>: CastAssigner<'tcx>
-    where
-        Self: 'a;
-
-    fn by_use(&mut self, operand: OperandRef);
-
-    fn by_repeat(&mut self, operand: OperandRef, count: &Const<'tcx>);
-
-    fn by_ref(&mut self, place: PlaceRef, is_mutable: bool);
-
-    fn by_thread_local_ref(&mut self, def_id: &DefId);
-
-    fn by_raw_ptr(&mut self, place: PlaceRef, is_mutable: bool);
-
-    fn by_cast(&mut self, operand: OperandRef) -> Self::Cast<'_>;
-
-    fn by_binary_op(&mut self, operator: &BinOp, first: OperandRef, second: OperandRef);
-
-    fn by_unary_op(&mut self, operator: &UnOp, operand: OperandRef);
-
-    fn by_discriminant(&mut self, place: PlaceRef);
-
-    fn by_aggregate_array(&mut self, items: &[OperandRef]);
-
-    fn by_aggregate_tuple(&mut self, fields: &[OperandRef]);
-
-    fn by_aggregate_struct(&mut self, fields: &[OperandRef]);
-
-    fn by_aggregate_enum(&mut self, fields: &[OperandRef], variant: VariantIdx);
-
-    fn by_aggregate_union(&mut self, active_field: FieldIdx, value: OperandRef);
-
-    fn by_aggregate_closure(&mut self, upvars: &[OperandRef]);
-
-    fn by_aggregate_coroutine(&mut self, upvars: &[OperandRef]);
-
-    fn by_aggregate_coroutine_closure(&mut self, upvars: &[OperandRef]);
-
-    fn by_aggregate_raw_ptr(
-        &mut self,
-        data_ptr: OperandRef,
-        metadata: OperandRef,
-        is_mutable: bool,
-    );
-
-    fn by_wrap_unsafe_binder(&mut self, operand: OperandRef, ty: &Ty<'tcx>);
-
-    // Special case for SetDiscriminant StatementType since it is similar to a regular assignment
-    fn its_discriminant_to(&mut self, variant_index: &VariantIdx);
-
-    fn by_some(&mut self);
-}
-
-pub(crate) trait CastAssigner<'tcx> {
-    fn to_int(&mut self, ty: Ty<'tcx>);
-
-    fn to_float(&mut self, ty: Ty<'tcx>);
-
-    fn through_unsizing(&mut self);
-
-    fn through_fn_ptr_coercion(&mut self);
-
-    fn expose_prov(&mut self);
-
-    fn with_exposed_prov(&mut self, ty: Ty<'tcx>);
-
-    fn to_another_ptr(&mut self, ty: Ty<'tcx>, kind: CastKind);
-
-    fn transmuted(&mut self, ty: Ty<'tcx>);
-
-    fn subtyped(&mut self, ty: Ty<'tcx>);
 }
 
 pub(crate) trait StorageMarker: Sized {
@@ -247,17 +172,17 @@ pub(crate) trait MemoryIntrinsicHandler<'tcx> {
 pub(crate) trait AtomicIntrinsicHandler<'tcx> {
     fn load(&mut self)
     where
-        Self: Assigner<'tcx>;
+        Self: AssignmentInfoProvider;
 
     fn store(&mut self, val: OperandRef)
     where
         // This is a redundant requirement as it is a unit function with a ptr passed to it.
         // However, it is used for the assignment id.
-        Self: Assigner<'tcx>;
+        Self: AssignmentInfoProvider;
 
     fn exchange(&mut self, val: OperandRef)
     where
-        Self: Assigner<'tcx>;
+        Self: AssignmentInfoProvider;
 
     fn compare_exchange(
         &mut self,
@@ -266,11 +191,11 @@ pub(crate) trait AtomicIntrinsicHandler<'tcx> {
         old: OperandRef,
         src: OperandRef,
     ) where
-        Self: Assigner<'tcx>;
+        Self: AssignmentInfoProvider;
 
     fn binary_op(&mut self, operator: AtomicBinaryOp, src: OperandRef)
     where
-        Self: Assigner<'tcx>;
+        Self: AssignmentInfoProvider;
 
     fn fence(&mut self, single_threaded: bool);
 }
@@ -311,7 +236,8 @@ impl InsertionLocation {
 
 pub(crate) struct Config {
     pub place_info_filter: PlaceInfoRules<PlaceStructureRules<DetailDecision>, DetailDecision>,
-    pub operand_info_filter: OperandKindRules<DetailDecision, Option<ConstantTypeRules<DetailDecision>>>,
+    pub operand_info_filter:
+        OperandKindRules<DetailDecision, Option<ConstantTypeRules<DetailDecision>>>,
     pub assignment_filter: AssignmentRules<EventDecision>,
     pub storage_lifetime_filter: StorageLifetimeMarkerRules<DetailDecision>,
     pub call_flow_filter: CallFlowRules<DetailDecision>,
