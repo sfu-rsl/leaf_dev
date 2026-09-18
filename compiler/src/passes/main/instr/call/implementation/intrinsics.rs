@@ -1,3 +1,5 @@
+use rustc_span::Spanned;
+
 use common::pri::{AtomicBinaryOp, AtomicOrdering};
 
 use super::{
@@ -82,11 +84,12 @@ where
         );
     }
 
-    fn store(&mut self, val: OperandRef, is_ptr_aligned: bool) {
+    fn store(&mut self, val: &Spanned<Operand<'tcx>>, is_ptr_aligned: bool) {
+        let val_ref = self.reference_operand_spanned(val);
         self.add_bb_for_memory_op_intrinsic_call(
             sym::intrinsics::memory::intrinsic_memory_store,
             vec![
-                operand::move_for_local(val.into()),
+                operand::move_for_local(val_ref.into()),
                 operand::const_from_bool(self.tcx(), self.context.is_volatile()),
                 operand::const_from_bool(self.tcx(), is_ptr_aligned),
             ],
@@ -97,16 +100,16 @@ where
 
     fn copy(
         &mut self,
-        dst_ref: OperandRef,
-        dst_value: &Operand<'tcx>,
-        count_ref: OperandRef,
-        count_value: &Operand<'tcx>,
+        dst: &Spanned<Operand<'tcx>>,
+        count: &Spanned<Operand<'tcx>>,
         is_overlapping: bool,
     ) {
         let mut stmts = Vec::new();
+        let dst_ref = self.reference_operand_spanned(dst);
+        let count_ref = self.reference_operand_spanned(count);
 
         let conc_dst_ptr_local = {
-            let (ptr_stmts, id_local) = self.make_conc_ptr_assignment(dst_value.to_copy());
+            let (ptr_stmts, id_local) = self.make_conc_ptr_assignment(dst.node.to_copy());
             stmts.extend(ptr_stmts);
             id_local
         };
@@ -117,7 +120,7 @@ where
                 operand::move_for_local(dst_ref.into()),
                 operand::move_for_local(conc_dst_ptr_local),
                 operand::move_for_local(count_ref.into()),
-                count_value.to_copy(),
+                count.node.to_copy(),
                 operand::const_from_bool(self.tcx(), self.context.is_volatile()),
                 operand::const_from_bool(self.tcx(), is_overlapping),
             ],
@@ -126,13 +129,15 @@ where
         )
     }
 
-    fn set(&mut self, val: OperandRef, count_ref: OperandRef, count_value: &Operand<'tcx>) {
+    fn set(&mut self, val: &Spanned<Operand<'tcx>>, count: &Spanned<Operand<'tcx>>) {
+        let val_ref = self.reference_operand_spanned(val);
+        let count_ref = self.reference_operand_spanned(count);
         self.add_bb_for_memory_op_intrinsic_call(
             sym::intrinsics::memory::intrinsic_memory_set,
             vec![
-                operand::move_for_local(val.into()),
+                operand::move_for_local(val_ref.into()),
                 operand::move_for_local(count_ref.into()),
-                count_value.to_copy(),
+                count.node.to_copy(),
                 operand::const_from_bool(self.tcx(), self.context.is_volatile()),
             ],
             Default::default(),
@@ -140,11 +145,12 @@ where
         )
     }
 
-    fn swap(&mut self, second_ref: OperandRef, second_value: &Operand<'tcx>) {
+    fn swap(&mut self, second: &Spanned<Operand<'tcx>>) {
         let mut stmts = Vec::new();
+        let second_ref = self.reference_operand_spanned(second);
 
         let conc_second_ptr_local = {
-            let (ptr_stmts, id_local) = self.make_conc_ptr_assignment(second_value.to_copy());
+            let (ptr_stmts, id_local) = self.make_conc_ptr_assignment(second.node.to_copy());
             stmts.extend(ptr_stmts);
             id_local
         };
@@ -160,11 +166,12 @@ where
         )
     }
 
-    fn raw_eq(&mut self, second_ref: OperandRef, second_value: &Operand<'tcx>) {
+    fn raw_eq(&mut self, second: &Spanned<Operand<'tcx>>) {
         let mut stmts = Vec::new();
+        let second_ref = self.reference_operand_spanned(second);
 
         let conc_second_ptr_local = {
-            let (ptr_stmts, id_local) = self.make_conc_ptr_assignment(second_value.to_copy());
+            let (ptr_stmts, id_local) = self.make_conc_ptr_assignment(second.node.to_copy());
             stmts.extend(ptr_stmts);
             id_local
         };
@@ -181,17 +188,13 @@ where
         )
     }
 
-    fn compare_bytes(
-        &mut self,
-        second_ref: OperandRef,
-        second_value: &Operand<'tcx>,
-        count_ref: OperandRef,
-        count_value: &Operand<'tcx>,
-    ) {
+    fn compare_bytes(&mut self, second: &Spanned<Operand<'tcx>>, count: &Spanned<Operand<'tcx>>) {
         let mut stmts = Vec::new();
+        let second_ref = self.reference_operand_spanned(second);
+        let count_ref = self.reference_operand_spanned(count);
 
         let conc_second_ptr_local = {
-            let (ptr_stmts, id_local) = self.make_conc_ptr_assignment(second_value.to_copy());
+            let (ptr_stmts, id_local) = self.make_conc_ptr_assignment(second.node.to_copy());
             stmts.extend(ptr_stmts);
             id_local
         };
@@ -202,7 +205,7 @@ where
                 operand::move_for_local(second_ref.into()),
                 operand::move_for_local(conc_second_ptr_local),
                 operand::move_for_local(count_ref.into()),
-                count_value.to_copy(),
+                count.node.to_copy(),
             ],
             stmts,
             Default::default(),

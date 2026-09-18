@@ -143,29 +143,25 @@ pub(crate) trait IntrinsicHandler<'tcx> {
 pub(crate) trait MemoryIntrinsicHandler<'tcx> {
     fn load(&mut self, is_ptr_aligned: bool);
 
-    fn store(&mut self, val: OperandRef, is_ptr_aligned: bool);
+    fn store(&mut self, val: &Spanned<Operand<'tcx>>, is_ptr_aligned: bool);
 
     fn copy(
         &mut self,
-        dst_ref: OperandRef,
-        dst_value: &Operand<'tcx>,
-        count_ref: OperandRef,
-        count_value: &Operand<'tcx>,
+        dst: &Spanned<Operand<'tcx>>,
+        count: &Spanned<Operand<'tcx>>,
         is_overlapping: bool,
     );
 
-    fn set(&mut self, val: OperandRef, count_ref: OperandRef, count_value: &Operand<'tcx>);
+    fn set(&mut self, val: &Spanned<Operand<'tcx>>, count: &Spanned<Operand<'tcx>>);
 
-    fn swap(&mut self, second_ref: OperandRef, second_value: &Operand<'tcx>);
+    fn swap(&mut self, second: &Spanned<Operand<'tcx>>);
 
-    fn raw_eq(&mut self, second_ref: OperandRef, second_value: &Operand<'tcx>);
+    fn raw_eq(&mut self, second: &Spanned<Operand<'tcx>>);
 
     fn compare_bytes(
         &mut self,
-        second_ref: OperandRef,
-        second_value: &Operand<'tcx>,
-        count_ref: OperandRef,
-        count_value: &Operand<'tcx>,
+        second: &Spanned<Operand<'tcx>>,
+        count: &Spanned<Operand<'tcx>>,
     );
 }
 
