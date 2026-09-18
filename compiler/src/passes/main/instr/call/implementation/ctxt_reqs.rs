@@ -39,7 +39,10 @@ ctxt_req_trait!(ForEntryFunction<'tcx>: ForInsertion<'tcx> + InEntryFunction);
 
 ctxt_req_trait!(
     ForAtomicIntrinsic<'tcx>:
-        ForInsertion<'tcx> + AtomicIntrinsicParamsProvider<'tcx> + PointerInfoProvider<'tcx>
+        ForInsertion<'tcx>
+            + ForOperandRef<'tcx>
+            + AtomicIntrinsicParamsProvider<'tcx>
+            + PointerInfoProvider<'tcx>
 );
 
 ctxt_req_trait!(
