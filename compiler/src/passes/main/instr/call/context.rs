@@ -22,9 +22,7 @@ use crate::passes::instr::pri::{
     FunctionInfo, PriHelperFunctions, PriItems, PriTypes, sym::LeafSymbol,
 };
 
-use super::{
-    AssignmentId, AtomicOrdering, Config, InsertionLocation, OperandRef, PlaceRef, SwitchInfo,
-};
+use super::{AssignmentId, AtomicOrdering, Config, InsertionLocation, OperandRef, PlaceRef};
 
 pub(crate) trait TyContextProvider<'tcx> {
     fn tcx(&self) -> TyCtxt<'tcx>;
@@ -70,10 +68,6 @@ pub(crate) trait SourceInfoProvider {
 pub(crate) trait AssignmentInfoProvider {
     fn assignment_id(&self) -> AssignmentId;
     fn dest_ref(&self) -> PlaceRef;
-}
-
-pub(crate) trait SwitchInfoProvider<'tcx> {
-    fn switch_info(&self) -> SwitchInfo<'tcx>;
 }
 
 pub(crate) trait PointerInfoProvider<'tcx> {
@@ -322,17 +316,6 @@ impl<B> AssignmentInfoProvider for AssignmentContext<'_, B> {
     }
 }
 
-pub(crate) struct BranchingContext<'b, 'tcx, B> {
-    pub(super) base: &'b mut B,
-    pub(super) switch_info: SwitchInfo<'tcx>,
-}
-
-impl<'tcx, B> SwitchInfoProvider<'tcx> for BranchingContext<'_, 'tcx, B> {
-    fn switch_info(&self) -> SwitchInfo<'tcx> {
-        self.switch_info.clone()
-    }
-}
-
 pub(in super::super) struct PointerPackage<'tcx> {
     pub reference: OperandRef,
     pub value: Operand<'tcx>,
@@ -563,13 +546,6 @@ make_impl_macro! {
 }
 
 make_impl_macro! {
-    impl_discr_info_provider,
-    SwitchInfoProvider<'tcx>,
-    self,
-    fn switch_info(&self) -> SwitchInfo<'tcx>;
-}
-
-make_impl_macro! {
     impl_ptr_info_provider,
     PointerInfoProvider<'tcx>,
     self,
@@ -660,7 +636,6 @@ make_caller_macro!(
         impl_insertion_location_provider,
         impl_source_info_provider,
         impl_dest_ref_provider,
-        impl_discr_info_provider,
         impl_ptr_info_provider,
         impl_atomic_intrinsic_params_provider,
         impl_memory_intrinsic_params_provider,
@@ -673,6 +648,5 @@ impl_traits!(all - [ impl_in_entry_function ] for EntryFunctionMarkerContext);
 impl_traits!(all - [ impl_location_provider impl_insertion_location_provider ] for AtLocationContext);
 impl_traits!(all - [ impl_source_info_provider ] for SourceInfoContext);
 impl_traits!(all - [ impl_dest_ref_provider ] for AssignmentContext);
-impl_traits!(all - [ impl_discr_info_provider ] for BranchingContext<'tcxd>);
 impl_traits!(all - [ impl_ptr_info_provider impl_atomic_intrinsic_params_provider ] for AtomicIntrinsicContext<'tcxd>);
 impl_traits!(all - [ impl_ptr_info_provider impl_memory_intrinsic_params_provider ] for MemoryIntrinsicContext<'tcxd>);

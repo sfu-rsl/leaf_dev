@@ -24,8 +24,8 @@ use crate::{
 use super::{
     TAG_INSTR,
     call::{
-        AssertionHandler, AtomicIntrinsicHandler, BranchingHandler, BranchingReferencer,
-        DropHandler, EntryFunctionHandler, FunctionHandler,
+        AssertionHandler, AtomicIntrinsicHandler, BranchingHandler, DropHandler,
+        EntryFunctionHandler, FunctionHandler,
         InsertionLocation::*,
         IntrinsicHandler, MemoryIntrinsicHandler, OperandRef, OperandReferencer, PlaceRef,
         PlaceReferencer, RuntimeCallAdder, StorageMarker,
@@ -330,20 +330,7 @@ where
         + cr::ForDropping<'tcx>,
 {
     fn visit_switch_int(&mut self, discr: &Operand<'tcx>, targets: &mir::SwitchTargets) {
-        if !self.call_adder.config().switch_filter.control.is_enabled()
-            && !self.call_adder.config().switch_filter.data.is_enabled()
-        {
-            return;
-        }
-
-        let switch_info = self.call_adder.store_branching_info(discr);
-        let mut call_adder = self.call_adder.branch(switch_info);
-        for (i, (value, target)) in targets.iter().enumerate() {
-            call_adder.at(Before(target)).take_case(i, value);
-        }
-        call_adder
-            .at(Before(targets.otherwise()))
-            .take_otherwise(targets.iter().map(|v| v.0));
+        self.call_adder.instrument_switch(discr, targets);
     }
 
     fn visit_return(&mut self) {

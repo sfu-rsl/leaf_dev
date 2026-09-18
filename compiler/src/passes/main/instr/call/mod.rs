@@ -3,8 +3,8 @@
 pub(super) mod context;
 
 use rustc_middle::{
-    mir::{BasicBlock, Body, ConstOperand, Local, Operand, Place},
-    ty::{GenericArg, Ty, TyCtxt},
+    mir::{BasicBlock, Body, ConstOperand, Local, Operand, Place, SwitchTargets},
+    ty::{GenericArg, TyCtxt},
 };
 use rustc_span::{Spanned, def_id::DefId};
 
@@ -86,24 +86,8 @@ pub(crate) trait StorageMarker<'tcx>: Sized {
     fn mark_dead(&mut self, place: &Place<'tcx>);
 }
 
-#[derive(Clone)]
-pub struct SwitchInfo<'tcx> {
-    pub(super) node_index: BasicBlock,
-    pub(super) original_node_index: Operand<'tcx>,
-    pub(super) discr_ty: Ty<'tcx>,
-    pub(super) discr: Option<OperandRef>,
-}
-
-pub(crate) trait BranchingReferencer<'tcx> {
-    fn store_branching_info(&mut self, discr: &Operand<'tcx>) -> SwitchInfo<'tcx>;
-}
-pub(crate) trait BranchingHandler {
-    fn take_case(&mut self, index: usize, value: u128);
-
-    fn take_otherwise<I>(&mut self, non_values: I)
-    where
-        I: IntoIterator<Item = u128> + ExactSizeIterator,
-        I::IntoIter: ExactSizeIterator<Item = u128>;
+pub(crate) trait BranchingHandler<'tcx> {
+    fn instrument_switch(&mut self, discr: &Operand<'tcx>, targets: &SwitchTargets);
 }
 
 pub(crate) trait FunctionHandler<'tcx> {
@@ -158,11 +142,7 @@ pub(crate) trait MemoryIntrinsicHandler<'tcx> {
 
     fn raw_eq(&mut self, second: &Spanned<Operand<'tcx>>);
 
-    fn compare_bytes(
-        &mut self,
-        second: &Spanned<Operand<'tcx>>,
-        count: &Spanned<Operand<'tcx>>,
-    );
+    fn compare_bytes(&mut self, second: &Spanned<Operand<'tcx>>, count: &Spanned<Operand<'tcx>>);
 }
 
 pub(crate) trait AtomicIntrinsicHandler<'tcx> {
