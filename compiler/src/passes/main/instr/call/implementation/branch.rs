@@ -1,32 +1,52 @@
-use crate::{
-    passes::instr::call::context::ConfigProvider, utils::mir_transform::JumpModificationConstraint,
-};
+use rustc_middle::mir::{BasicBlock, SwitchTargets};
+
+use crate::utils::mir_transform::JumpModificationConstraint;
 
 use super::{
-    BodyProvider, BranchingHandler, BranchingReferencer, OperandReferencer, SwitchInfo,
-    context::{BaseContext, BlockIndexProvider, BlockOriginalIndexProvider, SwitchInfoProvider},
+    BodyProvider, BranchingHandler, InsertionLocation, OperandReferencer,
+    context::{BaseContext, BlockIndexProvider, BlockOriginalIndexProvider, ConfigProvider},
     ctxt_reqs::ForBranching,
     prelude::{mir::*, *},
 };
 
-impl<'tcx, C> BranchingReferencer<'tcx> for RuntimeCallAdder<C>
+#[derive(Clone)]
+struct SwitchInfo<'tcx> {
+    node_index: BasicBlock,
+    original_node_index: Operand<'tcx>,
+    discr_ty: Ty<'tcx>,
+    discr: Option<OperandRef>,
+}
+
+impl<'tcx, C> BranchingHandler<'tcx> for RuntimeCallAdder<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx> + OperandReferencer<'tcx>,
     C: ForBranching<'tcx>,
 {
-    fn store_branching_info(&mut self, discr: &Operand<'tcx>) -> SwitchInfo<'tcx> {
+    fn instrument_switch(&mut self, discr: &Operand<'tcx>, targets: &SwitchTargets) {
+        if !self.config().switch_filter.control.is_enabled()
+            && !self.config().switch_filter.data.is_enabled()
+        {
+            return;
+        }
+
         let discr_ref = if self.config().switch_filter.data.is_enabled() {
             Some(self.reference_operand(discr))
         } else {
             None
         };
-
-        SwitchInfo {
+        let switch_info = SwitchInfo {
             node_index: self.context.block_index(),
             original_node_index: self.original_bb_index_as_arg(),
             discr_ty: discr.ty(self.context.local_decls(), self.tcx()),
             discr: discr_ref,
+        };
+
+        for (i, (value, target)) in targets.iter().enumerate() {
+            self.at(InsertionLocation::Before(target))
+                .take_case(switch_info.clone(), i, value);
         }
+        self.at(InsertionLocation::Before(targets.otherwise()))
+            .take_otherwise(switch_info, targets.iter().map(|(value, _)| value));
     }
 }
 
@@ -52,12 +72,12 @@ where
     }
 }
 
-impl<'tcx, C> BranchingHandler for RuntimeCallAdder<C>
+impl<'tcx, C> RuntimeCallAdder<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
-    C: SwitchInfoProvider<'tcx> + ForBranching<'tcx>,
+    C: ForBranching<'tcx>,
 {
-    fn take_case(&mut self, index: usize, value: u128) {
+    fn take_case(&mut self, switch_info: SwitchInfo<'tcx>, index: usize, value: u128) {
         let tcx = self.context.tcx();
 
         let index = SwitchCaseIndex::try_from(index).unwrap_or_else(|_| {
@@ -74,8 +94,6 @@ where
         });
 
         let mut blocks = Vec::new();
-
-        let switch_info = self.context.switch_info();
 
         if self.config().switch_filter.data.is_enabled() {
             let discr_ty = switch_info.discr_ty;
@@ -163,7 +181,7 @@ where
         );
     }
 
-    fn take_otherwise<I>(&mut self, non_values: I)
+    fn take_otherwise<I>(&mut self, switch_info: SwitchInfo<'tcx>, non_values: I)
     where
         I: IntoIterator<Item = u128>,
         I::IntoIter: ExactSizeIterator<Item = u128>,
@@ -171,7 +189,6 @@ where
         let mut blocks = Vec::new();
 
         let tcx = self.context.tcx();
-        let switch_info = self.context.switch_info();
 
         if self.config().switch_filter.data.is_enabled() {
             let discr_ty = switch_info.discr_ty;

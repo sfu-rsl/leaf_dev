@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use rustc_middle::{
     mir::{self, BasicBlock, BasicBlockData, HasLocalDecls},
-    ty::{self as mir_ty},
+    ty::{self as mir_ty, Ty},
 };
 
 use delegate::delegate;
@@ -194,16 +194,6 @@ impl<C> RuntimeCallAdder<C> {
         dest_ref: PlaceRef,
     ) -> RuntimeCallAdder<AssignmentContext<'b, C>> {
         self.with_context(|base| AssignmentContext { base, id, dest_ref })
-    }
-
-    pub fn branch<'tcx, 'b>(
-        &'b mut self,
-        info: SwitchInfo<'tcx>,
-    ) -> RuntimeCallAdder<BranchingContext<'b, 'tcx, C>> {
-        self.with_context(|base| BranchingContext {
-            base,
-            switch_info: info,
-        })
     }
 
     pub fn in_entry_fn<'b>(&'b mut self) -> RuntimeCallAdder<EntryFunctionMarkerContext<'b, C>> {
