@@ -5,6 +5,7 @@ use rustc_middle::{
     mir::{self, BasicBlock, BasicBlockData, HasLocalDecls},
     ty::{self as mir_ty, Ty},
 };
+use rustc_span::Spanned;
 
 use delegate::delegate;
 
@@ -203,7 +204,7 @@ impl<C> RuntimeCallAdder<C> {
     pub fn perform_atomic_op<'b, 'tcx>(
         &'b mut self,
         ordering: AtomicOrdering,
-        ptr: Option<PointerPackage<'tcx>>,
+        ptr: Option<Spanned<Operand<'tcx>>>,
     ) -> RuntimeCallAdder<AtomicIntrinsicContext<'b, 'tcx, C>> {
         self.with_context(|base| AtomicIntrinsicContext {
             base,
@@ -215,7 +216,7 @@ impl<C> RuntimeCallAdder<C> {
     pub fn perform_memory_op<'b, 'tcx>(
         &'b mut self,
         is_volatile: bool,
-        ptr: Option<PointerPackage<'tcx>>,
+        ptr: Option<Spanned<Operand<'tcx>>>,
     ) -> RuntimeCallAdder<MemoryIntrinsicContext<'b, 'tcx, C>> {
         self.with_context(|base| MemoryIntrinsicContext {
             base,

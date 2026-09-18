@@ -8,10 +8,7 @@ use crate::utils::mir::BodyExt;
 
 use super::{
     DropHandler, FunctionHandler, InsertionLocation, OperandReferencer, PlaceReferencer,
-    context::{
-        AssignmentInfoProvider, BodyProvider, ConfigProvider, PointerInfoProvider,
-        SourceInfoProvider,
-    },
+    context::{AssignmentInfoProvider, BodyProvider, ConfigProvider, SourceInfoProvider},
     ctxt_reqs::{Basic, ForDropping, ForFunctionCalling, ForPlaceRef},
     prelude::{mir::*, *},
 };
@@ -415,14 +412,12 @@ where
 
         let func_ref = self.reference_operand(drop_in_place_fn);
 
-        let ptr_pack = self.reference_ptr_for_intrinsic(to_drop);
-        let (ptr_type_id_block, conc_ptr_stmts, [ptr_ref, ptr_value, ptr_type_id]) = self
-            .make_ptr_triple_args(
-                ptr_pack.ptr_operand_ref(),
-                ptr_pack.ptr_value().clone(),
-                ptr_pack.ptr_ty(),
-            );
-        blocks.push(ptr_type_id_block);
+        let super::intrinsics::PointerParamInstrPack {
+            type_id_block,
+            conc_ptr_stmts,
+            pri_args: [ptr_ref, ptr_value, ptr_type_id],
+        } = self.reference_and_pack_ptr_operand(to_drop);
+        blocks.push(type_id_block);
 
         let mut block = self.make_bb_for_call(
             sym::before_drop_in_place_data,

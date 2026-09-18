@@ -31,8 +31,7 @@ use super::{
         PlaceReferencer, RuntimeCallAdder, StorageMarker,
         context::{
             AtLocationContext, BlockIndexProvider, BlockOriginalIndexProvider, BodyProvider,
-            ConfigProvider, PointerPackage, PriItemsProvider, SourceInfoProvider,
-            TyContextProvider,
+            ConfigProvider, PriItemsProvider, SourceInfoProvider, TyContextProvider,
         },
         ctxt_reqs as cr,
     },
@@ -673,9 +672,8 @@ where
                         match filter {
                             Detailed => {
                                 let ptr_arg = params.args.get(0).unwrap();
-                                let ptr = call_adder.reference_ptr_for_intrinsic(ptr_arg);
                                 let mut call_adder =
-                                    call_adder.perform_atomic_op(ordering, Some(ptr));
+                                    call_adder.perform_atomic_op(ordering, Some(ptr_arg.clone()));
 
                                 match kind {
                                     Load => call_adder.load(),
@@ -791,18 +789,6 @@ impl<'tcx, C: cr::ForOperandRef<'tcx>> RuntimeCallAdder<C> {
             })
             .reference_operand(&operand.node)
     }
-
-    pub(crate) fn reference_ptr_for_intrinsic(
-        &mut self,
-        operand: &Spanned<Operand<'tcx>>,
-    ) -> PointerPackage<'tcx> {
-        let reference = self.reference_operand_spanned(operand);
-        PointerPackage {
-            reference,
-            value: operand.node.to_copy(),
-            ty: operand.node.ty(self, self.tcx()),
-        }
-    }
 }
 
 fn instrument_memory_intrinsic_call<'tcx, 'a, C>(
@@ -843,8 +829,7 @@ fn instrument_memory_intrinsic_call<'tcx, 'a, C>(
                 (Copy { .. }, true) => args.get(1),
                 _ => args.get(0),
             };
-            let ptr = ptr_arg.map(|a| call_adder.reference_ptr_for_intrinsic(a));
-            let mut call_adder = call_adder.perform_memory_op(is_volatile, ptr);
+            let mut call_adder = call_adder.perform_memory_op(is_volatile, ptr_arg.cloned());
 
             match kind {
                 Load { is_ptr_aligned } => call_adder.load(is_ptr_aligned),
