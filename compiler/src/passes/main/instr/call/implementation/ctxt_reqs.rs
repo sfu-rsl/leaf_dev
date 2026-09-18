@@ -47,4 +47,4 @@ ctxt_req_trait!(
         ForAssignment<'tcx> + MemoryIntrinsicParamsProvider<'tcx> + PointerInfoProvider<'tcx>
 );
 
-ctxt_req_trait!(ForStorageMarking<'tcx>: ForInsertion<'tcx>);
+ctxt_req_trait!(ForStorageMarking<'tcx>: ForPlaceRef<'tcx>);

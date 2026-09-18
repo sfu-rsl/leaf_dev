@@ -81,9 +81,9 @@ pub(crate) trait OperandReferencer<'tcx> {
     fn reference_operand(&mut self, operand: &Operand<'tcx>) -> OperandRef;
 }
 
-pub(crate) trait StorageMarker: Sized {
-    fn mark_live(&mut self, place: impl FnOnce(&mut Self) -> PlaceRef);
-    fn mark_dead(&mut self, place: impl FnOnce(&mut Self) -> PlaceRef);
+pub(crate) trait StorageMarker<'tcx>: Sized {
+    fn mark_live(&mut self, place: &Place<'tcx>);
+    fn mark_dead(&mut self, place: &Place<'tcx>);
 }
 
 #[derive(Clone)]

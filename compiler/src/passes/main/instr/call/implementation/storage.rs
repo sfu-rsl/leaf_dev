@@ -1,13 +1,17 @@
 use core::debug_assert_matches;
 
-use super::{InsertionLocation, StorageMarker, ctxt_reqs::ForStorageMarking, prelude::*};
+use rustc_middle::mir::Place;
 
-impl<'tcx, C> StorageMarker for RuntimeCallAdder<C>
+use super::{
+    InsertionLocation, PlaceReferencer, StorageMarker, ctxt_reqs::ForStorageMarking, prelude::*,
+};
+
+impl<'tcx, C> StorageMarker<'tcx> for RuntimeCallAdder<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
     C: ForStorageMarking<'tcx>,
 {
-    fn mark_live(&mut self, place: impl FnOnce(&mut Self) -> PlaceRef) {
+    fn mark_live(&mut self, place: &Place<'tcx>) {
         if !self
             .context
             .config()
@@ -31,7 +35,7 @@ where
             )
         );
 
-        let place = place(self);
+        let place = self.reference_place(place);
         let block = self.make_bb_for_call(
             sym::mark_storage_live,
             vec![operand::move_for_local(place.into())],
@@ -39,7 +43,7 @@ where
         self.insert_blocks([block]);
     }
 
-    fn mark_dead(&mut self, place: impl FnOnce(&mut Self) -> PlaceRef) {
+    fn mark_dead(&mut self, place: &Place<'tcx>) {
         if !self
             .context
             .config()
@@ -56,7 +60,7 @@ where
             "Marking storage as dead after it takes place is not expected."
         );
 
-        let place = place(self);
+        let place = self.reference_place(place);
         let block = self.make_bb_for_call(
             sym::mark_storage_dead,
             vec![operand::move_for_local(place.into())],
