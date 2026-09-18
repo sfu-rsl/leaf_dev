@@ -4,8 +4,8 @@ use common::pri::{AtomicBinaryOp, AtomicOrdering};
 
 use super::{
     AssignmentInfoProvider, AtomicIntrinsicHandler, IntrinsicHandler,
-    context::PointerInfoProvider,
-    ctxt_reqs::{Basic, ForAssignment, ForAtomicIntrinsic, ForMemoryIntrinsic},
+    context::PointerParamProvider,
+    ctxt_reqs::{Basic, ForAssignment, ForAtomicIntrinsic, ForMemoryIntrinsic, ForOperandRef},
     prelude::{mir::*, *},
     pri::sym::intrinsics::{
         LeafIntrinsicSymbol, atomic::LeafAtomicIntrinsicSymbol, memory::LeafMemoryIntrinsicSymbol,
@@ -228,12 +228,13 @@ where
         let mut stmts = additional_stmts;
         let mut blocks = additional_blocks;
 
-        let [ptr_ref, ptr_value, ptr_type_id] = {
-            let (ptr_block, ptr_stmts, args) = self.make_ptr_pack_args();
-            stmts.extend(ptr_stmts);
-            blocks.push(ptr_block);
-            args
-        };
+        let PointerParamInstrPack {
+            type_id_block,
+            conc_ptr_stmts,
+            pri_args: [ptr_ref, ptr_value, ptr_type_id],
+        } = self.reference_ptr_param();
+        stmts.extend(conc_ptr_stmts);
+        blocks.push(type_id_block);
 
         let mut block = self.make_bb_for_call(
             **func,
@@ -387,12 +388,13 @@ where
         let mut stmts = Vec::new();
         let mut blocks = additional_blocks;
 
-        let [ptr_ref, ptr_value, ptr_type_id] = {
-            let (ptr_block, ptr_stmts, args) = self.make_ptr_pack_args();
-            stmts.extend(ptr_stmts);
-            blocks.push(ptr_block);
-            args
-        };
+        let PointerParamInstrPack {
+            type_id_block,
+            conc_ptr_stmts,
+            pri_args: [ptr_ref, ptr_value, ptr_type_id],
+        } = self.reference_ptr_param();
+        stmts.extend(conc_ptr_stmts);
+        blocks.push(type_id_block);
 
         self.add_bb_for_atomic_intrinsic_call(
             func,
@@ -441,58 +443,52 @@ where
     }
 }
 
+pub(super) struct PointerParamInstrPack<'tcx> {
+    pub type_id_block: BasicBlockData<'tcx>,
+    pub conc_ptr_stmts: Vec<Statement<'tcx>>,
+    pub pri_args: [Operand<'tcx>; 3],
+}
+
 impl<'tcx, C> RuntimeCallAdder<C>
 where
     Self: MirCallAdder<'tcx>,
     C: Basic<'tcx>,
 {
-    fn make_ptr_pack_args(
-        &mut self,
-    ) -> (
-        BasicBlockData<'tcx>,
-        Vec<Statement<'tcx>>,
-        [Operand<'tcx>; 3],
-    )
+    fn reference_ptr_param(&mut self) -> PointerParamInstrPack<'tcx>
     where
-        C: PointerInfoProvider<'tcx>,
+        C: ForOperandRef<'tcx> + PointerParamProvider<'tcx>,
     {
-        self.make_ptr_triple_args(
-            self.context.ptr_operand_ref(),
-            self.context.ptr_value().clone(),
-            self.context.ptr_ty(),
-        )
+        self.reference_and_pack_ptr_operand(&self.context.ptr_operand().clone())
     }
 
-    /// Makes three arguments of for a pointer to be passed to PRI:
-    /// the operand reference to the pointer,
-    /// the concrete value of the pointer,
-    /// and the type id of the pointer.
+    /// References a pointer operand and makes the three arguments passed to PRI:
+    /// the operand reference, the concrete pointer value, and the pointer type id.
     ///
     /// # Returns
     /// The type id block, the concrete pointer assignment, and the three arguments as operand array.
-    pub fn make_ptr_triple_args(
+    pub(super) fn reference_and_pack_ptr_operand(
         &mut self,
-        operand_ref: OperandRef,
-        ptr_value: Operand<'tcx>,
-        ptr_ty: Ty<'tcx>,
-    ) -> (
-        BasicBlockData<'tcx>,
-        Vec<Statement<'tcx>>,
-        [Operand<'tcx>; 3],
-    ) {
+        ptr_operand: &Spanned<Operand<'tcx>>,
+    ) -> PointerParamInstrPack<'tcx>
+    where
+        C: ForOperandRef<'tcx>,
+    {
+        let operand_ref = self.reference_operand_spanned(ptr_operand);
+        let ptr_value = ptr_operand.node.to_copy();
+        let ptr_ty = ptr_operand.node.ty(self, self.tcx());
         let (conc_ptr_stmts, conc_ptr_local) = self.make_conc_ptr_assignment(ptr_value);
 
         let (ptr_type_id_block, ptr_type_id_local) = self.make_type_id_of_bb(ptr_ty);
 
-        (
-            ptr_type_id_block,
+        PointerParamInstrPack {
+            type_id_block: ptr_type_id_block,
             conc_ptr_stmts,
-            [
+            pri_args: [
                 operand::move_for_local(operand_ref.into()),
                 operand::move_for_local(conc_ptr_local),
                 operand::move_for_local(ptr_type_id_local),
             ],
-        )
+        }
     }
 
     fn make_conc_ptr_assignment(

@@ -6,9 +6,9 @@ use rustc_middle::{
     mir::{
         self, BasicBlock, BasicBlockData, HasLocalDecls, Local, LocalDecls, Operand, SourceInfo,
     },
-    ty::{Ty, TyCtxt},
+    ty::TyCtxt,
 };
-use rustc_span::def_id::DefId;
+use rustc_span::{Spanned, def_id::DefId};
 
 use crate::{
     passes::Storage,
@@ -22,7 +22,7 @@ use crate::passes::instr::pri::{
     FunctionInfo, PriHelperFunctions, PriItems, PriTypes, sym::LeafSymbol,
 };
 
-use super::{AssignmentId, AtomicOrdering, Config, InsertionLocation, OperandRef, PlaceRef};
+use super::{AssignmentId, AtomicOrdering, Config, InsertionLocation, PlaceRef};
 
 pub(crate) trait TyContextProvider<'tcx> {
     fn tcx(&self) -> TyCtxt<'tcx>;
@@ -70,10 +70,8 @@ pub(crate) trait AssignmentInfoProvider {
     fn dest_ref(&self) -> PlaceRef;
 }
 
-pub(crate) trait PointerInfoProvider<'tcx> {
-    fn ptr_operand_ref(&self) -> OperandRef;
-    fn ptr_value(&self) -> &Operand<'tcx>;
-    fn ptr_ty(&self) -> Ty<'tcx>;
+pub(crate) trait PointerParamProvider<'tcx> {
+    fn ptr_operand(&self) -> &Spanned<Operand<'tcx>>;
 }
 
 pub(crate) trait AtomicIntrinsicParamsProvider<'tcx> {
@@ -316,30 +314,10 @@ impl<B> AssignmentInfoProvider for AssignmentContext<'_, B> {
     }
 }
 
-pub(in super::super) struct PointerPackage<'tcx> {
-    pub reference: OperandRef,
-    pub value: Operand<'tcx>,
-    pub ty: Ty<'tcx>,
-}
-
-impl<'tcx> PointerInfoProvider<'tcx> for PointerPackage<'tcx> {
-    fn ptr_operand_ref(&self) -> OperandRef {
-        self.reference
-    }
-
-    fn ptr_value(&self) -> &Operand<'tcx> {
-        &self.value
-    }
-
-    fn ptr_ty(&self) -> Ty<'tcx> {
-        self.ty
-    }
-}
-
 pub(crate) struct MemoryIntrinsicContext<'b, 'tcx, B> {
     pub(super) base: &'b mut B,
     pub(super) is_volatile: bool,
-    pub(super) ptr: Option<PointerPackage<'tcx>>,
+    pub(super) ptr: Option<Spanned<Operand<'tcx>>>,
 }
 
 impl<'tcx, B> MemoryIntrinsicParamsProvider<'tcx> for MemoryIntrinsicContext<'_, 'tcx, B> {
@@ -348,20 +326,16 @@ impl<'tcx, B> MemoryIntrinsicParamsProvider<'tcx> for MemoryIntrinsicContext<'_,
     }
 }
 
-impl<'tcx, B> PointerInfoProvider<'tcx> for MemoryIntrinsicContext<'_, 'tcx, B> {
-    delegate! {
-        to self.ptr.as_ref().unwrap() {
-            fn ptr_operand_ref(&self) -> OperandRef;
-            fn ptr_value(&self) -> &Operand<'tcx>;
-            fn ptr_ty(&self) -> Ty<'tcx>;
-        }
+impl<'tcx, B> PointerParamProvider<'tcx> for MemoryIntrinsicContext<'_, 'tcx, B> {
+    fn ptr_operand(&self) -> &Spanned<Operand<'tcx>> {
+        self.ptr.as_ref().unwrap()
     }
 }
 
 pub(crate) struct AtomicIntrinsicContext<'b, 'tcx, B> {
     pub(super) base: &'b mut B,
     pub(super) ordering: AtomicOrdering,
-    pub(super) ptr: Option<PointerPackage<'tcx>>,
+    pub(super) ptr: Option<Spanned<Operand<'tcx>>>,
 }
 
 impl<'tcx, B> AtomicIntrinsicParamsProvider<'tcx> for AtomicIntrinsicContext<'_, 'tcx, B> {
@@ -370,13 +344,9 @@ impl<'tcx, B> AtomicIntrinsicParamsProvider<'tcx> for AtomicIntrinsicContext<'_,
     }
 }
 
-impl<'tcx, B> PointerInfoProvider<'tcx> for AtomicIntrinsicContext<'_, 'tcx, B> {
-    delegate! {
-        to self.ptr.as_ref().unwrap() {
-            fn ptr_operand_ref(&self) -> OperandRef;
-            fn ptr_value(&self) -> &Operand<'tcx>;
-            fn ptr_ty(&self) -> Ty<'tcx>;
-        }
+impl<'tcx, B> PointerParamProvider<'tcx> for AtomicIntrinsicContext<'_, 'tcx, B> {
+    fn ptr_operand(&self) -> &Spanned<Operand<'tcx>> {
+        self.ptr.as_ref().unwrap()
     }
 }
 
@@ -547,11 +517,9 @@ make_impl_macro! {
 
 make_impl_macro! {
     impl_ptr_info_provider,
-    PointerInfoProvider<'tcx>,
+    PointerParamProvider<'tcx>,
     self,
-    fn ptr_operand_ref(&self) -> OperandRef;
-    fn ptr_value(&self) -> &Operand<'tcx>;
-    fn ptr_ty(&self) -> Ty<'tcx>;
+    fn ptr_operand(&self) -> &Spanned<Operand<'tcx>>;
 }
 
 make_impl_macro! {
