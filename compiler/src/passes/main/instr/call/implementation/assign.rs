@@ -92,13 +92,7 @@ where
     }
 
     fn visit_thread_local_ref(&mut self, _def_id: &DefId) {
-        if cfg!(feature = "abs_concrete") {
-            let BlocksAndResult(blocks, operand_ref) = self.internal_reference_const_some();
-            self.insert_blocks(blocks);
-            self.add_assignment_use_call(operand_ref.into());
-        } else {
-            self.add_bb_for_assign_call(sym::assign_thread_local_ref, vec![])
-        }
+        self.add_bb_for_assign_call(sym::assign_thread_local_ref, vec![])
     }
 
     fn visit_raw_ptr(&mut self, kind: &RawPtrKind, place: &Place<'tcx>) {
@@ -495,12 +489,8 @@ where
     }
 
     fn by_cast_through_fn_ptr_coercion(&mut self, operand: OperandRef) {
-        if cfg!(feature = "abs_concrete") {
-            // Effective only at compile time, no operational effect.
-            self.add_assignment_use_call(operand)
-        } else {
-            unimplemented!("Function pointer coercion is not supported in this configuration.")
-        }
+        // Effective only at compile time, no operational effect.
+        self.add_assignment_use_call(operand)
     }
 
     fn by_cast_expose_prov(&mut self, operand: OperandRef) {

@@ -117,8 +117,6 @@ where
                 .ptr
                 .is_enabled()
                 .then(|| self.internal_reference_const_ptr(constant))
-        } else if cfg!(feature = "abs_concrete") {
-            None
         }
         // &str
         else if ty.peel_refs().is_str() {
