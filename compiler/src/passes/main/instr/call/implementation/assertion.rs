@@ -11,10 +11,11 @@ where
 {
     fn check_assert(
         &mut self,
-        cond: OperandRef,
+        cond: &Operand<'tcx>,
         expected: bool,
         msg: &rustc_middle::mir::AssertMessage<'tcx>,
     ) {
+        let cond_ref = self.reference_operand(cond);
         let Some((func_name, additional_operands)) = self.reference_assert_kind(msg) else {
             return;
         };
@@ -25,7 +26,7 @@ where
                 [],
                 vec![
                     self.original_bb_index_as_arg(),
-                    operand::move_for_local(cond.into()),
+                    operand::move_for_local(cond_ref.into()),
                     operand::const_from_bool(self.context.tcx(), expected),
                 ],
                 Default::default(),

@@ -429,12 +429,11 @@ where
         cond: &Operand<'tcx>,
         expected: &bool,
         msg: &mir::AssertMessage<'tcx>,
-        // we ignore target because this is concolic execution, not symbolic (program execution guides location)
         _target: &BasicBlock,
         _unwind: &UnwindAction,
     ) {
-        let cond_ref = self.call_adder.reference_operand(cond);
-        self.call_adder.check_assert(cond_ref, *expected, msg);
+        // TODO: Handle the target
+        self.call_adder.check_assert(cond, *expected, msg);
     }
 
     fn visit_yield(

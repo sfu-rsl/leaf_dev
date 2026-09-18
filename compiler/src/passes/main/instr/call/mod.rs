@@ -186,7 +186,7 @@ pub(crate) trait EntryFunctionHandler {
 pub(crate) trait AssertionHandler<'tcx> {
     fn check_assert(
         &mut self,
-        cond: OperandRef,
+        cond: &Operand<'tcx>,
         expected: bool,
         msg: &rustc_middle::mir::AssertMessage<'tcx>,
     );
