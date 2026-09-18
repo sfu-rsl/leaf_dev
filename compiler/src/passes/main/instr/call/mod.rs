@@ -70,10 +70,10 @@ macro_rules! make_local_wrapper {
         }
     };
 }
-make_local_wrapper!(pub PlaceRef);
+make_local_wrapper!(pub(super) PlaceRef);
 make_local_wrapper!(OperandRef);
 
-pub(crate) trait PlaceReferencer<'tcx> {
+trait PlaceReferencer<'tcx> {
     fn reference_place(&mut self, place: &Place<'tcx>) -> PlaceRef;
 }
 
@@ -104,7 +104,7 @@ pub(crate) trait FunctionHandler<'tcx> {
 
     fn after_call_func(&mut self)
     where
-        Self: AssignmentInfoProvider;
+        Self: AssignmentInfoProvider<'tcx>;
 }
 
 pub(crate) trait DropHandler<'tcx> {
@@ -126,7 +126,9 @@ pub(crate) trait IntrinsicHandler<'tcx> {
 }
 
 pub(crate) trait MemoryIntrinsicHandler<'tcx> {
-    fn load(&mut self, is_ptr_aligned: bool);
+    fn load(&mut self, is_ptr_aligned: bool)
+    where
+        Self: AssignmentInfoProvider<'tcx>;
 
     fn store(&mut self, val: &Spanned<Operand<'tcx>>, is_ptr_aligned: bool);
 
@@ -141,25 +143,29 @@ pub(crate) trait MemoryIntrinsicHandler<'tcx> {
 
     fn swap(&mut self, second: &Spanned<Operand<'tcx>>);
 
-    fn raw_eq(&mut self, second: &Spanned<Operand<'tcx>>);
+    fn raw_eq(&mut self, second: &Spanned<Operand<'tcx>>)
+    where
+        Self: AssignmentInfoProvider<'tcx>;
 
-    fn compare_bytes(&mut self, second: &Spanned<Operand<'tcx>>, count: &Spanned<Operand<'tcx>>);
+    fn compare_bytes(&mut self, second: &Spanned<Operand<'tcx>>, count: &Spanned<Operand<'tcx>>)
+    where
+        Self: AssignmentInfoProvider<'tcx>;
 }
 
 pub(crate) trait AtomicIntrinsicHandler<'tcx> {
     fn load(&mut self)
     where
-        Self: AssignmentInfoProvider;
+        Self: AssignmentInfoProvider<'tcx>;
 
     fn store(&mut self, val: &Spanned<Operand<'tcx>>)
     where
         // This is a redundant requirement as it is a unit function with a ptr passed to it.
         // However, it is used for the assignment id.
-        Self: AssignmentInfoProvider;
+        Self: AssignmentInfoProvider<'tcx>;
 
     fn exchange(&mut self, val: &Spanned<Operand<'tcx>>)
     where
-        Self: AssignmentInfoProvider;
+        Self: AssignmentInfoProvider<'tcx>;
 
     fn compare_exchange(
         &mut self,
@@ -168,11 +174,11 @@ pub(crate) trait AtomicIntrinsicHandler<'tcx> {
         old: &Spanned<Operand<'tcx>>,
         src: &Spanned<Operand<'tcx>>,
     ) where
-        Self: AssignmentInfoProvider;
+        Self: AssignmentInfoProvider<'tcx>;
 
     fn binary_op(&mut self, operator: AtomicBinaryOp, src: &Spanned<Operand<'tcx>>)
     where
-        Self: AssignmentInfoProvider;
+        Self: AssignmentInfoProvider<'tcx>;
 
     fn fence(&mut self, single_threaded: bool);
 }

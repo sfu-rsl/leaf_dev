@@ -29,7 +29,7 @@ where
     pub(crate) fn instrument_assignment(
         &mut self,
         assignment_id: AssignmentId,
-        destination: &Place<'tcx>,
+        destination: Place<'tcx>,
         rvalue: &Rvalue<'tcx>,
     ) {
         log_debug!(target: TAG_INSTR, "Visiting Rvalue: {:#?}", rvalue);
@@ -39,7 +39,6 @@ where
         match filter {
             EventDecision::Omit => return,
             EventDecision::Opaque | EventDecision::Detailed => {
-                let destination = self.reference_place(destination);
                 let mut assignment = self.assign(assignment_id, destination);
                 match filter {
                     EventDecision::Detailed => assignment.visit_rvalue(rvalue),
@@ -74,11 +73,10 @@ where
     pub(crate) fn instrument_set_discriminant(
         &mut self,
         assignment_id: AssignmentId,
-        destination: &Place<'tcx>,
+        destination: Place<'tcx>,
         variant_index: &VariantIdx,
     ) {
         let tcx = self.tcx();
-        let destination = self.reference_place(destination);
         self.assign(assignment_id, destination)
             .add_bb_for_assign_call(
                 sym::set_discriminant,
@@ -90,12 +88,8 @@ where
 impl<'tcx, C> RvalueVisitor<'tcx, ()> for RuntimeCallAdder<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
-    C: ForAssignment<'tcx> + ForPlaceRef<'tcx> + ForOperandRef<'tcx>,
+    C: ForAssignment<'tcx> + ForOperandRef<'tcx>,
 {
-    fn visit_rvalue(&mut self, rvalue: &Rvalue<'tcx>) {
-        self.super_rvalue(rvalue)
-    }
-
     fn visit_use(&mut self, operand: &Operand<'tcx>, _: &WithRetag) {
         let operand = self.reference_operand(operand);
         self.add_assignment_use_call(operand)
@@ -438,7 +432,8 @@ where
         args: Vec<Operand<'tcx>>,
         statements: Vec<Statement<'tcx>>,
     ) {
-        let mut block = self.make_bb_for_assign_call(func_name, args);
+        let dest_ref = self.reference_destination();
+        let mut block = self.make_bb_for_assign_call(func_name, dest_ref, args);
         block.statements.extend(statements);
         self.insert_blocks([block]);
     }
@@ -446,14 +441,16 @@ where
     pub(super) fn make_bb_for_assign_call(
         &mut self,
         func_name: LeafSymbol,
+        dest_ref: PlaceRef,
         args: Vec<Operand<'tcx>>,
     ) -> BasicBlockData<'tcx> {
+        let assignment_id = self.context.assignment_id();
         self.make_bb_for_call(
             func_name,
             [
                 vec![
-                    operand::const_from_uint(self.tcx(), self.context.assignment_id()),
-                    operand::copy_for_local(self.context.dest_ref().into()),
+                    operand::const_from_uint(self.tcx(), assignment_id),
+                    operand::copy_for_local(dest_ref.into()),
                 ],
                 args,
             ]

@@ -4,7 +4,8 @@ use std::collections::{HashMap, HashSet};
 
 use rustc_middle::{
     mir::{
-        self, BasicBlock, BasicBlockData, HasLocalDecls, Local, LocalDecls, Operand, SourceInfo,
+        self, BasicBlock, BasicBlockData, HasLocalDecls, Local, LocalDecls, Operand, Place,
+        SourceInfo,
     },
     ty::TyCtxt,
 };
@@ -22,7 +23,7 @@ use crate::passes::instr::pri::{
     FunctionInfo, PriHelperFunctions, PriItems, PriTypes, sym::LeafSymbol,
 };
 
-use super::{AssignmentId, AtomicOrdering, Config, InsertionLocation, PlaceRef};
+use super::{AssignmentId, AtomicOrdering, Config, InsertionLocation};
 
 pub(crate) trait TyContextProvider<'tcx> {
     fn tcx(&self) -> TyCtxt<'tcx>;
@@ -65,9 +66,12 @@ pub(crate) trait SourceInfoProvider {
     fn source_info(&self) -> SourceInfo;
 }
 
-pub(crate) trait AssignmentInfoProvider {
+pub(crate) trait AssignmentIdProvider {
     fn assignment_id(&self) -> AssignmentId;
-    fn dest_ref(&self) -> PlaceRef;
+}
+
+pub(crate) trait AssignmentInfoProvider<'tcx>: AssignmentIdProvider {
+    fn destination(&self) -> Place<'tcx>;
 }
 
 pub(crate) trait PointerParamProvider<'tcx> {
@@ -298,19 +302,32 @@ impl<B> SourceInfoProvider for SourceInfoContext<'_, B> {
     }
 }
 
-pub(crate) struct AssignmentContext<'b, B> {
+pub(crate) struct AssignmentContext<'b, 'tcx, B> {
     pub(super) base: &'b mut B,
     pub(super) id: AssignmentId,
-    pub(super) dest_ref: PlaceRef,
+    pub(super) destination: Place<'tcx>,
 }
 
-impl<B> AssignmentInfoProvider for AssignmentContext<'_, B> {
+impl<B> AssignmentIdProvider for AssignmentContext<'_, '_, B> {
     fn assignment_id(&self) -> AssignmentId {
         self.id
     }
+}
 
-    fn dest_ref(&self) -> PlaceRef {
-        self.dest_ref
+impl<'tcx, B> AssignmentInfoProvider<'tcx> for AssignmentContext<'_, 'tcx, B> {
+    fn destination(&self) -> Place<'tcx> {
+        self.destination
+    }
+}
+
+pub(crate) struct AssignmentIdContext<'b, B> {
+    pub(super) base: &'b mut B,
+    pub(super) id: AssignmentId,
+}
+
+impl<B> AssignmentIdProvider for AssignmentIdContext<'_, B> {
+    fn assignment_id(&self) -> AssignmentId {
+        self.id
     }
 }
 
@@ -508,11 +525,17 @@ make_impl_macro! {
 }
 
 make_impl_macro! {
-    impl_dest_ref_provider,
-    AssignmentInfoProvider,
+    impl_assignment_id_provider,
+    AssignmentIdProvider,
     self,
     fn assignment_id(&self) -> AssignmentId;
-    fn dest_ref(&self) -> PlaceRef;
+}
+
+make_impl_macro! {
+    impl_assignment_info_provider,
+    AssignmentInfoProvider<'tcx>,
+    self,
+    fn destination(&self) -> Place<'tcx>;
 }
 
 make_impl_macro! {
@@ -603,7 +626,8 @@ make_caller_macro!(
         impl_orig_location_provider,
         impl_insertion_location_provider,
         impl_source_info_provider,
-        impl_dest_ref_provider,
+        impl_assignment_id_provider,
+        impl_assignment_info_provider,
         impl_ptr_info_provider,
         impl_atomic_intrinsic_params_provider,
         impl_memory_intrinsic_params_provider,
@@ -615,6 +639,7 @@ impl_traits!(all - [ impl_body_provider impl_orig_location_provider ] for InBody
 impl_traits!(all - [ impl_in_entry_function ] for EntryFunctionMarkerContext);
 impl_traits!(all - [ impl_location_provider impl_insertion_location_provider ] for AtLocationContext);
 impl_traits!(all - [ impl_source_info_provider ] for SourceInfoContext);
-impl_traits!(all - [ impl_dest_ref_provider ] for AssignmentContext);
+impl_traits!(all - [ impl_assignment_id_provider impl_assignment_info_provider ] for AssignmentContext<'tcxd>);
+impl_traits!(all - [ impl_assignment_id_provider ] for AssignmentIdContext);
 impl_traits!(all - [ impl_ptr_info_provider impl_atomic_intrinsic_params_provider ] for AtomicIntrinsicContext<'tcxd>);
 impl_traits!(all - [ impl_ptr_info_provider impl_memory_intrinsic_params_provider ] for MemoryIntrinsicContext<'tcxd>);

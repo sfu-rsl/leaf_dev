@@ -19,7 +19,11 @@ ctxt_req_trait!(ForPlaceRef<'tcx>: ForInsertion<'tcx>);
 
 ctxt_req_trait!(ForOperandRef<'tcx>: ForPlaceRef<'tcx>);
 
-ctxt_req_trait!(ForAssignment<'tcx>: ForInsertion<'tcx> + AssignmentInfoProvider);
+ctxt_req_trait!(
+    ForMemoryWrite<'tcx>: ForInsertion<'tcx> + ForPlaceRef<'tcx> + AssignmentIdProvider
+);
+
+ctxt_req_trait!(ForAssignment<'tcx>: ForMemoryWrite<'tcx> + AssignmentInfoProvider<'tcx>);
 
 ctxt_req_trait!(
     ForBranching<'tcx>: ForInsertion<'tcx> + BlockOriginalIndexProvider + JumpTargetModifier
@@ -47,7 +51,7 @@ ctxt_req_trait!(
 
 ctxt_req_trait!(
     ForMemoryIntrinsic<'tcx>:
-        ForAssignment<'tcx>
+        ForMemoryWrite<'tcx>
             + ForOperandRef<'tcx>
             + MemoryIntrinsicParamsProvider<'tcx>
             + PointerParamProvider<'tcx>
