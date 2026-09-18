@@ -50,9 +50,9 @@ use context::AssignmentInfoProvider;
  * that provide stricter interface rules.
  */
 macro_rules! make_local_wrapper {
-    ($name:ident) => {
+    ($v:vis $name:ident) => {
         #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-        pub struct $name(Local);
+        $v struct $name(Local);
         impl $name {
             // Local zero is the return value local. So it can never be acquired by a ref.
             pub const INVALID: $name = $name(Local::ZERO);
@@ -70,14 +70,14 @@ macro_rules! make_local_wrapper {
         }
     };
 }
-make_local_wrapper!(PlaceRef);
+make_local_wrapper!(pub PlaceRef);
 make_local_wrapper!(OperandRef);
 
 pub(crate) trait PlaceReferencer<'tcx> {
     fn reference_place(&mut self, place: &Place<'tcx>) -> PlaceRef;
 }
 
-pub(crate) trait OperandReferencer<'tcx> {
+trait OperandReferencer<'tcx> {
     fn reference_operand(&mut self, operand: &Operand<'tcx>) -> OperandRef;
 }
 

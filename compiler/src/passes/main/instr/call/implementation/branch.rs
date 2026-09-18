@@ -1,6 +1,8 @@
 use rustc_middle::mir::{BasicBlock, SwitchTargets};
 
-use crate::utils::mir_transform::JumpModificationConstraint;
+use crate::{
+    passes::instr::call::ctxt_reqs::ForOperandRef, utils::mir_transform::JumpModificationConstraint,
+};
 
 use super::{
     BodyProvider, BranchingHandler, InsertionLocation, OperandReferencer,
@@ -19,8 +21,8 @@ struct SwitchInfo<'tcx> {
 
 impl<'tcx, C> BranchingHandler<'tcx> for RuntimeCallAdder<C>
 where
-    Self: MirCallAdder<'tcx> + BlockInserter<'tcx> + OperandReferencer<'tcx>,
-    C: ForBranching<'tcx>,
+    Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
+    C: ForOperandRef<'tcx> + ForBranching<'tcx>,
 {
     fn instrument_switch(&mut self, discr: &Operand<'tcx>, targets: &SwitchTargets) {
         if !self.config().switch_filter.control.is_enabled()
