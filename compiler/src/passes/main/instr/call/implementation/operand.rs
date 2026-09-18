@@ -422,6 +422,26 @@ where
     }
 }
 
+impl<'tcx, C> RuntimeCallAdder<C>
+where
+    C: ForOperandRef<'tcx>,
+{
+    // Utility extension method to reference an operand with a spanned location.
+    pub(super) fn reference_operand_spanned(
+        &mut self,
+        operand: &rustc_span::Spanned<Operand<'tcx>>,
+    ) -> OperandRef {
+        let source_scope = self.source_info().scope;
+        let mut call_adder = self.before();
+        call_adder
+            .with_source_info(rustc_middle::mir::SourceInfo {
+                span: operand.span,
+                scope: source_scope,
+            })
+            .reference_operand(&operand.node)
+    }
+}
+
 mod utils {
     use rustc_middle::mir::{self, CastKind, ConstOperand};
 

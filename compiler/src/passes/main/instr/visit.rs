@@ -1,8 +1,8 @@
 use rustc_abi::VariantIdx;
 use rustc_middle::{
     mir::{
-        self, BasicBlock, BasicBlockData, Body, Location, Operand, Place, Rvalue, SourceInfo,
-        UnwindAction, visit::Visitor,
+        self, BasicBlock, BasicBlockData, Body, Location, Operand, Place, Rvalue, UnwindAction,
+        visit::Visitor,
     },
     ty::{self as mir_ty, IntrinsicDef},
 };
@@ -27,8 +27,8 @@ use super::{
         AssertionHandler, AtomicIntrinsicHandler, BranchingHandler, DropHandler,
         EntryFunctionHandler, FunctionHandler,
         InsertionLocation::*,
-        IntrinsicHandler, MemoryIntrinsicHandler, OperandRef, OperandReferencer, PlaceRef,
-        PlaceReferencer, RuntimeCallAdder, StorageMarker,
+        IntrinsicHandler, MemoryIntrinsicHandler, PlaceRef, PlaceReferencer, RuntimeCallAdder,
+        StorageMarker,
         context::{
             BlockIndexProvider, BlockOriginalIndexProvider, BodyProvider, ConfigProvider,
             PriItemsProvider, SourceInfoProvider, TyContextProvider,
@@ -762,22 +762,6 @@ where
         let dest_ref = call_adder.reference_place(destination);
         let mut call_adder = call_adder.assign(self.assignment_id.unwrap(), dest_ref);
         call_adder.after_call_func();
-    }
-}
-
-impl<'tcx, C: cr::ForOperandRef<'tcx>> RuntimeCallAdder<C> {
-    pub(crate) fn reference_operand_spanned(
-        &mut self,
-        operand: &Spanned<Operand<'tcx>>,
-    ) -> OperandRef {
-        let source_scope = self.source_info().scope;
-        let mut call_adder = self.before();
-        call_adder
-            .with_source_info(SourceInfo {
-                span: operand.span,
-                scope: source_scope,
-            })
-            .reference_operand(&operand.node)
     }
 }
 
