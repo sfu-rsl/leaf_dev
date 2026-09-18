@@ -679,33 +679,17 @@ where
 
                                 match kind {
                                     Load => call_adder.load(),
-                                    Store => {
-                                        let val_ref =
-                                            call_adder.reference_operand_spanned(&params.args[1]);
-                                        call_adder.store(val_ref)
-                                    }
+                                    Store => call_adder.store(&params.args[1]),
                                     BinOp(binop) => {
-                                        let src =
-                                            call_adder.reference_operand_spanned(&params.args[1]);
-                                        call_adder.binary_op(binop, src);
+                                        call_adder.binary_op(binop, &params.args[1]);
                                     }
-                                    Exchange => {
-                                        let src =
-                                            call_adder.reference_operand_spanned(&params.args[1]);
-                                        call_adder.exchange(src)
-                                    }
-                                    CompareExchange { weak } => {
-                                        let old =
-                                            call_adder.reference_operand_spanned(&params.args[1]);
-                                        let src =
-                                            call_adder.reference_operand_spanned(&params.args[2]);
-                                        call_adder.compare_exchange(
-                                            failure_ordering.unwrap(),
-                                            weak,
-                                            old,
-                                            src,
-                                        )
-                                    }
+                                    Exchange => call_adder.exchange(&params.args[1]),
+                                    CompareExchange { weak } => call_adder.compare_exchange(
+                                        failure_ordering.unwrap(),
+                                        weak,
+                                        &params.args[1],
+                                        &params.args[2],
+                                    ),
                                     Fence { .. } => unreachable!(),
                                 }
                             }

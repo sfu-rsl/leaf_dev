@@ -150,13 +150,13 @@ pub(crate) trait AtomicIntrinsicHandler<'tcx> {
     where
         Self: AssignmentInfoProvider;
 
-    fn store(&mut self, val: OperandRef)
+    fn store(&mut self, val: &Spanned<Operand<'tcx>>)
     where
         // This is a redundant requirement as it is a unit function with a ptr passed to it.
         // However, it is used for the assignment id.
         Self: AssignmentInfoProvider;
 
-    fn exchange(&mut self, val: OperandRef)
+    fn exchange(&mut self, val: &Spanned<Operand<'tcx>>)
     where
         Self: AssignmentInfoProvider;
 
@@ -164,12 +164,12 @@ pub(crate) trait AtomicIntrinsicHandler<'tcx> {
         &mut self,
         failure_ordering: AtomicOrdering,
         weak: bool,
-        old: OperandRef,
-        src: OperandRef,
+        old: &Spanned<Operand<'tcx>>,
+        src: &Spanned<Operand<'tcx>>,
     ) where
         Self: AssignmentInfoProvider;
 
-    fn binary_op(&mut self, operator: AtomicBinaryOp, src: OperandRef)
+    fn binary_op(&mut self, operator: AtomicBinaryOp, src: &Spanned<Operand<'tcx>>)
     where
         Self: AssignmentInfoProvider;
 

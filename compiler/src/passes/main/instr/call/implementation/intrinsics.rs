@@ -271,25 +271,27 @@ where
         );
     }
 
-    fn store(&mut self, val: OperandRef)
+    fn store(&mut self, val: &Spanned<Operand<'tcx>>)
     where
         Self: AssignmentInfoProvider,
     {
+        let val_ref = self.reference_operand_spanned(val);
         self.add_bb_for_atomic_intrinsic_call_with_ptr(
             sym::intrinsics::atomic::intrinsic_atomic_store,
-            vec![operand::move_for_local(val.into())],
+            vec![operand::move_for_local(val_ref.into())],
             Default::default(),
         )
     }
 
-    fn exchange(&mut self, val: OperandRef)
+    fn exchange(&mut self, val: &Spanned<Operand<'tcx>>)
     where
         Self: AssignmentInfoProvider,
     {
+        let val_ref = self.reference_operand_spanned(val);
         self.add_bb_for_atomic_intrinsic_call_with_ptr(
             sym::intrinsics::atomic::intrinsic_atomic_xchg,
             vec![
-                operand::move_for_local(val.into()),
+                operand::move_for_local(val_ref.into()),
                 operand::move_for_local(self.dest_ref().into()),
             ],
             Default::default(),
@@ -300,12 +302,14 @@ where
         &mut self,
         failure_ordering: AtomicOrdering,
         weak: bool,
-        old: OperandRef,
-        src: OperandRef,
+        old: &Spanned<Operand<'tcx>>,
+        src: &Spanned<Operand<'tcx>>,
     ) where
         Self: AssignmentInfoProvider,
     {
         let mut additional_blocks = vec![];
+        let old_ref = self.reference_operand_spanned(old);
+        let src_ref = self.reference_operand_spanned(src);
 
         let failure_ordering_local = {
             let bb = self.make_bb_for_atomic_ordering(failure_ordering);
@@ -318,20 +322,21 @@ where
             vec![
                 operand::move_for_local(failure_ordering_local),
                 operand::const_from_bool(self.tcx(), weak),
-                operand::move_for_local(old.into()),
-                operand::move_for_local(src.into()),
+                operand::move_for_local(old_ref.into()),
+                operand::move_for_local(src_ref.into()),
                 operand::move_for_local(self.dest_ref().into()),
             ],
             additional_blocks,
         )
     }
 
-    fn binary_op(&mut self, operator: AtomicBinaryOp, src: OperandRef)
+    fn binary_op(&mut self, operator: AtomicBinaryOp, src: &Spanned<Operand<'tcx>>)
     where
         Self: AssignmentInfoProvider,
     {
         let tcx = self.tcx();
         let mut additional_blocks = vec![];
+        let src_ref = self.reference_operand_spanned(src);
 
         let operator_local = {
             let (block, local) = self.make_bb_for_helper_call_with_all(
@@ -350,7 +355,7 @@ where
             sym::intrinsics::atomic::intrinsic_atomic_binary_op,
             vec![
                 operand::move_for_local(operator_local),
-                operand::move_for_local(src.into()),
+                operand::move_for_local(src_ref.into()),
                 operand::move_for_local(prev_dest.into()),
             ],
             additional_blocks,
