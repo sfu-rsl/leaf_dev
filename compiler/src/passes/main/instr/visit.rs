@@ -877,43 +877,23 @@ fn instrument_memory_intrinsic_call<'tcx, 'a, C>(
 
             match kind {
                 Load { is_ptr_aligned } => call_adder.load(is_ptr_aligned),
-                Store { is_ptr_aligned } => {
-                    let val_ref = call_adder.reference_operand_spanned(&args[1]);
-                    call_adder.store(val_ref, is_ptr_aligned)
-                }
+                Store { is_ptr_aligned } => call_adder.store(&args[1], is_ptr_aligned),
                 Copy { is_overlapping } => {
                     let dest: &Spanned<Operand<'tcx>> =
                         if is_volatile { &args[0] } else { &args[1] };
-                    let dst_ref = call_adder.reference_operand_spanned(dest);
-                    let count_ref = call_adder.reference_operand_spanned(&args[2]);
-                    call_adder.copy(
-                        dst_ref,
-                        &dest.node,
-                        count_ref,
-                        &args[2].node,
-                        is_overlapping,
-                    )
+                    call_adder.copy(dest, &args[2], is_overlapping)
                 }
                 Set => {
-                    let val_ref = call_adder.reference_operand_spanned(&args[1]);
-                    let count_ref = call_adder.reference_operand_spanned(&args[2]);
-                    call_adder.set(val_ref, count_ref, &args[2].node);
+                    call_adder.set(&args[1], &args[2]);
                 }
                 Swap => {
-                    let second: &Spanned<Operand<'tcx>> = &args[1];
-                    let second_ref = call_adder.reference_operand_spanned(second);
-                    call_adder.swap(second_ref, &second.node);
+                    call_adder.swap(&args[1]);
                 }
                 RawEq => {
-                    let second: &Spanned<Operand<'tcx>> = &args[1];
-                    let second_ref = call_adder.reference_operand_spanned(second);
-                    call_adder.raw_eq(second_ref, &second.node);
+                    call_adder.raw_eq(&args[1]);
                 }
                 CompareBytes => {
-                    let second: &Spanned<Operand<'tcx>> = &args[1];
-                    let second_ref = call_adder.reference_operand_spanned(second);
-                    let count_ref = call_adder.reference_operand_spanned(&args[2]);
-                    call_adder.compare_bytes(second_ref, &second.node, count_ref, &args[2].node);
+                    call_adder.compare_bytes(&args[1], &args[2]);
                 }
             }
         }
