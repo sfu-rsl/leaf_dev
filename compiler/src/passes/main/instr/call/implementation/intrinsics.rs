@@ -16,18 +16,24 @@ use super::{
 impl<'tcx, C> IntrinsicHandler<'tcx> for RuntimeCallAdder<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
-    C: ForAssignment<'tcx>,
+    C: ForAssignment<'tcx> + ForOperandRef<'tcx>,
 {
-    fn intrinsic_one_to_one_by(
+    fn intrinsic_one_to_one_by<'a>(
         &mut self,
         intrinsic_func: DefId,
         pri_func: LeafIntrinsicSymbol,
-        args: impl Iterator<Item = OperandRef>,
-    ) {
+        args: impl Iterator<Item = &'a Spanned<Operand<'tcx>>>,
+    ) where
+        'tcx: 'a,
+    {
         self.assert_pri_intrinsic_consistency(intrinsic_func, pri_func);
 
         let pri_name = *pri_func;
-        let args = args.map(Into::into).map(operand::move_for_local).collect();
+        let args = args
+            .map(|arg| self.reference_operand_spanned(arg))
+            .map(Into::into)
+            .map(operand::move_for_local)
+            .collect();
         let block = self.make_bb_for_assign_call(pri_name, args);
         self.insert_blocks([block]);
     }

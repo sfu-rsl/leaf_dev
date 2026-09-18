@@ -116,12 +116,13 @@ pub(crate) trait DropHandler<'tcx> {
 }
 
 pub(crate) trait IntrinsicHandler<'tcx> {
-    fn intrinsic_one_to_one_by(
+    fn intrinsic_one_to_one_by<'a>(
         &mut self,
         intrinsic_func: DefId,
         pri_func: LeafIntrinsicSymbol,
-        args: impl Iterator<Item = OperandRef>,
-    );
+        args: impl Iterator<Item = &'a Spanned<Operand<'tcx>>>,
+    ) where
+        'tcx: 'a;
 }
 
 pub(crate) trait MemoryIntrinsicHandler<'tcx> {

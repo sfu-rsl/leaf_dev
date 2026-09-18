@@ -30,8 +30,8 @@ use super::{
         IntrinsicHandler, MemoryIntrinsicHandler, OperandRef, OperandReferencer, PlaceRef,
         PlaceReferencer, RuntimeCallAdder, StorageMarker,
         context::{
-            AtLocationContext, BlockIndexProvider, BlockOriginalIndexProvider, BodyProvider,
-            ConfigProvider, PriItemsProvider, SourceInfoProvider, TyContextProvider,
+            BlockIndexProvider, BlockOriginalIndexProvider, BodyProvider, ConfigProvider,
+            PriItemsProvider, SourceInfoProvider, TyContextProvider,
         },
         ctxt_reqs as cr,
     },
@@ -590,12 +590,11 @@ where
             Opaque | Detailed => {
                 let mut call_adder = self.call_adder.before();
                 let dest_ref = call_adder.reference_place(params.destination);
-                let args = Self::ref_args(&mut call_adder, params.args);
                 let mut call_adder = call_adder.assign(self.assignment_id.unwrap(), dest_ref);
 
                 match filter {
                     Detailed => {
-                        call_adder.intrinsic_one_to_one_by(def_id, func_name, args.into_iter());
+                        call_adder.intrinsic_one_to_one_by(def_id, func_name, params.args.iter());
                     }
                     Opaque => {
                         call_adder.add_opaque_assignment();
@@ -753,25 +752,17 @@ where
 
         call_adder.before_call_func(func, args, no_definition);
 
-        if target.is_some() {
-            let mut call_adder = call_adder.after();
-            let dest_ref = call_adder.reference_place(destination);
-            let mut call_adder = call_adder.assign(self.assignment_id.unwrap(), dest_ref);
-            call_adder.after_call_func();
-        } else {
+        if target.is_none() {
             // This branch is only triggered by hitting a divergent function:
             // https://doc.rust-lang.org/rust-by-example/fn/diverging.html
             // (this means the program will exit immediately)
+            return;
         }
-    }
 
-    fn ref_args(
-        call_adder: &mut RuntimeCallAdder<AtLocationContext<C>>,
-        args: &[Spanned<Operand<'tcx>>],
-    ) -> Vec<OperandRef> {
-        args.iter()
-            .map(|arg| call_adder.reference_operand_spanned(arg))
-            .collect()
+        let mut call_adder = call_adder.after();
+        let dest_ref = call_adder.reference_place(destination);
+        let mut call_adder = call_adder.assign(self.assignment_id.unwrap(), dest_ref);
+        call_adder.after_call_func();
     }
 }
 
