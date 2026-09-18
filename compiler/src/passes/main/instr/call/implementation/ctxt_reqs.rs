@@ -21,8 +21,6 @@ ctxt_req_trait!(ForOperandRef<'tcx>: ForPlaceRef<'tcx>);
 
 ctxt_req_trait!(ForAssignment<'tcx>: ForInsertion<'tcx> + AssignmentInfoProvider);
 
-ctxt_req_trait!(ForCasting<'tcx>: CastOperandProvider + ForAssignment<'tcx>);
-
 ctxt_req_trait!(
     ForBranching<'tcx>: ForInsertion<'tcx> + BlockOriginalIndexProvider + JumpTargetModifier
 );

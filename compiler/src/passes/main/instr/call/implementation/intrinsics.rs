@@ -1,8 +1,8 @@
 use common::pri::{AtomicBinaryOp, AtomicOrdering};
 
 use super::{
-    Assigner, AtomicIntrinsicHandler, IntrinsicHandler,
-    context::{AssignmentInfoProvider, PointerInfoProvider},
+    AssignmentInfoProvider, AtomicIntrinsicHandler, IntrinsicHandler,
+    context::PointerInfoProvider,
     ctxt_reqs::{Basic, ForAssignment, ForAtomicIntrinsic, ForMemoryIntrinsic},
     prelude::{mir::*, *},
     pri::sym::intrinsics::{
@@ -259,7 +259,7 @@ where
 {
     fn load(&mut self)
     where
-        Self: Assigner<'tcx>,
+        Self: AssignmentInfoProvider,
     {
         self.add_bb_for_atomic_intrinsic_call_with_ptr(
             sym::intrinsics::atomic::intrinsic_atomic_load,
@@ -270,7 +270,7 @@ where
 
     fn store(&mut self, val: OperandRef)
     where
-        Self: Assigner<'tcx>,
+        Self: AssignmentInfoProvider,
     {
         self.add_bb_for_atomic_intrinsic_call_with_ptr(
             sym::intrinsics::atomic::intrinsic_atomic_store,
@@ -281,7 +281,7 @@ where
 
     fn exchange(&mut self, val: OperandRef)
     where
-        Self: Assigner<'tcx>,
+        Self: AssignmentInfoProvider,
     {
         self.add_bb_for_atomic_intrinsic_call_with_ptr(
             sym::intrinsics::atomic::intrinsic_atomic_xchg,
@@ -300,7 +300,7 @@ where
         old: OperandRef,
         src: OperandRef,
     ) where
-        Self: Assigner<'tcx>,
+        Self: AssignmentInfoProvider,
     {
         let mut additional_blocks = vec![];
 
@@ -325,7 +325,7 @@ where
 
     fn binary_op(&mut self, operator: AtomicBinaryOp, src: OperandRef)
     where
-        Self: Assigner<'tcx>,
+        Self: AssignmentInfoProvider,
     {
         let tcx = self.tcx();
         let mut additional_blocks = vec![];
@@ -374,7 +374,7 @@ where
         additional_args: Vec<Operand<'tcx>>,
         additional_blocks: Vec<BasicBlockData<'tcx>>,
     ) where
-        Self: Assigner<'tcx>,
+        Self: AssignmentInfoProvider,
     {
         let mut stmts = Vec::new();
         let mut blocks = additional_blocks;

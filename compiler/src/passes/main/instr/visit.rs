@@ -1,11 +1,10 @@
-use rustc_abi::{FieldIdx, VariantIdx};
-use rustc_index::IndexVec;
+use rustc_abi::VariantIdx;
 use rustc_middle::{
     mir::{
-        self, BasicBlock, BasicBlockData, Body, BorrowKind, CastKind, Location, Operand, Place,
-        Rvalue, SourceInfo, UnwindAction, visit::Visitor,
+        self, BasicBlock, BasicBlockData, Body, Location, Operand, Place, Rvalue, SourceInfo,
+        UnwindAction, visit::Visitor,
     },
-    ty::{self as mir_ty, IntrinsicDef, Ty},
+    ty::{self as mir_ty, IntrinsicDef},
 };
 use rustc_span::{Span, Spanned, def_id::DefId};
 
@@ -25,8 +24,8 @@ use crate::{
 use super::{
     TAG_INSTR,
     call::{
-        AssertionHandler, Assigner, AtomicIntrinsicHandler, BranchingHandler, BranchingReferencer,
-        CastAssigner, DropHandler, EntryFunctionHandler, FunctionHandler,
+        AssertionHandler, AtomicIntrinsicHandler, BranchingHandler, BranchingReferencer,
+        DropHandler, EntryFunctionHandler, FunctionHandler,
         InsertionLocation::*,
         IntrinsicHandler, MemoryIntrinsicHandler, OperandRef, OperandReferencer, PlaceRef,
         PlaceReferencer, RuntimeCallAdder, StorageMarker,
@@ -174,22 +173,6 @@ impl VisitorFactory {
             assignment_id,
         }
     }
-
-    fn make_assignment_visitor<'tcx, 'b, C>(
-        call_adder: &'b mut RuntimeCallAdder<C>,
-        id: AssignmentId,
-        destination: &Place<'tcx>,
-    ) -> impl RvalueVisitor<'tcx, ()> + 'b
-    where
-        C: cr::ForPlaceRef<'tcx> + cr::ForOperandRef<'tcx>,
-        'tcx: 'b,
-    {
-        LeafAssignmentFilteredVisitor {
-            call_adder: RuntimeCallAdder::borrow_from(call_adder),
-            assignment_id: id,
-            place: destination.clone(),
-        }
-    }
 }
 
 macro_rules! make_general_visitor {
@@ -277,19 +260,16 @@ where
     C: cr::ForPlaceRef<'tcx> + cr::ForOperandRef<'tcx>,
 {
     fn visit_assign(&mut self, place: &Place<'tcx>, rvalue: &Rvalue<'tcx>) {
-        VisitorFactory::make_assignment_visitor(
-            &mut self.call_adder,
-            self.assignment_id.unwrap(),
-            place,
-        )
-        .visit_rvalue(rvalue)
+        self.call_adder
+            .instrument_assignment(self.assignment_id.unwrap(), place, rvalue)
     }
 
     fn visit_set_discriminant(&mut self, place: &Place<'tcx>, variant_index: &VariantIdx) {
-        let destination = self.call_adder.reference_place(place);
-        self.call_adder
-            .assign(self.assignment_id.unwrap(), destination)
-            .its_discriminant_to(variant_index)
+        self.call_adder.instrument_set_discriminant(
+            self.assignment_id.unwrap(),
+            place,
+            variant_index,
+        )
     }
 
     fn visit_intrinsic(&mut self, intrinsic: &mir::NonDivergingIntrinsic<'tcx>) {
@@ -636,7 +616,7 @@ where
                         call_adder.intrinsic_one_to_one_by(def_id, func_name, args.into_iter());
                     }
                     Opaque => {
-                        call_adder.by_some();
+                        call_adder.add_opaque_assignment();
                     }
                     _ => unreachable!(),
                 }
@@ -746,7 +726,7 @@ where
                                     Fence { .. } => unreachable!(),
                                 }
                             }
-                            Opaque => call_adder.by_some(),
+                            Opaque => call_adder.add_opaque_assignment(),
                             _ => unreachable!(),
                         }
                     }
@@ -830,256 +810,6 @@ where
     }
 }
 
-struct LeafAssignmentFilteredVisitor<'tcx, C> {
-    call_adder: RuntimeCallAdder<C>,
-    assignment_id: AssignmentId,
-    place: Place<'tcx>,
-}
-
-impl<'tcx, C> RvalueVisitor<'tcx, ()> for LeafAssignmentFilteredVisitor<'tcx, C>
-where
-    C: cr::ForPlaceRef<'tcx> + cr::ForOperandRef<'tcx>,
-{
-    fn visit_rvalue(&mut self, rvalue: &Rvalue<'tcx>) {
-        log_debug!(target: TAG_INSTR, "Visiting Rvalue: {:#?}", rvalue);
-        use decision::rules::EventDecision::*;
-
-        let rules = &self.call_adder.config().assignment_filter;
-        let filter = match rvalue {
-            Rvalue::Use(..) => rules.use_,
-            Rvalue::Repeat(..) => rules.repeat,
-            Rvalue::Ref(..) => rules.ref_,
-            Rvalue::ThreadLocalRef(..) => rules.thread_local_ref,
-            Rvalue::RawPtr(..) => rules.raw_ptr,
-            Rvalue::Cast(..) => rules.cast,
-            Rvalue::BinaryOp(..) => rules.binary_op,
-            Rvalue::UnaryOp(..) => rules.unary_op,
-            Rvalue::Discriminant(..) => rules.discriminant,
-            Rvalue::Aggregate(..) => rules.aggregate,
-            Rvalue::CopyForDeref(..) => rules.use_,
-            Rvalue::WrapUnsafeBinder(..) => rules.wrap_unsafe_binder,
-            Rvalue::Reborrow(..) => Omit,
-        };
-        match filter {
-            Omit => {}
-            Opaque | Detailed => {
-                let dest_ref = self.call_adder.reference_place(&self.place);
-                let mut call_adder = self.call_adder.assign(self.assignment_id, dest_ref);
-                match filter {
-                    Detailed => LeafAssignmentVisitor { call_adder }.super_rvalue(rvalue),
-                    Opaque => call_adder.by_some(),
-                    _ => unreachable!(),
-                }
-            }
-        }
-    }
-}
-
-make_general_visitor!(LeafAssignmentVisitor);
-
-impl<'tcx, C> RvalueVisitor<'tcx, ()> for LeafAssignmentVisitor<C>
-where
-    C: cr::ForPlaceRef<'tcx> + cr::ForOperandRef<'tcx> + cr::ForAssignment<'tcx>,
-{
-    fn visit_rvalue(&mut self, rvalue: &Rvalue<'tcx>) {
-        self.super_rvalue(rvalue)
-    }
-
-    fn visit_use(&mut self, operand: &Operand<'tcx>, _: &mir::WithRetag) {
-        let operand_ref = self.call_adder.reference_operand(operand);
-        self.call_adder.by_use(operand_ref)
-    }
-
-    fn visit_repeat(&mut self, operand: &Operand<'tcx>, count: &mir_ty::Const<'tcx>) {
-        let operand_ref = self.call_adder.reference_operand(operand);
-        self.call_adder.by_repeat(operand_ref, count)
-    }
-
-    fn visit_ref(
-        &mut self,
-        _region: &mir_ty::Region,
-        borrow_kind: &BorrowKind,
-        place: &Place<'tcx>,
-    ) {
-        Self::instrument_ref(&mut self.call_adder, borrow_kind, place)
-    }
-
-    fn visit_thread_local_ref(&mut self, def_id: &DefId) {
-        self.call_adder.by_thread_local_ref(def_id);
-    }
-
-    fn visit_raw_ptr(&mut self, kind: &mir::RawPtrKind, place: &Place<'tcx>) {
-        let place_ref = self.call_adder.reference_place(place);
-        self.call_adder
-            .by_raw_ptr(place_ref, kind.to_mutbl_lossy().is_mut());
-    }
-
-    fn visit_cast(&mut self, kind: &CastKind, operand: &Operand<'tcx>, ty: &Ty<'tcx>) {
-        let operand_ref = self.call_adder.reference_operand(operand);
-        let call_adder = &mut self.call_adder.by_cast(operand_ref);
-        use CastKind::*;
-        match kind {
-            IntToInt | FloatToInt => call_adder.to_int(*ty),
-            IntToFloat | FloatToFloat => call_adder.to_float(*ty),
-            PointerCoercion(coercion, _source) => {
-                use mir_ty::adjustment::PointerCoercion::*;
-                match coercion {
-                    Unsize => call_adder.through_unsizing(),
-                    ReifyFnPointer(_) | UnsafeFnPointer | ClosureFnPointer(_) => {
-                        call_adder.through_fn_ptr_coercion()
-                    }
-                    MutToConstPointer => call_adder.to_another_ptr(*ty, *kind),
-                    ArrayToPointer => {
-                        log_warn!(
-                            target: TAG_INSTR,
-                            concat!(
-                                "ArrayToPointer casts are expected to be optimized away by at this point.",
-                                "Sending it to runtime as a regular pointer cast."
-                            )
-                        );
-                        call_adder.to_another_ptr(*ty, *kind)
-                    }
-                }
-            }
-            PointerExposeProvenance => call_adder.expose_prov(),
-            PointerWithExposedProvenance => call_adder.with_exposed_prov(*ty),
-            PtrToPtr | FnPtrToPtr => call_adder.to_another_ptr(*ty, *kind),
-            Transmute => call_adder.transmuted(*ty),
-            Subtype => call_adder.subtyped(*ty),
-        }
-    }
-
-    fn visit_binary_op(&mut self, op: &mir::BinOp, operands: &Box<(Operand<'tcx>, Operand<'tcx>)>) {
-        self.visit_binary_op_general(op, operands)
-    }
-
-    fn visit_unary_op(&mut self, op: &rustc_middle::mir::UnOp, operand: &Operand<'tcx>) {
-        let operand_ref = self.call_adder.reference_operand(operand);
-        self.call_adder.by_unary_op(op, operand_ref)
-    }
-
-    fn visit_discriminant(&mut self, place: &Place<'tcx>) {
-        let place_ref = self.call_adder.reference_place(place);
-        self.call_adder.by_discriminant(place_ref)
-    }
-
-    fn visit_aggregate(
-        &mut self,
-        kind: &Box<mir::AggregateKind>,
-        operands: &IndexVec<FieldIdx, Operand<'tcx>>,
-    ) {
-        let operands: Vec<OperandRef> = operands
-            .iter()
-            .map(|o| self.call_adder.reference_operand(o))
-            .collect();
-
-        use mir::AggregateKind::*;
-        #[allow(clippy::type_complexity)]
-        let mut add_call: Box<dyn FnMut(&[OperandRef])> = match kind.as_ref() {
-            Array(_) => Box::new(|items| self.call_adder.by_aggregate_array(items)),
-            Tuple => Box::new(|fields| {
-                self.call_adder.by_aggregate_tuple(fields);
-            }),
-            Adt(def_id, variant, _, _, None) => {
-                use rustc_hir::def::DefKind;
-                match self.call_adder.tcx().def_kind(*def_id) {
-                    DefKind::Enum => {
-                        Box::new(|fields| self.call_adder.by_aggregate_enum(fields, *variant))
-                    }
-                    DefKind::Struct => Box::new(|fields| {
-                        self.call_adder.by_aggregate_struct(fields)
-                    }),
-                    _ => unreachable!("Only enums and structs are supposed to be ADT."),
-                }
-            }
-            Adt(_, _, _, _, Some(active_field)) /* Union */ => Box::new(|fields| {
-                assert_eq!(
-                    fields.len(),
-                    1,
-                    "For a union, there should only be one field."
-                );
-                self.call_adder.by_aggregate_union(*active_field, fields[0])
-            }),
-            Closure(..) => Box::new(|fields| {
-                self.call_adder.by_aggregate_closure(fields)
-            }),
-            Coroutine(..) => Box::new(|fields| {
-                self.call_adder.by_aggregate_coroutine(fields)
-            }),
-            CoroutineClosure(..) => Box::new(|fields| {
-                self.call_adder.by_aggregate_coroutine_closure(fields)
-            }),
-            RawPtr(_, mutability) => Box::new(|fields| match fields {
-                [data_ptr, metadata] => self
-                    .call_adder
-                    .by_aggregate_raw_ptr(*data_ptr, *metadata, mutability.is_mut()),
-                _ => unreachable!(),
-            }),
-        };
-
-        add_call(operands.as_slice())
-    }
-
-    fn visit_copy_for_deref(&mut self, place: &Place<'tcx>) {
-        let operand = Operand::Copy(*place);
-        self.visit_use(&operand, &mir::WithRetag::No)
-    }
-
-    fn visit_wrap_unsafe_binder(&mut self, operand: &Operand<'tcx>, ty: &Ty<'tcx>) -> () {
-        let operand_ref = self.call_adder.reference_operand(operand);
-        self.call_adder.by_wrap_unsafe_binder(operand_ref, ty);
-    }
-
-    fn visit_reborrow(
-        &mut self,
-        target_ty: &Ty<'tcx>,
-        mutability: &rustc_hir::Mutability,
-        place: &Place<'tcx>,
-    ) {
-        // The GVN pass should replace reborrows with use.
-        panic!(
-            concat!(
-                "Reborrow is not expected to be observed at this point. ",
-                "It should have been optimized away by the compiler. ",
-                "({:?}, {:?}, {:?}) ",
-                "at {:?}"
-            ),
-            target_ty,
-            mutability,
-            place,
-            self.call_adder.source_info().span,
-        );
-    }
-}
-
-impl<'tcx, C> LeafAssignmentVisitor<C>
-where
-    C: cr::ForAssignment<'tcx>,
-{
-    fn instrument_ref(
-        call_adder: &mut RuntimeCallAdder<C>,
-        borrow_kind: &BorrowKind,
-        place: &Place<'tcx>,
-    ) where
-        C: cr::ForPlaceRef<'tcx>,
-    {
-        let place_ref = call_adder.reference_place(place);
-        call_adder.by_ref(place_ref, matches!(borrow_kind, BorrowKind::Mut { .. }))
-    }
-
-    fn visit_binary_op_general(
-        &mut self,
-        op: &mir::BinOp,
-        operands: &(Operand<'tcx>, Operand<'tcx>),
-    ) where
-        C: cr::ForOperandRef<'tcx>,
-    {
-        let first_ref = self.call_adder.reference_operand(&operands.0);
-        let second_ref = self.call_adder.reference_operand(&operands.1);
-        self.call_adder.by_binary_op(op, first_ref, second_ref)
-    }
-}
-
 impl<'tcx, C: cr::ForOperandRef<'tcx>> RuntimeCallAdder<C> {
     pub(crate) fn reference_operand_spanned(
         &mut self,
@@ -1136,7 +866,7 @@ fn instrument_memory_intrinsic_call<'tcx, 'a, C>(
                 if destination.is_none() {
                     // No information to report, so skip the instrumentation.
                 } else {
-                    call_adder.by_some();
+                    call_adder.add_opaque_assignment();
                 }
                 return;
             }

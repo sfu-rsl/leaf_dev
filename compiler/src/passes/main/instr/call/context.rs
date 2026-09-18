@@ -72,10 +72,6 @@ pub(crate) trait AssignmentInfoProvider {
     fn dest_ref(&self) -> PlaceRef;
 }
 
-pub(crate) trait CastOperandProvider {
-    fn operand_ref(&self) -> OperandRef;
-}
-
 pub(crate) trait SwitchInfoProvider<'tcx> {
     fn switch_info(&self) -> SwitchInfo<'tcx>;
 }
@@ -326,17 +322,6 @@ impl<B> AssignmentInfoProvider for AssignmentContext<'_, B> {
     }
 }
 
-pub(crate) struct CastAssignmentContext<'b, B> {
-    pub(super) base: &'b mut B,
-    pub(super) operand_ref: OperandRef,
-}
-
-impl<B> CastOperandProvider for CastAssignmentContext<'_, B> {
-    fn operand_ref(&self) -> OperandRef {
-        self.operand_ref
-    }
-}
-
 pub(crate) struct BranchingContext<'b, 'tcx, B> {
     pub(super) base: &'b mut B,
     pub(super) switch_info: SwitchInfo<'tcx>,
@@ -578,13 +563,6 @@ make_impl_macro! {
 }
 
 make_impl_macro! {
-    impl_cast_operand_provider,
-    CastOperandProvider,
-    self,
-    fn operand_ref(&self) -> OperandRef;
-}
-
-make_impl_macro! {
     impl_discr_info_provider,
     SwitchInfoProvider<'tcx>,
     self,
@@ -682,7 +660,6 @@ make_caller_macro!(
         impl_insertion_location_provider,
         impl_source_info_provider,
         impl_dest_ref_provider,
-        impl_cast_operand_provider,
         impl_discr_info_provider,
         impl_ptr_info_provider,
         impl_atomic_intrinsic_params_provider,
@@ -696,7 +673,6 @@ impl_traits!(all - [ impl_in_entry_function ] for EntryFunctionMarkerContext);
 impl_traits!(all - [ impl_location_provider impl_insertion_location_provider ] for AtLocationContext);
 impl_traits!(all - [ impl_source_info_provider ] for SourceInfoContext);
 impl_traits!(all - [ impl_dest_ref_provider ] for AssignmentContext);
-impl_traits!(all - [ impl_cast_operand_provider ] for CastAssignmentContext);
 impl_traits!(all - [ impl_discr_info_provider ] for BranchingContext<'tcxd>);
 impl_traits!(all - [ impl_ptr_info_provider impl_atomic_intrinsic_params_provider ] for AtomicIntrinsicContext<'tcxd>);
 impl_traits!(all - [ impl_ptr_info_provider impl_memory_intrinsic_params_provider ] for MemoryIntrinsicContext<'tcxd>);
