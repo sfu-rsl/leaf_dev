@@ -27,8 +27,7 @@ use super::{
         AssertionHandler, AtomicIntrinsicHandler, BranchingHandler, DropHandler,
         EntryFunctionHandler, FunctionHandler,
         InsertionLocation::*,
-        IntrinsicHandler, MemoryIntrinsicHandler, PlaceRef, PlaceReferencer, RuntimeCallAdder,
-        StorageMarker,
+        IntrinsicHandler, MemoryIntrinsicHandler, RuntimeCallAdder, StorageMarker,
         context::{
             BlockIndexProvider, BlockOriginalIndexProvider, BodyProvider, ConfigProvider,
             PriItemsProvider, SourceInfoProvider, TyContextProvider,
@@ -260,13 +259,13 @@ where
 {
     fn visit_assign(&mut self, place: &Place<'tcx>, rvalue: &Rvalue<'tcx>) {
         self.call_adder
-            .instrument_assignment(self.assignment_id.unwrap(), place, rvalue)
+            .instrument_assignment(self.assignment_id.unwrap(), *place, rvalue)
     }
 
     fn visit_set_discriminant(&mut self, place: &Place<'tcx>, variant_index: &VariantIdx) {
         self.call_adder.instrument_set_discriminant(
             self.assignment_id.unwrap(),
-            place,
+            *place,
             variant_index,
         )
     }
@@ -281,25 +280,12 @@ where
                 dst,
                 count,
             }) => {
-                let operands = {
-                    let span = self.call_adder.source_info().span;
-                    [src, dst, count]
-                        .into_iter()
-                        .map(|op| Spanned {
-                            node: op.clone(),
-                            span,
-                        })
-                        .collect::<Vec<_>>()
-                };
-                instrument_memory_intrinsic_call(
+                instrument_memory_intrinsic_copy_non_overlapping(
                     &mut self.call_adder,
-                    &operands,
-                    None,
+                    src,
+                    dst,
+                    count,
                     self.assignment_id.unwrap(),
-                    decision::MemoryIntrinsicKind::Copy {
-                        is_overlapping: false,
-                    },
-                    false,
                 );
             }
         }
@@ -588,8 +574,8 @@ where
             Omit => return,
             Opaque | Detailed => {
                 let mut call_adder = self.call_adder.before();
-                let dest_ref = call_adder.reference_place(params.destination);
-                let mut call_adder = call_adder.assign(self.assignment_id.unwrap(), dest_ref);
+                let mut call_adder =
+                    call_adder.assign(self.assignment_id.unwrap(), params.destination.clone());
 
                 match filter {
                     Detailed => {
@@ -614,7 +600,7 @@ where
         instrument_memory_intrinsic_call(
             &mut self.call_adder,
             &params.args,
-            Some(params.destination),
+            params.destination,
             assignment_id,
             kind,
             is_volatile,
@@ -663,9 +649,8 @@ where
                             .fence(single_thread);
                     }
                     Load | Store | Exchange | CompareExchange { .. } | BinOp(..) => {
-                        let dest_ref = call_adder.reference_place(params.destination);
                         let mut call_adder =
-                            call_adder.assign(self.assignment_id.unwrap(), dest_ref);
+                            call_adder.assign(self.assignment_id.unwrap(), *params.destination);
 
                         match filter {
                             Detailed => {
@@ -759,8 +744,7 @@ where
         }
 
         let mut call_adder = call_adder.after();
-        let dest_ref = call_adder.reference_place(destination);
-        let mut call_adder = call_adder.assign(self.assignment_id.unwrap(), dest_ref);
+        let mut call_adder = call_adder.assign(self.assignment_id.unwrap(), *destination);
         call_adder.after_call_func();
     }
 }
@@ -768,7 +752,7 @@ where
 fn instrument_memory_intrinsic_call<'tcx, 'a, C>(
     call_adder: &mut RuntimeCallAdder<C>,
     args: &'a [Spanned<Operand<'tcx>>],
-    destination: Option<&'a Place<'tcx>>,
+    destination: &'a Place<'tcx>,
     assignment_id: AssignmentId,
     kind: decision::MemoryIntrinsicKind,
     is_volatile: bool,
@@ -784,17 +768,10 @@ fn instrument_memory_intrinsic_call<'tcx, 'a, C>(
         Opaque | Detailed => {
             let mut call_adder = call_adder.before();
 
-            // FIXME: Destination is only used for some operations. But assignment_id is used for all.
-            // These dummy values can be avoided by breaking the context into smaller ones.
-            let dest_ref = destination.map_or(PlaceRef::INVALID, |d| call_adder.reference_place(d));
-            let mut call_adder = call_adder.assign(assignment_id, dest_ref);
+            let mut call_adder = call_adder.assign(assignment_id, *destination);
 
             if matches!(filter, Opaque) {
-                if destination.is_none() {
-                    // No information to report, so skip the instrumentation.
-                } else {
-                    call_adder.add_opaque_assignment();
-                }
+                call_adder.add_opaque_assignment();
                 return;
             }
 
@@ -828,4 +805,34 @@ fn instrument_memory_intrinsic_call<'tcx, 'a, C>(
             }
         }
     }
+}
+
+fn instrument_memory_intrinsic_copy_non_overlapping<'tcx, 'a, C>(
+    call_adder: &mut RuntimeCallAdder<C>,
+    src: &Operand<'tcx>,
+    dst: &Operand<'tcx>,
+    count: &Operand<'tcx>,
+    assignment_id: AssignmentId,
+) where
+    C: cr::ForOperandRef<'tcx>,
+{
+    use decision::rules::EventDecision::*;
+
+    match call_adder.config().assignment_filter.intrinsic_memory_op {
+        Omit | Opaque => return,
+        Detailed => (),
+    }
+
+    let [src, dst, count] = {
+        let span = call_adder.source_info().span;
+        [src, dst, count].map(|op| Spanned {
+            node: op.clone(),
+            span,
+        })
+    };
+
+    let mut call_adder = call_adder.before();
+    let mut call_adder = call_adder.memory_write(assignment_id);
+    let mut call_adder = call_adder.perform_memory_op(false, Some(src.clone()));
+    call_adder.copy(&dst, &count, false);
 }

@@ -3,7 +3,7 @@ use rustc_span::Spanned;
 use common::pri::{AtomicBinaryOp, AtomicOrdering};
 
 use super::{
-    AssignmentInfoProvider, AtomicIntrinsicHandler, IntrinsicHandler,
+    AssignmentIdProvider, AssignmentInfoProvider, AtomicIntrinsicHandler, IntrinsicHandler,
     context::PointerParamProvider,
     ctxt_reqs::{Basic, ForAssignment, ForAtomicIntrinsic, ForMemoryIntrinsic, ForOperandRef},
     prelude::{mir::*, *},
@@ -34,7 +34,8 @@ where
             .map(Into::into)
             .map(operand::move_for_local)
             .collect();
-        let block = self.make_bb_for_assign_call(pri_name, args);
+        let dest_ref = self.reference_destination();
+        let block = self.make_bb_for_assign_call(pri_name, dest_ref, args);
         self.insert_blocks([block]);
     }
 }
@@ -77,11 +78,15 @@ where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
     C: ForMemoryIntrinsic<'tcx>,
 {
-    fn load(&mut self, is_ptr_aligned: bool) {
+    fn load(&mut self, is_ptr_aligned: bool)
+    where
+        Self: AssignmentInfoProvider<'tcx>,
+    {
+        let dest_ref = self.reference_destination();
         self.add_bb_for_memory_op_intrinsic_call(
             sym::intrinsics::memory::intrinsic_memory_load,
             vec![
-                operand::move_for_local(self.dest_ref().into()),
+                operand::move_for_local(dest_ref.into()),
                 operand::const_from_bool(self.tcx(), self.context.is_volatile()),
                 operand::const_from_bool(self.tcx(), is_ptr_aligned),
             ],
@@ -172,9 +177,13 @@ where
         )
     }
 
-    fn raw_eq(&mut self, second: &Spanned<Operand<'tcx>>) {
+    fn raw_eq(&mut self, second: &Spanned<Operand<'tcx>>)
+    where
+        Self: AssignmentInfoProvider<'tcx>,
+    {
         let mut stmts = Vec::new();
         let second_ref = self.reference_operand_spanned(second);
+        let dest_ref = self.reference_destination();
 
         let conc_second_ptr_local = {
             let (ptr_stmts, id_local) = self.make_conc_ptr_assignment(second.node.to_copy());
@@ -185,7 +194,7 @@ where
         self.add_bb_for_memory_op_intrinsic_call(
             sym::intrinsics::memory::intrinsic_assign_raw_eq,
             vec![
-                operand::move_for_local(self.dest_ref().into()),
+                operand::move_for_local(dest_ref.into()),
                 operand::move_for_local(second_ref.into()),
                 operand::move_for_local(conc_second_ptr_local),
             ],
@@ -194,10 +203,14 @@ where
         )
     }
 
-    fn compare_bytes(&mut self, second: &Spanned<Operand<'tcx>>, count: &Spanned<Operand<'tcx>>) {
+    fn compare_bytes(&mut self, second: &Spanned<Operand<'tcx>>, count: &Spanned<Operand<'tcx>>)
+    where
+        Self: AssignmentInfoProvider<'tcx>,
+    {
         let mut stmts = Vec::new();
         let second_ref = self.reference_operand_spanned(second);
         let count_ref = self.reference_operand_spanned(count);
+        let dest_ref = self.reference_destination();
 
         let conc_second_ptr_local = {
             let (ptr_stmts, id_local) = self.make_conc_ptr_assignment(second.node.to_copy());
@@ -207,7 +220,7 @@ where
         self.add_bb_for_memory_op_intrinsic_call(
             sym::intrinsics::memory::intrinsic_assign_compare_bytes,
             vec![
-                operand::move_for_local(self.dest_ref().into()),
+                operand::move_for_local(dest_ref.into()),
                 operand::move_for_local(second_ref.into()),
                 operand::move_for_local(conc_second_ptr_local),
                 operand::move_for_local(count_ref.into()),
@@ -269,18 +282,19 @@ where
 {
     fn load(&mut self)
     where
-        Self: AssignmentInfoProvider,
+        Self: AssignmentInfoProvider<'tcx>,
     {
+        let dest_ref = self.reference_destination();
         self.add_bb_for_atomic_intrinsic_call_with_ptr(
             sym::intrinsics::atomic::intrinsic_atomic_load,
-            vec![operand::move_for_local(self.dest_ref().into())],
+            vec![operand::move_for_local(dest_ref.into())],
             Default::default(),
         );
     }
 
     fn store(&mut self, val: &Spanned<Operand<'tcx>>)
     where
-        Self: AssignmentInfoProvider,
+        Self: AssignmentInfoProvider<'tcx>,
     {
         let val_ref = self.reference_operand_spanned(val);
         self.add_bb_for_atomic_intrinsic_call_with_ptr(
@@ -292,14 +306,15 @@ where
 
     fn exchange(&mut self, val: &Spanned<Operand<'tcx>>)
     where
-        Self: AssignmentInfoProvider,
+        Self: AssignmentInfoProvider<'tcx>,
     {
         let val_ref = self.reference_operand_spanned(val);
+        let dest_ref = self.reference_destination();
         self.add_bb_for_atomic_intrinsic_call_with_ptr(
             sym::intrinsics::atomic::intrinsic_atomic_xchg,
             vec![
                 operand::move_for_local(val_ref.into()),
-                operand::move_for_local(self.dest_ref().into()),
+                operand::move_for_local(dest_ref.into()),
             ],
             Default::default(),
         );
@@ -312,11 +327,12 @@ where
         old: &Spanned<Operand<'tcx>>,
         src: &Spanned<Operand<'tcx>>,
     ) where
-        Self: AssignmentInfoProvider,
+        Self: AssignmentInfoProvider<'tcx>,
     {
         let mut additional_blocks = vec![];
         let old_ref = self.reference_operand_spanned(old);
         let src_ref = self.reference_operand_spanned(src);
+        let dest_ref = self.reference_destination();
 
         let failure_ordering_local = {
             let bb = self.make_bb_for_atomic_ordering(failure_ordering);
@@ -331,7 +347,7 @@ where
                 operand::const_from_bool(self.tcx(), weak),
                 operand::move_for_local(old_ref.into()),
                 operand::move_for_local(src_ref.into()),
-                operand::move_for_local(self.dest_ref().into()),
+                operand::move_for_local(dest_ref.into()),
             ],
             additional_blocks,
         )
@@ -339,7 +355,7 @@ where
 
     fn binary_op(&mut self, operator: AtomicBinaryOp, src: &Spanned<Operand<'tcx>>)
     where
-        Self: AssignmentInfoProvider,
+        Self: AssignmentInfoProvider<'tcx>,
     {
         let tcx = self.tcx();
         let mut additional_blocks = vec![];
@@ -356,14 +372,14 @@ where
             local
         };
 
-        let prev_dest = self.dest_ref();
+        let prev_dest_ref = self.reference_destination();
 
         self.add_bb_for_atomic_intrinsic_call_with_ptr(
             sym::intrinsics::atomic::intrinsic_atomic_binary_op,
             vec![
                 operand::move_for_local(operator_local),
                 operand::move_for_local(src_ref.into()),
-                operand::move_for_local(prev_dest.into()),
+                operand::move_for_local(prev_dest_ref.into()),
             ],
             additional_blocks,
         )
@@ -389,7 +405,7 @@ where
         additional_args: Vec<Operand<'tcx>>,
         additional_blocks: Vec<BasicBlockData<'tcx>>,
     ) where
-        Self: AssignmentInfoProvider,
+        Self: AssignmentInfoProvider<'tcx>,
     {
         let mut stmts = Vec::new();
         let mut blocks = additional_blocks;

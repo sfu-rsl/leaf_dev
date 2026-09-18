@@ -192,9 +192,20 @@ impl<C> RuntimeCallAdder<C> {
     pub fn assign<'b, 'tcx>(
         &'b mut self,
         id: AssignmentId,
-        dest_ref: PlaceRef,
-    ) -> RuntimeCallAdder<AssignmentContext<'b, C>> {
-        self.with_context(|base| AssignmentContext { base, id, dest_ref })
+        destination: Place<'tcx>,
+    ) -> RuntimeCallAdder<AssignmentContext<'b, 'tcx, C>> {
+        self.with_context(|base| AssignmentContext {
+            base,
+            id,
+            destination,
+        })
+    }
+
+    pub fn memory_write<'b, 'tcx>(
+        &'b mut self,
+        id: AssignmentId,
+    ) -> RuntimeCallAdder<AssignmentIdContext<'b, C>> {
+        self.with_context(|base| AssignmentIdContext { base, id })
     }
 
     pub fn in_entry_fn<'b>(&'b mut self) -> RuntimeCallAdder<EntryFunctionMarkerContext<'b, C>> {
@@ -316,15 +327,33 @@ where
         }
     }
 }
-impl<'tcx, C> AssignmentInfoProvider for RuntimeCallAdder<C>
+impl<C> AssignmentIdProvider for RuntimeCallAdder<C>
 where
-    C: AssignmentInfoProvider,
+    C: AssignmentIdProvider,
 {
     delegate! {
         to self.context {
             fn assignment_id(&self) -> AssignmentId;
-            fn dest_ref(&self) -> PlaceRef;
         }
+    }
+}
+impl<'tcx, C> AssignmentInfoProvider<'tcx> for RuntimeCallAdder<C>
+where
+    C: AssignmentInfoProvider<'tcx>,
+{
+    delegate! {
+        to self.context {
+            fn destination(&self) -> Place<'tcx>;
+        }
+    }
+}
+impl<'tcx, C> RuntimeCallAdder<C> {
+    pub(super) fn reference_destination(&mut self) -> PlaceRef
+    where
+        Self: AssignmentInfoProvider<'tcx> + PlaceReferencer<'tcx>,
+    {
+        let destination = self.destination();
+        self.reference_place(&destination)
     }
 }
 impl<'tcx, C> StorageProvider for RuntimeCallAdder<C>

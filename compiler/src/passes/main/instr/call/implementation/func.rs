@@ -8,7 +8,10 @@ use crate::utils::mir::BodyExt;
 
 use super::{
     DropHandler, FunctionHandler, InsertionLocation, OperandReferencer, PlaceReferencer,
-    context::{AssignmentInfoProvider, BodyProvider, ConfigProvider, SourceInfoProvider},
+    context::{
+        AssignmentIdProvider, AssignmentInfoProvider, BodyProvider, ConfigProvider,
+        SourceInfoProvider,
+    },
     ctxt_reqs::{Basic, ForDropping, ForFunctionCalling, ForPlaceRef},
     prelude::{mir::*, *},
 };
@@ -16,7 +19,7 @@ use super::{
 impl<'tcx, C> FunctionHandler<'tcx> for RuntimeCallAdder<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx> + DebugInfoHandler,
-    C: ForFunctionCalling<'tcx>,
+    C: ForFunctionCalling<'tcx> + ForPlaceRef<'tcx>,
 {
     fn before_call_func(
         &mut self,
@@ -69,13 +72,15 @@ where
 
     fn after_call_func(&mut self)
     where
-        Self: AssignmentInfoProvider,
+        Self: AssignmentInfoProvider<'tcx>,
     {
+        let assignment_id = self.assignment_id();
+        let destination = self.reference_destination();
         let block = self.make_bb_for_call(
             sym::after_call_func,
             vec![
-                operand::const_from_uint(self.tcx(), self.assignment_id()),
-                operand::copy_for_local(self.dest_ref().into()),
+                operand::const_from_uint(self.tcx(), assignment_id),
+                operand::copy_for_local(destination.into()),
             ],
         );
         debug_assert_matches!(
