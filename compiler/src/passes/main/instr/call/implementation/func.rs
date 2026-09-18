@@ -7,7 +7,8 @@ use core::{debug_assert_matches, iter};
 use crate::utils::mir::BodyExt;
 
 use super::{
-    DropHandler, FunctionHandler, InsertionLocation, OperandReferencer, PlaceReferencer,
+    super::{DropHandler, FunctionHandler},
+    InsertionLocation, OperandReferencer, PlaceReferencer,
     context::{
         AssignmentIdProvider, AssignmentInfoProvider, BodyProvider, ConfigProvider,
         SourceInfoProvider,
@@ -475,8 +476,8 @@ mod utils {
         assignment, operand, prepare_operand_for_slice, ptr_to_place, ty::TyExt,
     };
     use super::super::{
-        BodyLocalManager, BodyProvider, HasLocalDecls, MirCallAdder, PriItemsProvider,
-        StorageProvider,
+        BodyLocalManager, HasLocalDecls, MirCallAdder,
+        context::{BodyProvider, PriItemsProvider, StorageProvider},
     };
 
     pub(super) mod rvalue {

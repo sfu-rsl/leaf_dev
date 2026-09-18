@@ -1,13 +1,14 @@
-use core::debug_assert_matches;
+use core::{debug_assert_matches, iter};
 use std::collections::HashMap;
 
+use rustc_hir::def_id::DefId;
 use rustc_middle::{
-    mir::{self, BasicBlock, BasicBlockData, HasLocalDecls},
-    ty::{self as mir_ty, Ty},
+    mir::{self, BasicBlock, BasicBlockData, HasLocalDecls, Local, Operand, Place},
+    ty::{self as mir_ty, GenericArg, Ty, TyCtxt},
 };
 use rustc_span::Spanned;
 
-use delegate::delegate;
+use common::pri::{AssignmentId, AtomicOrdering};
 
 use crate::{
     passes::Storage,
@@ -15,12 +16,12 @@ use crate::{
 };
 
 use super::{
-    context::*,
+    Config, DebugInfoHandler, EntryFunctionHandler, InsertionLocation, config,
+    context::{self, DefaultContext, TyContextProvider},
     pri::{
         FunctionInfo, PriHelperFunctions, PriItems, PriTypes,
         sym::{self, LeafSymbol},
     },
-    *,
 };
 
 use utils::*;
@@ -117,6 +118,45 @@ pub(crate) trait BlockInserter<'tcx> {
     ) -> Vec<BasicBlock>;
 }
 
+/*
+ * These wrappers just ensure the semantics for the runtime call adder and
+ * prevent interchangeably using them.
+ * Note that these types are different from what pri has declared. They are
+ * direct aliases for interface clarification but these are separate structures
+ * that provide stricter interface rules.
+ */
+macro_rules! make_local_wrapper {
+    ($v:vis $name:ident) => {
+        #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+        $v struct $name(Local);
+        impl $name {
+            // Local zero is the return value local. So it can never be acquired by a ref.
+            pub const INVALID: $name = $name(Local::ZERO);
+        }
+        impl From<Local> for $name {
+            fn from(value: Local) -> Self {
+                Self(value)
+            }
+        }
+        impl From<$name> for Local {
+            fn from(value: $name) -> Self {
+                assert_ne!(value, $name::INVALID);
+                value.0
+            }
+        }
+    };
+}
+make_local_wrapper!(PlaceRef);
+make_local_wrapper!(OperandRef);
+
+trait PlaceReferencer<'tcx> {
+    fn reference_place(&mut self, place: &Place<'tcx>) -> PlaceRef;
+}
+
+trait OperandReferencer<'tcx> {
+    fn reference_operand(&mut self, operand: &Operand<'tcx>) -> OperandRef;
+}
+
 impl<'tcx, 'm, 'p, 's> RuntimeCallAdder<DefaultContext<'tcx, 'm, 'p, 's>> {
     pub fn new(
         tcx: TyCtxt<'tcx>,
@@ -131,377 +171,283 @@ impl<'tcx, 'm, 'p, 's> RuntimeCallAdder<DefaultContext<'tcx, 'm, 'p, 's>> {
     }
 }
 
-/*
- * The following methods are context definers that should be side-effect-free.
- * The reason that self is mutably borrowed is because of the mutability of the
- * context.
- * NOTE: Maybe this is a design mistake. Currently, the only mutable component
- * is the modification unit which may be extracted from the context and stored
- * directly in the RuntimeCallAdder. However, this change should be done when
- * the call adder is quite stable and no substantial change is expected.
- */
-impl<C> RuntimeCallAdder<C> {
-    pub fn in_body<'b, 'tcx, 'bd>(
-        &'b mut self,
-        body: &'bd Body<'tcx>,
-        block_orig_index_map: HashMap<BasicBlock, BasicBlock>,
-    ) -> RuntimeCallAdder<InBodyContext<'b, 'tcx, 'bd, C>> {
-        self.with_context(|base| InBodyContext {
-            base,
-            body,
-            block_orig_index_map,
-        })
-    }
+mod api {
+    use super::{context::*, *};
 
-    pub fn at<'b>(
-        &'b mut self,
-        location: InsertionLocation,
-    ) -> RuntimeCallAdder<AtLocationContext<'b, C>> {
-        self.with_context(|base| AtLocationContext { base, location })
-    }
-
-    pub fn before<'b>(&'b mut self) -> RuntimeCallAdder<AtLocationContext<'b, C>>
-    where
-        C: BlockIndexProvider,
-    {
-        let index = self.context.block_index();
-        self.with_context(|base| AtLocationContext {
-            base,
-            location: InsertionLocation::Before(index),
-        })
-    }
-
-    pub fn after<'b>(&'b mut self) -> RuntimeCallAdder<AtLocationContext<'b, C>>
-    where
-        C: BlockIndexProvider,
-    {
-        let index = self.context.block_index();
-        self.with_context(|base| AtLocationContext {
-            base,
-            location: InsertionLocation::After(index),
-        })
-    }
-
-    pub fn with_source_info<'b>(
-        &'b mut self,
-        source_info: mir::SourceInfo,
-    ) -> RuntimeCallAdder<SourceInfoContext<'b, C>> {
-        self.with_context(|base| SourceInfoContext { base, source_info })
-    }
-
-    pub fn assign<'b, 'tcx>(
-        &'b mut self,
-        id: AssignmentId,
-        destination: Place<'tcx>,
-    ) -> RuntimeCallAdder<AssignmentContext<'b, 'tcx, C>> {
-        self.with_context(|base| AssignmentContext {
-            base,
-            id,
-            destination,
-        })
-    }
-
-    pub fn memory_write<'b, 'tcx>(
-        &'b mut self,
-        id: AssignmentId,
-    ) -> RuntimeCallAdder<AssignmentIdContext<'b, C>> {
-        self.with_context(|base| AssignmentIdContext { base, id })
-    }
-
-    pub fn in_entry_fn<'b>(&'b mut self) -> RuntimeCallAdder<EntryFunctionMarkerContext<'b, C>> {
-        self.with_context(|base| EntryFunctionMarkerContext { base })
-    }
-
-    pub fn perform_atomic_op<'b, 'tcx>(
-        &'b mut self,
-        ordering: AtomicOrdering,
-        ptr: Option<Spanned<Operand<'tcx>>>,
-    ) -> RuntimeCallAdder<AtomicIntrinsicContext<'b, 'tcx, C>> {
-        self.with_context(|base| AtomicIntrinsicContext {
-            base,
-            ordering,
-            ptr,
-        })
-    }
-
-    pub fn perform_memory_op<'b, 'tcx>(
-        &'b mut self,
-        is_volatile: bool,
-        ptr: Option<Spanned<Operand<'tcx>>>,
-    ) -> RuntimeCallAdder<MemoryIntrinsicContext<'b, 'tcx, C>> {
-        self.with_context(|base| MemoryIntrinsicContext {
-            base,
-            is_volatile,
-            ptr,
-        })
-    }
-
-    pub fn borrow_from<'b>(
-        other: &'b mut RuntimeCallAdder<C>,
-    ) -> RuntimeCallAdder<TransparentContext<'b, C>> {
-        other.with_context(|base| TransparentContext { base })
-    }
-
-    pub fn with_context<'a: 'b, 'b, NC>(
-        &'a mut self,
-        f: impl FnOnce(&'b mut C) -> NC,
-    ) -> RuntimeCallAdder<NC> {
-        RuntimeCallAdder {
-            context: f(&mut self.context),
+    /*
+     * The following methods are context definers that should be side-effect-free.
+     * The reason that self is mutably borrowed is because of the mutability of the
+     * context.
+     * NOTE: Maybe this is a design mistake. Currently, the only mutable component
+     * is the modification unit which may be extracted from the context and stored
+     * directly in the RuntimeCallAdder. However, this change should be done when
+     * the call adder is quite stable and no substantial change is expected.
+     */
+    impl<C> RuntimeCallAdder<C> {
+        pub fn in_body<'b, 'tcx, 'bd>(
+            &'b mut self,
+            body: &'bd mir::Body<'tcx>,
+            block_orig_index_map: HashMap<BasicBlock, BasicBlock>,
+        ) -> RuntimeCallAdder<InBodyContext<'b, 'tcx, 'bd, C>> {
+            self.with_context(|base| InBodyContext {
+                base,
+                body,
+                block_orig_index_map,
+            })
         }
-    }
-}
 
-impl<'tcx, C> TyContextProvider<'tcx> for RuntimeCallAdder<C>
-where
-    C: TyContextProvider<'tcx>,
-{
-    delegate! {
-        to self.context {
-            fn tcx(&self) -> TyCtxt<'tcx>;
+        pub fn at<'b>(
+            &'b mut self,
+            location: InsertionLocation,
+        ) -> RuntimeCallAdder<AtLocationContext<'b, C>> {
+            self.with_context(|base| AtLocationContext { base, location })
         }
-    }
-}
-impl<'tcx, C> BodyProvider<'tcx> for RuntimeCallAdder<C>
-where
-    C: BodyProvider<'tcx>,
-{
-    delegate! {
-        to self.context {
-            fn body(&self) -> &Body<'tcx>;
-        }
-    }
-}
-impl<'tcx, C> HasLocalDecls<'tcx> for RuntimeCallAdder<C>
-where
-    C: HasLocalDecls<'tcx>,
-{
-    delegate! {
-        to self.context {
-            fn local_decls(&self) -> &rustc_middle::mir::LocalDecls<'tcx>;
-        }
-    }
-}
-impl<'tcx, C> BodyLocalManager<'tcx> for RuntimeCallAdder<C>
-where
-    C: BodyLocalManager<'tcx>,
-{
-    delegate! {
-        to self.context {
-            fn add_local<T>(&mut self, decl_info: T) -> Local
-            where
-                T: Into<NewLocalDecl<'tcx>>;
-        }
-    }
-}
-impl<'tcx, C> PriItemsProvider<'tcx> for RuntimeCallAdder<C>
-where
-    C: PriItemsProvider<'tcx>,
-{
-    delegate! {
-        to self.context {
-            fn get_pri_func_info(&self, func_name: LeafSymbol) -> &FunctionInfo;
-            fn pri_types(&self) -> &PriTypes;
-            fn pri_helper_funcs(&self) -> &PriHelperFunctions;
-            fn all_pri_items(&self) -> &std::collections::HashSet<DefId>;
-        }
-    }
-}
-impl<'tcx, C> SourceInfoProvider for RuntimeCallAdder<C>
-where
-    C: SourceInfoProvider,
-{
-    delegate! {
-        to self.context {
-            fn source_info(&self) -> mir::SourceInfo;
-        }
-    }
-}
-impl<'tcx, C> ConfigProvider for RuntimeCallAdder<C>
-where
-    C: ConfigProvider,
-{
-    delegate! {
-        to self.context {
-            fn config(&self) -> &Config;
-        }
-    }
-}
-impl<C> AssignmentIdProvider for RuntimeCallAdder<C>
-where
-    C: AssignmentIdProvider,
-{
-    delegate! {
-        to self.context {
-            fn assignment_id(&self) -> AssignmentId;
-        }
-    }
-}
-impl<'tcx, C> AssignmentInfoProvider<'tcx> for RuntimeCallAdder<C>
-where
-    C: AssignmentInfoProvider<'tcx>,
-{
-    delegate! {
-        to self.context {
-            fn destination(&self) -> Place<'tcx>;
-        }
-    }
-}
-impl<'tcx, C> RuntimeCallAdder<C> {
-    pub(super) fn reference_destination(&mut self) -> PlaceRef
-    where
-        Self: AssignmentInfoProvider<'tcx> + PlaceReferencer<'tcx>,
-    {
-        let destination = self.destination();
-        self.reference_place(&destination)
-    }
-}
-impl<'tcx, C> StorageProvider for RuntimeCallAdder<C>
-where
-    C: StorageProvider,
-{
-    delegate! {
-        to self.context {
-            fn storage(&mut self) -> &mut dyn Storage;
-        }
-    }
-}
 
-impl<'tcx, C> RuntimeCallAdder<C>
-where
-    C: context::BodyProvider<'tcx>,
-{
-    fn current_func_id(&self) -> DefId {
-        self.context.body().source.def_id()
-    }
-}
+        pub fn before<'b>(&'b mut self) -> RuntimeCallAdder<AtLocationContext<'b, C>>
+        where
+            C: BlockIndexProvider,
+        {
+            let index = self.context.block_index();
+            self.with_context(|base| AtLocationContext {
+                base,
+                location: InsertionLocation::Before(index),
+            })
+        }
 
-impl<'tcx, C> RuntimeCallAdder<C>
-where
-    C: context::BodyProvider<'tcx> + context::TyContextProvider<'tcx>,
-{
-    fn current_typing_env(&self) -> mir_ty::TypingEnv<'tcx> {
-        self.tcx().typing_env_in_body(self.current_func_id())
-    }
-}
+        pub fn after<'b>(&'b mut self) -> RuntimeCallAdder<AtLocationContext<'b, C>>
+        where
+            C: BlockIndexProvider,
+        {
+            let index = self.context.block_index();
+            self.with_context(|base| AtLocationContext {
+                base,
+                location: InsertionLocation::After(index),
+            })
+        }
 
-impl<'tcx, C> MirCallAdder<'tcx> for RuntimeCallAdder<C>
-where
-    C: BodyLocalManager<'tcx>
-        + TyContextProvider<'tcx>
-        + PriItemsProvider<'tcx>
-        + SourceInfoProvider,
-{
-    fn make_bb_for_call_with_all(
-        &mut self,
-        func_name: LeafSymbol,
-        generic_args: impl IntoIterator<Item = GenericArg<'tcx>>,
-        args: Vec<Operand<'tcx>>,
-        target: Option<BasicBlock>,
-    ) -> (BasicBlockData<'tcx>, Local) {
-        self.make_bb_for_call_raw(
-            *self.context.get_pri_func_info(func_name),
-            generic_args,
-            args,
-            target,
-        )
-    }
+        pub fn with_source_info<'b>(
+            &'b mut self,
+            source_info: mir::SourceInfo,
+        ) -> RuntimeCallAdder<SourceInfoContext<'b, C>> {
+            self.with_context(|base| SourceInfoContext { base, source_info })
+        }
 
-    fn make_bb_for_call_raw(
-        &mut self,
-        func_info: FunctionInfo,
-        generic_args: impl IntoIterator<Item = GenericArg<'tcx>>,
-        args: Vec<Operand<'tcx>>,
-        target: Option<BasicBlock>,
-    ) -> (BasicBlockData<'tcx>, Local) {
-        assert_eq!(
-            func_info.num_inputs(self.tcx()),
-            args.len(),
-            "Argument number mismatch for function {:?}",
-            func_info,
-        );
-        let generic_args = generic_args.into_iter().collect::<Vec<_>>();
-        let result_local = self.context.add_local((
-            func_info.ret_ty(self.tcx(), &generic_args),
-            self.context.source_info(),
-        ));
-        (
-            self.make_call_bb(
-                func_info.def_id,
-                generic_args,
-                args,
-                Place::from(result_local),
-                target,
-            ),
-            result_local,
-        )
-    }
-}
-impl<'tcx, C> RuntimeCallAdder<C>
-where
-    C: TyContextProvider<'tcx> + SourceInfoProvider,
-{
-    fn make_call_bb(
-        &self,
-        func_id: DefId,
-        generic_args: impl IntoIterator<Item = GenericArg<'tcx>>,
-        args: Vec<Operand<'tcx>>,
-        destination: Place<'tcx>,
-        target: Option<BasicBlock>,
-    ) -> BasicBlockData<'tcx> {
-        BasicBlockData::new(
-            Some(terminator::call(
-                self.context.tcx(),
-                func_id,
-                generic_args,
-                args,
+        pub fn assign<'b, 'tcx>(
+            &'b mut self,
+            id: AssignmentId,
+            destination: Place<'tcx>,
+        ) -> RuntimeCallAdder<AssignmentContext<'b, 'tcx, C>> {
+            self.with_context(|base| AssignmentContext {
+                base,
+                id,
                 destination,
-                target,
-                self.context.source_info(),
-            )),
-            false,
-        )
+            })
+        }
+
+        pub fn memory_write<'b, 'tcx>(
+            &'b mut self,
+            id: AssignmentId,
+        ) -> RuntimeCallAdder<AssignmentIdContext<'b, C>> {
+            self.with_context(|base| AssignmentIdContext { base, id })
+        }
+
+        pub fn in_entry_fn<'b>(
+            &'b mut self,
+        ) -> RuntimeCallAdder<EntryFunctionMarkerContext<'b, C>> {
+            self.with_context(|base| EntryFunctionMarkerContext { base })
+        }
+
+        pub fn perform_atomic_op<'b, 'tcx>(
+            &'b mut self,
+            ordering: AtomicOrdering,
+            ptr: Option<Spanned<Operand<'tcx>>>,
+        ) -> RuntimeCallAdder<AtomicIntrinsicContext<'b, 'tcx, C>> {
+            self.with_context(|base| AtomicIntrinsicContext {
+                base,
+                ordering,
+                ptr,
+            })
+        }
+
+        pub fn perform_memory_op<'b, 'tcx>(
+            &'b mut self,
+            is_volatile: bool,
+            ptr: Option<Spanned<Operand<'tcx>>>,
+        ) -> RuntimeCallAdder<MemoryIntrinsicContext<'b, 'tcx, C>> {
+            self.with_context(|base| MemoryIntrinsicContext {
+                base,
+                is_volatile,
+                ptr,
+            })
+        }
+
+        pub fn borrow_from<'b>(
+            other: &'b mut RuntimeCallAdder<C>,
+        ) -> RuntimeCallAdder<TransparentContext<'b, C>> {
+            other.with_context(|base| TransparentContext { base })
+        }
+
+        pub fn with_context<'a: 'b, 'b, NC>(
+            &'a mut self,
+            f: impl FnOnce(&'b mut C) -> NC,
+        ) -> RuntimeCallAdder<NC> {
+            RuntimeCallAdder {
+                context: f(&mut self.context),
+            }
+        }
     }
 }
 
-impl<'tcx, C> BlockInserter<'tcx> for RuntimeCallAdder<C>
-where
-    C: ForInsertion<'tcx>,
-{
-    #[inline]
-    fn insert_blocks(
-        &mut self,
-        blocks: impl IntoIterator<Item = BasicBlockData<'tcx>>,
-    ) -> Vec<BasicBlock> {
-        match self.context.insertion_loc() {
-            InsertionLocation::Before(_) => self.insert_blocks_with_stickiness(blocks, true),
-            InsertionLocation::After(index) => self.context.insert_blocks_after(index, blocks),
+mod bb {
+    use super::{context::*, *};
+
+    impl<'tcx, C> MirCallAdder<'tcx> for RuntimeCallAdder<C>
+    where
+        C: BodyLocalManager<'tcx>
+            + TyContextProvider<'tcx>
+            + PriItemsProvider<'tcx>
+            + SourceInfoProvider,
+    {
+        fn make_bb_for_call_with_all(
+            &mut self,
+            func_name: LeafSymbol,
+            generic_args: impl IntoIterator<Item = GenericArg<'tcx>>,
+            args: Vec<Operand<'tcx>>,
+            target: Option<BasicBlock>,
+        ) -> (BasicBlockData<'tcx>, Local) {
+            self.make_bb_for_call_raw(
+                *self.context.get_pri_func_info(func_name),
+                generic_args,
+                args,
+                target,
+            )
+        }
+
+        fn make_bb_for_call_raw(
+            &mut self,
+            func_info: FunctionInfo,
+            generic_args: impl IntoIterator<Item = GenericArg<'tcx>>,
+            args: Vec<Operand<'tcx>>,
+            target: Option<BasicBlock>,
+        ) -> (BasicBlockData<'tcx>, Local) {
+            assert_eq!(
+                func_info.num_inputs(self.tcx()),
+                args.len(),
+                "Argument number mismatch for function {:?}",
+                func_info,
+            );
+            let generic_args = generic_args.into_iter().collect::<Vec<_>>();
+            let result_local = self.context.add_local((
+                func_info.ret_ty(self.tcx(), &generic_args),
+                self.context.source_info(),
+            ));
+            (
+                self.make_call_bb(
+                    func_info.def_id,
+                    generic_args,
+                    args,
+                    Place::from(result_local),
+                    target,
+                ),
+                result_local,
+            )
+        }
+    }
+    impl<'tcx, C> RuntimeCallAdder<C>
+    where
+        C: TyContextProvider<'tcx> + SourceInfoProvider,
+    {
+        fn make_call_bb(
+            &self,
+            func_id: DefId,
+            generic_args: impl IntoIterator<Item = GenericArg<'tcx>>,
+            args: Vec<Operand<'tcx>>,
+            destination: Place<'tcx>,
+            target: Option<BasicBlock>,
+        ) -> BasicBlockData<'tcx> {
+            BasicBlockData::new(
+                Some(terminator::call(
+                    self.context.tcx(),
+                    func_id,
+                    generic_args,
+                    args,
+                    destination,
+                    target,
+                    self.context.source_info(),
+                )),
+                false,
+            )
         }
     }
 
-    fn insert_blocks_with_stickiness(
-        &mut self,
-        blocks: impl IntoIterator<Item = BasicBlockData<'tcx>>,
-        sticky: bool,
-    ) -> Vec<BasicBlock> {
-        debug_assert_matches!(
-            self.context.insertion_loc(),
-            InsertionLocation::Before(..),
-            "Stickiness is only defined for insertions before a block."
-        );
-        self.context
-            .insert_blocks_before(self.context.block_index(), blocks, sticky)
-    }
-}
+    impl<'tcx, C> BlockInserter<'tcx> for RuntimeCallAdder<C>
+    where
+        C: ForInsertion<'tcx>,
+    {
+        #[inline]
+        fn insert_blocks(
+            &mut self,
+            blocks: impl IntoIterator<Item = BasicBlockData<'tcx>>,
+        ) -> Vec<BasicBlock> {
+            match self.context.insertion_loc() {
+                InsertionLocation::Before(_) => self.insert_blocks_with_stickiness(blocks, true),
+                InsertionLocation::After(index) => self.context.insert_blocks_after(index, blocks),
+            }
+        }
 
-impl<'tcx, C> RuntimeCallAdder<C>
-where
-    C: ForAssignment<'tcx>,
-{
-    fn to_some_concrete(&mut self) {
-        let BlocksAndResult(blocks, operand_ref) = self.internal_reference_const_some();
-        self.insert_blocks(blocks);
-        self.add_assignment_use_call(operand_ref.into());
+        fn insert_blocks_with_stickiness(
+            &mut self,
+            blocks: impl IntoIterator<Item = BasicBlockData<'tcx>>,
+            sticky: bool,
+        ) -> Vec<BasicBlock> {
+            debug_assert_matches!(
+                self.context.insertion_loc(),
+                InsertionLocation::Before(..),
+                "Stickiness is only defined for insertions before a block."
+            );
+            self.context
+                .insert_blocks_before(self.context.block_index(), blocks, sticky)
+        }
+    }
+
+    impl<'tcx, C> RuntimeCallAdder<C>
+    where
+        Self: MirCallAdder<'tcx>,
+        C: TyContextProvider<'tcx> + PriItemsProvider<'tcx>,
+    {
+        pub(super) fn make_type_id_of_bb(&mut self, ty: Ty<'tcx>) -> (BasicBlockData<'tcx>, Local) {
+            /* NOTE: As `TypeId::of` requires static lifetime, do we need to clear lifetimes?
+             * Yes, as higher-ranked regions still appear here. Importantly, they are distinguished
+             * in the calculation of type id. However, as the types are used for runtime information
+             * (like layout) and also in type exportation, we perform erasing, we erase the regions
+             * to make sure the same type is used although over-approximated. */
+            let ty = self.context.tcx().erase_and_anonymize_regions(ty);
+
+            self.make_bb_for_helper_call_with_all(
+                self.context.pri_helper_funcs().type_id_of,
+                vec![ty.into()],
+                Vec::default(),
+                None,
+            )
+        }
+
+        pub(super) fn make_primitive_type_of_bb(
+            &mut self,
+            ty: Ty<'tcx>,
+        ) -> (BasicBlockData<'tcx>, Local) {
+            let tcx = self.tcx();
+            let pri_ty = convert_primitive_ty_to_pri(tcx, ty);
+            self.make_bb_for_helper_call_with_all(
+                self.context.pri_helper_funcs().const_primitive_type_of,
+                vec![],
+                vec![utils::operand::const_from_scalar_int(
+                    tcx,
+                    pri_ty.to_raw().into(),
+                    tcx.types.i8,
+                )],
+                Default::default(),
+            )
+        }
     }
 }
 
@@ -521,49 +467,12 @@ where
     }
 }
 
-impl<'tcx, C> RuntimeCallAdder<C>
-where
-    Self: MirCallAdder<'tcx>,
-    C: TyContextProvider<'tcx> + PriItemsProvider<'tcx>,
-{
-    fn make_type_id_of_bb(&mut self, ty: Ty<'tcx>) -> (BasicBlockData<'tcx>, Local) {
-        /* NOTE: As `TypeId::of` requires static lifetime, do we need to clear lifetimes?
-         * Yes, as higher-ranked regions still appear here. Importantly, they are distinguished
-         * in the calculation of type id. However, as the types are used for runtime information
-         * (like layout) and also in type exportation, we perform erasing, we erase the regions
-         * to make sure the same type is used although over-approximated. */
-        let ty = self.context.tcx().erase_and_anonymize_regions(ty);
-
-        self.make_bb_for_helper_call_with_all(
-            self.context.pri_helper_funcs().type_id_of,
-            vec![ty.into()],
-            Vec::default(),
-            None,
-        )
-    }
-
-    fn make_primitive_type_of_bb(&mut self, ty: Ty<'tcx>) -> (BasicBlockData<'tcx>, Local) {
-        let tcx = self.tcx();
-        let pri_ty = convert_primitive_ty_to_pri(tcx, ty);
-        self.make_bb_for_helper_call_with_all(
-            self.context.pri_helper_funcs().const_primitive_type_of,
-            vec![],
-            vec![utils::operand::const_from_scalar_int(
-                tcx,
-                pri_ty.to_raw().into(),
-                tcx.types.i8,
-            )],
-            Default::default(),
-        )
-    }
-}
-
 impl<'tcx, C> DebugInfoHandler for RuntimeCallAdder<C>
 where
     Self: MirCallAdder<'tcx>,
     C: ForInsertion<'tcx>,
 {
-    fn debug_info<T: Serialize>(&mut self, info: &T) {
+    fn debug_info<T: serde::Serialize>(&mut self, info: &T) {
         // FIXME: Make it configurable.
         if self.tcx().sess.opts.optimize != rustc_session::config::OptLevel::No {
             return;
@@ -578,6 +487,145 @@ where
             )],
         );
         self.insert_blocks([block]);
+    }
+}
+
+mod shortcuts {
+    use delegate::delegate;
+
+    use super::{context::*, *};
+
+    impl<'tcx, C> TyContextProvider<'tcx> for RuntimeCallAdder<C>
+    where
+        C: TyContextProvider<'tcx>,
+    {
+        delegate! {
+            to self.context {
+                fn tcx(&self) -> TyCtxt<'tcx>;
+            }
+        }
+    }
+    impl<'tcx, C> BodyProvider<'tcx> for RuntimeCallAdder<C>
+    where
+        C: BodyProvider<'tcx>,
+    {
+        delegate! {
+            to self.context {
+                fn body(&self) -> &mir::Body<'tcx>;
+            }
+        }
+    }
+    impl<'tcx, C> HasLocalDecls<'tcx> for RuntimeCallAdder<C>
+    where
+        C: HasLocalDecls<'tcx>,
+    {
+        delegate! {
+            to self.context {
+                fn local_decls(&self) -> &rustc_middle::mir::LocalDecls<'tcx>;
+            }
+        }
+    }
+    impl<'tcx, C> BodyLocalManager<'tcx> for RuntimeCallAdder<C>
+    where
+        C: BodyLocalManager<'tcx>,
+    {
+        delegate! {
+            to self.context {
+                fn add_local<T>(&mut self, decl_info: T) -> Local
+                where
+                    T: Into<NewLocalDecl<'tcx>>;
+            }
+        }
+    }
+    impl<'tcx, C> PriItemsProvider<'tcx> for RuntimeCallAdder<C>
+    where
+        C: PriItemsProvider<'tcx>,
+    {
+        delegate! {
+            to self.context {
+                fn get_pri_func_info(&self, func_name: LeafSymbol) -> &FunctionInfo;
+                fn pri_types(&self) -> &PriTypes;
+                fn pri_helper_funcs(&self) -> &PriHelperFunctions;
+                fn all_pri_items(&self) -> &std::collections::HashSet<DefId>;
+            }
+        }
+    }
+    impl<'tcx, C> SourceInfoProvider for RuntimeCallAdder<C>
+    where
+        C: SourceInfoProvider,
+    {
+        delegate! {
+            to self.context {
+                fn source_info(&self) -> mir::SourceInfo;
+            }
+        }
+    }
+    impl<'tcx, C> ConfigProvider for RuntimeCallAdder<C>
+    where
+        C: ConfigProvider,
+    {
+        delegate! {
+            to self.context {
+                fn config(&self) -> &Config;
+            }
+        }
+    }
+    impl<C> AssignmentIdProvider for RuntimeCallAdder<C>
+    where
+        C: AssignmentIdProvider,
+    {
+        delegate! {
+            to self.context {
+                fn assignment_id(&self) -> AssignmentId;
+            }
+        }
+    }
+    impl<'tcx, C> AssignmentInfoProvider<'tcx> for RuntimeCallAdder<C>
+    where
+        C: AssignmentInfoProvider<'tcx>,
+    {
+        delegate! {
+            to self.context {
+                fn destination(&self) -> Place<'tcx>;
+            }
+        }
+    }
+    impl<'tcx, C> RuntimeCallAdder<C> {
+        pub(super) fn reference_destination(&mut self) -> PlaceRef
+        where
+            Self: AssignmentInfoProvider<'tcx> + PlaceReferencer<'tcx>,
+        {
+            let destination = self.destination();
+            self.reference_place(&destination)
+        }
+    }
+    impl<'tcx, C> StorageProvider for RuntimeCallAdder<C>
+    where
+        C: StorageProvider,
+    {
+        delegate! {
+            to self.context {
+                fn storage(&mut self) -> &mut dyn Storage;
+            }
+        }
+    }
+
+    impl<'tcx, C> RuntimeCallAdder<C>
+    where
+        C: BodyProvider<'tcx>,
+    {
+        pub(super) fn current_func_id(&self) -> DefId {
+            self.context.body().source.def_id()
+        }
+    }
+
+    impl<'tcx, C> RuntimeCallAdder<C>
+    where
+        C: BodyProvider<'tcx> + TyContextProvider<'tcx>,
+    {
+        pub(super) fn current_typing_env(&self) -> mir_ty::TypingEnv<'tcx> {
+            self.tcx().typing_env_in_body(self.current_func_id())
+        }
     }
 }
 
@@ -614,7 +662,10 @@ pub(super) mod utils {
         use std::mem::size_of;
 
         use rustc_const_eval::interpret::Scalar;
-        use rustc_middle::{mir::Const, ty::ScalarInt};
+        use rustc_middle::{
+            mir::{Const, ConstOperand},
+            ty::ScalarInt,
+        };
         use rustc_type_ir::UintTy;
 
         use super::*;
@@ -1051,17 +1102,18 @@ pub(super) mod utils {
 
 mod prelude {
     pub(super) use super::{
-        BlockInserter, BlocksAndResult, DebugInfoHandler, MemoryIntrinsicHandler, MirCallAdder,
-        RuntimeCallAdder,
+        BlockInserter, BlocksAndResult, MirCallAdder, OperandRef, PlaceRef, RuntimeCallAdder,
     };
 
     pub(super) use super::{
-        BodyLocalManager, HasLocalDecls, PriItemsProvider, SourceInfoProvider, TyContextProvider,
+        BodyLocalManager, HasLocalDecls,
+        context::{PriItemsProvider, SourceInfoProvider, TyContextProvider},
     };
 
-    pub(super) use super::{OperandRef, PlaceRef};
-
-    pub(super) use super::pri::{sym, sym::LeafSymbol};
+    pub(super) use super::super::{
+        DebugInfoHandler, MemoryIntrinsicHandler,
+        pri::{sym, sym::LeafSymbol},
+    };
 
     pub(super) mod mir {
         pub use rustc_middle::{

@@ -7,81 +7,46 @@ use rustc_middle::{
 };
 use rustc_span::def_id::DefId;
 
-use common::{log_debug, log_warn, pri::AssignmentId};
+use common::{log_debug, log_warn};
 
 use crate::visit::RvalueVisitor;
 
 use super::{
+    super::{AssignmentHandler, pri::FunctionInfo},
     OperandReferencer, PlaceReferencer,
     context::{ConfigProvider, SourceInfoProvider},
-    ctxt_reqs::{ForAssignment, ForOperandRef, ForPlaceRef},
+    ctxt_reqs::{ForAssignment, ForOperandRef},
     prelude::{mir::*, *},
-    pri::FunctionInfo,
 };
 
 use super::super::super::TAG_INSTR;
 use super::super::super::decision::rules::EventDecision;
 
-impl<'tcx, C> RuntimeCallAdder<C>
+impl<'tcx, C> AssignmentHandler<'tcx> for RuntimeCallAdder<C>
 where
-    C: ForPlaceRef<'tcx> + ForOperandRef<'tcx>,
+    C: ForAssignment<'tcx> + ForOperandRef<'tcx>,
 {
-    pub(crate) fn instrument_assignment(
-        &mut self,
-        assignment_id: AssignmentId,
-        destination: Place<'tcx>,
-        rvalue: &Rvalue<'tcx>,
-    ) {
+    fn to_rvalue(&mut self, rvalue: &Rvalue<'tcx>) {
         log_debug!(target: TAG_INSTR, "Visiting Rvalue: {:#?}", rvalue);
 
         let filter = self.assignment_filter(rvalue);
 
         match filter {
             EventDecision::Omit => return,
-            EventDecision::Opaque | EventDecision::Detailed => {
-                let mut assignment = self.assign(assignment_id, destination);
-                match filter {
-                    EventDecision::Detailed => assignment.visit_rvalue(rvalue),
-                    EventDecision::Opaque => assignment.add_opaque_assignment(),
-                    _ => unreachable!(),
-                }
-            }
+            EventDecision::Opaque | EventDecision::Detailed => match filter {
+                EventDecision::Detailed => self.visit_rvalue(rvalue),
+                EventDecision::Opaque => self.add_opaque_assignment(),
+                _ => unreachable!(),
+            },
         }
     }
 
-    fn assignment_filter(&self, rvalue: &Rvalue<'tcx>) -> EventDecision {
-        use EventDecision::*;
-
-        let rules = &self.config().assignment_filter;
-        match rvalue {
-            Rvalue::Use(..) => rules.use_,
-            Rvalue::Repeat(..) => rules.repeat,
-            Rvalue::Ref(..) => rules.ref_,
-            Rvalue::ThreadLocalRef(..) => rules.thread_local_ref,
-            Rvalue::RawPtr(..) => rules.raw_ptr,
-            Rvalue::Cast(..) => rules.cast,
-            Rvalue::BinaryOp(..) => rules.binary_op,
-            Rvalue::UnaryOp(..) => rules.unary_op,
-            Rvalue::Discriminant(..) => rules.discriminant,
-            Rvalue::Aggregate(..) => rules.aggregate,
-            Rvalue::CopyForDeref(..) => rules.use_,
-            Rvalue::WrapUnsafeBinder(..) => rules.wrap_unsafe_binder,
-            Rvalue::Reborrow(..) => Omit,
-        }
-    }
-
-    pub(crate) fn instrument_set_discriminant(
-        &mut self,
-        assignment_id: AssignmentId,
-        destination: Place<'tcx>,
-        variant_index: &VariantIdx,
-    ) {
+    fn its_discriminant_to(&mut self, variant_index: &VariantIdx) {
         let tcx = self.tcx();
-        self.assign(assignment_id, destination)
-            .add_bb_for_assign_call(
-                sym::set_discriminant,
-                vec![operand::const_from_uint(tcx, variant_index.as_u32())],
-            );
+        self.add_bb_for_assign_call(
+            sym::set_discriminant,
+            vec![operand::const_from_uint(tcx, variant_index.as_u32())],
+        );
     }
 }
 
@@ -128,7 +93,9 @@ where
 
     fn visit_thread_local_ref(&mut self, _def_id: &DefId) {
         if cfg!(feature = "abs_concrete") {
-            self.to_some_concrete()
+            let BlocksAndResult(blocks, operand_ref) = self.internal_reference_const_some();
+            self.insert_blocks(blocks);
+            self.add_assignment_use_call(operand_ref.into());
         } else {
             self.add_bb_for_assign_call(sym::assign_thread_local_ref, vec![])
         }
@@ -266,6 +233,32 @@ where
             place,
             self.source_info().span,
         );
+    }
+}
+
+impl<'tcx, C> RuntimeCallAdder<C>
+where
+    Self: ConfigProvider,
+{
+    fn assignment_filter(&self, rvalue: &Rvalue<'tcx>) -> EventDecision {
+        use EventDecision::*;
+
+        let rules = &self.config().assignment_filter;
+        match rvalue {
+            Rvalue::Use(..) => rules.use_,
+            Rvalue::Repeat(..) => rules.repeat,
+            Rvalue::Ref(..) => rules.ref_,
+            Rvalue::ThreadLocalRef(..) => rules.thread_local_ref,
+            Rvalue::RawPtr(..) => rules.raw_ptr,
+            Rvalue::Cast(..) => rules.cast,
+            Rvalue::BinaryOp(..) => rules.binary_op,
+            Rvalue::UnaryOp(..) => rules.unary_op,
+            Rvalue::Discriminant(..) => rules.discriminant,
+            Rvalue::Aggregate(..) => rules.aggregate,
+            Rvalue::CopyForDeref(..) => rules.use_,
+            Rvalue::WrapUnsafeBinder(..) => rules.wrap_unsafe_binder,
+            Rvalue::Reborrow(..) => Omit,
+        }
     }
 }
 

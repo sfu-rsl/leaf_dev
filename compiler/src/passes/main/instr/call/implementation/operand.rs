@@ -3,7 +3,8 @@ use rustc_middle::mir::{ConstOperand, RuntimeChecks, UnevaluatedConst};
 use common::log_warn;
 
 use super::{
-    ConstantTypeRules, OperandReferencer,
+    OperandReferencer,
+    config::{ConstantTypeRules, DetailDecision},
     ctxt_reqs::{Basic, ForOperandRef, ForPlaceRef},
     prelude::{mir::*, *},
     utils::ty::TyExt,
@@ -412,7 +413,7 @@ where
             .flatten()
     }
 
-    fn const_config(&self) -> &ConstantTypeRules<super::DetailDecision> {
+    fn const_config(&self) -> &ConstantTypeRules<DetailDecision> {
         self.context
             .config()
             .operand_info_filter

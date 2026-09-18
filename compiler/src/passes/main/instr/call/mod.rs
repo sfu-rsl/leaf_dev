@@ -2,32 +2,18 @@
 /// PRI in MIR bodies.
 pub(super) mod context;
 
-use rustc_middle::{
-    mir::{BasicBlock, Body, ConstOperand, Local, Operand, Place, SwitchTargets},
-    ty::{GenericArg, TyCtxt},
-};
-use rustc_span::{Spanned, def_id::DefId};
-
-use core::iter;
-use std::vec;
+use rustc_middle::mir::{self, BasicBlock, Operand, Place, SwitchTargets};
+use rustc_span::Spanned;
 
 use serde::Serialize;
 
-use common::pri::{AssignmentId, AtomicBinaryOp, AtomicOrdering};
+use common::pri::{AtomicBinaryOp, AtomicOrdering};
 
-use super::{
-    decision::rules::{
-        AssignmentRules, CallFlowRules, ConstantTypeRules, DetailDecision, DropRules,
-        EventDecision, OperandKindRules, PlaceInfoRules, PlaceStructureRules,
-        StorageLifetimeMarkerRules, SwitchRules,
-    },
-    pri::{self, sym::intrinsics::LeafIntrinsicSymbol},
-};
+use super::pri::{self, sym::intrinsics::LeafIntrinsicSymbol};
 
 use context::AssignmentInfoProvider;
 
-/*
- * Contexts and RuntimeCallAdder.
+/* Contexts and RuntimeCallAdder
  * Based on the location and the statement we are going to add runtime calls for,
  * there are some data that are required to be passed to the runtime or used in
  * MIR generation. We place these data in a `Context` and `RuntimeCallAdder`
@@ -42,52 +28,23 @@ use context::AssignmentInfoProvider;
  * from `RuntimeCallAdder` for various call adding situations.
  */
 
-/*
- * These wrappers just ensure the semantics for the runtime call adder and
- * prevent interchangeably using them.
- * Note that these types are different from what pri has declared. They are
- * direct aliases for interface clarification but these are separate structures
- * that provide stricter interface rules.
- */
-macro_rules! make_local_wrapper {
-    ($v:vis $name:ident) => {
-        #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-        $v struct $name(Local);
-        impl $name {
-            // Local zero is the return value local. So it can never be acquired by a ref.
-            pub const INVALID: $name = $name(Local::ZERO);
-        }
-        impl From<Local> for $name {
-            fn from(value: Local) -> Self {
-                Self(value)
-            }
-        }
-        impl From<$name> for Local {
-            fn from(value: $name) -> Self {
-                assert_ne!(value, $name::INVALID);
-                value.0
-            }
-        }
-    };
-}
-make_local_wrapper!(pub(super) PlaceRef);
-make_local_wrapper!(OperandRef);
+pub(crate) trait AssignmentHandler<'tcx> {
+    fn to_rvalue(&mut self, rvalue: &mir::Rvalue<'tcx>);
 
-trait PlaceReferencer<'tcx> {
-    fn reference_place(&mut self, place: &Place<'tcx>) -> PlaceRef;
-}
-
-trait OperandReferencer<'tcx> {
-    fn reference_operand(&mut self, operand: &Operand<'tcx>) -> OperandRef;
-}
-
-pub(crate) trait StorageMarker<'tcx>: Sized {
-    fn mark_live(&mut self, place: &Place<'tcx>);
-    fn mark_dead(&mut self, place: &Place<'tcx>);
+    fn its_discriminant_to(&mut self, variant_index: &rustc_abi::VariantIdx);
 }
 
 pub(crate) trait BranchingHandler<'tcx> {
-    fn instrument_switch(&mut self, discr: &Operand<'tcx>, targets: &SwitchTargets);
+    fn switch(&mut self, discr: &Operand<'tcx>, targets: &SwitchTargets);
+}
+
+pub(crate) trait AssertionHandler<'tcx> {
+    fn check_assert(
+        &mut self,
+        cond: &Operand<'tcx>,
+        expected: bool,
+        msg: &rustc_middle::mir::AssertMessage<'tcx>,
+    );
 }
 
 pub(crate) trait FunctionHandler<'tcx> {
@@ -115,10 +72,15 @@ pub(crate) trait DropHandler<'tcx> {
     fn after_call_drop(&mut self);
 }
 
+pub(crate) trait StorageMarker<'tcx>: Sized {
+    fn mark_live(&mut self, place: &Place<'tcx>);
+    fn mark_dead(&mut self, place: &Place<'tcx>);
+}
+
 pub(crate) trait IntrinsicHandler<'tcx> {
     fn intrinsic_one_to_one_by<'a>(
         &mut self,
-        intrinsic_func: DefId,
+        intrinsic_func: rustc_hir::def_id::DefId,
         pri_func: LeafIntrinsicSymbol,
         args: impl Iterator<Item = &'a Spanned<Operand<'tcx>>>,
     ) where
@@ -189,15 +151,6 @@ pub(crate) trait EntryFunctionHandler {
     fn shutdown_runtime_lib(&mut self);
 }
 
-pub(crate) trait AssertionHandler<'tcx> {
-    fn check_assert(
-        &mut self,
-        cond: &Operand<'tcx>,
-        expected: bool,
-        msg: &rustc_middle::mir::AssertMessage<'tcx>,
-    );
-}
-
 pub(crate) trait DebugInfoHandler {
     fn debug_info<T: Serialize>(&mut self, info: &T);
 }
@@ -217,16 +170,25 @@ impl InsertionLocation {
     }
 }
 
-pub(crate) struct Config {
-    pub place_info_filter: PlaceInfoRules<PlaceStructureRules<DetailDecision>, DetailDecision>,
-    pub operand_info_filter:
-        OperandKindRules<DetailDecision, Option<ConstantTypeRules<DetailDecision>>>,
-    pub assignment_filter: AssignmentRules<EventDecision>,
-    pub storage_lifetime_filter: StorageLifetimeMarkerRules<DetailDecision>,
-    pub call_flow_filter: CallFlowRules<DetailDecision>,
-    pub drop_filter: DropRules<DetailDecision>,
-    pub switch_filter: SwitchRules<DetailDecision>,
+mod config {
+    pub(super) use super::super::decision::rules::{
+        AssignmentRules, CallFlowRules, ConstantTypeRules, DetailDecision, DropRules,
+        EventDecision, OperandKindRules, PlaceInfoRules, PlaceStructureRules,
+        StorageLifetimeMarkerRules, SwitchRules,
+    };
+
+    pub(crate) struct Config {
+        pub place_info_filter: PlaceInfoRules<PlaceStructureRules<DetailDecision>, DetailDecision>,
+        pub operand_info_filter:
+            OperandKindRules<DetailDecision, Option<ConstantTypeRules<DetailDecision>>>,
+        pub assignment_filter: AssignmentRules<EventDecision>,
+        pub storage_lifetime_filter: StorageLifetimeMarkerRules<DetailDecision>,
+        pub call_flow_filter: CallFlowRules<DetailDecision>,
+        pub drop_filter: DropRules<DetailDecision>,
+        pub switch_filter: SwitchRules<DetailDecision>,
+    }
 }
+pub(crate) use config::Config;
 
 mod implementation;
 

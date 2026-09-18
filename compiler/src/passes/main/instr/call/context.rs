@@ -11,19 +11,20 @@ use rustc_middle::{
 };
 use rustc_span::{Spanned, def_id::DefId};
 
+use common::pri::{AssignmentId, AtomicOrdering};
+
 use crate::{
-    passes::Storage,
+    passes::{
+        Storage,
+        instr::pri::{FunctionInfo, PriHelperFunctions, PriItems, PriTypes, sym::LeafSymbol},
+    },
     utils::mir_transform::{
         BodyBlockManager, BodyInstrumentationUnit, BodyLocalManager, JumpModificationConstraint,
         JumpTargetModifier, NewLocalDecl,
     },
 };
 
-use crate::passes::instr::pri::{
-    FunctionInfo, PriHelperFunctions, PriItems, PriTypes, sym::LeafSymbol,
-};
-
-use super::{AssignmentId, AtomicOrdering, Config, InsertionLocation};
+use super::{Config, InsertionLocation};
 
 pub(crate) trait TyContextProvider<'tcx> {
     fn tcx(&self) -> TyCtxt<'tcx>;

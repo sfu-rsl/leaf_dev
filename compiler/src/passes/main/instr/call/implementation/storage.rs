@@ -3,7 +3,8 @@ use core::debug_assert_matches;
 use rustc_middle::mir::Place;
 
 use super::{
-    InsertionLocation, PlaceReferencer, StorageMarker, ctxt_reqs::ForStorageMarking, prelude::*,
+    super::StorageMarker, InsertionLocation, PlaceReferencer, ctxt_reqs::ForStorageMarking,
+    prelude::*,
 };
 
 impl<'tcx, C> StorageMarker<'tcx> for RuntimeCallAdder<C>

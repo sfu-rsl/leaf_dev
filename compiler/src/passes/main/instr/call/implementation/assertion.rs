@@ -1,5 +1,6 @@
 use super::{
-    AssertionHandler, OperandReferencer,
+    super::AssertionHandler,
+    OperandReferencer,
     ctxt_reqs::ForAssertion,
     prelude::{mir::*, *},
 };
