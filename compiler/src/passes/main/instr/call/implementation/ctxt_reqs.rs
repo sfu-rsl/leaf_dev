@@ -2,7 +2,9 @@
 //! certain feature will be available in `RuntimeCallAdder` when its context
 //! implement that set of traits.
 
-use super::*;
+use crate::utils::mir_transform::JumpTargetModifier;
+
+use super::context::*;
 
 macro_rules! ctxt_req_trait {
     ($name:ident<'tcx> : $($bounds:tt)+) => {

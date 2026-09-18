@@ -24,7 +24,7 @@ use crate::{
 use super::{
     TAG_INSTR,
     call::{
-        AssertionHandler, AtomicIntrinsicHandler, BranchingHandler, DropHandler,
+        AssertionHandler, AssignmentHandler, AtomicIntrinsicHandler, BranchingHandler, DropHandler,
         EntryFunctionHandler, FunctionHandler,
         InsertionLocation::*,
         IntrinsicHandler, MemoryIntrinsicHandler, RuntimeCallAdder, StorageMarker,
@@ -259,15 +259,14 @@ where
 {
     fn visit_assign(&mut self, place: &Place<'tcx>, rvalue: &Rvalue<'tcx>) {
         self.call_adder
-            .instrument_assignment(self.assignment_id.unwrap(), *place, rvalue)
+            .assign(self.assignment_id.unwrap(), *place)
+            .to_rvalue(rvalue)
     }
 
     fn visit_set_discriminant(&mut self, place: &Place<'tcx>, variant_index: &VariantIdx) {
-        self.call_adder.instrument_set_discriminant(
-            self.assignment_id.unwrap(),
-            *place,
-            variant_index,
-        )
+        self.call_adder
+            .assign(self.assignment_id.unwrap(), *place)
+            .its_discriminant_to(variant_index)
     }
 
     fn visit_intrinsic(&mut self, intrinsic: &mir::NonDivergingIntrinsic<'tcx>) {
@@ -315,7 +314,7 @@ where
         + cr::ForDropping<'tcx>,
 {
     fn visit_switch_int(&mut self, discr: &Operand<'tcx>, targets: &mir::SwitchTargets) {
-        self.call_adder.instrument_switch(discr, targets);
+        self.call_adder.switch(discr, targets);
     }
 
     fn visit_return(&mut self) {

@@ -3,7 +3,9 @@ use rustc_middle::mir::{PlaceRef as MirPlaceRef, ProjectionElem};
 use common::log_warn;
 
 use super::{
-    BodyProvider, PlaceReferencer, PlaceStructureRules,
+    PlaceReferencer,
+    config::{DetailDecision, PlaceStructureRules},
+    context::BodyProvider,
     ctxt_reqs::ForPlaceRef,
     prelude::{mir::*, *},
 };
@@ -332,7 +334,7 @@ struct PlaceReferralChain<'tcx> {
 }
 
 fn filter_and_fold_place<'tcx>(
-    config: &PlaceStructureRules<super::DetailDecision>,
+    config: &PlaceStructureRules<DetailDecision>,
     place: &Place<'tcx>,
 ) -> PlaceReferralChain<'tcx> {
     let mut base = if config.local.is_enabled() {

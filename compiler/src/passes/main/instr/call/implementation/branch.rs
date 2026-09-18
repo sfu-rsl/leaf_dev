@@ -5,8 +5,11 @@ use crate::{
 };
 
 use super::{
-    BodyProvider, BranchingHandler, InsertionLocation, OperandReferencer,
-    context::{BaseContext, BlockIndexProvider, BlockOriginalIndexProvider, ConfigProvider},
+    super::BranchingHandler,
+    InsertionLocation, OperandReferencer,
+    context::{
+        BaseContext, BlockIndexProvider, BlockOriginalIndexProvider, BodyProvider, ConfigProvider,
+    },
     ctxt_reqs::ForBranching,
     prelude::{mir::*, *},
 };
@@ -24,7 +27,7 @@ where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
     C: ForOperandRef<'tcx> + ForBranching<'tcx>,
 {
-    fn instrument_switch(&mut self, discr: &Operand<'tcx>, targets: &SwitchTargets) {
+    fn switch(&mut self, discr: &Operand<'tcx>, targets: &SwitchTargets) {
         if !self.config().switch_filter.control.is_enabled()
             && !self.config().switch_filter.data.is_enabled()
         {

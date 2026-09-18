@@ -3,13 +3,16 @@ use rustc_span::Spanned;
 use common::pri::{AtomicBinaryOp, AtomicOrdering};
 
 use super::{
-    AssignmentIdProvider, AssignmentInfoProvider, AtomicIntrinsicHandler, IntrinsicHandler,
-    context::PointerParamProvider,
+    super::{
+        AtomicIntrinsicHandler, IntrinsicHandler,
+        pri::sym::intrinsics::{
+            LeafIntrinsicSymbol, atomic::LeafAtomicIntrinsicSymbol,
+            memory::LeafMemoryIntrinsicSymbol,
+        },
+    },
+    context::{AssignmentIdProvider, AssignmentInfoProvider, PointerParamProvider},
     ctxt_reqs::{Basic, ForAssignment, ForAtomicIntrinsic, ForMemoryIntrinsic, ForOperandRef},
     prelude::{mir::*, *},
-    pri::sym::intrinsics::{
-        LeafIntrinsicSymbol, atomic::LeafAtomicIntrinsicSymbol, memory::LeafMemoryIntrinsicSymbol,
-    },
     utils::operand,
 };
 
