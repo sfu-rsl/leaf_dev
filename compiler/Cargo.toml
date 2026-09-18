@@ -50,7 +50,3 @@ smallvec = "1.15.0"
 
 [package.metadata.rust-analyzer]
 rustc_private = true
-
-[features]
-default = ["abs_concrete"]
-abs_concrete = []
