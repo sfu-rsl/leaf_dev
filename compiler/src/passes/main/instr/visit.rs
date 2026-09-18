@@ -106,7 +106,7 @@ where
         .iter()
         .for_each(|l| match call_adder.body().local_kind(l) {
             mir::LocalKind::Temp => {
-                call_adder.mark_live(|call_adder| call_adder.reference_place(&l.into()));
+                call_adder.mark_live(&l.into());
             }
             mir::LocalKind::Arg => {}
             mir::LocalKind::ReturnPointer => {}
@@ -308,13 +308,11 @@ where
 
     fn visit_storage_live(&mut self, local: &mir::Local) -> () {
         let mut call_adder = self.call_adder.after();
-        call_adder.mark_live(|call_adder| call_adder.reference_place(&(*local).into()));
+        call_adder.mark_live(&(*local).into());
     }
 
     fn visit_storage_dead(&mut self, local: &mir::Local) {
-        self.call_adder
-            .before()
-            .mark_dead(|call_adder| call_adder.reference_place(&(*local).into()));
+        self.call_adder.before().mark_dead(&(*local).into());
     }
 }
 
@@ -355,9 +353,7 @@ where
                 if self.call_adder.body().local_kind(l) == mir::LocalKind::ReturnPointer {
                     return;
                 }
-                self.call_adder
-                    .before()
-                    .mark_dead(|call_adder| call_adder.reference_place(&l.into()));
+                self.call_adder.before().mark_dead(&l.into());
             });
 
         self.call_adder.return_from_func();
