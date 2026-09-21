@@ -304,6 +304,7 @@ mod bb {
     impl<'tcx, C> MirCallAdder<'tcx> for RuntimeCallAdder<C>
     where
         C: BodyLocalManager<'tcx>
+            + BodyProvider<'tcx>
             + TyContextProvider<'tcx>
             + PriItemsProvider<'tcx>
             + SourceInfoProvider,
@@ -330,12 +331,6 @@ mod bb {
             args: Vec<Operand<'tcx>>,
             target: Option<BasicBlock>,
         ) -> (BasicBlockData<'tcx>, Local) {
-            assert_eq!(
-                func_info.num_inputs(self.tcx()),
-                args.len(),
-                "Argument number mismatch for function {:?}",
-                func_info,
-            );
             let generic_args = generic_args.into_iter().collect::<Vec<_>>();
             let result_local = self.context.add_local((
                 func_info.ret_ty(self.tcx(), &generic_args),
@@ -355,19 +350,23 @@ mod bb {
     }
     impl<'tcx, C> RuntimeCallAdder<C>
     where
-        C: TyContextProvider<'tcx> + SourceInfoProvider,
+        C: TyContextProvider<'tcx>
+            + SourceInfoProvider
+            + BodyProvider<'tcx>
+            + BodyLocalManager<'tcx>,
     {
         fn make_call_bb(
             &self,
             func_id: DefId,
-            generic_args: impl IntoIterator<Item = GenericArg<'tcx>>,
+            generic_args: Vec<GenericArg<'tcx>>,
             args: Vec<Operand<'tcx>>,
             destination: Place<'tcx>,
             target: Option<BasicBlock>,
         ) -> BasicBlockData<'tcx> {
+            self.assert_arg_types(func_id, &generic_args, &args);
             BasicBlockData::new(
                 Some(terminator::call(
-                    self.context.tcx(),
+                    self.tcx(),
                     func_id,
                     generic_args,
                     args,
@@ -377,6 +376,34 @@ mod bb {
                 )),
                 false,
             )
+        }
+
+        fn assert_arg_types(
+            &self,
+            func_id: DefId,
+            generic_args: &[GenericArg<'tcx>],
+            args: &[Operand<'tcx>],
+        ) {
+            let tcx = self.tcx();
+            let typing_env = self.current_typing_env();
+
+            let sig = tcx.fn_sig(func_id).instantiate(tcx, generic_args);
+            let sig = tcx.normalize_erasing_regions(typing_env, sig);
+            let sig = tcx.instantiate_bound_regions_with_erased(sig);
+            let input_types = sig.inputs().iter().copied();
+            let arg_types = args
+                .iter()
+                .map(|a| a.ty(self.local_decls(), tcx))
+                .map(|t| tcx.normalize_erasing_regions(typing_env, mir_ty::Unnormalized::new(t)));
+            let result = input_types.clone().eq(arg_types.clone());
+            assert!(
+                result,
+                "Argument type mismatch for function {:?}: {:?}. Inputs: {:?}, args: {:?}",
+                func_id,
+                sig,
+                input_types.collect::<Vec<_>>(),
+                arg_types.collect::<Vec<_>>()
+            );
         }
     }
 
@@ -1074,14 +1101,6 @@ pub(super) mod utils {
     }
 
     impl FunctionInfo {
-        pub(super) fn num_inputs<'tcx>(&self, tcx: TyCtxt<'tcx>) -> usize {
-            tcx.fn_sig(self.def_id)
-                .skip_binder()
-                .inputs()
-                .skip_binder()
-                .len()
-        }
-
         pub(super) fn ret_ty<'tcx>(
             &self,
             tcx: TyCtxt<'tcx>,

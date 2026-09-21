@@ -149,7 +149,7 @@ where
         let second = self.reference_operand(&operands.1);
         self.add_operator_assignment(
             self.context.pri_helper_funcs().const_binary_op_of,
-            convert_mir_binop_to_pri(operator).to_raw().into(),
+            convert_mir_binop_to_pri(operator).to_raw(),
             sym::assign_binary_op,
             vec![
                 operand::copy_for_local(first.into()),
@@ -162,7 +162,7 @@ where
         let operand = self.reference_operand(operand);
         self.add_operator_assignment(
             self.context.pri_helper_funcs().const_unary_op_of,
-            convert_mir_unop_to_pri(operator).to_raw().into(),
+            convert_mir_unop_to_pri(operator).to_raw(),
             sym::assign_unary_op,
             vec![operand::copy_for_local(operand.into())],
         )
@@ -322,7 +322,7 @@ where
     fn add_operator_assignment(
         &mut self,
         operator_func: FunctionInfo,
-        operator: u128,
+        operator: u8,
         assignment_func: LeafSymbol,
         mut args: Vec<Operand<'tcx>>,
     ) {
