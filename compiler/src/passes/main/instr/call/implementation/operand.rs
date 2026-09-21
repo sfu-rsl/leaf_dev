@@ -1,6 +1,6 @@
-use rustc_middle::mir::{ConstOperand, RuntimeChecks, UnevaluatedConst};
+use rustc_middle::mir::{ConstOperand, RuntimeChecks};
 
-use common::log_warn;
+use common::{log_debug, log_warn};
 
 use super::{
     OperandReferencer,
@@ -125,7 +125,7 @@ where
             })
         }
         // &[u8]
-        else if Self::is_u8_slice_ref(tcx, ty) {
+        else if ty::is_u8_slice_ref(tcx, ty) {
             config.byte_str.is_enabled().then(|| {
                 self.internal_reference_const_operand_directly(
                     sym::ref_operand_const_byte_str,
@@ -134,9 +134,7 @@ where
             })
         }
         // &[u8; N]
-        else if ty.peel_refs().is_array()
-            && ty.peel_refs().sequence_element_type(tcx) == tcx.types.u8
-        {
+        else if ty::is_u8_array_ref(tcx, ty) {
             config
                 .byte_str
                 .is_enabled()
@@ -149,17 +147,23 @@ where
                 .is_enabled()
                 .then(|| self.internal_reference_zst_const_operand())
         } else if let TyKind::FnDef(..) = ty.kind() {
-            self.internal_reference_func_def_const_operand(constant)
-        } else if let Some(c) = operand::const_try_as_unevaluated(constant) {
-            self.internal_reference_unevaluated_const_operand(&c)
-        } else if let Some(def_id) = Self::try_as_immut_static(tcx, constant) {
-            self.internal_reference_static_ref_const_operand(def_id, ty)
-        } else {
-            unimplemented!(
-                "Encountered unknown constant {:?} with type {:?}",
-                constant.const_,
+            unreachable!(
+                "FnDef is expected to be a ZST and handled above, found {:?}",
                 ty
             )
+        } else if let Some(def_id) = Self::try_as_immut_static(tcx, constant) {
+            log_debug!("Static reference constant is not transferred: {:?}", def_id);
+            None
+        } else {
+            log_debug!(
+                concat!(
+                    "Encountered constant {:?} with a complex type {:?}. ",
+                    "Please report if it is from a primitive type.",
+                ),
+                constant.const_,
+                ty
+            );
+            None
         }
         .unwrap_or_else(|| self.internal_reference_const_some())
     }
@@ -341,7 +345,7 @@ where
     ) -> BlocksAndResult<'tcx> {
         let tcx = self.tcx();
         let ty = constant.ty();
-        debug_assert!(ty.is_ref() && ty.peel_refs().sequence_element_type(tcx) == tcx.types.u8,);
+        debug_assert!(ty.is_ref() && ty.peel_refs().sequence_element_type(tcx) == tcx.types.u8);
 
         let (slice_local, slice_assignment) = cast_array_ref_to_slice(
             tcx,
@@ -357,45 +361,12 @@ where
         BlocksAndResult::from(block_pair)
     }
 
-    fn internal_reference_func_def_const_operand(
-        &mut self,
-        _constant: &Box<ConstOperand<'tcx>>,
-    ) -> ! {
-        panic!("Function definition constant is not supported by this configuration.")
-    }
-
-    fn internal_reference_unevaluated_const_operand(&mut self, _constant: &UnevaluatedConst) -> !
-    where
-        C: ForOperandRef<'tcx>,
-    {
-        panic!("Unevaluated constant is not supported by this configuration.")
-    }
-
-    fn internal_reference_static_ref_const_operand(&mut self, _def_id: DefId, _ty: Ty<'tcx>) -> !
-    where
-        C: ForOperandRef<'tcx>,
-    {
-        panic!("Static reference constant is not supported by this configuration.")
-    }
-
     fn make_bb_for_operand_ref_call(
         &mut self,
         func_name: LeafSymbol,
         args: Vec<Operand<'tcx>>,
     ) -> (BasicBlockData<'tcx>, Local) {
         self.make_bb_for_call_with_ret(func_name, args)
-    }
-
-    #[inline]
-    fn is_u8_slice_ref(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>) -> bool {
-        // This is just for mitigating the bug in rustfmt. Track: rustfmt#5863
-        if let TyKind::Ref(_, ty, _) = ty.kind() {
-            if let TyKind::Slice(ty) = ty.kind() {
-                return ty == &tcx.types.u8;
-            }
-        }
-
-        false
     }
 
     #[inline]
@@ -442,38 +413,38 @@ where
 }
 
 mod utils {
-    use rustc_middle::mir::{self, CastKind, ConstOperand};
+    use rustc_middle::mir::{CastKind, ConstOperand};
 
     pub(super) use super::super::prelude::{mir::*, *};
 
-    pub(super) use super::super::utils::{
-        assignment, cast_array_ref_to_slice, rvalue, terminator, ty,
-    };
+    pub(super) use super::super::utils::{assignment, cast_array_ref_to_slice, rvalue, terminator};
 
     pub(super) mod operand {
-        use rustc_middle::{mir::Const, ty};
-
         pub use super::super::super::utils::operand::*;
+    }
+
+    pub(super) mod ty {
+        pub use super::super::super::utils::ty::*;
 
         use super::*;
 
-        pub fn const_try_as_unevaluated<'tcx>(
-            constant: &ConstOperand<'tcx>,
-        ) -> Option<mir::UnevaluatedConst<'tcx>> {
-            match constant.const_ {
-                Const::Unevaluated(c, _) => Some(c),
-                Const::Ty(_ty, c) => match c.kind() {
-                    ty::ConstKind::Alias(ty::IsRigid::No, ty::AliasConst { kind, args, .. }) => {
-                        Some(mir::UnevaluatedConst {
-                            def: kind.opt_def_id().unwrap(),
-                            args,
-                            promoted: None,
-                        })
-                    }
-                    _ => None,
-                },
-                _ => None,
+        pub fn is_u8_array_ref<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>) -> bool {
+            if let TyKind::Ref(_, ty, _) = ty.kind() {
+                return ty.is_array() && ty.sequence_element_type(tcx) == tcx.types.u8;
             }
+
+            false
+        }
+
+        pub fn is_u8_slice_ref<'tcx>(tcx: TyCtxt<'tcx>, ty: Ty<'tcx>) -> bool {
+            // This is just for mitigating the bug in rustfmt. Track: rustfmt#5863
+            if let TyKind::Ref(_, ty, _) = ty.kind() {
+                if let TyKind::Slice(ty) = ty.kind() {
+                    return *ty == tcx.types.u8;
+                }
+            }
+
+            false
         }
     }
 

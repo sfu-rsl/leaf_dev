@@ -36,7 +36,7 @@ mod operand;
 mod place;
 mod storage;
 
-use ctxt_reqs::{ForAssignment, ForEntryFunction, ForInsertion};
+use ctxt_reqs::{ForEntryFunction, ForInsertion};
 
 pub(crate) struct RuntimeCallAdder<C> {
     context: C,
@@ -964,7 +964,7 @@ pub(super) mod utils {
         else {
             panic!("Operand was not from reference type.")
         };
-        debug_assert!(array_ty.is_array());
+        debug_assert!(array_ty.is_array(), "{:?}", array_ty);
         let item_ty = array_ty.sequence_element_type(tcx);
         let slice_ty = tcx.mk_ty_from_kind(TyKind::Ref(
             *region,
