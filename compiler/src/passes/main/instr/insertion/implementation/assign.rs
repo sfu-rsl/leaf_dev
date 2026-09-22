@@ -22,7 +22,7 @@ use super::{
 use super::super::super::TAG_INSTR;
 use super::super::super::decision::rules::EventDecision;
 
-impl<'tcx, C> AssignmentHandler<'tcx> for RuntimeCallAdder<C>
+impl<'tcx, C> AssignmentHandler<'tcx> for ProbeInserter<C>
 where
     C: ForAssignment<'tcx> + ForOperandRef<'tcx>,
 {
@@ -50,7 +50,7 @@ where
     }
 }
 
-impl<'tcx, C> RvalueVisitor<'tcx, ()> for RuntimeCallAdder<C>
+impl<'tcx, C> RvalueVisitor<'tcx, ()> for ProbeInserter<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
     C: ForAssignment<'tcx> + ForOperandRef<'tcx>,
@@ -230,7 +230,7 @@ where
     }
 }
 
-impl<'tcx, C> RuntimeCallAdder<C>
+impl<'tcx, C> ProbeInserter<C>
 where
     Self: ConfigProvider,
 {
@@ -256,7 +256,7 @@ where
     }
 }
 
-impl<'tcx, C> RuntimeCallAdder<C>
+impl<'tcx, C> ProbeInserter<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
     C: ForAssignment<'tcx>,
@@ -350,7 +350,7 @@ where
     }
 }
 
-impl<'tcx, C> RuntimeCallAdder<C>
+impl<'tcx, C> ProbeInserter<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
     C: ForAssignment<'tcx>,
@@ -446,7 +446,7 @@ where
     }
 }
 
-impl<'tcx, C> RuntimeCallAdder<C>
+impl<'tcx, C> ProbeInserter<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
     C: ForAssignment<'tcx>,
@@ -541,7 +541,7 @@ where
     }
 }
 
-impl<'tcx, C> RuntimeCallAdder<C>
+impl<'tcx, C> ProbeInserter<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
     C: ForAssignment<'tcx>,

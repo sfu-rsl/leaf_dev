@@ -1,7 +1,8 @@
 use rustc_middle::mir::{BasicBlock, SwitchTargets};
 
 use crate::{
-    passes::instr::call::ctxt_reqs::ForOperandRef, utils::mir_transform::JumpModificationConstraint,
+    passes::instr::insertion::ctxt_reqs::ForOperandRef,
+    utils::mir_transform::JumpModificationConstraint,
 };
 
 use super::{
@@ -22,7 +23,7 @@ struct SwitchInfo<'tcx> {
     discr: Option<OperandRef>,
 }
 
-impl<'tcx, C> BranchingHandler<'tcx> for RuntimeCallAdder<C>
+impl<'tcx, C> BranchingHandler<'tcx> for ProbeInserter<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
     C: ForOperandRef<'tcx> + ForBranching<'tcx>,
@@ -55,7 +56,7 @@ where
     }
 }
 
-impl<'tcx, C> RuntimeCallAdder<C>
+impl<'tcx, C> ProbeInserter<C>
 where
     Self: BodyProvider<'tcx>,
     C: BaseContext<'tcx> + BlockIndexProvider + BlockOriginalIndexProvider,
@@ -77,7 +78,7 @@ where
     }
 }
 
-impl<'tcx, C> RuntimeCallAdder<C>
+impl<'tcx, C> ProbeInserter<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
     C: ForBranching<'tcx>,

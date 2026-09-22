@@ -5,7 +5,7 @@ use super::{
     prelude::{mir::*, *},
 };
 
-impl<'tcx, C> AssertionHandler<'tcx> for RuntimeCallAdder<C>
+impl<'tcx, C> AssertionHandler<'tcx> for ProbeInserter<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
     C: ForAssertion<'tcx>,
@@ -46,7 +46,7 @@ where
         self.insert_blocks([info_block, block]);
     }
 }
-impl<'tcx, C> RuntimeCallAdder<C>
+impl<'tcx, C> ProbeInserter<C>
 where
     C: ForAssertion<'tcx>,
 {

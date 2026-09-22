@@ -7,7 +7,7 @@ use super::{
     prelude::*,
 };
 
-impl<'tcx, C> StorageMarker<'tcx> for RuntimeCallAdder<C>
+impl<'tcx, C> StorageMarker<'tcx> for ProbeInserter<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
     C: ForStorageMarking<'tcx>,

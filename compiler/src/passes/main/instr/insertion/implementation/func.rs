@@ -17,7 +17,7 @@ use super::{
     prelude::{mir::*, *},
 };
 
-impl<'tcx, C> FunctionHandler<'tcx> for RuntimeCallAdder<C>
+impl<'tcx, C> FunctionHandler<'tcx> for ProbeInserter<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx> + DebugInfoHandler,
     C: ForFunctionCalling<'tcx> + ForPlaceRef<'tcx>,
@@ -93,7 +93,7 @@ where
     }
 }
 
-impl<'tcx, C> DropHandler<'tcx> for RuntimeCallAdder<C>
+impl<'tcx, C> DropHandler<'tcx> for ProbeInserter<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx> + DebugInfoHandler,
     C: ForDropping<'tcx>,
@@ -172,7 +172,7 @@ where
     }
 }
 
-impl<'tcx, C> RuntimeCallAdder<C>
+impl<'tcx, C> ProbeInserter<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
     C: Basic<'tcx> + SourceInfoProvider,
@@ -346,7 +346,7 @@ where
     }
 }
 
-impl<'tcx, C> RuntimeCallAdder<C>
+impl<'tcx, C> ProbeInserter<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
     C: Basic<'tcx> + SourceInfoProvider,
@@ -709,7 +709,7 @@ mod utils {
 
     pub fn enter_func<'tcx>(
         tcx: TyCtxt<'tcx>,
-        call_adder: &mut (
+        inserter: &mut (
                  impl BodyLocalManager<'tcx>
                  + BodyProvider<'tcx>
                  + MirCallAdder<'tcx>
@@ -719,14 +719,14 @@ mod utils {
         typing_env: TypingEnv<'tcx>,
         is_precise: bool,
     ) -> BasicBlockData<'tcx> {
-        let instance_kind = call_adder.body().source.instance;
+        let instance_kind = inserter.body().source.instance;
         let base_args = instance_kind_id_operand_triple(tcx, instance_kind).to_vec();
 
         if is_precise {
-            enter_func_precisely(tcx, call_adder, typing_env, base_args)
+            enter_func_precisely(tcx, inserter, typing_env, base_args)
         } else {
-            let (block, _) = call_adder.make_bb_for_helper_call_with_all(
-                call_adder.pri_helper_funcs().enter_func,
+            let (block, _) = inserter.make_bb_for_helper_call_with_all(
+                inserter.pri_helper_funcs().enter_func,
                 [],
                 base_args,
                 None,
@@ -737,7 +737,7 @@ mod utils {
 
     pub fn enter_func_precisely<'tcx>(
         tcx: TyCtxt<'tcx>,
-        call_adder: &mut (
+        inserter: &mut (
                  impl BodyLocalManager<'tcx>
                  + BodyProvider<'tcx>
                  + MirCallAdder<'tcx>
@@ -747,7 +747,7 @@ mod utils {
         typing_env: TypingEnv<'tcx>,
         base_args: Vec<Operand<'tcx>>,
     ) -> BasicBlockData<'tcx> {
-        let fn_def_ty = body_func_ty(tcx, call_adder.body(), typing_env);
+        let fn_def_ty = body_func_ty(tcx, inserter.body(), typing_env);
         let TyKind::FnDef(def_id, generic_args) = *fn_def_ty.kind() else {
             unreachable!(
                 "Expected function definition type but received: {}",
@@ -761,7 +761,7 @@ mod utils {
             && trait_ref.self_ty().is_sized(tcx, typing_env)
         {
             let ruled_out = {
-                let policy = get_baked_policy(call_adder.storage());
+                let policy = get_baked_policy(inserter.storage());
                 policy
                     .dynamic_definition_decision(&(tcx, def_id))
                     .is_some_and(|decision| decision == BodyDecision::Skip)
@@ -771,11 +771,11 @@ mod utils {
                     "Dyn-compatible method will be defined as static: {:?}",
                     def_id
                 );
-                enter_static_func_precisely(tcx, call_adder, base_args, fn_value)
+                enter_static_func_precisely(tcx, inserter, base_args, fn_value)
             } else {
                 enter_dyn_compatible_func_precisely(
                     tcx,
-                    call_adder,
+                    inserter,
                     base_args,
                     fn_value,
                     trait_ref,
@@ -783,21 +783,20 @@ mod utils {
                 )
             }
         } else {
-            enter_static_func_precisely(tcx, call_adder, base_args, fn_value)
+            enter_static_func_precisely(tcx, inserter, base_args, fn_value)
         }
     }
 
     fn enter_static_func_precisely<'tcx>(
         tcx: TyCtxt<'tcx>,
-        call_adder: &mut (impl BodyLocalManager<'tcx> + MirCallAdder<'tcx> + PriItemsProvider<'tcx>),
+        inserter: &mut (impl BodyLocalManager<'tcx> + MirCallAdder<'tcx> + PriItemsProvider<'tcx>),
         base_args: Vec<Operand<'tcx>>,
         fn_value: Operand<'tcx>,
     ) -> BasicBlockData<'tcx> {
-        let (fn_ptr_ty, fn_ptr_local, ptr_assignment) =
-            to_fn_ptr(tcx, call_adder, fn_value.clone());
+        let (fn_ptr_ty, fn_ptr_local, ptr_assignment) = to_fn_ptr(tcx, inserter, fn_value.clone());
 
-        let (mut block, _) = call_adder.make_bb_for_helper_call_with_all(
-            call_adder.pri_helper_funcs().enter_func_precise,
+        let (mut block, _) = inserter.make_bb_for_helper_call_with_all(
+            inserter.pri_helper_funcs().enter_func_precise,
             vec![fn_ptr_ty.into()],
             [base_args, vec![operand::move_for_local(fn_ptr_local)]].concat(),
             None,
@@ -825,7 +824,7 @@ mod utils {
 
     fn enter_dyn_compatible_func_precisely<'tcx>(
         tcx: TyCtxt<'tcx>,
-        call_adder: &mut (
+        inserter: &mut (
                  impl BodyLocalManager<'tcx>
                  + BodyProvider<'tcx>
                  + MirCallAdder<'tcx>
@@ -836,15 +835,14 @@ mod utils {
         trait_ref: TraitRef<'tcx>,
         method_id: DefId,
     ) -> BasicBlockData<'tcx> {
-        let (fn_ptr_ty, fn_ptr_local, ptr_assignment) =
-            to_fn_ptr(tcx, call_adder, fn_value.clone());
+        let (fn_ptr_ty, fn_ptr_local, ptr_assignment) = to_fn_ptr(tcx, inserter, fn_value.clone());
         let self_ty = trait_ref.self_ty();
         let dyn_ty = dyn_ty_from_impl(tcx, trait_ref);
 
         let identifier = identifier_of_method(tcx, method_id);
 
-        let (mut block, _) = call_adder.make_bb_for_helper_call_with_all(
-            call_adder.pri_helper_funcs().enter_func_precise_dyn_comp,
+        let (mut block, _) = inserter.make_bb_for_helper_call_with_all(
+            inserter.pri_helper_funcs().enter_func_precise_dyn_comp,
             vec![fn_ptr_ty.into(), self_ty.into(), dyn_ty.into()],
             [
                 base_args,
@@ -926,7 +924,7 @@ mod utils {
 
     pub fn before_call_control<'tcx, const FOR_DROP: bool>(
         tcx: TyCtxt<'tcx>,
-        call_adder: &mut (impl BodyLocalManager<'tcx> + MirCallAdder<'tcx> + PriItemsProvider<'tcx>),
+        inserter: &mut (impl BodyLocalManager<'tcx> + MirCallAdder<'tcx> + PriItemsProvider<'tcx>),
         typing_env: TypingEnv<'tcx>,
         fn_value: Operand<'tcx>,
         first_arg: Option<&Operand<'tcx>>,
@@ -934,7 +932,7 @@ mod utils {
         is_precise: bool,
     ) -> BasicBlockData<'tcx> {
         let instance_kind_id_args = {
-            let fn_ty = fn_value.ty(call_adder, tcx);
+            let fn_ty = fn_value.ty(inserter, tcx);
             let instance_kind = match fn_ty.kind() {
                 TyKind::FnDef(def_id, generic_args) => {
                     tcx.try_resolve_instance_raw(typing_env, *def_id, generic_args)
@@ -953,13 +951,13 @@ mod utils {
         let base_args = [[call_site_arg].to_vec(), instance_kind_id_args.to_vec()].concat();
 
         if is_precise {
-            before_call_precisely::<FOR_DROP>(tcx, call_adder, base_args, fn_value, first_arg)
+            before_call_precisely::<FOR_DROP>(tcx, inserter, base_args, fn_value, first_arg)
         } else {
-            let (block, _) = call_adder.make_bb_for_helper_call_with_all(
+            let (block, _) = inserter.make_bb_for_helper_call_with_all(
                 if !FOR_DROP {
-                    call_adder.pri_helper_funcs().before_call_control
+                    inserter.pri_helper_funcs().before_call_control
                 } else {
-                    call_adder.pri_helper_funcs().before_drop_control
+                    inserter.pri_helper_funcs().before_drop_control
                 },
                 [],
                 base_args,
@@ -971,12 +969,12 @@ mod utils {
 
     pub fn before_call_precisely<'tcx, const FOR_DROP: bool>(
         tcx: TyCtxt<'tcx>,
-        call_adder: &mut (impl BodyLocalManager<'tcx> + MirCallAdder<'tcx> + PriItemsProvider<'tcx>),
+        inserter: &mut (impl BodyLocalManager<'tcx> + MirCallAdder<'tcx> + PriItemsProvider<'tcx>),
         base_args: Vec<Operand<'tcx>>,
         fn_value: Operand<'tcx>,
         first_arg: Option<&Operand<'tcx>>,
     ) -> BasicBlockData<'tcx> {
-        let fn_ty = fn_value.ty(call_adder, tcx);
+        let fn_ty = fn_value.ty(inserter, tcx);
 
         match fn_ty.kind() {
             TyKind::FnDef(def_id, generic_args) => {
@@ -993,7 +991,7 @@ mod utils {
                     let self_ty = generic_args.type_at(0);
                     before_call_possibly_virtual_callee::<FOR_DROP>(
                         tcx,
-                        call_adder,
+                        inserter,
                         base_args,
                         fn_value,
                         item.def_id,
@@ -1001,11 +999,11 @@ mod utils {
                         receiver,
                     )
                 } else {
-                    before_call_static_callee::<FOR_DROP>(tcx, call_adder, base_args, fn_value)
+                    before_call_static_callee::<FOR_DROP>(tcx, inserter, base_args, fn_value)
                 }
             }
             TyKind::FnPtr(..) => {
-                before_call_static_callee::<FOR_DROP>(tcx, call_adder, base_args, fn_value)
+                before_call_static_callee::<FOR_DROP>(tcx, inserter, base_args, fn_value)
             }
             _ => {
                 unreachable!("Unexpected type of callee: {:?}: {:?}", fn_value, fn_ty);
@@ -1015,17 +1013,17 @@ mod utils {
 
     fn before_call_static_callee<'tcx, const FOR_DROP: bool>(
         tcx: TyCtxt<'tcx>,
-        call_adder: &mut (impl BodyLocalManager<'tcx> + MirCallAdder<'tcx> + PriItemsProvider<'tcx>),
+        inserter: &mut (impl BodyLocalManager<'tcx> + MirCallAdder<'tcx> + PriItemsProvider<'tcx>),
         base_args: Vec<Operand<'tcx>>,
         fn_value: Operand<'tcx>,
     ) -> BasicBlockData<'tcx> {
-        let (fn_ptr_ty, fn_ptr_local, ptr_assignment) = to_fn_ptr(tcx, call_adder, fn_value);
+        let (fn_ptr_ty, fn_ptr_local, ptr_assignment) = to_fn_ptr(tcx, inserter, fn_value);
 
-        let (mut block, _) = call_adder.make_bb_for_helper_call_with_all(
+        let (mut block, _) = inserter.make_bb_for_helper_call_with_all(
             if !FOR_DROP {
-                call_adder.pri_helper_funcs().before_call_control_precise
+                inserter.pri_helper_funcs().before_call_control_precise
             } else {
-                call_adder.pri_helper_funcs().before_drop_control_precise
+                inserter.pri_helper_funcs().before_drop_control_precise
             },
             vec![fn_ptr_ty.into()],
             [base_args, vec![operand::move_for_local(fn_ptr_local)]].concat(),
@@ -1037,23 +1035,23 @@ mod utils {
 
     fn before_call_possibly_virtual_callee<'tcx, const FOR_DROP: bool>(
         tcx: TyCtxt<'tcx>,
-        call_adder: &mut (impl BodyLocalManager<'tcx> + MirCallAdder<'tcx> + PriItemsProvider<'tcx>),
+        inserter: &mut (impl BodyLocalManager<'tcx> + MirCallAdder<'tcx> + PriItemsProvider<'tcx>),
         base_args: Vec<Operand<'tcx>>,
         fn_value: Operand<'tcx>,
         method_id: DefId,
         self_ty: Ty<'tcx>,
         receiver: &Operand<'tcx>,
     ) -> BasicBlockData<'tcx> {
-        let (fn_ptr_ty, fn_ptr_local, ptr_assignment) = to_fn_ptr(tcx, call_adder, fn_value);
+        let (fn_ptr_ty, fn_ptr_local, ptr_assignment) = to_fn_ptr(tcx, inserter, fn_value);
 
-        let receiver_ty = receiver.ty(call_adder, tcx);
+        let receiver_ty = receiver.ty(inserter, tcx);
         // receiver -> &receiver
         let (receiver_ref_local, receiver_ref_stmts) = {
             let mut statements = Vec::new();
             let receiver_place = match receiver {
                 Operand::Copy(place) | Operand::Move(place) => *place,
                 Operand::Constant(..) => {
-                    let local = call_adder.add_local(receiver_ty);
+                    let local = inserter.add_local(receiver_ty);
                     let assignment = assignment::create(
                         Place::from(local),
                         Rvalue::Use(receiver.clone(), WithRetag::No),
@@ -1066,7 +1064,7 @@ mod utils {
                 }
             };
             let receiver_ref_local =
-                call_adder.add_local(Ty::new_imm_ref(tcx, tcx.lifetimes.re_erased, receiver_ty));
+                inserter.add_local(Ty::new_imm_ref(tcx, tcx.lifetimes.re_erased, receiver_ty));
             let receiver_ref_assignment = super::assignment::create(
                 receiver_ref_local.into(),
                 rvalue::ref_of(receiver_place, tcx),
@@ -1076,13 +1074,13 @@ mod utils {
         };
         let identifier = identifier_of_method(tcx, method_id);
 
-        let (mut block, _) = call_adder.make_bb_for_helper_call_with_all(
+        let (mut block, _) = inserter.make_bb_for_helper_call_with_all(
             if !FOR_DROP {
-                call_adder
+                inserter
                     .pri_helper_funcs()
                     .before_call_control_precise_maybe_virtual
             } else {
-                call_adder
+                inserter
                     .pri_helper_funcs()
                     .before_drop_control_precise_maybe_virtual
             },
