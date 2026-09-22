@@ -1,7 +1,7 @@
 mod body;
-mod call;
 mod config;
 mod decision;
+mod insertion;
 pub(crate) mod pri;
 mod subpasses;
 mod visit;
@@ -23,7 +23,7 @@ use crate::{
 
 use super::super::{CompilationPass, OverrideFlags, Storage};
 
-use self::call::{Config, RuntimeCallAdder};
+use self::insertion::{Config, ProbeInserter};
 
 pub(crate) use config::InstrumentationRules;
 pub(crate) use subpasses::counter::InstrumentationCounter;
@@ -111,10 +111,10 @@ fn transform<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>, storage: &mut dyn S
 
     // Instrumentation
     {
-        let mut call_adder = RuntimeCallAdder::new(tcx, &mut unit, &pri_items, storage, config);
-        let mut call_adder = call_adder.in_body(body, orig_index_map);
+        let mut inserter = ProbeInserter::new(tcx, &mut unit, &pri_items, storage, config);
+        let mut inserter = inserter.in_body(body, orig_index_map);
 
-        visit::instrument_body(&mut call_adder, body);
+        visit::instrument_body(&mut inserter, body);
     }
 
     unit.commit(

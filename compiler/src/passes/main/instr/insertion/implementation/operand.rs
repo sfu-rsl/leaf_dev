@@ -10,7 +10,7 @@ use super::{
     utils::ty::TyExt,
 };
 
-impl<'tcx, C> OperandReferencer<'tcx> for RuntimeCallAdder<C>
+impl<'tcx, C> OperandReferencer<'tcx> for ProbeInserter<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
     C: ForOperandRef<'tcx>,
@@ -22,7 +22,7 @@ where
     }
 }
 #[allow(clippy::borrowed_box)]
-impl<'tcx, C> RuntimeCallAdder<C>
+impl<'tcx, C> ProbeInserter<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
     C: Basic<'tcx> + SourceInfoProvider,
@@ -392,7 +392,7 @@ where
     }
 }
 
-impl<'tcx, C> RuntimeCallAdder<C>
+impl<'tcx, C> ProbeInserter<C>
 where
     C: ForOperandRef<'tcx>,
 {
@@ -402,8 +402,8 @@ where
         operand: &rustc_span::Spanned<Operand<'tcx>>,
     ) -> OperandRef {
         let source_scope = self.source_info().scope;
-        let mut call_adder = self.before();
-        call_adder
+        let mut inserter = self.before();
+        inserter
             .with_source_info(rustc_middle::mir::SourceInfo {
                 span: operand.span,
                 scope: source_scope,

@@ -38,7 +38,7 @@ mod storage;
 
 use ctxt_reqs::{ForEntryFunction, ForInsertion};
 
-pub(crate) struct RuntimeCallAdder<C> {
+pub(crate) struct ProbeInserter<C> {
     context: C,
 }
 
@@ -157,7 +157,7 @@ trait OperandReferencer<'tcx> {
     fn reference_operand(&mut self, operand: &Operand<'tcx>) -> OperandRef;
 }
 
-impl<'tcx, 'm, 'p, 's> RuntimeCallAdder<DefaultContext<'tcx, 'm, 'p, 's>> {
+impl<'tcx, 'm, 'p, 's> ProbeInserter<DefaultContext<'tcx, 'm, 'p, 's>> {
     pub fn new(
         tcx: TyCtxt<'tcx>,
         modification_unit: &'m mut BodyInstrumentationUnit<'tcx>,
@@ -183,12 +183,12 @@ mod api {
      * directly in the RuntimeCallAdder. However, this change should be done when
      * the call adder is quite stable and no substantial change is expected.
      */
-    impl<C> RuntimeCallAdder<C> {
+    impl<C> ProbeInserter<C> {
         pub fn in_body<'b, 'tcx, 'bd>(
             &'b mut self,
             body: &'bd mir::Body<'tcx>,
             block_orig_index_map: HashMap<BasicBlock, BasicBlock>,
-        ) -> RuntimeCallAdder<InBodyContext<'b, 'tcx, 'bd, C>> {
+        ) -> ProbeInserter<InBodyContext<'b, 'tcx, 'bd, C>> {
             self.with_context(|base| InBodyContext {
                 base,
                 body,
@@ -199,11 +199,11 @@ mod api {
         pub fn at<'b>(
             &'b mut self,
             location: InsertionLocation,
-        ) -> RuntimeCallAdder<AtLocationContext<'b, C>> {
+        ) -> ProbeInserter<AtLocationContext<'b, C>> {
             self.with_context(|base| AtLocationContext { base, location })
         }
 
-        pub fn before<'b>(&'b mut self) -> RuntimeCallAdder<AtLocationContext<'b, C>>
+        pub fn before<'b>(&'b mut self) -> ProbeInserter<AtLocationContext<'b, C>>
         where
             C: BlockIndexProvider,
         {
@@ -214,7 +214,7 @@ mod api {
             })
         }
 
-        pub fn after<'b>(&'b mut self) -> RuntimeCallAdder<AtLocationContext<'b, C>>
+        pub fn after<'b>(&'b mut self) -> ProbeInserter<AtLocationContext<'b, C>>
         where
             C: BlockIndexProvider,
         {
@@ -228,7 +228,7 @@ mod api {
         pub fn with_source_info<'b>(
             &'b mut self,
             source_info: mir::SourceInfo,
-        ) -> RuntimeCallAdder<SourceInfoContext<'b, C>> {
+        ) -> ProbeInserter<SourceInfoContext<'b, C>> {
             self.with_context(|base| SourceInfoContext { base, source_info })
         }
 
@@ -236,7 +236,7 @@ mod api {
             &'b mut self,
             id: AssignmentId,
             destination: Place<'tcx>,
-        ) -> RuntimeCallAdder<AssignmentContext<'b, 'tcx, C>> {
+        ) -> ProbeInserter<AssignmentContext<'b, 'tcx, C>> {
             self.with_context(|base| AssignmentContext {
                 base,
                 id,
@@ -247,13 +247,11 @@ mod api {
         pub fn memory_write<'b, 'tcx>(
             &'b mut self,
             id: AssignmentId,
-        ) -> RuntimeCallAdder<AssignmentIdContext<'b, C>> {
+        ) -> ProbeInserter<AssignmentIdContext<'b, C>> {
             self.with_context(|base| AssignmentIdContext { base, id })
         }
 
-        pub fn in_entry_fn<'b>(
-            &'b mut self,
-        ) -> RuntimeCallAdder<EntryFunctionMarkerContext<'b, C>> {
+        pub fn in_entry_fn<'b>(&'b mut self) -> ProbeInserter<EntryFunctionMarkerContext<'b, C>> {
             self.with_context(|base| EntryFunctionMarkerContext { base })
         }
 
@@ -261,7 +259,7 @@ mod api {
             &'b mut self,
             ordering: AtomicOrdering,
             ptr: Option<Spanned<Operand<'tcx>>>,
-        ) -> RuntimeCallAdder<AtomicIntrinsicContext<'b, 'tcx, C>> {
+        ) -> ProbeInserter<AtomicIntrinsicContext<'b, 'tcx, C>> {
             self.with_context(|base| AtomicIntrinsicContext {
                 base,
                 ordering,
@@ -273,7 +271,7 @@ mod api {
             &'b mut self,
             is_volatile: bool,
             ptr: Option<Spanned<Operand<'tcx>>>,
-        ) -> RuntimeCallAdder<MemoryIntrinsicContext<'b, 'tcx, C>> {
+        ) -> ProbeInserter<MemoryIntrinsicContext<'b, 'tcx, C>> {
             self.with_context(|base| MemoryIntrinsicContext {
                 base,
                 is_volatile,
@@ -282,16 +280,16 @@ mod api {
         }
 
         pub fn borrow_from<'b>(
-            other: &'b mut RuntimeCallAdder<C>,
-        ) -> RuntimeCallAdder<TransparentContext<'b, C>> {
+            other: &'b mut ProbeInserter<C>,
+        ) -> ProbeInserter<TransparentContext<'b, C>> {
             other.with_context(|base| TransparentContext { base })
         }
 
         pub fn with_context<'a: 'b, 'b, NC>(
             &'a mut self,
             f: impl FnOnce(&'b mut C) -> NC,
-        ) -> RuntimeCallAdder<NC> {
-            RuntimeCallAdder {
+        ) -> ProbeInserter<NC> {
+            ProbeInserter {
                 context: f(&mut self.context),
             }
         }
@@ -301,7 +299,7 @@ mod api {
 mod bb {
     use super::{context::*, *};
 
-    impl<'tcx, C> MirCallAdder<'tcx> for RuntimeCallAdder<C>
+    impl<'tcx, C> MirCallAdder<'tcx> for ProbeInserter<C>
     where
         C: BodyLocalManager<'tcx>
             + BodyProvider<'tcx>
@@ -348,7 +346,7 @@ mod bb {
             )
         }
     }
-    impl<'tcx, C> RuntimeCallAdder<C>
+    impl<'tcx, C> ProbeInserter<C>
     where
         C: TyContextProvider<'tcx>
             + SourceInfoProvider
@@ -407,7 +405,7 @@ mod bb {
         }
     }
 
-    impl<'tcx, C> BlockInserter<'tcx> for RuntimeCallAdder<C>
+    impl<'tcx, C> BlockInserter<'tcx> for ProbeInserter<C>
     where
         C: ForInsertion<'tcx>,
     {
@@ -437,7 +435,7 @@ mod bb {
         }
     }
 
-    impl<'tcx, C> RuntimeCallAdder<C>
+    impl<'tcx, C> ProbeInserter<C>
     where
         Self: MirCallAdder<'tcx>,
         C: TyContextProvider<'tcx> + PriItemsProvider<'tcx>,
@@ -478,7 +476,7 @@ mod bb {
     }
 }
 
-impl<'tcx, C> EntryFunctionHandler for RuntimeCallAdder<C>
+impl<'tcx, C> EntryFunctionHandler for ProbeInserter<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
     C: ForEntryFunction<'tcx>,
@@ -494,7 +492,7 @@ where
     }
 }
 
-impl<'tcx, C> DebugInfoHandler for RuntimeCallAdder<C>
+impl<'tcx, C> DebugInfoHandler for ProbeInserter<C>
 where
     Self: MirCallAdder<'tcx>,
     C: ForInsertion<'tcx>,
@@ -522,7 +520,7 @@ mod shortcuts {
 
     use super::{context::*, *};
 
-    impl<'tcx, C> TyContextProvider<'tcx> for RuntimeCallAdder<C>
+    impl<'tcx, C> TyContextProvider<'tcx> for ProbeInserter<C>
     where
         C: TyContextProvider<'tcx>,
     {
@@ -532,7 +530,7 @@ mod shortcuts {
             }
         }
     }
-    impl<'tcx, C> BodyProvider<'tcx> for RuntimeCallAdder<C>
+    impl<'tcx, C> BodyProvider<'tcx> for ProbeInserter<C>
     where
         C: BodyProvider<'tcx>,
     {
@@ -542,7 +540,7 @@ mod shortcuts {
             }
         }
     }
-    impl<'tcx, C> HasLocalDecls<'tcx> for RuntimeCallAdder<C>
+    impl<'tcx, C> HasLocalDecls<'tcx> for ProbeInserter<C>
     where
         C: HasLocalDecls<'tcx>,
     {
@@ -552,7 +550,7 @@ mod shortcuts {
             }
         }
     }
-    impl<'tcx, C> BodyLocalManager<'tcx> for RuntimeCallAdder<C>
+    impl<'tcx, C> BodyLocalManager<'tcx> for ProbeInserter<C>
     where
         C: BodyLocalManager<'tcx>,
     {
@@ -564,7 +562,7 @@ mod shortcuts {
             }
         }
     }
-    impl<'tcx, C> PriItemsProvider<'tcx> for RuntimeCallAdder<C>
+    impl<'tcx, C> PriItemsProvider<'tcx> for ProbeInserter<C>
     where
         C: PriItemsProvider<'tcx>,
     {
@@ -577,7 +575,7 @@ mod shortcuts {
             }
         }
     }
-    impl<'tcx, C> SourceInfoProvider for RuntimeCallAdder<C>
+    impl<'tcx, C> SourceInfoProvider for ProbeInserter<C>
     where
         C: SourceInfoProvider,
     {
@@ -587,7 +585,7 @@ mod shortcuts {
             }
         }
     }
-    impl<'tcx, C> ConfigProvider for RuntimeCallAdder<C>
+    impl<'tcx, C> ConfigProvider for ProbeInserter<C>
     where
         C: ConfigProvider,
     {
@@ -597,7 +595,7 @@ mod shortcuts {
             }
         }
     }
-    impl<C> AssignmentIdProvider for RuntimeCallAdder<C>
+    impl<C> AssignmentIdProvider for ProbeInserter<C>
     where
         C: AssignmentIdProvider,
     {
@@ -607,7 +605,7 @@ mod shortcuts {
             }
         }
     }
-    impl<'tcx, C> AssignmentInfoProvider<'tcx> for RuntimeCallAdder<C>
+    impl<'tcx, C> AssignmentInfoProvider<'tcx> for ProbeInserter<C>
     where
         C: AssignmentInfoProvider<'tcx>,
     {
@@ -617,7 +615,7 @@ mod shortcuts {
             }
         }
     }
-    impl<'tcx, C> RuntimeCallAdder<C> {
+    impl<'tcx, C> ProbeInserter<C> {
         pub(super) fn reference_destination(&mut self) -> PlaceRef
         where
             Self: AssignmentInfoProvider<'tcx> + PlaceReferencer<'tcx>,
@@ -626,7 +624,7 @@ mod shortcuts {
             self.reference_place(&destination)
         }
     }
-    impl<'tcx, C> StorageProvider for RuntimeCallAdder<C>
+    impl<'tcx, C> StorageProvider for ProbeInserter<C>
     where
         C: StorageProvider,
     {
@@ -637,7 +635,7 @@ mod shortcuts {
         }
     }
 
-    impl<'tcx, C> RuntimeCallAdder<C>
+    impl<'tcx, C> ProbeInserter<C>
     where
         C: BodyProvider<'tcx>,
     {
@@ -646,7 +644,7 @@ mod shortcuts {
         }
     }
 
-    impl<'tcx, C> RuntimeCallAdder<C>
+    impl<'tcx, C> ProbeInserter<C>
     where
         C: BodyProvider<'tcx> + TyContextProvider<'tcx>,
     {
@@ -1121,7 +1119,7 @@ pub(super) mod utils {
 
 mod prelude {
     pub(super) use super::{
-        BlockInserter, BlocksAndResult, MirCallAdder, OperandRef, PlaceRef, RuntimeCallAdder,
+        BlockInserter, BlocksAndResult, MirCallAdder, OperandRef, PlaceRef, ProbeInserter,
     };
 
     pub(super) use super::{

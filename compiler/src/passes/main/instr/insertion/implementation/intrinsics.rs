@@ -16,7 +16,7 @@ use super::{
     utils::operand,
 };
 
-impl<'tcx, C> IntrinsicHandler<'tcx> for RuntimeCallAdder<C>
+impl<'tcx, C> IntrinsicHandler<'tcx> for ProbeInserter<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
     C: ForAssignment<'tcx> + ForOperandRef<'tcx>,
@@ -43,7 +43,7 @@ where
     }
 }
 
-impl<'tcx, C> RuntimeCallAdder<C>
+impl<'tcx, C> ProbeInserter<C>
 where
     C: Basic<'tcx>,
 {
@@ -76,7 +76,7 @@ where
     }
 }
 
-impl<'tcx, C> MemoryIntrinsicHandler<'tcx> for RuntimeCallAdder<C>
+impl<'tcx, C> MemoryIntrinsicHandler<'tcx> for ProbeInserter<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
     C: ForMemoryIntrinsic<'tcx>,
@@ -235,7 +235,7 @@ where
     }
 }
 
-impl<'tcx, C> RuntimeCallAdder<C>
+impl<'tcx, C> ProbeInserter<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
     C: ForMemoryIntrinsic<'tcx>,
@@ -278,7 +278,7 @@ where
     }
 }
 
-impl<'tcx, C> AtomicIntrinsicHandler<'tcx> for RuntimeCallAdder<C>
+impl<'tcx, C> AtomicIntrinsicHandler<'tcx> for ProbeInserter<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
     C: ForAtomicIntrinsic<'tcx>,
@@ -398,7 +398,7 @@ where
     }
 }
 
-impl<'tcx, C> RuntimeCallAdder<C>
+impl<'tcx, C> ProbeInserter<C>
 where
     C: ForAtomicIntrinsic<'tcx>,
 {
@@ -474,7 +474,7 @@ pub(super) struct PointerParamInstrPack<'tcx> {
     pub pri_args: [Operand<'tcx>; 3],
 }
 
-impl<'tcx, C> RuntimeCallAdder<C>
+impl<'tcx, C> ProbeInserter<C>
 where
     Self: MirCallAdder<'tcx>,
     C: Basic<'tcx>,
@@ -565,7 +565,7 @@ where
     }
 }
 
-impl<'tcx, C> RuntimeCallAdder<C>
+impl<'tcx, C> ProbeInserter<C>
 where
     Self: MirCallAdder<'tcx>,
     C: Basic<'tcx>,

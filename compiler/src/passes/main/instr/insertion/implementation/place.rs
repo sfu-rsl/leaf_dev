@@ -10,7 +10,7 @@ use super::{
     prelude::{mir::*, *},
 };
 
-impl<'tcx, C> PlaceReferencer<'tcx> for RuntimeCallAdder<C>
+impl<'tcx, C> PlaceReferencer<'tcx> for ProbeInserter<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
     C: ForPlaceRef<'tcx>,
@@ -21,7 +21,7 @@ where
         reference.into()
     }
 }
-impl<'tcx, C> RuntimeCallAdder<C>
+impl<'tcx, C> ProbeInserter<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
     C: ForPlaceRef<'tcx>,

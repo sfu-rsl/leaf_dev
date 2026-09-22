@@ -192,4 +192,4 @@ pub(crate) use config::Config;
 
 mod implementation;
 
-pub(super) use implementation::{RuntimeCallAdder, ctxt_reqs};
+pub(super) use implementation::{ProbeInserter, ctxt_reqs};
