@@ -1,26 +1,27 @@
 use rustc_middle::mir::Operand;
 use rustc_span::Spanned;
 
-use super::super::{
-    decision::{self},
+use super::super::super::{
+    decision,
+    decision::rules::EventDecision,
     insertion::{
         MemoryIntrinsicHandler, ProbeInserter,
         context::{ConfigProvider, SourceInfoProvider},
         ctxt_reqs as cr,
     },
 };
-use super::AssignmentId;
+use super::{AssignmentId, intrinsic_decision};
 
 pub(super) fn instrument_memory_intrinsic_call<'tcx, 'a, C>(
     inserter: &mut ProbeInserter<C>,
     args: &'a [Spanned<Operand<'tcx>>],
-    kind: decision::MemoryIntrinsicKind,
+    kind: intrinsic_decision::MemoryIntrinsicKind,
     is_volatile: bool,
 ) where
     C: cr::ForAssignment<'tcx>,
 {
-    use decision::MemoryIntrinsicKind::*;
-    use decision::rules::EventDecision::*;
+    use EventDecision::*;
+    use intrinsic_decision::MemoryIntrinsicKind::*;
 
     let filter = (&inserter.config().assignment_filter).intrinsic_memory_op;
     match filter {
@@ -63,7 +64,7 @@ pub(super) fn instrument_memory_intrinsic_call<'tcx, 'a, C>(
     }
 }
 
-pub(super) fn instrument_memory_intrinsic_copy_non_overlapping<'tcx, 'a, C>(
+pub(in super::super) fn instrument_memory_intrinsic_copy_non_overlapping<'tcx, 'a, C>(
     inserter: &mut ProbeInserter<C>,
     src: &Operand<'tcx>,
     dst: &Operand<'tcx>,

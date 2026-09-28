@@ -1,4 +1,3 @@
-mod intrinsics;
 pub(super) mod rules;
 
 use const_format::concatcp;
@@ -20,10 +19,6 @@ pub(super) const TAG_INSTR_DECISION: &str = concatcp!(super::TAG_INSTRUMENTATION
 
 const TOOL_NAME: &str = crate::constants::TOOL_LEAF;
 const ATTR_NAME: &str = "instrument";
-
-pub(super) use intrinsics::{
-    AtomicIntrinsicKind, IntrinsicDecision, MemoryIntrinsicKind, decide_intrinsic_call,
-};
 
 pub(super) fn should_instrument<'tcx>(
     tcx: TyCtxt<'tcx>,

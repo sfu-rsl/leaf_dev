@@ -2,7 +2,7 @@ use rustc_middle::ty::IntrinsicDef;
 
 use common::pri::AtomicBinaryOp;
 
-use super::super::pri;
+use super::super::super::pri;
 
 pub(crate) enum IntrinsicDecision {
     OneToOneAssign(pri::sym::intrinsics::LeafIntrinsicSymbol),
