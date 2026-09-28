@@ -1,3 +1,6 @@
+mod intrinsic_decision;
+pub(super) mod mem_intrinsics;
+
 use rustc_hir::def_id::DefId;
 use rustc_middle::{
     mir::{Operand, Place},
@@ -12,7 +15,7 @@ use crate::utils::mir::TyCtxtExt;
 
 use super::super::{
     TAG_INSTR,
-    decision::{self, AtomicIntrinsicKind},
+    decision::rules::EventDecision,
     insertion::{
         AtomicIntrinsicHandler, DropHandler, FunctionHandler, IntrinsicHandler, ProbeInserter,
         context::{AssignmentIdProvider, ConfigProvider, PriItemsProvider, TyContextProvider},
@@ -76,8 +79,8 @@ fn instrument_intrinsic_call<'tcx, 'c, C>(
 ) where
     C: cr::ForFunctionCallingWithResult<'tcx>,
 {
-    use decision::IntrinsicDecision::*;
-    match decision::decide_intrinsic_call(def) {
+    use intrinsic_decision::IntrinsicDecision::*;
+    match intrinsic_decision::decide_intrinsic_call(def) {
         OneToOneAssign(func_name) => {
             instrument_one_to_one_intrinsic_call(inserter, def_id, func_name, params);
         }
@@ -96,7 +99,7 @@ fn instrument_intrinsic_call<'tcx, 'c, C>(
                     .to_leaf()
                     .to_atomic_ordering()
             };
-            use decision::AtomicIntrinsicKind::*;
+            use intrinsic_decision::AtomicIntrinsicKind::*;
             instrument_atomic_intrinsic_call(
                 inserter,
                 Some(inserter.assignment_id()),
@@ -165,7 +168,7 @@ fn instrument_one_to_one_intrinsic_call<'tcx, 'c, C>(
 ) where
     C: cr::ForAssignment<'tcx>,
 {
-    use decision::rules::EventDecision::*;
+    use EventDecision::*;
 
     let rules = &inserter.config().assignment_filter;
     let filter = match params.args.len() {
@@ -196,13 +199,13 @@ fn instrument_one_to_one_intrinsic_call<'tcx, 'c, C>(
 fn instrument_memory_intrinsic_call<'tcx, 'c, C>(
     inserter: &'c mut ProbeInserter<C>,
     params: &CallParams<'_, 'tcx>,
-    kind: decision::MemoryIntrinsicKind,
+    kind: intrinsic_decision::MemoryIntrinsicKind,
     is_volatile: bool,
 ) where
     C: ForAssignment<'tcx>,
 {
     let mut inserter = inserter.before();
-    super::mem_intrinsics::instrument_memory_intrinsic_call(
+    mem_intrinsics::instrument_memory_intrinsic_call(
         &mut inserter,
         &params.args,
         kind,
@@ -216,12 +219,12 @@ fn instrument_atomic_intrinsic_call<'tcx, 'c, C>(
     params: &CallParams<'_, 'tcx>,
     ordering: mir_ty::AtomicOrdering,
     failure_ordering: Option<mir_ty::AtomicOrdering>,
-    kind: AtomicIntrinsicKind,
+    kind: intrinsic_decision::AtomicIntrinsicKind,
 ) where
     C: cr::ForInsertion<'tcx>,
 {
-    use AtomicIntrinsicKind::*;
-    use decision::rules::EventDecision::*;
+    use EventDecision::*;
+    use intrinsic_decision::AtomicIntrinsicKind::*;
 
     let convert_ordering = |ord: mir_ty::AtomicOrdering| match ord {
         mir_ty::AtomicOrdering::Relaxed => common::pri::AtomicOrdering::RELAXED,

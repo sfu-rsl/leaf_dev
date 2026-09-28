@@ -1,5 +1,4 @@
 mod call;
-mod mem_intrinsics;
 
 use rustc_abi::VariantIdx;
 use rustc_middle::{
@@ -273,7 +272,7 @@ where
                 dst,
                 count,
             }) => {
-                mem_intrinsics::instrument_memory_intrinsic_copy_non_overlapping(
+                call::mem_intrinsics::instrument_memory_intrinsic_copy_non_overlapping(
                     &mut self.inserter,
                     src,
                     dst,
