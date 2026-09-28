@@ -16,71 +16,55 @@ use rustc_span::{Span, Spanned};
 macro_rules! make_statement_kind_visitor {
     ($visitor_trait_name:ident, $($mutability:ident)?) => {
         #[allow(unused)]
-        pub trait $visitor_trait_name<'tcx, T: Default> {
+        pub trait $visitor_trait_name<'tcx, T> {
             fn visit_statement_kind(&mut self, kind: & $($mutability)? StatementKind<'tcx>) -> T {
                 self.super_statement_kind(kind)
             }
 
-            fn visit_assign(&mut self, place: & $($mutability)? Place<'tcx>, rvalue: & $($mutability)? Rvalue<'tcx>) -> T {
-                Default::default()
-            }
+            fn visit_assign(
+                &mut self,
+                place: & $($mutability)? Place<'tcx>,
+                rvalue: & $($mutability)? Rvalue<'tcx>,
+            ) -> T;
 
-            fn visit_fake_read(&mut self, cause: & $($mutability)? FakeReadCause, place: & $($mutability)? Place<'tcx>) -> T {
-                Default::default()
-            }
+            fn visit_fake_read(
+                &mut self,
+                cause: & $($mutability)? FakeReadCause,
+                place: & $($mutability)? Place<'tcx>,
+            ) -> T;
 
             fn visit_set_discriminant(
                 &mut self,
                 place: &Place<'tcx>,
                 variant_index: & $($mutability)? VariantIdx,
-            ) -> T {
-                Default::default()
-            }
+            ) -> T;
 
-            fn visit_storage_live(&mut self, local: & $($mutability)? Local) -> T {
-                Default::default()
-            }
+            fn visit_storage_live(&mut self, local: & $($mutability)? Local) -> T;
 
-            fn visit_storage_dead(&mut self, local: & $($mutability)? Local) -> T {
-                Default::default()
-            }
+            fn visit_storage_dead(&mut self, local: & $($mutability)? Local) -> T;
 
-            fn visit_place_mention(&mut self, place: & $($mutability)? Place<'tcx>) -> T {
-                Default::default()
-            }
+            fn visit_place_mention(&mut self, place: & $($mutability)? Place<'tcx>) -> T;
 
             fn visit_ascribe_user_type(
                 &mut self,
                 place: & $($mutability)? Place<'tcx>,
                 user_type_proj: & $($mutability)? UserTypeProjection,
                 variance: & $($mutability)? Variance,
-            ) -> T {
-                Default::default()
-            }
+            ) -> T;
 
-            fn visit_coverage(&mut self, coverage: & $($mutability)? CoverageKind) -> T {
-                Default::default()
-            }
+            fn visit_coverage(&mut self, coverage: & $($mutability)? CoverageKind) -> T;
 
-            fn visit_intrinsic(&mut self, intrinsic: & $($mutability)? NonDivergingIntrinsic<'tcx>) -> T {
-                Default::default()
-            }
+            fn visit_intrinsic(&mut self, intrinsic: & $($mutability)? NonDivergingIntrinsic<'tcx>) -> T;
 
-            fn visit_const_eval_counter(&mut self) -> T {
-                Default::default()
-            }
+            fn visit_const_eval_counter(&mut self) -> T;
 
-            fn visit_nop(&mut self) -> T {
-                Default::default()
-            }
+            fn visit_nop(&mut self) -> T;
 
             fn visit_backward_incompatible_drop_hint(
                 &mut self,
                 place: & $($mutability)? Place<'tcx>,
                 reason: & $($mutability)? BackwardIncompatibleDropReason
-            ) -> T {
-                Default::default()
-            }
+            ) -> T;
 
             fn super_statement_kind(&mut self, kind: & $($mutability)? StatementKind<'tcx>) -> T {
                 match kind {
@@ -118,41 +102,29 @@ make_statement_kind_visitor!(StatementKindMutVisitor, mut);
 macro_rules! make_terminator_kind_visitor {
     ($visitor_trait_name:ident, $($mutability:ident)?) => {
         #[allow(unused_variables)]
-        pub trait $visitor_trait_name<'tcx, T: Default> {
+        pub trait $visitor_trait_name<'tcx, T> {
             fn visit_terminator_kind(&mut self, kind: & $($mutability)? TerminatorKind<'tcx>) -> T {
                 self.super_terminator_kind(kind)
             }
 
-            fn visit_goto(&mut self, target: & $($mutability)? BasicBlock) -> T {
-                Default::default()
-            }
+            fn visit_goto(&mut self, target: & $($mutability)? BasicBlock) -> T;
 
             fn visit_switch_int(
                 &mut self,
                 discr: & $($mutability)? Operand<'tcx>,
-                targets: & $($mutability)? SwitchTargets
-            ) -> T {
-                Default::default()
-            }
+                targets: & $($mutability)? SwitchTargets,
+            ) -> T;
 
-            fn visit_unwind_resume(&mut self) -> T {
-                Default::default()
-            }
+            fn visit_unwind_resume(&mut self) -> T;
 
             fn visit_unwind_terminate(
                 &mut self,
-                reason: & $($mutability)? UnwindTerminateReason
-            ) -> T {
-                Default::default()
-            }
+                reason: & $($mutability)? UnwindTerminateReason,
+            ) -> T;
 
-            fn visit_return(&mut self) -> T {
-                Default::default()
-            }
+            fn visit_return(&mut self) -> T;
 
-            fn visit_unreachable(&mut self) -> T {
-                Default::default()
-            }
+            fn visit_unreachable(&mut self) -> T;
 
             fn visit_drop(
                 &mut self,
@@ -160,9 +132,7 @@ macro_rules! make_terminator_kind_visitor {
                 target: & $($mutability)? BasicBlock,
                 unwind: & $($mutability)? UnwindAction,
                 replace: & $($mutability)? bool,
-            ) -> T {
-                Default::default()
-            }
+            ) -> T;
 
             #[allow(clippy::too_many_arguments)]
             fn visit_call(
@@ -174,9 +144,7 @@ macro_rules! make_terminator_kind_visitor {
                 unwind: & $($mutability)? UnwindAction,
                 call_source: & $($mutability)? CallSource,
                 fn_span: Span,
-            ) -> T {
-                Default::default()
-            }
+            ) -> T;
 
             #[allow(clippy::too_many_arguments)]
             fn visit_tail_call(
@@ -184,9 +152,7 @@ macro_rules! make_terminator_kind_visitor {
                 func: & $($mutability)? Operand<'tcx>,
                 args: & $($mutability)? [Spanned<Operand<'tcx>>],
                 fn_span: Span,
-            ) -> T {
-                Default::default()
-            }
+            ) -> T;
 
             fn visit_assert(
                 &mut self,
@@ -195,9 +161,7 @@ macro_rules! make_terminator_kind_visitor {
                 msg: & $($mutability)? AssertMessage<'tcx>,
                 target: & $($mutability)? BasicBlock,
                 unwind: & $($mutability)? UnwindAction,
-            ) -> T {
-                Default::default()
-            }
+            ) -> T;
 
             fn visit_yield(
                 &mut self,
@@ -205,29 +169,21 @@ macro_rules! make_terminator_kind_visitor {
                 resume: & $($mutability)? BasicBlock,
                 resume_arg: & $($mutability)? Place<'tcx>,
                 drop: & $($mutability)? Option<BasicBlock>,
-            ) -> T {
-                Default::default()
-            }
+            ) -> T;
 
-            fn visit_coroutine_drop(&mut self) -> T {
-                Default::default()
-            }
+            fn visit_coroutine_drop(&mut self) -> T;
 
             fn visit_false_edge(
                 &mut self,
                 real_target: & $($mutability)? BasicBlock,
                 imaginary_target: & $($mutability)? BasicBlock,
-            ) -> T {
-                Default::default()
-            }
+            ) -> T;
 
             fn visit_false_unwind(
                 &mut self,
                 real_target: & $($mutability)? BasicBlock,
                 unwind: & $($mutability)? UnwindAction,
-            ) -> T {
-                Default::default()
-            }
+            ) -> T;
 
             fn visit_inline_asm(
                 &mut self,
@@ -238,9 +194,7 @@ macro_rules! make_terminator_kind_visitor {
                 line_spans: &'tcx [Span],
                 targets: & $($mutability)? Box<[BasicBlock]>,
                 unwind: & $($mutability)? UnwindAction,
-            ) -> T {
-                Default::default()
-            }
+            ) -> T;
 
             fn super_terminator_kind(&mut self, kind: & $($mutability)? TerminatorKind<'tcx>) -> T {
                 use TerminatorKind::*;
@@ -343,91 +297,68 @@ macro_rules! make_rvalue_visitor {
                 &mut self,
                 operand: & $($mutability)? Operand<'tcx>,
                 with_retag: & $($mutability)? WithRetag,
-            ) -> T {
-                Default::default()
-            }
-
-            fn visit_repeat(&mut self, operand: & $($mutability)? Operand<'tcx>, count: & $($mutability)? Const<'tcx>) -> T {
-                Default::default()
-            }
+            ) -> T;
+            fn visit_repeat(
+                &mut self,
+                operand: & $($mutability)? Operand<'tcx>,
+                count: & $($mutability)? Const<'tcx>,
+            ) -> T;
 
             fn visit_ref(
                 &mut self,
                 region: & $($mutability)? Region,
                 borrow_kind: & $($mutability)? BorrowKind,
                 place: & $($mutability)? Place<'tcx>,
-            ) -> T {
-                Default::default()
-            }
+            ) -> T;
 
             fn visit_thread_local_ref(
                 &mut self,
                 def_id: & $($mutability)? rustc_span::def_id::DefId,
-            ) -> T {
-                Default::default()
-            }
+            ) -> T;
 
             fn visit_raw_ptr(
                 &mut self,
                 kind: & $($mutability)? RawPtrKind,
                 place: & $($mutability)? Place<'tcx>,
-            ) -> T {
-                Default::default()
-            }
+            ) -> T;
 
             fn visit_cast(
                 &mut self,
                 kind: & $($mutability)? CastKind,
                 operand: & $($mutability)? Operand<'tcx>,
                 ty: & $($mutability)? Ty<'tcx>,
-            ) -> T {
-                Default::default()
-            }
+            ) -> T;
 
             fn visit_binary_op(
                 &mut self,
                 op: & $($mutability)? BinOp,
                 operands: & $($mutability)? Box<(Operand<'tcx>, Operand<'tcx>)>,
-            ) -> T {
-                Default::default()
-            }
+            ) -> T;
 
-            fn visit_unary_op(&mut self, op: & $($mutability)? UnOp, operand: & $($mutability)? Operand<'tcx>) -> T {
-                Default::default()
-            }
+            fn visit_unary_op(&mut self, op: & $($mutability)? UnOp, operand: & $($mutability)? Operand<'tcx>) -> T;
 
-            fn visit_discriminant(&mut self, place: & $($mutability)? Place<'tcx>) -> T {
-                Default::default()
-            }
+            fn visit_discriminant(&mut self, place: & $($mutability)? Place<'tcx>) -> T;
 
             fn visit_aggregate(
                 &mut self,
                 kind: & $($mutability)? Box<AggregateKind>,
                 operands: & $($mutability)? IndexVec<FieldIdx, Operand<'tcx>>,
-            ) -> T {
-                Default::default()
-            }
+            ) -> T;
 
-            fn visit_copy_for_deref(&mut self, place: & $($mutability)? Place<'tcx>) -> T {
-                Default::default()
-            }
+            fn visit_copy_for_deref(&mut self, place: & $($mutability)? Place<'tcx>) -> T;
 
             fn visit_wrap_unsafe_binder(
                 &mut self,
                 operand: & $($mutability)? Operand<'tcx>,
                 ty: & $($mutability)? Ty<'tcx>
-            ) -> T {
-                Default::default()
-            }
+            ) -> T;
 
             fn visit_reborrow(
                 &mut self,
                 target_ty: & $($mutability)? Ty<'tcx>,
                 mutability: & $($mutability)? rustc_hir::Mutability,
                 place: & $($mutability)? Place<'tcx>
-            ) -> T {
-                Default::default()
-            }
+            ) -> T;
 
             fn super_rvalue(&mut self, rvalue: & $($mutability)? Rvalue<'tcx>) -> T {
                 match rvalue {

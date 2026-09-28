@@ -125,6 +125,57 @@ mod orig_index {
         ) {
             self.record();
         }
+
+        fn visit_goto(&mut self, _target: &BasicBlock) {
+            Default::default()
+        }
+
+        fn visit_unwind_resume(&mut self) {
+            Default::default()
+        }
+
+        fn visit_unwind_terminate(&mut self, _reason: &mir::UnwindTerminateReason) {
+            Default::default()
+        }
+
+        fn visit_unreachable(&mut self) {
+            Default::default()
+        }
+
+        fn visit_yield(
+            &mut self,
+            _value: &Operand<'tcx>,
+            _resume: &BasicBlock,
+            _resume_arg: &Place<'tcx>,
+            _drop: &Option<BasicBlock>,
+        ) {
+            Default::default()
+        }
+
+        fn visit_coroutine_drop(&mut self) {
+            Default::default()
+        }
+
+        fn visit_false_edge(&mut self, _real_target: &BasicBlock, _imaginary_target: &BasicBlock) {
+            Default::default()
+        }
+
+        fn visit_false_unwind(&mut self, _real_target: &BasicBlock, _unwind: &UnwindAction) {
+            Default::default()
+        }
+
+        fn visit_inline_asm(
+            &mut self,
+            _asm_macro: &mir::InlineAsmMacro,
+            _template: &'tcx [rustc_ast::InlineAsmTemplatePiece],
+            _operands: &[mir::InlineAsmOperand<'tcx>],
+            _options: &rustc_ast::InlineAsmOptions,
+            _line_spans: &'tcx [Span],
+            _targets: &Box<[BasicBlock]>,
+            _unwind: &UnwindAction,
+        ) {
+            Default::default()
+        }
     }
 }
 
