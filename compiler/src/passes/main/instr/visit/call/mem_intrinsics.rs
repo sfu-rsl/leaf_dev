@@ -1,13 +1,8 @@
 use rustc_middle::mir::Operand;
 use rustc_span::Spanned;
 
-use super::super::super::{
-    config::rules::EventDecision,
-    insertion::{
-        MemoryIntrinsicHandler, ProbeInserter,
-        context::{ConfigProvider, SourceInfoProvider},
-        ctxt_reqs as cr,
-    },
+use super::super::super::insertion::{
+    MemoryIntrinsicHandler, ProbeInserter, context::SourceInfoProvider, ctxt_reqs as cr,
 };
 use super::{AssignmentId, intrinsic_decision};
 
@@ -19,46 +14,33 @@ pub(super) fn instrument_memory_intrinsic_call<'tcx, 'a, C>(
 ) where
     C: cr::ForAssignment<'tcx>,
 {
-    use EventDecision::*;
     use intrinsic_decision::MemoryIntrinsicKind::*;
 
-    let filter = (&inserter.config().assignment).intrinsic_memory_op;
-    match filter {
-        Omit => return,
-        Opaque | Detailed => {
-            if matches!(filter, Opaque) {
-                inserter.add_opaque_assignment();
-                return;
-            }
+    let ptr_arg = match (&kind, is_volatile) {
+        // `volatile_copy_memory`, `volatile_copy_nonoverlapping_memory` have dst first!
+        (Copy { .. }, true) => args.get(1),
+        _ => args.get(0),
+    };
+    let mut inserter = inserter.perform_memory_op(is_volatile, ptr_arg.cloned());
 
-            let ptr_arg = match (&kind, is_volatile) {
-                // `volatile_copy_memory`, `volatile_copy_nonoverlapping_memory` have dst first!
-                (Copy { .. }, true) => args.get(1),
-                _ => args.get(0),
-            };
-            let mut inserter = inserter.perform_memory_op(is_volatile, ptr_arg.cloned());
-
-            match kind {
-                Load { is_ptr_aligned } => inserter.load(is_ptr_aligned),
-                Store { is_ptr_aligned } => inserter.store(&args[1], is_ptr_aligned),
-                Copy { is_overlapping } => {
-                    let dest: &Spanned<Operand<'tcx>> =
-                        if is_volatile { &args[0] } else { &args[1] };
-                    inserter.copy(dest, &args[2], is_overlapping)
-                }
-                Set => {
-                    inserter.set(&args[1], &args[2]);
-                }
-                Swap => {
-                    inserter.swap(&args[1]);
-                }
-                RawEq => {
-                    inserter.raw_eq(&args[1]);
-                }
-                CompareBytes => {
-                    inserter.compare_bytes(&args[1], &args[2]);
-                }
-            }
+    match kind {
+        Load { is_ptr_aligned } => inserter.load(is_ptr_aligned),
+        Store { is_ptr_aligned } => inserter.store(&args[1], is_ptr_aligned),
+        Copy { is_overlapping } => {
+            let dest: &Spanned<Operand<'tcx>> = if is_volatile { &args[0] } else { &args[1] };
+            inserter.copy(dest, &args[2], is_overlapping)
+        }
+        Set => {
+            inserter.set(&args[1], &args[2]);
+        }
+        Swap => {
+            inserter.swap(&args[1]);
+        }
+        RawEq => {
+            inserter.raw_eq(&args[1]);
+        }
+        CompareBytes => {
+            inserter.compare_bytes(&args[1], &args[2]);
         }
     }
 }
@@ -72,13 +54,6 @@ pub(in super::super) fn instrument_memory_intrinsic_copy_non_overlapping<'tcx, '
 ) where
     C: cr::ForInsertion<'tcx>,
 {
-    use EventDecision::*;
-
-    match inserter.config().assignment.intrinsic_memory_op {
-        Omit | Opaque => return,
-        Detailed => (),
-    }
-
     let [src, dst, count] = {
         let span = inserter.source_info().span;
         [src, dst, count].map(|op| Spanned {
