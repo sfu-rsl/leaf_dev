@@ -20,7 +20,7 @@ use super::{
 };
 
 use super::super::super::TAG_INSTR;
-use super::super::super::decision::rules::EventDecision;
+use super::super::super::config::rules::EventDecision;
 
 impl<'tcx, C> AssignmentHandler<'tcx> for ProbeInserter<C>
 where

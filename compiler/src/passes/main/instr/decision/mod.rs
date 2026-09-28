@@ -1,5 +1,3 @@
-pub(super) mod rules;
-
 use const_format::concatcp;
 
 use rustc_hir::{def_id::DefId, definitions::DefPathData};
@@ -13,7 +11,7 @@ use common::{log_debug, log_info, log_warn};
 
 use crate::{passes::Storage, utils::mir::TyCtxtExt};
 
-use super::config::WholeBodyFilter;
+use super::config::{WholeBodyFilter, rules::BodyDecision};
 
 pub(super) const TAG_INSTR_DECISION: &str = concatcp!(super::TAG_INSTRUMENTATION, "::decision");
 
@@ -45,7 +43,7 @@ pub(super) fn should_instrument<'tcx>(
         return false;
     }
 
-    let policy = rules::get_baked_policy(storage);
+    let policy = super::config::rules::get_baked_policy(storage);
     if let Some((decision, item)) =
         find_inheritable_first_filtered(tcx, def_id, move |tcx, def_id| {
             policy.body_decision(&(tcx, def_id))
@@ -58,7 +56,7 @@ pub(super) fn should_instrument<'tcx>(
             item,
             decision
         );
-        return decision == rules::BodyDecision::Instrument;
+        return decision == BodyDecision::Instrument;
     }
 
     true
@@ -130,8 +128,8 @@ pub(super) fn get_exceptional_exclusions() -> Vec<WholeBodyFilter> {
 fn find_inheritable_first_filtered<'tcx>(
     tcx: TyCtxt<'tcx>,
     def_id: DefId,
-    rules: impl Fn(TyCtxt<'tcx>, DefId) -> Option<rules::BodyDecision>,
-) -> Option<(rules::BodyDecision, DefId)> {
+    rules: impl Fn(TyCtxt<'tcx>, DefId) -> Option<BodyDecision>,
+) -> Option<(BodyDecision, DefId)> {
     let mut current = def_id;
     loop {
         // Attributes take precedence over filters.
@@ -143,10 +141,7 @@ fn find_inheritable_first_filtered<'tcx>(
                 current,
                 explicit
             );
-            return Some((
-                rules::BodyDecision::from_rule(Some(explicit)).unwrap(),
-                current,
-            ));
+            return Some((BodyDecision::from_rule(Some(explicit)).unwrap(), current));
         }
 
         if let Some(decision) = rules(tcx, current) {

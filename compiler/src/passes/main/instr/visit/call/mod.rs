@@ -15,7 +15,7 @@ use crate::utils::mir::TyCtxtExt;
 
 use super::super::{
     TAG_INSTR,
-    decision::rules::EventDecision,
+    config::rules::EventDecision,
     insertion::{
         AtomicIntrinsicHandler, DropHandler, FunctionHandler, IntrinsicHandler, ProbeInserter,
         context::{AssignmentIdProvider, ConfigProvider, PriItemsProvider, TyContextProvider},

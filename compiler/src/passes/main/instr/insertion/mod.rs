@@ -171,7 +171,7 @@ impl InsertionLocation {
 }
 
 mod config {
-    pub(super) use super::super::decision::rules::{
+    pub(super) use super::super::config::rules::{
         AssignmentRules, CallFlowRules, ConstantTypeRules, DetailDecision, DropRules,
         EventDecision, OperandKindRules, PlaceInfoRules, PlaceStructureRules,
         StorageLifetimeMarkerRules, SwitchRules,
