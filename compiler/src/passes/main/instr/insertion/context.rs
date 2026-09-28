@@ -14,17 +14,14 @@ use rustc_span::{Spanned, def_id::DefId};
 use common::pri::{AssignmentId, AtomicOrdering};
 
 use crate::{
-    passes::{
-        Storage,
-        instr::pri::{FunctionInfo, PriHelperFunctions, PriItems, PriTypes, sym::LeafSymbol},
-    },
+    passes::instr::pri::{FunctionInfo, PriHelperFunctions, PriItems, PriTypes, sym::LeafSymbol},
     utils::mir_transform::{
         BodyBlockManager, BodyInstrumentationUnit, BodyLocalManager, JumpModificationConstraint,
         JumpTargetModifier, NewLocalDecl,
     },
 };
 
-use super::{Config, InsertionLocation};
+use super::{BodyConfig, InsertionLocation};
 
 pub(crate) trait TyContextProvider<'tcx> {
     fn tcx(&self) -> TyCtxt<'tcx>;
@@ -43,12 +40,8 @@ pub(crate) trait PriItemsProvider<'tcx> {
     fn all_pri_items(&self) -> &HashSet<DefId>;
 }
 
-pub(crate) trait StorageProvider {
-    fn storage(&mut self) -> &mut dyn Storage;
-}
-
 pub(crate) trait ConfigProvider {
-    fn config(&self) -> &Config;
+    fn config(&self) -> &BodyConfig;
 }
 
 pub(crate) trait BlockIndexProvider {
@@ -100,7 +93,6 @@ where
         + BodyBlockManager<'tcx>
         + PriItemsProvider<'tcx>
         + HasLocalDecls<'tcx>
-        + StorageProvider
         + ConfigProvider,
 {
 }
@@ -111,44 +103,40 @@ impl<'tcx, C> BaseContext<'tcx> for C where
         + BodyBlockManager<'tcx>
         + PriItemsProvider<'tcx>
         + HasLocalDecls<'tcx>
-        + StorageProvider
         + ConfigProvider
 {
 }
 
-pub(crate) struct DefaultContext<'tcx, 'm, 'p, 's> {
+pub(crate) struct DefaultContext<'tcx, 'm, 'p> {
     tcx: TyCtxt<'tcx>,
     modification_unit: &'m mut BodyInstrumentationUnit<'tcx>,
     pri: &'p PriItems,
-    storage: &'s mut dyn Storage,
-    config: Config,
+    config: BodyConfig,
 }
 
-impl<'tcx, 'm, 'p, 's> DefaultContext<'tcx, 'm, 'p, 's> {
+impl<'tcx, 'm, 'p> DefaultContext<'tcx, 'm, 'p> {
     pub(crate) fn new(
         tcx: TyCtxt<'tcx>,
         modification_unit: &'m mut BodyInstrumentationUnit<'tcx>,
         pri: &'p PriItems,
-        storage: &'s mut dyn Storage,
-        config: Config,
+        config: BodyConfig,
     ) -> Self {
         Self {
             tcx,
             modification_unit,
             pri,
-            storage,
             config,
         }
     }
 }
 
-impl<'tcx> TyContextProvider<'tcx> for DefaultContext<'tcx, '_, '_, '_> {
+impl<'tcx> TyContextProvider<'tcx> for DefaultContext<'tcx, '_, '_> {
     fn tcx(&self) -> TyCtxt<'tcx> {
         self.tcx
     }
 }
 
-impl<'tcx> HasLocalDecls<'tcx> for DefaultContext<'tcx, '_, '_, '_> {
+impl<'tcx> HasLocalDecls<'tcx> for DefaultContext<'tcx, '_, '_> {
     delegate! {
         to self.modification_unit {
             fn local_decls(&self) -> &LocalDecls<'tcx>;
@@ -156,7 +144,7 @@ impl<'tcx> HasLocalDecls<'tcx> for DefaultContext<'tcx, '_, '_, '_> {
     }
 }
 
-impl<'tcx> BodyLocalManager<'tcx> for DefaultContext<'tcx, '_, '_, '_> {
+impl<'tcx> BodyLocalManager<'tcx> for DefaultContext<'tcx, '_, '_> {
     delegate! {
         to self.modification_unit {
             fn add_local<T>(&mut self, decl_info: T) -> Local
@@ -166,7 +154,7 @@ impl<'tcx> BodyLocalManager<'tcx> for DefaultContext<'tcx, '_, '_, '_> {
     }
 }
 
-impl<'tcx> BodyBlockManager<'tcx> for DefaultContext<'tcx, '_, '_, '_> {
+impl<'tcx> BodyBlockManager<'tcx> for DefaultContext<'tcx, '_, '_> {
     fn insert_blocks_before<I>(
         &mut self,
         index: BasicBlock,
@@ -188,7 +176,7 @@ impl<'tcx> BodyBlockManager<'tcx> for DefaultContext<'tcx, '_, '_, '_> {
     }
 }
 
-impl JumpTargetModifier for DefaultContext<'_, '_, '_, '_> {
+impl JumpTargetModifier for DefaultContext<'_, '_, '_> {
     fn modify_jump_target_where(
         &mut self,
         terminator_location: BasicBlock,
@@ -221,7 +209,7 @@ impl<'tcx> PriItemsProvider<'tcx> for PriItems {
     }
 }
 
-impl<'tcx> PriItemsProvider<'tcx> for DefaultContext<'tcx, '_, '_, '_> {
+impl<'tcx> PriItemsProvider<'tcx> for DefaultContext<'tcx, '_, '_> {
     delegate! {
         to self.pri {
             fn get_pri_func_info(&self, func_name: LeafSymbol) -> &FunctionInfo;
@@ -232,14 +220,8 @@ impl<'tcx> PriItemsProvider<'tcx> for DefaultContext<'tcx, '_, '_, '_> {
     }
 }
 
-impl StorageProvider for DefaultContext<'_, '_, '_, '_> {
-    fn storage(&mut self) -> &mut dyn Storage {
-        self.storage
-    }
-}
-
-impl ConfigProvider for DefaultContext<'_, '_, '_, '_> {
-    fn config(&self) -> &Config {
+impl ConfigProvider for DefaultContext<'_, '_, '_> {
+    fn config(&self) -> &BodyConfig {
         &self.config
     }
 }
@@ -484,17 +466,10 @@ make_impl_macro! {
 }
 
 make_impl_macro! {
-    impl_storage_provider,
-    StorageProvider,
-    self,
-    fn storage(&mut self) -> &mut dyn Storage;
-}
-
-make_impl_macro! {
     impl_config_provider,
     ConfigProvider,
     self,
-    fn config(&self) -> &Config;
+    fn config(&self) -> &BodyConfig;
 }
 
 make_impl_macro! {
@@ -621,7 +596,6 @@ make_caller_macro!(
         impl_body_provider,
         impl_in_entry_function,
         impl_has_local_decls,
-        impl_storage_provider,
         impl_config_provider,
         impl_location_provider,
         impl_orig_location_provider,

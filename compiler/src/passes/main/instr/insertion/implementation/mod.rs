@@ -10,13 +10,10 @@ use rustc_span::Spanned;
 
 use common::pri::{AssignmentId, AtomicOrdering};
 
-use crate::{
-    passes::Storage,
-    utils::{mir::TyCtxtExt, mir_transform::*},
-};
+use crate::utils::{mir::TyCtxtExt, mir_transform::*};
 
 use super::{
-    Config, DebugInfoHandler, EntryFunctionHandler, InsertionLocation, config,
+    BodyConfig, DebugInfoHandler, EntryFunctionHandler, InsertionLocation, config,
     context::{self, DefaultContext, TyContextProvider},
     pri::{
         FunctionInfo, PriHelperFunctions, PriItems, PriTypes,
@@ -157,16 +154,15 @@ trait OperandReferencer<'tcx> {
     fn reference_operand(&mut self, operand: &Operand<'tcx>) -> OperandRef;
 }
 
-impl<'tcx, 'm, 'p, 's> ProbeInserter<DefaultContext<'tcx, 'm, 'p, 's>> {
+impl<'tcx, 'm, 'p> ProbeInserter<DefaultContext<'tcx, 'm, 'p>> {
     pub fn new(
         tcx: TyCtxt<'tcx>,
         modification_unit: &'m mut BodyInstrumentationUnit<'tcx>,
         pri: &'p PriItems,
-        storage: &'s mut dyn Storage,
-        config: Config,
+        config: BodyConfig,
     ) -> Self {
         Self {
-            context: DefaultContext::new(tcx, modification_unit, pri, storage, config),
+            context: DefaultContext::new(tcx, modification_unit, pri, config),
         }
     }
 }
@@ -591,7 +587,7 @@ mod shortcuts {
     {
         delegate! {
             to self.context {
-                fn config(&self) -> &Config;
+                fn config(&self) -> &BodyConfig;
             }
         }
     }
@@ -624,17 +620,6 @@ mod shortcuts {
             self.reference_place(&destination)
         }
     }
-    impl<'tcx, C> StorageProvider for ProbeInserter<C>
-    where
-        C: StorageProvider,
-    {
-        delegate! {
-            to self.context {
-                fn storage(&mut self) -> &mut dyn Storage;
-            }
-        }
-    }
-
     impl<'tcx, C> ProbeInserter<C>
     where
         C: BodyProvider<'tcx>,

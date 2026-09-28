@@ -465,10 +465,7 @@ mod utils {
     use core::{debug_assert_matches, iter};
 
     use crate::{
-        passes::instr::{
-            MirSourceExt,
-            config::rules::{BodyDecision, get_baked_policy},
-        },
+        passes::instr::MirSourceExt,
         utils::mir::{InstanceKindExt, TyCtxtExt},
     };
 
@@ -477,7 +474,7 @@ mod utils {
     };
     use super::super::{
         BodyLocalManager, HasLocalDecls, MirCallAdder,
-        context::{BodyProvider, PriItemsProvider, StorageProvider},
+        context::{BodyProvider, ConfigProvider, PriItemsProvider},
     };
 
     pub(super) mod rvalue {
@@ -714,7 +711,7 @@ mod utils {
                  + BodyProvider<'tcx>
                  + MirCallAdder<'tcx>
                  + PriItemsProvider<'tcx>
-                 + StorageProvider
+                 + ConfigProvider
              ),
         typing_env: TypingEnv<'tcx>,
         is_precise: bool,
@@ -742,7 +739,7 @@ mod utils {
                  + BodyProvider<'tcx>
                  + MirCallAdder<'tcx>
                  + PriItemsProvider<'tcx>
-                 + StorageProvider
+                 + ConfigProvider
              ),
         typing_env: TypingEnv<'tcx>,
         base_args: Vec<Operand<'tcx>>,
@@ -760,13 +757,7 @@ mod utils {
         if let Some((trait_ref, trait_item)) = as_dyn_compatible_method(tcx, def_id, typing_env)
             && trait_ref.self_ty().is_sized(tcx, typing_env)
         {
-            let ruled_out = {
-                let policy = get_baked_policy(inserter.storage());
-                policy
-                    .dynamic_definition_decision(&(tcx, def_id))
-                    .is_some_and(|decision| decision == BodyDecision::Skip)
-            };
-            if ruled_out {
+            if inserter.config().defines_dyn_compatible_method_as_static() {
                 log_info!(
                     "Dyn-compatible method will be defined as static: {:?}",
                     def_id

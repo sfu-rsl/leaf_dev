@@ -23,7 +23,7 @@ use crate::{
 
 use super::super::{CompilationPass, OverrideFlags, Storage};
 
-use self::insertion::{Config, ProbeInserter};
+use self::insertion::{BodyConfig, ProbeInserter};
 
 pub(crate) use config::InstrumentationRules;
 pub(crate) use subpasses::counter::InstrumentationCounter;
@@ -100,7 +100,10 @@ fn transform<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>, storage: &mut dyn S
         body.span,
     );
 
-    let config = make_config(storage, tcx, def_id);
+    let config = {
+        let policy = config::rules::get_baked_policy(storage);
+        BodyConfig::for_body(&policy, tcx, def_id)
+    };
     let pri_items = pri::get_pri_items(tcx, storage);
 
     clear_body(body, def_id, &pri_items.all_items);
@@ -111,7 +114,7 @@ fn transform<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'tcx>, storage: &mut dyn S
 
     // Instrumentation
     {
-        let mut inserter = ProbeInserter::new(tcx, &mut unit, &pri_items, storage, config);
+        let mut inserter = ProbeInserter::new(tcx, &mut unit, &pri_items, config);
         let mut inserter = inserter.in_body(body, orig_index_map);
 
         visit::instrument_body(&mut inserter, body);
@@ -154,35 +157,6 @@ fn split_blocks<'tcx>(
     mir_transform::split_blocks_with(body, body::requires_immediate_instr_after);
     let orig_index_map = body::make_orig_index_map(body, storage);
     orig_index_map
-}
-
-pub(super) fn make_config<'tcx>(
-    storage: &mut dyn Storage,
-    tcx: TyCtxt<'tcx>,
-    def_id: DefId,
-) -> Config {
-    let item = &(tcx, def_id);
-    let policy = config::rules::get_baked_policy(storage);
-    let operand_info = policy.operand_info_decisions(item);
-    let operand_info_filter = config::rules::OperandKindRules {
-        copy: operand_info.copy,
-        mov: operand_info.mov,
-        constant: if operand_info.constant.is_enabled() {
-            Some(policy.constant_type_decisions(item))
-        } else {
-            None
-        },
-    };
-
-    Config {
-        place_info_filter: policy.place_info_decisions(item),
-        operand_info_filter,
-        assignment_filter: policy.assignment_decisions(item),
-        storage_lifetime_filter: policy.storage_lifetime_decisions(item),
-        call_flow_filter: policy.call_flow_decisions(item),
-        drop_filter: policy.drop_decisions(item),
-        switch_filter: policy.switch_decisions(item),
-    }
 }
 
 trait MirSourceExt {
