@@ -34,8 +34,7 @@ where
 
         let tcx = self.tcx();
 
-        let referrals =
-            filter_and_fold_place(&self.context.config().place_info_filter.structure, place);
+        let referrals = filter_and_fold_place(&self.context.config().place_info.structure, place);
 
         let set_type_addr = |this: &mut Self,
                              blocks: &mut Vec<BasicBlockData<'tcx>>,
@@ -219,7 +218,7 @@ where
         place: Place<'tcx>,
         place_ty: Ty<'tcx>,
     ) -> Option<BlocksAndResult<'tcx>> {
-        if !self.context.config().place_info_filter.address.is_enabled() {
+        if !self.context.config().place_info.address.is_enabled() {
             return None;
         }
 
@@ -275,7 +274,7 @@ where
         mut place_ref: Local,
         ty: Ty<'tcx>,
     ) -> Option<BlocksAndResult<'tcx>> {
-        if !self.context.config().place_info_filter.ty.is_enabled() {
+        if !self.context.config().place_info.ty.is_enabled() {
             return None;
         }
 

@@ -29,12 +29,12 @@ where
     fn to_rvalue(&mut self, rvalue: &Rvalue<'tcx>) {
         log_debug!(target: TAG_INSTR, "Visiting Rvalue: {:#?}", rvalue);
 
-        let filter = self.assignment_filter(rvalue);
+        let decision = self.assignment_decision(rvalue);
 
         use EventDecision::*;
-        match filter {
+        match decision {
             Omit => return,
-            Opaque | Detailed => match filter {
+            Opaque | Detailed => match decision {
                 Detailed => self.visit_rvalue(rvalue),
                 Opaque => self.add_opaque_assignment(),
                 _ => unreachable!(),
@@ -235,10 +235,10 @@ impl<'tcx, C> ProbeInserter<C>
 where
     Self: ConfigProvider,
 {
-    fn assignment_filter(&self, rvalue: &Rvalue<'tcx>) -> EventDecision {
+    fn assignment_decision(&self, rvalue: &Rvalue<'tcx>) -> EventDecision {
         use EventDecision::*;
 
-        let rules = &self.config().assignment_filter;
+        let rules = &self.config().assignment;
         match rvalue {
             Rvalue::Use(..) => rules.use_,
             Rvalue::Repeat(..) => rules.repeat,

@@ -30,7 +30,7 @@ where
     ) where
         'tcx: 'a,
     {
-        let rules = &self.config().assignment_filter;
+        let rules = &self.config().assignment;
         let filter = match args.len() {
             1 => rules.intrinsic_unary_op,
             2 => rules.intrinsic_binary_op,
@@ -322,7 +322,7 @@ where
     where
         Self: AssignmentInfoProvider<'tcx>,
     {
-        match_config! ((self, self.config().assignment_filter.atomic_memory_op) {
+        match_config! ((self, self.config().assignment.atomic_memory_op) {
             skip => return
         });
 
@@ -338,7 +338,7 @@ where
     where
         Self: AssignmentInfoProvider<'tcx>,
     {
-        match_config! ((self, self.config().assignment_filter.atomic_memory_op) {
+        match_config! ((self, self.config().assignment.atomic_memory_op) {
             skip => return
         });
 
@@ -354,7 +354,7 @@ where
     where
         Self: AssignmentInfoProvider<'tcx>,
     {
-        match_config! ((self, self.config().assignment_filter.atomic_memory_op) {
+        match_config! ((self, self.config().assignment.atomic_memory_op) {
             skip => return
         });
 
@@ -379,7 +379,7 @@ where
     ) where
         Self: AssignmentInfoProvider<'tcx>,
     {
-        match_config! ((self, self.config().assignment_filter.atomic_memory_op) {
+        match_config! ((self, self.config().assignment.atomic_memory_op) {
             skip => return
         });
 
@@ -411,7 +411,7 @@ where
     where
         Self: AssignmentInfoProvider<'tcx>,
     {
-        match_config! ((self, self.config().assignment_filter.atomic_binary_op) {
+        match_config! ((self, self.config().assignment.atomic_binary_op) {
             skip => return
         });
 
