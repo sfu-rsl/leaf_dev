@@ -1,6 +1,12 @@
-/// This module contains the traits and implementations for adding calls to the
-/// PRI in MIR bodies.
+//! This module contains the traits and implementations for adding calls to the
+//! PRI in MIR bodies.
+mod config;
 pub(super) mod context;
+mod implementation;
+
+pub(super) use config::BodyConfig;
+
+pub(super) use implementation::{ProbeInserter, ctxt_reqs};
 
 use rustc_middle::mir::{self, BasicBlock, Operand, Place, SwitchTargets};
 use rustc_span::Spanned;
@@ -169,27 +175,3 @@ impl InsertionLocation {
         }
     }
 }
-
-mod config {
-    pub(super) use super::super::config::rules::{
-        AssignmentRules, CallFlowRules, ConstantTypeRules, DetailDecision, DropRules,
-        EventDecision, OperandKindRules, PlaceInfoRules, PlaceStructureRules,
-        StorageLifetimeMarkerRules, SwitchRules,
-    };
-
-    pub(crate) struct Config {
-        pub place_info_filter: PlaceInfoRules<PlaceStructureRules<DetailDecision>, DetailDecision>,
-        pub operand_info_filter:
-            OperandKindRules<DetailDecision, Option<ConstantTypeRules<DetailDecision>>>,
-        pub assignment_filter: AssignmentRules<EventDecision>,
-        pub storage_lifetime_filter: StorageLifetimeMarkerRules<DetailDecision>,
-        pub call_flow_filter: CallFlowRules<DetailDecision>,
-        pub drop_filter: DropRules<DetailDecision>,
-        pub switch_filter: SwitchRules<DetailDecision>,
-    }
-}
-pub(crate) use config::Config;
-
-mod implementation;
-
-pub(super) use implementation::{ProbeInserter, ctxt_reqs};

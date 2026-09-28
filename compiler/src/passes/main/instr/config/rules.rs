@@ -44,6 +44,10 @@ impl BodyDecision {
             }
         })
     }
+
+    pub(crate) fn from_rule_with_default(rule: Option<bool>, default: Self) -> Self {
+        Self::from_rule(rule).unwrap_or(default)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -358,8 +362,8 @@ impl BakedInstrumentationPolicy<'_> {
     pub(crate) fn dynamic_definition_decision<'tcx>(
         &self,
         item: &LocationQuery<'tcx>,
-    ) -> Option<BodyDecision> {
-        BodyDecision::from_rule(self.dyn_def().accept(item))
+    ) -> BodyDecision {
+        BodyDecision::from_rule_with_default(self.dyn_def().accept(item), BodyDecision::Instrument)
     }
 
     pub(crate) fn place_info_decisions<'tcx>(
@@ -699,6 +703,14 @@ mod tests {
         assert_eq!(
             BodyDecision::from_rule(Some(false)),
             Some(BodyDecision::Skip)
+        );
+        assert_eq!(
+            BodyDecision::from_rule_with_default(None, BodyDecision::Instrument),
+            BodyDecision::Instrument
+        );
+        assert_eq!(
+            BodyDecision::from_rule_with_default(Some(false), BodyDecision::Instrument),
+            BodyDecision::Skip
         );
     }
 
