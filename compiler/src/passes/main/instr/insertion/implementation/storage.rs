@@ -13,13 +13,7 @@ where
     C: ForStorageMarking<'tcx>,
 {
     fn mark_live(&mut self, place: &Place<'tcx>) {
-        if !self
-            .context
-            .config()
-            .storage_lifetime_filter
-            .live
-            .is_enabled()
-        {
+        if !self.context.config().storage_lifetime.live.is_enabled() {
             return;
         }
 
@@ -45,13 +39,7 @@ where
     }
 
     fn mark_dead(&mut self, place: &Place<'tcx>) {
-        if !self
-            .context
-            .config()
-            .storage_lifetime_filter
-            .dead
-            .is_enabled()
-        {
+        if !self.context.config().storage_lifetime.dead.is_enabled() {
             return;
         }
 

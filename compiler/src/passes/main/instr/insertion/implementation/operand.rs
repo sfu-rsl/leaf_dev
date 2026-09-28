@@ -34,7 +34,7 @@ where
     where
         C: ForOperandRef<'tcx>,
     {
-        let config = &self.context.config().operand_info_filter;
+        let config = &self.context.config().operand_info;
 
         use Operand::*;
         match operand {
@@ -385,7 +385,7 @@ where
     fn const_config(&self) -> &ConstantTypeRules<DetailDecision> {
         self.context
             .config()
-            .operand_info_filter
+            .operand_info
             .constant
             .as_ref()
             .unwrap()

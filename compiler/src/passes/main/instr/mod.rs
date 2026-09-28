@@ -38,10 +38,8 @@ pub(crate) struct Instrumentor {
 }
 
 impl Instrumentor {
-    pub(crate) fn new(filters: InstrumentationRules) -> Self {
-        Self {
-            rules: Some(filters),
-        }
+    pub(crate) fn new(rules: InstrumentationRules) -> Self {
+        Self { rules: Some(rules) }
     }
 }
 
@@ -60,7 +58,7 @@ impl CompilationPass for Instrumentor {
         storage.get_or_insert_with(config::rules::KEY_RULES.to_owned(), || {
             self.rules.take().unwrap()
         });
-        config::rules::bake_rules(storage, decision::get_exceptional_exclusions);
+        config::rules::bake_policy(storage, decision::get_exceptional_exclusions);
         rustc_driver::Compilation::Continue
     }
 

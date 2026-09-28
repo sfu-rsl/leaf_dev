@@ -474,29 +474,29 @@ fn filter_rules<T>(
     all_rules.clone().filter_map(select)
 }
 
-pub(crate) fn bake_rules(
+pub(crate) fn bake_policy(
     storage: &mut dyn Storage,
     additional_exclusions: impl FnOnce() -> Vec<WholeBodyFilter>,
 ) {
     let _ = storage.get_or_insert_with_acc(
         KEY_BAKED_POLICY.to_owned(),
         |storage| -> BakedInstrumentationPolicy<'_> {
-            let all_rules = storage.get_or_default::<InstrumentationRules>(KEY_RULES.to_owned());
+            let rules = storage.get_or_default::<InstrumentationRules>(KEY_RULES.to_owned());
 
-            let mut body = filter_rules(&*all_rules, |rule| match rule {
+            let mut body = filter_rules(&*rules, |rule| match rule {
                 EntityFilter::WholeBody(filter) => Some(filter),
                 _ => None,
             });
             body.exclude.extend(additional_exclusions());
 
-            let place_rules = filter_rules(&*all_rules, |rule| match rule {
+            let place_rules = filter_rules(&*rules, |rule| match rule {
                 EntityFilter::PlaceInfo(filter) => Some(filter),
                 _ => None,
             });
 
             BakedInstrumentationPolicy {
                 body: body.to_baked(),
-                dyn_def: filter_rules(&*all_rules, |rule| match rule {
+                dyn_def: filter_rules(&*rules, |rule| match rule {
                     EntityFilter::MethodDynDefinition(filter) => Some(filter),
                     _ => None,
                 })
@@ -523,42 +523,42 @@ pub(crate) fn bake_rules(
                         })
                         .to_baked(),
                 },
-                operand_info: filter_rules(&*all_rules, |rule| match rule {
+                operand_info: filter_rules(&*rules, |rule| match rule {
                     EntityFilter::OperandKind(filter) => Some(filter),
                     _ => None,
                 })
                 .to_baked(),
-                constant_type: filter_rules(&*all_rules, |rule| match rule {
+                constant_type: filter_rules(&*rules, |rule| match rule {
                     EntityFilter::ConstantType(filter) => Some(filter),
                     _ => None,
                 })
                 .to_baked(),
-                assignment: filter_rules(&*all_rules, |rule| match rule {
+                assignment: filter_rules(&*rules, |rule| match rule {
                     EntityFilter::Assignment(filter) => Some(filter),
                     _ => None,
                 })
                 .to_baked(),
-                assignment_info: filter_rules(&*all_rules, |rule| match rule {
+                assignment_info: filter_rules(&*rules, |rule| match rule {
                     EntityFilter::AssignmentInfo(filter) => Some(filter),
                     _ => None,
                 })
                 .to_baked(),
-                storage_lifetime: filter_rules(&*all_rules, |rule| match rule {
+                storage_lifetime: filter_rules(&*rules, |rule| match rule {
                     EntityFilter::StorageLifetimeMarker(filter) => Some(filter),
                     _ => None,
                 })
                 .to_baked(),
-                call_flow: filter_rules(&*all_rules, |rule| match rule {
+                call_flow: filter_rules(&*rules, |rule| match rule {
                     EntityFilter::CallFlow(filter) => Some(filter),
                     _ => None,
                 })
                 .to_baked(),
-                drop: filter_rules(&*all_rules, |rule| match rule {
+                drop: filter_rules(&*rules, |rule| match rule {
                     EntityFilter::Drop(filter) => Some(filter),
                     _ => None,
                 })
                 .to_baked(),
-                switch: filter_rules(&*all_rules, |rule| match rule {
+                switch: filter_rules(&*rules, |rule| match rule {
                     EntityFilter::Switch(filter) => Some(filter),
                     _ => None,
                 })

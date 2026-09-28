@@ -37,12 +37,12 @@ where
         self.debug_info(&format!("{}", func.ty(self, self.tcx())));
 
         let mut added = false;
-        if self.config().call_flow_filter.call_control.is_enabled() {
+        if self.config().call_flow.call_control.is_enabled() {
             self.before_call_control(no_def, func, args.first().map(|a| &a.node));
             added = true;
         }
 
-        if self.config().call_flow_filter.call_input.is_enabled() {
+        if self.config().call_flow.call_input.is_enabled() {
             self.before_call_data(func, args);
             added = true;
         }
@@ -60,7 +60,7 @@ where
 
         self.enter_func();
 
-        if self.config().call_flow_filter.call_input.is_enabled() {
+        if self.config().call_flow.call_input.is_enabled() {
             self.enter_func_data();
         }
     }
@@ -117,12 +117,12 @@ where
         self.debug_info(&format!("{}", func.ty(self, self.tcx())));
 
         let mut added = false;
-        if self.config().drop_filter.control.is_enabled() {
+        if self.config().drop.control.is_enabled() {
             self.before_drop_control(func.clone());
             added = true;
         }
 
-        if self.config().drop_filter.input.is_enabled() {
+        if self.config().drop.input.is_enabled() {
             self.before_drop_data(&func, place.clone());
             added = true;
         }
@@ -146,12 +146,12 @@ where
         self.debug_info(&format!("{}", func.ty(self, self.tcx())));
 
         let mut added = false;
-        if self.config().drop_filter.control.is_enabled() {
+        if self.config().drop.control.is_enabled() {
             self.before_drop_control(func.clone());
             added = true;
         }
 
-        if self.config().drop_filter.input.is_enabled() {
+        if self.config().drop.input.is_enabled() {
             self.before_drop_in_place_data(&func, to_drop);
             added = true;
         }
@@ -204,7 +204,7 @@ where
             func,
             first_arg,
             self.original_bb_index_as_arg(),
-            self.config().call_flow_filter.call_address.is_enabled(),
+            self.config().call_flow.call_address.is_enabled(),
         ));
 
         self.insert_blocks(blocks);
@@ -260,7 +260,7 @@ where
             self.tcx(),
             self,
             self.current_typing_env(),
-            self.config().call_flow_filter.func_address.is_enabled(),
+            self.config().call_flow.func_address.is_enabled(),
         );
         self.insert_blocks([block]);
     }
@@ -364,7 +364,7 @@ where
             drop_in_place_fn,
             None,
             self.original_bb_index_as_arg(),
-            self.config().call_flow_filter.call_address.is_enabled(),
+            self.config().call_flow.call_address.is_enabled(),
         ));
 
         self.insert_blocks(blocks);

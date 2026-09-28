@@ -22,7 +22,7 @@ pub(super) fn instrument_memory_intrinsic_call<'tcx, 'a, C>(
     use EventDecision::*;
     use intrinsic_decision::MemoryIntrinsicKind::*;
 
-    let filter = (&inserter.config().assignment_filter).intrinsic_memory_op;
+    let filter = (&inserter.config().assignment).intrinsic_memory_op;
     match filter {
         Omit => return,
         Opaque | Detailed => {
@@ -74,7 +74,7 @@ pub(in super::super) fn instrument_memory_intrinsic_copy_non_overlapping<'tcx, '
 {
     use EventDecision::*;
 
-    match inserter.config().assignment_filter.intrinsic_memory_op {
+    match inserter.config().assignment.intrinsic_memory_op {
         Omit | Opaque => return,
         Detailed => (),
     }
