@@ -1,3 +1,5 @@
+pub(super) mod rules;
+
 use derive_more as dm;
 use serde::Deserialize;
 

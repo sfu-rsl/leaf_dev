@@ -467,7 +467,7 @@ mod utils {
     use crate::{
         passes::instr::{
             MirSourceExt,
-            decision::rules::{BodyDecision, get_baked_policy},
+            config::rules::{BodyDecision, get_baked_policy},
         },
         utils::mir::{InstanceKindExt, TyCtxtExt},
     };

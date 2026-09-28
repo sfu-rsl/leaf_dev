@@ -57,10 +57,10 @@ impl CompilationPass for Instrumentor {
         _krate: &rustc_ast::Crate,
         storage: &mut dyn Storage,
     ) -> rustc_driver::Compilation {
-        storage.get_or_insert_with(decision::rules::KEY_RULES.to_owned(), || {
+        storage.get_or_insert_with(config::rules::KEY_RULES.to_owned(), || {
             self.rules.take().unwrap()
         });
-        decision::rules::bake_rules(storage, decision::get_exceptional_exclusions);
+        config::rules::bake_rules(storage, decision::get_exceptional_exclusions);
         rustc_driver::Compilation::Continue
     }
 
@@ -161,11 +161,10 @@ pub(super) fn make_config<'tcx>(
     tcx: TyCtxt<'tcx>,
     def_id: DefId,
 ) -> Config {
-    use decision::rules::*;
     let item = &(tcx, def_id);
-    let policy = decision::rules::get_baked_policy(storage);
+    let policy = config::rules::get_baked_policy(storage);
     let operand_info = policy.operand_info_decisions(item);
-    let operand_info_filter = OperandKindRules {
+    let operand_info_filter = config::rules::OperandKindRules {
         copy: operand_info.copy,
         mov: operand_info.mov,
         constant: if operand_info.constant.is_enabled() {

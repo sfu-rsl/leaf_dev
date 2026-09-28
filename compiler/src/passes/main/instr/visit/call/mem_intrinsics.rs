@@ -2,8 +2,7 @@ use rustc_middle::mir::Operand;
 use rustc_span::Spanned;
 
 use super::super::super::{
-    decision,
-    decision::rules::EventDecision,
+    config::rules::EventDecision,
     insertion::{
         MemoryIntrinsicHandler, ProbeInserter,
         context::{ConfigProvider, SourceInfoProvider},
@@ -73,7 +72,7 @@ pub(in super::super) fn instrument_memory_intrinsic_copy_non_overlapping<'tcx, '
 ) where
     C: cr::ForInsertion<'tcx>,
 {
-    use decision::rules::EventDecision::*;
+    use EventDecision::*;
 
     match inserter.config().assignment_filter.intrinsic_memory_op {
         Omit | Opaque => return,
