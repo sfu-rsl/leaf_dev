@@ -31,11 +31,12 @@ where
 
         let filter = self.assignment_filter(rvalue);
 
+        use EventDecision::*;
         match filter {
-            EventDecision::Omit => return,
-            EventDecision::Opaque | EventDecision::Detailed => match filter {
-                EventDecision::Detailed => self.visit_rvalue(rvalue),
-                EventDecision::Opaque => self.add_opaque_assignment(),
+            Omit => return,
+            Opaque | Detailed => match filter {
+                Detailed => self.visit_rvalue(rvalue),
+                Opaque => self.add_opaque_assignment(),
                 _ => unreachable!(),
             },
         }

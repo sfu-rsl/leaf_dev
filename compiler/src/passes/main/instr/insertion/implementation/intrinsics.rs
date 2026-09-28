@@ -1,5 +1,6 @@
 use rustc_span::Spanned;
 
+use super::super::super::config::rules::EventDecision;
 use common::pri::{AtomicBinaryOp, AtomicOrdering};
 
 use super::{
@@ -10,7 +11,7 @@ use super::{
             memory::LeafMemoryIntrinsicSymbol,
         },
     },
-    context::{AssignmentIdProvider, AssignmentInfoProvider, PointerParamProvider},
+    context::{AssignmentIdProvider, AssignmentInfoProvider, ConfigProvider, PointerParamProvider},
     ctxt_reqs::{Basic, ForAssignment, ForAtomicIntrinsic, ForMemoryIntrinsic, ForOperandRef},
     prelude::{mir::*, *},
     utils::operand,
@@ -25,10 +26,28 @@ where
         &mut self,
         intrinsic_func: DefId,
         pri_func: LeafIntrinsicSymbol,
-        args: impl Iterator<Item = &'a Spanned<Operand<'tcx>>>,
+        args: impl ExactSizeIterator<Item = &'a Spanned<Operand<'tcx>>>,
     ) where
         'tcx: 'a,
     {
+        let rules = &self.config().assignment_filter;
+        let filter = match args.len() {
+            1 => rules.intrinsic_unary_op,
+            2 => rules.intrinsic_binary_op,
+            3 => rules.intrinsic_ternary_op,
+            _ => rules.intrinsic_misc_op,
+        };
+
+        match filter {
+            EventDecision::Omit => {
+                return;
+            }
+            EventDecision::Opaque => {
+                return self.add_opaque_assignment();
+            }
+            EventDecision::Detailed => (),
+        };
+
         self.assert_pri_intrinsic_consistency(intrinsic_func, pri_func);
 
         let pri_name = *pri_func;
@@ -278,6 +297,22 @@ where
     }
 }
 
+macro_rules! match_config {
+    // Just to mimic a match statement to avoid hiding the control flow of the function.
+    (($this:expr, $cfg:expr) { skip => return }) => {
+        use EventDecision::*;
+        match $cfg {
+            Omit => {
+                return;
+            }
+            Opaque => {
+                return $this.add_opaque_assignment_through_self();
+            }
+            Detailed => (),
+        }
+    };
+}
+
 impl<'tcx, C> AtomicIntrinsicHandler<'tcx> for ProbeInserter<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
@@ -287,6 +322,10 @@ where
     where
         Self: AssignmentInfoProvider<'tcx>,
     {
+        match_config! ((self, self.config().assignment_filter.atomic_memory_op) {
+            skip => return
+        });
+
         let dest_ref = self.reference_destination();
         self.add_bb_for_atomic_intrinsic_call_with_ptr(
             sym::intrinsics::atomic::intrinsic_atomic_load,
@@ -299,6 +338,10 @@ where
     where
         Self: AssignmentInfoProvider<'tcx>,
     {
+        match_config! ((self, self.config().assignment_filter.atomic_memory_op) {
+            skip => return
+        });
+
         let val_ref = self.reference_operand_spanned(val);
         self.add_bb_for_atomic_intrinsic_call_with_ptr(
             sym::intrinsics::atomic::intrinsic_atomic_store,
@@ -311,6 +354,10 @@ where
     where
         Self: AssignmentInfoProvider<'tcx>,
     {
+        match_config! ((self, self.config().assignment_filter.atomic_memory_op) {
+            skip => return
+        });
+
         let val_ref = self.reference_operand_spanned(val);
         let dest_ref = self.reference_destination();
         self.add_bb_for_atomic_intrinsic_call_with_ptr(
@@ -332,6 +379,10 @@ where
     ) where
         Self: AssignmentInfoProvider<'tcx>,
     {
+        match_config! ((self, self.config().assignment_filter.atomic_memory_op) {
+            skip => return
+        });
+
         let mut additional_blocks = vec![];
         let old_ref = self.reference_operand_spanned(old);
         let src_ref = self.reference_operand_spanned(src);
@@ -360,6 +411,10 @@ where
     where
         Self: AssignmentInfoProvider<'tcx>,
     {
+        match_config! ((self, self.config().assignment_filter.atomic_binary_op) {
+            skip => return
+        });
+
         let tcx = self.tcx();
         let mut additional_blocks = vec![];
         let src_ref = self.reference_operand_spanned(src);
@@ -389,6 +444,8 @@ where
     }
 
     fn fence(&mut self, single_thread: bool) {
+        // FIXME: Add config
+
         self.add_bb_for_atomic_intrinsic_call(
             sym::intrinsics::atomic::intrinsic_atomic_fence,
             vec![operand::const_from_bool(self.tcx(), single_thread)],
@@ -465,6 +522,15 @@ where
         blocks.push(block);
 
         self.insert_blocks(blocks);
+    }
+
+    // A patchy workaround for bridging Self: AssignmentInfoProvider to C: AssignmentIdProvider.
+    fn add_opaque_assignment_through_self(&mut self)
+    where
+        Self: AssignmentInfoProvider<'tcx>,
+    {
+        let mut this = self.assign(self.assignment_id(), self.destination());
+        this.add_opaque_assignment()
     }
 }
 

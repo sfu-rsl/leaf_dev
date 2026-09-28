@@ -82,7 +82,7 @@ pub(crate) trait IntrinsicHandler<'tcx> {
         &mut self,
         intrinsic_func: rustc_hir::def_id::DefId,
         pri_func: LeafIntrinsicSymbol,
-        args: impl Iterator<Item = &'a Spanned<Operand<'tcx>>>,
+        args: impl ExactSizeIterator<Item = &'a Spanned<Operand<'tcx>>>,
     ) where
         'tcx: 'a;
 }

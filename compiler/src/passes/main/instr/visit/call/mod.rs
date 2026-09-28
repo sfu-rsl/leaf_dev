@@ -15,10 +15,9 @@ use crate::utils::mir::TyCtxtExt;
 
 use super::super::{
     TAG_INSTR,
-    config::rules::EventDecision,
     insertion::{
         AtomicIntrinsicHandler, DropHandler, FunctionHandler, IntrinsicHandler, ProbeInserter,
-        context::{AssignmentIdProvider, ConfigProvider, PriItemsProvider, TyContextProvider},
+        context::{AssignmentIdProvider, PriItemsProvider, TyContextProvider},
         ctxt_reqs::{self as cr, ForAssignment},
     },
     pri::sym::intrinsics::LeafIntrinsicSymbol,
@@ -168,32 +167,8 @@ fn instrument_one_to_one_intrinsic_call<'tcx, 'c, C>(
 ) where
     C: cr::ForAssignment<'tcx>,
 {
-    use EventDecision::*;
-
-    let rules = &inserter.config().assignment_filter;
-    let filter = match params.args.len() {
-        1 => rules.intrinsic_unary_op,
-        2 => rules.intrinsic_binary_op,
-        3 => rules.intrinsic_ternary_op,
-        _ => rules.intrinsic_misc_op,
-    };
-
-    match filter {
-        Omit => return,
-        Opaque | Detailed => {
-            let mut inserter = inserter.before();
-
-            match filter {
-                Detailed => {
-                    inserter.intrinsic_one_to_one_by(def_id, func_name, params.args.iter());
-                }
-                Opaque => {
-                    inserter.add_opaque_assignment();
-                }
-                _ => unreachable!(),
-            }
-        }
-    }
+    let mut inserter = inserter.before();
+    inserter.intrinsic_one_to_one_by(def_id, func_name, params.args.iter());
 }
 
 fn instrument_memory_intrinsic_call<'tcx, 'c, C>(
@@ -223,9 +198,6 @@ fn instrument_atomic_intrinsic_call<'tcx, 'c, C>(
 ) where
     C: cr::ForInsertion<'tcx>,
 {
-    use EventDecision::*;
-    use intrinsic_decision::AtomicIntrinsicKind::*;
-
     let convert_ordering = |ord: mir_ty::AtomicOrdering| match ord {
         mir_ty::AtomicOrdering::Relaxed => common::pri::AtomicOrdering::RELAXED,
         mir_ty::AtomicOrdering::Release => common::pri::AtomicOrdering::RELEASE,
@@ -236,57 +208,35 @@ fn instrument_atomic_intrinsic_call<'tcx, 'c, C>(
     let ordering = convert_ordering(ordering);
     let failure_ordering = failure_ordering.map(convert_ordering);
 
-    let rules = &inserter.config().assignment_filter;
-    let filter = match kind {
-        Load | Store | Exchange | CompareExchange { .. } => rules.atomic_memory_op,
-        BinOp(..) => rules.atomic_binary_op,
-        Fence { .. } => {
-            // FIXME: Add config.
-            Detailed
+    use intrinsic_decision::AtomicIntrinsicKind::*;
+    match kind {
+        Fence { single_thread } => {
+            inserter
+                .perform_atomic_op(ordering, None)
+                .fence(single_thread);
+        }
+        Load | Store | Exchange | CompareExchange { .. } | BinOp(..) => {
+            let mut inserter = inserter.assign(assignment_id.unwrap(), *params.destination);
+            let ptr_arg = params.args.get(0).unwrap();
+            let mut inserter = inserter.perform_atomic_op(ordering, Some(ptr_arg.clone()));
+
+            match kind {
+                Load => inserter.load(),
+                Store => inserter.store(&params.args[1]),
+                BinOp(binop) => {
+                    inserter.binary_op(binop, &params.args[1]);
+                }
+                Exchange => inserter.exchange(&params.args[1]),
+                CompareExchange { weak } => inserter.compare_exchange(
+                    failure_ordering.unwrap(),
+                    weak,
+                    &params.args[1],
+                    &params.args[2],
+                ),
+                Fence { .. } => unreachable!(),
+            }
         }
     };
-
-    match filter {
-        Omit => return,
-        Opaque | Detailed => {
-            match kind {
-                Fence { single_thread } => {
-                    inserter
-                        .perform_atomic_op(ordering, None)
-                        .fence(single_thread);
-                }
-                Load | Store | Exchange | CompareExchange { .. } | BinOp(..) => {
-                    let mut inserter = inserter.assign(assignment_id.unwrap(), *params.destination);
-
-                    match filter {
-                        Detailed => {
-                            let ptr_arg = params.args.get(0).unwrap();
-                            let mut inserter =
-                                inserter.perform_atomic_op(ordering, Some(ptr_arg.clone()));
-
-                            match kind {
-                                Load => inserter.load(),
-                                Store => inserter.store(&params.args[1]),
-                                BinOp(binop) => {
-                                    inserter.binary_op(binop, &params.args[1]);
-                                }
-                                Exchange => inserter.exchange(&params.args[1]),
-                                CompareExchange { weak } => inserter.compare_exchange(
-                                    failure_ordering.unwrap(),
-                                    weak,
-                                    &params.args[1],
-                                    &params.args[2],
-                                ),
-                                Fence { .. } => unreachable!(),
-                            }
-                        }
-                        Opaque => inserter.add_opaque_assignment(),
-                        _ => unreachable!(),
-                    }
-                }
-            };
-        }
-    }
 }
 
 fn instrument_llvm_intrinsic_call<'tcx, 'c, C>(
