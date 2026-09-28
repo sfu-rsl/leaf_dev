@@ -288,7 +288,7 @@ where
         }
     }
 
-    fn visit_storage_live(&mut self, local: &mir::Local) -> () {
+    fn visit_storage_live(&mut self, local: &mir::Local) {
         let mut inserter = self.inserter.after();
         inserter.mark_live(&(*local).into());
     }
@@ -296,7 +296,48 @@ where
     fn visit_storage_dead(&mut self, local: &mir::Local) {
         self.inserter.before().mark_dead(&(*local).into());
     }
+
+    fn visit_nop(&mut self) {
+        // Nothing to do
+        Default::default()
+    }
+
+    fn visit_coverage(&mut self, _coverage: &mir::coverage::CoverageKind) {
+        // Nothing to do
+        Default::default()
+    }
+
+    fn visit_place_mention(&mut self, _place: &Place<'tcx>) {}
+
+    fn visit_const_eval_counter(&mut self) {
+        // Nothing to do
+        Default::default()
+    }
+
+    fn visit_backward_incompatible_drop_hint(
+        &mut self,
+        _place: &Place<'tcx>,
+        _reason: &mir::BackwardIncompatibleDropReason,
+    ) {
+        // Nothing to do
+        Default::default()
+    }
+
+    fn visit_ascribe_user_type(
+        &mut self,
+        _place: &Place<'tcx>,
+        _user_type_proj: &mir::UserTypeProjection,
+        _variance: &mir_ty::Variance,
+    ) {
+        panic!("Unexpected statement kind at this stage.")
+    }
+
+    fn visit_fake_read(&mut self, _cause: &mir::FakeReadCause, _place: &Place<'tcx>) {
+        panic!("Unexpected statement kind at this stage.")
+    }
 }
+
+impl<C> LeafStatementKindVisitor<C> {}
 
 make_general_visitor!(LeafTerminatorKindVisitor {
     assignment_id: Option<AssignmentId>,
@@ -373,7 +414,7 @@ where
         _func: &Operand<'tcx>,
         _args: &[Spanned<Operand<'tcx>>],
         _fn_span: Span,
-    ) -> () {
+    ) {
         // NOTE: https://github.com/rust-lang/rust/issues/112788
         unimplemented!(
             "This is still an experimental feature in the compiler and is not expected to appear in target projects."
@@ -417,6 +458,29 @@ where
         _unwind: &UnwindAction,
     ) {
         Default::default()
+    }
+
+    fn visit_unwind_resume(&mut self) {
+        // TODO
+        Default::default()
+    }
+
+    fn visit_unwind_terminate(&mut self, _reason: &mir::UnwindTerminateReason) {
+        // TODO
+        Default::default()
+    }
+
+    fn visit_goto(&mut self, _target: &BasicBlock) {
+        // Nothing to do
+        Default::default()
+    }
+
+    fn visit_false_edge(&mut self, _real_target: &BasicBlock, _imaginary_target: &BasicBlock) {
+        panic!("Unexpected terminator kind at this stage.")
+    }
+
+    fn visit_false_unwind(&mut self, _real_target: &BasicBlock, _unwind: &UnwindAction) {
+        panic!("Unexpected terminator kind at this stage.")
     }
 }
 

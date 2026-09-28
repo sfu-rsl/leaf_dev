@@ -1,8 +1,8 @@
 use common::log_debug;
 use std::marker::PhantomData;
 
-use rustc_middle::mir::{BasicBlock, Operand, Place, Terminator, UnwindAction};
-use rustc_span::Span;
+use rustc_middle::mir::{self, BasicBlock, Operand, Place, Terminator, UnwindAction};
+use rustc_span::{Span, Spanned};
 
 use crate::visit::TerminatorKindMutVisitor;
 
@@ -48,11 +48,7 @@ where
         self.update(target);
     }
 
-    fn visit_switch_int(
-        &mut self,
-        _discr: &mut Operand<'tcx>,
-        targets: &mut rustc_middle::mir::SwitchTargets,
-    ) {
+    fn visit_switch_int(&mut self, _discr: &mut Operand<'tcx>, targets: &mut mir::SwitchTargets) {
         // Because of API limitations we have to take this weird approach.
         let values: Vec<u128> = targets.iter().map(|(v, _)| v).collect();
         for (index, target) in targets.all_targets_mut().iter_mut().enumerate() {
@@ -81,11 +77,11 @@ where
     fn visit_call(
         &mut self,
         _func: &mut Operand<'tcx>,
-        _args: &mut [rustc_span::Spanned<Operand<'tcx>>],
+        _args: &mut [Spanned<Operand<'tcx>>],
         _destination: &mut Place<'tcx>,
         target: &mut Option<BasicBlock>,
         unwind: &mut UnwindAction,
-        _call_source: &mut rustc_middle::mir::CallSource,
+        _call_source: &mut mir::CallSource,
         _fn_span: Span,
     ) {
         self.update_maybe(target.as_mut());
@@ -96,7 +92,7 @@ where
         &mut self,
         _cond: &mut Operand<'tcx>,
         _expected: &mut bool,
-        _msg: &mut rustc_middle::mir::AssertMessage<'tcx>,
+        _msg: &mut mir::AssertMessage<'tcx>,
         target: &mut BasicBlock,
         unwind: &mut UnwindAction,
     ) {
@@ -131,9 +127,9 @@ where
 
     fn visit_inline_asm(
         &mut self,
-        _asm_macro: &mut rustc_middle::mir::InlineAsmMacro,
+        _asm_macro: &mut mir::InlineAsmMacro,
         _template: &'tcx [rustc_ast::InlineAsmTemplatePiece],
-        _operands: &mut [rustc_middle::mir::InlineAsmOperand<'tcx>],
+        _operands: &mut [mir::InlineAsmOperand<'tcx>],
         _options: &mut rustc_ast::InlineAsmOptions,
         _line_spans: &'tcx [Span],
         targets: &mut Box<[BasicBlock]>,
@@ -141,6 +137,36 @@ where
     ) {
         targets.iter_mut().for_each(|target| self.update(target));
         self.update_maybe(unwind.basic_block());
+    }
+
+    fn visit_unwind_resume(&mut self) {
+        Default::default()
+    }
+
+    fn visit_unwind_terminate(&mut self, _reason: &mut mir::UnwindTerminateReason) {
+        Default::default()
+    }
+
+    fn visit_return(&mut self) {
+        Default::default()
+    }
+
+    fn visit_unreachable(&mut self) {
+        Default::default()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn visit_tail_call(
+        &mut self,
+        _func: &mut Operand<'tcx>,
+        _args: &mut [Spanned<Operand<'tcx>>],
+        _fn_span: Span,
+    ) {
+        Default::default()
+    }
+
+    fn visit_coroutine_drop(&mut self) {
+        Default::default()
     }
 }
 
