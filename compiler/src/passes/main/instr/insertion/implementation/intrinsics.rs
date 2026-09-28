@@ -12,7 +12,10 @@ use super::{
         },
     },
     context::{AssignmentIdProvider, AssignmentInfoProvider, ConfigProvider, PointerParamProvider},
-    ctxt_reqs::{Basic, ForAssignment, ForAtomicIntrinsic, ForMemoryIntrinsic, ForOperandRef},
+    ctxt_reqs::{
+        Basic, ForAssignment, ForAtomicIntrinsic, ForInsertion, ForMemoryIntrinsic, ForOperandRef,
+        ForPlaceRef,
+    },
     prelude::{mir::*, *},
     utils::operand,
 };
@@ -95,6 +98,22 @@ where
     }
 }
 
+macro_rules! match_config {
+    // Just to mimic a match statement to avoid hiding the control flow of the function.
+    (($this:expr, $cfg:expr) { skip => return }) => {
+        use EventDecision::*;
+        match $cfg {
+            Omit => {
+                return;
+            }
+            Opaque => {
+                return $this.add_opaque_assignment_through_self();
+            }
+            Detailed => (),
+        }
+    };
+}
+
 impl<'tcx, C> MemoryIntrinsicHandler<'tcx> for ProbeInserter<C>
 where
     Self: MirCallAdder<'tcx> + BlockInserter<'tcx>,
@@ -104,6 +123,10 @@ where
     where
         Self: AssignmentInfoProvider<'tcx>,
     {
+        match_config! ((self, self.config().assignment.intrinsic_memory_op) {
+            skip => return
+        });
+
         let dest_ref = self.reference_destination();
         self.add_bb_for_memory_op_intrinsic_call(
             sym::intrinsics::memory::intrinsic_memory_load,
@@ -118,6 +141,17 @@ where
     }
 
     fn store(&mut self, val: &Spanned<Operand<'tcx>>, is_ptr_aligned: bool) {
+        match self.config().assignment.intrinsic_memory_op {
+            EventDecision::Omit => {
+                return;
+            }
+            EventDecision::Opaque => {
+                // TODO: Add opaque assignment for pointer-based destinations.
+                return;
+            }
+            EventDecision::Detailed => (),
+        }
+
         let val_ref = self.reference_operand_spanned(val);
         self.add_bb_for_memory_op_intrinsic_call(
             sym::intrinsics::memory::intrinsic_memory_store,
@@ -137,6 +171,17 @@ where
         count: &Spanned<Operand<'tcx>>,
         is_overlapping: bool,
     ) {
+        match self.config().assignment.intrinsic_memory_op {
+            EventDecision::Omit => {
+                return;
+            }
+            EventDecision::Opaque => {
+                // TODO: Add opaque assignment for pointer-based destinations.
+                return;
+            }
+            EventDecision::Detailed => (),
+        }
+
         let mut stmts = Vec::new();
         let dst_ref = self.reference_operand_spanned(dst);
         let count_ref = self.reference_operand_spanned(count);
@@ -163,6 +208,17 @@ where
     }
 
     fn set(&mut self, val: &Spanned<Operand<'tcx>>, count: &Spanned<Operand<'tcx>>) {
+        match self.config().assignment.intrinsic_memory_op {
+            EventDecision::Omit => {
+                return;
+            }
+            EventDecision::Opaque => {
+                // TODO: Add opaque assignment for pointer-based destinations.
+                return;
+            }
+            EventDecision::Detailed => (),
+        }
+
         let val_ref = self.reference_operand_spanned(val);
         let count_ref = self.reference_operand_spanned(count);
         self.add_bb_for_memory_op_intrinsic_call(
@@ -179,6 +235,17 @@ where
     }
 
     fn swap(&mut self, second: &Spanned<Operand<'tcx>>) {
+        match self.config().assignment.intrinsic_memory_op {
+            EventDecision::Omit => {
+                return;
+            }
+            EventDecision::Opaque => {
+                // TODO: Add opaque assignment for pointer-based destinations.
+                return;
+            }
+            EventDecision::Detailed => (),
+        }
+
         let mut stmts = Vec::new();
         let second_ref = self.reference_operand_spanned(second);
 
@@ -203,6 +270,10 @@ where
     where
         Self: AssignmentInfoProvider<'tcx>,
     {
+        match_config! ((self, self.config().assignment.intrinsic_memory_op) {
+            skip => return
+        });
+
         let mut stmts = Vec::new();
         let second_ref = self.reference_operand_spanned(second);
         let dest_ref = self.reference_destination();
@@ -229,6 +300,10 @@ where
     where
         Self: AssignmentInfoProvider<'tcx>,
     {
+        match_config! ((self, self.config().assignment.intrinsic_memory_op) {
+            skip => return
+        });
+
         let mut stmts = Vec::new();
         let second_ref = self.reference_operand_spanned(second);
         let count_ref = self.reference_operand_spanned(count);
@@ -295,22 +370,6 @@ where
 
         self.insert_blocks(blocks);
     }
-}
-
-macro_rules! match_config {
-    // Just to mimic a match statement to avoid hiding the control flow of the function.
-    (($this:expr, $cfg:expr) { skip => return }) => {
-        use EventDecision::*;
-        match $cfg {
-            Omit => {
-                return;
-            }
-            Opaque => {
-                return $this.add_opaque_assignment_through_self();
-            }
-            Detailed => (),
-        }
-    };
 }
 
 impl<'tcx, C> AtomicIntrinsicHandler<'tcx> for ProbeInserter<C>
@@ -523,8 +582,12 @@ where
 
         self.insert_blocks(blocks);
     }
+}
 
-    // A patchy workaround for bridging Self: AssignmentInfoProvider to C: AssignmentIdProvider.
+impl<'tcx, C> ProbeInserter<C>
+where
+    C: ForInsertion<'tcx> + ForPlaceRef<'tcx>,
+{
     fn add_opaque_assignment_through_self(&mut self)
     where
         Self: AssignmentInfoProvider<'tcx>,
