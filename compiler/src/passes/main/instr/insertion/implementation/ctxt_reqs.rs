@@ -34,7 +34,14 @@ ctxt_req_trait!(
 ctxt_req_trait!(ForAssertion<'tcx>: ForOperandRef<'tcx> + BlockOriginalIndexProvider);
 
 ctxt_req_trait!(
-    ForFunctionCalling<'tcx>: ForInsertion<'tcx> + JumpTargetModifier + BlockOriginalIndexProvider
+    ForFunctionCalling<'tcx>:
+        ForInsertion<'tcx>
+        + JumpTargetModifier
+        + BlockOriginalIndexProvider
+        + ForOperandRef<'tcx>
+);
+ctxt_req_trait!(
+    ForFunctionCallingWithResult<'tcx>: ForFunctionCalling<'tcx> + ForAssignment<'tcx>
 );
 
 ctxt_req_trait!(ForDropping<'tcx>: ForInsertion<'tcx> + BlockOriginalIndexProvider);
