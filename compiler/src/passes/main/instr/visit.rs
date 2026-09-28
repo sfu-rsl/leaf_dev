@@ -277,7 +277,7 @@ where
                 dst,
                 count,
             }) => {
-                instrument_memory_intrinsic_copy_non_overlapping(
+                intrinsic_processing::instrument_memory_intrinsic_copy_non_overlapping(
                     &mut self.inserter,
                     src,
                     dst,
@@ -354,45 +354,18 @@ where
         target: &Option<BasicBlock>,
         _unwind: &UnwindAction,
         _call_source: &mir::CallSource,
-        fn_span: Span,
+        _fn_span: Span,
     ) {
-        let tcx = self.inserter.tcx();
-        let opt_def_id =
-            if let mir_ty::TyKind::FnDef(def_id, ..) = func.ty(&self.inserter, tcx).kind() {
-                assert!(
-                    !self.inserter.all_pri_items().contains(def_id),
-                    "Instrumenting our own instrumentation."
-                );
-                Some(*def_id)
-            } else {
-                None
-            };
-
-        let params = CallParams {
-            func,
-            args,
-            destination,
-            target,
-            fn_span,
-        };
-
-        match opt_def_id {
-            Some(def_id) if tcx.is_llvm_intrinsic(def_id) => {
-                self.instrument_llvm_intrinsic_call(params)
-            }
-            Some(def_id) if let Some(intrinsic) = tcx.intrinsic(def_id) => {
-                self.instrument_intrinsic_call((def_id, intrinsic), params)
-            }
-            Some(def_id)
-                if tcx
-                    .lang_items()
-                    .drop_glue_fn()
-                    .is_some_and(|id| id == def_id) =>
-            {
-                self.instrument_drop_in_place_call(params)
-            }
-            _ => self.instrument_regular_call(params),
-        }
+        call_processing::handle_call(
+            &mut self.inserter,
+            self.assignment_id,
+            call_processing::CallParams {
+                func,
+                args,
+                destination,
+                is_diverging: target.is_none(),
+            },
+        );
     }
 
     fn visit_tail_call(
@@ -447,27 +420,70 @@ where
     }
 }
 
-struct CallParams<'a, 'tcx> {
-    func: &'a Operand<'tcx>,
-    args: &'a [Spanned<Operand<'tcx>>],
-    destination: &'a Place<'tcx>,
-    target: &'a Option<BasicBlock>,
-    fn_span: Span,
-}
+mod call_processing {
+    use super::super::insertion::{context::AssignmentIdProvider, ctxt_reqs::ForAssignment};
 
-impl<'tcx, C> LeafTerminatorKindVisitor<C>
-where
-    C: cr::ForOperandRef<'tcx> + cr::ForPlaceRef<'tcx> + cr::ForFunctionCalling<'tcx>,
-{
-    fn instrument_intrinsic_call(
-        &mut self,
+    use super::*;
+
+    pub(super) struct CallParams<'a, 'tcx> {
+        pub func: &'a Operand<'tcx>,
+        pub args: &'a [Spanned<Operand<'tcx>>],
+        pub destination: &'a Place<'tcx>,
+        pub is_diverging: bool,
+    }
+
+    pub(super) fn handle_call<'tcx, 'c, C>(
+        inserter: &'c mut ProbeInserter<C>,
+        assignment_id: Option<AssignmentId>,
+        params: CallParams<'_, 'tcx>,
+    ) where
+        C: cr::ForFunctionCalling<'tcx> + cr::ForDropping<'tcx>,
+    {
+        let tcx = inserter.tcx();
+        let def_id = if let mir_ty::TyKind::FnDef(def_id, ..) = params.func.ty(inserter, tcx).kind()
+        {
+            *def_id
+        } else {
+            // Example: function pointer.
+            let mut inserter = inserter.assign(assignment_id.unwrap(), *params.destination);
+            instrument_regular_call(&mut inserter, params);
+            return;
+        };
+
+        assert!(
+            !inserter.all_pri_items().contains(&def_id),
+            "Instrumenting our own instrumentation."
+        );
+
+        if tcx
+            .lang_items()
+            .drop_glue_fn()
+            .is_some_and(|id| id == def_id)
+        {
+            return instrument_drop_in_place_call(inserter, params);
+        }
+
+        let mut inserter = inserter.assign(assignment_id.unwrap(), *params.destination);
+        if tcx.is_llvm_intrinsic(def_id) {
+            instrument_llvm_intrinsic_call(&mut inserter, params)
+        } else if let Some(intrinsic) = tcx.intrinsic(def_id) {
+            instrument_intrinsic_call(&mut inserter, (def_id, intrinsic), params)
+        } else {
+            instrument_regular_call(&mut inserter, params)
+        }
+    }
+
+    fn instrument_intrinsic_call<'tcx, 'c, C>(
+        inserter: &'c mut ProbeInserter<C>,
         (def_id, def): (DefId, IntrinsicDef),
         params: CallParams<'_, 'tcx>,
-    ) {
+    ) where
+        C: cr::ForFunctionCallingWithResult<'tcx>,
+    {
         use decision::IntrinsicDecision::*;
         match decision::decide_intrinsic_call(def) {
             OneToOneAssign(func_name) => {
-                self.instrument_one_to_one_intrinsic_call(def_id, func_name, params);
+                instrument_one_to_one_intrinsic_call(inserter, def_id, func_name, params);
             }
             Atomic(kind) => {
                 // Source: rustc_codegen_llvm/builder/struct.GenericBuilder.html#method.codegen_intrinsic_call
@@ -485,7 +501,9 @@ where
                         .to_atomic_ordering()
                 };
                 use AtomicIntrinsicKind::*;
-                self.instrument_atomic_intrinsic_call(
+                instrument_atomic_intrinsic_call(
+                    inserter,
+                    Some(inserter.assignment_id()),
                     &params,
                     parse_ordering(match kind {
                         Load | Store | Exchange | CompareExchange { .. } => 1,
@@ -501,15 +519,10 @@ where
                 );
             }
             Memory { kind, is_volatile } => {
-                self.instrument_memory_intrinsic_call(
-                    &params,
-                    self.assignment_id.unwrap(),
-                    kind,
-                    is_volatile,
-                );
+                instrument_memory_intrinsic_call(inserter, &params, kind, is_volatile);
             }
             NoOp => {
-                self.instrument_noop_intrinsic_call(params);
+                instrument_noop_intrinsic_call(inserter, params);
             }
             Contract => {
                 // Currently, no instrumentation
@@ -521,7 +534,7 @@ where
                     "Intrinsic call to {:?} observed.",
                     def.name
                 );
-                self.instrument_unsupported_call(params);
+                instrument_unsupported_call(inserter, params);
             }
             NotPlanned => {
                 log_warn!(
@@ -532,7 +545,7 @@ where
                     ),
                     def.name
                 );
-                self.instrument_unsupported_call(params);
+                instrument_unsupported_call(inserter, params);
             }
             Unsupported => {
                 log_info!(
@@ -540,26 +553,25 @@ where
                     "Intrinsic call to {:?} observed, which is not yet supported.",
                     def.name
                 );
-                self.instrument_unsupported_call(params)
+                instrument_unsupported_call(inserter, params)
             }
             Unexpected => {
-                panic!(
-                    "Unexpected intrinsic call to {:?} observed at {:?}.",
-                    def.name, params.fn_span,
-                );
+                panic!("Unexpected intrinsic call to {:?} observed.", def.name,);
             }
         }
     }
 
-    fn instrument_one_to_one_intrinsic_call(
-        &mut self,
+    fn instrument_one_to_one_intrinsic_call<'tcx, 'c, C>(
+        inserter: &'c mut ProbeInserter<C>,
         def_id: DefId,
         func_name: LeafIntrinsicSymbol,
         params: CallParams<'_, 'tcx>,
-    ) {
+    ) where
+        C: cr::ForAssignment<'tcx>,
+    {
         use decision::rules::EventDecision::*;
 
-        let rules = &self.inserter.config().assignment_filter;
+        let rules = &inserter.config().assignment_filter;
         let filter = match params.args.len() {
             1 => rules.intrinsic_unary_op,
             2 => rules.intrinsic_binary_op,
@@ -570,9 +582,7 @@ where
         match filter {
             Omit => return,
             Opaque | Detailed => {
-                let mut inserter = self.inserter.before();
-                let mut inserter =
-                    inserter.assign(self.assignment_id.unwrap(), params.destination.clone());
+                let mut inserter = inserter.before();
 
                 match filter {
                     Detailed => {
@@ -587,30 +597,33 @@ where
         }
     }
 
-    fn instrument_memory_intrinsic_call(
-        &mut self,
+    fn instrument_memory_intrinsic_call<'tcx, 'c, C>(
+        inserter: &'c mut ProbeInserter<C>,
         params: &CallParams<'_, 'tcx>,
-        assignment_id: AssignmentId,
         kind: decision::MemoryIntrinsicKind,
         is_volatile: bool,
-    ) {
-        instrument_memory_intrinsic_call(
-            &mut self.inserter,
+    ) where
+        C: ForAssignment<'tcx>,
+    {
+        let mut inserter = inserter.before();
+        intrinsic_processing::instrument_memory_intrinsic_call(
+            &mut inserter,
             &params.args,
-            params.destination,
-            assignment_id,
             kind,
             is_volatile,
         );
     }
 
-    fn instrument_atomic_intrinsic_call(
-        &mut self,
+    fn instrument_atomic_intrinsic_call<'tcx, 'c, C>(
+        inserter: &mut ProbeInserter<C>,
+        assignment_id: Option<AssignmentId>, // Optional because of `fence`
         params: &CallParams<'_, 'tcx>,
         ordering: mir_ty::AtomicOrdering,
         failure_ordering: Option<mir_ty::AtomicOrdering>,
         kind: AtomicIntrinsicKind,
-    ) {
+    ) where
+        C: cr::ForInsertion<'tcx>,
+    {
         use AtomicIntrinsicKind::*;
         use decision::rules::EventDecision::*;
 
@@ -624,7 +637,7 @@ where
         let ordering = convert_ordering(ordering);
         let failure_ordering = failure_ordering.map(convert_ordering);
 
-        let rules = &self.inserter.config().assignment_filter;
+        let rules = &inserter.config().assignment_filter;
         let filter = match kind {
             Load | Store | Exchange | CompareExchange { .. } => rules.atomic_memory_op,
             BinOp(..) => rules.atomic_binary_op,
@@ -637,8 +650,6 @@ where
         match filter {
             Omit => return,
             Opaque | Detailed => {
-                let mut inserter = self.inserter.before();
-
                 match kind {
                     Fence { single_thread } => {
                         inserter
@@ -647,7 +658,7 @@ where
                     }
                     Load | Store | Exchange | CompareExchange { .. } | BinOp(..) => {
                         let mut inserter =
-                            inserter.assign(self.assignment_id.unwrap(), *params.destination);
+                            inserter.assign(assignment_id.unwrap(), *params.destination);
 
                         match filter {
                             Detailed => {
@@ -680,156 +691,174 @@ where
         }
     }
 
-    fn instrument_llvm_intrinsic_call(&mut self, params: CallParams<'_, 'tcx>) {
+    fn instrument_llvm_intrinsic_call<'tcx, 'c, C>(
+        inserter: &mut ProbeInserter<C>,
+        params: CallParams<'_, 'tcx>,
+    ) where
+        C: cr::ForFunctionCallingWithResult<'tcx>,
+    {
         // Currently, we do not support for LLVM intrinsics.
-        self.instrument_unsupported_call(params);
+        instrument_unsupported_call(inserter, params);
     }
 
-    fn instrument_drop_in_place_call(
-        &mut self,
+    fn instrument_drop_in_place_call<'tcx, 'c, C>(
+        inserter: &mut ProbeInserter<C>,
         CallParams {
             func,
             args,
             destination: _,
-            target,
-            fn_span: _,
+            is_diverging,
         }: CallParams<'_, 'tcx>,
-    ) {
-        let mut inserter = self.inserter.before();
+    ) where
+        C: cr::ForDropping<'tcx>,
+    {
+        let mut inserter = inserter.before();
         assert_eq!(args.len(), 1);
         inserter.before_call_drop_in_place(func, &args[0]);
 
-        if target.is_some() {
-            let mut inserter = inserter.after();
-            inserter.after_call_drop();
-        }
-    }
-
-    fn instrument_regular_call(&mut self, params: CallParams<'_, 'tcx>) {
-        self.instrument_call_general(params, false);
-    }
-
-    fn instrument_noop_intrinsic_call(&mut self, params: CallParams<'_, 'tcx>) {
-        // Although ineffective in runtime, we still report it.
-        self.instrument_call_general(params, true);
-    }
-
-    fn instrument_unsupported_call(&mut self, params: CallParams<'_, 'tcx>) {
-        self.instrument_call_general(params, true);
-    }
-
-    fn instrument_call_general(
-        &mut self,
-        CallParams {
-            func,
-            args,
-            destination,
-            target,
-            fn_span: _,
-        }: CallParams<'_, 'tcx>,
-        no_definition: bool,
-    ) {
-        let mut inserter = self.inserter.before();
-
-        inserter.before_call_func(func, args, no_definition);
-
-        if target.is_none() {
-            // This branch is only triggered by hitting a divergent function:
-            // https://doc.rust-lang.org/rust-by-example/fn/diverging.html
-            // (this means the program will exit immediately)
+        if is_diverging {
             return;
         }
 
         let mut inserter = inserter.after();
-        let mut inserter = inserter.assign(self.assignment_id.unwrap(), *destination);
+        inserter.after_call_drop();
+    }
+
+    fn instrument_regular_call<'tcx, 'c, C>(
+        inserter: &mut ProbeInserter<C>,
+        params: CallParams<'_, 'tcx>,
+    ) where
+        C: cr::ForFunctionCallingWithResult<'tcx>,
+    {
+        instrument_call_general(inserter, params, false);
+    }
+
+    fn instrument_noop_intrinsic_call<'tcx, 'c, C>(
+        inserter: &mut ProbeInserter<C>,
+        params: CallParams<'_, 'tcx>,
+    ) where
+        C: cr::ForFunctionCallingWithResult<'tcx>,
+    {
+        // Although ineffective in runtime, we still report it.
+        instrument_call_general(inserter, params, true);
+    }
+
+    fn instrument_unsupported_call<'tcx, 'c, C>(
+        inserter: &mut ProbeInserter<C>,
+        params: CallParams<'_, 'tcx>,
+    ) where
+        C: cr::ForFunctionCallingWithResult<'tcx>,
+    {
+        instrument_call_general(inserter, params, true);
+    }
+
+    fn instrument_call_general<'tcx, 'c, C>(
+        inserter: &'c mut ProbeInserter<C>,
+        CallParams {
+            func,
+            args,
+            destination: _,
+            is_diverging,
+        }: CallParams<'_, 'tcx>,
+        no_definition: bool,
+    ) where
+        C: cr::ForFunctionCallingWithResult<'tcx>,
+    {
+        let mut inserter = inserter.before();
+
+        inserter.before_call_func(func, args, no_definition);
+
+        if is_diverging {
+            return;
+        }
+
+        let mut inserter = inserter.after();
         inserter.after_call_func();
     }
 }
 
-fn instrument_memory_intrinsic_call<'tcx, 'a, C>(
-    inserter: &mut ProbeInserter<C>,
-    args: &'a [Spanned<Operand<'tcx>>],
-    destination: &'a Place<'tcx>,
-    assignment_id: AssignmentId,
-    kind: decision::MemoryIntrinsicKind,
-    is_volatile: bool,
-) where
-    C: cr::ForOperandRef<'tcx> + cr::ForPlaceRef<'tcx>,
-{
-    use decision::MemoryIntrinsicKind::*;
-    use decision::rules::EventDecision::*;
+mod intrinsic_processing {
+    use super::*;
 
-    let filter = (&inserter.config().assignment_filter).intrinsic_memory_op;
-    match filter {
-        Omit => return,
-        Opaque | Detailed => {
-            let mut inserter = inserter.before();
+    pub(super) fn instrument_memory_intrinsic_call<'tcx, 'a, C>(
+        inserter: &mut ProbeInserter<C>,
+        args: &'a [Spanned<Operand<'tcx>>],
+        kind: decision::MemoryIntrinsicKind,
+        is_volatile: bool,
+    ) where
+        C: cr::ForAssignment<'tcx>,
+    {
+        use decision::MemoryIntrinsicKind::*;
+        use decision::rules::EventDecision::*;
 
-            let mut inserter = inserter.assign(assignment_id, *destination);
-
-            if matches!(filter, Opaque) {
-                inserter.add_opaque_assignment();
-                return;
-            }
-
-            let ptr_arg = match (&kind, is_volatile) {
-                // `volatile_copy_memory`, `volatile_copy_nonoverlapping_memory` have dst first!
-                (Copy { .. }, true) => args.get(1),
-                _ => args.get(0),
-            };
-            let mut inserter = inserter.perform_memory_op(is_volatile, ptr_arg.cloned());
-
-            match kind {
-                Load { is_ptr_aligned } => inserter.load(is_ptr_aligned),
-                Store { is_ptr_aligned } => inserter.store(&args[1], is_ptr_aligned),
-                Copy { is_overlapping } => {
-                    let dest: &Spanned<Operand<'tcx>> =
-                        if is_volatile { &args[0] } else { &args[1] };
-                    inserter.copy(dest, &args[2], is_overlapping)
+        let filter = (&inserter.config().assignment_filter).intrinsic_memory_op;
+        match filter {
+            Omit => return,
+            Opaque | Detailed => {
+                if matches!(filter, Opaque) {
+                    inserter.add_opaque_assignment();
+                    return;
                 }
-                Set => {
-                    inserter.set(&args[1], &args[2]);
-                }
-                Swap => {
-                    inserter.swap(&args[1]);
-                }
-                RawEq => {
-                    inserter.raw_eq(&args[1]);
-                }
-                CompareBytes => {
-                    inserter.compare_bytes(&args[1], &args[2]);
+
+                let ptr_arg = match (&kind, is_volatile) {
+                    // `volatile_copy_memory`, `volatile_copy_nonoverlapping_memory` have dst first!
+                    (Copy { .. }, true) => args.get(1),
+                    _ => args.get(0),
+                };
+                let mut inserter = inserter.perform_memory_op(is_volatile, ptr_arg.cloned());
+
+                match kind {
+                    Load { is_ptr_aligned } => inserter.load(is_ptr_aligned),
+                    Store { is_ptr_aligned } => inserter.store(&args[1], is_ptr_aligned),
+                    Copy { is_overlapping } => {
+                        let dest: &Spanned<Operand<'tcx>> =
+                            if is_volatile { &args[0] } else { &args[1] };
+                        inserter.copy(dest, &args[2], is_overlapping)
+                    }
+                    Set => {
+                        inserter.set(&args[1], &args[2]);
+                    }
+                    Swap => {
+                        inserter.swap(&args[1]);
+                    }
+                    RawEq => {
+                        inserter.raw_eq(&args[1]);
+                    }
+                    CompareBytes => {
+                        inserter.compare_bytes(&args[1], &args[2]);
+                    }
                 }
             }
         }
     }
-}
 
-fn instrument_memory_intrinsic_copy_non_overlapping<'tcx, 'a, C>(
-    inserter: &mut ProbeInserter<C>,
-    src: &Operand<'tcx>,
-    dst: &Operand<'tcx>,
-    count: &Operand<'tcx>,
-    assignment_id: AssignmentId,
-) where
-    C: cr::ForOperandRef<'tcx>,
-{
-    use decision::rules::EventDecision::*;
+    pub(super) fn instrument_memory_intrinsic_copy_non_overlapping<'tcx, 'a, C>(
+        inserter: &mut ProbeInserter<C>,
+        src: &Operand<'tcx>,
+        dst: &Operand<'tcx>,
+        count: &Operand<'tcx>,
+        assignment_id: AssignmentId,
+    ) where
+        C: cr::ForInsertion<'tcx>,
+    {
+        use decision::rules::EventDecision::*;
 
-    match inserter.config().assignment_filter.intrinsic_memory_op {
-        Omit | Opaque => return,
-        Detailed => (),
+        match inserter.config().assignment_filter.intrinsic_memory_op {
+            Omit | Opaque => return,
+            Detailed => (),
+        }
+
+        let [src, dst, count] = {
+            let span = inserter.source_info().span;
+            [src, dst, count].map(|op| Spanned {
+                node: op.clone(),
+                span,
+            })
+        };
+
+        let mut inserter = inserter.before();
+        let mut inserter = inserter.memory_write(assignment_id);
+        let mut inserter = inserter.perform_memory_op(false, Some(src.clone()));
+        inserter.copy(&dst, &count, false);
     }
-
-    let [src, dst, count] = {
-        let span = inserter.source_info().span;
-        [src, dst, count].map(|op| Spanned {
-            node: op.clone(),
-            span,
-        })
-    };
-
-    let mut inserter = inserter.before();
-    let mut inserter = inserter.memory_write(assignment_id);
-    let mut inserter = inserter.perform_memory_op(false, Some(src.clone()));
-    inserter.copy(&dst, &count, false);
 }
