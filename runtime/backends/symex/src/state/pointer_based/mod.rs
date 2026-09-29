@@ -164,7 +164,7 @@ impl<EB: SymValueRefExprBuilder> RawPointerVariableState<EB> {
         place_val
             .type_info()
             .get_size(self.type_manager.as_ref())
-            .expect("Copying/Moving of unsized types")
+            .unwrap_or_else(|| panic!("Copying/Moving of unsized types: {:?}", place_val))
     }
 }
 

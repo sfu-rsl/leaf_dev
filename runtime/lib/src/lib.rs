@@ -4,6 +4,7 @@
 #![allow(internal_features)]
 #![feature(likely_unlikely)]
 #![feature(never_type)]
+#![feature(f16, f128, float_bits_const)]
 
 pub mod abs;
 pub mod call;

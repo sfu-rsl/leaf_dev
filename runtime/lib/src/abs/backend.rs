@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
-use super::{BasicBlockLocation, Constraint, ConstraintKind, FuncDef, IntType, ValueType};
+use super::{
+    BasicBlockLocation, Constraint, ConstraintKind, FloatType, FuncDef, IntType, ValueType,
+};
 
 pub trait Shutdown {
     fn shutdown(&mut self);
@@ -63,6 +65,16 @@ pub trait CoreTypeProvider<V> {
             (true, i128::BITS) => self.i128(),
             (false, u128::BITS) => self.u128(),
             _ => unreachable!("Unexpected integer type: {:?}", ty),
+        }
+    }
+
+    fn float_type(&self, ty: FloatType) -> V {
+        match (ty.e_bits + ty.s_bits) as u32 {
+            f16::BITS => self.f16(),
+            f32::BITS => self.f32(),
+            f64::BITS => self.f64(),
+            f128::BITS => self.f128(),
+            _ => unreachable!("Unexpected float type: {:?}", ty),
         }
     }
 
