@@ -83,7 +83,13 @@ mod handlers {
                             CoreTypeProvider::<&TypeInfo>::int_type(self.type_manager, *int_type)
                                 .id,
                         ),
-                        ValueType::Float(_float_type) => None,
+                        ValueType::Float(float_type) => Some(
+                            CoreTypeProvider::<&TypeInfo>::float_type(
+                                self.type_manager,
+                                *float_type,
+                            )
+                            .id,
+                        ),
                     };
                     if let Some(id) = id {
                         info.metadata_mut().set_type_id(id);
