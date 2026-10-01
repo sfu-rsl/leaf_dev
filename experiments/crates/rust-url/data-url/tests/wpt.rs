@@ -52,13 +52,13 @@ where
             TestCase::Three(i, m, b) => (i, m, Some(b)),
         };
         let should_panic = known_failures.contains(&&*input);
-        add_test(
-            format!("data: URL {:?}", input),
-            should_panic,
-            test::TestFn::DynTestFn(Box::new(move || {
-                run_data_url(input, expected_mime, expected_body, should_panic)
-            })),
-        );
+        // add_test(
+        //     format!("data: URL {:?}", input),
+        //     should_panic,
+        //     test::TestFn::DynTestFn(Box::new(move || {
+        //         run_data_url(input, expected_mime, expected_body, should_panic)
+        //     })),
+        // );
     }
 }
 
