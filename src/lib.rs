@@ -1,3 +1,8 @@
+#![cfg(feature = "rust_backend")]
+#![cfg(feature = "any_impl")]
+#![cfg(feature = "miniz_oxide")]
+#![cfg(feature = "default")]
+
 //! A DEFLATE-based stream compression/decompression library
 //!
 //! This library provides support for compression and decompression of
