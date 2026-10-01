@@ -1,18 +1,18 @@
-//! Wasmer will let you easily run Wasm module in a Rust host.
-//!
-//! This example illustrates the basics of using Wasmer through a "Hello World"-like project:
-//!
-//!   1. How to load a Wasm modules as bytes
-//!   2. How to compile the module
-//!   3. How to create an instance of the module
-//!
-//! You can run the example directly by executing in Wasmer root:
-//!
-//! ```shell
-//! cargo run --example instance --release --features "cranelift"
-//! ```
-//!
-//! Ready?
+// Wasmer will let you easily run Wasm module in a Rust host.
+//
+// This example illustrates the basics of using Wasmer through a "Hello World"-like project:
+//
+//   1. How to load a Wasm modules as bytes
+//   2. How to compile the module
+//   3. How to create an instance of the module
+//
+// You can run the example directly by executing in Wasmer root:
+//
+// ```shell
+// cargo run --example instance --release --features "cranelift"
+// ```
+//
+// Ready?
 
 use wasmer::{Instance, Module, Store, TypedFunction, imports, wat2wasm};
 

@@ -1,14 +1,14 @@
-//! A Wasm module can be compiled with multiple compilers.
-//!
-//! This example illustrates how to use the LLVM compiler.
-//!
-//! You can run the example directly by executing in Wasmer root:
-//!
-//! ```shell
-//! cargo run --example compiler-llvm --release --features "llvm"
-//! ```
-//!
-//! Ready?
+// A Wasm module can be compiled with multiple compilers.
+//
+// This example illustrates how to use the LLVM compiler.
+//
+// You can run the example directly by executing in Wasmer root:
+//
+// ```shell
+// cargo run --example compiler-llvm --release --features "llvm"
+// ```
+//
+// Ready?
 
 use wasmer::{Instance, Module, Store, Value, imports, wat2wasm};
 use wasmer_compiler_llvm::LLVM;

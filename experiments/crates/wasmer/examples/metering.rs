@@ -1,18 +1,18 @@
-//! Wasmer will let you easily run Wasm module in a Rust host.
-//!
-//! This example illustrates the basics of using Wasmer metering features:
-//!
-//!   1. How to enable metering in a module
-//!   2. How to meter a specific function call
-//!   3. How to make execution fails if cost exceeds a given limit
-//!
-//! You can run the example directly by executing in Wasmer root:
-//!
-//! ```shell
-//! cargo run --example metering --release --features "cranelift"
-//! ```
-//!
-//! Ready?
+// Wasmer will let you easily run Wasm module in a Rust host.
+//
+// This example illustrates the basics of using Wasmer metering features:
+//
+//   1. How to enable metering in a module
+//   2. How to meter a specific function call
+//   3. How to make execution fails if cost exceeds a given limit
+//
+// You can run the example directly by executing in Wasmer root:
+//
+// ```shell
+// cargo run --example metering --release --features "cranelift"
+// ```
+//
+// Ready?
 
 use anyhow::bail;
 use std::sync::Arc;

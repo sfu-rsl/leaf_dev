@@ -1,16 +1,16 @@
-//! Defining an engine in Wasmer is one of the fundamental steps.
-//!
-//! This example builds on that of 'engine_headless.rs' but instead of
-//! serializing a module and then deserializing it again for your host machines target,
-//! We instead create an engine for our target architecture (In this case an ARM64 iOS device),
-//! serialize a simple module to a .dylib file that can be copied to an iOS project and
-//! deserialized/ran using the 'Headless C-API'.
-//!
-//! ```shell
-//! cargo run --example platform-headless-ios --release --features "cranelift"
-//! ```
-//!
-//! Ready?
+// Defining an engine in Wasmer is one of the fundamental steps.
+//
+// This example builds on that of 'engine_headless.rs' but instead of
+// serializing a module and then deserializing it again for your host machines target,
+// We instead create an engine for our target architecture (In this case an ARM64 iOS device),
+// serialize a simple module to a .dylib file that can be copied to an iOS project and
+// deserialized/ran using the 'Headless C-API'.
+//
+// ```shell
+// cargo run --example platform-headless-ios --release --features "cranelift"
+// ```
+//
+// Ready?
 #![allow(unused)]
 use std::path::Path;
 use std::str::FromStr;

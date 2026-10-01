@@ -1,14 +1,14 @@
-//! WebAssembly is a living standard. Wasmer integrates some
-//! WebAssembly features that aren't yet stable but can still be
-//! turned on. This example explains how.
-//!
-//! You can run the example directly by executing in Wasmer root:
-//!
-//! ```shell
-//! cargo run --example features --release --features "cranelift"
-//! ```
-//!
-//! Ready?
+// WebAssembly is a living standard. Wasmer integrates some
+// WebAssembly features that aren't yet stable but can still be
+// turned on. This example explains how.
+//
+// You can run the example directly by executing in Wasmer root:
+//
+// ```shell
+// cargo run --example features --release --features "cranelift"
+// ```
+//
+// Ready?
 
 use wasmer::{
     Instance, Module, Store, Value, imports,

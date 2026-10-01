@@ -1,48 +1,48 @@
-//! Defining an engine in Wasmer is one of the fundamental steps.
-//!
-//! This example illustrates a neat feature of engines: their ability
-//! to run in a headless mode. At the time of writing, all engines
-//! have a headless mode, but it's not a requirement of the `Engine`
-//! trait (defined in the `wasmer_engine` crate).
-//!
-//! What problem does it solve, and what does it mean?
-//!
-//! Once a Wasm module is compiled into executable code and stored
-//! somewhere (e.g. in memory with the Universal engine), the module
-//! can be instantiated and executed. But imagine for a second the
-//! following scenario:
-//!
-//!   * Modules are compiled ahead of time, to be instantiated later
-//!     on.
-//!   * Modules are cross-compiled on a machine ahead of time
-//!     to be run on another machine later one.
-//!
-//! In both scenarios, the environment where the compiled Wasm module
-//! will be executed can be very constrained. For such particular
-//! contexts, Wasmer can be compiled _without_ the compilers, so that
-//! the `wasmer` binary is as small as possible. Indeed, there is no
-//! need for a compiler since the Wasm module is already compiled. All
-//! we need is an engine that _only_ drives the instantiation and
-//! execution of the Wasm module.
-//!
-//! And that, that's a headless engine.
-//!
-//! To achieve such a scenario, a Wasm module must be compiled, then
-//! serialized —for example into a file—, then later, potentially on
-//! another machine, deserialized. The next steps are classical: The
-//! Wasm module is instantiated and executed.
-//!
-//! This example uses a `compiler` because it illustrates the entire
-//! workflow, but keep in mind the compiler isn't required after the
-//! compilation step.
-//!
-//! You can run the example directly by executing in Wasmer root:
-//!
-//! ```shell
-//! cargo run --example engine-headless --release --features "cranelift"
-//! ```
-//!
-//! Ready?
+// Defining an engine in Wasmer is one of the fundamental steps.
+//
+// This example illustrates a neat feature of engines: their ability
+// to run in a headless mode. At the time of writing, all engines
+// have a headless mode, but it's not a requirement of the `Engine`
+// trait (defined in the `wasmer_engine` crate).
+//
+// What problem does it solve, and what does it mean?
+//
+// Once a Wasm module is compiled into executable code and stored
+// somewhere (e.g. in memory with the Universal engine), the module
+// can be instantiated and executed. But imagine for a second the
+// following scenario:
+//
+//   * Modules are compiled ahead of time, to be instantiated later
+//     on.
+//   * Modules are cross-compiled on a machine ahead of time
+//     to be run on another machine later one.
+//
+// In both scenarios, the environment where the compiled Wasm module
+// will be executed can be very constrained. For such particular
+// contexts, Wasmer can be compiled _without_ the compilers, so that
+// the `wasmer` binary is as small as possible. Indeed, there is no
+// need for a compiler since the Wasm module is already compiled. All
+// we need is an engine that _only_ drives the instantiation and
+// execution of the Wasm module.
+//
+// And that, that's a headless engine.
+//
+// To achieve such a scenario, a Wasm module must be compiled, then
+// serialized —for example into a file—, then later, potentially on
+// another machine, deserialized. The next steps are classical: The
+// Wasm module is instantiated and executed.
+//
+// This example uses a `compiler` because it illustrates the entire
+// workflow, but keep in mind the compiler isn't required after the
+// compilation step.
+//
+// You can run the example directly by executing in Wasmer root:
+//
+// ```shell
+// cargo run --example engine-headless --release --features "cranelift"
+// ```
+//
+// Ready?
 
 use tempfile::NamedTempFile;
 use wasmer::{Instance, Module, Store, Value, imports, sys::EngineBuilder, wat2wasm};

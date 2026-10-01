@@ -1,19 +1,19 @@
-//! A Wasm module can import and export entities, like functions, memories, globals and tables.
-//! This example illustrates the basics of using these entities.
-//!
-//! In this example we'll be using a sample Wasm module which exports some entities and requires us
-//! to also import some of them.
-//!
-//! The goal here is to give you an idea of how to work with imports and exports. We won't go into
-//! the details of each entities, they'll be covered in more details in the other examples.
-//!
-//! You can run the example directly by executing in Wasmer root:
-//!
-//! ```shell
-//! cargo run --example imports-exports --release --features "cranelift"
-//! ```
-//!
-//! Ready?
+// A Wasm module can import and export entities, like functions, memories, globals and tables.
+// This example illustrates the basics of using these entities.
+//
+// In this example we'll be using a sample Wasm module which exports some entities and requires us
+// to also import some of them.
+//
+// The goal here is to give you an idea of how to work with imports and exports. We won't go into
+// the details of each entities, they'll be covered in more details in the other examples.
+//
+// You can run the example directly by executing in Wasmer root:
+//
+// ```shell
+// cargo run --example imports-exports --release --features "cranelift"
+// ```
+//
+// Ready?
 
 use wasmer::{
     Function, FunctionType, Global, Instance, Memory, Module, Store, Table, Type, Value, imports,

@@ -1,15 +1,15 @@
-//! Piping to and from a WASI compiled WebAssembly module with Wasmer.
-//!
-//! This example builds on the WASI example, showing how you can pipe to and
-//! from a WebAssembly module.
-//!
-//! You can run the example directly by executing in Wasmer root:
-//!
-//! ```shell
-//! cargo run --example wasi-pipes --release --features "cranelift,tokio,backend,wasi"
-//! ```
-//!
-//! Ready?
+// Piping to and from a WASI compiled WebAssembly module with Wasmer.
+//
+// This example builds on the WASI example, showing how you can pipe to and
+// from a WebAssembly module.
+//
+// You can run the example directly by executing in Wasmer root:
+//
+// ```shell
+// cargo run --example wasi-pipes --release --features "cranelift,tokio,backend,wasi"
+// ```
+//
+// Ready?
 
 use std::io::{Read, Write};
 

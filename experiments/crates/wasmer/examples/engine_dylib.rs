@@ -1,22 +1,22 @@
-//! Defining an engine in Wasmer is one of the fundamental steps.
-//!
-//! This example illustrates how to use the `wasmer_engine_dylib`,
-//! aka the Dylib engine. An engine applies roughly 2 steps:
-//!
-//!   1. It compiles the Wasm module bytes to executable code, through
-//!      the intervention of a compiler,
-//!   2. It stores the executable code somewhere.
-//!
-//! In the particular context of the Dylib engine, the executable code
-//! is stored in a shared object (`.dylib`, `.so` or `.dll` file).
-//!
-//! You can run the example directly by executing in Wasmer root:
-//!
-//! ```shell
-//! cargo run --example engine-dylib --release --features "cranelift"
-//! ```
-//!
-//! Ready?
+// Defining an engine in Wasmer is one of the fundamental steps.
+//
+// This example illustrates how to use the `wasmer_engine_dylib`,
+// aka the Dylib engine. An engine applies roughly 2 steps:
+//
+//   1. It compiles the Wasm module bytes to executable code, through
+//      the intervention of a compiler,
+//   2. It stores the executable code somewhere.
+//
+// In the particular context of the Dylib engine, the executable code
+// is stored in a shared object (`.dylib`, `.so` or `.dll` file).
+//
+// You can run the example directly by executing in Wasmer root:
+//
+// ```shell
+// cargo run --example engine-dylib --release --features "cranelift"
+// ```
+//
+// Ready?
 
 use wasmer::{imports, wat2wasm, Instance, Module, Store, Value};
 use wasmer_compiler_cranelift::Cranelift;
