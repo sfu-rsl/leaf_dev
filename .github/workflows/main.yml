@@ -1,0 +1,133 @@
+name: CI
+on: [push, pull_request]
+
+jobs:
+  test:
+    name: Test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        build: [stable, beta, nightly, macos, windows, mingw]
+        include:
+          - build: stable
+            os: ubuntu-latest
+            rust: stable
+          - build: beta
+            os: ubuntu-latest
+            rust: beta
+          - build: nightly
+            os: ubuntu-latest
+            rust: nightly
+          - build: macos
+            os: macos-latest
+            rust: stable
+          - build: windows
+            os: windows-2022
+            rust: stable
+          - build: mingw
+            os: windows-2022
+            rust: stable-x86_64-gnu
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install Rust (rustup)
+      run: rustup update ${{ matrix.rust }} --no-self-update && rustup default ${{ matrix.rust }}
+      shell: bash
+    - run: cargo build
+    - run: rustdoc --test README.md -L target/debug/deps --extern flate2=target/debug/libflate2.rlib --edition=2018
+    - run: cargo test
+    - run: cargo test --features zlib
+    - run: cargo test --features zlib --no-default-features
+    - run: cargo test --features zlib-default --no-default-features
+    - run: cargo test --features zlib-ng-compat --no-default-features
+      if: matrix.build != 'mingw'
+    - run: cargo test --features zlib-ng --no-default-features
+      if: matrix.build != 'mingw'
+    - run: cargo test --features zlib-rs --no-default-features
+    - run: cargo test --features cloudflare_zlib --no-default-features
+      if: matrix.build != 'mingw'
+    - run: |
+        if ! cargo check --no-default-features 2>&1 | grep "You need to choose"; then
+          echo "expected message stating a zlib backend must be chosen"
+          exit 1
+        fi
+      if: matrix.build == 'stable'
+
+  rustfmt_docs_clippy:
+    name: Rustfmt, Docs and Clippy
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install Rust
+      run: rustup update stable && rustup default stable && rustup component add rustfmt && rustup component add clippy
+    - run: cargo fmt -- --check
+    - run: cargo doc --all-features
+    - run: cargo clippy --all-features -- -D warnings
+    - run: | 
+        if cargo tree --features zlib-rs --no-default-features | grep -q crc32fast; then
+          echo "zlib-rs uses its own crc implementation, and should not build crc32fast"
+          exit 1
+        fi
+
+  audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate Cargo.lock # explicitly generate the lockfile, see https://github.com/rustsec/audit-check/issues/27
+        run: cargo generate-lockfile
+
+      - name: Audit Check
+        uses: rustsec/audit-check@v2.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  wasm:
+    name: WebAssembly
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [wasm32-unknown-unknown, wasm32-wasip1]
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install Rust
+      run: rustup update stable && rustup default stable && rustup target add ${{ matrix.target }}
+    - run: cargo build --target ${{ matrix.target }}
+
+  minimum:
+    name: Minimum Rust compiler
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-2022, macos-latest, ubuntu-latest]
+    env:
+      version: 1.67.0
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust (rustup)
+        run: |
+          rustup toolchain install ${version} nightly --profile minimal --no-self-update
+          rustup default ${version}
+          cargo +nightly update -Zminimal-versions
+        shell: bash
+      - run: cargo build
+      - run: cargo build --features zlib
+      - run: cargo build --features zlib --no-default-features
+      - run: cargo build --features zlib-default --no-default-features
+      - run: cargo build --features zlib-ng-compat --no-default-features
+      - run: cargo build --features zlib-ng --no-default-features
+      - run: cargo build --features cloudflare_zlib --no-default-features
+
+  # Minimum Rust compiler to build `flate2` with no optional features
+  minimum-build:
+    name: Minimum Rust compiler
+    runs-on: ubuntu-latest
+    env:
+      # If this is changed to pass tests, then set `rust-version` in `Cargo.toml` to the same version.
+      version: 1.67.0
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust (rustup)
+        run: rustup update ${version} --no-self-update && rustup default ${version}
+        shell: bash
+      - run: cargo build
