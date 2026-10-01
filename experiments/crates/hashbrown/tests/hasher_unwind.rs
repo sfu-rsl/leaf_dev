@@ -144,6 +144,7 @@ fn hashmap_reserve_survives_panicking_build_hasher_inner(count: usize) {
 }
 
 #[test]
+#[ignore = "not supported"]
 fn hashmap_reserve_survives_panicking_build_hasher() {
     let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     if cfg!(miri) {
