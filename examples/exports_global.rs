@@ -1,19 +1,19 @@
-//! A Wasm module can export entities, like functions, memories,
-//! globals and tables.
-//!
-//! This example illustrates how to use exported globals. They come
-//! in 2 flavors:
-//!
-//!   1. Immutable globals (const),
-//!   2. Mutable globals.
-//!
-//! You can run the example directly by executing in Wasmer root:
-//!
-//! ```shell
-//! cargo run --example exported-global --release --features "cranelift"
-//! ```
-//!
-//! Ready?
+// A Wasm module can export entities, like functions, memories,
+// globals and tables.
+//
+// This example illustrates how to use exported globals. They come
+// in 2 flavors:
+//
+//   1. Immutable globals (const),
+//   2. Mutable globals.
+//
+// You can run the example directly by executing in Wasmer root:
+//
+// ```shell
+// cargo run --example exported-global --release --features "cranelift"
+// ```
+//
+// Ready?
 
 use wasmer::{Instance, Module, Mutability, Store, Type, TypedFunction, Value, imports, wat2wasm};
 

@@ -1,18 +1,18 @@
-//! With Wasmer you'll be able to interact with guest module memory.
-//!
-//! This example illustrates the basics of interacting with Wasm module memory.:
-//!
-//!   1. How to load a Wasm modules as bytes
-//!   2. How to compile the module
-//!   3. How to create an instance of the module
-//!
-//! You can run the example directly by executing in Wasmer root:
-//!
-//! ```shell
-//! cargo run --example memory --release --features "cranelift"
-//! ```
-//!
-//! Ready?
+// With Wasmer you'll be able to interact with guest module memory.
+//
+// This example illustrates the basics of interacting with Wasm module memory.:
+//
+//   1. How to load a Wasm modules as bytes
+//   2. How to compile the module
+//   3. How to create an instance of the module
+//
+// You can run the example directly by executing in Wasmer root:
+//
+// ```shell
+// cargo run --example memory --release --features "cranelift"
+// ```
+//
+// Ready?
 
 #[cfg(not(feature = "wamr"))]
 use std::mem;

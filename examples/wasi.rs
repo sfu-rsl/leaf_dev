@@ -1,18 +1,18 @@
-//! Running a WASI compiled WebAssembly module with Wasmer.
-//!
-//! This example illustrates how to run WASI modules with
-//! Wasmer.
-//!
-//! If you need more manual control over the instantiation, including custom
-//! imports, then check out the ./wasi_manual_setup.rs example.
-//!
-//! You can run the example directly by executing in Wasmer root:
-//!
-//! ```shell
-//! cargo run --example wasi --release --features "cranelift,wasi"
-//! ```
-//!
-//! Ready?
+// Running a WASI compiled WebAssembly module with Wasmer.
+//
+// This example illustrates how to run WASI modules with
+// Wasmer.
+//
+// If you need more manual control over the instantiation, including custom
+// imports, then check out the ./wasi_manual_setup.rs example.
+//
+// You can run the example directly by executing in Wasmer root:
+//
+// ```shell
+// cargo run --example wasi --release --features "cranelift,wasi"
+// ```
+//
+// Ready?
 
 use std::{io::Read, sync::Arc};
 

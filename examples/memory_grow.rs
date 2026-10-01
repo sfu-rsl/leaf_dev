@@ -1,10 +1,10 @@
-//! Example demonstrating WebAssembly memory growth limits
-//!
-//! Tests growing memory to maximum allowed size according to the spec
-//! You can run the example directly by executing:
-//! ```shell
-//! cargo run --example memory-grow --release --features "cranelift"
-//! ```
+// Example demonstrating WebAssembly memory growth limits
+//
+// Tests growing memory to maximum allowed size according to the spec
+// You can run the example directly by executing:
+// ```shell
+// cargo run --example memory-grow --release --features "cranelift"
+// ```
 
 use wasmer::{Instance, Module, Store, imports, wat2wasm};
 

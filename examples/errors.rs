@@ -1,17 +1,17 @@
-//! A Wasm module can sometimes be invalid or trigger traps, and in those case we will get
-//! an error back from the API.
-//!
-//! In this example we'll see how to handle such errors in the most
-//! basic way. To do that we'll use a Wasm module that we know will
-//! produce an error.
-//!
-//! You can run the example directly by executing in Wasmer root:
-//!
-//! ```shell
-//! cargo run --example errors --release --features "cranelift"
-//! ```
-//!
-//! Ready?
+// A Wasm module can sometimes be invalid or trigger traps, and in those case we will get
+// an error back from the API.
+//
+// In this example we'll see how to handle such errors in the most
+// basic way. To do that we'll use a Wasm module that we know will
+// produce an error.
+//
+// You can run the example directly by executing in Wasmer root:
+//
+// ```shell
+// cargo run --example errors --release --features "cranelift"
+// ```
+//
+// Ready?
 
 use wasmer::{Instance, Module, Store, TypedFunction, imports, wat2wasm};
 

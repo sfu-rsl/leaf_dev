@@ -1,22 +1,22 @@
-//! Defining an engine in Wasmer is one of the fundamental steps.
-//!
-//! As a reminder, an engine applies roughly 2 steps:
-//!
-//!   1. It compiles the Wasm module bytes to executable code, through
-//!      the intervention of a compiler,
-//!   2. It stores the executable code somewhere.
-//!
-//! This example focuses on the first step: the compiler. It
-//! illustrates how the abstraction over the compiler is so powerful
-//! that it is possible to cross-compile a Wasm module.
-//!
-//! You can run the example directly by executing in Wasmer root:
-//!
-//! ```shell
-//! cargo run --example cross-compilation --release --features "cranelift"
-//! ```
-//!
-//! Ready?
+// Defining an engine in Wasmer is one of the fundamental steps.
+//
+// As a reminder, an engine applies roughly 2 steps:
+//
+//   1. It compiles the Wasm module bytes to executable code, through
+//      the intervention of a compiler,
+//   2. It stores the executable code somewhere.
+//
+// This example focuses on the first step: the compiler. It
+// illustrates how the abstraction over the compiler is so powerful
+// that it is possible to cross-compile a Wasm module.
+//
+// You can run the example directly by executing in Wasmer root:
+//
+// ```shell
+// cargo run --example cross-compilation --release --features "cranelift"
+// ```
+//
+// Ready?
 
 use std::str::FromStr;
 use wasmer::{

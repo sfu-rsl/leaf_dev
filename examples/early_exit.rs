@@ -1,18 +1,18 @@
-//! There are cases where you may want to interrupt this synchronous execution of the Wasm module
-//! while the it is calling a host function. This can be useful for saving resources, and not
-//! returning back to the guest Wasm for execution, when you already know the Wasm execution will
-//! fail, or no longer be needed.
-//!
-//! In this example, we will run a Wasm module that calls the imported host function
-//! interrupt_execution. This host function will immediately stop executing the WebAssembly module.
-//!
-//! You can run the example directly by executing in Wasmer root:
-//!
-//! ```shell
-//! cargo run --example early-exit --release --features "cranelift"
-//! ```
-//!
-//! Ready?
+// There are cases where you may want to interrupt this synchronous execution of the Wasm module
+// while the it is calling a host function. This can be useful for saving resources, and not
+// returning back to the guest Wasm for execution, when you already know the Wasm execution will
+// fail, or no longer be needed.
+//
+// In this example, we will run a Wasm module that calls the imported host function
+// interrupt_execution. This host function will immediately stop executing the WebAssembly module.
+//
+// You can run the example directly by executing in Wasmer root:
+//
+// ```shell
+// cargo run --example early-exit --release --features "cranelift"
+// ```
+//
+// Ready?
 
 use anyhow::bail;
 use std::fmt;

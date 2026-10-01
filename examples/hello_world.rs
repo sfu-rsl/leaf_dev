@@ -1,10 +1,10 @@
-//! This is a simple example introducing the core concepts of the Wasmer API.
-//!
-//! You can run the example directly by executing the following in the Wasmer root:
-//!
-//! ```shell
-//! cargo run --example hello-world --release --features "cranelift"
-//! ```
+// This is a simple example introducing the core concepts of the Wasmer API.
+//
+// You can run the example directly by executing the following in the Wasmer root:
+//
+// ```shell
+// cargo run --example hello-world --release --features "cranelift"
+// ```
 
 use wasmer::{Function, Instance, Module, Store, TypedFunction, imports, wat2wasm};
 

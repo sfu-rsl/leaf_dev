@@ -1,21 +1,21 @@
-//! A Wasm module can export entities, like functions, memories,
-//! globals and tables.
-//!
-//! This example illustrates how to use exported functions. They come
-//! in 2 flavors:
-//!
-//!   1. Dynamic functions, where parameters and results are of a
-//!      slice of `Value`,
-//!   2. Native function, where parameters and results are statically
-//!      typed Rust values.
-//!
-//! You can run the example directly by executing in Wasmer root:
-//!
-//! ```shell
-//! cargo run --example exported-function --release --features "cranelift"
-//! ```
-//!
-//! Ready?
+// A Wasm module can export entities, like functions, memories,
+// globals and tables.
+//
+// This example illustrates how to use exported functions. They come
+// in 2 flavors:
+//
+//   1. Dynamic functions, where parameters and results are of a
+//      slice of `Value`,
+//   2. Native function, where parameters and results are statically
+//      typed Rust values.
+//
+// You can run the example directly by executing in Wasmer root:
+//
+// ```shell
+// cargo run --example exported-function --release --features "cranelift"
+// ```
+//
+// Ready?
 
 use wasmer::{Instance, Module, Store, TypedFunction, Value, imports, wat2wasm};
 

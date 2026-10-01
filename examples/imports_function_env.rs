@@ -1,23 +1,23 @@
-//! A Wasm module can import entities, like functions, memories,
-//! globals and tables.
-//!
-//! In this example, we'll create a system for getting and adjusting a counter value. However, host
-//! functions are not limited to storing data outside of Wasm, they're normal host functions and
-//! can do anything that the host can do.
-//!
-//!   1. There will be a `get_counter` function that will return an i32 of
-//!      the current global counter,
-//!   2. There will be an `add_to_counter` function will add the passed
-//!      i32 value to the counter, and return an i32 of the current
-//!      global counter.
-//!
-//! You can run the example directly by executing in Wasmer root:
-//!
-//! ```shell
-//! cargo run --example imported-function-env --release --features "cranelift"
-//! ```
-//!
-//! Ready?
+// A Wasm module can import entities, like functions, memories,
+// globals and tables.
+//
+// In this example, we'll create a system for getting and adjusting a counter value. However, host
+// functions are not limited to storing data outside of Wasm, they're normal host functions and
+// can do anything that the host can do.
+//
+//   1. There will be a `get_counter` function that will return an i32 of
+//      the current global counter,
+//   2. There will be an `add_to_counter` function will add the passed
+//      i32 value to the counter, and return an i32 of the current
+//      global counter.
+//
+// You can run the example directly by executing in Wasmer root:
+//
+// ```shell
+// cargo run --example imported-function-env --release --features "cranelift"
+// ```
+//
+// Ready?
 
 use std::sync::{Arc, Mutex};
 use wasmer::{
