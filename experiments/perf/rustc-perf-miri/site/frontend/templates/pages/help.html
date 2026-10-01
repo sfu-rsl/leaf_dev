@@ -1,0 +1,54 @@
+{% extends "layout.html" %}
+{% block head %}
+<style>
+  .help-content {
+    font-family: Helvetica, Arial, sans-serif;
+    line-height: 140%;
+    font-size: 16px;
+    max-width: 50em;
+  }
+
+  .help-content code {
+    background: #eee;
+    border-radius: 5px;
+    padding: 2px;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="help-content">
+  <h3><b><code>@rust-timer</code> commands</b></h3>
+  <p><code>@rust-timer</code> supports several commands, the most common (and simple) being
+    <code>@rust-timer queue</code>. This command is usually invoked as <code>@bors try @rust-timer
+      queue</code>, which starts a bors <a
+      href="https://rustc-dev-guide.rust-lang.org/tests/ci.html#try-builds">"try build"</a> (not a
+    merge). <code>@rust-timer</code> will wait for the try build to finish, and if it succeeds will
+    then queue a perf run.
+  </p>
+  <p><code>@rust-timer queue</code> has a few extra options that can be useful:</p>
+  <ul>
+    <li><code>backends=&lt;BACKENDS&gt;</code> configures which codegen backends should be
+      benchmarked.
+      By default, only the LLVM backend is benchmarked. If you select a non-default codegen backend,
+      rustc-perf will also gather data for this backend for the parent/baseline commit, so that we
+      have something to compare to.
+    </li>
+    <li><code>profiles=&lt;PROFILES&gt;</code> configures which profiles should be benchmarked.
+      If you select a non-default profile, rustc-perf will also gather data for this profile for the
+      parent/baseline commit, so that we have something to compare to.
+    </li>
+    <li><code>targets=&lt;TARGETS&gt;</code> configures which targets should be benchmarked.
+      If no targets are provided <code>x86_64-unknown-linux-gnu</code> is the default.
+      Please note presently the only valid option is <code>x86_64-unknown-linux-gnu</code>.
+    </li>
+  </ul>
+  <p><code>@rust-timer build $commit</code> will queue a perf run for the given commit
+    <code>$commit</code>.
+    It is usually invoked with the commit from a successful "try" run. (The
+    <code>queue</code> command can be seen as a shortcut that automatically selects the
+    "try" run's commit for the <code>build</code> command)
+    This command also supports the same options as <code>@rust-timer queue</code>.
+  </p>
+</div>
+{% endblock %}
