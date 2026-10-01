@@ -21,7 +21,7 @@
 	branch = leaf-eval/v2.5.8
 [submodule "crates/rustls"]
 	path = crates/rustls
-	url = https://github.com/rustls/rustls/
+	url = https://github.com/rustls/rustls.git
 [submodule "crates/wasmer"]
 	path = crates/wasmer
 	url = https://github.com/sfu-rsl/wasmer.git
