@@ -1,0 +1,1217 @@
+commit e80d3e2fadf5770610951269faeb08af7accdc47
+Author: Mohammad Omidvar <m_omidvart@sfu.ca>
+Date:   Thu Oct 1 14:50:02 2026 -0700
+
+    Add a test for the target examples
+
+diff --git a/tests/all_no_engine.rs b/tests/all_no_engine.rs
+new file mode 100644
+index 00000000..73ebd5c9
+--- /dev/null
++++ b/tests/all_no_engine.rs
+@@ -0,0 +1,71 @@
++mod errors {
++    include!("../examples/errors.rs");
++}
++
++mod exports_function {
++    include!("../examples/exports_function.rs");
++}
++
++mod export_global {
++    include!("../examples/exports_global.rs");
++}
++
++mod export_memory {
++    include!("../examples/exports_memory.rs");
++}
++
++mod funcref {
++    include!("../examples/funcref.rs");
++}
++
++mod hello_world {
++    include!("../examples/hello_world.rs");
++}
++
++mod http_dynamic_size {
++    include!("../examples/http_dynamic_size.rs");
++}
++
++mod imports_exports {
++    include!("../examples/imports_exports.rs");
++}
++
++mod imports_function_env {
++    include!("../examples/imports_function_env.rs");
++}
++
++mod imports_function {
++    include!("../examples/imports_function.rs");
++}
++
++mod imports_global {
++    include!("../examples/imports_global.rs");
++}
++
++mod instance {
++    include!("../examples/instance.rs");
++}
++
++// Requiring features like cranelift that are not the target of experiments
++
++// mod early_exit {
++//     include!("../examples/early_exit.rs");
++// }
++
++// mod imports_function_env_global {
++//     include!("../examples/imports_function_env_global.rs");
++// }
++
++// Not compatible with wamr
++
++// mod memory_grow {
++//     include!("../examples/memory_grow.rs");
++// }
++
++// mod memory {
++//     include!("../examples/memory.rs");
++// }
++
++// mod table {
++//     include!("../examples/table.rs");
++// }
+\ No newline at end of file
+
+commit 8eb4021387e8df55ff4b8bc091333a273261bc12
+Author: Mohammad Omidvar <m_omidvart@sfu.ca>
+Date:   Thu Oct 1 14:49:45 2026 -0700
+
+    Covert docs to comments to avoid include errors
+
+diff --git a/examples/compiler_cranelift.rs b/examples/compiler_cranelift.rs
+index 14493e84..c21476aa 100644
+--- a/examples/compiler_cranelift.rs
++++ b/examples/compiler_cranelift.rs
+@@ -1,14 +1,14 @@
+-//! A Wasm module can be compiled with multiple compilers.
+-//!
+-//! This example illustrates how to use the Cranelift compiler.
+-//!
+-//! You can run the example directly by executing in Wasmer root:
+-//!
+-//! ```shell
+-//! cargo run --example compiler-cranelift --release --features "cranelift"
+-//! ```
+-//!
+-//! Ready?
++// A Wasm module can be compiled with multiple compilers.
++//
++// This example illustrates how to use the Cranelift compiler.
++//
++// You can run the example directly by executing in Wasmer root:
++//
++// ```shell
++// cargo run --example compiler-cranelift --release --features "cranelift"
++// ```
++//
++// Ready?
+ 
+ use wasmer::{Instance, Module, Store, Value, imports, wat2wasm};
+ use wasmer_compiler_cranelift::Cranelift;
+diff --git a/examples/compiler_llvm.rs b/examples/compiler_llvm.rs
+index 4a7f60e2..24ba06f1 100644
+--- a/examples/compiler_llvm.rs
++++ b/examples/compiler_llvm.rs
+@@ -1,14 +1,14 @@
+-//! A Wasm module can be compiled with multiple compilers.
+-//!
+-//! This example illustrates how to use the LLVM compiler.
+-//!
+-//! You can run the example directly by executing in Wasmer root:
+-//!
+-//! ```shell
+-//! cargo run --example compiler-llvm --release --features "llvm"
+-//! ```
+-//!
+-//! Ready?
++// A Wasm module can be compiled with multiple compilers.
++//
++// This example illustrates how to use the LLVM compiler.
++//
++// You can run the example directly by executing in Wasmer root:
++//
++// ```shell
++// cargo run --example compiler-llvm --release --features "llvm"
++// ```
++//
++// Ready?
+ 
+ use wasmer::{Instance, Module, Store, Value, imports, wat2wasm};
+ use wasmer_compiler_llvm::LLVM;
+diff --git a/examples/compiler_singlepass.rs b/examples/compiler_singlepass.rs
+index 931e33db..a508d327 100644
+--- a/examples/compiler_singlepass.rs
++++ b/examples/compiler_singlepass.rs
+@@ -1,14 +1,14 @@
+-//! A Wasm module can be compiled with multiple compilers.
+-//!
+-//! This example illustrates how to use the Singlepass compiler.
+-//!
+-//! You can run the example directly by executing in Wasmer root:
+-//!
+-//! ```shell
+-//! cargo run --example compiler-singlepass --release --features "singlepass"
+-//! ```
+-//!
+-//! Ready?
++// A Wasm module can be compiled with multiple compilers.
++//
++// This example illustrates how to use the Singlepass compiler.
++//
++// You can run the example directly by executing in Wasmer root:
++//
++// ```shell
++// cargo run --example compiler-singlepass --release --features "singlepass"
++// ```
++//
++// Ready?
+ 
+ use wasmer::{Instance, Module, Store, Value, imports, wat2wasm};
+ use wasmer_compiler_singlepass::Singlepass;
+diff --git a/examples/early_exit.rs b/examples/early_exit.rs
+index 154c06bf..9ad89aca 100644
+--- a/examples/early_exit.rs
++++ b/examples/early_exit.rs
+@@ -1,18 +1,18 @@
+-//! There are cases where you may want to interrupt this synchronous execution of the Wasm module
+-//! while the it is calling a host function. This can be useful for saving resources, and not
+-//! returning back to the guest Wasm for execution, when you already know the Wasm execution will
+-//! fail, or no longer be needed.
+-//!
+-//! In this example, we will run a Wasm module that calls the imported host function
+-//! interrupt_execution. This host function will immediately stop executing the WebAssembly module.
+-//!
+-//! You can run the example directly by executing in Wasmer root:
+-//!
+-//! ```shell
+-//! cargo run --example early-exit --release --features "cranelift"
+-//! ```
+-//!
+-//! Ready?
++// There are cases where you may want to interrupt this synchronous execution of the Wasm module
++// while the it is calling a host function. This can be useful for saving resources, and not
++// returning back to the guest Wasm for execution, when you already know the Wasm execution will
++// fail, or no longer be needed.
++//
++// In this example, we will run a Wasm module that calls the imported host function
++// interrupt_execution. This host function will immediately stop executing the WebAssembly module.
++//
++// You can run the example directly by executing in Wasmer root:
++//
++// ```shell
++// cargo run --example early-exit --release --features "cranelift"
++// ```
++//
++// Ready?
+ 
+ use anyhow::bail;
+ use std::fmt;
+diff --git a/examples/engine.rs b/examples/engine.rs
+index 0aae8867..2a549e45 100644
+--- a/examples/engine.rs
++++ b/examples/engine.rs
+@@ -1,22 +1,22 @@
+-//! Defining an engine in Wasmer is one of the fundamental steps.
+-//!
+-//! This example illustrates how to use the `wasmer_compiler`,
+-//! aka the Universal engine. An engine applies roughly 2 steps:
+-//!
+-//!   1. It compiles the Wasm module bytes to executable code, through
+-//!      the intervention of a compiler,
+-//!   2. It stores the executable code somewhere.
+-//!
+-//! In the particular context of the Universal engine, the executable
+-//! code is stored in memory.
+-//!
+-//! You can run the example directly by executing in Wasmer root:
+-//!
+-//! ```shell
+-//! cargo run --example engine --release --features "cranelift"
+-//! ```
+-//!
+-//! Ready?
++// Defining an engine in Wasmer is one of the fundamental steps.
++//
++// This example illustrates how to use the `wasmer_compiler`,
++// aka the Universal engine. An engine applies roughly 2 steps:
++//
++//   1. It compiles the Wasm module bytes to executable code, through
++//      the intervention of a compiler,
++//   2. It stores the executable code somewhere.
++//
++// In the particular context of the Universal engine, the executable
++// code is stored in memory.
++//
++// You can run the example directly by executing in Wasmer root:
++//
++// ```shell
++// cargo run --example engine --release --features "cranelift"
++// ```
++//
++// Ready?
+ 
+ use wasmer::{Instance, Module, Store, Value, imports, sys::EngineBuilder, wat2wasm};
+ use wasmer_compiler_cranelift::Cranelift;
+diff --git a/examples/engine_cross_compilation.rs b/examples/engine_cross_compilation.rs
+index c4a2856d..be9fbff7 100644
+--- a/examples/engine_cross_compilation.rs
++++ b/examples/engine_cross_compilation.rs
+@@ -1,22 +1,22 @@
+-//! Defining an engine in Wasmer is one of the fundamental steps.
+-//!
+-//! As a reminder, an engine applies roughly 2 steps:
+-//!
+-//!   1. It compiles the Wasm module bytes to executable code, through
+-//!      the intervention of a compiler,
+-//!   2. It stores the executable code somewhere.
+-//!
+-//! This example focuses on the first step: the compiler. It
+-//! illustrates how the abstraction over the compiler is so powerful
+-//! that it is possible to cross-compile a Wasm module.
+-//!
+-//! You can run the example directly by executing in Wasmer root:
+-//!
+-//! ```shell
+-//! cargo run --example cross-compilation --release --features "cranelift"
+-//! ```
+-//!
+-//! Ready?
++// Defining an engine in Wasmer is one of the fundamental steps.
++//
++// As a reminder, an engine applies roughly 2 steps:
++//
++//   1. It compiles the Wasm module bytes to executable code, through
++//      the intervention of a compiler,
++//   2. It stores the executable code somewhere.
++//
++// This example focuses on the first step: the compiler. It
++// illustrates how the abstraction over the compiler is so powerful
++// that it is possible to cross-compile a Wasm module.
++//
++// You can run the example directly by executing in Wasmer root:
++//
++// ```shell
++// cargo run --example cross-compilation --release --features "cranelift"
++// ```
++//
++// Ready?
+ 
+ use std::str::FromStr;
+ use wasmer::{
+diff --git a/examples/engine_dylib.rs b/examples/engine_dylib.rs
+index 07fa3cd1..e529e32e 100644
+--- a/examples/engine_dylib.rs
++++ b/examples/engine_dylib.rs
+@@ -1,22 +1,22 @@
+-//! Defining an engine in Wasmer is one of the fundamental steps.
+-//!
+-//! This example illustrates how to use the `wasmer_engine_dylib`,
+-//! aka the Dylib engine. An engine applies roughly 2 steps:
+-//!
+-//!   1. It compiles the Wasm module bytes to executable code, through
+-//!      the intervention of a compiler,
+-//!   2. It stores the executable code somewhere.
+-//!
+-//! In the particular context of the Dylib engine, the executable code
+-//! is stored in a shared object (`.dylib`, `.so` or `.dll` file).
+-//!
+-//! You can run the example directly by executing in Wasmer root:
+-//!
+-//! ```shell
+-//! cargo run --example engine-dylib --release --features "cranelift"
+-//! ```
+-//!
+-//! Ready?
++// Defining an engine in Wasmer is one of the fundamental steps.
++//
++// This example illustrates how to use the `wasmer_engine_dylib`,
++// aka the Dylib engine. An engine applies roughly 2 steps:
++//
++//   1. It compiles the Wasm module bytes to executable code, through
++//      the intervention of a compiler,
++//   2. It stores the executable code somewhere.
++//
++// In the particular context of the Dylib engine, the executable code
++// is stored in a shared object (`.dylib`, `.so` or `.dll` file).
++//
++// You can run the example directly by executing in Wasmer root:
++//
++// ```shell
++// cargo run --example engine-dylib --release --features "cranelift"
++// ```
++//
++// Ready?
+ 
+ use wasmer::{imports, wat2wasm, Instance, Module, Store, Value};
+ use wasmer_compiler_cranelift::Cranelift;
+diff --git a/examples/engine_headless.rs b/examples/engine_headless.rs
+index ec75248c..fa16ea74 100644
+--- a/examples/engine_headless.rs
++++ b/examples/engine_headless.rs
+@@ -1,48 +1,48 @@
+-//! Defining an engine in Wasmer is one of the fundamental steps.
+-//!
+-//! This example illustrates a neat feature of engines: their ability
+-//! to run in a headless mode. At the time of writing, all engines
+-//! have a headless mode, but it's not a requirement of the `Engine`
+-//! trait (defined in the `wasmer_engine` crate).
+-//!
+-//! What problem does it solve, and what does it mean?
+-//!
+-//! Once a Wasm module is compiled into executable code and stored
+-//! somewhere (e.g. in memory with the Universal engine), the module
+-//! can be instantiated and executed. But imagine for a second the
+-//! following scenario:
+-//!
+-//!   * Modules are compiled ahead of time, to be instantiated later
+-//!     on.
+-//!   * Modules are cross-compiled on a machine ahead of time
+-//!     to be run on another machine later one.
+-//!
+-//! In both scenarios, the environment where the compiled Wasm module
+-//! will be executed can be very constrained. For such particular
+-//! contexts, Wasmer can be compiled _without_ the compilers, so that
+-//! the `wasmer` binary is as small as possible. Indeed, there is no
+-//! need for a compiler since the Wasm module is already compiled. All
+-//! we need is an engine that _only_ drives the instantiation and
+-//! execution of the Wasm module.
+-//!
+-//! And that, that's a headless engine.
+-//!
+-//! To achieve such a scenario, a Wasm module must be compiled, then
+-//! serialized —for example into a file—, then later, potentially on
+-//! another machine, deserialized. The next steps are classical: The
+-//! Wasm module is instantiated and executed.
+-//!
+-//! This example uses a `compiler` because it illustrates the entire
+-//! workflow, but keep in mind the compiler isn't required after the
+-//! compilation step.
+-//!
+-//! You can run the example directly by executing in Wasmer root:
+-//!
+-//! ```shell
+-//! cargo run --example engine-headless --release --features "cranelift"
+-//! ```
+-//!
+-//! Ready?
++// Defining an engine in Wasmer is one of the fundamental steps.
++//
++// This example illustrates a neat feature of engines: their ability
++// to run in a headless mode. At the time of writing, all engines
++// have a headless mode, but it's not a requirement of the `Engine`
++// trait (defined in the `wasmer_engine` crate).
++//
++// What problem does it solve, and what does it mean?
++//
++// Once a Wasm module is compiled into executable code and stored
++// somewhere (e.g. in memory with the Universal engine), the module
++// can be instantiated and executed. But imagine for a second the
++// following scenario:
++//
++//   * Modules are compiled ahead of time, to be instantiated later
++//     on.
++//   * Modules are cross-compiled on a machine ahead of time
++//     to be run on another machine later one.
++//
++// In both scenarios, the environment where the compiled Wasm module
++// will be executed can be very constrained. For such particular
++// contexts, Wasmer can be compiled _without_ the compilers, so that
++// the `wasmer` binary is as small as possible. Indeed, there is no
++// need for a compiler since the Wasm module is already compiled. All
++// we need is an engine that _only_ drives the instantiation and
++// execution of the Wasm module.
++//
++// And that, that's a headless engine.
++//
++// To achieve such a scenario, a Wasm module must be compiled, then
++// serialized —for example into a file—, then later, potentially on
++// another machine, deserialized. The next steps are classical: The
++// Wasm module is instantiated and executed.
++//
++// This example uses a `compiler` because it illustrates the entire
++// workflow, but keep in mind the compiler isn't required after the
++// compilation step.
++//
++// You can run the example directly by executing in Wasmer root:
++//
++// ```shell
++// cargo run --example engine-headless --release --features "cranelift"
++// ```
++//
++// Ready?
+ 
+ use tempfile::NamedTempFile;
+ use wasmer::{Instance, Module, Store, Value, imports, sys::EngineBuilder, wat2wasm};
+diff --git a/examples/errors.rs b/examples/errors.rs
+index 98de26f5..fc052610 100644
+--- a/examples/errors.rs
++++ b/examples/errors.rs
+@@ -1,17 +1,17 @@
+-//! A Wasm module can sometimes be invalid or trigger traps, and in those case we will get
+-//! an error back from the API.
+-//!
+-//! In this example we'll see how to handle such errors in the most
+-//! basic way. To do that we'll use a Wasm module that we know will
+-//! produce an error.
+-//!
+-//! You can run the example directly by executing in Wasmer root:
+-//!
+-//! ```shell
+-//! cargo run --example errors --release --features "cranelift"
+-//! ```
+-//!
+-//! Ready?
++// A Wasm module can sometimes be invalid or trigger traps, and in those case we will get
++// an error back from the API.
++//
++// In this example we'll see how to handle such errors in the most
++// basic way. To do that we'll use a Wasm module that we know will
++// produce an error.
++//
++// You can run the example directly by executing in Wasmer root:
++//
++// ```shell
++// cargo run --example errors --release --features "cranelift"
++// ```
++//
++// Ready?
+ 
+ use wasmer::{Instance, Module, Store, TypedFunction, imports, wat2wasm};
+ 
+diff --git a/examples/exports_function.rs b/examples/exports_function.rs
+index 2c420f31..c2c8a3a4 100644
+--- a/examples/exports_function.rs
++++ b/examples/exports_function.rs
+@@ -1,21 +1,21 @@
+-//! A Wasm module can export entities, like functions, memories,
+-//! globals and tables.
+-//!
+-//! This example illustrates how to use exported functions. They come
+-//! in 2 flavors:
+-//!
+-//!   1. Dynamic functions, where parameters and results are of a
+-//!      slice of `Value`,
+-//!   2. Native function, where parameters and results are statically
+-//!      typed Rust values.
+-//!
+-//! You can run the example directly by executing in Wasmer root:
+-//!
+-//! ```shell
+-//! cargo run --example exported-function --release --features "cranelift"
+-//! ```
+-//!
+-//! Ready?
++// A Wasm module can export entities, like functions, memories,
++// globals and tables.
++//
++// This example illustrates how to use exported functions. They come
++// in 2 flavors:
++//
++//   1. Dynamic functions, where parameters and results are of a
++//      slice of `Value`,
++//   2. Native function, where parameters and results are statically
++//      typed Rust values.
++//
++// You can run the example directly by executing in Wasmer root:
++//
++// ```shell
++// cargo run --example exported-function --release --features "cranelift"
++// ```
++//
++// Ready?
+ 
+ use wasmer::{Instance, Module, Store, TypedFunction, Value, imports, wat2wasm};
+ 
+diff --git a/examples/exports_global.rs b/examples/exports_global.rs
+index 2f51af5f..7fdf4165 100644
+--- a/examples/exports_global.rs
++++ b/examples/exports_global.rs
+@@ -1,19 +1,19 @@
+-//! A Wasm module can export entities, like functions, memories,
+-//! globals and tables.
+-//!
+-//! This example illustrates how to use exported globals. They come
+-//! in 2 flavors:
+-//!
+-//!   1. Immutable globals (const),
+-//!   2. Mutable globals.
+-//!
+-//! You can run the example directly by executing in Wasmer root:
+-//!
+-//! ```shell
+-//! cargo run --example exported-global --release --features "cranelift"
+-//! ```
+-//!
+-//! Ready?
++// A Wasm module can export entities, like functions, memories,
++// globals and tables.
++//
++// This example illustrates how to use exported globals. They come
++// in 2 flavors:
++//
++//   1. Immutable globals (const),
++//   2. Mutable globals.
++//
++// You can run the example directly by executing in Wasmer root:
++//
++// ```shell
++// cargo run --example exported-global --release --features "cranelift"
++// ```
++//
++// Ready?
+ 
+ use wasmer::{Instance, Module, Mutability, Store, Type, TypedFunction, Value, imports, wat2wasm};
+ 
+diff --git a/examples/exports_memory.rs b/examples/exports_memory.rs
+index 5b5b988b..3abd3f83 100644
+--- a/examples/exports_memory.rs
++++ b/examples/exports_memory.rs
+@@ -1,15 +1,15 @@
+-//! A Wasm module can export entities, like functions, memories,
+-//! globals and tables.
+-//!
+-//! This example illustrates how to use exported memories
+-//!
+-//! You can run the example directly by executing in Wasmer root:
+-//!
+-//! ```shell
+-//! cargo run --example exported-memory --release --features "cranelift"
+-//! ```
+-//!
+-//! Ready?
++// A Wasm module can export entities, like functions, memories,
++// globals and tables.
++//
++// This example illustrates how to use exported memories
++//
++// You can run the example directly by executing in Wasmer root:
++//
++// ```shell
++// cargo run --example exported-memory --release --features "cranelift"
++// ```
++//
++// Ready?
+ 
+ use wasmer::{Instance, Module, Store, TypedFunction, WasmPtr, imports, wat2wasm};
+ 
+diff --git a/examples/features.rs b/examples/features.rs
+index 5b7fce12..411a1a9c 100644
+--- a/examples/features.rs
++++ b/examples/features.rs
+@@ -1,14 +1,14 @@
+-//! WebAssembly is a living standard. Wasmer integrates some
+-//! WebAssembly features that aren't yet stable but can still be
+-//! turned on. This example explains how.
+-//!
+-//! You can run the example directly by executing in Wasmer root:
+-//!
+-//! ```shell
+-//! cargo run --example features --release --features "cranelift"
+-//! ```
+-//!
+-//! Ready?
++// WebAssembly is a living standard. Wasmer integrates some
++// WebAssembly features that aren't yet stable but can still be
++// turned on. This example explains how.
++//
++// You can run the example directly by executing in Wasmer root:
++//
++// ```shell
++// cargo run --example features --release --features "cranelift"
++// ```
++//
++// Ready?
+ 
+ use wasmer::{
+     Instance, Module, Store, Value, imports,
+diff --git a/examples/hello_world.rs b/examples/hello_world.rs
+index 60aeadf7..f34729d0 100644
+--- a/examples/hello_world.rs
++++ b/examples/hello_world.rs
+@@ -1,10 +1,10 @@
+-//! This is a simple example introducing the core concepts of the Wasmer API.
+-//!
+-//! You can run the example directly by executing the following in the Wasmer root:
+-//!
+-//! ```shell
+-//! cargo run --example hello-world --release --features "cranelift"
+-//! ```
++// This is a simple example introducing the core concepts of the Wasmer API.
++//
++// You can run the example directly by executing the following in the Wasmer root:
++//
++// ```shell
++// cargo run --example hello-world --release --features "cranelift"
++// ```
+ 
+ use wasmer::{Function, Instance, Module, Store, TypedFunction, imports, wat2wasm};
+ 
+diff --git a/examples/imports_exports.rs b/examples/imports_exports.rs
+index ed833a39..a8225fc9 100644
+--- a/examples/imports_exports.rs
++++ b/examples/imports_exports.rs
+@@ -1,19 +1,19 @@
+-//! A Wasm module can import and export entities, like functions, memories, globals and tables.
+-//! This example illustrates the basics of using these entities.
+-//!
+-//! In this example we'll be using a sample Wasm module which exports some entities and requires us
+-//! to also import some of them.
+-//!
+-//! The goal here is to give you an idea of how to work with imports and exports. We won't go into
+-//! the details of each entities, they'll be covered in more details in the other examples.
+-//!
+-//! You can run the example directly by executing in Wasmer root:
+-//!
+-//! ```shell
+-//! cargo run --example imports-exports --release --features "cranelift"
+-//! ```
+-//!
+-//! Ready?
++// A Wasm module can import and export entities, like functions, memories, globals and tables.
++// This example illustrates the basics of using these entities.
++//
++// In this example we'll be using a sample Wasm module which exports some entities and requires us
++// to also import some of them.
++//
++// The goal here is to give you an idea of how to work with imports and exports. We won't go into
++// the details of each entities, they'll be covered in more details in the other examples.
++//
++// You can run the example directly by executing in Wasmer root:
++//
++// ```shell
++// cargo run --example imports-exports --release --features "cranelift"
++// ```
++//
++// Ready?
+ 
+ use wasmer::{
+     Function, FunctionType, Global, Instance, Memory, Module, Store, Table, Type, Value, imports,
+diff --git a/examples/imports_function.rs b/examples/imports_function.rs
+index 634f0ffa..a8a74798 100644
+--- a/examples/imports_function.rs
++++ b/examples/imports_function.rs
+@@ -1,21 +1,21 @@
+-//! A Wasm module can import entities, like functions, memories,
+-//! globals and tables.
+-//!
+-//! This example illustrates how to use imported functions. They come
+-//! in 2 flavors:
+-//!
+-//!   1. Dynamic functions, where parameters and results are of a
+-//!      slice of `Value`,
+-//!   2. Native function, where parameters and results are statically
+-//!      typed Rust values.
+-//!
+-//! You can run the example directly by executing in Wasmer root:
+-//!
+-//! ```shell
+-//! cargo run --example imported-function --release --features "cranelift"
+-//! ```
+-//!
+-//! Ready?
++// A Wasm module can import entities, like functions, memories,
++// globals and tables.
++//
++// This example illustrates how to use imported functions. They come
++// in 2 flavors:
++//
++//   1. Dynamic functions, where parameters and results are of a
++//      slice of `Value`,
++//   2. Native function, where parameters and results are statically
++//      typed Rust values.
++//
++// You can run the example directly by executing in Wasmer root:
++//
++// ```shell
++// cargo run --example imported-function --release --features "cranelift"
++// ```
++//
++// Ready?
+ 
+ use wasmer::{
+     Function, FunctionEnv, FunctionEnvMut, FunctionType, Instance, Module, Store, Type,
+diff --git a/examples/imports_function_env.rs b/examples/imports_function_env.rs
+index d84400ae..6866dd9d 100644
+--- a/examples/imports_function_env.rs
++++ b/examples/imports_function_env.rs
+@@ -1,23 +1,23 @@
+-//! A Wasm module can import entities, like functions, memories,
+-//! globals and tables.
+-//!
+-//! In this example, we'll create a system for getting and adjusting a counter value. However, host
+-//! functions are not limited to storing data outside of Wasm, they're normal host functions and
+-//! can do anything that the host can do.
+-//!
+-//!   1. There will be a `get_counter` function that will return an i32 of
+-//!      the current global counter,
+-//!   2. There will be an `add_to_counter` function will add the passed
+-//!      i32 value to the counter, and return an i32 of the current
+-//!      global counter.
+-//!
+-//! You can run the example directly by executing in Wasmer root:
+-//!
+-//! ```shell
+-//! cargo run --example imported-function-env --release --features "cranelift"
+-//! ```
+-//!
+-//! Ready?
++// A Wasm module can import entities, like functions, memories,
++// globals and tables.
++//
++// In this example, we'll create a system for getting and adjusting a counter value. However, host
++// functions are not limited to storing data outside of Wasm, they're normal host functions and
++// can do anything that the host can do.
++//
++//   1. There will be a `get_counter` function that will return an i32 of
++//      the current global counter,
++//   2. There will be an `add_to_counter` function will add the passed
++//      i32 value to the counter, and return an i32 of the current
++//      global counter.
++//
++// You can run the example directly by executing in Wasmer root:
++//
++// ```shell
++// cargo run --example imported-function-env --release --features "cranelift"
++// ```
++//
++// Ready?
+ 
+ use std::sync::{Arc, Mutex};
+ use wasmer::{
+diff --git a/examples/imports_function_env_global.rs b/examples/imports_function_env_global.rs
+index 7a62d754..33075d58 100644
+--- a/examples/imports_function_env_global.rs
++++ b/examples/imports_function_env_global.rs
+@@ -1,24 +1,24 @@
+-//! A Wasm module can import entities, like functions, memories,
+-//! globals and tables.
+-//!
+-//! In this example, we'll create a system for getting and adjusting a counter value. However, host
+-//! functions are not limited to storing data outside of Wasm, they're normal host functions and
+-//! can do anything that the host can do.
+-//! we will also demonstrate how a Function can also get globals from within a wasm call
+-//!
+-//!   1. There will be a `get_counter` function that will return an i32 of
+-//!      the current global counter, The function will also increment a global value
+-//!   2. There will be an `add_to_counter` function will add the passed
+-//!      i32 value to the counter, and return an i32 of the current
+-//!      global counter.
+-//!
+-//! You can run the example directly by executing in Wasmer root:
+-//!
+-//! ```shell
+-//! cargo run --example imported-function-env-global --release --features "cranelift"
+-//! ```
+-//!
+-//! Ready?
++// A Wasm module can import entities, like functions, memories,
++// globals and tables.
++//
++// In this example, we'll create a system for getting and adjusting a counter value. However, host
++// functions are not limited to storing data outside of Wasm, they're normal host functions and
++// can do anything that the host can do.
++// we will also demonstrate how a Function can also get globals from within a wasm call
++//
++//   1. There will be a `get_counter` function that will return an i32 of
++//      the current global counter, The function will also increment a global value
++//   2. There will be an `add_to_counter` function will add the passed
++//      i32 value to the counter, and return an i32 of the current
++//      global counter.
++//
++// You can run the example directly by executing in Wasmer root:
++//
++// ```shell
++// cargo run --example imported-function-env-global --release --features "cranelift"
++// ```
++//
++// Ready?
+ 
+ use std::sync::{Arc, Mutex};
+ use wasmer::{
+@@ -96,7 +96,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
+     }
+ 
+     let env = FunctionEnv::new(
+-        &mut store,
++        &mut store,imports_function_env_global
++imports_function_env_global
+         Env {
+             counter: shared_counter.clone(),
+             g_counter: g_counter.clone(),
+diff --git a/examples/imports_global.rs b/examples/imports_global.rs
+index 5d03c8bf..c43e8eeb 100644
+--- a/examples/imports_global.rs
++++ b/examples/imports_global.rs
+@@ -1,19 +1,19 @@
+-//! A Wasm module can import entities, like functions, memories,
+-//! globals and tables.
+-//!
+-//! This example illustrates how to use imported globals. They come
+-//! in 2 flavors:
+-//!
+-//!   1. Immutable globals (const),
+-//!   2. Mutable globals.
+-//!
+-//! You can run the example directly by executing in Wasmer root:
+-//!
+-//! ```shell
+-//! cargo run --example imported-global --release --features "cranelift"
+-//! ```
+-//!
+-//! Ready?
++// A Wasm module can import entities, like functions, memories,
++// globals and tables.
++//
++// This example illustrates how to use imported globals. They come
++// in 2 flavors:
++//
++//   1. Immutable globals (const),
++//   2. Mutable globals.
++//
++// You can run the example directly by executing in Wasmer root:
++//
++// ```shell
++// cargo run --example imported-global --release --features "cranelift"
++// ```
++//
++// Ready?
+ 
+ use wasmer::{Global, Instance, Module, Store, TypedFunction, Value, imports, wat2wasm};
+ 
+diff --git a/examples/instance.rs b/examples/instance.rs
+index e6bba7f8..5f5e989e 100644
+--- a/examples/instance.rs
++++ b/examples/instance.rs
+@@ -1,18 +1,18 @@
+-//! Wasmer will let you easily run Wasm module in a Rust host.
+-//!
+-//! This example illustrates the basics of using Wasmer through a "Hello World"-like project:
+-//!
+-//!   1. How to load a Wasm modules as bytes
+-//!   2. How to compile the module
+-//!   3. How to create an instance of the module
+-//!
+-//! You can run the example directly by executing in Wasmer root:
+-//!
+-//! ```shell
+-//! cargo run --example instance --release --features "cranelift"
+-//! ```
+-//!
+-//! Ready?
++// Wasmer will let you easily run Wasm module in a Rust host.
++//
++// This example illustrates the basics of using Wasmer through a "Hello World"-like project:
++//
++//   1. How to load a Wasm modules as bytes
++//   2. How to compile the module
++//   3. How to create an instance of the module
++//
++// You can run the example directly by executing in Wasmer root:
++//
++// ```shell
++// cargo run --example instance --release --features "cranelift"
++// ```
++//
++// Ready?
+ 
+ use wasmer::{Instance, Module, Store, TypedFunction, imports, wat2wasm};
+ 
+diff --git a/examples/memory.rs b/examples/memory.rs
+index 8455ef27..43542b64 100644
+--- a/examples/memory.rs
++++ b/examples/memory.rs
+@@ -1,18 +1,18 @@
+-//! With Wasmer you'll be able to interact with guest module memory.
+-//!
+-//! This example illustrates the basics of interacting with Wasm module memory.:
+-//!
+-//!   1. How to load a Wasm modules as bytes
+-//!   2. How to compile the module
+-//!   3. How to create an instance of the module
+-//!
+-//! You can run the example directly by executing in Wasmer root:
+-//!
+-//! ```shell
+-//! cargo run --example memory --release --features "cranelift"
+-//! ```
+-//!
+-//! Ready?
++// With Wasmer you'll be able to interact with guest module memory.
++//
++// This example illustrates the basics of interacting with Wasm module memory.:
++//
++//   1. How to load a Wasm modules as bytes
++//   2. How to compile the module
++//   3. How to create an instance of the module
++//
++// You can run the example directly by executing in Wasmer root:
++//
++// ```shell
++// cargo run --example memory --release --features "cranelift"
++// ```
++//
++// Ready?
+ 
+ #[cfg(not(feature = "wamr"))]
+ use std::mem;
+diff --git a/examples/memory_grow.rs b/examples/memory_grow.rs
+index 1ea79925..b09bfe1d 100644
+--- a/examples/memory_grow.rs
++++ b/examples/memory_grow.rs
+@@ -1,10 +1,10 @@
+-//! Example demonstrating WebAssembly memory growth limits
+-//!
+-//! Tests growing memory to maximum allowed size according to the spec
+-//! You can run the example directly by executing:
+-//! ```shell
+-//! cargo run --example memory-grow --release --features "cranelift"
+-//! ```
++// Example demonstrating WebAssembly memory growth limits
++//
++// Tests growing memory to maximum allowed size according to the spec
++// You can run the example directly by executing:
++// ```shell
++// cargo run --example memory-grow --release --features "cranelift"
++// ```
+ 
+ use wasmer::{Instance, Module, Store, imports, wat2wasm};
+ 
+diff --git a/examples/metering.rs b/examples/metering.rs
+index 8e7a5136..232e06f8 100644
+--- a/examples/metering.rs
++++ b/examples/metering.rs
+@@ -1,18 +1,18 @@
+-//! Wasmer will let you easily run Wasm module in a Rust host.
+-//!
+-//! This example illustrates the basics of using Wasmer metering features:
+-//!
+-//!   1. How to enable metering in a module
+-//!   2. How to meter a specific function call
+-//!   3. How to make execution fails if cost exceeds a given limit
+-//!
+-//! You can run the example directly by executing in Wasmer root:
+-//!
+-//! ```shell
+-//! cargo run --example metering --release --features "cranelift"
+-//! ```
+-//!
+-//! Ready?
++// Wasmer will let you easily run Wasm module in a Rust host.
++//
++// This example illustrates the basics of using Wasmer metering features:
++//
++//   1. How to enable metering in a module
++//   2. How to meter a specific function call
++//   3. How to make execution fails if cost exceeds a given limit
++//
++// You can run the example directly by executing in Wasmer root:
++//
++// ```shell
++// cargo run --example metering --release --features "cranelift"
++// ```
++//
++// Ready?
+ 
+ use anyhow::bail;
+ use std::sync::Arc;
+diff --git a/examples/platform_ios_headless.rs b/examples/platform_ios_headless.rs
+index 69c70ec0..df9b47ae 100644
+--- a/examples/platform_ios_headless.rs
++++ b/examples/platform_ios_headless.rs
+@@ -1,16 +1,16 @@
+-//! Defining an engine in Wasmer is one of the fundamental steps.
+-//!
+-//! This example builds on that of 'engine_headless.rs' but instead of
+-//! serializing a module and then deserializing it again for your host machines target,
+-//! We instead create an engine for our target architecture (In this case an ARM64 iOS device),
+-//! serialize a simple module to a .dylib file that can be copied to an iOS project and
+-//! deserialized/ran using the 'Headless C-API'.
+-//!
+-//! ```shell
+-//! cargo run --example platform-headless-ios --release --features "cranelift"
+-//! ```
+-//!
+-//! Ready?
++// Defining an engine in Wasmer is one of the fundamental steps.
++//
++// This example builds on that of 'engine_headless.rs' but instead of
++// serializing a module and then deserializing it again for your host machines target,
++// We instead create an engine for our target architecture (In this case an ARM64 iOS device),
++// serialize a simple module to a .dylib file that can be copied to an iOS project and
++// deserialized/ran using the 'Headless C-API'.
++//
++// ```shell
++// cargo run --example platform-headless-ios --release --features "cranelift"
++// ```
++//
++// Ready?
+ #![allow(unused)]
+ use std::path::Path;
+ use std::str::FromStr;
+diff --git a/examples/wasi.rs b/examples/wasi.rs
+index 0dfab7cb..9c8c86a4 100644
+--- a/examples/wasi.rs
++++ b/examples/wasi.rs
+@@ -1,18 +1,18 @@
+-//! Running a WASI compiled WebAssembly module with Wasmer.
+-//!
+-//! This example illustrates how to run WASI modules with
+-//! Wasmer.
+-//!
+-//! If you need more manual control over the instantiation, including custom
+-//! imports, then check out the ./wasi_manual_setup.rs example.
+-//!
+-//! You can run the example directly by executing in Wasmer root:
+-//!
+-//! ```shell
+-//! cargo run --example wasi --release --features "cranelift,wasi"
+-//! ```
+-//!
+-//! Ready?
++// Running a WASI compiled WebAssembly module with Wasmer.
++//
++// This example illustrates how to run WASI modules with
++// Wasmer.
++//
++// If you need more manual control over the instantiation, including custom
++// imports, then check out the ./wasi_manual_setup.rs example.
++//
++// You can run the example directly by executing in Wasmer root:
++//
++// ```shell
++// cargo run --example wasi --release --features "cranelift,wasi"
++// ```
++//
++// Ready?
+ 
+ use std::{io::Read, sync::Arc};
+ 
+diff --git a/examples/wasi_manual_setup.rs b/examples/wasi_manual_setup.rs
+index 504eb8be..db202e3f 100644
+--- a/examples/wasi_manual_setup.rs
++++ b/examples/wasi_manual_setup.rs
+@@ -1,19 +1,19 @@
+-//! Running a WASI compiled WebAssembly module with Wasmer.
+-//!
+-//! This example illustrates how to run WASI modules with
+-//! Wasmer. To run WASI we have to have to do mainly 3 steps:
+-//!
+-//!   1. Create a `WasiEnv` instance
+-//!   2. Attach the imports from the `WasiEnv` to a new instance
+-//!   3. Run the `WASI` module.
+-//!
+-//! You can run the example directly by executing in Wasmer root:
+-//!
+-//! ```shell
+-//! cargo run --example wasi-manual-setup --release --features "cranelift,tokio,wasi"
+-//! ```
+-//!
+-//! Ready?
++// Running a WASI compiled WebAssembly module with Wasmer.
++//
++// This example illustrates how to run WASI modules with
++// Wasmer. To run WASI we have to have to do mainly 3 steps:
++//
++//   1. Create a `WasiEnv` instance
++//   2. Attach the imports from the `WasiEnv` to a new instance
++//   3. Run the `WASI` module.
++//
++// You can run the example directly by executing in Wasmer root:
++//
++// ```shell
++// cargo run --example wasi-manual-setup --release --features "cranelift,tokio,wasi"
++// ```
++//
++// Ready?
+ 
+ use wasmer::{Instance, Module, Store};
+ use wasmer_wasix::WasiEnv;
+diff --git a/examples/wasi_pipes.rs b/examples/wasi_pipes.rs
+index b33ee034..a3865f3f 100644
+--- a/examples/wasi_pipes.rs
++++ b/examples/wasi_pipes.rs
+@@ -1,15 +1,15 @@
+-//! Piping to and from a WASI compiled WebAssembly module with Wasmer.
+-//!
+-//! This example builds on the WASI example, showing how you can pipe to and
+-//! from a WebAssembly module.
+-//!
+-//! You can run the example directly by executing in Wasmer root:
+-//!
+-//! ```shell
+-//! cargo run --example wasi-pipes --release --features "cranelift,tokio,backend,wasi"
+-//! ```
+-//!
+-//! Ready?
++// Piping to and from a WASI compiled WebAssembly module with Wasmer.
++//
++// This example builds on the WASI example, showing how you can pipe to and
++// from a WebAssembly module.
++//
++// You can run the example directly by executing in Wasmer root:
++//
++// ```shell
++// cargo run --example wasi-pipes --release --features "cranelift,tokio,backend,wasi"
++// ```
++//
++// Ready?
+ 
+ use std::io::{Read, Write};
+ 
+
+commit 8f2200208f3018057048e5259f020bf9efa7accc
+Author: Mohammad Omidvar <m_omidvart@sfu.ca>
+Date:   Thu Oct 1 14:48:47 2026 -0700
+
+    Make default features more accurate
+
+diff --git a/Cargo.toml b/Cargo.toml
+index 40afe75e..9a2cbcc2 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -333,10 +333,14 @@ glob.workspace = true
+ rustc_version.workspace = true
+ 
+ [dev-dependencies]
+-wasmer = { version = "=7.1.0", path = "lib/api", features = [
+-	"compiler",
+-	"singlepass",
+-	"sys",
++wasmer = { version = "=7.1.0", path = "lib/api",  default-features = false, features = [
++	# "compiler",
++	# "singlepass",
++	# "sys",
++	"headless",
++	"wat",
++	"std",
++	"wasmi",
+ ] }
+ anyhow.workspace = true
+ clap.workspace = true
+
+commit 381da9d6f6129fcedae27ec482c73eb05805a760
+Author: Mohammad Omidvar <m_omidvart@sfu.ca>
+Date:   Thu Oct 1 14:47:11 2026 -0700
+
+    Remove the enforced toolchain
+
+diff --git a/rust-toolchain.toml b/rust-toolchain.toml
+deleted file mode 100644
+index ff79a41f..00000000
+--- a/rust-toolchain.toml
++++ /dev/null
+@@ -1,3 +0,0 @@
+-[toolchain]
+-channel = "1.91"
+-components = ["rustfmt", "clippy"]
