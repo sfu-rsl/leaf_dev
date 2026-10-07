@@ -141,7 +141,9 @@ where
                 .then(|| self.internal_reference_byte_str_const_operand(constant))
         }
         // NOTE: Check this after all other ZSTs that you want to distinguish.
-        else if ty.size(tcx, self.current_typing_env()) == rustc_abi::Size::ZERO {
+        else if let Some(size) = ty.opt_size(tcx, self.current_typing_env())
+            && size == rustc_abi::Size::ZERO
+        {
             config
                 .zst
                 .is_enabled()
