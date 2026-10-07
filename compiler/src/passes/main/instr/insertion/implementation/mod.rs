@@ -839,7 +839,7 @@ pub(super) mod utils {
         pub trait TyExt<'tcx> {
             fn is_trivially_tuple(self) -> bool;
             fn is_tuple(self, tcx: TyCtxt<'tcx>, typing_env: TypingEnv<'tcx>) -> bool;
-            fn size(self, tcx: TyCtxt<'tcx>, typing_env: TypingEnv<'tcx>) -> Size;
+            fn opt_size(self, tcx: TyCtxt<'tcx>, typing_env: TypingEnv<'tcx>) -> Option<Size>;
         }
 
         impl<'tcx> TyExt<'tcx> for Ty<'tcx> {
@@ -858,8 +858,10 @@ pub(super) mod utils {
                     )
             }
 
-            fn size(self, tcx: TyCtxt<'tcx>, typing_env: TypingEnv<'tcx>) -> Size {
-                tcx.layout_of(typing_env.as_query_input(self)).unwrap().size
+            fn opt_size(self, tcx: TyCtxt<'tcx>, typing_env: TypingEnv<'tcx>) -> Option<Size> {
+                tcx.layout_of(typing_env.as_query_input(self))
+                    .ok()
+                    .map(|layout| layout.size)
             }
         }
 
